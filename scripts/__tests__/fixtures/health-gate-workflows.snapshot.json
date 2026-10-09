@@ -86,6 +86,16 @@
             }
           },
           {
+            "name": "Checkout immutable integration commit",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "path": "shadow-integration",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
             "name": "Download authoritative scope",
             "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
             "with": {
@@ -116,7 +126,9 @@
             "name": "Measure shadow selection",
             "env": {
               "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "INTEGRATION_SHA": "${{ github.sha }}",
+              "INTEGRATION_ROOT": "shadow-integration"
             },
             "run": "node scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json"
           },

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     closeSync,
@@ -8,6 +9,7 @@ import {
     openSync,
     readFileSync,
     realpathSync,
+    rmSync,
     rmdirSync,
     symlinkSync,
     unlinkSync,
@@ -20,9 +22,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
     hashInventoryFile,
+    listIntegrationInventory,
+    listInventory,
     measureShadow,
     parseChangedRecords,
+    readHeadSourceBindings,
+    readIntegrationSourceHashes,
     sourceQualificationReasons,
+    verifyIntegrationCheckout,
 } from '../e2eSelectionShadow';
 import certificate from '../e2eSelectionShadowCertificate.json' with { type: 'json' };
 import { selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
@@ -68,21 +75,75 @@ function withInventoryFiles(run: (file: string, outside: string, originalHash: s
     }
 }
 
-function fixture(overrides: Record<string, unknown> = {}) {
+function withIntegrationCheckout(
+    run: (root: string, merge: string, head: string, base: string, first: string) => void
+): void {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-shadow-integration-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+    const commit = (message: string) => {
+        git('add', '.');
+        git('-c', 'user.name=Shadow Test', '-c', 'user.email=shadow@example.invalid', 'commit', '-q', '-m', message);
+        return git('rev-parse', 'HEAD');
+    };
+    try {
+        git('init', '-q', '-b', 'main');
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        writeFileSync(join(root, SMOKE_SPEC), 'smoke\n');
+        const base = commit('base');
+        writeFileSync(join(root, 'main.txt'), 'main\n');
+        const first = commit('main');
+        git('checkout', '-q', '-b', 'feature', base);
+        writeFileSync(join(root, 'tests/e2e/monoModulationInput.spec.ts'), 'integration spec\n');
+        const head = commit('head');
+        git('checkout', '-q', 'main');
+        git(
+            '-c',
+            'user.name=Shadow Test',
+            '-c',
+            'user.email=shadow@example.invalid',
+            'merge',
+            '-q',
+            '--no-ff',
+            '-m',
+            'integration',
+            'feature'
+        );
+        run(root, git('rev-parse', 'HEAD'), head, base, first);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
+function fixture(
+    overrides: Record<string, unknown> & {
+        sourceHashes?: Record<string, string>;
+        integrationSourceHashes?: Record<string, string>;
+    } = {}
+) {
     const rawDiff = Buffer.from(`M\0${candidate}\0`);
+    const selectedInventory = Array.isArray(overrides.inventory) ? overrides.inventory : inventory;
+    const suppliedSourceHashes = overrides.sourceHashes ?? certificate.sourceHashes;
+    const sourceHashes = {
+        '.github/workflows/health-gates.yml': 'e'.repeat(64),
+        'scripts/e2eSelectionShadow.ts': 'f'.repeat(64),
+        'scripts/e2eSelectionShadowIntegration.ts': '5d774576933ff4b07af65d326d2acbca20ac3d8af4d29d73f226f85c491cbb6a',
+        ...suppliedSourceHashes,
+    };
     return {
         base: sha,
         head,
+        integrationSha: 'c'.repeat(40),
         rawDiff,
         certificateSha256,
         records: [{ status: 'M', oldPath: candidate, newPath: candidate, oldMode: '100644', newMode: '100644' }],
         inventory,
-        sourceHashes: { ...certificate.sourceHashes, '.github/workflows/health-gates.yml': 'e'.repeat(64) },
+        integrationInventory: selectedInventory,
         sourceModes: Object.fromEntries(
             [
                 ...Object.keys(certificate.sourceHashes),
                 '.github/workflows/health-gates.yml',
                 'scripts/e2eSelectionShadow.ts',
+                'scripts/e2eSelectionShadowIntegration.ts',
             ].map((path) => [path, '100644'])
         ),
         healthRequiredPolicySha256: certificate.healthRequiredPolicySha256,
@@ -93,10 +154,54 @@ function fixture(overrides: Record<string, unknown> = {}) {
             inventory.map((row) => row.path)
         ),
         ...overrides,
+        sourceHashes,
+        integrationSourceHashes: overrides.integrationSourceHashes ?? sourceHashes,
     };
 }
 
 describe('E2E selection shadow', () => {
+    it('binds the two-parent integration commit and reads exact regular Git bytes', () => {
+        withIntegrationCheckout((root, merge, head, base, first) => {
+            expect(() => verifyIntegrationCheckout(root, merge, head, base)).not.toThrow();
+            expect(() => verifyIntegrationCheckout(root, merge, first, base)).toThrow('two-parent merge');
+            expect(() => verifyIntegrationCheckout(root, merge, head, head)).toThrow('first parent');
+            expect(() => verifyIntegrationCheckout(root, '0'.repeat(40), head, base)).toThrow('immutable merge SHA');
+            const rows = listIntegrationInventory(root, merge);
+            expect(listInventory(root, merge)).toEqual(rows);
+            expect(rows.map((row) => row.path)).toContain('tests/e2e/monoModulationInput.spec.ts');
+            expect(rows.every((row) => row.mode === '100644')).toBe(true);
+            const file = join(root, 'tests/e2e/monoModulationInput.spec.ts');
+            const sourceHashes = readIntegrationSourceHashes(root, merge, ['tests/e2e/monoModulationInput.spec.ts']);
+            expect(
+                readHeadSourceBindings(
+                    root,
+                    merge,
+                    ['tests/e2e/monoModulationInput.spec.ts'],
+                    ['tests/e2e/monoModulationInput.spec.ts']
+                ).sourceHashes
+            ).toEqual(sourceHashes);
+            expect(sourceHashes['tests/e2e/monoModulationInput.spec.ts']).toBe(
+                createHash('sha256').update(readFileSync(file)).digest('hex')
+            );
+            writeFileSync(file, 'altered bytes\n');
+            expect(readIntegrationSourceHashes(root, merge, ['tests/e2e/monoModulationInput.spec.ts'])).toEqual(
+                sourceHashes
+            );
+            expect(() => listIntegrationInventory(root, merge)).toThrow('disagree with Git blob');
+            expect(() => listInventory(root, merge)).toThrow('Candidate inventory bytes disagree');
+            expect(() =>
+                readHeadSourceBindings(
+                    root,
+                    merge,
+                    ['tests/e2e/monoModulationInput.spec.ts'],
+                    ['tests/e2e/monoModulationInput.spec.ts']
+                )
+            ).toThrow('Shadow rule in checkout disagrees');
+            unlinkSync(file);
+            symlinkSync(join(root, 'main.txt'), file);
+            expect(() => listIntegrationInventory(root, merge)).toThrow('not regular');
+        });
+    });
     it('retains NUL diff actions and both rename paths', () => {
         expect(parseChangedRecords(`R100\0old.ts\0new.ts\0`)).toEqual([
             { status: 'R100', oldPath: 'old.ts', newPath: 'new.ts' },
@@ -468,6 +573,99 @@ describe('E2E selection shadow', () => {
         );
         expect(report.candidateSpecs).toHaveLength(314);
         expect(report.fallbackReasons).toContain('inventory-certificate-drift: paths');
+    });
+
+    it('keeps an integration-only browser spec in the complete full fallback', () => {
+        const extra = {
+            path: 'tests/e2e/monoModulationInput.spec.ts',
+            gitBlob: 'f'.repeat(40),
+            sha256: 'f'.repeat(64),
+            mode: '100644',
+        };
+        const integrationInventory = [...inventory, extra];
+        const integrationSourceHashes = {
+            ...fixture().integrationSourceHashes,
+            'tests/e2e/smoke.spec.ts': '0'.repeat(64),
+        };
+        const report = measureShadow(
+            fixture({
+                integrationInventory,
+                integrationSourceHashes,
+                livePlan: selectValidationPlan(
+                    [candidate],
+                    integrationInventory.map((row) => row.path)
+                ),
+            })
+        );
+        expect(report.measurementStatus).toBe('complete');
+        expect(report.counts).toEqual({ inventory: 314, candidate: 314, liveSelected: 314 });
+        expect(report.candidateSpecs).toContain(extra.path);
+        expect(report.fallbackReasons).toContain('scope-head-inventory-drift');
+        expect(report.fallbackReasons).toContain('inventory-certificate-drift: paths');
+        expect(report.fallbackReasons).toContain('integration-source-drift: tests/e2e/smoke.spec.ts');
+        expect(report.obligationDispositions).toHaveLength(314);
+        expect(report.obligationDispositions.find((row) => row.path === extra.path)?.disposition).toBe(
+            'INTEGRATION_UNMAPPED'
+        );
+        expect(report.liveSelectedSpecs).toContain(extra.path);
+    });
+
+    it('rejects an integration plan that does not match the authenticated inventory', () => {
+        const integrationInventory = [
+            ...inventory,
+            {
+                path: 'tests/e2e/monoModulationInput.spec.ts',
+                gitBlob: 'f'.repeat(40),
+                sha256: 'f'.repeat(64),
+                mode: '100644',
+            },
+        ];
+        expect(() => measureShadow(fixture({ integrationInventory }))).toThrow(
+            'Authoritative scope artifact disagrees'
+        );
+        const livePlan = selectValidationPlan(
+            [candidate],
+            integrationInventory.map((row) => row.path)
+        );
+        expect(() =>
+            measureShadow(fixture({ integrationInventory, livePlan: { ...livePlan, codeql: !livePlan.codeql } }))
+        ).toThrow('Authoritative scope artifact disagrees');
+    });
+
+    it('refuses a changed integration selector or collector before authenticating the plan', () => {
+        for (const path of ['scripts/prValidationScope.ts', 'scripts/vitestCollectionPatterns.ts']) {
+            const integrationSourceHashes = { ...fixture().integrationSourceHashes, [path]: '0'.repeat(64) };
+            expect(() => measureShadow(fixture({ integrationSourceHashes }))).toThrow(
+                `Integration selector or collector differs from candidate head: ${path}`
+            );
+        }
+    });
+
+    it('refuses a changed integration Playwright or required execution policy', () => {
+        for (const path of ['playwright.config.ts', '.github/workflows/heavy-gates.yml']) {
+            const integrationSourceHashes = { ...fixture().integrationSourceHashes, [path]: '0'.repeat(64) };
+            expect(() => measureShadow(fixture({ integrationSourceHashes }))).toThrow(
+                `Integration execution policy differs from candidate head: ${path}`
+            );
+        }
+    });
+
+    it('keeps full fallback when an integration execution source differs', () => {
+        const integrationSourceHashes = {
+            ...fixture().integrationSourceHashes,
+            'tests/e2e/smoke.spec.ts': '0'.repeat(64),
+        };
+        const report = measureShadow(fixture({ integrationSourceHashes }));
+        expect(report.candidateSpecs).toHaveLength(313);
+        expect(report.fallbackReasons).toContain('integration-source-drift: tests/e2e/smoke.spec.ts');
+    });
+
+    it('falls back when the immutable integration reader differs from its frozen rule', () => {
+        const sourceHashes = {
+            ...fixture().sourceHashes,
+            'scripts/e2eSelectionShadowIntegration.ts': '0'.repeat(64),
+        };
+        expect(measureShadow(fixture({ sourceHashes })).fallbackReasons).toContain('integration-reader-drift');
     });
 
     it('rejects a missing or mismatched authoritative scope artifact', () => {

@@ -3598,6 +3598,12 @@ describe('health gates workflow contract', () => {
             'fetch-depth': 0,
             'persist-credentials': false,
         });
+        expect(stepNamed(shadow, 'Checkout immutable integration commit').with).toEqual({
+            ref: '${{ github.sha }}',
+            path: 'shadow-integration',
+            'fetch-depth': 0,
+            'persist-credentials': false,
+        });
         expect(stepNamed(shadow, 'Download authoritative scope').with).toEqual({
             name: 'pr-validation-scope',
             path: 'shadow-scope',
@@ -3610,6 +3616,12 @@ describe('health gates workflow contract', () => {
         expect(stepNamed(shadow, 'Measure shadow selection').run).toBe(
             'node scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
         );
+        expect(stepNamed(shadow, 'Measure shadow selection').env).toEqual({
+            BASE_SHA: '${{ github.event.pull_request.base.sha }}',
+            HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
+            INTEGRATION_SHA: '${{ github.sha }}',
+            INTEGRATION_ROOT: 'shadow-integration',
+        });
         const gateScript = assertGateContract(health, 'gate', 'Gate', GATE_CONDITION);
         const required = JSON.stringify({
             scope: { result: 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql: 'false' } },

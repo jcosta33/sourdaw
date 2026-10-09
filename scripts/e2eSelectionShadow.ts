@@ -1,13 +1,24 @@
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, constants, fstatSync, openSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 import { parseDocument } from 'yaml';
 
 import certificate from './e2eSelectionShadowCertificate.json' with { type: 'json' };
+import {
+    git,
+    hashInventoryFile,
+    listIntegrationInventory,
+    listInventory,
+    readHeadSourceBindings,
+    readIntegrationSourceHashes,
+    sortInventoryRows,
+    treeEntry,
+    verifyIntegrationCheckout,
+    type InventoryRow,
+} from './e2eSelectionShadowIntegration.ts';
 import { parseChangedPaths, selectValidationPlan, SMOKE_SPEC } from './prValidationScope.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
@@ -18,16 +29,27 @@ type ChangedRecord = {
     oldMode: string | null;
     newMode: string | null;
 };
-type InventoryRow = { path: string; gitBlob: string; sha256: string; mode: string };
 type SourceRow = { path: string; disposition: string; reason: string; producerRoute: string[] };
+
+export {
+    hashInventoryFile,
+    listIntegrationInventory,
+    listInventory,
+    readHeadSourceBindings,
+    readIntegrationSourceHashes,
+    verifyIntegrationCheckout,
+};
 type ShadowInput = {
     base: string;
     head: string;
+    integrationSha: string;
     rawDiff: Buffer;
     certificateSha256: string;
     records: ChangedRecord[];
     inventory: InventoryRow[];
+    integrationInventory: InventoryRow[];
     sourceHashes: Record<string, string>;
+    integrationSourceHashes: Record<string, string>;
     sourceModes: Record<string, string>;
     healthRequiredPolicySha256: string;
     candidateBase: string | null;
@@ -39,6 +61,7 @@ const CANDIDATE_PATH = certificate.candidatePath;
 const WITNESS = 'DIRECT_TUNER_WITNESS';
 const UNPROVEN = 'SOURCE_ONLY_UNPROVEN';
 const CERTIFICATE_SHA256 = '906c986190c48180e234cbb0fb1adb15f3a08b2a2e4631c966e32006b843b9ba';
+const INTEGRATION_READER_SHA256 = '5d774576933ff4b07af65d326d2acbca20ac3d8af4d29d73f226f85c491cbb6a';
 const ALLOWED_ATTRIBUTES = new Set(['className', 'title', 'detail', 'label', 'aria-label', 'aria-live', 'aria-atomic']);
 const SHA = /^[0-9a-f]{40}$/;
 
@@ -214,9 +237,15 @@ function astComparison(before: string, after: string): { admitted: boolean; rout
     return { admitted, routes: routes.length > 0 ? routes : ['allowed-edit: trivia'] };
 }
 
-function validateMeasurementInput(input: ShadowInput): { inventory: InventoryRow[]; full: string[]; live: string[] } {
-    if (!SHA.test(input.base) || !SHA.test(input.head)) {
-        throw new Error('Shadow requires immutable base/head SHAs');
+function validateMeasurementInput(input: ShadowInput): {
+    headInventory: InventoryRow[];
+    inventory: InventoryRow[];
+    full: string[];
+    live: string[];
+    inventoryDrift: boolean;
+} {
+    if (!SHA.test(input.base) || !SHA.test(input.head) || !SHA.test(input.integrationSha)) {
+        throw new Error('Shadow requires immutable base/head/integration SHAs');
     }
     const parsed = parseChangedRecords(input.rawDiff.toString('utf8'));
     if (
@@ -226,20 +255,32 @@ function validateMeasurementInput(input: ShadowInput): { inventory: InventoryRow
         throw new Error('Changed records disagree with raw diff');
     }
     const paths = parseChangedPaths(input.rawDiff.toString('utf8'));
-    const inventory = [...input.inventory].sort((a, b) => {
-        if (a.path < b.path) {
-            return -1;
+    const headInventory = sortInventoryRows([...input.inventory]);
+    const inventory = sortInventoryRows([...input.integrationInventory]);
+    for (const rows of [headInventory, inventory]) {
+        if (
+            new Set(rows.map((row) => row.path)).size !== rows.length ||
+            rows.some((row) => !isPlaywrightCollected(row.path))
+        ) {
+            throw new Error('Invalid Playwright inventory');
         }
-        if (a.path > b.path) {
-            return 1;
+    }
+    for (const path of ['scripts/prValidationScope.ts', 'scripts/vitestCollectionPatterns.ts']) {
+        if (input.integrationSourceHashes[path] !== input.sourceHashes[path] || !input.sourceHashes[path]) {
+            throw new Error(`Integration selector or collector differs from candidate head: ${path}`);
         }
-        return 0;
-    });
-    if (
-        new Set(inventory.map((row) => row.path)).size !== inventory.length ||
-        inventory.some((row) => !isPlaywrightCollected(row.path))
-    ) {
-        throw new Error('Invalid Playwright inventory');
+    }
+    for (const path of [
+        'playwright.config.ts',
+        '.github/workflows/health-gates.yml',
+        '.github/workflows/heavy-gates.yml',
+        '.github/workflows/validation.yml',
+        'package.json',
+        'pnpm-lock.yaml',
+    ]) {
+        if (input.integrationSourceHashes[path] !== input.sourceHashes[path] || !input.sourceHashes[path]) {
+            throw new Error(`Integration execution policy differs from candidate head: ${path}`);
+        }
     }
     const expectedPlan = selectValidationPlan(
         paths,
@@ -252,7 +293,13 @@ function validateMeasurementInput(input: ShadowInput): { inventory: InventoryRow
     if (full.length === 0) {
         throw new Error('Full browser inventory is empty');
     }
-    return { inventory, full, live: expectedPlan.matrix.include.flatMap((group) => group.specs).sort() };
+    return {
+        headInventory,
+        inventory,
+        full,
+        live: expectedPlan.matrix.include.flatMap((group) => group.specs).sort(),
+        inventoryDrift: canonical(headInventory) !== canonical(inventory),
+    };
 }
 
 export function sourceQualificationReasons(
@@ -325,6 +372,12 @@ function certificateReasons(input: ShadowInput, inventory: InventoryRow[], full:
     if (input.certificateSha256 !== CERTIFICATE_SHA256) {
         reasons.push('source-map-certificate-drift');
     }
+    if (
+        input.sourceHashes['scripts/e2eSelectionShadowIntegration.ts'] !== INTEGRATION_READER_SHA256 ||
+        input.sourceModes['scripts/e2eSelectionShadowIntegration.ts'] !== '100644'
+    ) {
+        reasons.push('integration-reader-drift');
+    }
     return reasons;
 }
 
@@ -375,22 +428,47 @@ function candidateDecision(input: ShadowInput, reasons: string[]): string[] {
 }
 
 export function measureShadow(input: ShadowInput) {
-    const { inventory, full, live } = validateMeasurementInput(input);
+    const { headInventory, inventory, full, live, inventoryDrift } = validateMeasurementInput(input);
     const fallbackReasons = certificateReasons(input, inventory, full);
+    if (inventoryDrift) {
+        fallbackReasons.push('scope-head-inventory-drift');
+    }
+    for (const [path, headSha] of Object.entries(input.sourceHashes)) {
+        if (input.integrationSourceHashes[path] !== headSha) {
+            fallbackReasons.push(`integration-source-drift: ${path}`);
+        }
+    }
     const astRoutes = candidateDecision(input, fallbackReasons);
     const witnessRows = certificate.rows.filter((row) => row.disposition === WITNESS);
     const candidate = fallbackReasons.length === 0 ? witnessRows.map((row) => row.path).sort() : full;
+    const certified = new Map(certificate.rows.map((row) => [row.path, row]));
+    const obligationDispositions = inventory
+        .filter((row) => row.path !== SMOKE_SPEC)
+        .map(
+            (row) =>
+                certified.get(row.path) ?? {
+                    path: row.path,
+                    gitBlob: row.gitBlob,
+                    sha256: row.sha256,
+                    disposition: 'INTEGRATION_UNMAPPED',
+                    reason: 'Integration spec is absent from the frozen source-map certificate',
+                    producerRoute: [],
+                }
+        );
     return {
         schemaVersion: 1 as const,
         shadowOnly: true as const,
         measurementStatus: 'complete' as const,
         base: input.base,
         head: input.head,
+        integrationSha: input.integrationSha,
         rawDiffSha256: sha256(input.rawDiff),
         certificateSha256: input.certificateSha256,
         sourceMapSha256: certificate.sourceMapSha256,
         inventorySha256: sha256(canonical(inventory)),
+        headInventorySha256: sha256(canonical(headInventory)),
         sourceAndConfigurationSha256: input.sourceHashes,
+        integrationSourceAndConfigurationSha256: input.integrationSourceHashes,
         sourceModes: input.sourceModes,
         healthRequiredPolicySha256: input.healthRequiredPolicySha256,
         changedRecords: input.records,
@@ -399,71 +477,8 @@ export function measureShadow(input: ShadowInput) {
         liveSelectedSpecs: live,
         fallbackReasons,
         counts: { inventory: full.length, candidate: candidate.length, liveSelected: live.length },
-        obligationDispositions: certificate.rows,
+        obligationDispositions,
     };
-}
-
-function git(args: string[]): Buffer {
-    return execFileSync('git', args, { maxBuffer: 16 * 1024 * 1024 });
-}
-
-function treeEntry(ref: string, path: string): { mode: string; blob: string } | null {
-    const raw = git(['ls-tree', '-z', ref, '--', `:(literal)${path}`]).toString('utf8');
-    if (raw === '') {
-        return null;
-    }
-    const match = /^(\d+) blob ([0-9a-f]{40})\t([^\0]+)\0$/.exec(raw);
-    if (!match || match[3] !== path) {
-        throw new Error(`Invalid tree entry: ${path}`);
-    }
-    return { mode: match[1] ?? '', blob: match[2] ?? '' };
-}
-
-type InventoryFileAccess = {
-    open: (file: string, flags: number) => number;
-    fstat: (fd: number) => ReturnType<typeof fstatSync>;
-    read: (fd: number) => Buffer;
-    close: (fd: number) => void;
-};
-
-const inventoryFileAccess: InventoryFileAccess = {
-    open: openSync,
-    fstat: fstatSync,
-    read: (fd) => readFileSync(fd),
-    close: closeSync,
-};
-
-export function hashInventoryFile(file: string, access: InventoryFileAccess = inventoryFileAccess): string {
-    let fd: number;
-    try {
-        fd = access.open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    } catch (error) {
-        if (error instanceof Error && 'code' in error && error.code === 'ELOOP') {
-            return 'missing';
-        }
-        throw error;
-    }
-    try {
-        return access.fstat(fd).isFile() ? sha256(access.read(fd)) : 'missing';
-    } finally {
-        access.close(fd);
-    }
-}
-
-function listInventory(root: string, head: string): InventoryRow[] {
-    const rows: InventoryRow[] = [];
-    for (const entry of readdirSync(resolve(root, 'tests/e2e'), { recursive: true, withFileTypes: true })) {
-        const path = relative(root, resolve(entry.parentPath, entry.name));
-        if (!isPlaywrightCollected(path)) {
-            continue;
-        }
-        const tree = treeEntry(head, path);
-        const mode = tree?.mode ?? 'missing';
-        const file = resolve(root, path);
-        const sha = entry.isFile() ? hashInventoryFile(file) : 'missing';
-        rows.push({ path, gitBlob: tree?.blob ?? 'missing', sha256: sha, mode });
-    }
-    return rows;
 }
 
 function healthPolicyDigest(workflowSource: string): string {
@@ -489,15 +504,34 @@ function healthPolicyDigest(workflowSource: string): string {
 }
 
 function main(): void {
-    const { BASE_SHA: base, HEAD_SHA: head } = process.env;
+    const {
+        BASE_SHA: base,
+        HEAD_SHA: head,
+        INTEGRATION_SHA: integrationSha,
+        INTEGRATION_ROOT: integrationPath,
+    } = process.env;
     const scopePath = process.argv[2];
-    if (!base || !head || !scopePath || !SHA.test(base) || !SHA.test(head)) {
-        throw new Error('Shadow requires BASE_SHA, HEAD_SHA and the downloaded scope manifest path');
+    if (
+        !base ||
+        !head ||
+        !integrationSha ||
+        !integrationPath ||
+        !scopePath ||
+        !SHA.test(base) ||
+        !SHA.test(head) ||
+        !SHA.test(integrationSha)
+    ) {
+        throw new Error('Shadow requires BASE_SHA, HEAD_SHA, INTEGRATION_SHA, INTEGRATION_ROOT and the scope manifest');
     }
     const root = process.cwd();
+    const integrationRoot = resolve(root, integrationPath);
+    if (integrationRoot === root) {
+        throw new Error('Integration checkout must be distinct from candidate head');
+    }
     if (git(['rev-parse', 'HEAD']).toString('utf8').trim() !== head) {
         throw new Error('Shadow checkout does not match the immutable head');
     }
+    verifyIntegrationCheckout(integrationRoot, integrationSha, head, base);
     const rawDiff = git(['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--']);
     const parsed = parseChangedRecords(rawDiff.toString('utf8'));
     const mergeBase = git(['merge-base', base, head]).toString('utf8').trim();
@@ -511,20 +545,13 @@ function main(): void {
         ...Object.keys(certificate.sourceHashes),
         '.github/workflows/health-gates.yml',
         'scripts/e2eSelectionShadow.ts',
+        'scripts/e2eSelectionShadowIntegration.ts',
     ];
-    const sourceModes = Object.fromEntries(sourcePaths.map((path) => [path, treeEntry(head, path)?.mode ?? 'missing']));
-    const sourceHashes = Object.fromEntries(
-        sourcePaths.map((path) => [
-            path,
-            sourceModes[path] === '100644' ? sha256(git(['show', `${head}:${path}`])) : 'missing-or-nonregular',
-        ])
-    );
-    if (
-        sha256(readFileSync(resolve(root, 'scripts/e2eSelectionShadow.ts'))) !==
-        sourceHashes['scripts/e2eSelectionShadow.ts']
-    ) {
-        throw new Error('Shadow rule in checkout disagrees with the immutable head');
-    }
+    const { sourceModes, sourceHashes } = readHeadSourceBindings(root, head, sourcePaths, [
+        'scripts/e2eSelectionShadow.ts',
+        'scripts/e2eSelectionShadowIntegration.ts',
+    ]);
+    const integrationSourceHashes = readIntegrationSourceHashes(integrationRoot, integrationSha, sourcePaths);
     const certificateSha256 = sha256(git(['show', `${head}:scripts/e2eSelectionShadowCertificate.json`]));
     if (sha256(readFileSync(resolve(root, 'scripts/e2eSelectionShadowCertificate.json'))) !== certificateSha256) {
         throw new Error('Shadow certificate in checkout disagrees with the immutable head');
@@ -541,11 +568,14 @@ function main(): void {
     const report = measureShadow({
         base,
         head,
+        integrationSha,
         rawDiff,
         certificateSha256,
         records,
         inventory: listInventory(root, head),
+        integrationInventory: listIntegrationInventory(integrationRoot, integrationSha),
         sourceHashes,
+        integrationSourceHashes,
         sourceModes,
         healthRequiredPolicySha256,
         candidateBase,

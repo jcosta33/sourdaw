@@ -129,6 +129,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         scope: ['Checkout', 'Set up Node', 'Plan affected checks', 'Upload scope manifest'],
         'selection-shadow': [
             'Checkout candidate head',
+            'Checkout immutable integration commit',
             'Download authoritative scope',
             'Set up pnpm',
             'Set up Node',
