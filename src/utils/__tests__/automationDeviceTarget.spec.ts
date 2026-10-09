@@ -4,9 +4,24 @@ import {
     NO_DEVICE_AUTOMATION_TARGET,
     UNRESOLVED_DEVICE_AUTOMATION_TARGET,
     createDeviceAutomationTargetId,
+    getDeviceAutomationOwnerId,
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
 } from '../automationDeviceTarget';
+
+describe('getDeviceAutomationOwnerId', () => {
+    it('extracts the device before the first colon', () => {
+        expect(getDeviceAutomationOwnerId('dev-1:freq')).toBe('dev-1');
+        expect(getDeviceAutomationOwnerId('dev-1:param:sub')).toBe('dev-1');
+    });
+
+    it('returns null for a track parameter, an empty owner, or a send level', () => {
+        expect(getDeviceAutomationOwnerId('gain')).toBeNull();
+        expect(getDeviceAutomationOwnerId(':freq')).toBeNull();
+        expect(getDeviceAutomationOwnerId('send:bus-1')).toBeNull();
+        expect(getDeviceAutomationOwnerId('')).toBeNull();
+    });
+});
 
 describe('createDeviceAutomationTargetId', () => {
     it('joins deviceId and parameterId with a colon', () => {

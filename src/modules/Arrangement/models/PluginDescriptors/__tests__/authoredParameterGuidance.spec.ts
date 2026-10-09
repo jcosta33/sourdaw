@@ -237,10 +237,6 @@ const DEFAULT_EXCLUDING_WINDOWS: ReadonlyMap<string, string> = new Map([
         'The 12000 Hz default leaves the tail nearly unfiltered; deliberately darkening a bright tail needs the lower, more audible cut the window covers.',
     ],
     [
-        'bacteria/convolutionMix',
-        'The 0.3 default blends in a peak-normalised body impulse response that gains 20 to 23 dB on broadband material, so the blend a mix can actually use sits far below it.',
-    ],
-    [
         'fermenter/portamentoMode',
         'Mode 0 glides every note, including the first after a rest; legato (1), which glides only while a key is still held and snaps otherwise, is the fingered-portamento setting used once portamentoTime is raised.',
     ],
