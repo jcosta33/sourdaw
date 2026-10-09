@@ -161,7 +161,7 @@ const MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS;
  * horizon instead of the crossing changes when they appear, not what they
  * contain.
  */
-function stageLoopWrapTakes(current: TransportState): void {
+function stageLoopWrapTakes(current: TransportState, passEndContextSeconds: number): void {
     if (!current.isRecording) {
         return;
     }
@@ -219,6 +219,7 @@ function stageLoopWrapTakes(current: TransportState): void {
             startBeat: current.loopStart,
             endBeat: current.loopEnd,
             sourceOffsetBeats,
+            passEndContextSeconds,
         });
     }
 }
@@ -360,6 +361,7 @@ export function startPlayheadScheduler(): void {
         // and the wrap replaced the scanned position before the punch checks
         // below.
         let lateWrap = false;
+        let lateWrapSeamAudioTime: number | null = null;
         // Set when an edit's teardown cuts the look-ahead: the window that
         // re-emits it opens where playback stands (or at the loop start), and
         // like a jump's it must restore the stored controllers in force there.
@@ -530,6 +532,7 @@ export function startPlayheadScheduler(): void {
             // compensation window: for that long the audio a compensated track
             // is fed is still this dying pass's tail.
             schedulerSession.lastLoopSeamAudioTime = seamAudioTime;
+            lateWrapSeamAudioTime = seamAudioTime;
             const wrappedPastSeam = beatAtSecondsFromAnchor(
                 changes,
                 current.loopStart,
@@ -873,6 +876,9 @@ export function startPlayheadScheduler(): void {
                                     // edit, or stop has replaced the published pair.
                                     const capture = {
                                         provisionalStartBeat: captureAnchor.provisionalStartBeat,
+                                        sourceContextOriginSeconds:
+                                            result.sampleZeroContextFrame / result.sampleRate -
+                                            captureAnchor.latencySeconds,
                                         mediaOriginSeconds:
                                             captureAnchor.songSeconds +
                                             result.sampleZeroContextFrame / result.sampleRate -
@@ -946,7 +952,7 @@ export function startPlayheadScheduler(): void {
             // out, or a punch-out past the loop end — still gets its pass-span
             // take here, so the staging moment moves but the staged takes do
             // not.
-            stageLoopWrapTakes(current);
+            stageLoopWrapTakes(current, seam.seamAudioTime);
             // Dying pass: the window remainder up to the seam, emitted against
             // the position the dying pass holds at `now`, so its last events
             // land at their own grid times — all at or before the seam instant.
@@ -1050,8 +1056,8 @@ export function startPlayheadScheduler(): void {
             // finalizes its recording this tick, and a take staged before that
             // finalization would name the punch clip with a full pass span it
             // never recorded.
-            if (lateWrap) {
-                stageLoopWrapTakes(current);
+            if (lateWrap && lateWrapSeamAudioTime !== null) {
+                stageLoopWrapTakes(current, lateWrapSeamAudioTime);
             }
             // The window opens at the committed position — after any follow
             // action relocation — exactly as the pre-seam code emitted it.

@@ -710,7 +710,7 @@ describe('playhead scheduler tick', () => {
                     ...finalized_clip,
                     audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
                 },
-                { provisionalStartBeat: 0.05, mediaOriginSeconds: 0.0625 }
+                { provisionalStartBeat: 0.05, mediaOriginSeconds: 0.0625, sourceContextOriginSeconds: 0.0625 }
             );
             const capture = harness.commit_recording.mock.calls[0]?.[1];
             if (!capture) {

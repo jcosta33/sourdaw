@@ -16,6 +16,7 @@ import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats, type TempoChange } 
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
@@ -40,6 +41,8 @@ type TransportHold = {
     requestedAtContextSeconds: number | null;
     rolledAtContextSeconds: number | null;
     rollLeadBeats: number | null;
+    captureStartSongSeconds: number | null;
+    firstPassContextSeconds: number | null;
 };
 
 /** A take stopped before the roll answered is placed against the clock at its stop, so the whole wait so far counts. */
@@ -110,6 +113,124 @@ function placeCapture(input: CapturePlacementInput): CapturePlacement {
     return { startBeat, audioOffsetBeats: (leadInSeconds * startBeatTempo) / 60, capture };
 }
 
+type ManualRecordingTerminalInput = {
+    result: Parameters<Parameters<typeof startAudioRecording>[1]>[0];
+    recClip: ReturnType<typeof startRecording>[number] | undefined;
+    totalLatencySec: number;
+    transportHold: TransportHold;
+    admissionChanges: readonly TempoChange[];
+    admissionTempo: number;
+    nowContextSeconds: number;
+};
+
+function completeManualRecording(input: ManualRecordingTerminalInput): void {
+    const { result, recClip, totalLatencySec, transportHold, admissionChanges, admissionTempo, nowContextSeconds } =
+        input;
+    if (result.kind === 'failed') {
+        // A capture that dies mid-take (ring overrun, worker crash, a
+        // WAV that never decoded) must not strand an empty provisional
+        // clip on the arrangement or stay silent about it (#4265).
+        notifyUser('Recording failed — the partial take was discarded. Check your audio input and try again.', 'error');
+        const failedClip = recClip;
+        if (failedClip) {
+            discardRecording(failedClip.id);
+        }
+        return;
+    }
+    const { buffer } = result;
+    if (recClip) {
+        const transport = getTransportState();
+        const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
+        const tempoChanges = tempoMapStore.value?.changes ?? [];
+        // The capture is open before the transport is asked to roll, and
+        // on a desktop build the roll waits for the native session, so
+        // the buffer's first sample predates the beat the clip is
+        // anchored on by that wait. It is subtracted like hardware
+        // latency. The wait and the take both sit on the timeline the
+        // active tempo map shapes, so both convert through the map's own
+        // integration — the base tempo only falls back where no change
+        // governs. `samplesToBeat` inverts exactly that integration; a
+        // rate of one sample per second makes its coordinate seconds.
+        const offsetSeconds = totalLatencySec + heldTransportSeconds(transportHold, nowContextSeconds);
+        // The capture runs from wherever the transport rolls from,
+        // which is ahead of the record point by the pre-roll when
+        // one is enabled. With no pre-roll, or no roll of its own
+        // (record engaged on a moving transport), it is the anchor.
+        const rollLeadBeats = transportHold.rollLeadBeats ?? 0;
+        const captureStartBeat = recClip.startBeat - rollLeadBeats;
+        const captureStartSeconds =
+            transportHold.captureStartSongSeconds ??
+            secondsBetweenBeats(admissionChanges, 0, captureStartBeat, admissionTempo);
+        // The buffer's first sample was captured at this timeline
+        // position: the beat the capture began on, rewound by the
+        // latency the musician heard it through (and, on a stopped
+        // transport, the roll the capture waited through).
+        const originSeconds = captureStartSeconds - offsetSeconds;
+        const { startBeat, audioOffsetBeats, capture } = placeCapture({
+            originSeconds,
+            recordPointBeat: recClip.startBeat,
+            rollLeadBeats,
+            tempoChanges,
+            defaultTempo,
+        });
+        const exactEndBeat = samplesToBeat(tempoChanges, originSeconds + buffer.duration, defaultTempo, 1);
+        // A capture shorter than the offset that precedes it ends
+        // before the timeline begins: `startBeat` clamps to 0 and
+        // nothing audible remains. Committing it would write an
+        // inverted clip (`endBeat < startBeat`) — the shape every
+        // clip writer refuses and playback skips — with a take-lane
+        // entry claiming audio that does not exist. Refuse the take
+        // the way a capture that never completes is refused, matching
+        // the scheduler's own `playDuration <= 0` do-not-start rule:
+        // the provisional clip — and with it the staged take and the
+        // lane it would leave empty — is discarded before anything
+        // is cached or committed.
+        if (exactEndBeat <= startBeat) {
+            notifyUser(
+                'Recording discarded — the take was shorter than its latency offset, so nothing audible was captured.',
+                'warning'
+            );
+            discardRecording(recClip.id);
+            return;
+        }
+
+        const bufferId = `rec-${crypto.randomUUID()}`;
+        cacheAudioBuffer({ buffer, bufferId });
+
+        const recordedClip = {
+            ...recClip,
+            audioBufferId: bufferId,
+            startBeat,
+            endBeat: exactEndBeat,
+        };
+        // Absent when the origin is on or after beat 0, so an
+        // ordinary take commits without an offset field.
+        if (audioOffsetBeats > 0) {
+            recordedClip.audioOffsetBeats = audioOffsetBeats;
+        }
+        // The provisional clip and take the recorder opened are
+        // committed as ONE history entry here, once the capture has
+        // completed. A capture that never reaches this branch never
+        // commits, so no incomplete take becomes replayable. The
+        // lifecycle owns the promise so the user-facing stop can wait
+        // for the entry; a commit that fails retires the provisional
+        // result instead of leaving it visible with no entry (#4439),
+        // and says so the way the capture-failure sibling does.
+        recordingLifecycle.trackCommit(
+            Promise.resolve().then(() =>
+                commitRecording(recordedClip, {
+                    ...capture,
+                    sourceContextOriginSeconds: result.sampleZeroContextFrame / result.sampleRate - totalLatencySec,
+                }).catch((error: unknown) => {
+                    logger.error(new Error('Recording commit failed', { cause: error }));
+                    notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
+                    discardRecording(recordedClip.id);
+                })
+            )
+        );
+    }
+}
+
 async function beginActualRecording(
     startToken: number,
     anchorBeat: number | undefined,
@@ -117,6 +238,8 @@ async function beginActualRecording(
 ): Promise<boolean> {
     const ctx = getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
+    let admissionTempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
+    let admissionChanges = tempoMapStore.value?.changes ?? [];
     const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
     const audioTracks = armedTracks.filter((track) => track.kind === 'audio');
     let clips: ReturnType<typeof startRecording> = [];
@@ -127,110 +250,16 @@ async function beginActualRecording(
 
         return startAudioRecording(
             track.id,
-            (result) => {
-                if (result.kind === 'failed') {
-                    // A capture that dies mid-take (ring overrun, worker crash, a
-                    // WAV that never decoded) must not strand an empty provisional
-                    // clip on the arrangement or stay silent about it (#4265).
-                    notifyUser(
-                        'Recording failed — the partial take was discarded. Check your audio input and try again.',
-                        'error'
-                    );
-                    const failedClip = clips.find((context) => context.trackId === track.id);
-                    if (failedClip) {
-                        discardRecording(failedClip.id);
-                    }
-                    return;
-                }
-                const { buffer } = result;
-                const recClip = clips.find((context) => context.trackId === track.id);
-                if (recClip) {
-                    const transport = getTransportState();
-                    const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
-                    const tempoChanges = tempoMapStore.value?.changes ?? [];
-                    // The capture is open before the transport is asked to roll, and
-                    // on a desktop build the roll waits for the native session, so
-                    // the buffer's first sample predates the beat the clip is
-                    // anchored on by that wait. It is subtracted like hardware
-                    // latency. The wait and the take both sit on the timeline the
-                    // active tempo map shapes, so both convert through the map's own
-                    // integration — the base tempo only falls back where no change
-                    // governs. `samplesToBeat` inverts exactly that integration; a
-                    // rate of one sample per second makes its coordinate seconds.
-                    const offsetSeconds = totalLatencySec + heldTransportSeconds(transportHold, ctx.currentTime);
-                    // The capture runs from wherever the transport rolls from,
-                    // which is ahead of the record point by the pre-roll when
-                    // one is enabled. With no pre-roll, or no roll of its own
-                    // (record engaged on a moving transport), it is the anchor.
-                    const rollLeadBeats = transportHold.rollLeadBeats ?? 0;
-                    const captureStartBeat = recClip.startBeat - rollLeadBeats;
-                    const captureStartSeconds = secondsBetweenBeats(tempoChanges, 0, captureStartBeat, defaultTempo);
-                    // The buffer's first sample was captured at this timeline
-                    // position: the beat the capture began on, rewound by the
-                    // latency the musician heard it through (and, on a stopped
-                    // transport, the roll the capture waited through).
-                    const originSeconds = captureStartSeconds - offsetSeconds;
-                    const { startBeat, audioOffsetBeats, capture } = placeCapture({
-                        originSeconds,
-                        recordPointBeat: recClip.startBeat,
-                        rollLeadBeats,
-                        tempoChanges,
-                        defaultTempo,
-                    });
-                    const exactEndBeat = samplesToBeat(tempoChanges, originSeconds + buffer.duration, defaultTempo, 1);
-                    // A capture shorter than the offset that precedes it ends
-                    // before the timeline begins: `startBeat` clamps to 0 and
-                    // nothing audible remains. Committing it would write an
-                    // inverted clip (`endBeat < startBeat`) — the shape every
-                    // clip writer refuses and playback skips — with a take-lane
-                    // entry claiming audio that does not exist. Refuse the take
-                    // the way a capture that never completes is refused, matching
-                    // the scheduler's own `playDuration <= 0` do-not-start rule:
-                    // the provisional clip — and with it the staged take and the
-                    // lane it would leave empty — is discarded before anything
-                    // is cached or committed.
-                    if (exactEndBeat <= startBeat) {
-                        notifyUser(
-                            'Recording discarded — the take was shorter than its latency offset, so nothing audible was captured.',
-                            'warning'
-                        );
-                        discardRecording(recClip.id);
-                        return;
-                    }
-
-                    const bufferId = `rec-${crypto.randomUUID()}`;
-                    cacheAudioBuffer({ buffer, bufferId });
-
-                    const recordedClip = {
-                        ...recClip,
-                        audioBufferId: bufferId,
-                        startBeat,
-                        endBeat: exactEndBeat,
-                    };
-                    // Absent when the origin is on or after beat 0, so an
-                    // ordinary take commits without an offset field.
-                    if (audioOffsetBeats > 0) {
-                        recordedClip.audioOffsetBeats = audioOffsetBeats;
-                    }
-                    // The provisional clip and take the recorder opened are
-                    // committed as ONE history entry here, once the capture has
-                    // completed. A capture that never reaches this branch never
-                    // commits, so no incomplete take becomes replayable. The
-                    // lifecycle owns the promise so the user-facing stop can wait
-                    // for the entry; a commit that fails retires the provisional
-                    // result instead of leaving it visible with no entry (#4439),
-                    // and says so the way the capture-failure sibling does.
-                    recordingLifecycle.trackCommit(
-                        Promise.resolve().then(() =>
-                            commitRecording(recordedClip, capture).catch((error: unknown) => {
-                                logger.error(new Error('Recording commit failed', { cause: error }));
-                                notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
-                                discardRecording(recordedClip.id);
-                            })
-                        )
-                    );
-                }
-            },
+            (result) =>
+                completeManualRecording({
+                    result,
+                    recClip: clips.find((clip) => clip.trackId === track.id),
+                    totalLatencySec,
+                    transportHold,
+                    admissionChanges,
+                    admissionTempo,
+                    nowContextSeconds: ctx.currentTime,
+                }),
             track.inputId
         );
     });
@@ -258,8 +287,15 @@ async function beginActualRecording(
     // started at — `startRecording`'s default would open the clip back there.
     // Otherwise an armed count-in hands in the boundary beat it counted to;
     // `undefined` keeps the stationary default.
-    const rolling = getTransportState()?.isPlaying === true;
-    clips = startRecording(rolling ? playheadPositionRef.current : anchorBeat);
+    const admittedTransport = getTransportState();
+    admissionTempo = admittedTransport?.tempo ?? DEFAULT_TEMPO_BPM;
+    admissionChanges = tempoMapStore.value?.changes ?? [];
+    const rolling = admittedTransport?.isPlaying === true;
+    if (rolling) {
+        clips = startRecording(playheadPositionRef.current);
+    } else {
+        clips = startRecording(anchorBeat, () => transportHold.firstPassContextSeconds);
+    }
     updateTransportState({ isRecording: true });
     return true;
 }
@@ -270,6 +306,8 @@ function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
         requestedAtContextSeconds: null,
         rolledAtContextSeconds: null,
         rollLeadBeats: null,
+        captureStartSongSeconds: null,
+        firstPassContextSeconds: null,
     };
     void beginActualRecording(startToken, anchorBeat, transportHold).then(async (started) => {
         const current = getTransportState();
@@ -278,10 +316,21 @@ function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
             // The instant the transport is asked to roll, read on the clock the
             // capture runs on: the take opened here is placed against it.
             transportHold.requestedAtContextSeconds = ctx.currentTime;
-            transportHold.rollLeadBeats =
-                current.playheadPosition - resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
+            const recordPointBeat = current.playheadPosition;
+            const rollStartBeat = resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
+            transportHold.rollLeadBeats = recordPointBeat - rollStartBeat;
             await startPlayback();
-            transportHold.rolledAtContextSeconds = ctx.currentTime;
+            const rolled = getTransportState();
+            const changes = tempoMapStore.value?.changes ?? [];
+            const tempo = rolled?.tempo ?? DEFAULT_TEMPO_BPM;
+            transportHold.rolledAtContextSeconds =
+                playheadClockRef.audioTimeSeconds -
+                secondsBetweenBeats(changes, rollStartBeat, playheadClockRef.beat, tempo);
+            transportHold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, rollStartBeat, tempo);
+            const firstPassBeat = Math.max(recordPointBeat, rolled?.loopStart ?? recordPointBeat);
+            transportHold.firstPassContextSeconds =
+                playheadClockRef.audioTimeSeconds +
+                secondsBetweenBeats(changes, playheadClockRef.beat, firstPassBeat, tempo);
         }
         return null;
     });

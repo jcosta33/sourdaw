@@ -1,6 +1,8 @@
-import { placeTakeOnClipMedia } from '../../models/TakeLane';
+import { placeTakeOnClipMedia, startFirstPassAtRecordPoint } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
+
+import { recordingPassTiming } from './recordingPassTiming';
 
 type PlaceRecordingTakesInput = {
     clipId: string;
@@ -10,6 +12,8 @@ type PlaceRecordingTakesInput = {
     mediaOriginSeconds: number;
     /** The song time the committed clip's media begins on, as the readers read the clip. */
     clipMediaOriginSeconds: number;
+    /** Producer sample-zero clock, corrected by the latency captured at admission. */
+    sourceContextOriginSeconds?: number;
 };
 
 /**
@@ -31,7 +35,22 @@ export function placeRecordingTakes(input: PlaceRecordingTakesInput): void {
                 if (take.clipId !== input.clipId) {
                     return take;
                 }
-                return placeTakeOnClipMedia(take, placement);
+                if (take.sourceOffsetBeats === undefined) {
+                    return take;
+                }
+                if (input.sourceContextOriginSeconds === undefined) {
+                    return placeTakeOnClipMedia(take, placement);
+                }
+                const placed = startFirstPassAtRecordPoint(take, input.recordPointBeat);
+                return {
+                    ...placed,
+                    passAnchorSeconds: liveTempoTimeline.secondsAtBeat(placed.startBeat) - input.clipMediaOriginSeconds,
+                    passDepthSeconds: recordingPassTiming.depthSeconds(
+                        take,
+                        input.sourceContextOriginSeconds,
+                        input.mediaOriginSeconds
+                    ),
+                };
             }),
         })),
     });

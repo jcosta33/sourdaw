@@ -1,6 +1,8 @@
 import { createTake, createTakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
+import { recordingPassTiming } from './recordingPassTiming';
+
 type StageRecordingTakeInput = {
     trackId: string;
     clipId: string;
@@ -8,6 +10,8 @@ type StageRecordingTakeInput = {
     startBeat: number;
     endBeat: number;
     sourceOffsetBeats?: number;
+    /** Physical seam ending this recorded pass, on the capture clock. */
+    passEndContextSeconds?: number;
 };
 
 /**
@@ -29,6 +33,7 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
     }
 
     const take = createTake(input.clipId, input.name, input.startBeat, input.endBeat, input.sourceOffsetBeats);
+    recordingPassTiming.stage(take, input.passEndContextSeconds);
     const lane = state.lanes.find((existing) => existing.trackId === input.trackId);
     if (!lane) {
         takeLaneStore.set({

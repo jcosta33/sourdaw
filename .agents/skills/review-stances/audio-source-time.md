@@ -54,3 +54,27 @@ loop start 8 and sought source second 1 instead of 1.1. The missed review
 obligation was capture-origin parity across audio terminals: manual placement
 coverage and a scheduler test with a mocked commit did not observe the automatic
 terminal's actual comped source.
+
+## Captured pass timing across terminal waits
+
+Hold the audio terminal after two loop passes at 120 BPM, Stop near beat 11,
+change tempo to 60 BPM, then release the terminal and select the second pass
+from loop start 8. The source seek must still address the captured lap: 1.1 s
+with 100 ms latency after admission at beat 10, sample 52800 at 48 kHz. Read
+paired pass fields, actual selected PCM, raw CRDT/project projections, and real
+Undo/Redo for both manual and punch terminals. Changing timeline placement must
+not reconstruct a captured pass's physical depth from the later tempo map.
+
+The first pass can begin at the record point or after a run-up; a staged pass
+ends at the scheduled or late-wrap seam, while a later pass starts at the
+previous seam. Review the producer clock for each, and retire witnesses by
+recording identity on commit or discard so a stale terminal cannot affect a
+successor. Hold recorder permission and native transport admission while changing
+tempo, then advance context time after rolling begins but before the awaiting
+continuation resumes. The first pass must use the scheduler's actual published
+rolling beat/context pair and its roll-time map, rather than callback time or a
+map frozen before the hold. Keep the probe's worker tick below the scheduler's
+ordinary advancement cap, or account separately for its delayed physical seam.
+PR #4987 introduced completion-time depth conversion; the #5050
+review of PR #5165 initially checked only sample-zero origin after the tempo
+edit. It missed selection of a later pass, which sought 7.1 s rather than 1.1 s.

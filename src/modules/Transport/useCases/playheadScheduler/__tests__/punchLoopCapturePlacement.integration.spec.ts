@@ -57,6 +57,11 @@ const hardware = vi.hoisted(() => ({
     correlation: null as { beat: number; contextSeconds: number } | null,
     flushGate: null as Promise<void> | null,
     flushes: 0,
+    admissionGate: null as Promise<void> | null,
+    rollGate: null as Promise<void> | null,
+    nativeHold: false,
+    rollStarts: 0,
+    rollContinuationAdvance: 0,
     finalizedAtFlush: null as { active: string[]; endBeat: number | undefined } | null,
 }));
 
@@ -74,6 +79,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
             createGain: () => ({ connect: () => {}, disconnect: () => {} }),
         }),
         resumeEngine: () => Promise.resolve(),
+        nativeLiveGraphSessionOffered: () => hardware.nativeHold,
         getCompensationDelay: () => 0,
         audioEngine: { ...real.audioEngine, setTransportInfo: vi.fn() },
         stopAllScheduled: vi.fn(),
@@ -84,6 +90,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
         startAudioRecording: async (_id: string, terminal: (result: RecordingResult) => void) => {
             hardware.starts++;
             hardware.terminal = terminal;
+            await hardware.admissionGate;
             // Hardware seam: first nonempty sample is measured here on the capture clock.
             hardware.zeroFrame = Math.round(hardware.now * hardware.sampleRate);
             hardware.correlation = { beat: playheadClockRef.beat, contextSeconds: playheadClockRef.audioTimeSeconds };
@@ -123,6 +130,21 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
             });
         },
         readNativeEnginePlayheadSeconds: () => null,
+    };
+});
+vi.mock('../../transportControls/startNativeSessionAtBeat', () => ({
+    startNativeSessionAtBeat: () => {
+        hardware.rollStarts++;
+        return hardware.rollGate ?? Promise.resolve();
+    },
+}));
+vi.mock('../../transportControls/startPlayback', async (original) => {
+    const real = await original<typeof import('../../transportControls/startPlayback')>();
+    return {
+        startPlayback: async () => {
+            await real.startPlayback();
+            hardware.now += hardware.rollContinuationAdvance;
+        },
     };
 });
 vi.mock('../../scheduling/scheduleMidiNotes', () => ({ scheduleMidiNotes: () => Promise.resolve() }));
@@ -241,6 +263,11 @@ describe('punch audio capture loop placement', () => {
         hardware.flushGate = null;
         hardware.flushes = 0;
         hardware.finalizedAtFlush = null;
+        hardware.admissionGate = null;
+        hardware.rollGate = null;
+        hardware.nativeHold = false;
+        hardware.rollStarts = 0;
+        hardware.rollContinuationAdvance = 0;
         sequence = 0;
         playheadWrapCountRef.current = 0;
         disposePlayheadScheduler();
@@ -453,49 +480,167 @@ describe('punch audio capture loop placement', () => {
         expectProjectProjection();
     });
 
-    it('keeps the admission clock and tempo when Stop resets the clock before capture completion', async () => {
-        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
-        await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
-        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
-        transportStore.set({ ...transportStore.value!, isPlaying: true });
-        startPlayheadScheduler();
-        await advanceUntil(() => hardware.starts === 1);
-        await advanceUntil(() => playheadWrapCountRef.current >= 2);
-        await advanceUntil(() => playheadPositionRef.current >= 11);
-        expect(hardware.correlation).toEqual({ beat: 10, contextSeconds: 51 });
-        let release!: () => void;
-        hardware.flushGate = new Promise<void>((resolve) => {
-            release = resolve;
+    it('keeps the actual first pass clock across permission and native roll tempo edits', async () => {
+        transportStore.set({ ...transportStore.value!, playheadPosition: 10 });
+        hardware.nativeHold = true;
+        hardware.rollContinuationAdvance = 0.025;
+        let admit!: () => void;
+        let roll!: () => void;
+        hardware.admissionGate = new Promise<void>((resolve) => {
+            admit = resolve;
         });
-        let stopSettled = false;
-        const stopped = stopPlayback().then(() => {
-            stopSettled = true;
+        hardware.rollGate = new Promise<void>((resolve) => {
+            roll = resolve;
         });
-        expect(hardware.flushes).toBe(1);
+        toggleRecording();
+        await vi.waitFor(() => expect(hardware.starts).toBe(1));
         expect(activeRecordingRef.current).toEqual([]);
-        expect(playheadClockRef).toEqual({ beat: 0, audioTimeSeconds: 0 });
-        expect(stopSettled).toBe(false);
-        expect(undoHistoryStore.value?.past).toHaveLength(0);
-        // A later map and hardware clock cannot rewrite the already captured
-        // correlation. The current map still owns placement of the final clip.
+        await executeAppAction({ type: 'setTempo', payload: { bpm: 90 } }, { skipUndo: true });
+        hardware.now = 50.25;
+        admit();
+        await vi.waitFor(() => expect(hardware.rollStarts).toBe(1), { interval: 1 });
+        expect(activeRecordingRef.current).toHaveLength(1);
         await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
-        hardware.now = 105;
-        hardware.latencySeconds = 0.7;
-        release();
-        await stopped;
-        flushAutomergeStorageWrites();
-        expect(stopSettled).toBe(true);
-        const [clip] = recordedClips();
-        if (!clip) {
-            throw new Error('Stop lost the punched capture');
-        }
-        expect(clip.startBeat).toBe(8);
-        const origin =
-            secondsBetweenBeats(tempoMapStore.value!.changes, 0, clip.startBeat, 60) -
-            ((clip.audioOffsetBeats ?? 0) * 60) / 60;
-        expect(origin).toBeCloseTo(4.9, 10);
-        expect(audioBufferCache.get(clip.audioBufferId!)).toBe(hardware.buffer);
+        hardware.now = 50.5;
+        roll();
+        await vi.waitFor(() => expect(schedulerSession.worker).not.toBeNull(), { interval: 1 });
+        expect(playheadClockRef).toEqual({ beat: 10, audioTimeSeconds: 50.5 });
+        await vi.waitFor(() => expect(hardware.now).toBe(50.525), { interval: 1 });
+        await advanceUntil(
+            () => playheadWrapCountRef.current >= 2 && lane().takes.some((take) => take.sourceOffsetBeats === 2)
+        );
+        await stopPlayback();
+        const second = lane().takes.find((take) => take.sourceOffsetBeats === 2)!;
+        expect(second.passDepthSeconds).toBeCloseTo(2.35, 10);
+        const [capturedClip] = recordedClips();
+        const mediaOrigin = capturedClip!.startBeat - (capturedClip!.audioOffsetBeats ?? 0);
+        expect(mediaOrigin).toBeCloseTo(9.65, 10);
+        expect(lane().takes.find((take) => take.sourceOffsetBeats === 0)!.passDepthSeconds).toBeCloseTo(0.35, 10);
+        await executeAppAction(
+            { type: 'setCompRegion', payload: { trackId: TRACK_ID, takeId: second.id, startBeat: 8, endBeat: 12 } },
+            { skipUndo: true }
+        );
+        const selected = resolveClipsWithComping(TRACK_ID, recordedClips()).find((clip) => clip.regionStartBeat === 8)!;
+        expect(selected.audioOffsetBeats).toBeCloseTo(2.35, 10);
+        const frame = Math.round(selected.audioOffsetBeats! * hardware.sampleRate);
+        expect(frame).toBe(112800);
+        expect(hardware.buffer!.getChannelData(0)[frame]).toBe(112800);
         expect(undoHistoryStore.value?.past).toHaveLength(1);
         expectProjectProjection();
+        const takes = structuredClone(lane().takes);
+        await undo();
+        expect(recordedClips()).toEqual([]);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        expectProjectProjection();
+        await redo();
+        expect(lane().takes).toEqual(takes);
+        expectProjectProjection();
     });
+
+    it.each(['punch', 'manual'] as const)(
+        '%s keeps captured pass time when tempo changes during the Stop flush',
+        async (route) => {
+            if (route === 'punch') {
+                await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+                await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+                await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+                transportStore.set({ ...transportStore.value!, isPlaying: true });
+                startPlayheadScheduler();
+                await advanceUntil(() => hardware.starts === 1);
+            } else {
+                hardware.now = 51;
+                transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 10 });
+                playheadPositionRef.current = 10;
+                playheadClockRef.beat = 10;
+                playheadClockRef.audioTimeSeconds = 51;
+                toggleRecording();
+                await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+                startPlayheadScheduler();
+            }
+            await advanceUntil(
+                () => playheadWrapCountRef.current >= 2 && lane().takes.some((take) => take.sourceOffsetBeats === 2)
+            );
+            await advanceUntil(() => playheadPositionRef.current >= 11);
+            expect(hardware.correlation).toEqual({ beat: 10, contextSeconds: 51 });
+            let release!: () => void;
+            hardware.flushGate = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            let stopSettled = false;
+            const stopped = stopPlayback().then(() => {
+                stopSettled = true;
+            });
+            expect(hardware.flushes).toBe(1);
+            expect(activeRecordingRef.current).toEqual([]);
+            expect(playheadClockRef).toEqual({ beat: 0, audioTimeSeconds: 0 });
+            expect(stopSettled).toBe(false);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            // A later map and hardware clock cannot rewrite the already captured
+            // correlation. The current map still owns placement of the final clip.
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+            hardware.now = 105;
+            hardware.latencySeconds = 0.7;
+            release();
+            await stopped;
+            flushAutomergeStorageWrites();
+            expect(stopSettled).toBe(true);
+            const [clip] = recordedClips();
+            if (!clip) {
+                throw new Error('Stop lost the punched capture');
+            }
+            expect(clip.startBeat).toBe(route === 'punch' ? 8 : 4.9);
+            const origin =
+                secondsBetweenBeats(tempoMapStore.value!.changes, 0, clip.startBeat, 60) -
+                ((clip.audioOffsetBeats ?? 0) * 60) / 60;
+            expect(origin).toBeCloseTo(4.9, 10);
+            expect(audioBufferCache.get(clip.audioBufferId!)).toBe(hardware.buffer);
+            const second = lane().takes.find((take) => take.sourceOffsetBeats === 2);
+            expect(second).toBeDefined();
+            await executeAppAction(
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: TRACK_ID, takeId: second!.id, startBeat: 8, endBeat: 12 },
+                },
+                { skipUndo: true }
+            );
+            const selectedPass = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+                (fragment) => fragment.regionStartBeat === 8
+            );
+            expect(selectedPass).toBeDefined();
+            const selectedSourceSeconds = ((selectedPass!.audioOffsetBeats ?? 0) * 60) / 60;
+            expect(second!.passDepthSeconds).toBeCloseTo(1.1, 10);
+            expect(second!.passAnchorSeconds).toBeCloseTo(3.1, 10);
+            expect(selectedSourceSeconds).toBeCloseTo(1.1, 10);
+            const frame = Math.round(selectedSourceSeconds * hardware.sampleRate);
+            expect(frame).toBe(52800);
+            expect(hardware.buffer!.getChannelData(0)[frame]).toBe(52800);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expectProjectProjection();
+            const committedClip = structuredClone(clip);
+            const committedTakes = structuredClone(lane().takes);
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(recordedClips()).toEqual([]);
+            expect(takeLaneStore.value?.lanes).toEqual([]);
+            expectProjectProjection();
+            await redo();
+            flushAutomergeStorageWrites();
+            expect(recordedClips()).toEqual([committedClip]);
+            expect(lane().takes).toEqual(committedTakes);
+            await executeAppAction(
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: TRACK_ID, takeId: second!.id, startBeat: 8, endBeat: 12 },
+                },
+                { skipUndo: true }
+            );
+            const replayed = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+                (fragment) => fragment.regionStartBeat === 8
+            );
+            expect(replayed!.audioOffsetBeats).toBeCloseTo(1.1, 10);
+            expect(replayed!.audioBufferId).toBe(selectedPass!.audioBufferId);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expectProjectProjection();
+        }
+    );
 });

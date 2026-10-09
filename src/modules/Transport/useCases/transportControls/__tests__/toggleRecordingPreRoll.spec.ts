@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getTempoAtBeat, secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
@@ -52,7 +53,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: mocks.ensureTrackStrips }));
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
-    startPlayheadScheduler: mocks.startPlayheadScheduler,
+    startPlayheadScheduler: () => {
+        mocks.startPlayheadScheduler();
+        playheadClockRef.beat = transportStore.value!.playheadPosition;
+        playheadClockRef.audioTimeSeconds = mocks.getAudioContext().currentTime;
+    },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: mocks.resolveClipsWithComping,
@@ -230,7 +235,7 @@ describe('toggleRecording — take aligned to the timeline under pre-roll', () =
         });
 
         // The take opens on the boundary beat the count-in counted to, not on a default.
-        expect(mocks.startRecording).toHaveBeenCalledExactlyOnceWith(RECORD_POINT_BEAT);
+        expect(mocks.startRecording).toHaveBeenCalledExactlyOnceWith(RECORD_POINT_BEAT, expect.any(Function));
 
         const mediaOriginBeat = committed.startBeat - (committed.audioOffsetBeats ?? 0);
         expect(mediaOriginBeat).toBeCloseTo(RECORD_POINT_BEAT - 8 - LATENCY_BEATS, 9);

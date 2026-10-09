@@ -696,6 +696,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 0,
             endBeat: 4,
             sourceOffsetBeats: 0,
+            passEndContextSeconds: expect.closeTo(0.15, 10),
         });
     });
 
@@ -732,6 +733,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 0,
             endBeat: 4,
             sourceOffsetBeats: 0,
+            passEndContextSeconds: expect.closeTo(0.15, 10),
         });
     });
 
@@ -820,6 +822,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 0,
             endBeat: 4,
             sourceOffsetBeats: 0,
+            passEndContextSeconds: expect.closeTo(0.15, 10),
         });
         expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
             trackId: 'rec-b',
@@ -828,6 +831,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 0,
             endBeat: 4,
             sourceOffsetBeats: 0,
+            passEndContextSeconds: expect.closeTo(0.15, 10),
         });
     });
 
@@ -871,6 +875,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 0,
             endBeat: 4,
             sourceOffsetBeats: 0,
+            passEndContextSeconds: expect.closeTo(0.15, 10),
         });
         // The unarmed track is never the subject of the call, even though its
         // clip id sits in the ref.
@@ -915,6 +920,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 0,
             endBeat: 4,
             sourceOffsetBeats: 0,
+            passEndContextSeconds: expect.closeTo(0.15, 10),
         });
 
         // The lane as wrap 1 left it: the initial take plus pass 1's take.
@@ -945,6 +951,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 0,
             endBeat: 4,
             sourceOffsetBeats: 4,
+            passEndContextSeconds: expect.closeTo(0.25, 10),
         });
     });
 
@@ -1025,6 +1032,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 2,
             endBeat: 6,
             sourceOffsetBeats: 1,
+            passEndContextSeconds: expect.closeTo(0.15, 10),
         });
     });
 
@@ -1067,6 +1075,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 0,
             endBeat: 4,
             sourceOffsetBeats: 0,
+            passEndContextSeconds: expect.closeTo(0.15, 10),
         });
     });
 
@@ -1119,6 +1128,7 @@ describe('startPlayheadScheduler', () => {
             startBeat: 8,
             endBeat: 16,
             sourceOffsetBeats: 4,
+            passEndContextSeconds: expect.closeTo(0.15, 10),
         });
     });
 
@@ -1381,7 +1391,7 @@ describe('startPlayheadScheduler', () => {
                 startBeat: 0,
                 audioBufferId: expect.any(String),
             },
-            { provisionalStartBeat: 0, mediaOriginSeconds: 0.1 }
+            { provisionalStartBeat: 0, mediaOriginSeconds: 0.1, sourceContextOriginSeconds: 0.1 }
         );
         // A delivered take is kept: no retirement and no failure notice.
         expect(arrangementMocks.discardRecording).not.toHaveBeenCalled();
@@ -1453,12 +1463,20 @@ describe('startPlayheadScheduler', () => {
         expect(arrangementMocks.commitRecording).toHaveBeenNthCalledWith(
             1,
             expect.objectContaining({ id: 'clip-rec-1' }),
-            { provisionalStartBeat: 10, mediaOriginSeconds: expect.closeTo(6.115, 10) }
+            {
+                provisionalStartBeat: 10,
+                mediaOriginSeconds: expect.closeTo(6.115, 10),
+                sourceContextOriginSeconds: expect.closeTo(50.165, 10),
+            }
         );
         expect(arrangementMocks.commitRecording).toHaveBeenNthCalledWith(
             2,
             expect.objectContaining({ id: 'clip-rec-2' }),
-            { provisionalStartBeat: 10, mediaOriginSeconds: expect.closeTo(6.075, 10) }
+            {
+                provisionalStartBeat: 10,
+                mediaOriginSeconds: expect.closeTo(6.075, 10),
+                sourceContextOriginSeconds: expect.closeTo(50.125, 10),
+            }
         );
     });
 
@@ -1542,7 +1560,7 @@ describe('startPlayheadScheduler', () => {
         // anchor and can overwrite the span the finalizer owns.
         expect(arrangementMocks.commitRecording).toHaveBeenCalledWith(
             expect.objectContaining({ id: 'clip-rec-1', endBeat: 8 }),
-            { provisionalStartBeat: 0, mediaOriginSeconds: 0.1 }
+            { provisionalStartBeat: 0, mediaOriginSeconds: 0.1, sourceContextOriginSeconds: 0.1 }
         );
     });
 

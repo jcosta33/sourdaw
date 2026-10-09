@@ -23,10 +23,12 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { getTempoAtBeat, secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { transportStore } from '../../../stores/transportStore';
 import { recordingLifecycle } from '../recordingLifecycle';
+import { resolveRollStartBeat } from '../resolveRollStartBeat';
 import { toggleRecording } from '../toggleRecording';
 
 type TestRecordingResult = { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed'; reason: string };
@@ -51,7 +53,13 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     stopAudioRecording: vi.fn(() => Promise.resolve()),
     getCompensationDelay: () => 0,
 }));
-vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
+vi.mock('../startPlayback', () => ({
+    startPlayback: async () => {
+        await mocks.startPlayback();
+        playheadClockRef.beat = resolveRollStartBeat(transportStore.value!, timeSignatureMapStore.value?.changes ?? []);
+        playheadClockRef.audioTimeSeconds = mocks.audioClock.currentTime;
+    },
+}));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 

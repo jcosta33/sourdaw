@@ -7,6 +7,7 @@ import { liveTempoTimeline } from '../liveTempoTimeline';
 
 import { placeRecordingClipStart } from './placeRecordingClipStart';
 import { placeRecordingTakes } from './placeRecordingTakes';
+import { recordingPassTiming } from './recordingPassTiming';
 
 /** Where a captured recording's media truly begins, as the capture terminal measured it. */
 type RecordedCapture = {
@@ -14,6 +15,8 @@ type RecordedCapture = {
     provisionalStartBeat: number;
     /** The song time the capture's first sample sounds on, pre-roll lead and latency included. */
     mediaOriginSeconds: number;
+    /** Producer sample zero less admission latency, on the audio context clock. */
+    sourceContextOriginSeconds: number;
 };
 
 /**
@@ -69,9 +72,11 @@ export async function commitRecording(clip: Clip, capture?: RecordedCapture): Pr
         clipId: clip.id,
         recordPointBeat: capture.provisionalStartBeat,
         mediaOriginSeconds: capture.mediaOriginSeconds,
+        sourceContextOriginSeconds: capture.sourceContextOriginSeconds,
         clipMediaOriginSeconds:
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
     await executeAppAction({ type: 'commitRecording', payload: { clip: placed } });
+    recordingPassTiming.retire(clip.id);
 }
