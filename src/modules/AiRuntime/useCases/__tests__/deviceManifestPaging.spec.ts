@@ -47,6 +47,8 @@ function listOffsetWalks(): OffsetWalk[] {
 
 const OFFSET_WALKS = listOffsetWalks();
 
+const RELEASED_BUILTIN_TYPES = getAgentBuiltinDeviceFactoryManifest().map((descriptor) => descriptor.type);
+
 // `schemaVersion` stays a plain `number`, not the production cursor's literal `1`, so a forged
 // cursor can carry a schema version the decoder does not recognize.
 type ForgedManifestCursor = { schemaVersion: number; type: string; version: string; offset: number };
@@ -156,6 +158,20 @@ describe('device.factory-manifest.read paging', () => {
     it('has released builtin parameter offsets whose full-limit pages the walk cases cover', () => {
         expect(OFFSET_WALKS.length).toBeGreaterThan(0);
     });
+
+    // Types without parameters have no offset window, so this case is the only walk case that
+    // reads their first page with the worst-case call id.
+    it.each(RELEASED_BUILTIN_TYPES)(
+        'reads the first page of released builtin type %s within budget using a worst-case call id',
+        async (type) => {
+            const receipt = await callDeviceManifest({
+                callId: 'w'.repeat(WORST_CASE_CALL_ID_LENGTH),
+                arguments: { types: [type], page: { limit: 1 } },
+            });
+            expect(receipt.status).toBe('success');
+            expect(receiptByteLength(receipt)).toBeLessThanOrEqual(MAX_RECEIPT_BYTES_PER_CALL);
+        }
+    );
 
     // Windowed cases keep each walk far under the test timeout while every released type, every
     // starting offset and the worst-case call id stay covered.
