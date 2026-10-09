@@ -117,7 +117,10 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
             }
 
             const offsetFromIteration = intervalStartBeat - iterationStartBeat;
-            const wrappedOffset = ((offsetFromIteration % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
+            const moduloOffset = ((offsetFromIteration % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
+            // A start that float noise leaves just below a loop length is the next pass head,
+            // not a sliver at the loop end followed by the whole note again at that head.
+            const wrappedOffset = loopLengthBeats - moduloOffset <= SAME_BEAT_TOLERANCE ? 0 : moduloOffset;
             const wrappedStartBeat = iterationStartBeat + wrappedOffset;
             const preservedDuration = Math.min(intervalDurationBeats, loopLengthBeats);
             const firstEndBeat = Math.min(iterationStartBeat + loopLengthBeats, wrappedStartBeat + preservedDuration);
