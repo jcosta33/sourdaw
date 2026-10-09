@@ -231,7 +231,7 @@ describe('createLevainNode disposal release', () => {
         expect(close).toHaveBeenCalledTimes(1);
     });
 
-    it('closes the port at once when destroyed on a closed context', async () => {
+    it('closes the port at once when destroyed on a closed live AudioContext', async () => {
         const result = await createLevainNode(ctx as unknown as BaseAudioContext);
         ctx.state = 'closed';
         postMessage.mockClear();
@@ -240,6 +240,70 @@ describe('createLevainNode disposal release', () => {
 
         expect(close).toHaveBeenCalledTimes(1);
         expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it('posts dispose and keeps the port open when destroyed on a suspended context', async () => {
+        const result = await createLevainNode(ctx as unknown as BaseAudioContext);
+        ctx.state = 'suspended';
+        postMessage.mockClear();
+
+        result.destroy();
+
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'dispose' });
+        expect(close).not.toHaveBeenCalled();
+    });
+
+    describe('on a closed OfflineAudioContext, which still answers its worklet port', () => {
+        function stubOfflineContext(): void {
+            class FakeOfflineAudioContext {}
+            vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+            Object.setPrototypeOf(ctx, FakeOfflineAudioContext.prototype);
+        }
+
+        it('posts dispose, drains to done and closes the port only then', async () => {
+            stubOfflineContext();
+            const result = await createLevainNode(ctx as unknown as BaseAudioContext);
+            ctx.state = 'closed';
+            postMessage.mockClear();
+
+            result.destroy();
+
+            expect(postMessage).toHaveBeenCalledTimes(1);
+            expect(postMessage).toHaveBeenCalledWith({ type: 'dispose' });
+            expect(close).not.toHaveBeenCalled();
+
+            receive({ type: 'disposed' });
+            receive({ type: 'disposedBanksReleased', done: false });
+
+            expect(postMessage).toHaveBeenLastCalledWith({ type: 'releaseDisposedBanks' });
+            expect(postMessage).toHaveBeenCalledTimes(3);
+            expect(close).not.toHaveBeenCalled();
+
+            receive({ type: 'disposedBanksReleased', done: true });
+
+            expect(close).toHaveBeenCalledTimes(1);
+        });
+
+        it('keeps draining when its state changes to closed mid-drain', async () => {
+            stubOfflineContext();
+            const result = await createLevainNode(ctx as unknown as BaseAudioContext);
+            result.destroy();
+            receive({ type: 'disposed' });
+            const [listener] = stateListeners;
+            if (!listener) {
+                throw new TypeError('Expected a statechange listener after destroy');
+            }
+
+            ctx.state = 'closed';
+            listener();
+
+            expect(close).not.toHaveBeenCalled();
+
+            receive({ type: 'disposedBanksReleased', done: true });
+
+            expect(close).toHaveBeenCalledTimes(1);
+        });
     });
 });
 

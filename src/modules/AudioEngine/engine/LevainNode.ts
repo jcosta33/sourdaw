@@ -96,9 +96,16 @@ export async function createLevainNode(
     let portClosed = false;
     let drainingDisposal = false;
 
+    // A closed live AudioContext no longer answers port messages, so only it is
+    // treated as gone. A completed OfflineAudioContext also reports 'closed' but
+    // its worklet scope still answers (measured in Chromium), so it drains.
+    // `instanceof` is the check because the closed state alone cannot tell them apart.
+    const isContextGone = (): boolean =>
+        ctx.state === 'closed' && !(typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext);
+
     // The port stays open from `destroy()` until the worklet has freed what the
     // disposed processor held, or can no longer answer: it reported an error,
-    // or the context closed and took the worklet scope with it.
+    // or a live context closed and took the worklet scope with it.
     const closePort = (): void => {
         if (portClosed) {
             return;
@@ -108,7 +115,7 @@ export async function createLevainNode(
         node.port.close();
     };
     function handleContextStateChange(): void {
-        if (ctx.state === 'closed') {
+        if (isContextGone()) {
             closePort();
         }
     }
@@ -256,7 +263,7 @@ export async function createLevainNode(
         destroyed = true;
         disconnect();
         ctx.addEventListener('statechange', handleContextStateChange);
-        if (ctx.state === 'closed') {
+        if (isContextGone()) {
             closePort();
             return;
         }

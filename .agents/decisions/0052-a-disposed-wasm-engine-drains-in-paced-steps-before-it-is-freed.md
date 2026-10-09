@@ -49,8 +49,10 @@ This record extends 0051; it changes none of its clauses.
 - **The processor stays reachable until done.** A module-level set holds a disposed processor that
   still has an engine, so the finalizer cannot free it in one call before the drain ends.
 - **The node closes its port only when nothing more can arrive.** On done, on an `error` posted
-  during the drain, or when the context's state becomes `closed`, which discards the worklet scope
-  and its memory with it.
+  during the drain, or when a live `AudioContext` becomes `closed`, which stops answering port
+  messages and discards the worklet scope with it. A completed `OfflineAudioContext` also reports
+  `closed`, but its worklet scope still answers (measured in Chromium, 3 s after `startRendering`
+  resolved), so it is not treated as gone and takes the drain.
 
 The drain runs on the render thread, as 0051's release does, in steps bounded to a fraction of a
 quantum. Teardown of a very large bank takes proportionally many messages.
@@ -59,10 +61,13 @@ quantum. Teardown of a very large bank takes proportionally many messages.
 
 - Every route that destroys a Levain node reaches `destroy()` in `LevainNode`, so the drain covers
   device removal, track and bus removal, load abort and timeout, and fault recovery without any change
-  to the device registry. A context close needs no drain: its scope is discarded.
+  to the device registry. A live context's close needs no drain: it stops answering and its scope is
+  discarded.
 - An engine that throws mid-drain is left for the finalizer, as before this record; the drain
   narrows the common case rather than claiming a bound for a faulted wasm instance.
 - Offline renders destroy their Levain nodes through the same `destroy()` (via
-  `destroyOfflineDeviceStrategies`), so they take the same paced drain; a context already closed at
-  destroy closes the port at once.
+  `destroyOfflineDeviceStrategies`) after rendering, when the offline context already reports
+  `closed` yet still answers, so they take the same paced drain. Any context other than a closed
+  live `AudioContext`, a suspended one included, posts `dispose` and drains; a closed live one closes
+  the port at once.
 - The finalizer's thread is not established by this record; the design does not depend on it.

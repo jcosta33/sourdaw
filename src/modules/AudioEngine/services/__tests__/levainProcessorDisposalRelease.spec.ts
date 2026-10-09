@@ -239,9 +239,10 @@ describe('shipped LevainProcessor disposal release', () => {
         const processor = await startProcessor();
         const free = vi.fn();
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        // The trap leaves the engine looking drained: after the first throw it
-        // reports no retired bank and no sounding bank, so only the poison flag
-        // keeps a later request from reaching free().
+        // The fake models a step that throws once and later succeeds, a JS-side
+        // failure: after the first throw it reports no retired bank and no
+        // sounding bank, so only the poison flag keeps a later request from
+        // reaching free(). A real wasm trap would throw on every later call.
         let trapped = false;
         processor._instance = {
             all_notes_off: () => undefined,
@@ -273,8 +274,10 @@ describe('shipped LevainProcessor disposal release', () => {
         const processor = await startProcessor();
         const free = vi.fn();
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        // After the first throw the engine reports nothing left to retire, so
-        // only the poison flag keeps a later request from reaching free().
+        // The fake models a retire step that throws once and later succeeds, a
+        // JS-side failure: it then reports nothing left to retire, so only the
+        // poison flag keeps a later request from reaching free(). A real wasm
+        // trap would throw on every later call.
         let trapped = false;
         processor._instance = {
             all_notes_off: () => undefined,
