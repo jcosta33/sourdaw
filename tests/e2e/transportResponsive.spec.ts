@@ -27,6 +27,14 @@ test.describe('Responsive transport bar', () => {
 
         for (const width of effectiveWidths) {
             await page.setViewportSize({ width, height: 900 });
+            // The wrap re-layout after a viewport change is asynchronous;
+            // measuring in the same frame can observe the pre-wrap geometry
+            // as transient overlaps. Wait two frames so the post-resize
+            // layout has rendered before reading control bounds.
+            await page.evaluate(
+                () =>
+                    new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+            );
             await expect(page.getByTestId('transport-play')).toBeVisible();
             await expect(page.getByTestId('transport-stop')).toBeVisible();
             await expect(page.getByTestId('transport-record')).toBeVisible();
