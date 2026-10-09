@@ -447,10 +447,13 @@ function snapToChangeBeat(changes: readonly TimelineChange[], beat: number): num
 // Both maps are cut by one span, so a bound snaps once against every change in
 // either map; snapped per map, a bound near a change in only one of them would
 // cut the other map at a different beat.
-function snapDeleteOperation(
+function snapOperationToChanges(
     changes: readonly TimelineChange[],
-    operation: DeleteTimelineMapTimeOperation
-): DeleteTimelineMapTimeOperation {
+    operation: TimelineMapTimeOperation
+): TimelineMapTimeOperation {
+    if (operation.type === 'insert') {
+        return operation;
+    }
     return {
         type: 'delete',
         startBeat: snapToChangeBeat(changes, operation.startBeat),
@@ -537,10 +540,7 @@ function prepareTimelineMapStates(operation: TimelineMapTimeOperation): Prepared
         return { status: 'rejected' };
     }
 
-    const cutOperation =
-        operation.type === 'delete'
-            ? snapDeleteOperation([...tempoState.changes, ...timeSignatureState.changes], operation)
-            : operation;
+    const cutOperation = snapOperationToChanges([...tempoState.changes, ...timeSignatureState.changes], operation);
 
     const preparedTempoChanges = prepareChanges(tempoState.changes, cutOperation, carryTempoAcrossDeletion);
     if (preparedTempoChanges.status === 'invalid') {
