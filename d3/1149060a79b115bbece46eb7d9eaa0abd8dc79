@@ -1,0 +1,29 @@
+scripts/e2eSelectionShadow.ts
+  s_97ab82e0b4f10c::t_0ea1bd8fae83f5 577
+  s_97ab82e0b4f10c::t_0cdae45b085dc9 578
+scripts/e2eSelectionShadowCompatibility.ts
+  s_97ab82e0b4f10c::t_4444cd9e47c8fb 2,66-75,84-87
+  s_97ab82e0b4f10c::t_0ea1bd8fae83f5 8-14,77-83
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_97ab82e0b4f10c::t_d881bd4f74db83 130-131,138,217-219,231-239,241-243,257-259,264-276,283,375-391
+  s_97ab82e0b4f10c::t_a3fbea88ba31c2 240,251-254,260-263
+  s_97ab82e0b4f10c::t_18afaad46094c7 354-356
+  s_97ab82e0b4f10c::t_31316cb491f666 129,220-223,346-353,357-362,392
+  s_97ab82e0b4f10c::t_78bf2543eaffdd 230,249-250,255-256,277-278,363-374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d31149060a79b115bbece46eb7d9eaa0abd8dc79",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
