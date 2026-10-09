@@ -833,6 +833,13 @@ export function startPlayheadScheduler(): void {
                 }
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
+                    const captureAnchor = recClip && {
+                        provisionalStartBeat: recClip.startBeat,
+                        songSeconds: secondsBetweenBeats(changes, 0, playheadClockRef.beat, current.tempo),
+                        contextSeconds: playheadClockRef.audioTimeSeconds,
+                        latencySeconds:
+                            (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + getCompensationDelay(track.id),
+                    };
                     Promise.resolve(
                         startAudioRecording(
                             track.id,
@@ -851,7 +858,7 @@ export function startPlayheadScheduler(): void {
                                 const { buffer } = result;
                                 const bufferId = `rec-${crypto.randomUUID()}`;
                                 cacheAudioBuffer({ buffer, bufferId });
-                                if (recClip) {
+                                if (recClip && captureAnchor) {
                                     // The punched clip is finalized by the punch-out
                                     // `stopRecording`, so the commit carries the live
                                     // clip with only its media reference attached —
@@ -861,6 +868,17 @@ export function startPlayheadScheduler(): void {
                                         .find((clip) => clip.id === recClip.id);
                                     const finalizedClip = liveClip ?? recClip;
                                     const recordedClip = { ...finalizedClip, audioBufferId: bufferId };
+                                    // Sample zero belongs to the producer's clock.
+                                    // The callback can arrive after a wrap, tempo
+                                    // edit, or stop has replaced the published pair.
+                                    const capture = {
+                                        provisionalStartBeat: captureAnchor.provisionalStartBeat,
+                                        mediaOriginSeconds:
+                                            captureAnchor.songSeconds +
+                                            result.sampleZeroContextFrame / result.sampleRate -
+                                            captureAnchor.contextSeconds -
+                                            captureAnchor.latencySeconds,
+                                    };
                                     // The user-facing stop awaits this through the
                                     // lifecycle; the scheduler itself never blocks on
                                     // it. A failed commit retires the provisional
@@ -868,7 +886,7 @@ export function startPlayheadScheduler(): void {
                                     // and says so the way the punch capture-failure
                                     // sibling does.
                                     recordingLifecycle.trackCommit(
-                                        commitRecording(recordedClip).catch((error: unknown) => {
+                                        commitRecording(recordedClip, capture).catch((error: unknown) => {
                                             logger.error(
                                                 new Error('Punch-in recording commit failed', { cause: error })
                                             );

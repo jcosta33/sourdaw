@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { applyAutomation } from '../../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../../scheduling/applyAutomation/applyVcaGains';
@@ -15,6 +16,15 @@ import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
 import { schedulerTimingDiagnostics } from '../schedulerTimingDiagnostics';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
+
+type PunchTerminalResult =
+    | { kind: 'completed'; buffer: { duration: number }; sampleZeroContextFrame: number; sampleRate: number }
+    | { kind: 'failed'; reason: string };
+type PunchTerminal = (result: PunchTerminalResult) => void;
+
+function completedPunchResult(sampleZeroContextFrame = 4800, sampleRate = 48000): PunchTerminalResult {
+    return { kind: 'completed', buffer: { duration: 1 }, sampleZeroContextFrame, sampleRate };
+}
 
 // Mutable store holders so each test can seed the transport + tempo-map
 // without fighting vi.mock hoisting.
@@ -52,7 +62,8 @@ const audioEngineMocks = {
     getCompensationDelay: vi.fn(() => 0),
     audioEngine: { setTransportInfo: vi.fn() },
     stopAllScheduled: vi.fn(),
-    startAudioRecording: vi.fn(),
+    startAudioRecording:
+        vi.fn<(trackId: string, terminal: PunchTerminal, inputId?: string | null) => Promise<boolean>>(),
     stopAudioRecording: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
@@ -101,7 +112,7 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 }));
 // Arrangement + Automation mock holders (same binding-split workaround).
 const arrangementMocks = {
-    startRecording: vi.fn(() => [] as { trackId: string; id: string }[]),
+    startRecording: vi.fn(() => [] as { trackId: string; id: string; startBeat: number }[]),
     stopRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
@@ -1179,7 +1190,7 @@ describe('startPlayheadScheduler', () => {
             punchInBeat: 0,
             punchOutBeat: 8,
         });
-        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 }]);
         startPlayheadScheduler();
         // Advance the playhead past punchInBeat 0 (0.1s @ 120bpm = 0.2 beats).
         ctxTime.now = 0.1;
@@ -1288,7 +1299,7 @@ describe('startPlayheadScheduler', () => {
         ctxLatency.base = 0.005;
         ctxLatency.output = 0.015;
         audioEngineMocks.getCompensationDelay.mockImplementation(() => 0.01);
-        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 }]);
         startPlayheadScheduler();
         ctxTime.now = 0.1;
         const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
@@ -1323,7 +1334,7 @@ describe('startPlayheadScheduler', () => {
         });
         ctxLatency.base = 0.005;
         ctxLatency.output = 0.015;
-        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 }]);
         startPlayheadScheduler();
         ctxTime.now = 0.1;
         const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
@@ -1341,40 +1352,114 @@ describe('startPlayheadScheduler', () => {
             punchInBeat: 0,
             punchOutBeat: 8,
         });
-        const recClip = { trackId: 'rec-1', id: 'clip-rec-1' };
+        const recClip = { trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 };
         arrangementMocks.startRecording.mockReturnValueOnce([recClip]);
-        let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
-        audioEngineMocks.startAudioRecording.mockImplementationOnce(((
-            _trackId: string,
-            onTerminal: (result: { kind: string; buffer?: unknown }) => void
-        ) => {
+        let capturedOnTerminal: PunchTerminal | null = null;
+        audioEngineMocks.startAudioRecording.mockImplementationOnce((_trackId: string, onTerminal: PunchTerminal) => {
             capturedOnTerminal = onTerminal;
-            return Promise.resolve();
-        }) as never);
+            return Promise.resolve(true);
+        });
         startPlayheadScheduler();
         ctxTime.now = 0.1;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
         emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
 
         // Drive the recorded-buffer callback the engine invokes.
         expect(capturedOnTerminal).not.toBeNull();
-        capturedOnTerminal!({ kind: 'completed', buffer: { duration: 1 } });
+        capturedOnTerminal!(completedPunchResult());
         expect(audioEngineMocks.cacheAudioBuffer).toHaveBeenCalledWith({
             buffer: { duration: 1 },
             bufferId: expect.any(String),
         });
-        expect(arrangementMocks.commitRecording).toHaveBeenCalledWith({
-            trackId: 'rec-1',
-            id: 'clip-rec-1',
-            audioBufferId: expect.any(String),
-        });
+        expect(arrangementMocks.commitRecording).toHaveBeenCalledWith(
+            {
+                trackId: 'rec-1',
+                id: 'clip-rec-1',
+                startBeat: 0,
+                audioBufferId: expect.any(String),
+            },
+            { provisionalStartBeat: 0, mediaOriginSeconds: 0.1 }
+        );
         // A delivered take is kept: no retirement and no failure notice.
         expect(arrangementMocks.discardRecording).not.toHaveBeenCalled();
         expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+
+    it('captures each track latency and mapped clock before recorder admission can await', async () => {
+        trackStoreState.value = {
+            tracks: [
+                { id: 'rec-1', armed: true, kind: 'audio', clips: [] },
+                { id: 'rec-2', armed: true, kind: 'audio', clips: [] },
+            ],
+        };
+        transportStoreState.value = playingState({
+            playheadPosition: 9.95,
+            punchInEnabled: true,
+            punchInBeat: 10,
+            punchOutBeat: 14,
+        });
+        tempoMapStoreState.value = {
+            changes: [
+                { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 8, tempo: 60, curve: 'instant' },
+            ],
+        };
+        ctxTime.now = 50;
+        ctxLatency.base = 0.01;
+        ctxLatency.output = 0.02;
+        audioEngineMocks.getCompensationDelay.mockImplementation((...args: unknown[]) =>
+            args[0] === 'rec-1' ? 0.03 : 0.07
+        );
+        arrangementMocks.startRecording.mockReturnValueOnce([
+            { trackId: 'rec-1', id: 'clip-rec-1', startBeat: 10 },
+            { trackId: 'rec-2', id: 'clip-rec-2', startBeat: 10 },
+        ]);
+        const terminals = new Map<string, PunchTerminal>();
+        let admit!: (started: boolean) => void;
+        const readiness = new Promise<boolean>((resolve) => {
+            admit = resolve;
+        });
+        audioEngineMocks.startAudioRecording.mockImplementation((trackId, terminal) => {
+            terminals.set(trackId, terminal);
+            return readiness;
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 50.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+        expect(terminals.size).toBe(2);
+        expect(playheadClockRef.beat).toBeCloseTo(10.05, 10);
+        expect(playheadClockRef.audioTimeSeconds).toBe(50.1);
+        expect(transportStoreState.value?.playheadPosition).toBe(9.95);
+
+        // Admission and completion arrive after a different transport clock,
+        // map, and latency. Sample zero is later than admission by 0.125 s.
+        ctxTime.now = 900;
+        ctxLatency.base = 0.8;
+        audioEngineMocks.getCompensationDelay.mockReturnValue(0.9);
+        playheadClockRef.beat = 0;
+        playheadClockRef.audioTimeSeconds = 0;
+        tempoMapStoreState.value = { changes: [] };
+        admit(true);
+        const completed = completedPunchResult(2410800);
+        terminals.get('rec-1')!(completed);
+        terminals.get('rec-2')!(completed);
+        await recordingLifecycle.waitForCommits();
+        expect(arrangementMocks.commitRecording).toHaveBeenCalledTimes(2);
+        expect(arrangementMocks.commitRecording).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ id: 'clip-rec-1' }),
+            { provisionalStartBeat: 10, mediaOriginSeconds: expect.closeTo(6.115, 10) }
+        );
+        expect(arrangementMocks.commitRecording).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ id: 'clip-rec-2' }),
+            { provisionalStartBeat: 10, mediaOriginSeconds: expect.closeTo(6.075, 10) }
+        );
     });
 
     it('retires the punched take and tells the user when the recording commit fails', async () => {
@@ -1384,27 +1469,23 @@ describe('startPlayheadScheduler', () => {
             punchInBeat: 0,
             punchOutBeat: 8,
         });
-        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 }]);
         arrangementMocks.commitRecording.mockImplementationOnce(() => Promise.reject(new Error('commit refused')));
-        let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
-        audioEngineMocks.startAudioRecording.mockImplementationOnce(((
-            _trackId: string,
-            onTerminal: (result: { kind: string; buffer?: unknown }) => void
-        ) => {
+        let capturedOnTerminal: PunchTerminal | null = null;
+        audioEngineMocks.startAudioRecording.mockImplementationOnce((_trackId: string, onTerminal: PunchTerminal) => {
             capturedOnTerminal = onTerminal;
-            return Promise.resolve();
-        }) as never);
+            return Promise.resolve(true);
+        });
         startPlayheadScheduler();
         ctxTime.now = 0.1;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
         emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
 
-        capturedOnTerminal!({ kind: 'completed', buffer: { duration: 1 } });
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        capturedOnTerminal!(completedPunchResult());
+        await recordingLifecycle.waitForCommits();
 
         // A commit that never landed leaves no visible take no entry owns, and
         // says so the way the punch capture-failure sibling does.
@@ -1422,7 +1503,7 @@ describe('startPlayheadScheduler', () => {
             ],
         };
         transportStoreState.value = playingState({ punchInEnabled: true, punchInBeat: 0, punchOutBeat: 8 });
-        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 }]);
         // The real finalizer writes the punch-out end onto the live clip before
         // it returns; the mock does the same so the commit can observe it.
         arrangementMocks.stopRecording.mockImplementationOnce((atBeat?: number) => {
@@ -1432,18 +1513,15 @@ describe('startPlayheadScheduler', () => {
                 clip.endBeat = atBeat;
             }
         });
-        let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
-        audioEngineMocks.startAudioRecording.mockImplementationOnce(((
-            _trackId: string,
-            onTerminal: (result: { kind: string; buffer?: unknown }) => void
-        ) => {
+        let capturedOnTerminal: PunchTerminal | null = null;
+        audioEngineMocks.startAudioRecording.mockImplementationOnce((_trackId: string, onTerminal: PunchTerminal) => {
             capturedOnTerminal = onTerminal;
             return Promise.resolve(true);
-        }) as never);
+        });
         // The punch-out flush runs the capture terminal exactly where the real
         // one does — before the finalizer in the pre-fix order.
         audioEngineMocks.stopAudioRecording.mockImplementationOnce(() => {
-            capturedOnTerminal?.({ kind: 'completed', buffer: { duration: 1 } });
+            capturedOnTerminal?.(completedPunchResult());
             return Promise.resolve();
         });
 
@@ -1451,21 +1529,20 @@ describe('startPlayheadScheduler', () => {
         ctxTime.now = 0.1;
         const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
         emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
         expect(capturedOnTerminal).not.toBeNull();
 
         // Roll to the punch-out point and cross it.
         schedulerSession.accumulatedPosition = 7.9;
         ctxTime.now = 0.3;
         emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
 
         // Zero-length payloads here mean the entry captured the pre-finalization
         // anchor and can overwrite the span the finalizer owns.
         expect(arrangementMocks.commitRecording).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 'clip-rec-1', endBeat: 8 })
+            expect.objectContaining({ id: 'clip-rec-1', endBeat: 8 }),
+            { provisionalStartBeat: 0, mediaOriginSeconds: 0.1 }
         );
     });
 
@@ -1476,22 +1553,18 @@ describe('startPlayheadScheduler', () => {
             ],
         };
         transportStoreState.value = playingState({ punchInEnabled: true, punchInBeat: 0, punchOutBeat: 8 });
-        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
-        let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
-        audioEngineMocks.startAudioRecording.mockImplementationOnce(((
-            _trackId: string,
-            onTerminal: (result: { kind: string; buffer?: unknown }) => void
-        ) => {
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 }]);
+        let capturedOnTerminal: PunchTerminal | null = null;
+        audioEngineMocks.startAudioRecording.mockImplementationOnce((_trackId: string, onTerminal: PunchTerminal) => {
             capturedOnTerminal = onTerminal;
             return Promise.resolve(true);
-        }) as never);
+        });
 
         startPlayheadScheduler();
         ctxTime.now = 0.1;
         const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
         emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
 
         let release!: () => void;
         arrangementMocks.commitRecording.mockImplementationOnce(
@@ -1500,7 +1573,7 @@ describe('startPlayheadScheduler', () => {
                     release = resolve;
                 })
         );
-        capturedOnTerminal!({ kind: 'completed', buffer: { duration: 1 } });
+        capturedOnTerminal!(completedPunchResult());
 
         // The scheduler never blocks on the commit, but it must register it so a
         // user-facing stop can wait for the entry.
@@ -1559,15 +1632,12 @@ describe('startPlayheadScheduler', () => {
             punchInBeat: 0,
             punchOutBeat: 8,
         });
-        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
-        let capturedOnTerminal: ((result: { kind: string; reason?: string }) => void) | null = null;
-        audioEngineMocks.startAudioRecording.mockImplementationOnce(((
-            _trackId: string,
-            onTerminal: (result: { kind: string; reason?: string }) => void
-        ) => {
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 }]);
+        let capturedOnTerminal: PunchTerminal | null = null;
+        audioEngineMocks.startAudioRecording.mockImplementationOnce((_trackId: string, onTerminal: PunchTerminal) => {
             capturedOnTerminal = onTerminal;
             return Promise.resolve(true);
-        }) as never);
+        });
         startPlayheadScheduler();
         ctxTime.now = 0.1;
         const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
