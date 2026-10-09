@@ -15,6 +15,11 @@
 /// kept as a duration so the shape survives a change of rate.
 const BUILTIN_IR_SECONDS: f32 = 1024.0 / 44_100.0;
 
+/// Rate at which a built-in body IR carries unit energy. Its energy at any
+/// other rate scales by this over the session rate, which keeps the body's
+/// audible-band level the same at every rate.
+const BODY_REFERENCE_RATE: f32 = 48_000.0;
+
 /// Direct-form convolution against a stereo IR pair.
 pub struct ConvolutionProcessor {
     // IR storage
@@ -136,11 +141,15 @@ impl ConvolutionProcessor {
             }
         }
 
-        // Unity energy here, at load, and not a precomputed per-body constant:
-        // the energy grows with the sample count, so a constant would hold at
-        // one session rate only, while this one pass over the response runs
-        // beside the allocation that builds it and never in `process_stereo`.
-        normalise_to_unit_energy(&mut ir);
+        // The body is one analogue response sampled at the session rate, so
+        // both its in-band gain and its energy grow with the rate: at a fixed
+        // energy its audible-band level would climb 3 dB per doubling of the
+        // rate. An energy of BODY_REFERENCE_RATE / rate holds the in-band
+        // response where it sits at 48 kHz, where unit energy passes white
+        // noise across the whole band at its dry level. The target follows the
+        // rate, so it is applied here, in one pass beside the allocation that
+        // builds the response, and never in `process_stereo`.
+        normalise_to_energy(&mut ir, BODY_REFERENCE_RATE / sample_rate);
 
         self.load_ir(&ir, &ir);
     }
@@ -207,15 +216,16 @@ impl ConvolutionProcessor {
     }
 }
 
-/// Scale `ir` so its squared samples sum to one: white noise then leaves the
-/// convolution at the level it entered, and `convolutionMix` trades dry for
-/// body at matched loudness. A pure gain, so the body's colour is unchanged.
-fn normalise_to_unit_energy(ir: &mut [f32]) {
+/// Scale `ir` so its squared samples sum to `target`. At a target of one,
+/// white noise leaves the convolution at the level it entered, so
+/// `convolutionMix` trades dry for body at matched loudness. A pure gain, so
+/// the body's colour is unchanged.
+fn normalise_to_energy(ir: &mut [f32], target: f32) {
     let energy: f32 = ir.iter().map(|s| s * s).sum();
     if energy <= 0.0 {
         return;
     }
-    let scale = energy.sqrt().recip();
+    let scale = (target / energy).sqrt();
     for s in ir.iter_mut() {
         *s *= scale;
     }
@@ -265,10 +275,27 @@ mod tests {
     /// A built-in body loaded through `set_param`, as the engine loads one,
     /// fully wet.
     fn builtin_body(index: f32) -> ConvolutionProcessor {
-        let mut body = ConvolutionProcessor::new(BODY_TEST_RATE);
+        builtin_body_at(index, BODY_TEST_RATE)
+    }
+
+    fn builtin_body_at(index: f32, sample_rate: f32) -> ConvolutionProcessor {
+        let mut body = ConvolutionProcessor::new(sample_rate);
         body.set_param("convolutionIr", index);
         body.set_param("convolutionMix", 1.0);
         body
+    }
+
+    /// Mean power gain of `ir`, in dB, over the audible band: its squared
+    /// magnitude read every 10 Hz from 20 Hz to 20 kHz. Ten hertz resolves
+    /// every body's resonance, which the 23.2 ms response widens to a main
+    /// lobe of about 86 Hz.
+    fn audible_band_level_db(ir: &[f32], sample_rate: f32) -> f64 {
+        let bins: Vec<f32> = (2..=2_000).map(|step| step as f32 * 10.0).collect();
+        let power: f64 = bins
+            .iter()
+            .map(|&hz| amplitude_at(ir, hz, sample_rate).powi(2))
+            .sum();
+        10.0 * (power / bins.len() as f64).log10()
     }
 
     /// Output energy over input energy, in dB, of four seconds of the crate's
@@ -303,10 +330,32 @@ mod tests {
             let mut body = builtin_body(index);
             let gain = white_noise_gain_db(&mut body);
             assert!(
-                gain.abs() <= 1.0,
-                "the {name} body changes white noise by {gain:.2} dB at mix 1; \
-                 it must leave broadband material within 1 dB of its dry level"
+                gain.abs() <= 0.5,
+                "the {name} body changes white noise by {gain:.2} dB at mix 1 at \
+                 48 kHz; it must leave broadband material within 0.5 dB of its dry level"
             );
+        }
+    }
+
+    /// The body is one physical object whatever rate the session runs at, so
+    /// its level on audible material has to be one level too. Unit energy at
+    /// every rate put each body's audible band 3 dB higher per doubling of the
+    /// rate: +0.79 dB at 48 kHz, +3.80 dB at 96 kHz and +6.81 dB at 192 kHz.
+    #[test]
+    fn a_builtin_body_keeps_its_audible_band_level_at_every_context_rate() {
+        for (index, name) in BUILTIN_BODIES {
+            let reference = audible_band_level_db(&builtin_body(index).ir_left, BODY_TEST_RATE);
+            for sample_rate in [44_100.0_f32, 96_000.0] {
+                let level = audible_band_level_db(
+                    &builtin_body_at(index, sample_rate).ir_left,
+                    sample_rate,
+                );
+                assert!(
+                    (level - reference).abs() <= 0.5,
+                    "the {name} body passes the audible band at {level:.2} dB when the \
+                     context runs at {sample_rate} Hz, against {reference:.2} dB at 48 kHz"
+                );
+            }
         }
     }
 

@@ -269,11 +269,12 @@ export const BACTERIA_EFFECTS_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         0.2,
         0.8,
         [
-            'The built-in body impulse responses are normalised to unit energy, so a mix of 1 leaves white noise within 0.4 dB of its dry level; convolutionSeparation widens side content in the convolved signal, and gain trims the result afterwards.',
-            'Dry and body add as a crossfade of two mostly uncorrelated signals: measured on mono white noise at 48 kHz, every built-in body lowers the level by 0.9 dB at mix 0.1, 2.0 dB at 0.25, 2.8 to 3.0 dB at 0.5 and 1.7 to 2.0 dB at 0.75.',
+            'The built-in body impulse responses keep the same audible-band level at every session rate and carry unit energy at 48 kHz, so at 48 kHz a mix of 1 leaves mono or identical-channel white noise within 0.2 dB of its dry level; convolutionSeparation widens side content in the convolved signal, and gain trims the result afterwards.',
+            'Dry and body add as a crossfade of two mostly uncorrelated signals: measured over 16 to 64 s of mono white noise at 48 kHz, every built-in body lowers the level by 0.9 dB at mix 0.1, 2.0 dB at 0.25, 2.3 to 2.4 dB at 0.3, 2.9 to 3.0 dB at 0.5 and 1.9 to 2.0 dB at 0.75.',
         ],
         [
-            'Each body still lifts its own resonance by 25.7 to 26.4 dB, so material concentrated there gets louder: on mono pink noise at 48 kHz, wood (800 Hz) measures +1.7 dB at mix 0.5 and +6.3 dB at 1, while ceramic and metal stay between -1.7 and +1.9 dB at mixes 0.1, 0.25, 0.3, 0.5, 0.75 and 1.',
+            'Stereo material that differs between channels gets louder, because convolutionSeparation boosts the side content of the convolved signal: measured over 16 to 64 s of independent left and right white noise at 48 kHz, a mix of 1 raises each channel by 3.9 to 4.0 dB at the default separation of 0.5 and by 6.9 to 7.0 dB at separation 1.',
+            'Each body still lifts its own resonance by 25.7 to 26.4 dB at session rates from 44.1 to 96 kHz, so material concentrated there gets louder: measured over 16 to 256 s of mono pink noise at 48 kHz, wood (800 Hz) measures +1.7 to +1.8 dB at mix 0.5 and +6.2 to +6.4 dB at 1, while ceramic and metal stay between -1.7 and +2.1 dB at mixes 0.1, 0.25, 0.3, 0.5, 0.75 and 1.',
         ],
         noExternalModulation
     ),
