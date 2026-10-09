@@ -1,0 +1,135 @@
+src/modules/AiRuntime/transformers/__tests__/describePlanningOutcome.spec.ts
+  s_1c08b47ac3792f::t_e962d7e3fd622b 16-19
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_1c08b47ac3792f::t_039b75f726aa8c 85-86,88
+  s_1c08b47ac3792f::t_cb3b29f8d4f623 76
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_1459e3761c5fa1 1597
+  s_1c08b47ac3792f::t_e253e4028213b5 1663
+src/modules/AiRuntime/transformers/parseAnswerRespond.ts
+  s_1c08b47ac3792f::t_c652f3a463fa76 1-42
+  s_1c08b47ac3792f::t_88b3f8fa8470fb 43
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/answerOutcome.spec.ts
+  s_1c08b47ac3792f::t_133d6e7b9f9a74 180-249
+  s_1c08b47ac3792f::t_094d39b4b5c296 17-19
+  s_1c08b47ac3792f::t_1240b65992d2ee 62-64
+src/modules/AiRuntime/useCases/agentRequestOrchestration/appendAnswerChatMessages.ts
+  s_1c08b47ac3792f::t_22ebdb1e01df06 1-26
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_1c08b47ac3792f::t_efccbd68317a5f 26,33
+  s_1c08b47ac3792f::t_115c7694703f74 252-265
+  s_1c08b47ac3792f::t_f7d7f6df3e8352 286
+  s_97ab82e0b4f10c::t_9fef6553f75c8e 34
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_1c08b47ac3792f::t_4f12fad07219ba 33
+  s_1c08b47ac3792f::t_4f22fce5b3f029 377
+  s_1c08b47ac3792f::t_b0900b1e3b8b54 349-354,359-376,378-405
+  s_1c08b47ac3792f::t_e026980e7c28b6 74
+  s_1c08b47ac3792f::t_4fcb98ba60e45f 11
+  s_1c08b47ac3792f::t_4c4cc031f34134 406
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_1c08b47ac3792f::t_da29f2c90447d9 30,41
+  s_1c08b47ac3792f::t_c15f75dd129dcd 16
+src/modules/AiRuntime/models/AnswerRespond.ts
+  s_1c08b47ac3792f::t_0379822f01956c 1-16
+src/modules/AiRuntime/useCases/notifyAiChange.ts
+  s_1c08b47ac3792f::t_e0d39d18de55a6 23
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_8df6d4e56434b1 2078
+  s_1c08b47ac3792f::t_d65824c6e822df 59
+  s_1c08b47ac3792f::t_568e3735f025e2 2185
+  s_1c08b47ac3792f::t_ad79bd054633de 23
+  s_1c08b47ac3792f::t_040dc433bf22c1 1621
+  s_1c08b47ac3792f::t_bbd4f7d6684ab0 48
+  s_1c08b47ac3792f::t_cd47cd5faf2aa8 1509,1524-1565,1568
+  s_1c08b47ac3792f::t_b108138fef599f 127-128
+  s_1c08b47ac3792f::t_61f873898bdd00 2159-2160
+  s_1c08b47ac3792f::t_83d70f093e522b 1584-1585,1591-1593
+  s_1c08b47ac3792f::t_399a6207a5edb1 1594
+src/modules/AiRuntime/transformers/__tests__/parseAnswerRespond.spec.ts
+  s_1c08b47ac3792f::t_27238ab199461e 1-32
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  s_1c08b47ac3792f::t_0d8c2983fe2be6 1-266
+src/modules/AiRuntime/presentations/views/__tests__/AiChangeToast.spec.tsx
+  s_1c08b47ac3792f::t_672b86b67fb83b 264-320
+  s_1c08b47ac3792f::t_00fcb89c2a8107 18-24
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1c08b47ac3792f::t_42563ca6b75bca 452-464
+  s_1c08b47ac3792f::t_4f036a97000684 16
+  s_1c08b47ac3792f::t_8dc889bcb6eff0 31-34
+  s_1c08b47ac3792f::t_a718c4d257f326 60
+  s_1c08b47ac3792f::t_6a4ed124775fab 30
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_1c08b47ac3792f::t_ce7d9e90e5eb6f 338
+  s_1c08b47ac3792f::t_eaf84eb15bfd0e 176-197
+  s_1c08b47ac3792f::t_802965ac2372bf 14
+src/modules/AiRuntime/transformers/describePlanningOutcome.ts
+  s_1c08b47ac3792f::t_9b638167397da5 25-26
+src/modules/AiRuntime/presentations/views/AiChangeToast.tsx
+  s_1c08b47ac3792f::t_837b764566f62b 90,96-108
+  s_1c08b47ac3792f::t_59ecee6ab50d25 73
+  s_1c08b47ac3792f::t_6a23db4fcf2034 45
+  s_1c08b47ac3792f::t_627aa3ed9bb0e8 8
+  s_1c08b47ac3792f::t_f3d6f2d1394ef2 42
+  s_1c08b47ac3792f::t_60f7b3bd1b596f 43-44
+  s_1c08b47ac3792f::t_b13ffb5b41703b 3,10
+  s_1c08b47ac3792f::t_c41cf169de27fb 26-27
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_5778c8fab1888e 61
+  s_1c08b47ac3792f::t_e568dc57e8c872 794-805
+  s_1c08b47ac3792f::t_784d1361c9286f 526
+src/modules/AiRuntime/useCases/notifyAiAnswer.ts
+  s_1c08b47ac3792f::t_0a14fbedd55303 1-21
+  s_1c08b47ac3792f::t_8c3416c6634fe8 22-25
+src/modules/AiRuntime/useCases/aiPanelActions/openAnswerInChat.ts
+  s_1c08b47ac3792f::t_46b84cfad51800 1-16
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_1c08b47ac3792f::t_814cf9bd5d39fd 160
+  s_1c08b47ac3792f::t_0e0e3fca94865d 171
+src/modules/AiRuntime/__tests__/toolDescriptionAccuracy.spec.ts
+  s_1c08b47ac3792f::t_aa162fa68204ae 71
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_10e3459371559c 315
+  s_1c08b47ac3792f::t_8457919ece581e 291-314,328-340
+  s_1c08b47ac3792f::t_f524fdf14a080f 26
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/openAnswerInChat.spec.ts
+  s_1c08b47ac3792f::t_5ad22609a3f41f 1-57
+  s_1c08b47ac3792f::t_ddfb83e45c520d 58
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_bf1d1c7b3a3448 49
+  s_1c08b47ac3792f::t_4406d2674e8fc3 36
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_1c08b47ac3792f::t_84a4445aa2bbfb 414
+src/modules/AiRuntime/useCases/aiChangeNotificationState.ts
+  s_1c08b47ac3792f::t_8c043b4f5dfcd6 1-2,5-8,15-17
+  s_1c08b47ac3792f::t_09a4920863840e 18
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_1c08b47ac3792f::t_792725eff5220a 12-13
+  s_1c08b47ac3792f::t_e0b20057a74aaa 1148
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_aa4024c693069f 374,527
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f67a4aa275d3c6457f877493e1fa74f70caf8eb5",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
