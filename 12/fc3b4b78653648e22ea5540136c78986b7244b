@@ -1,0 +1,19 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_97ab82e0b4f10c::t_b3ccd5f349ea28 1077,1148,1356,1360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "12fc3b4b78653648e22ea5540136c78986b7244b",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
