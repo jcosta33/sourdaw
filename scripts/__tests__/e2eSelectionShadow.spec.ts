@@ -87,8 +87,10 @@ describe('E2E selection shadow', () => {
         );
     });
 
-    it('requires every declared direct-witness producer to be bound by the fixed map', () => {
-        const producer = 'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx';
+    it.each([
+        'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx',
+        'tests/e2e/e2eUtils.ts',
+    ])('requires declared direct-witness producer %s to be bound by the fixed map', (producer) => {
         const witness = certificate.rows.find((row) => row.disposition === 'DIRECT_TUNER_WITNESS');
         if (!witness) {
             throw new Error('Missing frozen direct witness');
@@ -98,6 +100,30 @@ describe('E2E selection shadow', () => {
         );
         expect(sourceQualificationReasons([witness], bound)).toContain(`source-map-producer-unbound: ${producer}`);
     });
+
+    it('accepts every real direct-witness route with the bound source hashes', () => {
+        const witnesses = certificate.rows.filter((row) => row.disposition === 'DIRECT_TUNER_WITNESS');
+        expect(witnesses).toHaveLength(2);
+        expect(sourceQualificationReasons(witnesses, certificate.sourceHashes)).toEqual([]);
+        expect(
+            measureShadow(fixture()).fallbackReasons.filter((reason) =>
+                reason.startsWith('source-map-producer-route-invalid:')
+            )
+        ).toEqual([]);
+    });
+
+    it.each(['tests/e2e/e2eUtils.ts:72-100,', 'tests/e2e/e2eUtils.ts:72-,131-155', 'tests/e2e/e2eUtils.ts:0-2'])(
+        'rejects malformed direct-witness route %s',
+        (route) => {
+            const witness = certificate.rows.find((row) => row.disposition === 'DIRECT_TUNER_WITNESS');
+            if (!witness) {
+                throw new Error('Missing frozen direct witness');
+            }
+            expect(
+                sourceQualificationReasons([{ ...witness, producerRoute: [route] }], certificate.sourceHashes)
+            ).toContain(`source-map-producer-route-invalid: ${witness.path}`);
+        }
+    );
 
     it('distinguishes a synthetic qualified exclusion from an unproved source trace', () => {
         const row = {
@@ -219,6 +245,7 @@ describe('E2E selection shadow', () => {
         for (const path of [
             'src/modules/WorkspaceShell/presentations/views/AppShell.tsx',
             'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx',
+            'tests/e2e/e2eUtils.ts',
             'scripts/vitestCollectionPatterns.ts',
             'scripts/prValidationScope.ts',
             'playwright.config.ts',

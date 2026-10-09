@@ -248,7 +248,7 @@ export function sourceQualificationReasons(
     const witnessRows = rows.filter((row) => row.disposition === WITNESS);
     for (const row of witnessRows) {
         for (const route of row.producerRoute) {
-            const path = /^([^:]+):\d+(?:-\d+)?$/.exec(route)?.[1];
+            const path = /^([^:,]+):[1-9]\d*(?:-[1-9]\d*)?(?:,[1-9]\d*(?:-[1-9]\d*)?)*$/.exec(route)?.[1];
             if (!path) {
                 reasons.push(`source-map-producer-route-invalid: ${row.path}`);
             } else if (path !== CANDIDATE_PATH && !Object.hasOwn(boundSources, path)) {
