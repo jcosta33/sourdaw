@@ -31,7 +31,9 @@ import { recordingLifecycle } from '../recordingLifecycle';
 import { resolveRollStartBeat } from '../resolveRollStartBeat';
 import { toggleRecording } from '../toggleRecording';
 
-type TestRecordingResult = { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed'; reason: string };
+type TestRecordingResult =
+    | { kind: 'completed'; buffer: { duration: number }; sampleZeroContextFrame: number; sampleRate: number }
+    | { kind: 'failed'; reason: string };
 
 type StartAudioRecording = (trackId: string, callback: (result: TestRecordingResult) => void) => Promise<boolean>;
 
@@ -172,6 +174,8 @@ async function recordLoopWithPreRoll(): Promise<void> {
     finishCapture({
         kind: 'completed',
         buffer: { duration: secondsBetweenBeats([], 0, 24, TEMPO_BPM) - MEDIA_ORIGIN_SECONDS },
+        sampleZeroContextFrame: 0,
+        sampleRate: 48_000,
     });
     await vi.waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(1));
     flushAutomergeStorageWrites();
@@ -328,7 +332,12 @@ async function recordLoopAcrossTempoChange(scenario: TempoChangeScenario): Promi
     if (!finishCapture) {
         throw new Error('Expected the recording callback to be registered');
     }
-    finishCapture({ kind: 'completed', buffer: { duration: scenario.captureSeconds } });
+    finishCapture({
+        kind: 'completed',
+        buffer: { duration: scenario.captureSeconds },
+        sampleZeroContextFrame: 0,
+        sampleRate: 48_000,
+    });
     await vi.waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(1));
     flushAutomergeStorageWrites();
 }

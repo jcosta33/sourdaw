@@ -134,6 +134,7 @@ const evaluateFollowActionsMock = vi.fn<
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    observeRecordingPassEntry: vi.fn(),
     startRecording: (...args: unknown[]) => (arrangementMocks.startRecording as (...a: unknown[]) => unknown)(...args),
     stopRecording: (...args: unknown[]) => (arrangementMocks.stopRecording as (...a: unknown[]) => unknown)(...args),
     addTakeLane: (...args: unknown[]) => (arrangementMocks.addTakeLane as (...a: unknown[]) => unknown)(...args),
@@ -1365,6 +1366,7 @@ describe('startPlayheadScheduler', () => {
         const recClip = { trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 };
         arrangementMocks.startRecording.mockReturnValueOnce([recClip]);
         let capturedOnTerminal: PunchTerminal | null = null;
+        const completed = completedPunchResult();
         audioEngineMocks.startAudioRecording.mockImplementationOnce((_trackId: string, onTerminal: PunchTerminal) => {
             capturedOnTerminal = onTerminal;
             return Promise.resolve(true);
@@ -1379,7 +1381,7 @@ describe('startPlayheadScheduler', () => {
 
         // Drive the recorded-buffer callback the engine invokes.
         expect(capturedOnTerminal).not.toBeNull();
-        capturedOnTerminal!(completedPunchResult());
+        capturedOnTerminal!(completed);
         expect(audioEngineMocks.cacheAudioBuffer).toHaveBeenCalledWith({
             buffer: { duration: 1 },
             bufferId: expect.any(String),
@@ -1391,7 +1393,12 @@ describe('startPlayheadScheduler', () => {
                 startBeat: 0,
                 audioBufferId: expect.any(String),
             },
-            { provisionalStartBeat: 0, mediaOriginSeconds: 0.1, sourceContextOriginSeconds: 0.1 }
+            {
+                provisionalStartBeat: 0,
+                mediaOriginSeconds: 0.1,
+                sourceContextOriginSeconds: 0.1,
+                sourceDurationSeconds: completed.buffer.duration,
+            }
         );
         // A delivered take is kept: no retirement and no failure notice.
         expect(arrangementMocks.discardRecording).not.toHaveBeenCalled();
@@ -1467,6 +1474,7 @@ describe('startPlayheadScheduler', () => {
                 provisionalStartBeat: 10,
                 mediaOriginSeconds: expect.closeTo(6.115, 10),
                 sourceContextOriginSeconds: expect.closeTo(50.165, 10),
+                sourceDurationSeconds: completed.buffer.duration,
             }
         );
         expect(arrangementMocks.commitRecording).toHaveBeenNthCalledWith(
@@ -1476,6 +1484,7 @@ describe('startPlayheadScheduler', () => {
                 provisionalStartBeat: 10,
                 mediaOriginSeconds: expect.closeTo(6.075, 10),
                 sourceContextOriginSeconds: expect.closeTo(50.125, 10),
+                sourceDurationSeconds: completed.buffer.duration,
             }
         );
     });
@@ -1522,6 +1531,7 @@ describe('startPlayheadScheduler', () => {
         };
         transportStoreState.value = playingState({ punchInEnabled: true, punchInBeat: 0, punchOutBeat: 8 });
         arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1', startBeat: 0 }]);
+        const completed = completedPunchResult();
         // The real finalizer writes the punch-out end onto the live clip before
         // it returns; the mock does the same so the commit can observe it.
         arrangementMocks.stopRecording.mockImplementationOnce((atBeat?: number) => {
@@ -1539,7 +1549,7 @@ describe('startPlayheadScheduler', () => {
         // The punch-out flush runs the capture terminal exactly where the real
         // one does — before the finalizer in the pre-fix order.
         audioEngineMocks.stopAudioRecording.mockImplementationOnce(() => {
-            capturedOnTerminal?.(completedPunchResult());
+            capturedOnTerminal?.(completed);
             return Promise.resolve();
         });
 
@@ -1559,8 +1569,16 @@ describe('startPlayheadScheduler', () => {
         // Zero-length payloads here mean the entry captured the pre-finalization
         // anchor and can overwrite the span the finalizer owns.
         expect(arrangementMocks.commitRecording).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 'clip-rec-1', endBeat: 8 }),
-            { provisionalStartBeat: 0, mediaOriginSeconds: 0.1, sourceContextOriginSeconds: 0.1 }
+            expect.objectContaining({
+                id: 'clip-rec-1',
+                endBeat: 8,
+            }),
+            {
+                provisionalStartBeat: 0,
+                mediaOriginSeconds: 0.1,
+                sourceContextOriginSeconds: 0.1,
+                sourceDurationSeconds: completed.buffer.duration,
+            }
         );
     });
 
@@ -1696,7 +1714,13 @@ describe('startPlayheadScheduler', () => {
         expect(arrangementMocks.stopRecording).toHaveBeenCalledTimes(1);
         // The tick overshoots to 8.3; the take ends at the punch-out point.
         expect(schedulerSession.accumulatedPosition).toBeGreaterThan(8);
-        expect(arrangementMocks.stopRecording).toHaveBeenCalledWith(8);
+        expect(arrangementMocks.stopRecording).toHaveBeenCalledWith(
+            8,
+            expect.objectContaining({ contextSeconds: 0.2, beatAtContextSeconds: expect.any(Function) })
+        );
+        const ending = arrangementMocks.stopRecording.mock.calls[0]?.[1];
+        expect(ending?.contextSeconds).toBe(0.2);
+        expect(ending?.beatAtContextSeconds(0.3)).toBeCloseTo(8.3, 10);
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 

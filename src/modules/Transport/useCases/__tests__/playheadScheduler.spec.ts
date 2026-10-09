@@ -81,13 +81,17 @@ vi.mock('../../stores/playheadPositionRef', () => ({
 vi.mock('../../stores/tempoMapStore', () => ({
     tempoMapStore: harness.tempo_map_store,
 }));
-vi.mock('../../models/TempoMap', () => ({
-    getTempoAtBeat: vi.fn(() => 120),
-    // Flat 120 BPM — two beats a second — to match the tempo above. This spec
-    // exercises the tick's control flow, not the integration; the integration
-    // itself is covered where the tempo map is real.
-    secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
-}));
+vi.mock('../../models/TempoMap', async () => {
+    const actual = await vi.importActual<typeof import('../../models/TempoMap')>('../../models/TempoMap');
+    return {
+        ...actual,
+        getTempoAtBeat: vi.fn(() => 120),
+        // Flat 120 BPM — two beats a second — to match the tempo above. This spec
+        // exercises the tick's control flow, not the integration; the integration
+        // itself is covered where the tempo map is real.
+        secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
+    };
+});
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: harness.track_store,
     takeLaneStore: { value: { lanes: [] } },
@@ -96,6 +100,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: { current: [] },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
@@ -331,11 +336,22 @@ describe('stopPlayheadScheduler', () => {
         harness.stop_recording.mockImplementationOnce(() => held_commit);
         schedulerSession.punchRecordingActive = true;
         playheadPositionRef.current = 1.5;
+        harness.transport_store.value = { ...playingTransport, playheadPosition: 0 };
+        harness.clock = 0.2;
+        playheadClockRef.beat = 1.5;
+        playheadClockRef.audioTimeSeconds = 0.2;
+        harness.tempo_map_store.value = { changes: [] };
 
         stopPlayheadScheduler();
 
         // The ref, not the store, is the live boundary on every teardown route.
-        expect(harness.stop_recording).toHaveBeenCalledWith(1.5);
+        expect(harness.stop_recording).toHaveBeenCalledWith(
+            1.5,
+            expect.objectContaining({ contextSeconds: 0.2, beatAtContextSeconds: expect.any(Function) })
+        );
+        const ending = harness.stop_recording.mock.calls[0]?.[1];
+        expect(ending?.contextSeconds).toBe(0.2);
+        expect(ending?.beatAtContextSeconds(0.3)).toBeCloseTo(1.7, 10);
 
         // A following user-facing stop waits on the lifecycle. While the
         // teardown's commit is held that wait must stay pending, or the stop
@@ -710,7 +726,12 @@ describe('playhead scheduler tick', () => {
                     ...finalized_clip,
                     audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
                 },
-                { provisionalStartBeat: 0.05, mediaOriginSeconds: 0.0625, sourceContextOriginSeconds: 0.0625 }
+                {
+                    provisionalStartBeat: 0.05,
+                    mediaOriginSeconds: 0.0625,
+                    sourceContextOriginSeconds: 0.0625,
+                    sourceDurationSeconds: buffer.duration,
+                }
             );
             const capture = harness.commit_recording.mock.calls[0]?.[1];
             if (!capture) {

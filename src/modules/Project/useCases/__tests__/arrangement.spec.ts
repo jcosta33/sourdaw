@@ -148,6 +148,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         '#/modules/Arrangement/useCases'
     );
     return {
+        observeRecordingPassEntry: vi.fn(),
         acceptsExternalPluginAutomationParameter: vi.fn(),
         removeClip: vi.fn(),
         setClipAudioAssetStager: vi.fn(),
