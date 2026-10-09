@@ -173,8 +173,29 @@ function prepareInsertedChanges<TChange extends TimelineChange>(
     };
 }
 
+// The tolerance decides which side of a bound a change falls on, and nothing
+// else: a change within BEAT_EPSILON of a bound is on it. The bounds themselves
+// never move, so the span the maps lose is exactly the span the content loses.
+function isBeforeCut(beat: number, startBeat: number): boolean {
+    return beat < startBeat - BEAT_EPSILON;
+}
+
+function isPastCut(beat: number, endBeat: number): boolean {
+    return beat >= endBeat - BEAT_EPSILON;
+}
+
+// Shifted by exactly the span the content moves by. A beat that lands within
+// BEAT_EPSILON of the start is on the cut and goes exactly there, so every
+// change on the cut shares the start's beat and none sits a float step off it.
+function shiftPastCut(beat: number, startBeat: number, endBeat: number): number {
+    const shiftedBeat = beat - (endBeat - startBeat);
+    return shiftedBeat - startBeat <= BEAT_EPSILON ? startBeat : shiftedBeat;
+}
+
+// Exact: once classified, a remaining change is on the cut only by sitting
+// exactly on the start, and every other one is more than BEAT_EPSILON from it.
 function hasChangeAtBeat(changes: readonly TimelineChange[], beat: number): boolean {
-    return changes.some((change) => Math.abs(change.beat - beat) <= BEAT_EPSILON);
+    return changes.some((change) => change.beat === beat);
 }
 
 // The later entry wins a tie, as the sorted view the map readers use does.
@@ -247,7 +268,7 @@ function carryTempoValueToSpanStart({
         return null;
     }
     const tempoAtEnd = getTempoAtBeat(original, endBeat, governingAtEnd.tempo);
-    const rampStartsInsideSpan = governingAtEnd.curve === 'linear' && governingAtEnd.beat >= startBeat;
+    const rampStartsInsideSpan = governingAtEnd.curve === 'linear' && !isBeforeCut(governingAtEnd.beat, startBeat);
     const rampContinuesPastEnd = original.some((change) => change.beat > endBeat);
     // A ramp that begins inside the span and is still in motion at its end only
     // survives as a ramp when the carried change keeps it, even where the value
@@ -275,8 +296,8 @@ function keepLeadInTempo(
     if (
         startBeat <= 0 ||
         !oldFirst ||
-        oldFirst.beat < startBeat ||
-        oldFirst.beat >= endBeat ||
+        isBeforeCut(oldFirst.beat, startBeat) ||
+        isPastCut(oldFirst.beat, endBeat) ||
         remaining.some((change) => change.beat < startBeat)
     ) {
         return null;
@@ -291,10 +312,13 @@ function keepLeadInTempo(
 // The tempo a ramp that is under way at the span start has reached there, read
 // along the slope it already has: the last change before the span, when it is
 // linear and has a change to ramp toward. Null when nothing ramps into the span.
+// A target within tolerance below the start is on the cut and removed with it,
+// so the ramp is read along its line up to the start rather than held at the
+// target's tempo, which would re-aim the ramp before the cut.
 function readRampReachedAtSpanStart(original: readonly TempoChange[], startBeat: number): number | null {
     let ramping: TempoChange | undefined;
     for (const change of original) {
-        if (change.beat < startBeat && (!ramping || change.beat >= ramping.beat)) {
+        if (isBeforeCut(change.beat, startBeat) && (!ramping || change.beat >= ramping.beat)) {
             ramping = change;
         }
     }
@@ -310,7 +334,8 @@ function readRampReachedAtSpanStart(original: readonly TempoChange[], startBeat:
     if (!target) {
         return null;
     }
-    return getTempoAtBeat([ramping, target], startBeat, ramping.tempo);
+    const progress = (startBeat - ramping.beat) / (target.beat - ramping.beat);
+    return ramping.tempo + (target.tempo - ramping.tempo) * progress;
 }
 
 // Removing time never changes the tempo before the cut. A ramp that crosses the
@@ -325,8 +350,7 @@ function arriveAtSpanStart(
     if (reached === null) {
         return null;
     }
-    const firstAtStart =
-        carried ?? input.remaining.find((change) => Math.abs(change.beat - input.startBeat) <= BEAT_EPSILON);
+    const firstAtStart = carried ?? input.remaining.find((change) => change.beat === input.startBeat);
     if (firstAtStart?.tempo === reached) {
         return null;
     }
@@ -384,7 +408,7 @@ function findShiftedDownbeat(
     if (downbeat >= nextChange - BEAT_EPSILON) {
         return null;
     }
-    return Math.max(downbeat - (endBeat - startBeat), startBeat);
+    return shiftPastCut(downbeat, startBeat, endBeat);
 }
 
 // With no explicit change at or before the span end the project's own meter
@@ -427,40 +451,6 @@ function carryTimeSignatureToSpanStart(input: CarryAcrossDeletionInput<TimeSigna
     return [createTimeSignatureChange(carriedBeat, governingAtEnd.numerator, governingAtEnd.denominator)];
 }
 
-// A bound within BEAT_EPSILON of a change is that change's beat: a float step
-// off it is no distinction, and every comparison below would otherwise read the
-// change as inside or outside the span by accident of rounding. Changes a float
-// step apart are one beat, and the earliest of them is the one the bound joins,
-// so the span covers all of them.
-function snapToChangeBeat(changes: readonly TimelineChange[], beat: number): number {
-    let snapped = beat;
-    let earliest = Infinity;
-    for (const change of changes) {
-        if (Math.abs(change.beat - beat) <= BEAT_EPSILON && change.beat < earliest) {
-            snapped = change.beat;
-            earliest = change.beat;
-        }
-    }
-    return snapped;
-}
-
-// Both maps are cut by one span, so a bound snaps once against every change in
-// either map; snapped per map, a bound near a change in only one of them would
-// cut the other map at a different beat.
-function snapOperationToChanges(
-    changes: readonly TimelineChange[],
-    operation: TimelineMapTimeOperation
-): TimelineMapTimeOperation {
-    if (operation.type === 'insert') {
-        return operation;
-    }
-    return {
-        type: 'delete',
-        startBeat: snapToChangeBeat(changes, operation.startBeat),
-        endBeat: snapToChangeBeat(changes, operation.endBeat),
-    };
-}
-
 function prepareDeletedChanges<TChange extends TimelineChange>(
     changes: readonly TChange[],
     operation: DeleteTimelineMapTimeOperation,
@@ -470,23 +460,20 @@ function prepareDeletedChanges<TChange extends TimelineChange>(
     if (endBeat <= startBeat) {
         return { status: 'valid', hasChanges: false, changes: [...changes] };
     }
-    const durationBeats = endBeat - startBeat;
     let hasChanges = false;
     const remainingChanges: TChange[] = [];
 
     for (const change of changes) {
-        if (change.beat >= startBeat && change.beat < endBeat) {
-            hasChanges = true;
-            continue;
-        }
-        if (change.beat < endBeat) {
+        if (isBeforeCut(change.beat, startBeat)) {
             remainingChanges.push(change);
             continue;
         }
+        if (!isPastCut(change.beat, endBeat)) {
+            hasChanges = true;
+            continue;
+        }
 
-        const subtractedBeat = change.beat - durationBeats;
-        // A non-dyadic span leaves the shift one float step off startBeat; exact-beat readers need it on startBeat.
-        const shiftedBeat = Math.abs(subtractedBeat - startBeat) <= BEAT_EPSILON ? startBeat : subtractedBeat;
+        const shiftedBeat = shiftPastCut(change.beat, startBeat, endBeat);
         if (!isFiniteNonNegative(shiftedBeat)) {
             return { status: 'invalid' };
         }
@@ -540,16 +527,14 @@ function prepareTimelineMapStates(operation: TimelineMapTimeOperation): Prepared
         return { status: 'rejected' };
     }
 
-    const cutOperation = snapOperationToChanges([...tempoState.changes, ...timeSignatureState.changes], operation);
-
-    const preparedTempoChanges = prepareChanges(tempoState.changes, cutOperation, carryTempoAcrossDeletion);
+    const preparedTempoChanges = prepareChanges(tempoState.changes, operation, carryTempoAcrossDeletion);
     if (preparedTempoChanges.status === 'invalid') {
         return { status: 'rejected' };
     }
 
     const preparedTimeSignatureChanges = prepareChanges(
         timeSignatureState.changes,
-        cutOperation,
+        operation,
         carryTimeSignatureAcrossDeletion
     );
     if (preparedTimeSignatureChanges.status === 'invalid') {
