@@ -5,6 +5,7 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { prepareTimelineMapTimeOperation } from '../prepareTimelineMapTimeOperation';
 import { projectEngineTransportMaps } from '../projectEngineTransportMaps';
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
@@ -184,6 +185,41 @@ describe('projectEngineTransportMaps', () => {
         expect(tempo.slice(0, cutIndex).every((segment) => segment.beatsPerMinute <= 140)).toBe(true);
         expect(tempo[cutIndex]!.beatsPerMinute).toBeGreaterThan(160);
         expect(tempo[cutIndex]!.beatsPerMinute).toBeLessThan(200);
+    });
+
+    it('projects a Delete Time over a non-dyadic span onto strictly increasing segment starts stating the change at the cut', () => {
+        tempoMapStore.set({
+            changes: [tempoChange(0, 100, 'linear'), tempoChange(3, 200)],
+        });
+        const transaction = prepareTimelineMapTimeOperation({
+            operation: { type: 'delete', startBeat: 1 / 3, endBeat: 3 },
+        });
+        expect(transaction.status).toBe('ready');
+        expect(transaction.apply()).toBe(true);
+
+        const { tempo } = projectEngineTransportMaps();
+
+        // The engine places a segment on a whole frame and refuses equal frames, so
+        // a float step between two starts is no separation.
+        const startFrames = tempo.map((segment) => Math.round(segment.startSeconds * 48_000));
+        expect(startFrames.every((frame, index) => index === 0 || frame > startFrames[index - 1]!)).toBe(true);
+        expect(tempo.at(-1)?.beatsPerMinute).toBe(200);
+    });
+
+    it('opens one segment where two changes sit a float step apart', () => {
+        tempoMapStore.set({
+            changes: [
+                tempoChange(0, 100),
+                { id: 'arrival', beat: 1 / 3, tempo: 120, curve: 'instant' },
+                { id: 'governing', beat: 1 / 3 + 2e-16, tempo: 200, curve: 'instant' },
+            ],
+        });
+
+        const { tempo } = projectEngineTransportMaps();
+
+        expect(tempo).toHaveLength(2);
+        expect(tempo[0]?.beatsPerMinute).toBeCloseTo(100, 9);
+        expect(tempo[1]?.beatsPerMinute).toBeCloseTo(200, 9);
     });
 
     it('integrates the meter map through the same tempo map as the tempo map itself', () => {

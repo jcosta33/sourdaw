@@ -446,7 +446,10 @@ function prepareDeletedChanges<TChange extends TimelineChange>(
             continue;
         }
 
-        const shiftedBeat = change.beat - durationBeats;
+        const subtractedBeat = change.beat - durationBeats;
+        // A non-dyadic span leaves the shift one float step off startBeat; exact-beat readers need it on startBeat.
+        const shiftedBeat =
+            Math.abs(subtractedBeat - operation.startBeat) <= BEAT_EPSILON ? operation.startBeat : subtractedBeat;
         if (!isFiniteNonNegative(shiftedBeat)) {
             return { status: 'invalid' };
         }

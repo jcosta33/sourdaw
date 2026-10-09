@@ -442,6 +442,47 @@ describe('prepareTimelineMapTimeOperation', () => {
             expect([2, 4, 6].map((beat) => getTempoAtBeat(after, beat, 120))).toEqual([120, 160, 180]);
         });
 
+        it('lands the change that follows a non-dyadic cut exactly on the span start, after the ramp arrival', () => {
+            setStoreStates(
+                tempoState([
+                    { id: 'a', beat: 0, tempo: 100, curve: 'linear' },
+                    { id: 'b', beat: 2, tempo: 200, curve: 'instant' },
+                ]),
+                timeSignatureState([])
+            );
+
+            deleteTime(1 / 3, 2);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ id, beat }) => [id, beat])).toEqual([
+                ['a', 0],
+                [expect.any(String), 1 / 3],
+                ['b', 1 / 3],
+            ]);
+            expect(after[1]?.tempo).toBeCloseTo(116.6667, 3);
+            expect(getTempoAtBeat(after, 0.2, 120)).toBeCloseTo(110, 9);
+            expect(getTempoAtBeat(after, 1, 120)).toBe(200);
+        });
+
+        it('lands a change three beats past a non-dyadic cut start exactly on the start', () => {
+            setStoreStates(
+                tempoState([
+                    { id: 'a', beat: 0, tempo: 100, curve: 'linear' },
+                    { id: 'b', beat: 3, tempo: 200, curve: 'instant' },
+                ]),
+                timeSignatureState([])
+            );
+
+            deleteTime(1 / 3, 3);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ id, beat }) => [id, beat])).toEqual([
+                ['a', 0],
+                [expect.any(String), 1 / 3],
+                ['b', 1 / 3],
+            ]);
+        });
+
         it('keeps the slope before the cut and steps to the held tempo when a change inside the span follows the ramp', () => {
             setStoreStates(
                 tempoState([

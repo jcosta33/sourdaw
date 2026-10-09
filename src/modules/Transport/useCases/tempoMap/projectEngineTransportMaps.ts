@@ -36,7 +36,7 @@
  * every projected segment boundary, whatever the sampling resolution.
  */
 
-import { secondsBetweenBeats } from '../../models/TempoMap';
+import { BEAT_EPSILON, secondsBetweenBeats } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { tempoMapStore, type TempoMapStoreState } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore, type TimeSignatureMapStoreState } from '../../stores/timeSignatureMapStore';
@@ -174,11 +174,16 @@ function segmentBeats(sorted: readonly TempoChange[], rampStep: number): number[
  * One change per beat, the last of those sharing it. Two changes on one beat
  * mean "arrive at the first, govern from the last"; both land on the same
  * second, and the engine refuses a map whose segments do not start on strictly
- * increasing frames. The arrival is not lost: the seconds the segments start
- * on are integrated through the full map.
+ * increasing frames. Beats within BEAT_EPSILON share a beat, because a float
+ * step apart they would otherwise open two segments on one frame. The arrival
+ * is not lost: the seconds the segments start on are integrated through the
+ * full map.
  */
 function governingPerBeat(sorted: readonly TempoChange[]): TempoChange[] {
-    return sorted.filter((change, index) => sorted[index + 1]?.beat !== change.beat);
+    return sorted.filter((change, index) => {
+        const next = sorted[index + 1];
+        return next === undefined || next.beat - change.beat > BEAT_EPSILON;
+    });
 }
 
 /**
