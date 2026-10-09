@@ -1,0 +1,31 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_2bfd55a4393d7c::t_aea925d0b55a71 669-673
+scripts/recoverPublishReviewLock.ts
+  s_2bfd55a4393d7c::t_cbbe68a753f2d9 54
+  s_2bfd55a4393d7c::t_d6bb7dc752dd6b 479
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_2bfd55a4393d7c::t_d37bbf10bbeee9 1046-1096,1098-1116,1118-1121
+  s_2bfd55a4393d7c::t_0d41c7bdc817ea 1097
+  s_2bfd55a4393d7c::t_c7912ba375fa8e 1117
+  s_2bfd55a4393d7c::t_6d20a53aca3c53 1122-1124
+scripts/reviewPublicationRemoteInspection.ts
+  s_2bfd55a4393d7c::t_435285d7ecd686 312-331
+  s_2bfd55a4393d7c::t_f0bfd2cf02a639 291-294
+  s_2bfd55a4393d7c::t_18cec836843525 311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "893d99c5f7630a27334cbd5bd195dd113131880e",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
