@@ -414,7 +414,7 @@ async function persistRippleRemoval(grouped: boolean, automated = true, fraction
                 ],
             }),
             {
-                ...createTrack({ id: 'other-track', kind: 'midi' }),
+                ...createTrack({ id: 'other-track', kind: 'midi', name: 'Other Track' }),
                 clips: [
                     { ...createClipFixture('clip-c', 2, 4), trackId: 'other-track' },
                     { ...createClipFixture('peer-clip', 0, 1), trackId: 'other-track' },

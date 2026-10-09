@@ -301,11 +301,11 @@ describe('handleRestoreClip', () => {
             trackStore.set({
                 tracks: [
                     {
-                        ...createTrack({ id: 't1', kind: 'midi' }),
+                        ...createTrack({ id: 't1', kind: 'midi', name: 'Track 1' }),
                         clips: change === 'missing' || change === 'foreign-track' ? [] : [clip],
                     },
                     {
-                        ...createTrack({ id: 'other-track', kind: 'midi' }),
+                        ...createTrack({ id: 'other-track', kind: 'midi', name: 'Other Track' }),
                         clips: change === 'foreign-track' ? [clip] : [],
                     },
                 ],
