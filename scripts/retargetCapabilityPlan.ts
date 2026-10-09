@@ -6,6 +6,7 @@ import { ORCHESTRATOR_USER_NODE_ID } from './githubAppIdentity.ts';
 import { captureRollback, type RulesetDocument } from './rulesetHardening.ts';
 
 export const CAPABILITY_PROPOSAL_NAME = 'native-publication-nonmain';
+const EXACT_MAIN_PROTECTION_URL = 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection';
 function capabilityProposal(): RulesetDocument {
     return {
         name: CAPABILITY_PROPOSAL_NAME,
@@ -119,6 +120,44 @@ function jsonArray(value: JsonValue | undefined): value is JsonValue[] {
     return Array.isArray(value);
 }
 
+function nullableRecord(value: JsonValue | undefined): value is RulesetDocument | null {
+    return value === null || (typeof value === 'object' && !Array.isArray(value));
+}
+
+function exactMainProtectionComplete(value: JsonValue | null): boolean {
+    if (value === null || Array.isArray(value) || typeof value !== 'object') {
+        return false;
+    }
+    const checks = value.required_status_checks;
+    const admins = value.enforce_admins;
+    const reviews = value.required_pull_request_reviews;
+    const restrictions = value.restrictions;
+    if (
+        value.url !== EXACT_MAIN_PROTECTION_URL ||
+        !nullableRecord(checks) ||
+        !nullableRecord(admins) ||
+        !nullableRecord(reviews) ||
+        !nullableRecord(restrictions)
+    ) {
+        return false;
+    }
+    return (
+        (checks === null ||
+            (jsonArray(checks.contexts) && checks.contexts.every((context) => typeof context === 'string'))) &&
+        (admins === null || typeof admins.enabled === 'boolean') &&
+        (reviews === null || Number.isSafeInteger(reviews.required_approving_review_count)) &&
+        (restrictions === null ||
+            (jsonArray(restrictions.users) && jsonArray(restrictions.teams) && jsonArray(restrictions.apps)))
+    );
+}
+
+function exactMainProtectionLimitations(value: JsonValue | null): string[] {
+    if (exactMainProtectionComplete(value)) {
+        return [];
+    }
+    return ['exact main classic protection is incomplete'];
+}
+
 function stringSelectors(value: JsonValue | undefined): value is string[] {
     return Array.isArray(value) && value.every((selector) => typeof selector === 'string');
 }
@@ -176,7 +215,10 @@ function ruleLimitations(rule: JsonValue): string[] {
 }
 
 function policyLimitations(observation: CapabilityObservation, mainApplicabilityUnresolved: boolean): string[] {
-    const limitations = [...observation.limitations];
+    const limitations = [
+        ...observation.limitations,
+        ...exactMainProtectionLimitations(observation.exactMainProtection),
+    ];
     if (mainApplicabilityUnresolved) {
         limitations.push('main ruleset applicability is unresolved');
     }
@@ -328,27 +370,28 @@ export function buildCapabilityPlan(
     ) {
         throw new Error('source or observation interval is malformed');
     }
-    assertIdentity(observation);
-    if (observation.rulesets.some((ruleset) => ruleset.name === CAPABILITY_PROPOSAL_NAME)) {
+    const captured = structuredClone(observation);
+    assertIdentity(captured);
+    if (captured.rulesets.some((ruleset) => ruleset.name === CAPABILITY_PROPOSAL_NAME)) {
         throw new Error('proposed ruleset name already exists');
     }
-    assertUniqueRulesets(observation.rulesets);
-    const baseline = capabilityObservationRecord(observation);
+    assertUniqueRulesets(captured.rulesets);
+    const baseline = capabilityObservationRecord(captured);
     safe(baseline);
-    const mainSelection = mainRulesets(observation.rulesets);
-    const limitations = policyLimitations(observation, mainSelection.unresolved);
+    const mainSelection = mainRulesets(captured.rulesets);
+    const limitations = policyLimitations(captured, mainSelection.unresolved);
     const mainPolicy: RulesetDocument = {
         rulesets: mainSelection.rulesets,
-        classic: observation.classic,
-        effective: observation.effectiveBranches.main ?? [],
-        exactProtection: observation.exactMainProtection,
+        classic: captured.classic,
+        effective: captured.effectiveBranches.main ?? [],
+        exactProtection: captured.exactMainProtection,
     };
     const rollback = mainSelection.rulesets.map((ruleset) => captureRollback(ruleset));
     const proposal = capabilityProposal();
     const plan: RulesetDocument = {
         format: 'retarget-capability-plan-v1',
         sourceSha,
-        observedAt: interval,
+        observedAt: { startedAt: interval.startedAt, endedAt: interval.endedAt },
         baseline,
         baselineDigest: sha256(baseline),
         originalMainSemanticDigest: sha256(mainPolicy),

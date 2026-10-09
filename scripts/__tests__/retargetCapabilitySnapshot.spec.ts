@@ -37,6 +37,13 @@ const RULE = {
     rules: [{ type: 'pull_request' }],
     bypass_actors: [],
 };
+const EXACT_MAIN_PROTECTION = {
+    url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
+    required_status_checks: null,
+    enforce_admins: { enabled: false },
+    required_pull_request_reviews: null,
+    restrictions: null,
+};
 const CLASSIC = {
     id: 'classic-node',
     databaseId: 42,
@@ -108,7 +115,7 @@ function fakePort() {
         },
         exactMainProtection: () => {
             calls.push('main-classic-exact');
-            return { required_status_checks: null };
+            return EXACT_MAIN_PROTECTION;
         },
         classicPage: (cursor) => {
             calls.push(`classic-${String(cursor)}`);
@@ -374,6 +381,37 @@ describe('bounded capability capture', () => {
         expect(emitted).toMatchObject({
             completeObservedInventory: false,
             limitations: ['an applicable ruleset has incomplete required status checks'],
+            activationEligible: false,
+        });
+        expect(disposed).toHaveBeenCalledOnce();
+    });
+
+    const unreadableProtection: JsonValue[] = [null, false, [], {}, { unrelated: true }];
+    it.each(unreadableProtection)('emits incomplete inventory for stable unreadable exact-main protection', (value) => {
+        const { port } = fakePort();
+        const disposed = vi.fn();
+        const printed: string[] = [];
+        const result = runRetargetCapabilityPlanCli([], {
+            sourceCheck: () => SOURCE,
+            primaryRoot: () => '/primary',
+            authenticate: () => ({
+                minted: { actorNodeId: USER.node_id },
+                session: { configDir: '/unused', env: {}, dispose: disposed },
+            }),
+            readPort: () => ({ ...port, exactMainProtection: () => value }),
+            now: () => '2026-10-08T00:00:00.000Z',
+            print: (output) => printed.push(output),
+        });
+        expect(result).toBe(0);
+        expect(printed).toHaveLength(1);
+        const output = printed[0];
+        if (output === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const emitted: unknown = JSON.parse(output);
+        expect(emitted).toMatchObject({
+            completeObservedInventory: false,
+            limitations: ['exact main classic protection is incomplete'],
             activationEligible: false,
         });
         expect(disposed).toHaveBeenCalledOnce();

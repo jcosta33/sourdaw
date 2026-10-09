@@ -39,7 +39,13 @@ function observed(): CapabilityObservation {
         ],
         classic: [],
         effectiveBranches: { main: [{ type: 'pull_request' }] },
-        exactMainProtection: { required_status_checks: null },
+        exactMainProtection: {
+            url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
+            required_status_checks: null,
+            enforce_admins: { enabled: false },
+            required_pull_request_reviews: null,
+            restrictions: null,
+        },
         limitations: [],
     };
 }
@@ -89,6 +95,81 @@ describe('inactive retarget capability plan', () => {
         expect(buildCapabilityPlan(first, SOURCE, INTERVAL).originalMainSemanticDigest).not.toBe(
             buildCapabilityPlan(changed, SOURCE, INTERVAL).originalMainSemanticDigest
         );
+    });
+
+    it('detaches all captured observation fields before deriving digests and rollback', () => {
+        const input = observed();
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        const emitted = renderCapabilityPlan(plan);
+        const baselineDigest = plan.baselineDigest;
+        const mainDigest = plan.originalMainSemanticDigest;
+        const rollback = plan.originalMainRollback;
+        requiredRuleset(input).rules = [{ type: 'pull_request', parameters: { required_approving_review_count: 2 } }];
+        requiredRuleset(input).bypass_actors = [{ actor_id: 7, actor_type: 'User', bypass_mode: 'always' }];
+        input.classic.push({ pattern: 'release/*' });
+        const effectiveMain = input.effectiveBranches.main;
+        if (effectiveMain === undefined) {
+            throw new Error('test fixture is missing effective main rules');
+        }
+        effectiveMain.push({ type: 'required_status_checks' });
+        const protection = input.exactMainProtection;
+        if (protection === null || Array.isArray(protection) || typeof protection !== 'object') {
+            throw new Error('test fixture is missing exact main protection');
+        }
+        protection.required_status_checks = { contexts: ['changed'] };
+        input.limitations.push('later source mutation');
+        expect(renderCapabilityPlan(plan)).toBe(emitted);
+        expect(plan.baselineDigest).toBe(baselineDigest);
+        expect(plan.originalMainSemanticDigest).toBe(mainDigest);
+        expect(plan.originalMainRollback).toEqual(rollback);
+        expect(plan.activationEligible).toBe(false);
+    });
+
+    const unreadableProtection: JsonValue[] = [
+        null,
+        false,
+        [],
+        {},
+        { unrelated: true },
+        { url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection' },
+        {
+            url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
+            required_status_checks: null,
+        },
+        {
+            url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
+            required_status_checks: {},
+            enforce_admins: {},
+            required_pull_request_reviews: {},
+            restrictions: {},
+        },
+    ];
+    it.each(unreadableProtection)(
+        'marks an unreadable exact-main protection response incomplete',
+        (exactMainProtection) => {
+            const input: CapabilityObservation = { ...observed(), exactMainProtection };
+            const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+            expect(plan.completeObservedInventory).toBe(false);
+            expect(plan.limitations).toContain('exact main classic protection is incomplete');
+            expect(plan.activationEligible).toBe(false);
+        }
+    );
+
+    it('accepts a structured exact-main protection response with populated policy sections', () => {
+        const input: CapabilityObservation = {
+            ...observed(),
+            exactMainProtection: {
+                url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
+                required_status_checks: { contexts: ['Gate'], enforcement_level: 'non_admins' },
+                enforce_admins: { enabled: true },
+                required_pull_request_reviews: { required_approving_review_count: 1 },
+                restrictions: { users: [], teams: [], apps: [] },
+            },
+        };
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(true);
+        expect(plan.limitations).toEqual([]);
+        expect(plan.activationEligible).toBe(false);
     });
 
     it('selects main rollback by include and exclude roles, not selector text', () => {
