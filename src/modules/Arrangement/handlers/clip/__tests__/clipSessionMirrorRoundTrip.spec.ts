@@ -559,8 +559,8 @@ async function persistSplitRemoveGroup() {
     midiStore.set({
         probabilitySeed: 1,
         notesByClipId: { 'clip-a': [{ id: 'group-note', pitch: 60, startBeat: 1, duration: 2, velocity: 100 }] },
-        ccByClipId: { 'clip-a': [{ id: 'group-cc', controller: 64, value: 127, beat: 3 }] },
-        pitchBendByClipId: { 'clip-a': [{ id: 'group-pb', value: 200, beat: 3 }] },
+        ccByClipId: { 'clip-a': [{ id: 'group-cc', controller: 64, value: 127, beat: 3, channel: 1 }] },
+        pitchBendByClipId: { 'clip-a': [{ id: 'group-pb', value: 200, beat: 3, channel: 1 }] },
     });
     flushAutomergeStorageWrites();
     trackStore.set({ ...trackStore.value!, selectedTrackId: null });
