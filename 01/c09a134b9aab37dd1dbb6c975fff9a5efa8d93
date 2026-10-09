@@ -1,0 +1,50 @@
+src/modules/Arrangement/stores/resolveTakeMedia.ts
+  s_1f0dcd815e8946::t_52eee35eec76c6 10
+src/modules/Arrangement/stores/index.ts
+  s_1f0dcd815e8946::t_52eee35eec76c6 16
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipTakeRestore.integration.spec.ts
+  s_1f0dcd815e8946::t_e4a607b36c0db6 28
+  s_1f0dcd815e8946::t_046c3479bbfb7c 156-161,177,181-190,219-220,224-225
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_1f0dcd815e8946::t_52eee35eec76c6 1
+src/modules/AudioEngine/useCases/offlineRender/__tests__/splitCompedAudio.integration.spec.ts
+  s_1f0dcd815e8946::t_046c3479bbfb7c 357-361,364-369
+  s_1f0dcd815e8946::t_e4a607b36c0db6 335-341
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStartTakes.integration.spec.ts
+  s_1f0dcd815e8946::t_c8b2d6a9788ca0 162-163,168,228-236,240-248,260-273
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_1f0dcd815e8946::t_dcf6e9b0b50c2c 40-41
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_1f0dcd815e8946::t_dcf6e9b0b50c2c 12-13
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_1f0dcd815e8946::t_dcf6e9b0b50c2c 36-37
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_1f0dcd815e8946::t_dcf6e9b0b50c2c 32-33
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingLoopRunUp.spec.ts
+  s_1f0dcd815e8946::t_dcf6e9b0b50c2c 11-12
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_1f0dcd815e8946::t_dcf6e9b0b50c2c 68-69
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_1f0dcd815e8946::t_52eee35eec76c6 1
+src/modules/AudioEngine/useCases/offlineRender/__tests__/spanningAudioTimeOperationOffline.spec.ts
+  s_1f0dcd815e8946::t_046c3479bbfb7c 36,176-181,246-251,328-333
+src/modules/Arrangement/useCases/comping/prepareTakeSourceDepthMove.ts
+  s_1f0dcd815e8946::t_4f9cd5b8d4ef5b 21
+  s_1f0dcd815e8946::t_c8b2d6a9788ca0 92-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01c09a134b9aab37dd1dbb6c975fff9a5efa8d93",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
