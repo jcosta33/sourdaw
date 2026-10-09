@@ -34,6 +34,7 @@ import {
     type PublishedReviewComment,
     type PublishReviewCoordinatorDependencies,
     type PublishReviewPort,
+    type ReviewDocument,
 } from '../publishReview.ts';
 import {
     type PullRequestMutationLockOwner,
@@ -5107,7 +5108,7 @@ describe('fresh reviewer dossier publication', () => {
         }
     }
 
-    const reviewDocument = {
+    const reviewDocument: ReviewDocument = {
         format: 'compact-v1',
         event: 'APPROVE',
         body: 'Attacked the dossier gate; it held.',
