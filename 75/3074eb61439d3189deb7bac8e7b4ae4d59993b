@@ -1,0 +1,20 @@
+scripts/__tests__/e2eLaunchOverlayBound.spec.ts
+  s_d257b09300b1ad::t_27ef03239880d5 2,4,7-8,10-16,20,22-25,29-98,100-136,139-150,153-155,159-162,164-182,184,186,189-242,253-257,260-261,299,316-451
+  s_d257b09300b1ad::t_73519a96824981 452-465
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "753074eb61439d3189deb7bac8e7b4ae4d59993b",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
