@@ -283,7 +283,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts",
-                    "digest": "182cf73725708eea89832f14df1f883ab27e6bca9a1236425f66645c0a5b2100"
+                    "digest": "1667894043c52740d041feea4541b4e6f91870daf56133ef2b7d1f91fe2fd80a"
                 }
             ]
         },
