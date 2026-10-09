@@ -131,6 +131,56 @@ const NEW_REVIEW_TOOLING_PATHS = [
     'scripts/savedProjectStatePaths.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
 ];
+const REVIEW_HELPER_STEMS = [
+    'resolveThread',
+    'reviewDossierChain',
+    'reviewDossierPublication',
+    'reviewDossierReassessed',
+    'reviewDossierSemanticAssessment',
+    'reviewDossierViews',
+    'reviewPublicationBinding',
+    'reviewPublicationLegacyIncidents',
+    'reviewPublicationReceiptAdoption',
+    'reviewPublicationRecoveryReceipt',
+    'reviewPublicationRemoteInspection',
+    'rulesetHardening',
+    'retargetCapabilityPlan',
+    'retargetCapabilitySnapshot',
+];
+const REVIEW_SPEC_ONLY_STEMS = [
+    'deliveryRiskPlanLoss',
+    'orchestratorReviewState',
+    'recoverDeliveryLockGeneral',
+    'recoverPublishReviewLockReceiptReplay',
+    'threeRoleTransitions',
+];
+const PR_5158_SCOPE_PATHS = [
+    '.agents/skills/review-stances/security-and-platform.md',
+    '.agents/skills/review-stances/test-validity.md',
+    'scripts/__tests__/recoverPublishReviewLockReceiptReplay.spec.ts',
+    'scripts/recoverPublishReviewLock.ts',
+    'scripts/reviewPublicationBinding.ts',
+    'scripts/reviewPublicationReceiptAdoption.ts',
+    'scripts/trustedGithubWriteBootstrap.ts',
+];
+const RETARGET_SCOPE_PATHS = [
+    'scripts/retargetCapabilityPlan.ts',
+    'scripts/__tests__/retargetCapabilityPlan.spec.ts',
+    'scripts/retargetCapabilitySnapshot.ts',
+    'scripts/__tests__/retargetCapabilitySnapshot.spec.ts',
+];
+const SHARED_OR_BROWSER_OWNED_SCRIPTS = [
+    'canonicalRecord',
+    'evidenceSafety',
+    'githubAppIdentity',
+    'prContract',
+    'wasm-artifacts',
+    'wasmToolchainPins',
+    'workspaceManifestFingerprint',
+    'e2eServerIdentity',
+    'loopbackOpenAiProvider',
+    'offlineAudioWorkletTrace',
+];
 const folders: string[] = [];
 const callerTrace2Event = process.env.GIT_TRACE2_EVENT;
 
@@ -223,6 +273,97 @@ describe('required affected verification', () => {
             codeql: true,
             matrix: { include: [] },
         });
+    });
+
+    it.each(REVIEW_HELPER_STEMS)('admits exact review helper source and matching spec %s', (stem) => {
+        for (const path of [`scripts/${stem}.ts`, `scripts/__tests__/${stem}.spec.ts`]) {
+            expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
+                profile: 'tooling',
+                browser: false,
+                browserAi: false,
+                codeql: true,
+                matrix: { include: [] },
+            });
+        }
+    });
+
+    it.each(REVIEW_SPEC_ONLY_STEMS)('admits exact review-only spec %s', (stem) => {
+        expect(selectValidationPlan([`scripts/__tests__/${stem}.spec.ts`], INVENTORY)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+        expect(selectValidationPlan([`scripts/${stem}.ts`], INVENTORY).profile).toBe('broad');
+    });
+
+    it.each(['recoverDeliveryLock3437', 'recoverPublishReviewLock5008'])(
+        'admits terminal-decimal review incident spec %s',
+        (stem) => {
+            expect(selectValidationPlan([`scripts/__tests__/${stem}.spec.ts`], INVENTORY)).toMatchObject({
+                profile: 'tooling',
+                browser: false,
+                browserAi: false,
+                codeql: true,
+                matrix: { include: [] },
+            });
+            expect(selectValidationPlan([`scripts/${stem}.ts`], INVENTORY).profile).toBe('broad');
+        }
+    );
+
+    it('keeps the exact seven-path review receipt change out of browser jobs', () => {
+        const plan = selectValidationPlan(PR_5158_SCOPE_PATHS, INVENTORY);
+        expect(plan).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+        expect(plan.reasons).toEqual(
+            PR_5158_SCOPE_PATHS.map((path, index) => ({
+                path,
+                reason:
+                    index < 2
+                        ? 'documentation; no browser execution'
+                        : 'known review tooling; security/static checks without browser execution',
+            }))
+        );
+    });
+
+    it('admits exact retarget helper paths while their package change retains full browser coverage', () => {
+        expect(selectValidationPlan(RETARGET_SCOPE_PATHS, INVENTORY)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+        const plan = selectValidationPlan([...RETARGET_SCOPE_PATHS, 'package.json'], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)('keeps shared or browser-owned script %s broad', (stem) => {
+        for (const path of [`scripts/${stem}.ts`, `scripts/__tests__/${stem}.spec.ts`]) {
+            const plan = selectValidationPlan([path], INVENTORY);
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        }
+    });
+
+    it.each([
+        'scripts/reviewPublicationFuture.ts',
+        'scripts/__tests__/agentDeliveryScriptsLookalike.spec.ts',
+        'scripts/__tests__/recoverPublishReviewLock5008Extra.spec.ts',
+        'scripts/recoverPublishReviewLock5008.ts',
+        'scripts/nested/reviewPublicationBinding.ts',
+        'scripts/__tests__/nested/reviewPublicationBinding.spec.ts',
+    ])('keeps unclassified lookalike or nested script %s broad', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
     });
 
     it('keeps the exact 17 paths of PR 4890 in the tooling scope', () => {

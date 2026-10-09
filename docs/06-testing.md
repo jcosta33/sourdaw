@@ -760,6 +760,10 @@ application unit shards, browser jobs and native checks require a product or unc
 Unknown scripts, build configuration and mixed product changes keep broad coverage. A forced full
 validation run and the nightly retain their full scope. An AI judgment cannot waive deterministic coverage.
 Missing selected files and malformed plans fail.
+Selected browser files split into at most twelve shards by recorded duration: longest file first, each
+into the shard with the least recorded time, so one slow shard does not hold `Gate`. Durations live in
+`scripts/e2eSpecDurations.json`, refreshed from a green full run by the command its module documents;
+a file without a recording weighs as the median file.
 CodeQL runs for JavaScript/TypeScript and relevant workflow or security configuration changes;
 the PR secret scan and dependency review remain in required validation even when CodeQL is skipped.
 

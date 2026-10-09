@@ -10,6 +10,7 @@ import {
     createSdkProviderPort,
 } from '../semanticReview/provider.ts';
 import { SEMANTIC_BUDGET_PROFILES } from '../semanticReview/rules.ts';
+import { sensitiveContentReason } from '../semanticReview/sensitive.ts';
 import {
     localTypeSafeFailure,
     prepareTypeSafeRequest,
@@ -445,6 +446,438 @@ describe('installed SDK prepared handoff', () => {
                 fetch,
             })
         ).rejects.toBeInstanceOf(mode === 'timeout' ? APITimeoutError : APIUserAbortError);
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('opaque bearer complete request admission', () => {
+    const opaque = ['A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0'].join('');
+    const header = ['Authorization:', 'Bearer', opaque].join(' ');
+    const headerValues = [
+        { shape: 'one-character', value: String.fromCharCode(81) },
+        { shape: 'fifteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7i'].join('') },
+        { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
+        { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
+    ];
+    function explicitHeaderForms(value: string, padding = '', separator = ' ') {
+        const scheme = `${padding}${['Bearer', value].join(separator)}${padding}`;
+        return [
+            { shape: 'template-bracket', value: `headers[\`Authorization\`] = \`${scheme}\`;` },
+            { shape: 'bracket-assignment', value: `headers['Authorization'] = '${scheme}';` },
+            { shape: 'computed-key', value: `const headers = { ['Authorization']: '${scheme}' };` },
+            { shape: 'quoted-object', value: JSON.stringify({ Authorization: scheme }) },
+            { shape: 'assignment', value: `headers.Authorization = '${scheme}';` },
+            { shape: 'setter', value: `headers.set('Authorization', '${scheme}');` },
+            { shape: 'append', value: `headers.append("Authorization", "${scheme}");` },
+            { shape: 'tuple', value: JSON.stringify(['Authorization', scheme]) },
+            { shape: 'escaped-tuple', value: JSON.stringify(JSON.stringify(['Authorization', scheme])) },
+            { shape: 'escaped-setter', value: JSON.stringify(`headers.set("Authorization", "${scheme}");`) },
+            { shape: 'template-assignment', value: `headers.Authorization = \`${scheme}\`;` },
+        ];
+    }
+    function additionalHeaderForms(value: string) {
+        const scheme = ['Bearer', value].join(' ');
+        const comments = [
+            { kind: 'block', gap: '/* retained */' },
+            { kind: 'line', gap: '// retained\n' },
+        ];
+        const setters = comments.flatMap(({ kind, gap }) =>
+            [
+                { quote: "'", before: '', after: gap },
+                { quote: '"', before: gap, after: '' },
+                { quote: '`', before: gap, after: gap },
+            ].map(({ quote, before, after }, index) => ({
+                shape: `commented-setter-${kind}-${String(index)}`,
+                value: `headers.set(${quote}Authorization${quote} ${before}, ${after} ${quote}${scheme}${quote});`,
+            }))
+        );
+        const arrays = [
+            [scheme],
+            ['Bearer <token>', scheme],
+            [scheme, 'Bearer <token>'],
+            ['Bearer <token>', 'ordinary [note]', scheme],
+            ['Bearer <token>', 'ordinary ]note', scheme],
+            ['Bearer <token>', 'ordinary [note', scheme],
+            ['Bearer <token>', 'ordinary "[note]" and \\path', scheme],
+            ['Bearer <token>', 'ordinary [note]\\', scheme],
+        ].flatMap((values, index) => [
+            { shape: `array-record-${String(index)}`, value: JSON.stringify({ Authorization: values }) },
+            { shape: `array-tuple-${String(index)}`, value: JSON.stringify([['Authorization', values]]) },
+        ]);
+        return [...setters, ...arrays].flatMap((form) => [
+            { ...form, shape: `${form.shape}-raw` },
+            { shape: `${form.shape}-serialized`, value: JSON.stringify(form.value) },
+        ]);
+    }
+    function whitespaceHeaderForms(value: string) {
+        return [
+            { whitespace: 'space', padding: ' ', separator: ' ' },
+            { whitespace: 'tab', padding: String.fromCharCode(9), separator: ' ' },
+            { whitespace: 'mixed', padding: ` ${String.fromCharCode(9)}`, separator: ' ' },
+            { whitespace: 'scheme-tab', padding: '', separator: String.fromCharCode(9) },
+        ].flatMap(({ whitespace, padding, separator }) =>
+            explicitHeaderForms(value, padding, separator).flatMap((form) => [
+                { ...form, shape: `${form.shape}-${whitespace}-raw` },
+                { shape: `${form.shape}-${whitespace}-escaped`, value: JSON.stringify(form.value) },
+            ])
+        );
+    }
+    const literals = [
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                additionalHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+            ),
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                whitespaceHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+            ),
+        ...headerValues.flatMap(({ shape, value }) =>
+            explicitHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+        ),
+        ...headerValues.flatMap(({ shape, value }) => [
+            { shape: `explicit-header-${shape}`, value: ['Authorization:', 'Bearer', value].join(' ') },
+            { shape: `quoted-header-${shape}`, value: JSON.stringify({ Authorization: ['Bearer', value].join(' ') }) },
+        ]),
+        {
+            shape: 'escaped-header',
+            value: JSON.stringify(JSON.stringify({ Authorization: ['Bearer', headerValues[0]!.value].join(' ') })),
+        },
+        { shape: 'alphanumeric', value: header },
+        { shape: 'dotted', value: ['Bearer', ['abcde', 'fghij', 'klmnop'].join('.')].join(' ') },
+        { shape: 'alphabetic', value: ['Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join('')].join(' ') },
+        { shape: 'header-tail', value: `${header} expired` },
+        {
+            shape: 'dotted-tail',
+            value: ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),
+        },
+        {
+            shape: 'alphabetic-tail',
+            value: ['finding: Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''), 'was logged'].join(' '),
+        },
+        { shape: 'hyphenated', value: ['Bearer', 'credential-shaped'].join(' ') },
+        { shape: 'quoted-hyphenated', value: `'${['Bearer', 'credential-shaped'].join(' ')}'` },
+        { shape: 'header-hyphenated', value: ['Authorization:', 'Bearer', 'credential-shaped'].join(' ') },
+        { shape: 'uppercase-underscore', value: ['Bearer', ['ABCD1234', 'EFGH5678'].join('_')].join(' ') },
+        {
+            shape: 'hyphenated-prose',
+            value: ['Reviewer saw Bearer', ['qzxvpmrt', 'ncbwksjg'].join('-'), 'expire'].join(' '),
+        },
+    ];
+    const positions = ['state', 'instructions', 'criteria', 'key', 'questionName', 'criterionKey', 'model'] as const;
+    function payload(position: (typeof positions)[number], value: string) {
+        let state: unknown = {};
+        if (position === 'state') {
+            state = { nested: [value] };
+        }
+        if (position === 'key') {
+            state = { [value]: 'ordinary' };
+        }
+        return {
+            state,
+            model: position === 'model' ? value : MODEL,
+            questions: {
+                [position === 'questionName' ? value : 'q']: {
+                    type: 'choice' as const,
+                    instructions: position === 'instructions' ? value : 'Is it ordinary?',
+                    criteria: {
+                        [position === 'criterionKey' ? value : 'true']:
+                            position === 'criteria' ? { nested: value } : 'ordinary',
+                    },
+                },
+            },
+        };
+    }
+
+    const headerStructures = headerValues.flatMap(({ shape, value }) =>
+        ['', ' ', String.fromCharCode(9), ` ${String.fromCharCode(9)}`].flatMap((padding, index) => [
+            {
+                shape: `object-${shape}-padding-${String(index)}`,
+                value,
+                state: { Authorization: `${padding}${['Bearer', value].join(' ')}` },
+            },
+            {
+                shape: `tuple-${shape}-padding-${String(index)}`,
+                value,
+                state: [['Authorization', `${padding}${['Bearer', value].join(' ')}`]],
+            },
+        ])
+    );
+    const arrayStructures = headerValues.slice(0, 2).flatMap(({ shape, value }) => {
+        const scheme = ['Bearer', value].join(' ');
+        return [
+            [scheme],
+            ['Bearer <token>', scheme],
+            [scheme, 'Bearer <token>'],
+            ['Bearer <token>', 'ordinary [note]', scheme],
+            ['Bearer <token>', 'ordinary ]note', scheme],
+            ['Bearer <token>', 'ordinary [note', scheme],
+            ['Bearer <token>', 'ordinary "[note]" and \\path', scheme],
+            ['Bearer <token>', 'ordinary [note]\\', scheme],
+        ].flatMap((values, index) => [
+            { shape: `array-record-${shape}-${String(index)}`, value, state: { Authorization: values } },
+            { shape: `array-tuple-${shape}-${String(index)}`, value, state: [['Authorization', values]] },
+        ]);
+    });
+    it.each([...headerStructures, ...arrayStructures])(
+        'opaque bearer paired header $shape requires the serialized screen',
+        ({ value, state }) => {
+            expect(sensitiveContentReason('Authorization')).toBeUndefined();
+            if (value.length < 16) {
+                // Neither leaf carries header context; the final envelope must pair the key and value.
+                expect(sensitiveContentReason(['Bearer', value].join(' '))).toBeUndefined();
+            }
+            expect(sensitiveContentReason(JSON.stringify(state))).toBeDefined();
+            expect(sensitiveContentReason(JSON.stringify({ source: JSON.stringify(state) }))).toBeDefined();
+            expect(() => prepare(body(state))).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
+        }
+    );
+
+    it.each([
+        ...positions.flatMap((position) => literals.map((literal) => ({ position, ...literal, objectHeader: false }))),
+        ...headerStructures.map(({ shape, value, state }) => ({
+            position: 'state' as const,
+            shape: `paired-header-${shape}`,
+            value,
+            objectHeader: state,
+        })),
+    ])(
+        'opaque bearer $shape $position rejects before a would-hit cache and SDK delegate',
+        async ({ position, value, objectHeader }) => {
+            const request = payload(position, value);
+            if (objectHeader) {
+                request.state = objectHeader;
+            }
+            const validCachedResponse = {
+                model: request.model,
+                answers: Object.fromEntries(
+                    Object.keys(request.questions).map((key) => [
+                        key,
+                        {
+                            type: 'choice',
+                            choice: Object.keys(request.questions[key]!.criteria)[0],
+                            probabilities: Object.fromEntries(
+                                Object.keys(request.questions[key]!.criteria).map((label) => [label, 1])
+                            ),
+                            confidence: 0.9,
+                        },
+                    ])
+                ),
+            };
+            const read = vi.fn(() => validCachedResponse);
+            const write = vi.fn();
+            const fetch = vi.fn<Fetch>(async () => response());
+            const sdk = createSdkProviderPort({ apiKey: KEY, fetch });
+            const systemOne = vi.fn(sdk.systemOne);
+            const profile = SEMANTIC_BUDGET_PROFILES.ci;
+            const budget = createBudgetController(profile);
+            const reserve = vi.spyOn(budget, 'reserve');
+            const before = budget.totals();
+            let failure: unknown;
+            try {
+                await assessUnit({
+                    port: { systemOne },
+                    cache: { read, write },
+                    budget,
+                    profile,
+                    deadline: Date.now() + 60_000,
+                    state: request.state,
+                    questions: request.questions,
+                    requestedModel: request.model,
+                    signal: signal(),
+                });
+            } catch (error) {
+                failure = error;
+            }
+            expect(read).not.toHaveBeenCalled();
+            expect(write).not.toHaveBeenCalled();
+            expect(reserve).not.toHaveBeenCalled();
+            expect(systemOne).not.toHaveBeenCalled();
+            expect(fetch).not.toHaveBeenCalled();
+            expect(budget.totals()).toEqual(before);
+            expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
+            expect(() => prepare(request)).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
+            expect(sensitiveContentReason(JSON.stringify(request))).toBeDefined();
+        }
+    );
+
+    const newRequests = [
+        ...headerValues.slice(0, 2).flatMap(({ shape, value }) =>
+            additionalHeaderForms(value).map((form) => ({
+                shape: `${form.shape}-${shape}`,
+                state: { source: form.value },
+                value,
+            }))
+        ),
+        ...arrayStructures,
+    ];
+    it.each(newRequests.flatMap((request) => ['hit', 'miss'].map((cacheMode) => ({ ...request, cacheMode }))))(
+        'opaque bearer bounded $shape refuses cache-$cacheMode and offline SDK effects',
+        async ({ state, cacheMode, value }) => {
+            const request = body(state);
+            const expectedBody = JSON.stringify(request);
+            const cached = { model: MODEL, answers: { check: { type: 'noul', noul: 0.9 } } };
+            const read = vi.fn(() => (cacheMode === 'hit' ? cached : undefined));
+            const write = vi.fn();
+            const wireBodies: unknown[] = [];
+            const fetch = vi.fn<Fetch>(async (_url, init) => {
+                wireBodies.push(init?.body);
+                expect(init?.body).toBe(expectedBody);
+                return response();
+            });
+            const sdk = createSdkProviderPort({ apiKey: KEY, fetch });
+            const systemOne = vi.fn(sdk.systemOne);
+            const profile = SEMANTIC_BUDGET_PROFILES.ci;
+            const budget = createBudgetController(profile);
+            const reserve = vi.spyOn(budget, 'reserve');
+            const before = budget.totals();
+            let failure: unknown;
+            try {
+                await assessUnit({
+                    port: { systemOne },
+                    cache: { read, write },
+                    budget,
+                    profile,
+                    deadline: Date.now() + 60_000,
+                    state,
+                    questions: QUESTIONS,
+                    requestedModel: MODEL,
+                    signal: signal(),
+                });
+            } catch (error) {
+                failure = error;
+            }
+            expect({
+                reads: read.mock.calls.length,
+                writes: write.mock.calls.length,
+                reservations: reserve.mock.calls.length,
+                providers: systemOne.mock.calls.length,
+                fetches: fetch.mock.calls.length,
+                wireBodies,
+            }).toEqual({
+                reads: 0,
+                writes: 0,
+                reservations: 0,
+                providers: 0,
+                fetches: 0,
+                wireBodies: [],
+            });
+            expect(budget.totals()).toEqual(before);
+            expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
+            expect(String(failure)).not.toContain(['Bearer', value].join(' '));
+            expect(() => prepare(request)).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
+            expect(sensitiveContentReason(expectedBody)).toBeDefined();
+        }
+    );
+
+    it.each(
+        ['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap((value) => {
+            const scheme = ['Bearer', value].join(' ');
+            return [
+                { shape: `record-${value}`, state: { Authorization: ['Bearer <token>', 'ordinary [note]', scheme] } },
+                { shape: `tuple-${value}`, state: [['Authorization', ['Bearer <token>', 'ordinary ]note', scheme]]] },
+            ];
+        })
+    )('opaque bearer benign-only $shape retains frozen complete SDK bytes', async ({ state }) => {
+        const request = body(state);
+        const prepared = prepare(request);
+        expect(prepared.serializedBody).toBe(JSON.stringify(request));
+        const fetch = vi.fn<Fetch>(async (_url, init) => {
+            expect(init?.body).toBe(prepared.serializedBody);
+            return response();
+        });
+        await sendTypeSafeRequest({ prepared, apiKey: KEY, signal: signal(), timeoutMs: 1000, fetch });
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ...positions.flatMap((position) => [
+            // A reference needs actual interpolation; a bare alphabetic scheme value is a literal.
+            { position, control: 'reference', value: 'Bearer ${runtimeCredentialReference}' },
+            { position, control: 'short-prose', value: 'A reviewer mentions Bearer schemes in this note.' },
+            { position, control: 'header-placeholder', value: 'Authorization: Bearer <token>' },
+            { position, control: 'header-reference', value: 'Authorization: Bearer ${runtimeCredentialReference}' },
+            ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER']
+                .flatMap(additionalHeaderForms)
+                .map((form) => ({ position, control: `${form.shape}-benign`, value: form.value })),
+            ...explicitHeaderForms('<token>').map((form) => ({
+                position,
+                control: `${form.shape}-placeholder`,
+                value: form.value,
+            })),
+            ...explicitHeaderForms('${runtimeCredentialReference}').map((form) => ({
+                position,
+                control: `${form.shape}-reference`,
+                value: form.value,
+            })),
+            {
+                position,
+                control: 'prose',
+                value: 'A reviewer notes Bearer credential-shaped examples remain synthetic and contain no credential.',
+            },
+        ]),
+        ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap((value) =>
+            whitespaceHeaderForms(value).map((form) => ({
+                position: 'state' as const,
+                control: `${form.shape}-benign`,
+                value: form.value,
+            }))
+        ),
+    ])('opaque bearer $control $position reaches a valid matching cache', async ({ position, value }) => {
+        const request = payload(position, value);
+        const read = vi.fn(() => ({
+            model: request.model,
+            answers: Object.fromEntries(
+                Object.keys(request.questions).map((key) => [
+                    key,
+                    {
+                        type: 'choice',
+                        choice: Object.keys(request.questions[key]!.criteria)[0],
+                        probabilities: Object.fromEntries(
+                            Object.keys(request.questions[key]!.criteria).map((label) => [label, 1])
+                        ),
+                        confidence: 0.9,
+                    },
+                ])
+            ),
+        }));
+        const fetch = vi.fn<Fetch>(async () => response());
+        const sdk = createSdkProviderPort({ apiKey: KEY, fetch });
+        const systemOne = vi.fn(sdk.systemOne);
+        const write = vi.fn();
+        const budget = createBudgetController(SEMANTIC_BUDGET_PROFILES.ci);
+        const reserve = vi.spyOn(budget, 'reserve');
+        const before = budget.totals();
+        const result = await assessUnit({
+            port: { systemOne },
+            cache: { read, write },
+            budget,
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+            deadline: Date.now() + 60_000,
+            state: request.state,
+            questions: request.questions,
+            requestedModel: request.model,
+            signal: signal(),
+        });
+        expect(result.fromCache).toBe(true);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(read).toHaveBeenCalledWith(result.cacheKey);
+        expect(result.response.model).toBe(request.model);
+        expect(write).not.toHaveBeenCalled();
+        expect(reserve).not.toHaveBeenCalled();
+        expect(systemOne).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
+        expect(budget.totals()).toEqual({ ...before, cacheHits: 1 });
+    });
+
+    it('opaque bearer serialized envelope control reaches one installed SDK delegate unchanged', async () => {
+        const prepared = prepare(body({ header: 'Bearer <token>' }));
+        const fetch = vi.fn<Fetch>(async (_url, init) => {
+            expect(init?.body).toBe(prepared.serializedBody);
+            return response();
+        });
+        await sendTypeSafeRequest({ prepared, apiKey: KEY, signal: signal(), timeoutMs: 1000, fetch });
         expect(fetch).toHaveBeenCalledTimes(1);
     });
 });

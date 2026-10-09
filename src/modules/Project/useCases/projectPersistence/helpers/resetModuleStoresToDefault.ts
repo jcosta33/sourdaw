@@ -13,6 +13,7 @@ import { hydrateGrooveTemplates, resetMidiStoreForProject } from '#/modules/MIDI
 import { proofStore } from '#/modules/Proof/stores';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
 import { toasterStore, resetToasterDeviceLifecycleState } from '#/modules/Toaster/stores';
+import { disposeEveryToasterDevice } from '#/modules/Toaster/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { tunerStore } from '#/modules/Tuner/stores';
@@ -89,6 +90,11 @@ export function resetModuleStoresToDefault({
     bacteriaStore.set({});
     proofStore.set({});
     tunerStore.set({});
+    // The graph reset that precedes a switch announces no device removal, so
+    // the outgoing project's Toasters end here: their sequencer, note-repeat
+    // and 16-Levels sessions would otherwise reach a same-id device of the
+    // incoming project.
+    disposeEveryToasterDevice();
     toasterStore.set({});
     // The Toaster registration bookkeeping (deferred kit writes and retired
     // ids) is module-level state beside the store. Surviving a project

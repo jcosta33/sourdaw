@@ -118,6 +118,91 @@ function assertStepIsBlocking(step: UnknownRecord): void {
     }
 }
 
+// Playwright installs the Chrome channel as root: apt-get update, a curl
+// download of the .deb, then apt-get install. A timeout owned by the runner
+// user cannot signal that sudo'd tree, so the whole install runs under a
+// root-side timeout and a stalled mirror fails an attempt instead of holding
+// the job to its limit. The install is forced because sudo's env_reset drops
+// CI, and without CI or --force Playwright skips a channel the runner image
+// already ships, leaving the image's older Chrome in place.
+const CHROME_INSTALL_ATTEMPTS = 3;
+const CHROME_INSTALL_CAP_MINUTES = 5;
+const CHROME_INSTALL_KILL_AFTER_SECONDS = 15;
+// The loop sleeps `attempt * 5` seconds after a failed attempt except the last.
+const CHROME_INSTALL_BACKOFF_SECONDS = 5 + 10;
+const CHROME_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${CHROME_INSTALL_KILL_AFTER_SECONDS}s ${CHROME_INSTALL_CAP_MINUTES}m node_modules/.bin/playwright install --force chrome`;
+const CHROME_INSTALL_RUN = [
+    'for attempt in 1 2 3; do',
+    `  if ${CHROME_INSTALL_COMMAND}; then`,
+    '    break',
+    '  fi',
+    '  if [ "$attempt" -eq 3 ]; then',
+    '    exit 1',
+    '  fi',
+    '  sleep $((attempt * 5))',
+    'done',
+    '',
+].join('\n');
+// Every attempt times out at its cap plus its kill-after, so the step and the
+// job must hold this; the job also holds the longest observed time of every
+// other step.
+const CHROME_INSTALL_WORST_CASE_SECONDS =
+    CHROME_INSTALL_ATTEMPTS * (CHROME_INSTALL_CAP_MINUTES * 60 + CHROME_INSTALL_KILL_AFTER_SECONDS) +
+    CHROME_INSTALL_BACKOFF_SECONDS;
+const CHROME_INSTALL_STEP_MINUTES = 20;
+// Longest observed time of every step except the Chrome install, from 52
+// successful runs between 2026-09-29 and 2026-10-09.
+const NON_INSTALL_SECONDS = 423;
+// The derived minimum is a floor only; the declared limit is also a ceiling, so
+// raising the job toward GitHub's 360-minute default is a deliberate edit here
+// and not a silent workflow change.
+const MEASUREMENT_JOB_MINUTES = 30;
+
+function assertBoundedChromeInstall(install: UnknownRecord): void {
+    const run = install.run;
+    if (
+        typeof run !== 'string' ||
+        !run.includes('for attempt in 1 2 3; do') ||
+        !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1\n  fi') ||
+        !run.includes('sleep $((attempt * 5))')
+    ) {
+        throw new Error(
+            'Hosted quantum measurement workflow must retain three Google Chrome install attempts that fail after the third'
+        );
+    }
+    if (!run.includes('playwright install --force chrome')) {
+        throw new Error(
+            'Hosted quantum measurement workflow must retain the forced Google Chrome install, since sudo drops CI and the runner image already ships Chrome'
+        );
+    }
+    if (!run.includes(CHROME_INSTALL_COMMAND)) {
+        throw new Error(
+            'Hosted quantum measurement workflow must retain the Google Chrome install under a root-side sudo timeout'
+        );
+    }
+    requireEqual(run, CHROME_INSTALL_RUN, 'the complete bounded Google Chrome install loop');
+    const stepMinutes = install['timeout-minutes'];
+    if (stepMinutes !== CHROME_INSTALL_STEP_MINUTES || stepMinutes * 60 <= CHROME_INSTALL_WORST_CASE_SECONDS) {
+        throw new Error(
+            `Hosted quantum measurement workflow must retain a ${CHROME_INSTALL_STEP_MINUTES} minute Google Chrome install step limit above its three timed-out attempts`
+        );
+    }
+}
+
+function assertMeasurementJobLimit(limit: unknown): void {
+    const requiredMinutes = Math.ceil((CHROME_INSTALL_WORST_CASE_SECONDS + NON_INSTALL_SECONDS) / 60);
+    if (typeof limit !== 'number' || limit < requiredMinutes) {
+        throw new Error(
+            'Hosted quantum measurement workflow must have a job limit that holds three timed-out Google Chrome install attempts and its other steps'
+        );
+    }
+    if (limit !== MEASUREMENT_JOB_MINUTES) {
+        throw new Error(
+            `Hosted quantum measurement workflow must keep its job limit at exactly ${MEASUREMENT_JOB_MINUTES} minutes`
+        );
+    }
+}
+
 function assertCheckout(named: (name: string) => UnknownRecord): void {
     const checkout = named('Checkout source head');
     requireEqual(
@@ -149,11 +234,7 @@ function assertSetup(named: (name: string) => UnknownRecord): void {
         'pnpm install --frozen-lockfile --ignore-scripts',
         'the frozen dependency installation without lifecycle scripts'
     );
-    requireEqual(
-        named('Install Google Chrome').run,
-        'pnpm exec playwright install chrome',
-        'the Google Chrome channel installation'
-    );
+    assertBoundedChromeInstall(named('Install Google Chrome'));
 }
 
 function assertSourceAdmission(named: (name: string) => UnknownRecord): void {
@@ -243,7 +324,7 @@ export function assertHostedQuantumMeasurementWorkflow(value: unknown): void {
     const job = record(jobs.measure, 'measurement job');
     requireEqual(job.name, 'Measure browser audio quanta', 'a distinct non-Gate check name');
     requireEqual(job['runs-on'], 'ubuntu-latest', 'the standard Ubuntu runner');
-    requireEqual(job['timeout-minutes'], 60, 'the 60 minute timeout');
+    assertMeasurementJobLimit(job['timeout-minutes']);
     for (const key of ['permissions', 'if', 'continue-on-error', 'environment', 'uses', 'secrets']) {
         requireEqual(job[key], undefined, `no job-level ${key}`);
     }

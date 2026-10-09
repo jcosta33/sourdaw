@@ -5177,6 +5177,7 @@ describe('fresh reviewer dossier publication', () => {
             reviewState: (_publishedNumber, _expectedHead) => ({
                 latestReviewerStateOnHead: 'APPROVED',
                 latestReviewerReviewDatabaseId: 99,
+                latestReviewerCommitOid: head,
                 unresolvedThreads: 0,
             }),
             remoteReview: (_publishedNumber, reviewId) => {
@@ -5334,6 +5335,30 @@ describe('fresh reviewer dossier publication', () => {
             expect(parseReviewDossier(JSON.parse(fixture.writes[0]!.contents)).events.length).toBe(
                 persisted.events.length - 2
             );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it.each([
+        { label: 'missing reviewer', reviewerState: null, reviewerId: null, reviewerHead: null },
+        { label: 'approval without an id', reviewerState: 'APPROVED', reviewerId: null, reviewerHead: head },
+    ])('refuses a fresh APPROVE with $label identity before terminal binding', (input) => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        fixture.port.reviewState = () => ({
+            latestReviewerStateOnHead: input.reviewerState,
+            latestReviewerReviewDatabaseId: input.reviewerId,
+            latestReviewerCommitOid: input.reviewerHead,
+            unresolvedThreads: 0,
+        });
+        try {
+            expect(() => publishReview(number, fixture.port)).toThrow(/incomplete reviewer approval identity/);
+
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+            expect(fixture.writes).toHaveLength(1);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(publishedReviewId(persisted)).toBeUndefined();
+            expect(deliveryAuthorization(persisted)).toBeUndefined();
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

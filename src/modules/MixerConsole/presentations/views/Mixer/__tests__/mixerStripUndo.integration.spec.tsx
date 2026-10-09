@@ -245,6 +245,8 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    reconcileAutoInputMonitoring: vi.fn(),
+    suspendAutoInputMonitoring: vi.fn(() => vi.fn()),
     getAgentBuiltinDeviceRuntimeManifest: vi.fn(() => []),
     forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
@@ -275,6 +277,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getTrackPeakLevel: vi.fn(() => 0),
     getMasterPeakLevel: vi.fn(() => 0),
     removeTrackStrip: vi.fn(),
+    deactivateTrackStrip: vi.fn(),
     ensureTrackStrip: vi.fn(),
     addDeviceToStrip: vi.fn(),
     updateDeviceBypass: vi.fn(),
