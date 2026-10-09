@@ -1,3 +1,4 @@
+import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureAgentProjectInspectionState } from '#/app/captureCommandBatchPreflightState';
@@ -29,6 +30,7 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    replaceCrdtDocInLineage,
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -51,6 +53,7 @@ import { gainEnvelopeStore, setEnvelope } from '../../../stores/gainEnvelopeStor
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStateStore } from '../../../stores/warpStates';
+import { takeLaneSelection } from '../../../useCases/comping/takeLaneSelection';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
 import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
@@ -207,6 +210,37 @@ function ownerProjections() {
         midi: midiStore.value,
         takes: takeLaneStore.value,
     });
+}
+
+function syncPeerTakes(edit: (project: { takeLanes: NonNullable<typeof takeLaneStore.value> }) => void): void {
+    const current = getCrdtDoc<{ takeLanes: NonNullable<typeof takeLaneStore.value> }>('root');
+    if (!current) {
+        throw new Error('Expected a shared project genesis');
+    }
+    let local = Automerge.clone(current);
+    let peer = Automerge.change(Automerge.clone(current), edit);
+    let localSync = Automerge.initSyncState();
+    let peerSync = Automerge.initSyncState();
+    expect(Automerge.getHeads(peer)).not.toEqual(Automerge.getHeads(local));
+    for (let round = 0; round < 16; round += 1) {
+        let message: Uint8Array | null;
+        [peerSync, message] = Automerge.generateSyncMessage(peer, peerSync);
+        if (message) {
+            [local, localSync] = Automerge.receiveSyncMessage(local, localSync, message);
+        }
+        let reply: Uint8Array | null;
+        [localSync, reply] = Automerge.generateSyncMessage(local, localSync);
+        if (reply) {
+            [peer, peerSync] = Automerge.receiveSyncMessage(peer, peerSync, reply);
+        }
+        if (!message && !reply) {
+            expect(Automerge.getHeads(local)).toEqual(Automerge.getHeads(peer));
+            replaceCrdtDocInLineage({ id: 'root', doc: local });
+            projectCrdtToStores();
+            return;
+        }
+    }
+    throw new Error('Peer take edit did not converge');
 }
 
 async function persistRemovalWithDistinctOwners() {
@@ -1080,6 +1114,91 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 (clip) => clip.id === 'clip-a'
             )
         ).toMatchObject({ startBeat: 0.1, endBeat: 4.1 });
+    });
+
+    it('split hydrated redo keeps a later synced surviving take as the unique selection', async () => {
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        hydrateProductionContracts();
+        const retired = {
+            id: 'peer-right-take',
+            clipId: 'clip-right',
+            name: 'Peer right pass',
+            startBeat: 2,
+            endBeat: 4,
+            sourceOffsetBeats: 8,
+            selected: true,
+        };
+        syncPeerTakes((project) => {
+            project.takeLanes.lanes.push({
+                id: 'peer-lane',
+                trackId: TRACK_ID,
+                takes: [retired],
+                activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: retired.id }],
+            });
+        });
+        expect(takeLaneStore.value?.lanes[0]?.takes).toEqual([retired]);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-right')).toBeUndefined();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future as unknown[]).length).toBe(
+                1
+            )
+        );
+        hydrateProductionContracts();
+        const later = {
+            id: 'peer-left-take',
+            clipId: 'clip-a',
+            name: 'Later peer choice',
+            startBeat: 0,
+            endBeat: 2,
+            selected: true,
+        };
+        syncPeerTakes((project) => {
+            project.takeLanes.lanes.push({
+                id: 'peer-lane',
+                trackId: TRACK_ID,
+                takes: [later],
+                activeCompRegions: [{ startBeat: 0.5, endBeat: 1.5, takeId: later.id }],
+            });
+        });
+        const history = structuredClone(undoHistoryStore.value);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+        expect(history?.future).toHaveLength(1);
+        await redo();
+        expect(clipOnTrack(TRACK_ID, 'clip-right')).toMatchObject({ startBeat: 2, endBeat: 4 });
+        const expected = [
+            {
+                id: 'peer-lane',
+                trackId: TRACK_ID,
+                takes: [{ ...retired, selected: false }, later],
+                activeCompRegions: [
+                    { startBeat: 0.5, endBeat: 1.5, takeId: later.id },
+                    { startBeat: 2, endBeat: 4, takeId: retired.id },
+                ],
+            },
+        ];
+        expect(takeLaneStore.value?.lanes).toEqual(expected);
+        expect(getCrdtDoc<{ takeLanes: { lanes: unknown[] } }>('root')?.takeLanes.lanes).toEqual(expected);
+        expect(takeLaneStore.value?.lanes[0]?.takes.filter((take) => take.selected)).toEqual([later]);
+        expect(
+            takeLaneSelection.resolve(takeLaneStore.value!, {
+                type: 'selectTake',
+                payload: { trackId: TRACK_ID, takeId: later.id },
+            })?.selectedTakeId
+        ).toBe(later.id);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
     });
 
     it.each([false, true])('split restores later right-fragment take after redo with hydration=%s', async (reload) => {

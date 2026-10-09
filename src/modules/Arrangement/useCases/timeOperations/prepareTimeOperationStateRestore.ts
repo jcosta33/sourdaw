@@ -281,10 +281,11 @@ function prepareLocalState(plan: CombinedStateRestorePlan): PreparedLocalState |
     if (!timeOperationStateCodec.trackStateMatchesSnapshot(capturedTrackState, expectedTrackSnapshot)) {
         return null;
     }
-    const replacementTrackState = timeOperationStateCodec.decodeTrackState(replacementTrackSnapshot);
-    if (!replacementTrackState) {
+    const decodedReplacement = timeOperationStateCodec.decodeTrackState(replacementTrackSnapshot);
+    if (!decodedReplacement) {
         return null;
     }
+    const replacementTrackState = { ...capturedTrackState, tracks: decodedReplacement.tracks };
 
     let capturedMarkerState: MarkerStoreState | null = null;
     let replacementMarkerState: MarkerStoreState | null = null;
@@ -313,7 +314,7 @@ function prepareLocalState(plan: CombinedStateRestorePlan): PreparedLocalState |
         capturedMarkerSnapshot: plan.local.expected.markerState,
         replacementMarkerState,
         replacementMarkerSnapshot: plan.local.replacement.markerState,
-        trackHasChanges: !timeOperationStateCodec.valuesEqual(expectedTrackSnapshot, replacementTrackSnapshot),
+        trackHasChanges: !timeOperationStateCodec.valuesEqual(capturedTrackState.tracks, replacementTrackState.tracks),
         markerHasChanges,
     };
 }
