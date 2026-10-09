@@ -40,6 +40,11 @@ scripts/reconstructReviewRounds.ts
 scripts/__tests__/reviewRepair.spec.ts
   s_97ab82e0b4f10c::t_df88982295c09f 10,12,14,234-274
   s_97ab82e0b4f10c::t_99613a6dd73dba 275-278
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_6178ae2d7cf5e9 754
+  s_2bfd55a4393d7c::t_249f25caf42092 3323,3333,3335
+  s_2bfd55a4393d7c::t_c89275d76bbe95 3336
+  s_2bfd55a4393d7c::t_7f1243e9f12ae7 3337
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -51,6 +56,14 @@ scripts/__tests__/reviewRepair.spec.ts
       "agent_id": {
         "tool": "claude",
         "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
         "model": "claude-opus-5-5"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
