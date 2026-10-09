@@ -49,7 +49,13 @@ impl FmOperator {
 #[derive(Clone)]
 pub struct FmEngine {
     pub ops: [FmOperator; 4],
-    /// Modulation matrix: amount that op[row] modulates op[col].
+    /// Unit routing of the current algorithm: ±1.0 where op[row] modulates
+    /// op[col]. Written only by `set_algorithm`.
+    routing: [[f32; 4]; 4],
+    /// Modulation amount that scales `routing` into `matrix`.
+    mod_amount: f32,
+    /// Live modulation matrix, always `routing * mod_amount`: amount that
+    /// op[row] modulates op[col].
     pub matrix: [[f32; 4]; 4],
     /// Which operators are carriers (output to mix). Bitfield.
     pub carriers: u8,
@@ -66,6 +72,8 @@ impl FmEngine {
                 FmOperator::new(),
                 FmOperator::new(),
             ],
+            routing: [[0.0; 4]; 4],
+            mod_amount: 1.0,
             matrix: [[0.0; 4]; 4],
             carriers: 0b0001, // Op 1 is carrier by default
             algorithm: 0,
@@ -83,7 +91,7 @@ impl FmEngine {
     /// Set one of 8 preset algorithms (simplified from DX7's 32).
     pub fn set_algorithm(&mut self, alg: u8) {
         self.algorithm = alg;
-        self.matrix = [[0.0; 4]; 4];
+        self.routing = [[0.0; 4]; 4];
         // Reset feedback on all ops before setting algorithm
         for op in &mut self.ops {
             op.feedback = 0.0;
@@ -91,22 +99,22 @@ impl FmEngine {
         match alg {
             0 => {
                 // Stack: 4->3->2->1(C)
-                self.matrix[3][2] = 1.0;
-                self.matrix[2][1] = 1.0;
-                self.matrix[1][0] = 1.0;
+                self.routing[3][2] = 1.0;
+                self.routing[2][1] = 1.0;
+                self.routing[1][0] = 1.0;
                 self.carriers = 0b0001;
             }
             1 => {
                 // Parallel pairs: 2->1(C), 4->3(C)
-                self.matrix[1][0] = 1.0;
-                self.matrix[3][2] = 1.0;
+                self.routing[1][0] = 1.0;
+                self.routing[3][2] = 1.0;
                 self.carriers = 0b0101;
             }
             2 => {
                 // Y: 3->1(C), 4->2->1(C)
-                self.matrix[2][0] = 1.0;
-                self.matrix[3][1] = 1.0;
-                self.matrix[1][0] = 1.0;
+                self.routing[2][0] = 1.0;
+                self.routing[3][1] = 1.0;
+                self.routing[1][0] = 1.0;
                 self.carriers = 0b0001;
             }
             3 => {
@@ -115,31 +123,48 @@ impl FmEngine {
             }
             4 => {
                 // Fork: 4->(2,3), 2->1(C), 3->1(C)
-                self.matrix[3][1] = 1.0;
-                self.matrix[3][2] = 1.0;
-                self.matrix[1][0] = 1.0;
-                self.matrix[2][0] = 1.0;
+                self.routing[3][1] = 1.0;
+                self.routing[3][2] = 1.0;
+                self.routing[1][0] = 1.0;
+                self.routing[2][0] = 1.0;
                 self.carriers = 0b0001;
             }
             5 => {
                 // 3->2->1(C), 4 feedback carrier
-                self.matrix[2][1] = 1.0;
-                self.matrix[1][0] = 1.0;
+                self.routing[2][1] = 1.0;
+                self.routing[1][0] = 1.0;
                 self.ops[3].feedback = 0.5;
                 self.carriers = 0b1001;
             }
             6 => {
                 // Stack with feedback: 4(fb)->3->2->1(C)
-                self.matrix[3][2] = 1.0;
-                self.matrix[2][1] = 1.0;
-                self.matrix[1][0] = 1.0;
+                self.routing[3][2] = 1.0;
+                self.routing[2][1] = 1.0;
+                self.routing[1][0] = 1.0;
                 self.ops[3].feedback = 0.7;
                 self.carriers = 0b0001;
             }
             _ => {
                 // 2->1(C), 3(C), 4(C) -- one modulated + two additive
-                self.matrix[1][0] = 1.0;
+                self.routing[1][0] = 1.0;
                 self.carriers = 0b1101;
+            }
+        }
+        self.derive_matrix();
+    }
+
+    /// Scale the algorithm's routing by `amount` into the live matrix.
+    /// The routing is never rescaled, so an amount of 0 silences modulation
+    /// without forgetting which operators are routed.
+    pub fn set_mod_amount(&mut self, amount: f32) {
+        self.mod_amount = amount;
+        self.derive_matrix();
+    }
+
+    fn derive_matrix(&mut self) {
+        for from in 0..4 {
+            for to in 0..4 {
+                self.matrix[from][to] = self.routing[from][to] * self.mod_amount;
             }
         }
     }
@@ -159,12 +184,6 @@ impl FmEngine {
     pub fn set_feedback(&mut self, op: usize, amount: f32) {
         if op < 4 {
             self.ops[op].feedback = amount.clamp(0.0, 1.0);
-        }
-    }
-
-    pub fn set_mod_amount(&mut self, from: usize, to: usize, amount: f32) {
-        if from < 4 && to < 4 {
-            self.matrix[from][to] = amount;
         }
     }
 
@@ -193,5 +212,76 @@ impl FmEngine {
             }
         }
         mix
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FmEngine;
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const BASE_FREQ: f32 = 220.0;
+
+    fn rendered(engine: &mut FmEngine, samples: usize) -> Vec<f32> {
+        (0..samples)
+            .map(|_| engine.tick(BASE_FREQ, SAMPLE_RATE))
+            .collect()
+    }
+
+    fn engine_at(algorithm: u8, amount: f32) -> FmEngine {
+        let mut engine = FmEngine::new();
+        engine.set_algorithm(algorithm);
+        engine.set_mod_amount(amount);
+        engine
+    }
+
+    #[test]
+    fn raising_the_amount_from_zero_restores_the_algorithm_routing() {
+        let mut engine = engine_at(0, 0.0);
+        assert_eq!(engine.matrix, [[0.0; 4]; 4]);
+        rendered(&mut engine, 64);
+
+        engine.set_mod_amount(0.8);
+
+        let mut reference = engine_at(0, 0.8);
+        rendered(&mut reference, 64);
+        assert_eq!(engine.matrix[1][0], 0.8);
+        assert_eq!(engine.matrix[2][1], 0.8);
+        assert_eq!(engine.matrix[3][2], 0.8);
+        // Operator phase advances whether or not it is modulated, so two
+        // engines that differ only in how they reached 0.8 render the same.
+        assert_eq!(rendered(&mut engine, 256), rendered(&mut reference, 256));
+    }
+
+    #[test]
+    fn an_amount_below_the_tick_threshold_does_not_forget_the_routing() {
+        let mut engine = engine_at(0, 0.0005);
+        assert_eq!(engine.matrix[1][0], 0.0005);
+
+        engine.set_mod_amount(0.5);
+
+        assert_eq!(engine.matrix[1][0], 0.5);
+    }
+
+    #[test]
+    fn a_new_algorithm_is_scaled_by_the_amount_already_in_force() {
+        let mut engine = engine_at(3, 0.25);
+
+        engine.set_algorithm(0);
+
+        assert_eq!(engine.matrix[1][0], 0.25);
+        assert_eq!(engine.matrix[3][2], 0.25);
+    }
+
+    #[test]
+    fn an_algorithm_with_no_routing_ignores_the_amount() {
+        let mut silent = engine_at(3, 0.0);
+        let mut loud = engine_at(3, 0.8);
+
+        assert_eq!(silent.matrix, [[0.0; 4]; 4]);
+        assert_eq!(loud.matrix, [[0.0; 4]; 4]);
+        let carriers = rendered(&mut silent, 256);
+        assert!(carriers.iter().any(|sample| sample.abs() > 0.1));
+        assert_eq!(carriers, rendered(&mut loud, 256));
     }
 }

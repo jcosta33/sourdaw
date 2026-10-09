@@ -693,12 +693,24 @@ jobs:
       # this job and Gate on an otherwise-green head (#4085), so the install
       # retries three times with a 15s then 30s backoff; the last failure
       # still fails the step. Package list unchanged: libasound2-dev only.
+      #
+      # An apt run has hung until the job limit (#5072), and a hung attempt
+      # never exits, so each one carries a deadline. `apt-get update` is the
+      # slow part: the browser-dependency install above saw its apt phase take
+      # 523s and 1252s on a slow Ubuntu mirror, so the cap matches that
+      # install's 8 minutes and a merely slow mirror is not killed. The root
+      # `timeout` is required because one owned by the runner user cannot
+      # signal apt under sudo; the deadline sends a TERM, and the KILL after
+      # 15 seconds only reaches a `bash -c` wrapper that survives it.
+      # Three timed-out attempts take 3 x 495s plus 45s of backoff, 1530s, so
+      # the step carries a 30 minute limit inside the 60 minute job limit.
       - name: Install ALSA development headers
         shell: bash
+        timeout-minutes: 30
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if sudo apt-get update && sudo apt-get install -y libasound2-dev; then
+            if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
               exit 0
             fi
             printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2

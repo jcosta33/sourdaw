@@ -282,6 +282,24 @@ describe('downloadMidiFile — Standard MIDI File binary encoding', () => {
         expect(files[0]).toContain('8360b0407f00803c0000903c64');
     });
 
+    it('writes no note for a stored span of float-noise length', () => {
+        const residue: MidiNote = { id: 'residue', pitch: 60, startBeat: 1, duration: 1e-12, velocity: 100 };
+
+        const hex = exportedHex([residue], []);
+
+        expect(hex).not.toContain('903c');
+        expect(hex).not.toContain('803c');
+    });
+
+    it('writes a stored span just above the float-noise tolerance with the one tick a sub-tick note keeps', () => {
+        const short: MidiNote = { id: 'short', pitch: 60, startBeat: 1, duration: 2e-9, velocity: 100 };
+
+        const hex = exportedHex([short], []);
+
+        // On at tick 480 (var-len 83 60), off one tick later.
+        expect(hex).toContain('8360903c6401803c00');
+    });
+
     it('writes one on and off pair for sub-tick notes of one key that share a start tick', () => {
         // Both notes are shorter than a tick and round to start tick 480, so written
         // as they are they would strike pitch 60 twice and release it twice.

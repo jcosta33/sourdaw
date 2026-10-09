@@ -1,9 +1,10 @@
+// @vitest-environment node
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     DEFAULT_STANCES_THRESHOLD,
@@ -15,6 +16,7 @@ import {
     readStancesCheckAnswers,
     readStancesCheckRecord,
     renderStancesCheckOutcome,
+    requestStancesVerdicts,
 } from '../checkStancesRecord.ts';
 import { TYPESAFE_MODEL } from '../semanticReview/provider.ts';
 
@@ -22,7 +24,78 @@ import type { StanceAdmission, StancesCheckRecord } from '../checkStancesRecord.
 
 const STANCES_PATH = 'bundles/2999-head/stances.json';
 
-function runOfflineCheck(raw: unknown) {
+afterEach(() => vi.restoreAllMocks());
+
+describe('stance prepared transport', () => {
+    it('sends the projected body through the SDK unchanged and uses one attempt', async () => {
+        const timeout = vi.spyOn(globalThis, 'setTimeout');
+        const body = buildStancesCheckBody(checkRecord());
+        const expected = JSON.stringify(body);
+        const fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+            expect(init?.body).toBe(expected);
+            expect(init?.signal).toBeInstanceOf(AbortSignal);
+            return new Response(JSON.stringify({ model: TYPESAFE_STANCES_MODEL, answers: {} }));
+        });
+        await expect(
+            requestStancesVerdicts(body, 'unused-offline-key', { signal: new AbortController().signal, fetch })
+        ).resolves.toMatchObject({ model: TYPESAFE_STANCES_MODEL });
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(timeout).toHaveBeenCalledWith(expect.any(Function), 20_000);
+    });
+
+    it('admits the exact stance state/question cap and refuses one extra byte', async () => {
+        const body = buildStancesCheckBody(checkRecord());
+        body.state.stances[0]!.admittedBy = '';
+        const emptyBytes = Buffer.byteLength(JSON.stringify({ state: body.state, questions: body.questions }), 'utf8');
+        body.state.stances[0]!.admittedBy = 'x'.repeat(96 * 1024 - emptyBytes);
+        const fetch = vi.fn(async () => new Response(JSON.stringify({ model: TYPESAFE_STANCES_MODEL, answers: {} })));
+        const options = { signal: new AbortController().signal, fetch };
+        await expect(requestStancesVerdicts(body, 'unused-offline-key', options)).resolves.toMatchObject({
+            model: TYPESAFE_STANCES_MODEL,
+        });
+        body.state.stances[0]!.admittedBy += 'x';
+        await expect(requestStancesVerdicts(body, 'unused-offline-key', options)).rejects.toMatchObject({
+            code: 'request_too_large',
+        });
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a stance request above its new state/question cap before fetch', async () => {
+        const body = buildStancesCheckBody(checkRecord());
+        body.state.stances[0]!.admittedBy = 'x'.repeat(96 * 1024);
+        const fetch = vi.fn(async () => new Response('{}'));
+        await expect(
+            requestStancesVerdicts(body, 'unused-offline-key', { signal: new AbortController().signal, fetch })
+        ).rejects.toMatchObject({ code: 'request_too_large' });
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('pre-abort reaches no SDK fetch', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        const fetch = vi.fn(async () => new Response('{}'));
+        await expect(
+            requestStancesVerdicts(buildStancesCheckBody(checkRecord()), 'unused-offline-key', {
+                signal: controller.signal,
+                fetch,
+            })
+        ).rejects.toMatchObject({ code: 'cancelled' });
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not retry a transient HTTP response', async () => {
+        const fetch = vi.fn(async () => new Response('{}', { status: 503 }));
+        await expect(
+            requestStancesVerdicts(buildStancesCheckBody(checkRecord()), 'unused-offline-key', {
+                signal: new AbortController().signal,
+                fetch,
+            })
+        ).rejects.toMatchObject({ status: 503 });
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
+function runOfflineCheck(raw: unknown, cancel = false) {
     const bundle = mkdtempSync(join(tmpdir(), 'sourdaw-stances-egress-'));
     const hookPath = join(bundle, 'offline-fetch.mjs');
     writeFileSync(join(bundle, 'stances.json'), JSON.stringify(raw));
@@ -30,6 +103,10 @@ function runOfflineCheck(raw: unknown) {
         hookPath,
         `globalThis.fetch = async (_url, options) => {
             console.log('OFFLINE_REQUEST ' + options.body);
+            if (${String(cancel)}) {
+                queueMicrotask(() => process.kill(process.pid, 'SIGTERM'));
+                return new Response(new ReadableStream({ start() {} }));
+            }
             return new Response(JSON.stringify({
                 model: ${JSON.stringify(TYPESAFE_STANCES_MODEL)},
                 answers: { stance_0: { noul: 0.9 }, stance_1: { noul: 0.9 } }
@@ -198,6 +275,13 @@ describe('buildStancesCheckBody', () => {
 });
 
 describe('offline CLI request boundary', () => {
+    it('turns process cancellation during body delivery into a failed check', () => {
+        const result = runOfflineCheck(genuineRecord(), true);
+        expect(result.signal).toBeNull();
+        expect(result.status).toBe(1);
+        expect(result.stdout.match(/OFFLINE_REQUEST/gu)).toHaveLength(1);
+        expect(result.stderr).toMatch(/abort|cancel/iu);
+    });
     it('sends only admissions while retaining the indexed questions and verdicts', () => {
         const privateValue = ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('');
         const result = runOfflineCheck({

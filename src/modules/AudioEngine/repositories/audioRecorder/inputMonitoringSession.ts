@@ -22,17 +22,21 @@ type InputMonitoringSession = {
     trackKeys: Map<string, MonitorCaptureKey>;
     /** Every in-flight acquisition keyed like its eventual capture, deduped per key. */
     pendingRequests: Map<MonitorCaptureKey, Promise<MediaStream>>;
+    /** Counts explicit global teardowns, so an open that outlived one can tell it was cancelled, not refused. */
+    teardownEpoch: number;
 };
 
 export const inputMonitoringSession = createHmrPersistentState<InputMonitoringSession>(
     // v3: captures are keyed by selected input and a track can hold several keys
     // across its lifetime; a dev session holding the v2 singleton object would
     // come back without the keyed maps and hand one track another's source.
-    'audioEngine.inputMonitoring.v3',
+    // v4: adds the teardown epoch, which a v3 object would hold as undefined.
+    'audioEngine.inputMonitoring.v4',
     () => ({
         captures: new Map(),
         trackKeys: new Map(),
         pendingRequests: new Map(),
+        teardownEpoch: 0,
     })
 );
 

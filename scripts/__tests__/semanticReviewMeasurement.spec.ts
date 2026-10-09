@@ -672,6 +672,87 @@ describe('evidence completeness', () => {
     });
 });
 
+describe('transport usage aggregation', () => {
+    it.each(['actualInputTokens', 'estimatedInputTokens'] as const)(
+        'checks stored scan and verification %s sums at the safe boundary',
+        (field) => {
+            for (const additional of [0, 1]) {
+                const root = checkout();
+                const scan = parseReportJson(JSON.stringify(everyOmissionState(HEAD_ONE, 4801)), 'scan fixture');
+                const verify = parseReportJson(JSON.stringify(verificationFixture(HEAD_TWO, 4801)), 'verify fixture');
+                writeSidecar(root, 'scan-max', {
+                    ...scan,
+                    usage: { ...scan.usage, [field]: Number.MAX_SAFE_INTEGER },
+                });
+                writeSidecar(
+                    root,
+                    'verify-additional',
+                    { ...verify, usage: { ...verify.usage, [field]: additional } },
+                    'verification.json'
+                );
+                if (additional === 0) {
+                    const measured = measure(root);
+                    expect(measured.acrossRuns.runCount).toBe(2);
+                    expect(measured.acrossRuns.usage[field]).toBe(Number.MAX_SAFE_INTEGER);
+                } else {
+                    expect(() => measure(root)).toThrow(new RegExp(`${field}.*safe integer`, 'u'));
+                }
+            }
+        }
+    );
+
+    it.each(['actualInputTokens', 'estimatedInputTokens'] as const)(
+        'checks evaluation-reader %s sums at the safe boundary',
+        (field) => {
+            for (const additional of [0, 1]) {
+                const root = checkout();
+                const path = join(root, 'evaluation.json');
+                const first = evaluationOutcome({
+                    usage: {
+                        networkAttempts: 1,
+                        logicalRequests: 1,
+                        retries: 0,
+                        submittedBytes: 20,
+                        actualInputTokens: 5,
+                        estimatedInputTokens: 5,
+                        [field]: Number.MAX_SAFE_INTEGER,
+                        attemptsWithUnknownUsage: 0,
+                        estimatedCostUsd: 1,
+                        pricingConfigurationVersion: 'test',
+                    },
+                });
+                const second = evaluationOutcome({
+                    fixtureId: 'fixture-2',
+                    usage: {
+                        networkAttempts: 1,
+                        logicalRequests: 1,
+                        retries: 0,
+                        submittedBytes: 20,
+                        actualInputTokens: 5,
+                        estimatedInputTokens: 5,
+                        [field]: additional,
+                        attemptsWithUnknownUsage: 0,
+                        estimatedCostUsd: 1,
+                        pricingConfigurationVersion: 'test',
+                    },
+                });
+                const parsedFirst = first as { outcomes: unknown[] };
+                const parsedSecond = second as { outcomes: unknown[] };
+                writeFileSync(path, JSON.stringify({ outcomes: [...parsedFirst.outcomes, ...parsedSecond.outcomes] }));
+                if (additional === 0) {
+                    expect(measure(root, { evaluationPath: path }).acrossRuns.usage[field]).toBe(
+                        Number.MAX_SAFE_INTEGER
+                    );
+                } else {
+                    expect(() => measure(root, { evaluationPath: path })).toThrow(
+                        new RegExp(`${field}.*safe integer`, 'u')
+                    );
+                }
+            }
+        }
+    );
+});
+
 describe('usage, cost and wall clock', () => {
     it("carries the run's own usage block, its cache hits, and its own span in milliseconds", () => {
         const root = checkout();

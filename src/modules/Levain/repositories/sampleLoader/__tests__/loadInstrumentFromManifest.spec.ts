@@ -105,6 +105,13 @@ type MakePortOptions = {
      * itself, so it decides when, and for which token, the worklet reports.
      */
     manualRelease?: boolean;
+    /**
+     * Model a processor that faulted before any load registered on this port:
+     * the `error` it posted then reached no listener, so it answers a
+     * `beginSampleBank` or a `releaseRetiredBank` by posting that fault again
+     * (levainProcessor.ts `_answerAfterFault`) and nothing else.
+     */
+    faultedBeforeLoad?: string;
 };
 
 /**
@@ -127,6 +134,15 @@ function makePort(options: MakePortOptions = {}): FakePort {
     }
     const postMessage = vi.fn((message: unknown) => {
         if (!isRecord(message) || typeof message.loadToken !== 'number') {
+            return;
+        }
+        if (
+            options.faultedBeforeLoad !== undefined &&
+            (message.type === 'beginSampleBank' || message.type === 'releaseRetiredBank')
+        ) {
+            queueMicrotask(() => {
+                emit({ type: 'error', message: options.faultedBeforeLoad });
+            });
             return;
         }
         if (message.type === 'beginSampleBank') {
@@ -627,6 +643,18 @@ describe('loadInstrumentFromManifest', () => {
             // A dead processor answers nothing, so a later load fails the same way.
             await expect(load(port)).rejects.toThrow('Levain processor ended during sample-bank loading: wasm trap');
             expect(beginTokens(port)).toHaveLength(1);
+            expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+        });
+
+        it('rejects a load on a port whose processor faulted before any load registered, without hanging', async () => {
+            const port = makePort({ faultedBeforeLoad: 'wasm trap' });
+
+            await expect(load(port)).rejects.toThrow('Levain processor ended during sample-bank loading: wasm trap');
+
+            expect(postedTypes(port)).toEqual(['beginSampleBank']);
+            // The fault it learned from the answer ends every later load on the port at once.
+            await expect(load(port)).rejects.toThrow('Levain processor ended during sample-bank loading: wasm trap');
+            expect(postedTypes(port)).toEqual(['beginSampleBank']);
             expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
         });
 
