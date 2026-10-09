@@ -1,0 +1,30 @@
+.github/workflows/quantum-measurements.yml
+  s_1c08b47ac3792f::t_f1047f11ab2fba 58
+  s_1c08b47ac3792f::t_655a20ea92f51c 84-104,106-116
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  s_1c08b47ac3792f::t_32dee663a7a8f9 121-162,164-198
+  s_1c08b47ac3792f::t_4eb33193db8b24 163
+  s_1c08b47ac3792f::t_ce3c3181024720 230
+  s_1c08b47ac3792f::t_c000a96c4ab175 320
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  s_1c08b47ac3792f::t_26f1d9d6e33b09 393-494
+  s_1c08b47ac3792f::t_df9b00e1f12b99 495-496
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_1c08b47ac3792f::t_443d44415d04df 2163,2198-2199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7115361f5b1f128f2f4f6d87ec15ee1a383ea965",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
