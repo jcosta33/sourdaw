@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import {
+    coordinateDelivery,
     DeliveryMergeRejectedError,
     deliverPullRequest as deliverPullRequestWithTracker,
     deliverPullRequestWithRequiredCi as deliverPullRequestWithRequiredCiAndTracker,
@@ -28,6 +29,8 @@ import {
     runDeliverCli,
     shellPort,
     withPullRequestDeliveryLock,
+    type DeliveryAuthentication,
+    type DeliveryCoordinatorDependencies,
     type DeliveryReceiptAuthorityExpectation,
     type DeliveryReceiptProof,
     type DeliveryPort,
@@ -47,6 +50,7 @@ import {
     GITHUB_HTTPS_REMOTE,
     REQUIRED_BASE_BRANCH,
     REVIEWER_BOT_NODE_ID,
+    type MintPermissions,
 } from '../githubAppIdentity.ts';
 import { composeDeliveryReceipt } from '../prContract.ts';
 import { reviewBundlePath } from '../reviewBundleLocator.ts';
@@ -9472,6 +9476,235 @@ describe('delivery CLI', () => {
         [['--help', '--unknown'], /help takes no other arguments/],
     ])('rejects malformed arguments %#', (args, message) => {
         expect(() => parseCliArgs(args)).toThrow(message);
+    });
+});
+
+describe('delivery author authentication', () => {
+    const PR_NUMBER = 42;
+
+    function classificationDependencies(input: {
+        root: string;
+        baseSha: string;
+        headSha: string;
+        events: string[];
+        authorMints: MintPermissions[];
+    }): {
+        dependencies: DeliveryCoordinatorDependencies;
+        deliveredAuthentication: () => DeliveryAuthentication | undefined;
+    } {
+        const events = input.events;
+        const builtPorts: Array<{ authentication: DeliveryAuthentication; port: DeliveryPort }> = [];
+        let delivered: DeliveryAuthentication | undefined;
+        const authentication = (permissions: MintPermissions): DeliveryAuthentication => {
+            input.authorMints.push(permissions);
+            events.push(Object.hasOwn(permissions, 'workflows') ? 'mint:author-workflow' : 'mint:author-ordinary');
+            return {
+                minted: {
+                    token: 'ghs_classification',
+                    login: 'author[bot]',
+                    actorNodeId: AUTHOR_BOT_NODE_ID,
+                    permissions,
+                },
+                session: { configDir: '', env: {}, dispose: () => events.push('dispose') },
+            };
+        };
+        const buildPort = (): DeliveryPort => ({
+            gateRequiredCheckNames: () => new Set(['Gate']),
+            gateRequiredSkipAliases: () => new Map(),
+            headCheckRuns: () => [],
+            requiredStatusCheckContexts: () => ['Gate'],
+            fetch: () => {
+                events.push('fetch');
+            },
+            pullRequest: (number) => {
+                events.push('snapshot');
+                expect(number).toBe(PR_NUMBER);
+                return pullRequest({ baseRefOid: input.baseSha, headRefOid: input.headSha });
+            },
+            reviewState: () => {
+                throw new Error('classification never reads review state');
+            },
+            reviewBundleDeliveryAuthorization: () => {
+                throw new Error('classification never reads a review bundle');
+            },
+            dependents: () => {
+                throw new Error('classification never reads dependents');
+            },
+            repositoryDeletesMergedBranches: () => {
+                throw new Error('classification never reads merge policy');
+            },
+            merge: () => {
+                throw new Error('classification never merges');
+            },
+            retarget: () => {
+                throw new Error('classification never retargets');
+            },
+            deliveryReceipts: () => {
+                throw new Error('classification never reads receipts');
+            },
+            deliveryReceiptProof: () => {
+                throw new Error('classification never reads receipt proof');
+            },
+            addDeliveryReceipt: () => {
+                throw new Error('classification never adds a receipt');
+            },
+            readDeliveryReceiptAuthority: () => {
+                throw new Error('classification never reads receipt authority');
+            },
+            writeDeliveryReceiptAuthority: () => {
+                throw new Error('classification never writes receipt authority');
+            },
+            clearDeliveryReceiptAuthority: () => {
+                throw new Error('classification never clears receipt authority');
+            },
+            log: () => {
+                throw new Error('classification never logs');
+            },
+        });
+        const dependencies: DeliveryCoordinatorDependencies = {
+            primaryRoot: () => input.root,
+            serializeDelivery: (_primaryRoot, _number, operation) =>
+                operation({
+                    markRemoteMutationAttempt: () => events.push('mutate-attempt'),
+                    markRemoteMutationKnownAbsent: () => events.push('mutate-known-absent'),
+                    ownerOid: '',
+                    registerSuccessfulCompletion: () => undefined,
+                }),
+            authenticateAuthor: async (_primaryRoot, permissions) => authentication(permissions),
+            authenticateTracker: async () => {
+                events.push('auth:tracker');
+                return {
+                    minted: {
+                        token: 'ghs_tracker',
+                        login: 'author[bot]',
+                        actorNodeId: AUTHOR_BOT_NODE_ID,
+                        permissions: { issues: 'write' },
+                    },
+                    session: { configDir: '', env: {}, dispose: () => events.push('dispose') },
+                };
+            },
+            repositoryName: () => {
+                events.push('repository');
+                return 'jcosta33/sourdaw';
+            },
+            deliveryPort: (_repository, portAuthentication) => {
+                events.push('port');
+                const port = buildPort();
+                builtPorts.push({ authentication: portAuthentication, port });
+                return port;
+            },
+            trackerPort: () => ({
+                withMutationLease: <Value>(operation: () => Value) => operation(),
+                inspect: () => {
+                    throw new Error('classification never inspects an issue');
+                },
+                update: () => {
+                    throw new Error('classification never updates an issue');
+                },
+                comment: () => {
+                    throw new Error('classification never comments on an issue');
+                },
+                log: () => {
+                    throw new Error('classification never logs');
+                },
+            }),
+            completeIssue: () => {
+                throw new Error('classification never completes an issue');
+            },
+            deliver: (number, deliveredPort) => {
+                events.push(`deliver:${number}`);
+                delivered = builtPorts.find((entry) => entry.port === deliveredPort)?.authentication;
+            },
+        };
+        return { dependencies, deliveredAuthentication: () => delivered };
+    }
+
+    function commitRange(root: string, changedPath: string | undefined): { baseSha: string; headSha: string } {
+        const run = (args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        run(['init', '-b', 'main']);
+        run(['config', 'user.name', 'Fixture']);
+        run(['config', 'user.email', 'fixture@example.com']);
+        writeFileSync(join(root, 'base.txt'), 'base\n');
+        run(['add', 'base.txt']);
+        run(['commit', '--no-gpg-sign', '-m', 'chore: base']);
+        const baseSha = run(['rev-parse', 'HEAD']);
+        if (changedPath !== undefined) {
+            const target = join(root, changedPath);
+            mkdirSync(dirname(target), { recursive: true });
+            writeFileSync(target, 'change\n');
+            run(['add', '--', changedPath]);
+            run(['commit', '--no-gpg-sign', '-m', 'feat: change']);
+        }
+        return { baseSha, headSha: run(['rev-parse', 'HEAD']) };
+    }
+
+    it('re-mints the author session with workflows write when the merge diff changes a workflow', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        let deliveredAuthentication: DeliveryAuthentication | undefined;
+        try {
+            const { baseSha, headSha } = commitRange(root, '.github/workflows/health-gates.yml');
+            const harness = classificationDependencies({ root, baseSha, headSha, events, authorMints });
+            await coordinateDelivery(PR_NUMBER, harness.dependencies);
+            deliveredAuthentication = harness.deliveredAuthentication();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        expect(authorMints[0]).toEqual({ contents: 'write', pull_requests: 'write' });
+        expect(authorMints[1]).toEqual({ contents: 'write', pull_requests: 'write', workflows: 'write' });
+        expect(authorMints).toHaveLength(2);
+        expect(authorMints[0]).not.toHaveProperty('workflows');
+        expect(authorMints[1]).not.toHaveProperty('issues');
+        expect(deliveredAuthentication?.minted.permissions).toEqual({
+            contents: 'write',
+            pull_requests: 'write',
+            workflows: 'write',
+        });
+        expect(events).toEqual([
+            'mint:author-ordinary',
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'mint:author-workflow',
+            'dispose',
+            'auth:tracker',
+            'port',
+            'deliver:42',
+            'dispose',
+            'dispose',
+        ]);
+    });
+
+    it('keeps the ordinary author mint when the merge diff touches no workflow', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        let deliveredAuthentication: DeliveryAuthentication | undefined;
+        try {
+            const { baseSha, headSha } = commitRange(root, 'scripts/deliverPullRequest.ts');
+            const harness = classificationDependencies({ root, baseSha, headSha, events, authorMints });
+            await coordinateDelivery(PR_NUMBER, harness.dependencies);
+            deliveredAuthentication = harness.deliveredAuthentication();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        expect(authorMints).toEqual([{ contents: 'write', pull_requests: 'write' }]);
+        expect(authorMints[0]).not.toHaveProperty('workflows');
+        expect(deliveredAuthentication?.minted.permissions).toEqual({ contents: 'write', pull_requests: 'write' });
+        expect(events).toEqual([
+            'mint:author-ordinary',
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'auth:tracker',
+            'port',
+            'deliver:42',
+            'dispose',
+            'dispose',
+        ]);
     });
 });
 
