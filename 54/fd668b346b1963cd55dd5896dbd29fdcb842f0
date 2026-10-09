@@ -1,0 +1,25 @@
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_97ab82e0b4f10c::t_67793a4c6b59ad 147-148,159-160
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_97ab82e0b4f10c::t_09dc7505bc0c94 120-121,132-133
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_97ab82e0b4f10c::t_8a007654b78c74 138-139
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_97ab82e0b4f10c::t_fb67e915af7c82 134-135,146-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54fd668b346b1963cd55dd5896dbd29fdcb842f0",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
