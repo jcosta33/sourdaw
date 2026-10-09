@@ -98,7 +98,15 @@ describe('inactive retarget capability plan', () => {
             artifact: 'retarget-installed-grants.json',
             currentGrantClaim: false,
         });
-        expect(JSON.parse(renderCapabilityPlan(plan))).toEqual(plan);
+        const inactiveClaims = {
+            atomicServerSnapshot: false,
+            repairedDestinationBoundary: false,
+            operatorGrantPresent: false,
+        };
+        expect(plan.claims).toEqual(inactiveClaims);
+        const rendered: JsonValue = JSON.parse(renderCapabilityPlan(plan));
+        expect(rendered).toEqual(plan);
+        expect(requiredRecord(rendered).claims).toEqual(inactiveClaims);
         expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
     });
 
