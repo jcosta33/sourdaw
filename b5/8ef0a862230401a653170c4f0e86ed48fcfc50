@@ -1,0 +1,19 @@
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_1c08b47ac3792f::t_679da836ea5603 962-1020
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b58ef0a862230401a653170c4f0e86ed48fcfc50",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
