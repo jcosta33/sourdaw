@@ -140,16 +140,22 @@ function secondsAcrossTempoSegment(
 ): number {
     const startTempo = tempoAtPpq(changes, fromPpq, defaultTempo);
     let activeChange: TempoMapChange | undefined;
+    let rampTarget: TempoMapChange | undefined;
     for (const change of changes) {
         if (change.beat > fromPpq) {
+            rampTarget = change;
             break;
         }
         activeChange = change;
     }
-    if (!activeChange || activeChange.curve === 'instant') {
+    if (!activeChange || activeChange.curve === 'instant' || !rampTarget) {
         return ((toPpq - fromPpq) * 60) / startTempo;
     }
-    const endTempo = tempoAtPpq(changes, toPpq, defaultTempo);
+    // Where several changes share a beat the first is where the ramp arrives,
+    // so a segment ending there ends at the ramp target's tempo, not at the
+    // tempo of the change that governs from that beat on.
+    const rampProgress = (toPpq - activeChange.beat) / (rampTarget.beat - activeChange.beat);
+    const endTempo = activeChange.tempo + (rampTarget.tempo - activeChange.tempo) * rampProgress;
     const tempoDelta = endTempo - startTempo;
     if (tempoDelta === 0) {
         return ((toPpq - fromPpq) * 60) / startTempo;

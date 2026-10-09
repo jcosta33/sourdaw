@@ -203,8 +203,10 @@ function createSampleBankHandshake(
  * can still commit. A load is over when the worklet has given its terminal
  * answer for a bank that did not commit, or when the release loop of a bank
  * that did has finished. `processorEnded` keeps the first end-of-life message:
- * a processor that faulted or was disposed drops every later message, so no
- * later load can complete.
+ * a processor that faulted or was disposed gives no later bank answer (a
+ * disposed one posts nothing for a load's messages, a faulted one posts its
+ * `error` again), so no later load can complete. ADR 0052's Message contract
+ * tables every answer by state.
  */
 type PortLoads = {
     tail: Promise<void>;
@@ -237,8 +239,9 @@ function portLoadsOf(nodePort: MessagePort): PortLoads {
  * that started this does not wait on the loop: it has already settled. The
  * port delivers this after any `abortSampleBank` the load posted, so the
  * request always finds the bank retired. A closed port, or a processor that
- * has ended or ends meanwhile, stops the loop too: it drops every message, so
- * no answer would come and every later load on the port would wait for it.
+ * has ended or ends meanwhile, stops the loop too: it gives no
+ * `retiredBankReleased`, so no answer would come and every later load on the
+ * port would wait for it.
  */
 function releaseRetiredBank(nodePort: MessagePort, loads: PortLoads, loadToken: number, onOver: () => void): void {
     function stop(): void {
@@ -370,7 +373,7 @@ export async function loadInstrumentFromManifest({
             return undefined;
         }
         if (loads.processorEnded) {
-            // The processor drops every message from here on, so a begin
+            // The processor gives no bank answer from here on, so a begin
             // would never be answered.
             throw loads.processorEnded;
         }
