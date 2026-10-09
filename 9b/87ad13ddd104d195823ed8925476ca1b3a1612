@@ -1,0 +1,124 @@
+.agents/skills/review-stances/provider-egress.md
+  h_beb54bf43b47b7 74-169
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 694-717
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1210-1211
+scripts/__tests__/checkStancesRecord.spec.ts
+  h_beb54bf43b47b7 575-766
+scripts/__tests__/typesafeRequest.spec.ts
+  h_beb54bf43b47b7 13,452-883
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 72,11303-11716
+scripts/semanticReview/sensitive.ts
+  h_beb54bf43b47b7 306-395,721-723
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  h_beb54bf43b47b7 69
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  h_beb54bf43b47b7 54
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  h_beb54bf43b47b7 79
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  h_beb54bf43b47b7 189
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  h_beb54bf43b47b7 178
+src/modules/Arrangement/useCases/device/__tests__/prepareRemoveDevice.spec.ts
+  h_beb54bf43b47b7 17,48,181,341,356,380-382,395,397,421,439,454,471,487,503,566,589,612,627
+src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts
+  h_beb54bf43b47b7 1,156-157
+src/modules/AudioEngine/AGENTS.md
+  h_beb54bf43b47b7 11,49
+src/modules/AudioEngine/engine/TrackNode.ts
+  h_beb54bf43b47b7 9,1329,1331-1345,1360-1362,1408-1409,1411,1597,1601-1609
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  h_beb54bf43b47b7 304-306,320,1647-1648
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  h_beb54bf43b47b7 409-412,1673-1674
+src/modules/AudioEngine/models/AudioEngineState.ts
+  h_beb54bf43b47b7 533,535-536
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  h_beb54bf43b47b7 101
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  h_beb54bf43b47b7 50
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  h_beb54bf43b47b7 93,165-167
+src/modules/AudioEngine/repositories/__tests__/toasterRemovalDuringDeviceLoad.spec.ts
+  h_beb54bf43b47b7 1-422
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  h_beb54bf43b47b7 108-116,1750,1800-1804,1810-1820,1965,1975,1985-1988,2679,2682
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  h_beb54bf43b47b7 283-304,306-310,317,319
+src/modules/AudioEngine/useCases/engineAccess/__tests__/deactivateTrackStrip.spec.ts
+  h_beb54bf43b47b7 1-31
+src/modules/AudioEngine/useCases/engineAccess/deactivateTrackStrip.ts
+  h_beb54bf43b47b7 1-10
+src/modules/AudioEngine/useCases/engineAccess/removeTrackStrip.ts
+  h_beb54bf43b47b7 8-10
+src/modules/AudioEngine/useCases/index.ts
+  h_beb54bf43b47b7 110
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 298
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  h_beb54bf43b47b7 92
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  h_beb54bf43b47b7 81
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  h_beb54bf43b47b7 84
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  h_beb54bf43b47b7 190
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_beb54bf43b47b7 280
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_beb54bf43b47b7 79
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  h_beb54bf43b47b7 79
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  h_beb54bf43b47b7 91
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  h_beb54bf43b47b7 6,24,88-91,141-156
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  h_beb54bf43b47b7 16,93-97
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 143,151
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 109
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_beb54bf43b47b7 147
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  h_beb54bf43b47b7 66
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_beb54bf43b47b7 85
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  h_beb54bf43b47b7 80
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  h_beb54bf43b47b7 85
+src/modules/Toaster/AGENTS.md
+  h_beb54bf43b47b7 7,24
+src/modules/Toaster/useCases/__tests__/disposeToasterDevice.spec.ts
+  h_beb54bf43b47b7 3-4,7,38-41,66-94,144,207,209,219-268
+src/modules/Toaster/useCases/__tests__/toasterRemovalDuringLoad.spec.ts
+  h_beb54bf43b47b7 1-65,68-72,74-77,79-93,95-113,115-121,123-133,135,138-143,146-150,152-153,155-157,160-174,177-191
+src/modules/Toaster/useCases/disposeEveryToasterDevice.ts
+  h_beb54bf43b47b7 1-27
+src/modules/Toaster/useCases/disposeToasterDevice.ts
+  h_beb54bf43b47b7 4-7
+src/modules/Toaster/useCases/index.ts
+  h_beb54bf43b47b7 2
+src/modules/Transport/AGENTS.md
+  h_beb54bf43b47b7 9,25
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  h_beb54bf43b47b7 122
+src/modules/Transport/useCases/transportControls/syncTransportMapsToNativeSession.ts
+  h_beb54bf43b47b7 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b87ad13ddd104d195823ed8925476ca1b3a1612",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
