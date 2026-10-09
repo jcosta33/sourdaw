@@ -4023,23 +4023,35 @@ describe('health gates workflow contract', () => {
             'fetch-depth': 0,
             'persist-credentials': false,
         });
+        expect(stepNamed(shadow, 'Checkout immutable shadow control').with).toEqual({
+            ref: '${{ github.event.pull_request.base.sha }}',
+            path: 'shadow-control',
+            'fetch-depth': 0,
+            'persist-credentials': false,
+        });
         expect(stepNamed(shadow, 'Download authoritative scope').with).toEqual({
             name: 'pr-validation-scope',
             path: 'shadow-scope',
         });
+        expect(stepNamed(shadow, 'Set up pnpm').with).toEqual({ package_json_file: 'shadow-control/package.json' });
+        expect(stepNamed(shadow, 'Set up Node').with).toMatchObject({
+            'cache-dependency-path': 'shadow-control/pnpm-lock.yaml',
+        });
+        expect(stepNamed(shadow, 'Install dependencies')['working-directory']).toBe('shadow-control');
         expect(stepNamed(shadow, 'Upload shadow measurement').with).toMatchObject({
             name: 'e2e-selection-shadow',
             'if-no-files-found': 'error',
         });
         expect(stepNamed(shadow, 'Upload shadow measurement').if).toBe('${{ always() }}');
         expect(stepNamed(shadow, 'Measure shadow selection').run).toBe(
-            'node scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
+            'node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
         );
         expect(stepNamed(shadow, 'Measure shadow selection').env).toEqual({
             BASE_SHA: '${{ github.event.pull_request.base.sha }}',
             HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
             INTEGRATION_SHA: '${{ github.sha }}',
             INTEGRATION_ROOT: 'shadow-integration',
+            CONTROL_ROOT: 'shadow-control',
         });
         const gateScript = assertGateContract(health, 'gate', 'Gate', GATE_CONDITION);
         const required = JSON.stringify({

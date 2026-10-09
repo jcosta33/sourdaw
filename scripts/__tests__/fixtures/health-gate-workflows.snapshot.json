@@ -97,6 +97,16 @@
             }
           },
           {
+            "name": "Checkout immutable shadow control",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.base.sha }}",
+              "path": "shadow-control",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
             "name": "Download authoritative scope",
             "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
             "with": {
@@ -108,7 +118,7 @@
             "name": "Set up pnpm",
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
-              "package_json_file": "package.json"
+              "package_json_file": "shadow-control/package.json"
             }
           },
           {
@@ -116,11 +126,13 @@
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "24.19.0",
-              "cache": "pnpm"
+              "cache": "pnpm",
+              "cache-dependency-path": "shadow-control/pnpm-lock.yaml"
             }
           },
           {
             "name": "Install dependencies",
+            "working-directory": "shadow-control",
             "run": "pnpm install --frozen-lockfile"
           },
           {
@@ -129,9 +141,10 @@
               "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
               "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
               "INTEGRATION_SHA": "${{ github.sha }}",
-              "INTEGRATION_ROOT": "shadow-integration"
+              "INTEGRATION_ROOT": "shadow-integration",
+              "CONTROL_ROOT": "shadow-control"
             },
-            "run": "node scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json"
+            "run": "node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json"
           },
           {
             "name": "Upload shadow measurement",
