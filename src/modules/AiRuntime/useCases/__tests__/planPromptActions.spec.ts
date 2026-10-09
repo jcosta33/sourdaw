@@ -222,6 +222,35 @@ describe('planPromptActions', () => {
         expect(mocks.parsePromptToActions.mock.calls.map(([input]) => input.thread)).toEqual([thread, thread]);
     });
 
+    it('hands the thread context to the re-parse that plans a prepared stem import', async () => {
+        seedAdmittedRun();
+        const thread = {
+            requests: ['import the stems from the session folder'],
+            pendingProposal: null,
+            lastCommit: {
+                runId: 'agent-run-committed',
+                receiptIds: ['command:agent-run-committed:batch-1'],
+                standing: 'standing' as const,
+                commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
+                measuredDeltas: [],
+            },
+        };
+        mocks.parsePromptToActions
+            .mockResolvedValueOnce({ actions: [], preparationRequest: 'stem-import' })
+            .mockResolvedValueOnce({ actions: [{ type: 'importStemSet', payload: stemImportScope.actionSeed }] });
+
+        await planPromptActions({
+            prompt: 'Import stems',
+            streamIdentity: { runId: 'stem-run', requestId: 'request-1', cancellationGeneration: 0 },
+            thread,
+        });
+
+        expect(mocks.prepareStemImport).toHaveBeenCalledOnce();
+        expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(2);
+        expect(mocks.parsePromptToActions.mock.calls[1]?.[0]).toMatchObject({ stemImportScope });
+        expect(mocks.parsePromptToActions.mock.calls.map(([input]) => input.thread)).toEqual([thread, thread]);
+    });
+
     it('runs one admitted correction and retains the validation failure as durable run evidence', async () => {
         const randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000003');
         mocks.captureProjectRevision.mockReturnValue('rev-1');
