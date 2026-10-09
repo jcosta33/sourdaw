@@ -1,0 +1,162 @@
+src/modules/AiRuntime/transformers/diffProposalCommands.ts
+  s_1c08b47ac3792f::t_a351903effced7 78-79
+  s_1c08b47ac3792f::t_9b4682010e4d2b 80-83,85
+  s_1c08b47ac3792f::t_43aa7a8827ba3b 1,3-68,74-77,86-116
+  s_1c08b47ac3792f::t_d345a365e661dc 2
+  s_1c08b47ac3792f::t_5078f7e72e01d2 69-73
+  s_1c08b47ac3792f::t_d7b54d81d0031f 84
+src/modules/AiRuntime/useCases/agentRequestOrchestration/supersedeRefinedProposal.ts
+  s_1c08b47ac3792f::t_c758eae1c7d675 30
+  s_1c08b47ac3792f::t_76a1ad2a06e187 64-65
+  s_1c08b47ac3792f::t_a707e94d9e3c2a 53
+  s_1c08b47ac3792f::t_e34fcd625bd3ed 1-29,31-52,54-63,66-68
+  s_1c08b47ac3792f::t_3650a2ce74213b 69-71
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_1c08b47ac3792f::t_70e64a59555d0f 1-37
+src/modules/AiRuntime/useCases/agentRequestOrchestration/retireSupersededConfirmation.ts
+  s_1c08b47ac3792f::t_b7645bbba1b167 1-40
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_1c08b47ac3792f::t_6c512848cf00b4 276-282
+  s_1c08b47ac3792f::t_402ab5a7271ed0 14
+  s_1c08b47ac3792f::t_84c3f785442d44 283-285
+  s_1c08b47ac3792f::t_d3b4c4671c5a65 286-325
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_534181caa37b2d 515,517-521
+  s_1c08b47ac3792f::t_ec82a055077167 480-514,516,522-523
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_5ecdfe6cc1a4ce 44
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_1c08b47ac3792f::t_1ea1aee4c1b122 456-493
+  s_97ab82e0b4f10c::t_9e94303d6be5d9 494
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_1c08b47ac3792f::t_067e94b797ae21 234
+  s_1c08b47ac3792f::t_7f3515311f16bf 774-830,832-834
+  s_1c08b47ac3792f::t_09101f103c3de0 831
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  s_1c08b47ac3792f::t_030070166610d5 299-300,318
+  s_1c08b47ac3792f::t_338bbd65c55bb7 1078-1083
+  s_1c08b47ac3792f::t_69d304c0a5be33 157
+  s_1c08b47ac3792f::t_9662b81cb0e466 986-987
+  s_1c08b47ac3792f::t_9260bcba23d794 142
+  s_1c08b47ac3792f::t_6b549fe3b33667 327-356
+  s_1c08b47ac3792f::t_23ce1ccc798f1c 855-860
+  s_1c08b47ac3792f::t_62c96f0747322e 149-151
+  s_1c08b47ac3792f::t_98b364b21ea7e2 914
+  s_1c08b47ac3792f::t_fcd7a61db3701f 945-946
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_af00f2f0897044 43
+  s_1c08b47ac3792f::t_c821f5aaf114bb 1107
+  s_1c08b47ac3792f::t_95c47eb038f9ef 1055
+  s_1c08b47ac3792f::t_71d4a86c3c2c5b 874-875,877,881
+  s_1c08b47ac3792f::t_2f2c2d9672e0d3 841-863
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_1c08b47ac3792f::t_14c020b58a182a 205,208-237
+  s_1c08b47ac3792f::t_7968be1d05c519 37-44,53-54
+  s_1c08b47ac3792f::t_df133d4ab14593 206-207
+  s_1c08b47ac3792f::t_bf559a3564fbf8 397
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_1c08b47ac3792f::t_6534b41aa5a128 595-658
+  s_1c08b47ac3792f::t_f10eac0663b759 225-226
+  s_1c08b47ac3792f::t_209769932bec9c 239-240
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1c08b47ac3792f::t_a31ee7ab123530 388-394
+  s_1c08b47ac3792f::t_0e9a921c49b1fe 50
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_1c08b47ac3792f::t_5eefd694088784 11,18
+  s_1c08b47ac3792f::t_9ac99fbe23f14e 45
+  s_1c08b47ac3792f::t_e176d5efcb355d 393
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_2d21c8c8defd01 267,319-320,322-347,349-355
+  s_1c08b47ac3792f::t_bf4fb67d0b7a01 521
+  s_1c08b47ac3792f::t_d797ce8205b754 493-496,498
+  s_1c08b47ac3792f::t_55c0e3a2768f57 518,520,522
+  s_1c08b47ac3792f::t_b2a288fefe3b87 268-274,284-298,301
+  s_1c08b47ac3792f::t_9582569345ccd6 38
+  s_1c08b47ac3792f::t_e893af98a71754 321
+  s_1c08b47ac3792f::t_d8bcc2a3ddbfb9 348
+  s_1c08b47ac3792f::t_7e6edceedee1b7 427-430
+src/modules/AiRuntime/transformers/fitThreadContext.ts
+  s_1c08b47ac3792f::t_6e52ce9eb49a82 42
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_1c08b47ac3792f::t_aedd3dbfccea97 283-291
+src/modules/AiRuntime/transformers/buildThreadContext.ts
+  s_1c08b47ac3792f::t_caf0a47916a300 13
+  s_1c08b47ac3792f::t_bc6f3404190aab 210
+  s_1c08b47ac3792f::t_5cac8428159d4c 207-209,211-212
+  s_1c08b47ac3792f::t_6e274c52136348 29
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_1c08b47ac3792f::t_dc84e476fd17ff 74-89
+  s_1c08b47ac3792f::t_573596a4fee8a6 314-334
+  s_1c08b47ac3792f::t_e80630bb8e66af 9
+  s_1c08b47ac3792f::t_543581b4d7cd4b 107-108
+  s_1c08b47ac3792f::t_7290d07c5e5342 372
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_4637ff9c75a58d 1461,1463-1465
+  s_1c08b47ac3792f::t_afc9867c98a104 42
+  s_1c08b47ac3792f::t_e1dd2951ca57bc 1423-1434
+src/modules/AiRuntime/models/ThreadContext.ts
+  s_1c08b47ac3792f::t_7522ba980e4820 64-74
+  s_1c08b47ac3792f::t_ed406a20eca826 32-37
+src/modules/AiRuntime/models/IntentResult.ts
+  s_1c08b47ac3792f::t_c12c2fd5a3c7b5 62-67
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_1c08b47ac3792f::t_bf8ecfe14e1381 7
+src/modules/AiRuntime/useCases/__tests__/threadContextFixture.ts
+  s_1c08b47ac3792f::t_cc8486fe6d3076 34-35
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_1c08b47ac3792f::t_91bde5bce10ab4 203-204
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_1c08b47ac3792f::t_a10a5c1c1699d3 34
+  s_1c08b47ac3792f::t_56a6ebd2c27db1 521
+  s_1c08b47ac3792f::t_552b5eed5c0c5d 266-280
+  s_1c08b47ac3792f::t_60175ff0049757 69-72,74-75,77-79
+  s_1c08b47ac3792f::t_277b65b366c9fa 634-646
+  s_1c08b47ac3792f::t_2cf6e7af825e91 184
+  s_1c08b47ac3792f::t_b91b258f9f0766 76
+  s_1c08b47ac3792f::t_622e1dc37d7c90 212-215
+  s_1c08b47ac3792f::t_b45ca4e2416ae3 421,424,429,435,438,444,450
+  s_1c08b47ac3792f::t_b6fa65ec2efd39 479-482
+  s_1c08b47ac3792f::t_794814cd936cbc 493-496,499,504-506
+  s_1c08b47ac3792f::t_4f1eed48719e36 575,577,584,592-615,618-621
+  s_1c08b47ac3792f::t_6314589a542c95 1-33,35-42,44-68,73,80-183,185-211,216-265,281-320,322-324,326-343,345-420,422-423,425-428,430-434,436-437,439-443,445-449,451-478,483-492,497-498,500-503,507-520,522-542,544-569,571-574,576,578-583,585-591,616-617,622-633,647-658,660-664
+  s_1c08b47ac3792f::t_41bb5698b9bb8e 43
+  s_1c08b47ac3792f::t_8269ef7759b6bd 321
+  s_1c08b47ac3792f::t_9bcb962211ab23 325,344
+  s_1c08b47ac3792f::t_f7f4baf35e9f47 543
+  s_1c08b47ac3792f::t_2a7954d44cfc1b 570
+  s_1c08b47ac3792f::t_afc07210157f9e 659
+evidence/agent-campaign/manifest.json
+  s_1f0dcd815e8946::t_17513dd25bcc6f 374,748
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7573b247952e28e34296b99899365d72ba5d38ab",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
