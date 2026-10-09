@@ -126,13 +126,16 @@ function withShadowCliCheckouts(
         base: string,
         head: string,
         integration: string
-    ) => void
+    ) => void,
+    dirtyControlPath?: string,
+    advertiseCleanControl = false
 ): void {
     const root = mkdtempSync(join(process.cwd(), '.agents/shadow-cli-'));
     const repository = join(root, 'repository');
     const candidateRoot = join(root, 'candidate');
     const integrationRoot = join(root, 'integration');
     const controlRoot = join(root, 'control');
+    const cleanControlRoot = join(root, 'clean-control');
     const git = (...args: string[]) => execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim();
     const commit = (message: string) => {
         git('add', '.');
@@ -211,39 +214,73 @@ function withShadowCliCheckouts(
         git('worktree', 'add', '-q', '--detach', candidateRoot, head);
         git('worktree', 'add', '-q', '--detach', integrationRoot, integration);
         git('worktree', 'add', '-q', '--detach', controlRoot, control);
+        if (advertiseCleanControl) {
+            git('worktree', 'add', '-q', '--detach', cleanControlRoot, control);
+        }
+        if (dirtyControlPath) {
+            const file = join(controlRoot, dirtyControlPath);
+            writeFileSync(file, `${readFileSync(file, 'utf8')}\n// Dirty executing control source.\n`);
+        }
         const changed = git('diff', '--name-only', `${control}...${head}`).split('\n');
         const plan = selectValidationPlan(changed, [SMOKE_SPEC, 'tests/e2e/example.spec.ts']);
         mkdirSync(join(candidateRoot, 'shadow-scope'));
         const scopeText = JSON.stringify(capability === 'invalid-scope' ? { ...plan, browser: false } : plan);
         writeFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), scopeText);
         writeFileSync(join(candidateRoot, 'github-output.txt'), 'preserved\n');
-        const result = spawnSync(
-            process.execPath,
-            [join(controlRoot, 'scripts/e2eSelectionShadow.ts'), 'shadow-scope/pr-validation-scope.json'],
-            {
-                cwd: candidateRoot,
-                encoding: 'utf8',
-                env: {
-                    ...process.env,
-                    BASE_SHA: control,
-                    HEAD_SHA: head,
-                    INTEGRATION_SHA: integration,
-                    INTEGRATION_ROOT: integrationRoot,
-                    CONTROL_ROOT: controlRoot,
-                    GITHUB_OUTPUT: join(candidateRoot, 'github-output.txt'),
-                },
-            }
-        );
+        const cliArgs = [join(controlRoot, 'scripts/e2eSelectionShadow.ts'), 'shadow-scope/pr-validation-scope.json'];
+        const result = spawnSync(process.execPath, cliArgs, {
+            cwd: candidateRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                BASE_SHA: control,
+                HEAD_SHA: head,
+                INTEGRATION_SHA: integration,
+                INTEGRATION_ROOT: integrationRoot,
+                CONTROL_ROOT: advertiseCleanControl ? cleanControlRoot : controlRoot,
+                GITHUB_OUTPUT: join(candidateRoot, 'github-output.txt'),
+            },
+        });
         const reportPath = join(candidateRoot, 'e2e-selection-shadow.json');
         if (!existsSync(reportPath)) {
             throw new Error(`Shadow CLI emitted no report: ${result.stderr}`);
         }
         const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+        const evidenceDir = process.env.SOURDAW_SHADOW_CLI_EVIDENCE_DIR;
+        if (evidenceDir) {
+            let variant = dirtyControlPath?.split('/').at(-1) ?? 'clean';
+            if (advertiseCleanControl) {
+                variant = 'redirected-control';
+            }
+            writeFileSync(
+                join(evidenceDir, `${capability}-${variant}.json`),
+                `${JSON.stringify(
+                    {
+                        utc: new Date().toISOString(),
+                        cwd: candidateRoot,
+                        argv: [process.execPath, ...cliArgs],
+                        executingControlRoot: controlRoot,
+                        advertisedControlRoot: advertiseCleanControl ? cleanControlRoot : controlRoot,
+                        base: control,
+                        head,
+                        integration,
+                        exitCode: result.status,
+                        stdout: result.stdout,
+                        stderr: result.stderr,
+                        report,
+                        scopeBytes: readFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), 'utf8'),
+                        githubOutputBytes: readFileSync(join(candidateRoot, 'github-output.txt'), 'utf8'),
+                    },
+                    null,
+                    2
+                )}\n`
+            );
+        }
         run(result, report, control, head, integration);
         expect(readFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), 'utf8')).toBe(scopeText);
         expect(readFileSync(join(candidateRoot, 'github-output.txt'), 'utf8')).toBe('preserved\n');
     } finally {
-        for (const path of [candidateRoot, integrationRoot, controlRoot]) {
+        for (const path of [candidateRoot, integrationRoot, controlRoot, cleanControlRoot]) {
             if (existsSync(path)) {
                 git('worktree', 'remove', '--force', path);
             }
@@ -306,6 +343,53 @@ function fixture(
 }
 
 describe('E2E selection shadow', () => {
+    it.each(['absent', 'present'] as const)(
+        'fails when the %s candidate executes a modified control compatibility helper',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.measurementStatus).toBe('failed');
+                    expect(report.failureReason).toMatch(
+                        /Shadow rule in checkout disagrees with the immutable head: scripts\/e2eSelectionShadowCompatibility\.ts/
+                    );
+                },
+                'scripts/e2eSelectionShadowCompatibility.ts'
+            );
+        },
+        30_000
+    );
+
+    it('fails when an imported control selector changes on the supported route', () => {
+        withShadowCliCheckouts(
+            'present',
+            (result, report) => {
+                expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                expect(report.measurementStatus).toBe('failed');
+                expect(report.failureReason).toMatch(/scripts\/prValidationScope\.ts/);
+            },
+            'scripts/prValidationScope.ts'
+        );
+    }, 30_000);
+
+    it.each(['absent', 'present'] as const)(
+        'fails when the %s candidate advertises a clean control root while executing dirty control source',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.measurementStatus).toBe('failed');
+                    expect(report.failureReason).toMatch(/executing shadow source differs from the control checkout/i);
+                },
+                'scripts/e2eSelectionShadowCompatibility.ts',
+                true
+            );
+        },
+        30_000
+    );
+
     it('reports an older head without shadow capability as unsupported full coverage', () => {
         withShadowCliCheckouts('absent', (result, report, base, head, integration) => {
             expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);

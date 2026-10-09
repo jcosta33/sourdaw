@@ -574,7 +574,8 @@ function main(): void {
     if (git(['rev-parse', 'HEAD'], controlRoot).toString('utf8').trim() !== base) {
         throw new Error('Shadow control checkout does not match the immutable base');
     }
-    if (candidateShadowCapability(root, head) === 'unsupported') {
+    const capability = candidateShadowCapability(root, head, controlRoot, base, fileURLToPath(import.meta.url));
+    if (capability === 'unsupported') {
         const report = unsupportedShadowReport({
             root: controlRoot,
             integrationRoot,
