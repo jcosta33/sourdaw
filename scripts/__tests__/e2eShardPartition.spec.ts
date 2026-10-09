@@ -184,4 +184,43 @@ describe('recorded browser durations', () => {
     it('accepts a report covering every collected file when smoke is absent from it', () => {
         expect(Object.keys(specDurationsFromReport(report(), [...REPORTED, SMOKE_SPEC]))).toEqual(REPORTED);
     });
+
+    it('runs the refresh command and refuses a partial report without writing', () => {
+        const root = mkdtempSync(join(tmpdir(), 'e2e-refresh-'));
+        folders.push(root);
+
+        // Record committed table bytes before running the command
+        const committedBytes = readFileSync(resolve('scripts/e2eSpecDurations.json'), 'utf8');
+
+        // Create a temporary report that omits a collected file (gamma.spec.ts)
+        const partialReport = {
+            config: { rootDir: resolve('tests/e2e') },
+            stats: { unexpected: 0, flaky: 0 },
+            suites: [
+                {
+                    file: 'alpha.spec.ts',
+                    specs: [{ tests: [{ results: [{ duration: 1000 }] }] }],
+                },
+                {
+                    file: 'nested/beta.spec.ts',
+                    specs: [{ tests: [{ results: [{ duration: 100 }] }] }],
+                },
+            ],
+        };
+        const reportPath = join(root, 'partial-report.json');
+        writeFileSync(reportPath, JSON.stringify(partialReport));
+
+        // Run the refresh command
+        const result = spawnSync(process.execPath, [resolve('scripts/e2eShardPartition.ts'), 'refresh', reportPath], {
+            encoding: 'utf8',
+        });
+
+        // Assert the command failed
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('Report omits');
+
+        // Assert the committed table is unchanged
+        const tableAfter = readFileSync(resolve('scripts/e2eSpecDurations.json'), 'utf8');
+        expect(tableAfter).toBe(committedBytes);
+    });
 });
