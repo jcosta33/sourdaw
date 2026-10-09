@@ -1,0 +1,35 @@
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_3e67096ace881b 145-148
+  s_1f0dcd815e8946::t_912a31e93bb72e 144,177-184
+  s_97ab82e0b4f10c::t_a1f56e1ee026b8 185
+src/modules/Automation/useCases/automation/isExactAutomationLaneSnapshots.ts
+  s_1f0dcd815e8946::t_5592045668e58a 9,12,15
+  s_1f0dcd815e8946::t_431fec2bd66ebf 11
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1f0dcd815e8946::t_8638452be3fc8b 13,421-422,470
+  s_1f0dcd815e8946::t_aeb7b20e96139d 423-469,471-478
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a54431f7e2b0d090c1f5ed3fe1a3f769c66b40f",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
