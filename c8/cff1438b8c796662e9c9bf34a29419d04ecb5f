@@ -1,0 +1,14 @@
+tests/e2e/transportResponsive.spec.ts
+  h_beb54bf43b47b7 30-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8cff1438b8c796662e9c9bf34a29419d04ecb5f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
