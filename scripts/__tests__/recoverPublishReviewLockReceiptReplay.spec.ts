@@ -157,6 +157,8 @@ function remote(
     input: {
         state?: string;
         liveHead?: string;
+        stateAfterInspections?: string;
+        liveHeadAfterInspections?: string;
         actor?: string;
         body?: string;
         unresolvedThreads?: number;
@@ -181,7 +183,11 @@ function remote(
     const gh = (args: string[]): string => {
         if (args[0] === 'pr') {
             state.inspections += 1;
-            return JSON.stringify({ state: prState, headRefOid: liveHead, labels: [] });
+            return JSON.stringify({
+                state: state.inspections > 2 ? (input.stateAfterInspections ?? prState) : prState,
+                headRefOid: state.inspections > 2 ? (input.liveHeadAfterInspections ?? liveHead) : liveHead,
+                labels: [],
+            });
         }
         if (args[0] === 'api' && args[1] === 'graphql') {
             state.reviewStateReads += 1;
@@ -340,7 +346,7 @@ describe('already recovered landed receipt binds its modern dossier', () => {
         await expect(recover(root, ownerOid, github.gh)).resolves.toBe(0);
 
         const bound = readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');
-        expect(github.state.inspections).toBeGreaterThanOrEqual(2);
+        expect(github.state.inspections).toBeGreaterThanOrEqual(3);
         expect(publishedReviewId(dossier(root))).toBe(reviewId);
         expect(deliveryAuthorization(dossier(root))).toMatchObject({
             reviewId,
@@ -403,6 +409,30 @@ describe('already recovered landed receipt binds its modern dossier', () => {
         expect(publishedReviewId(dossier(root))).toBe(reviewId);
         expect(deliveryAuthorization(dossier(root))).toBeUndefined();
     });
+
+    it.each([
+        { label: 'merged', remoteInput: { stateAfterInspections: 'MERGED' } },
+        { label: 'closed', remoteInput: { stateAfterInspections: 'CLOSED' } },
+        { label: 'moved-head', remoteInput: { liveHeadAfterInspections: 'c'.repeat(40) } },
+    ])(
+        'binds publication without authority when the pull request is $label after exact inspections',
+        async ({ remoteInput }) => {
+            const { root, ownerOid } = fixture();
+            const github = remote(remoteInput);
+            const before = dossier(root);
+
+            await expect(recover(root, ownerOid, github.gh)).resolves.toBe(0);
+
+            const bound = readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');
+            expect(publishedReviewId(dossier(root))).toBe(reviewId);
+            expect(deliveryAuthorization(dossier(root))).toBeUndefined();
+            expect(github.state.inspections).toBeGreaterThanOrEqual(3);
+            expect(dossier(root).events.slice(0, before.events.length)).toEqual(before.events);
+            await expect(recover(root, ownerOid, github.gh)).resolves.toBe(0);
+            expect(readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8')).toBe(bound);
+            expect(github.state.posts).toBe(0);
+        }
+    );
 
     it('binds an open approval with unresolved threads without granting delivery authority', async () => {
         const { root, ownerOid } = fixture();

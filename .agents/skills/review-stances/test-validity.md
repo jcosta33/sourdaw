@@ -6,6 +6,17 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-09 — recovery tests fixed PR state for the whole run (introduced by PR #5032)
+
+The #5032 recovery spec varied a moved head before reconciliation, but its remote kept state and
+head constant through both inspections and the later dossier write. It did not exercise the
+authority decision when the PR changed after the exact historical receipt was established.
+
+Probe that would have caught it: make the first two inspections return the same open head, then
+return merged, closed, or another head on the next PR read. Assert the publication binds without
+`delivery-authorized`, replay is byte-identical, and no second POST occurs. Revert only the live
+PR-state check and require these cases to fail; retain an open current-head approval control.
+
 ### 2026-10-09 — cold navigation expired before its warmup allowance (introduced by PR #3222)
 
 The E2E global warmup gave the launch overlay 180 seconds but left the preceding `page.goto('/')`

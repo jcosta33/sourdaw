@@ -22,6 +22,17 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-09 — recovered publication used an earlier PR state for delivery authority (introduced via PR #5032)
+
+PR #5032 added the recovered publication binding route. It passed the PR state and head from its
+second exact publication inspection into the binder, then the binder read complete approval state
+without rechecking whether the PR was still open at that head. The missing authority-state probe
+was a merge, close, or head move after both inspections but before `delivery-authorized` was added.
+
+Probe that would have caught it: hold the landed review exact across both inspections, change the
+PR state or head before the final authorization read, and require a publication-only dossier with
+zero review POSTs. Keep an open, unchanged PR as the positive authorization control.
+
 ### 2026-09-09 — hosted WASM control and source revisions were assumed identical (introduced via PR #4057)
 
 PR #4057 validated artifact provenance when the workflow helper and checked-out source shared a

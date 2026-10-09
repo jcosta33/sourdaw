@@ -516,7 +516,10 @@ export function recordPublicationBindings(
         }
         const state = port.reviewState(number, head);
         assertCompleteReviewerIdentityForBinding(state, reviewId);
+        const currentPullRequest = port.pullRequest(number);
         if (
+            currentPullRequest.state === 'OPEN' &&
+            currentPullRequest.head === head &&
             state.latestReviewerStateOnHead === 'APPROVED' &&
             state.latestReviewerReviewDatabaseId === reviewId &&
             state.unresolvedThreads === 0
