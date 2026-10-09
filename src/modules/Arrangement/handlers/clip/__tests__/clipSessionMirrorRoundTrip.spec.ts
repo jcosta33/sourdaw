@@ -48,6 +48,7 @@ import {
 import { isRecord } from '#/utils/structuralEquality';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { createTake, createTakeLane, placeTakeOnClipMedia } from '../../../models/TakeLane';
 import { type Clip } from '../../../models/Track';
 import { gainEnvelopeStore, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
@@ -927,6 +928,83 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(projectClips?.map((clip) => [clip.id, clip.startBeat, clip.endBeat])).toEqual(
             trackStore.value?.tracks[0]?.clips.map((clip) => [clip.id, clip.startBeat, clip.endBeat])
         );
+    });
+
+    it('removeClip retains placed audio pass fields through saved history and both replay directions', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        const audio: Clip = {
+            ...createClipFixture('recorded-audio', 8, 16),
+            type: 'audio',
+            audioBufferId: 'recorded-loop-buffer',
+            audioOffsetBeats: -4,
+        };
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'audio', clips: [audio] })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        // A recording begun at beat 12 in loop [8, 16): the second pass
+        // sounds before the media origin and reads two seconds into it.
+        const placed = placeTakeOnClipMedia(
+            { ...createTake(audio.id, 'Pass 2', 8, 16, 4), selected: true },
+            {
+                recordPointBeat: 12,
+                mediaOriginSeconds: 6,
+                clipMediaOriginSeconds: 6,
+                timeline: {
+                    secondsAtBeat: (beat) => beat / 2,
+                    beatAtSeconds: (seconds) => seconds * 2,
+                    tempoAtBeat: () => 120,
+                },
+            }
+        );
+        const lane = {
+            ...createTakeLane(TRACK_ID),
+            takes: [placed],
+            activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: placed.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        expect(placed).toMatchObject({ sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 });
+        expect(takeLaneStore.value?.lanes).toEqual([lane]);
+        expect(getCrdtDoc<{ takeLanes: { lanes: unknown[] } }>('root')?.takeLanes.lanes).toEqual([lane]);
+
+        await executeAppAction({ type: 'removeClip', payload: { clipId: audio.id } }, { source: 'manual' });
+        await vi.waitFor(() => {
+            const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            expect(saved.past).toHaveLength(1);
+            expect(saved.past).toMatchObject([
+                {
+                    inverseAction: {
+                        type: 'restoreClip',
+                        payload: { retiredTakeLanes: [{ lane, retiredTakeIds: [placed.id] }] },
+                    },
+                },
+            ]);
+        });
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(clipOnTrack(TRACK_ID, audio.id)).toBeUndefined();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, audio.id)).toEqual(audio);
+        expect(takeLaneStore.value?.lanes).toEqual([lane]);
+        expect(getCrdtDoc<{ takeLanes: { lanes: unknown[] } }>('root')?.takeLanes.lanes).toEqual([lane]);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        hydrateProductionContracts();
+        expect(undoStore.value?.future).toHaveLength(1);
+        await redo();
+        expect(clipOnTrack(TRACK_ID, audio.id)).toBeUndefined();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        expect(getCrdtDoc<{ takeLanes: { lanes: unknown[] } }>('root')?.takeLanes.lanes).toEqual([]);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
     });
 
     it('rehydrates a rich paired move capture and restores exact automation with real Undo and Redo', async () => {
