@@ -1207,7 +1207,7 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:0dee6dbc7998602dcdad2ea721575c2df3a9977ef34c535e5f6416546f99d03a:grand-boule-discovery-catalog",
                 "tracked-set-sha256:d90916200a6151f9245d134989a9920bf616a7309fe3a8154347fdd2c3dbe522:grand-boule-factory-admission",
-                "tracked-set-sha256:d9ebc2d9f46dfe6a280b0df9b1596c8bb5a9f77fa9a225215df1b8928ce5e4fe:grand-boule-live-runtime",
+                "tracked-set-sha256:708769984c2f213d5f3c5b38bf5eda214e367dd6527f435b46a512da9721c972:grand-boule-live-runtime",
                 "tracked-set-sha256:42d11c3f35a450a6a93fb733f9e2c3662a66e0b83463dc106b7941c533e93544:grand-boule-project-state",
                 "tracked-set-sha256:67166eae730be899f2ae574e09d0b97074cd60b893c7d2c7c0ce5d835a8c127c:grand-boule-offline-composition",
                 "tracked-set-sha256:4cf6df4ec83e92ee30dc93eb4f0ed990f4656a3813a812e3226d3a67a7eedbcb:grand-boule-release-proof"
@@ -1341,13 +1341,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:d3feb673978936358efb650af7e170109f2f7ce75ba2ac58a34ef4511dea5638",
+                "daw-dsp sha256:2f53259232bd211fe150436e6dff0863dd5214641ddf8cdeafd1c7c208312828",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:1c3a4e4ed1ac200437a1f99ac185f1ccaf465c903afc864fa204968ff6e866b2",
                 "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
             ],
             "digests": [
-                "sha256:b67346fe6211fba945837e795b76e5be600809599b711dcaad2f2924c0d7a1f6:public/wasm/manifest.json"
+                "sha256:13608915e279444b23a9d42876e9d3ed772e1733ccb7b783f111481b8e47dddf:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1767,7 +1767,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "b67346fe6211fba945837e795b76e5be600809599b711dcaad2f2924c0d7a1f6"
+            "sha256": "13608915e279444b23a9d42876e9d3ed772e1733ccb7b783f111481b8e47dddf"
         }
     ],
     "externalReferences": [

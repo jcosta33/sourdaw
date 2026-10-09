@@ -15,7 +15,11 @@ import {
 } from './pullRequestMutationLock.ts';
 import { recordRecoveredPublicationBindings } from './reviewPublicationBinding.ts';
 import { hasExactRecoveryReceipt, type RecoveryReceipt } from './reviewPublicationRecoveryReceipt.ts';
-import { exactPublishedReview, type RecoveryInspection } from './reviewPublicationRemoteInspection.ts';
+import {
+    exactOrDismissedCopy,
+    landedPublishedReview,
+    type RecoveryInspection,
+} from './reviewPublicationRemoteInspection.ts';
 
 import type { AttestedRecoveryOwner, RecoverPublishReviewDependencies } from './recoverPublishReviewLock.ts';
 
@@ -165,7 +169,7 @@ export function assertNoUnauthorizedLandedEvidence(
         (inspection.otherActorReviews ?? []).some(
             (review) =>
                 review.actorNodeId !== sanctionedOtherActorNodeId &&
-                exactPublishedReview(review, document, expectedHead, review.actorNodeId)
+                exactOrDismissedCopy(review, document, expectedHead, review.actorNodeId)
         )
     ) {
         fail('review-publication recovery found unauthorized landed review evidence');
@@ -181,7 +185,13 @@ export function assertSingleExactLandedReview(
     if (
         inspection.reviews.length > 1 ||
         (inspection.reviews.length === 1 &&
-            !exactPublishedReview(inspection.reviews[0]!, document, expectedHead, expectedActorNodeId))
+            !landedPublishedReview(
+                inspection.reviews[0]!,
+                document,
+                expectedHead,
+                expectedActorNodeId,
+                inspection.head
+            ))
     ) {
         fail('review-publication recovery found ambiguous or non-exact remote review evidence');
     }
@@ -199,8 +209,9 @@ export function assertReconciliationStable(
         second.head !== first.head ||
         second.reviews.length !== first.reviews.length ||
         (second.reviews.length === 1 && second.reviews[0]!.id !== first.reviews[0]!.id) ||
+        (second.reviews.length === 1 && second.reviews[0]!.state !== first.reviews[0]!.state) ||
         (second.reviews.length === 1 &&
-            !exactPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId))
+            !landedPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId, second.head))
     ) {
         fail('review-publication recovery remote state changed during reconciliation');
     }

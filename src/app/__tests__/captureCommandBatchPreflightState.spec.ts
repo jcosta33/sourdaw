@@ -391,6 +391,28 @@ describe('captureCommandBatchPreflightState', () => {
         }
     });
 
+    it('does not let a stored arrangement copy establish authority for a target the live project lost', () => {
+        const storedTrack = {
+            clips: [],
+            devices: [{ id: 'device-drive', parameterValues: { drive: 0.4 } }],
+            id: 'track-drive',
+        };
+        mocks.getCrdtDoc.mockReturnValue({
+            arrangements: {
+                activeArrangementId: 'arrangement-1',
+                arrangements: [{ id: 'arrangement-1', tracks: { tracks: [storedTrack] } }],
+            },
+            tracks: { tracks: [{ ...storedTrack, devices: [] }] },
+        });
+
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [],
+            targetIds: ['track-drive', 'device-drive', 'device-drive:drive'],
+        });
+
+        expect(Object.keys(state.targetFingerprints)).toEqual(['track-drive']);
+    });
+
     it('reports advertised drift for a document-backed target without moving its document fingerprint', () => {
         const document = {
             tracks: {

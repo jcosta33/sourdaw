@@ -182,6 +182,14 @@ impl LevainInstance {
         self.engine.commit_sample_bank()
     }
 
+    /// Move the sounding bank into the retired slot so `release_retired_bank`
+    /// can free it in bounded steps before the instance is freed. For a
+    /// disposed instance that will never render again. Frees nothing. Returns
+    /// false, retiring nothing, while the slot is occupied or no bank sounds.
+    pub fn retire_sample_bank(&mut self) -> bool {
+        self.engine.retire_sample_bank()
+    }
+
     /// Whether a bank displaced by a commit is still waiting to be freed.
     pub fn has_retired_bank(&self) -> bool {
         self.engine.has_retired_bank()
