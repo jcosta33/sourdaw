@@ -1,0 +1,19 @@
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_97ab82e0b4f10c::t_0ecfff25bc82fa 239,245-261,267-269,273-275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc842c60ce9045245ea61445bd2fdaaa0c7628c2",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
