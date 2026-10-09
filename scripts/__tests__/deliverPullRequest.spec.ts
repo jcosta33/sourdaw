@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import {
     chmodSync,
     existsSync,
@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import {
+    coordinateDelivery,
     DeliveryMergeRejectedError,
     deliverPullRequest as deliverPullRequestWithTracker,
     deliverPullRequestWithRequiredCi as deliverPullRequestWithRequiredCiAndTracker,
@@ -28,6 +29,8 @@ import {
     runDeliverCli,
     shellPort,
     withPullRequestDeliveryLock,
+    type DeliveryAuthentication,
+    type DeliveryCoordinatorDependencies,
     type DeliveryReceiptAuthorityExpectation,
     type DeliveryReceiptProof,
     type DeliveryPort,
@@ -43,16 +46,29 @@ import {
 } from '../deliverPullRequest';
 import {
     AUTHOR_BOT_NODE_ID,
+    AUTHOR_MINT_PERMISSIONS,
+    DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     ORCHESTRATOR_USER_NODE_ID,
     GITHUB_HTTPS_REMOTE,
     REQUIRED_BASE_BRANCH,
     REVIEWER_BOT_NODE_ID,
+    authenticateRole,
+    type GitHubJsonClient,
+    type MintPermissions,
 } from '../githubAppIdentity.ts';
 import { composeDeliveryReceipt } from '../prContract.ts';
 import { reviewBundlePath } from '../reviewBundleLocator.ts';
 import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
 
 const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
+
+/**
+ * A throwaway mint key composed at runtime, so no credential-shaped literal is committed: the
+ * real `authenticateRole` under test signs its app JWT with it before the stubbed request client
+ * records the mint body.
+ */
+const { privateKey: mintKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const mintPem = mintKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 
 /**
  * The launcher's own parse, serialized exactly as it reaches the snapshot. Going through it rather
@@ -9475,6 +9491,390 @@ describe('delivery CLI', () => {
     });
 });
 
+describe('delivery author authentication', () => {
+    const PR_NUMBER = 42;
+
+    function classificationDependencies(input: {
+        root: string;
+        baseSha: string;
+        headSha: string;
+        events: string[];
+        authorMints: MintPermissions[];
+        /** Fails the author mint that carries the workflow set, exercising a failure before tracker auth. */
+        workflowMintFailure?: Error;
+        /**
+         * Replaces the recording author seam with a real backing (e.g. `authenticateRole` over a
+         * stubbed request client), so the coordinator's permission request is observed through the
+         * actual mint rather than a stub.
+         */
+        authenticateAuthorOverride?: (
+            primaryRoot: string,
+            permissions: MintPermissions
+        ) => Promise<DeliveryAuthentication>;
+    }): {
+        dependencies: DeliveryCoordinatorDependencies;
+        deliveredAuthentication: () => DeliveryAuthentication | undefined;
+    } {
+        const events = input.events;
+        const builtPorts: Array<{ authentication: DeliveryAuthentication; port: DeliveryPort }> = [];
+        let delivered: DeliveryAuthentication | undefined;
+        const authentication = (permissions: MintPermissions): DeliveryAuthentication => {
+            input.authorMints.push(permissions);
+            events.push(Object.hasOwn(permissions, 'workflows') ? 'mint:author-workflow' : 'mint:author-ordinary');
+            if (input.workflowMintFailure !== undefined && Object.hasOwn(permissions, 'workflows')) {
+                throw input.workflowMintFailure;
+            }
+            return {
+                minted: {
+                    token: 'ghs_classification',
+                    login: 'author[bot]',
+                    actorNodeId: AUTHOR_BOT_NODE_ID,
+                    permissions,
+                },
+                session: { configDir: '', env: {}, dispose: () => events.push('dispose') },
+            };
+        };
+        const buildPort = (): DeliveryPort => ({
+            gateRequiredCheckNames: () => new Set(['Gate']),
+            gateRequiredSkipAliases: () => new Map(),
+            headCheckRuns: () => [],
+            requiredStatusCheckContexts: () => ['Gate'],
+            fetch: () => {
+                events.push('fetch');
+            },
+            pullRequest: (number) => {
+                events.push('snapshot');
+                expect(number).toBe(PR_NUMBER);
+                return pullRequest({ baseRefOid: input.baseSha, headRefOid: input.headSha });
+            },
+            reviewState: () => {
+                throw new Error('classification never reads review state');
+            },
+            reviewBundleDeliveryAuthorization: () => {
+                throw new Error('classification never reads a review bundle');
+            },
+            dependents: () => {
+                throw new Error('classification never reads dependents');
+            },
+            repositoryDeletesMergedBranches: () => {
+                throw new Error('classification never reads merge policy');
+            },
+            merge: () => {
+                throw new Error('classification never merges');
+            },
+            retarget: () => {
+                throw new Error('classification never retargets');
+            },
+            deliveryReceipts: () => {
+                throw new Error('classification never reads receipts');
+            },
+            deliveryReceiptProof: () => {
+                throw new Error('classification never reads receipt proof');
+            },
+            addDeliveryReceipt: () => {
+                throw new Error('classification never adds a receipt');
+            },
+            readDeliveryReceiptAuthority: () => {
+                throw new Error('classification never reads receipt authority');
+            },
+            writeDeliveryReceiptAuthority: () => {
+                throw new Error('classification never writes receipt authority');
+            },
+            clearDeliveryReceiptAuthority: () => {
+                throw new Error('classification never clears receipt authority');
+            },
+            log: () => {
+                throw new Error('classification never logs');
+            },
+        });
+        const dependencies: DeliveryCoordinatorDependencies = {
+            primaryRoot: () => input.root,
+            serializeDelivery: (_primaryRoot, _number, operation) =>
+                operation({
+                    markRemoteMutationAttempt: () => events.push('mutate-attempt'),
+                    markRemoteMutationKnownAbsent: () => events.push('mutate-known-absent'),
+                    ownerOid: '',
+                    registerSuccessfulCompletion: () => undefined,
+                }),
+            authenticateAuthor:
+                input.authenticateAuthorOverride ?? (async (_primaryRoot, permissions) => authentication(permissions)),
+            authenticateTracker: async () => {
+                events.push('auth:tracker');
+                return {
+                    minted: {
+                        token: 'ghs_tracker',
+                        login: 'author[bot]',
+                        actorNodeId: AUTHOR_BOT_NODE_ID,
+                        permissions: { issues: 'write' },
+                    },
+                    session: { configDir: '', env: {}, dispose: () => events.push('dispose') },
+                };
+            },
+            repositoryName: () => {
+                events.push('repository');
+                return 'jcosta33/sourdaw';
+            },
+            deliveryPort: (_repository, portAuthentication) => {
+                events.push('port');
+                const port = buildPort();
+                builtPorts.push({ authentication: portAuthentication, port });
+                return port;
+            },
+            trackerPort: () => ({
+                withMutationLease: <Value>(operation: () => Value) => operation(),
+                inspect: () => {
+                    throw new Error('classification never inspects an issue');
+                },
+                update: () => {
+                    throw new Error('classification never updates an issue');
+                },
+                comment: () => {
+                    throw new Error('classification never comments on an issue');
+                },
+                log: () => {
+                    throw new Error('classification never logs');
+                },
+            }),
+            completeIssue: () => {
+                throw new Error('classification never completes an issue');
+            },
+            deliver: (number, deliveredPort) => {
+                events.push(`deliver:${number}`);
+                delivered = builtPorts.find((entry) => entry.port === deliveredPort)?.authentication;
+            },
+        };
+        return { dependencies, deliveredAuthentication: () => delivered };
+    }
+
+    function commitRange(root: string, changedPath: string | undefined): { baseSha: string; headSha: string } {
+        const run = (args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        run(['init', '-b', 'main']);
+        run(['config', 'user.name', 'Fixture']);
+        run(['config', 'user.email', 'fixture@example.com']);
+        writeFileSync(join(root, 'base.txt'), 'base\n');
+        run(['add', 'base.txt']);
+        run(['commit', '--no-gpg-sign', '-m', 'chore: base']);
+        const baseSha = run(['rev-parse', 'HEAD']);
+        if (changedPath !== undefined) {
+            const target = join(root, changedPath);
+            mkdirSync(dirname(target), { recursive: true });
+            writeFileSync(target, 'change\n');
+            run(['add', '--', changedPath]);
+            run(['commit', '--no-gpg-sign', '-m', 'feat: change']);
+        }
+        return { baseSha, headSha: run(['rev-parse', 'HEAD']) };
+    }
+
+    /**
+     * Records every mint request and answers like GitHub would: the installation token carries
+     * exactly the permissions the request body asked for, so a reverted or dropped permission
+     * forwarding reaches the recorded bodies instead of being laundered by the stub's own echo.
+     */
+    function mintRecordingClient(): {
+        requests: Array<{ url: string; body?: string }>;
+        request: GitHubJsonClient;
+    } {
+        const requests: Array<{ url: string; body?: string }> = [];
+        const request: GitHubJsonClient = async (url, init) => {
+            requests.push({ url, body: init.body });
+            if (url.endsWith('/access_tokens')) {
+                return {
+                    status: 201,
+                    body: {
+                        token: `ghs_deliver_${requests.length}`,
+                        permissions: JSON.parse(init.body ?? '{}').permissions,
+                    },
+                };
+            }
+            if (url === 'https://api.github.com/app') {
+                return { status: 200, body: { slug: 'hplovecraft208' } };
+            }
+            return {
+                status: 200,
+                body: { login: 'hplovecraft208[bot]', node_id: AUTHOR_BOT_NODE_ID, type: 'Bot' },
+            };
+        };
+        return { requests, request };
+    }
+
+    function authorCredentialFile(primaryRoot: string): (path: string) => string {
+        return (path) => {
+            if (path === join(primaryRoot, '.env.sourdaw-author')) {
+                return [
+                    'SOURDAW_GITHUB_APP_ID=4650613',
+                    'SOURDAW_GITHUB_APP_INSTALLATION_ID=154969409',
+                    `SOURDAW_GITHUB_APP_PRIVATE_KEY="${mintPem.replaceAll('\n', '\\n')}"`,
+                    '',
+                ].join('\n');
+            }
+            throw new Error(`unexpected credential read in test: ${path}`);
+        };
+    }
+
+    it('re-mints the author session with workflows write when the merge diff changes a workflow', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        let deliveredAuthentication: DeliveryAuthentication | undefined;
+        try {
+            const { baseSha, headSha } = commitRange(root, '.github/workflows/health-gates.yml');
+            const harness = classificationDependencies({ root, baseSha, headSha, events, authorMints });
+            await coordinateDelivery(PR_NUMBER, harness.dependencies);
+            deliveredAuthentication = harness.deliveredAuthentication();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        expect(authorMints[0]).toEqual({ contents: 'write', pull_requests: 'write' });
+        expect(authorMints[1]).toEqual({ contents: 'write', pull_requests: 'write', workflows: 'write' });
+        expect(authorMints).toHaveLength(2);
+        expect(authorMints[0]).not.toHaveProperty('workflows');
+        expect(authorMints[1]).not.toHaveProperty('issues');
+        expect(deliveredAuthentication?.minted.permissions).toEqual({
+            contents: 'write',
+            pull_requests: 'write',
+            workflows: 'write',
+        });
+        expect(events).toEqual([
+            'mint:author-ordinary',
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'mint:author-workflow',
+            'dispose',
+            'auth:tracker',
+            'port',
+            'deliver:42',
+            'dispose',
+            'dispose',
+        ]);
+    });
+
+    it('keeps the ordinary author mint when the merge diff touches no workflow', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        let deliveredAuthentication: DeliveryAuthentication | undefined;
+        try {
+            const { baseSha, headSha } = commitRange(root, 'scripts/deliverPullRequest.ts');
+            const harness = classificationDependencies({ root, baseSha, headSha, events, authorMints });
+            await coordinateDelivery(PR_NUMBER, harness.dependencies);
+            deliveredAuthentication = harness.deliveredAuthentication();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        expect(authorMints).toEqual([{ contents: 'write', pull_requests: 'write' }]);
+        expect(authorMints[0]).not.toHaveProperty('workflows');
+        expect(deliveredAuthentication?.minted.permissions).toEqual({ contents: 'write', pull_requests: 'write' });
+        expect(events).toEqual([
+            'mint:author-ordinary',
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'auth:tracker',
+            'port',
+            'deliver:42',
+            'dispose',
+            'dispose',
+        ]);
+    });
+
+    it('mints the deliver workflow set through the real author role when the coordinator classifies a workflow diff', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        const { requests, request } = mintRecordingClient();
+        let deliveredAuthentication: DeliveryAuthentication | undefined;
+        try {
+            const { baseSha, headSha } = commitRange(root, WORKFLOW_PATH);
+            const harness = classificationDependencies({
+                root,
+                baseSha,
+                headSha,
+                events,
+                authorMints,
+                authenticateAuthorOverride: (primaryRoot, permissions) =>
+                    authenticateRole({
+                        primaryRoot,
+                        role: 'author',
+                        permissions,
+                        readFile: authorCredentialFile(primaryRoot),
+                        request,
+                        env: {},
+                    }),
+            });
+            await coordinateDelivery(PR_NUMBER, harness.dependencies);
+            deliveredAuthentication = harness.deliveredAuthentication();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        const mintBodies = requests.filter((entry) => entry.url.endsWith('/access_tokens'));
+        expect(mintBodies).toHaveLength(2);
+        expect(DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS).toEqual({
+            contents: 'write',
+            pull_requests: 'write',
+            workflows: 'write',
+        });
+        expect(JSON.parse(mintBodies[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
+        expect(JSON.parse(mintBodies[1]?.body ?? '{}')).toEqual({
+            permissions: DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+        });
+        expect(mintBodies[1]?.body).not.toContain('issues');
+        expect(deliveredAuthentication?.minted.permissions).toEqual({
+            contents: 'write',
+            pull_requests: 'write',
+            workflows: 'write',
+        });
+        expect(deliveredAuthentication?.minted.permissions).not.toHaveProperty('issues');
+        expect(events).toEqual([
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'auth:tracker',
+            'port',
+            'deliver:42',
+            'dispose',
+        ]);
+    });
+
+    it('disposes the ordinary author session exactly once when the workflow re-mint fails before the tracker mint', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        try {
+            const { baseSha, headSha } = commitRange(root, WORKFLOW_PATH);
+            const harness = classificationDependencies({
+                root,
+                baseSha,
+                headSha,
+                events,
+                authorMints,
+                workflowMintFailure: new Error('workflow mint is unavailable'),
+            });
+            await expect(coordinateDelivery(PR_NUMBER, harness.dependencies)).rejects.toThrow(
+                'workflow mint is unavailable'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        expect(authorMints).toEqual([
+            { contents: 'write', pull_requests: 'write' },
+            { contents: 'write', pull_requests: 'write', workflows: 'write' },
+        ]);
+        expect(events).toEqual([
+            'mint:author-ordinary',
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'mint:author-workflow',
+            'dispose',
+        ]);
+    });
+});
+
 describe('delivery shell boundary', () => {
     afterEach(() => {
         vi.unstubAllEnvs();
@@ -11996,7 +12396,7 @@ describe('delivery shell boundary', () => {
             expect(runs).toHaveLength(1);
             const args = runs[0]?.args ?? [];
             expect(args.slice(0, 3)).toEqual(['-c', 'credential.helper=', '-c']);
-            expect(args[3]).toMatch(/^credential\.helper=\//);
+            expect(args[3]).toMatch(/^credential\.helper=!'\//);
             expect(args[3]).not.toContain('ghs_minted');
             expect(args.slice(4)).toEqual([
                 'fetch',

@@ -247,7 +247,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts",
-                    "digest": "99f4f07d23aaf51a9511ed4841aa4dfa8f2cf43323655a79267a6cfbbfba67dc"
+                    "digest": "d802d953c2f5cddc1b8615bb5dc0f4e37ae09d9b676f050d707e083dde5b4b9a"
                 }
             ]
         },
@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "5f7a231517bc007df88af1b9b7bd20232548b463c2e1d7f16a915b9974b9d93a"
+                    "digest": "a081c4b4152aea814dbadca6ee7fb5da3e418e8c638655351381e1b836d3e60c"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "7cbb9a828366118c12cfb6fac54f834577eecc99bd8c99de8c2abc4c05d3cf30"
+                    "digest": "6202740f1d35ca4dac497715699743341243cf0ebc738e743b302e58ca5997f7"
                 }
             ]
         },

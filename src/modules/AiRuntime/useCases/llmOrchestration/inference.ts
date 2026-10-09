@@ -73,7 +73,7 @@ import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategori
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
 
-// What WebLLM advertises on every request: the eight mandatory planning tools, the command-index
+// What WebLLM advertises on every request: the nine mandatory planning tools, the command-index
 // search, catalog discovery and the creative interpretation tool.
 const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     ...MANDATORY_PLANNING_TOOL_NAMES,
@@ -82,10 +82,10 @@ const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     CREATIVE_INTERPRETATION_TOOL_NAME,
 ]);
 
-// The mandatory planning contract (workflow selector, eleven application tools, the 23 workflow
-// action tools: 35) plus one prompt-selected slot; the budget bounds browser prompt size, not a
+// The mandatory planning contract (workflow selector, twelve application tools, the 23 workflow
+// action tools: 36) plus one prompt-selected slot; the budget bounds browser prompt size, not a
 // provider limit. Raise it with the mandatory set, never below it plus one free slot.
-export const WEBLLM_TOOL_BUDGET = 36;
+export const WEBLLM_TOOL_BUDGET = 37;
 
 /** What one hosted turn replays: the run's first user message, the turns behind it, and the note closing them. */
 type HostedTurnRequest = { firstUserMessage: string; history: HostedTurnHistory; budgetNote: string };
