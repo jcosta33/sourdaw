@@ -215,6 +215,8 @@ type GrinderNeuralPatch =
               recurrentBias?: number | null;
               convWeights?: readonly (readonly [number, number, number])[];
           };
+          /** The imported `.nam` model as JSON (#3774), when the sender proved one. */
+          modelJson?: string;
       };
 
 const NEURAL_TIER_INDEX: Record<string, number> = {
@@ -249,6 +251,16 @@ function applyNeuralPatch(instance: GrinderInstance, patch: GrinderNeuralPatch):
     if (patch.neuralModelMode === 'builtin') {
         instance.set_param('neuralModelMode', 0);
         return;
+    }
+
+    // A model-carrying patch loads the real imported network first (#3774):
+    // the runtime parses the `.nam` JSON and `process_capture` then runs it
+    // directly, ignoring the scalar substitute shaping below. The sender
+    // validated the same document against the mirrored rejection set, so a
+    // rejection here means the two validators diverged — surfaced loudly
+    // through the processor's fault path, never substituted over.
+    if (patch.modelJson !== undefined) {
+        instance.load_neural_model(patch.modelJson);
     }
 
     instance.set_param('neuralCustomTier', NEURAL_TIER_INDEX[patch.profile.preferredTier ?? 'standard'] ?? 0);
@@ -286,11 +298,16 @@ function isGrinderNeuralPatch(value: unknown): value is GrinderNeuralPatch {
     if (value.neuralModelMode === 'builtin') {
         return Object.keys(value).length === 1;
     }
-    if (
-        value.neuralModelMode !== 'imported' ||
-        !hasOnlyKeys(value, ['neuralModelMode', 'profile']) ||
-        !isRecord(value.profile)
-    ) {
+    const payloadKeys = ['neuralModelMode', 'profile'];
+    if (value.modelJson !== undefined) {
+        payloadKeys.push('modelJson');
+    }
+    if (value.neuralModelMode !== 'imported' || !hasOnlyKeys(value, payloadKeys) || !isRecord(value.profile)) {
+        return false;
+    }
+    // The compiled model transport (#3774): optional, but present only as a
+    // non-empty string — anything else is a corrupt message, dropped whole.
+    if (value.modelJson !== undefined && (typeof value.modelJson !== 'string' || value.modelJson.length === 0)) {
         return false;
     }
     const profile = value.profile;

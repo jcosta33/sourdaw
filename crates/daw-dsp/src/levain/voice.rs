@@ -408,8 +408,8 @@ impl SamplePlayback {
         // redundant: `update_vibrato_block` runs for every active voice at the
         // top of every block and calls `apply_pitch_mod`, which reassigns
         // `speed` from the always-positive `base_speed` before any tick reads
-        // it. `layer_secondary` is never pitch-modulated, so there the flip is
-        // the only thing that turns the stream around. No shipped bank uses
+        // it. `layer_secondary` now rides the same modulation (#4843), so the
+        // flip is redundant there too. No shipped bank uses
         // `pingpong` — the 18 banks here declare only `forward` and `none` —
         // but the manifest schema and the worklet both accept it.
         if self.speed < 0.0 {
@@ -1183,6 +1183,14 @@ impl LevainVoice {
                 playback.apply_pitch_mod(humanized_bend);
                 outgoing.apply_pitch_mod(humanized_bend);
             }
+            for (layer, attached) in self.layer_secondary[..mics]
+                .iter_mut()
+                .zip(&self.layer_attached[..mics])
+            {
+                if *attached {
+                    layer.apply_pitch_mod(humanized_bend);
+                }
+            }
             return;
         }
 
@@ -1215,6 +1223,19 @@ impl LevainVoice {
         if self.crossfading {
             for outgoing in self.crossfade_playback[..mics].iter_mut() {
                 outgoing.apply_pitch_mod(semitones);
+            }
+        }
+        // The CC1 dynamic layer is blended into every mic position for the
+        // life of the note, so it must ride the same combined modulation —
+        // otherwise it reads as a second, detuned voice under the bent one
+        // (#4843). Its base_speed stays its own layer recording's; only the
+        // modulation rides on top.
+        for (layer, attached) in self.layer_secondary[..mics]
+            .iter_mut()
+            .zip(&self.layer_attached[..mics])
+        {
+            if *attached {
+                layer.apply_pitch_mod(semitones);
             }
         }
     }

@@ -95,6 +95,32 @@ export type OfflineRenderEngineSelection =
 /** A sidechain route as the Routing store spells it — only the keyed device matters here. */
 export type OfflineRenderSidechainRoute = Readonly<{ targetDeviceId: string }>;
 
+/**
+ * The modulator-rack facts the gates read, as the stores spell them. The
+ * native engine carries lane automation on device parameters but has no
+ * vocabulary for a modulator curve, so any enabled mapping gates to Web Audio
+ * — the same conservatism as every gate below.
+ */
+export type OfflineRenderGateModulator = Readonly<{
+    name: string;
+    enabled: boolean;
+    mappings: readonly unknown[];
+}>;
+
+/**
+ * The adjustment-layer facts the gates read. A volume/pan layer whose blend is
+ * steady across the render folds into the strip state both engines apply; a
+ * moving one, and every DSP layer (no native bus), gate to Web Audio.
+ */
+export type OfflineRenderGateAdjustmentLayer = Readonly<{
+    name: string;
+    enabled: boolean;
+    effectType: string;
+    regions: readonly { startBeat: number; endBeat: number }[];
+    affectedTrackIds: readonly string[];
+    insertionIndex: number;
+}>;
+
 export type SelectOfflineRenderEngineInput = Readonly<{
     gainEnvelopes?: GainEnvelopeStoreState['envelopes'];
     /** Every sidechain route the render reads, wired or not. */
@@ -103,6 +129,8 @@ export type SelectOfflineRenderEngineInput = Readonly<{
     renderableTracks: readonly Track[];
     /** The tracks whose programme reaches the mix. */
     scheduledTracks: readonly Track[];
+    modulators?: readonly OfflineRenderGateModulator[];
+    adjustmentLayers?: readonly OfflineRenderGateAdjustmentLayer[];
 }>;
 
 /** Why this track's chain cannot render natively, or `null` when every device on it can. */
@@ -110,6 +138,15 @@ function deviceChainGateReason(track: Track, keyedDeviceIds: ReadonlySet<string>
     for (const device of track.devices) {
         if (nativeBuiltinBody(device.type) === null) {
             return `track "${track.name}" carries device "${device.type}", which the native render has no body for`;
+        }
+        // A Grinder whose record carries model digest words is running a real
+        // imported .nam capture (#3774). The native body is built from the
+        // numeric record alone and has no vocabulary for a loaded network, so
+        // a native render would sound the derived substitute — the exact
+        // silent substitution #3774 forbids. The Web Audio render loads the
+        // model, so the project degrades to it with this reason.
+        if (device.type === 'grinder' && device.parameterValues.neuralCustomModelDigest0 !== undefined) {
+            return `track "${track.name}" carries device "${device.type}" running an imported neural model, which the native render cannot load`;
         }
         if (isOfflineInstrumentDevice(device.type)) {
             return `track "${track.name}" carries instrument "${device.type}", which renders through Web Audio`;
@@ -142,6 +179,52 @@ function busOriginSendGateReason(renderableTracks: readonly Track[]): string | n
             }
             return `bus "${source.name}" sends to bus "${target.name}", which the native engine has no bus send tap for`;
         }
+    }
+    return null;
+}
+
+/**
+ * Why the modulator rack or the adjustment-layer stack keeps this render off
+ * the native engine, or `null` when neither applies. Mirrors what the Web
+ * Audio render carries: a modulator's block-sampled schedule, a DSP layer's
+ * bus chain, and a moving volume/pan layer's block curve are all web-only.
+ */
+/** Live `resolveAffectedTrackIds`: the explicit list, or every track below the stack position. */
+function layerAffectsRenderableTracks(
+    layer: OfflineRenderGateAdjustmentLayer,
+    trackIds: ReadonlySet<string>,
+    allTrackIds: readonly string[]
+): boolean {
+    if (layer.affectedTrackIds.length > 0) {
+        return layer.affectedTrackIds.some((trackId) => trackIds.has(trackId));
+    }
+    return allTrackIds.slice(layer.insertionIndex).some((trackId) => trackIds.has(trackId));
+}
+
+function modulationAndLayerGateReason(input: SelectOfflineRenderEngineInput): string | null {
+    for (const modulator of input.modulators ?? []) {
+        if (modulator.enabled && modulator.mappings.length > 0) {
+            return `modulator "${modulator.name}" drives device parameters, which the native render does not carry`;
+        }
+    }
+    const trackIds = new Set(input.renderableTracks.map((track) => track.id));
+    const allTrackIds = input.renderableTracks.map((track) => track.id);
+    for (const layer of input.adjustmentLayers ?? []) {
+        if (!layer.enabled) {
+            continue;
+        }
+        if (!layerAffectsRenderableTracks(layer, trackIds, allTrackIds)) {
+            continue;
+        }
+        // A steady volume/pan layer folds into the strip state the native
+        // engine applies like the web one; only a moving one is web-only.
+        if (layer.effectType === 'volume' || layer.effectType === 'pan') {
+            if (layer.regions.length > 0) {
+                return `adjustment layer "${layer.name}" moves across the export, which only the Web Audio render schedules`;
+            }
+            continue;
+        }
+        return `adjustment layer "${layer.name}" routes DSP the native engine has no bus for`;
     }
     return null;
 }
@@ -193,7 +276,7 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
             return `bus "${track.name}" routes into a track, which the native engine refuses`;
         }
     }
-    return busOriginSendGateReason(renderableTracks);
+    return modulationAndLayerGateReason(input) ?? busOriginSendGateReason(renderableTracks);
 }
 
 /**

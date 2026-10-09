@@ -1437,6 +1437,30 @@ export class GrinderInstance {
         return ret;
     }
     /**
+     * Whether a real imported .nam model is loaded (distinct from the
+     * builtin slots and the legacy derived profile).
+     * @returns {boolean}
+     */
+    has_loaded_neural_model() {
+        const ret = wasm.grinderinstance_has_loaded_neural_model(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Load a real .nam capture into the neural stage. Control-path only:
+     * parses the full model (weights, config, architecture) and prewarms it.
+     * Returns the named rejection reason for unsupported or inconsistent
+     * files — nothing is ever substituted.
+     * @param {string} json
+     */
+    load_neural_model(json) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.grinderinstance_load_neural_model(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
      * @param {number} sample_rate
      */
     constructor(sample_rate) {
@@ -2353,6 +2377,11 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
+        __wbindgen_cast_0000000000000001: function(arg0, arg1) {
+            // Cast intrinsic for `Ref(String) -> Externref`.
+            const ret = getStringFromWasm0(arg0, arg1);
+            return ret;
+        },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
             const offset = table.grow(4);
@@ -2483,6 +2512,12 @@ function passStringToWasm0(arg, malloc, realloc) {
 
     WASM_VECTOR_LEN = offset;
     return ptr;
+}
+
+function takeFromExternrefTable0(idx) {
+    const value = wasm.__wbindgen_externrefs.get(idx);
+    wasm.__externref_table_dealloc(idx);
+    return value;
 }
 
 let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });

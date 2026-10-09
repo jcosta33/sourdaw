@@ -1,6 +1,7 @@
 import { type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { type DeviceRef } from '#/utils/createFindDeviceRef';
 
+import { grinderNeuralModelJson } from '../../models/grinderNeuralModelJson';
 import { grinderNeuralProfileParams } from '../../models/GrinderNeuralProfileParams';
 import { type GrinderPatch, type GrinderPedal } from '../../models/GrinderPatch';
 import { GRINDER_PROJECT_PARAM_KEYS } from '../../models/GrinderProjectParameterMap';
@@ -301,10 +302,18 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
     }
     sendNumericParamToDevice(input, 'neuralModelMode', importedModel ? 1 : 0);
     if (importedModel) {
-        sendPatchToDevice(input, {
+        // The model rides the structured patch as `.nam` JSON (#3774): the
+        // worklet parses it into the real network. A profile without a model
+        // — a record no library entry claims — sends none and the scalar
+        // substitute runs, the same degradation #4146 established.
+        const patch: GrinderNeuralAudioPatch = {
             neuralModelMode: 'imported',
             profile: importedModel,
-        });
+        };
+        if (importedModel.model !== null && importedModel.model !== undefined) {
+            patch.modelJson = grinderNeuralModelJson(importedModel.model);
+        }
+        sendPatchToDevice(input, patch);
     } else {
         sendPatchToDevice(input, { neuralModelMode: 'builtin' });
         const neural_model_slot = getNeuralModelSlot(patch.neuralModelId);

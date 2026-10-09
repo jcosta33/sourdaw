@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
     createReadyGrinderProcessor,
+    grinderLoadModelCalls,
     grinderSetParamCalls,
     resetGrinderProcessorCalls,
+    setGrinderModelRejection,
     type GrinderProcessorLike,
 } from './grinderProcessorTestHarness';
 
@@ -152,6 +154,45 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
             (c) => (c[0] as { type?: string }).type === 'latency-changed'
         );
         expect(latencyCalls).toEqual([]);
+    });
+
+    it('loads a model-carrying patch before writing the scalar profile (#3774)', async () => {
+        const processor = await createReadyGrinderProcessor();
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: { preferredTier: 'standard' },
+            modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+        });
+
+        expect(grinderLoadModelCalls).toEqual(['{"architecture":"WaveNet","config":{},"weights":[0.5]}']);
+        // The model load lands before the scalars: the runtime parses the real
+        // network first, then the tier/scalars mode the stage in.
+        expect(grinderSetParamCalls[0]?.name).toBe('neuralCustomTier');
+        expect(paramMap(grinderSetParamCalls).neuralModelMode).toBe(1);
+    });
+
+    it('never calls load_neural_model without a model', async () => {
+        const processor = await createReadyGrinderProcessor();
+        patch(processor, { neuralModelMode: 'imported', profile: { preferredTier: 'standard' } });
+        expect(grinderSetParamCalls.length).toBeGreaterThan(0);
+        expect(grinderLoadModelCalls).toEqual([]);
+    });
+
+    it('faults the processor when the runtime rejects a model the sender validated', async () => {
+        setGrinderModelRejection('unsupported NAM file version "0.4.9"');
+        const processor = await createReadyGrinderProcessor();
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: {},
+            modelJson: '{"architecture":"WaveNet"}',
+        });
+
+        // The rejection propagates: the onmessage catch faults the processor and
+        // posts the error instead of running the substitute silently.
+        expect(grinderLoadModelCalls).toEqual(['{"architecture":"WaveNet"}']);
+        expect(grinderSetParamCalls).toEqual([]);
+        const error = processor.port.postMessage.mock.calls.find((c) => (c[0] as { type?: string }).type === 'error');
+        expect(error).toBeDefined();
     });
 });
 

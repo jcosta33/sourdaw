@@ -14,6 +14,10 @@ import type { GetWebMidiTrackStrip } from './engineStripAccess';
 type RoutedYeastNoteOff = {
     channel: number;
     note: number;
+    /** The generated voice this off retires, when the rack carried one (#4873). */
+    noteInstanceId?: string;
+    /** Sample frame the worker settled the voice at, when it carried one. */
+    sampleFrame?: number;
 };
 
 /**

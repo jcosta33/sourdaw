@@ -31,6 +31,8 @@ function make_entry(input: { id: string; imported_at: number }): GrinderImported
             contourMix: 0.2,
             recurrentBias: 0.01,
             convWeights: [[0.1, 0.7, 0.2]],
+            model: null,
+            modelDigest: null,
         },
     };
 }

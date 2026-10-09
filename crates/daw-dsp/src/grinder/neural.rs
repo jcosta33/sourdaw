@@ -8,6 +8,8 @@
 
 use crate::primitives::flush_denormal;
 
+use super::nam::{parse_nam_model, NamModel, NamModelError};
+
 /// Neural model tier.
 #[derive(Clone, Copy, PartialEq)]
 pub enum ModelTier {
@@ -196,6 +198,10 @@ pub struct NeuralCapture {
     cpu_budget: u32,
     selected_model_slot: Option<usize>,
     custom_profile_active: bool,
+    /// A real imported .nam model. When present, `process_capture` runs this
+    /// network directly — the drive/asymmetry/contour/trim shaping and the
+    /// tier layer clipping only apply to the legacy derived profile.
+    model: Option<NamModel>,
     input_drive: f32,
     asymmetry: f32,
     output_trim: f32,
@@ -232,6 +238,7 @@ impl NeuralCapture {
             cpu_budget: 1,
             selected_model_slot: None,
             custom_profile_active: false,
+            model: None,
             input_drive: 1.0,
             asymmetry: 0.0,
             output_trim: 1.0,
@@ -273,6 +280,9 @@ impl NeuralCapture {
                     self.arm_warmup();
                 } else {
                     self.custom_profile_active = false;
+                    // Switching back to a builtin slot discards any imported
+                    // model: the slots are the builtin captures' weights.
+                    self.model = None;
                     self.model_loaded = self.selected_model_slot.is_some();
                     self.warmup_samples_remaining = 0;
                 }
@@ -294,10 +304,38 @@ impl NeuralCapture {
         }
     }
 
+    /// Load a real .nam capture. Parses and constructs the network (control
+    /// path only — allocation happens here, never in `process_capture`), then
+    /// prewarms it so the first rendered sample matches NAMCore's
+    /// prewarm-on-reset state. Rejects unsupported or inconsistent files with
+    /// the named reason; nothing is substituted.
+    pub fn load_model_json(&mut self, json: &str) -> Result<(), NamModelError> {
+        let mut model = parse_nam_model(json)?;
+        model.reset();
+        self.model = Some(model);
+        self.selected_model_slot = None;
+        self.custom_profile_active = true;
+        self.model_loaded = true;
+        self.arm_warmup();
+        Ok(())
+    }
+
+    pub fn has_loaded_model(&self) -> bool {
+        self.model.is_some()
+    }
+
     pub fn process_capture(&mut self, input: f32) -> f32 {
         if self.engine_mode == EngineMode::Circuit || !self.has_active_model() || !self.model_loaded
         {
             return input;
+        }
+
+        // A real imported model is the transfer function: run it on the raw
+        // input with none of the derived-profile shaping around it.
+        if let Some(model) = &mut self.model {
+            let processed = model.process(input);
+            let activation = self.next_warmup_mix();
+            return input * (1.0 - activation) + processed * activation;
         }
 
         let shaped_input = input * self.input_drive + input.abs() * input * self.asymmetry;
@@ -344,6 +382,9 @@ impl NeuralCapture {
         }
         self.lstm.reset();
         self.contour_state = 0.0;
+        if let Some(model) = &mut self.model {
+            model.reset();
+        }
     }
 
     pub fn engine_mode(&self) -> EngineMode {
@@ -438,6 +479,7 @@ impl NeuralCapture {
     fn load_builtin_model(&mut self, slot: usize) {
         self.selected_model_slot = Some(slot);
         self.custom_profile_active = false;
+        self.model = None;
 
         let (weight_triplets, input_drive, asymmetry, output_trim, contour_mix, lstm_bias) =
             match slot {
@@ -489,6 +531,149 @@ impl NeuralCapture {
 #[cfg(test)]
 mod tests {
     use super::{ModelTier, NeuralCapture};
+    use crate::grinder::nam::parity_input;
+
+    fn wavenet_fixture() -> String {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/grinder/nam/fixtures/wavenet.nam"
+        );
+        std::fs::read_to_string(path).expect("fixture must be readable")
+    }
+
+    /// A real loaded model is the transfer function: none of the
+    /// derived-profile shapers (drive, asymmetry, contour, trim) may touch its
+    /// output, so the capture path must reproduce the fixture parity exactly.
+    #[test]
+    fn loaded_model_bypasses_the_substitute_shapers() {
+        let json = wavenet_fixture();
+        let mut capture = NeuralCapture::new(48_000.0);
+        capture.set_param("engineMode", 1.0);
+        capture.load_model_json(&json).expect("fixture must load");
+        assert!(capture.has_loaded_model());
+
+        // The parity expectation for this fixture against NAMCore, via the
+        // capture path end to end.
+        let golden_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/grinder/nam/fixtures/golden_wavenet_bs64.txt"
+        );
+        let golden: Vec<f32> = std::fs::read_to_string(golden_path)
+            .expect("golden must be readable")
+            .lines()
+            .map(|line| line.trim().parse::<f64>().expect("golden line") as f32)
+            .collect();
+
+        let mut reference = crate::grinder::nam::parse_nam_model(&json).expect("fixture must load");
+        reference.reset();
+        let input = parity_input(golden.len());
+        // Ride out the capture path's 40 ms warmup crossfade on silence (which
+        // leaves the model's prewarmed trajectory untouched), then compare.
+        for _ in 0..2_400 {
+            capture.process_capture(0.0);
+        }
+        let mut worst = 0.0_f64;
+        for value in input.iter() {
+            let via_capture = capture.process_capture(*value);
+            let direct = reference.process(*value);
+            let delta = (via_capture - direct).abs() as f64;
+            worst = worst.max(delta);
+        }
+        assert!(
+            worst < 1.0e-6,
+            "capture path must run the bare model (worst delta {worst:.3e})"
+        );
+        // And the direct path stays inside the pinned NAMCore tolerance.
+        let actual: Vec<f32> = {
+            let mut model = crate::grinder::nam::parse_nam_model(&json).expect("fixture");
+            model.reset();
+            input.iter().map(|value| model.process(*value)).collect()
+        };
+        let relative_rms = {
+            let numerator: f64 = actual
+                .iter()
+                .zip(&golden)
+                .map(|(a, e)| {
+                    let d = (a - e) as f64;
+                    d * d
+                })
+                .sum();
+            let denominator: f64 = golden.iter().map(|e| (*e as f64) * (*e as f64)).sum();
+            (numerator / denominator).sqrt()
+        };
+        assert!(
+            relative_rms <= 1.0e-5,
+            "relative RMS {relative_rms:.3e} > 1e-5"
+        );
+    }
+
+    /// Two different .nam captures must sound different through the same
+    /// capture path — the issue's "different models collapse to the same
+    /// sound" defect, inverted.
+    #[test]
+    fn two_different_models_produce_distinct_output() {
+        let wavenet_json = wavenet_fixture();
+        let lstm_json = {
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/grinder/nam/fixtures/lstm.nam"
+            );
+            std::fs::read_to_string(path).expect("fixture must be readable")
+        };
+
+        let mut a = NeuralCapture::new(48_000.0);
+        a.set_param("engineMode", 1.0);
+        a.load_model_json(&wavenet_json).expect("fixture must load");
+        let mut b = NeuralCapture::new(48_000.0);
+        b.set_param("engineMode", 1.0);
+        b.load_model_json(&lstm_json).expect("fixture must load");
+
+        let input = parity_input(2000);
+        let mut delta_sum = 0.0_f64;
+        for value in &input {
+            let difference = (a.process_capture(*value) - b.process_capture(*value)) as f64;
+            delta_sum += difference * difference;
+        }
+        let rms = (delta_sum / input.len() as f64).sqrt();
+        assert!(
+            rms > 1.0e-3,
+            "distinct models collapsed to one sound (rms {rms:.3e})"
+        );
+    }
+
+    /// Switching back to a builtin slot discards the imported model; loading
+    /// a new one replaces it.
+    #[test]
+    fn model_slot_switching_discards_and_replaces_loaded_models() {
+        let json = wavenet_fixture();
+        let mut capture = NeuralCapture::new(48_000.0);
+        capture.set_param("engineMode", 1.0);
+        capture.load_model_json(&json).expect("fixture must load");
+        assert!(capture.has_loaded_model());
+        capture.set_param("neuralModelMode", 0.0);
+        assert!(!capture.has_loaded_model());
+        capture.set_param("neuralModelSlot", 1.0);
+        assert!(!capture.has_loaded_model());
+        capture.load_model_json(&json).expect("fixture must load");
+        assert!(capture.has_loaded_model());
+    }
+
+    /// The render path may not allocate: a loaded model processes inside the
+    /// no-alloc guard.
+    #[test]
+    fn loaded_model_render_path_is_allocation_free() {
+        let json = wavenet_fixture();
+        let mut capture = NeuralCapture::new(48_000.0);
+        capture.set_param("engineMode", 1.0);
+        capture.load_model_json(&json).expect("fixture must load");
+        let input = parity_input(256);
+        assert_no_alloc::assert_no_alloc(|| {
+            for value in &input {
+                let out = capture.process_capture(*value);
+                assert!(out.is_finite());
+            }
+        });
+    }
 
     fn average_abs_output_for_model(slot: usize) -> f32 {
         let mut neural = NeuralCapture::new(48_000.0);

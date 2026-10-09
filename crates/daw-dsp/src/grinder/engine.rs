@@ -691,6 +691,17 @@ impl GrinderEngine {
     pub fn neural_warmup_progress(&self) -> f32 {
         self.neural.warmup_progress()
     }
+    /// Load a real .nam capture into the neural stage. Control-path only:
+    /// parsing and prewarming allocate, so this must never run inside the
+    /// render callback.
+    pub fn load_neural_model(&mut self, json: &str) -> Result<(), String> {
+        self.neural
+            .load_model_json(json)
+            .map_err(|error| error.to_string())
+    }
+    pub fn has_loaded_neural_model(&self) -> bool {
+        self.neural.has_loaded_model()
+    }
 
     fn set_supported_pedal_order(&mut self, name: &str, value: f32) {
         let Some((is_post, pedal_slot)) = map_supported_pedal_order_param(name) else {

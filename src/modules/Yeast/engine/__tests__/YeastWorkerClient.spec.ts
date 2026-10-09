@@ -1167,7 +1167,9 @@ describe('createYeastWorker — projection protocol', () => {
 
         await expect(result).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', noteOffs: [{ channel: 0, note: 60 }] }]);
+        expect(onNotesOff).toHaveBeenCalledWith([
+            { trackId: 'track-a', noteOffs: [{ channel: 0, note: 60, sampleFrame: 128 }] },
+        ]);
     });
 
     it('dispatches projection note-offs grouped by their originating track', async () => {
@@ -1185,8 +1187,8 @@ describe('createYeastWorker — projection protocol', () => {
         await expect(result).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
         expect(onNotesOff).toHaveBeenCalledWith([
-            { trackId: 'track-a', noteOffs: [{ channel: 0, note: 60 }] },
-            { trackId: 'track-b', noteOffs: [{ channel: 0, note: 60 }] },
+            { trackId: 'track-a', noteOffs: [{ channel: 0, note: 60, sampleFrame: 128 }] },
+            { trackId: 'track-b', noteOffs: [{ channel: 0, note: 60, sampleFrame: 128 }] },
         ]);
     });
 
@@ -1209,11 +1211,83 @@ describe('createYeastWorker — projection protocol', () => {
             {
                 trackId: 'track-a',
                 noteOffs: [
-                    { channel: 1, note: 60 },
-                    { channel: 2, note: 60 },
+                    { channel: 1, note: 60, sampleFrame: 128 },
+                    { channel: 2, note: 60, sampleFrame: 128 },
                 ],
             },
-            { trackId: 'track-b', noteOffs: [{ channel: 2, note: 60 }] },
+            { trackId: 'track-b', noteOffs: [{ channel: 2, note: 60, sampleFrame: 128 }] },
+        ]);
+    });
+
+    it('carries the voice instance and settle frame on lifecycle note-offs (#4873)', async () => {
+        const node = await createYeastWorker(makeContext());
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
+        const events = [
+            {
+                timeSamples: 128,
+                trackId: 'track-a',
+                noteInstanceId: 'voice-a',
+                kind: { type: 'noteOff', channel: 0, note: 60 },
+            },
+            { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 64 } },
+        ];
+
+        const result = node.setProjection([]);
+        replyProjectionAck(lastWorker(), 0, events);
+
+        await expect(result).resolves.toBeUndefined();
+        expect(onNotesOff).toHaveBeenCalledExactlyOnceWith([
+            {
+                trackId: 'track-a',
+                noteOffs: [
+                    { channel: 0, note: 60, noteInstanceId: 'voice-a', sampleFrame: 128 },
+                    { channel: 0, note: 64, sampleFrame: 128 },
+                ],
+            },
+        ]);
+    });
+
+    it('deduplicates lifecycle note-offs per voice instance so same-pitch voices each survive', async () => {
+        const node = await createYeastWorker(makeContext());
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
+        const events = [
+            {
+                timeSamples: 128,
+                trackId: 'track-a',
+                noteInstanceId: 'voice-a',
+                kind: { type: 'noteOff', channel: 0, note: 60 },
+            },
+            {
+                timeSamples: 128,
+                trackId: 'track-a',
+                noteInstanceId: 'voice-a',
+                kind: { type: 'noteOff', channel: 0, note: 60 },
+            },
+            {
+                timeSamples: 200,
+                trackId: 'track-a',
+                noteInstanceId: 'voice-b',
+                kind: { type: 'noteOff', channel: 0, note: 60 },
+            },
+            { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+            { timeSamples: 300, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+        ];
+
+        const result = node.setProjection([]);
+        replyProjectionAck(lastWorker(), 0, events);
+
+        await expect(result).resolves.toBeUndefined();
+        expect(onNotesOff).toHaveBeenCalledExactlyOnceWith([
+            {
+                trackId: 'track-a',
+                noteOffs: [
+                    { channel: 0, note: 60, noteInstanceId: 'voice-a', sampleFrame: 128 },
+                    { channel: 0, note: 60, noteInstanceId: 'voice-b', sampleFrame: 200 },
+                    { channel: 0, note: 60, sampleFrame: 128 },
+                ],
+            },
         ]);
     });
 
@@ -1325,8 +1399,8 @@ describe('createYeastWorker — allNotesOff acknowledgement lifecycle', () => {
             {
                 trackId: 'track-a',
                 noteOffs: [
-                    { channel: 1, note: 60 },
-                    { channel: 2, note: 60 },
+                    { channel: 1, note: 60, sampleFrame: 512 },
+                    { channel: 2, note: 60, sampleFrame: 512 },
                 ],
             },
         ]);

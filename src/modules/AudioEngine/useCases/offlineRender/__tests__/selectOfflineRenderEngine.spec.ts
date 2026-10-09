@@ -569,7 +569,37 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                 keyedDeviceId: 'glue-1',
                 reason: 'track "Chained A" carries device "gluten" keyed by a sidechain, which the native render does not wire',
             },
+            {
+                // The digest words in the record are the only marker the
+                // selection sees: they mean the device is running a real
+                // imported .nam model (#3774), which the numeric-record-built
+                // native body cannot load — it would sound the substitute.
+                name: 'a Grinder running an imported neural model',
+                devices: [
+                    device({
+                        id: 'grind-1',
+                        type: 'grinder',
+                        parameterValues: { neuralModelMode: 1, neuralCustomModelDigest0: 1234 },
+                    }),
+                ],
+                reason: 'track "Chained A" carries device "grinder" running an imported neural model, which the native render cannot load',
+            },
         ];
+
+        it('hands a Grinder whose record carries no model digest to the native engine', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+            const track = chainedTrack('Chained A', [
+                device({ id: 'grind-1', type: 'grinder', parameterValues: { neuralModelMode: 1 } }),
+            ]);
+
+            const selection = await selectOfflineRenderEngine({
+                renderableTracks: [track],
+                scheduledTracks: [track],
+                sidechainRoutes: [],
+            });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
 
         it.each(cases)('degrades $name with its own reason', async ({ devices, keyedDeviceId, reason }) => {
             mocks.availability = { available: true, transport: stubTransport };

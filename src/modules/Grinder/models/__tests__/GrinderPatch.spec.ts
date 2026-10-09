@@ -119,6 +119,8 @@ describe('migrateGrinderPatch', () => {
             contourMix: 0,
             recurrentBias: 0,
             convWeights: [[0.1, 0.2, 0.3]],
+            model: null,
+            modelDigest: null,
         };
 
         const migrated = migrateGrinderPatch({ neuralModelProfile: profile });
@@ -140,6 +142,8 @@ describe('migrateGrinderPatch', () => {
             contourMix: 0,
             recurrentBias: 0,
             convWeights: [[0.1, 0.2, 0.3]],
+            model: null,
+            modelDigest: null,
         };
 
         const migrated = migrateGrinderPatch({ neuralModelProfile: profile });

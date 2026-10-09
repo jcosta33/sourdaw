@@ -1,6 +1,6 @@
 import { getGainEnvelopeSeries, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
+import { buildOfflineModulatorPlans, getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getDrumKitDefByIndex,
@@ -306,6 +306,14 @@ export async function scheduleTrackClips({
     // fully automated. The bounce follows the monitor.
     const trackReadsAutomation = track.automationMode !== 'off';
     if (includeAutomation && trackReadsAutomation) {
+        // The modulator rack's mappings resolved once against the project's
+        // tracks; this pass carries only the ones aimed at this track. Live
+        // evaluates the same rack per tick (`applyModulationToEngine`) on top
+        // of the automation below — the scheduler composes them per block in
+        // that same order.
+        const modulatorPlans = buildOfflineModulatorPlans({ tracks: allTracks ?? [track] }).filter(
+            (plan) => plan.targetTrackId === track.id
+        );
         scheduleTrackAutomation({
             lanes: automationLanes,
             trackId: track.id,
@@ -350,11 +358,13 @@ export async function scheduleTrackClips({
                     parameterLaw.quantiseValue?.({ deviceType, paramId, value }) ?? value,
             },
             regionStartSeconds: regionStartSec,
+            regionStartBeat,
             projectBeatToSeconds,
             sampleRate: offlineCtx.sampleRate,
             compensationDelaySec: compensationDelay,
             clipBoundsById,
             vcaMultiplier,
+            modulatorPlans,
             // Automation's own law, read here rather than re-derived in the
             // scheduler — the same reason `deviceParameterLaw` is injected.
             resolveLaneCeiling: getAutomationLaneCeiling,

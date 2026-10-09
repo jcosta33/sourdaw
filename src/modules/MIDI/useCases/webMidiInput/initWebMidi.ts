@@ -3,6 +3,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { initWebMidi as initializeWebMidi } from '../../repositories/webMidi/lifecycle/initWebMidi';
+import { releaseCapturedYeastLifecycleVoices } from '../../repositories/webMidi/routeYeastLifecycleNoteOff';
 import { routeYeastNoteOffsForTargetTrack } from '../../repositories/webMidi/routeYeastNoteOff';
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
 
@@ -61,6 +62,15 @@ function subscribeToYeastNotesOff(): void {
     webMidiSubscriptionState.disposeYeastNotesOffSubscription = eventBus.on(
         'yeast.notesOff',
         ({ trackId, noteOffs }) => {
+            // Lifecycle offs name the voice that started them (#4873): release
+            // the captured owner first so the ORIGINAL instrument control
+            // settles its voice even after the track's instrument changed.
+            // Only what no captured owner claims falls through to the
+            // current-node route.
+            const unroutedNoteOffs = releaseCapturedYeastLifecycleVoices(trackId, noteOffs);
+            if (unroutedNoteOffs.length === 0) {
+                return;
+            }
             const resolvedInstrument = resolveInstrumentTrack(trackStore.value, trackId);
             const instrumentTrack = resolvedInstrument?.instrumentTrack;
             const instrumentSnapshot = instrumentTrack
@@ -69,7 +79,7 @@ function subscribeToYeastNotesOff(): void {
                       devices: instrumentTrack.devices.map(({ id, type }) => ({ id, type })),
                   }
                 : null;
-            routeYeastNoteOffsForTargetTrack(instrumentSnapshot, noteOffs, {
+            routeYeastNoteOffsForTargetTrack(instrumentSnapshot, unroutedNoteOffs, {
                 emitGrandBouleEvent: (deviceId, midiNote) => {
                     void eventBus.emit('midi.noteOff', { deviceId, midiNote });
                 },

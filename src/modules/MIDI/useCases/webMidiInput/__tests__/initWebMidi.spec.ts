@@ -11,10 +11,27 @@ type RouteYeastNoteOffs = (
     options: { emitGrandBouleEvent: (deviceId: string, midiNote: number) => void }
 ) => void;
 
+type LifecycleNoteOff = {
+    channel: number;
+    note: number;
+    noteInstanceId?: string;
+    sampleFrame?: number;
+};
+
+type ReleaseCapturedYeastLifecycleVoices = (
+    trackId: string,
+    noteOffs: readonly LifecycleNoteOff[]
+) => LifecycleNoteOff[];
+
 const initializeWebMidiMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const setMidiInputTrackMock = vi.hoisted(() => vi.fn());
 const getMidiInputTrackOwnerIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
 const routeYeastNoteOffsMock = vi.hoisted(() => vi.fn<RouteYeastNoteOffs>());
+// Default passthrough: every identityless off reaches the current-node route,
+// matching the pre-#4873 consumer for payloads without captured owners.
+const releaseCapturedMock = vi.hoisted(() =>
+    vi.fn<ReleaseCapturedYeastLifecycleVoices>((_trackId, noteOffs) => [...noteOffs])
+);
 const trackStoreSubscribeMock = vi.hoisted(() => vi.fn());
 const eventBusOnMock = vi.hoisted(() => vi.fn());
 const eventBusEmitMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -64,6 +81,10 @@ vi.mock('../../../repositories/webMidi/routeYeastNoteOff', () => ({
     routeYeastNoteOffsForTargetTrack: routeYeastNoteOffsMock,
 }));
 
+vi.mock('../../../repositories/webMidi/routeYeastLifecycleNoteOff', () => ({
+    releaseCapturedYeastLifecycleVoices: releaseCapturedMock,
+}));
+
 vi.mock('../setMidiInputTrack', () => ({
     setMidiInputTrack: setMidiInputTrackMock,
 }));
@@ -83,6 +104,8 @@ describe('initWebMidi', () => {
         getMidiInputTrackOwnerIdMock.mockReset();
         getMidiInputTrackOwnerIdMock.mockReturnValue(null);
         routeYeastNoteOffsMock.mockClear();
+        releaseCapturedMock.mockClear();
+        releaseCapturedMock.mockImplementation((_trackId, noteOffs) => [...noteOffs]);
         trackStoreSubscribeMock.mockReset();
         eventBusOnMock.mockReset();
         eventBusEmitMock.mockClear();
@@ -141,6 +164,44 @@ describe('initWebMidi', () => {
         };
         routeInput.emitGrandBouleEvent('device-a', 60);
         expect(eventBusEmitMock).toHaveBeenCalledWith('midi.noteOff', { deviceId: 'device-a', midiNote: 60 });
+    });
+
+    it('routes a fully captured lifecycle batch without touching the current-node route (#4873)', async () => {
+        eventBusOnMock.mockImplementation(() => () => {});
+        await subject.initWebMidi();
+
+        const handler = eventBusOnMock.mock.calls.find(([event]) => event === 'yeast.notesOff')?.[1] as (payload: {
+            trackId: string;
+            noteOffs: LifecycleNoteOff[];
+        }) => void;
+        releaseCapturedMock.mockReturnValue([]);
+
+        handler({ trackId: 'track-a', noteOffs: [{ channel: 0, note: 60, noteInstanceId: 'voice-a' }] });
+
+        expect(releaseCapturedMock).toHaveBeenCalledWith('track-a', [
+            { channel: 0, note: 60, noteInstanceId: 'voice-a' },
+        ]);
+        expect(routeYeastNoteOffsMock).not.toHaveBeenCalled();
+    });
+
+    it('routes only the leftover identityless offs to the current-node compat route (#4873)', async () => {
+        eventBusOnMock.mockImplementation(() => () => {});
+        await subject.initWebMidi();
+
+        const handler = eventBusOnMock.mock.calls.find(([event]) => event === 'yeast.notesOff')?.[1] as (payload: {
+            trackId: string;
+            noteOffs: LifecycleNoteOff[];
+        }) => void;
+        const leftover: LifecycleNoteOff = { channel: 0, note: 64 };
+        releaseCapturedMock.mockReturnValue([leftover]);
+
+        handler({
+            trackId: 'track-a',
+            noteOffs: [{ channel: 0, note: 60, noteInstanceId: 'voice-a' }, leftover],
+        });
+
+        expect(routeYeastNoteOffsMock).toHaveBeenCalledTimes(1);
+        expect(routeYeastNoteOffsMock.mock.calls[0]?.[1]).toEqual([leftover]);
     });
 
     it('drops the live input target when the selection moves to a non-MIDI track', async () => {

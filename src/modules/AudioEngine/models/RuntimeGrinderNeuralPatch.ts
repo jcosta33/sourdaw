@@ -34,6 +34,13 @@ export type RuntimeGrinderNeuralPatchPayload =
               recurrentBias: number | null;
               convWeights: readonly (readonly [number, number, number])[];
           }>;
+          /**
+           * The imported `.nam` model serialized to JSON (#3774). Present when
+           * the sender proved a validated model; the worklet hands it to
+           * `GrinderInstance::load_neural_model`, which executes the source
+           * network. Absent keeps the scalar-only substitute path.
+           */
+          modelJson?: string;
       }>;
 
 export type RuntimeGrinderNeuralPatchCompilation =
