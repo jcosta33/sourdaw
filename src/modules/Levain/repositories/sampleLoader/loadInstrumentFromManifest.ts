@@ -1,3 +1,4 @@
+import { LEVAIN_SAMPLE_CHUNK_FLOATS, LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT } from '#/infra/audioWorklet/levainSampleChunk';
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 
 import { decodedBankResource } from './decodedBankResource';
@@ -282,6 +283,117 @@ function releaseRetiredBank(nodePort: MessagePort, loads: PortLoads, loadToken: 
     request();
 }
 
+type ChunkPacer = {
+    /** Resolve when a chunk may be posted; reject if the load was aborted, the worklet refused it or the processor ended. */
+    reserve: () => Promise<void>;
+    dispose: () => void;
+};
+
+/**
+ * Limit a load to `LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT` chunks the worklet has not
+ * yet acknowledged with `sampleChunkWritten`. The wait ends on an
+ * acknowledgement, and just as promptly on the abort signal, a
+ * `sampleBankError` for this load, or the processor's `error`/`disposed`: a
+ * processor that stops answering must not leave the load waiting for an
+ * acknowledgement that will never come.
+ */
+function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: AbortSignal): ChunkPacer {
+    let outstanding = 0;
+    let failure: Error | null = null;
+    let wake: (() => void) | null = null;
+
+    function wakeWaiter(): void {
+        wake?.();
+        wake = null;
+    }
+    function onMessage(event: MessageEvent<unknown>): void {
+        const message = event.data;
+        if (!isRecord(message)) {
+            return;
+        }
+        if (isProcessorEnd(message)) {
+            failure ??= processorEndedError(message);
+            wakeWaiter();
+            return;
+        }
+        if (message.loadToken !== loadToken) {
+            return;
+        }
+        if (message.type === 'sampleChunkWritten') {
+            outstanding = Math.max(0, outstanding - 1);
+            wakeWaiter();
+            return;
+        }
+        if (message.type === 'sampleBankError') {
+            const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
+            failure ??= new Error(`Levain sample-bank load failed${detail}`);
+            wakeWaiter();
+        }
+    }
+    async function reserve(): Promise<void> {
+        for (;;) {
+            if (failure) {
+                throw failure;
+            }
+            signal?.throwIfAborted();
+            if (outstanding < LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT) {
+                outstanding += 1;
+                return;
+            }
+            const answered = Promise.withResolvers<void>();
+            wake = answered.resolve;
+            await raceAbortSignal(answered.promise, signal);
+        }
+    }
+
+    nodePort.addEventListener('message', onMessage);
+    return {
+        reserve,
+        dispose: () => {
+            nodePort.removeEventListener('message', onMessage);
+            wakeWaiter();
+        },
+    };
+}
+
+/**
+ * Post one decoded sample as `beginSample`, its PCM in `sampleChunk` messages
+ * of at most `LEVAIN_SAMPLE_CHUNK_FLOATS` floats, then `sealSample`, in that
+ * order on one port. The worklet reserves the sample's storage once at begin
+ * and copies one chunk per message, so no message holds the render thread for a
+ * whole sample's copy.
+ *
+ * Each chunk is a copy of its slice, transferred: posting a view of the bank's
+ * shared buffer would clone the whole underlying buffer, and the decoded bank
+ * stays cached for later loads, so its own buffer cannot be handed away.
+ *
+ * Each chunk waits for a slot from `pacer`, so the worklet never holds more
+ * than `LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT` queued chunks and cannot drain a long
+ * run of them between two render quanta.
+ */
+async function uploadSampleInChunks(
+    nodePort: MessagePort,
+    loadToken: number,
+    sampleId: number,
+    decoded: { data: Float32Array; frameCount: number; channels: number; sampleRate: number },
+    pacer: ChunkPacer
+): Promise<void> {
+    nodePort.postMessage({
+        type: 'beginSample',
+        loadToken,
+        sampleId,
+        frameCount: decoded.frameCount,
+        channels: decoded.channels,
+        sampleRate: decoded.sampleRate,
+    });
+    for (let offset = 0; offset < decoded.data.length; offset += LEVAIN_SAMPLE_CHUNK_FLOATS) {
+        await pacer.reserve();
+        const data = decoded.data.slice(offset, offset + LEVAIN_SAMPLE_CHUNK_FLOATS);
+        nodePort.postMessage({ type: 'sampleChunk', loadToken, sampleId, data }, [data.buffer]);
+    }
+    nodePort.postMessage({ type: 'sealSample', loadToken, sampleId });
+}
+
 export type LoadInstrumentFromManifestInput = {
     manifestUrl: string;
     basePath: string;
@@ -362,6 +474,8 @@ export async function loadInstrumentFromManifest({
     let releaseStarted = false;
     let handshake: SampleBankHandshake | null = null;
     let completed = false;
+    // Paces the chunk uploads of this load; made when the first sample uploads.
+    let chunkPacer: ChunkPacer | null = null;
     try {
         // Hold this load's `beginSampleBank` until every earlier load on the
         // port is over, the bank the last one displaced fully freed a bounded
@@ -398,15 +512,8 @@ export async function loadInstrumentFromManifest({
             }
             sampleIdMap.set(file, sampleId);
             if (uploadRequired) {
-                nodePort.postMessage({
-                    type: 'addSample',
-                    loadToken,
-                    sampleId,
-                    data: decoded.data,
-                    frameCount: decoded.frameCount,
-                    channels: decoded.channels,
-                    sampleRate: decoded.sampleRate,
-                });
+                chunkPacer ??= createChunkPacer(nodePort, loadToken, signal);
+                await uploadSampleInChunks(nodePort, loadToken, sampleId, decoded, chunkPacer);
             }
         }
 
@@ -506,6 +613,7 @@ export async function loadInstrumentFromManifest({
         releaseRetiredBank(nodePort, loads, loadToken, over.resolve);
         return bank;
     } finally {
+        chunkPacer?.dispose();
         if (handshake && !completed) {
             handshake.cancel();
         }

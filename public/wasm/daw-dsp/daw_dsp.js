@@ -1493,8 +1493,15 @@ export class LevainInstance {
         wasm.levaininstance_add_legato_transition(this.__wbg_ptr, interval, transition_type, dynamic, sample_id, crossfade_out_ms);
     }
     /**
-     * Add a sample to the uniquely-owned loading bank. `data` is interleaved
-     * f32 PCM. Returns `None` if the bank is already shared or exceeds limits.
+     * Add a whole sample to the uniquely-owned loading bank in one call. `data`
+     * is interleaved f32 PCM. Returns `None` if the bank is already shared or
+     * exceeds limits.
+     *
+     * Not what the worklet calls: copying a whole sample is one message-sized
+     * cost on the render thread, which `begin_sample`, `sample_write_ptr` and
+     * `commit_sample_frames` bound to one chunk. The native host (which builds
+     * banks on a control thread) and the pinned wasm measurement recipes
+     * (`benches/wasm/deviceRecipes.js`) still use this one.
      * @param {Float32Array} data
      * @param {number} frame_count
      * @param {number} channels
@@ -1564,6 +1571,24 @@ export class LevainInstance {
         return ret !== 0;
     }
     /**
+     * Start uploading a sample into the staged bank, reserving storage for
+     * all of its PCM. Returns the id the sample will have once sealed, or
+     * `None` when the engine refuses (no staged bank, a sample already open,
+     * a shared bank, or limits exceeded).
+     *
+     * This is the one allocation of the upload: the chunks that follow
+     * (`sample_write_ptr`, `commit_sample_frames`) allocate nothing and each
+     * copies at most `LEVAIN_SAMPLE_CHUNK_FLOATS` floats.
+     * @param {number} frame_count
+     * @param {number} channels
+     * @param {number} sample_rate
+     * @returns {number | undefined}
+     */
+    begin_sample(frame_count, channels, sample_rate) {
+        const ret = wasm.levaininstance_begin_sample(this.__wbg_ptr, frame_count, channels, sample_rate);
+        return ret === Number.MAX_SAFE_INTEGER ? undefined : ret;
+    }
+    /**
      * Reset this device to a uniquely-owned empty loading bank.
      * @param {string} instrument_id
      */
@@ -1598,6 +1623,24 @@ export class LevainInstance {
      */
     commit_sample_bank() {
         const ret = wasm.levaininstance_commit_sample_bank(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Count `float_count` floats the host wrote at `sample_write_ptr` as part
+     * of the open sample. Allocates nothing. Refuses (false) for another
+     * sample id or a count above `sample_write_floats`.
+     *
+     * # Safety
+     *
+     * The caller must have written `float_count` floats at the address
+     * `sample_write_ptr` returned for this sample. Nothing in Rust can check
+     * that the host did.
+     * @param {number} sample_id
+     * @param {number} float_count
+     * @returns {boolean}
+     */
+    commit_sample_frames(sample_id, float_count) {
+        const ret = wasm.levaininstance_commit_sample_frames(this.__wbg_ptr, sample_id, float_count);
         return ret !== 0;
     }
     /**
@@ -1756,6 +1799,41 @@ export class LevainInstance {
     sample_bank_bytes() {
         const ret = wasm.levaininstance_sample_bank_bytes(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Floats the host may write at `sample_write_ptr` next: what the open
+     * sample still needs, at most `LEVAIN_SAMPLE_CHUNK_FLOATS`. Zero when
+     * `sample_id` is not the open sample.
+     * @param {number} sample_id
+     * @returns {number}
+     */
+    sample_write_floats(sample_id) {
+        const ret = wasm.levaininstance_sample_write_floats(this.__wbg_ptr, sample_id);
+        return ret >>> 0;
+    }
+    /**
+     * Address in this module's linear memory where the next chunk of the open
+     * sample goes, or 0 when `sample_id` is not the open sample. Write at most
+     * `sample_write_floats` floats there, then call `commit_sample_frames`.
+     * Read the module's `memory.buffer` after this call: growing it
+     * elsewhere detaches earlier buffers.
+     * @param {number} sample_id
+     * @returns {number}
+     */
+    sample_write_ptr(sample_id) {
+        const ret = wasm.levaininstance_sample_write_ptr(this.__wbg_ptr, sample_id);
+        return ret >>> 0;
+    }
+    /**
+     * Publish the open sample once every one of its floats is written.
+     * Allocates and frees nothing. Returns false, leaving the sample open,
+     * for another id or a short sample.
+     * @param {number} sample_id
+     * @returns {boolean}
+     */
+    seal_sample(sample_id) {
+        const ret = wasm.levaininstance_seal_sample(this.__wbg_ptr, sample_id);
+        return ret !== 0;
     }
     /**
      * Tell the engine which instrument id is now loaded (e.g. `violin-1`,

@@ -29,14 +29,15 @@ function stageBank(processor: LevainProcessorLike, loadToken: number, instrument
     send(processor, { type: 'beginSampleBank', bankKey: `bank-${loadToken}`, instrumentId, loadToken });
     const data = new Float32Array(SAMPLE_FRAMES).map((_, frame) => Math.sin(frame * 0.05) * 0.5);
     send(processor, {
-        type: 'addSample',
+        type: 'beginSample',
         loadToken,
         sampleId: 0,
-        data,
         frameCount: SAMPLE_FRAMES,
         channels: 1,
         sampleRate: 48_000,
     });
+    send(processor, { type: 'sampleChunk', loadToken, sampleId: 0, data });
+    send(processor, { type: 'sealSample', loadToken, sampleId: 0 });
     send(processor, {
         type: 'addZone',
         loadToken,

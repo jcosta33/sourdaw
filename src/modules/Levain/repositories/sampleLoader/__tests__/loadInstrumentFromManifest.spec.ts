@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
+import { LEVAIN_SAMPLE_CHUNK_FLOATS, LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT } from '#/infra/audioWorklet/levainSampleChunk';
+
 import { decodedBankResource } from '../decodedBankResource';
 import { fetchAndDecode } from '../fetchAndDecode';
 import { loadInstrumentFromManifest } from '../loadInstrumentFromManifest';
@@ -70,6 +72,8 @@ function mockFetchOk(): void {
 type FakePort = MessagePort & {
     postMessage: ReturnType<typeof vi.fn>;
     emit: (message: unknown) => void;
+    /** The most chunks that were ever posted and not yet answered at once. */
+    peakUnacknowledgedChunks: () => number;
 };
 
 type MakePortOptions = {
@@ -112,6 +116,12 @@ type MakePortOptions = {
      * (levainProcessor.ts `_answerAfterFault`) and nothing else.
      */
     faultedBeforeLoad?: string;
+    /**
+     * How the fake worklet answers a `sampleChunk`: 'now' with a microtask,
+     * 'later' with a macrotask (so a loader that does not wait piles chunks
+     * up), or 'never' (a processor that stopped answering mid-sample).
+     */
+    chunkAnswers?: 'now' | 'later' | 'never';
 };
 
 /**
@@ -126,6 +136,8 @@ function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     let pendingToken: number | null = null;
     let releaseRequests = 0;
+    let unacknowledgedChunks = 0;
+    let peakUnacknowledgedChunks = 0;
     function emit(message: unknown): void {
         const event = { data: message } as MessageEvent<unknown>;
         for (const listener of listeners) {
@@ -143,6 +155,21 @@ function makePort(options: MakePortOptions = {}): FakePort {
             queueMicrotask(() => {
                 emit({ type: 'error', message: options.faultedBeforeLoad });
             });
+            return;
+        }
+        if (message.type === 'sampleChunk') {
+            unacknowledgedChunks++;
+            peakUnacknowledgedChunks = Math.max(peakUnacknowledgedChunks, unacknowledgedChunks);
+            const answer = (): void => {
+                unacknowledgedChunks--;
+                emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId });
+            };
+            const answers = options.chunkAnswers ?? 'now';
+            if (answers === 'now') {
+                queueMicrotask(answer);
+            } else if (answers === 'later') {
+                setTimeout(answer, 0);
+            }
             return;
         }
         if (message.type === 'beginSampleBank') {
@@ -210,6 +237,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
     return {
         postMessage,
         emit,
+        peakUnacknowledgedChunks: () => peakUnacknowledgedChunks,
         addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
             if (typeof listener === 'function') {
                 listeners.add(listener);
@@ -233,10 +261,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getPostedSampleData(call: unknown[] | undefined): Float32Array {
     const message: unknown = call?.[0];
-    if (!isRecord(message) || message.type !== 'addSample' || !(message.data instanceof Float32Array)) {
-        throw new Error('Expected an addSample message with Float32Array data');
+    if (!isRecord(message) || message.type !== 'sampleChunk' || !(message.data instanceof Float32Array)) {
+        throw new Error('Expected a sampleChunk message with Float32Array data');
     }
     return message.data;
+}
+
+/** Messages that upload one sample's PCM, in the order the loader posts them. */
+const UPLOAD_TYPES = ['beginSample', 'sampleChunk', 'sealSample'];
+
+function postedMessages(port: { postMessage: ReturnType<typeof vi.fn> }): Record<string, unknown>[] {
+    return port.postMessage.mock.calls.map(([message]) => message as Record<string, unknown>);
 }
 
 describe('loadInstrumentFromManifest', () => {
@@ -264,23 +299,28 @@ describe('loadInstrumentFromManifest', () => {
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
         const types = postedTypes(port);
         expect(types).toContain('beginSampleBank');
-        expect(types).toContain('addSample');
         expect(types).toContain('buildZoneMap');
-        expect(types.indexOf('beginSampleBank')).toBeLessThan(types.indexOf('addSample'));
+        expect(types.filter((type) => UPLOAD_TYPES.includes(type))).toEqual(UPLOAD_TYPES);
+        expect(types.indexOf('beginSampleBank')).toBeLessThan(types.indexOf('beginSample'));
+        expect(types.indexOf('sealSample')).toBeLessThan(types.indexOf('buildZoneMap'));
         const beginCall = port.postMessage.mock.calls.find(([message]) => {
             return (message as { type: string }).type === 'beginSampleBank';
         });
-        const addSampleCall = port.postMessage.mock.calls.find(([message]) => {
-            return (message as { type: string }).type === 'addSample';
+        const beginSampleCall = port.postMessage.mock.calls.find(([message]) => {
+            return (message as { type: string }).type === 'beginSample';
         });
         const beginMessage: unknown = beginCall?.[0];
-        const addSampleMessage: unknown = addSampleCall?.[0];
-        if (!isRecord(beginMessage) || !isRecord(addSampleMessage)) {
-            throw new Error('Expected beginSampleBank and addSample messages');
+        const beginSampleMessage: unknown = beginSampleCall?.[0];
+        if (!isRecord(beginMessage) || !isRecord(beginSampleMessage)) {
+            throw new Error('Expected beginSampleBank and beginSample messages');
         }
-        expect(addSampleCall).toHaveLength(1);
+        expect(beginSampleCall).toHaveLength(1);
         expect(beginMessage.instrumentId).toBe('violin-1');
-        expect(addSampleMessage.loadToken).toBe(beginMessage.loadToken);
+        expect(beginSampleMessage.loadToken).toBe(beginMessage.loadToken);
+        const uploadMessages = postedMessages(port).filter(
+            (message) => typeof message.type === 'string' && UPLOAD_TYPES.includes(message.type)
+        );
+        expect(uploadMessages.every((message) => message.loadToken === beginMessage.loadToken)).toBe(true);
         const zoneAndBuildMessages = port.postMessage.mock.calls
             .map(([message]) => message as { type: string; loadToken?: number })
             .filter((message) => message.type === 'addZone' || message.type === 'buildZoneMap');
@@ -356,7 +396,7 @@ describe('loadInstrumentFromManifest', () => {
         });
 
         const messages = port.postMessage.mock.calls.map(([message]) => message as Record<string, unknown>);
-        const uploaded = messages.filter((message) => message.type === 'addSample');
+        const uploaded = messages.filter((message) => message.type === 'beginSample');
         // The transition's PCM is a second file the bank would otherwise never
         // fetch: the zone list only names `a.wav`.
         expect(uploaded).toHaveLength(2);
@@ -387,6 +427,188 @@ describe('loadInstrumentFromManifest', () => {
         expect(postedTypes(port)).not.toContain('addLegatoTransition');
     });
 
+    describe('uploading a sample in bounded chunks', () => {
+        const FRAMES = 2 * LEVAIN_SAMPLE_CHUNK_FLOATS + 5;
+
+        /** A decoded sample the way the bank holds it: PCM in a SharedArrayBuffer. */
+        function stubLargeSample(): Float32Array {
+            const data = new Float32Array(new SharedArrayBuffer(FRAMES * Float32Array.BYTES_PER_ELEMENT));
+            for (let index = 0; index < FRAMES; index++) {
+                data[index] = index + 1;
+            }
+            vi.mocked(fetchAndDecode).mockResolvedValueOnce({
+                data,
+                frameCount: FRAMES,
+                channels: 1,
+                sampleRate: 44100,
+            });
+            return data;
+        }
+
+        function load(port: FakePort, signal?: AbortSignal): Promise<unknown> {
+            return loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                signal,
+            });
+        }
+
+        it('posts a begin, chunks no longer than the ceiling in order, then a seal', async () => {
+            const source = stubLargeSample();
+            const port = makePort();
+
+            await load(port);
+
+            const upload = postedMessages(port).filter(
+                (message) => typeof message.type === 'string' && UPLOAD_TYPES.includes(message.type)
+            );
+            expect(upload.map((message) => message.type)).toEqual([
+                'beginSample',
+                'sampleChunk',
+                'sampleChunk',
+                'sampleChunk',
+                'sealSample',
+            ]);
+            expect(upload[0]).toMatchObject({ sampleId: 0, frameCount: FRAMES, channels: 1, sampleRate: 44100 });
+            const chunks = upload.filter((message) => message.type === 'sampleChunk');
+            expect(chunks.map((message) => (message.data as Float32Array).length)).toEqual([
+                LEVAIN_SAMPLE_CHUNK_FLOATS,
+                LEVAIN_SAMPLE_CHUNK_FLOATS,
+                5,
+            ]);
+            expect(chunks.every((message) => message.sampleId === 0)).toBe(true);
+            const rejoined = chunks.flatMap((message) => [...(message.data as Float32Array)]);
+            expect(rejoined).toEqual([...source]);
+        });
+
+        it('transfers each chunk as its own copy and leaves the cached bank intact', async () => {
+            const source = stubLargeSample();
+            const port = makePort();
+
+            await load(port);
+
+            const chunkCalls = port.postMessage.mock.calls.filter(
+                ([message]) => (message as { type: string }).type === 'sampleChunk'
+            );
+            expect(chunkCalls).toHaveLength(3);
+            for (const [message, transfer] of chunkCalls) {
+                const data = (message as { data: Float32Array }).data;
+                expect(transfer).toEqual([data.buffer]);
+                expect(data.buffer).not.toBe(source.buffer);
+            }
+            expect(source.buffer.byteLength).toBe(FRAMES * Float32Array.BYTES_PER_ELEMENT);
+        });
+
+        describe('waiting for the worklet to acknowledge chunks', () => {
+            const MANY_FRAMES = 7 * LEVAIN_SAMPLE_CHUNK_FLOATS + 5;
+
+            function stubManyChunks(): void {
+                const data = new Float32Array(new SharedArrayBuffer(MANY_FRAMES * Float32Array.BYTES_PER_ELEMENT));
+                vi.mocked(fetchAndDecode).mockResolvedValueOnce({
+                    data,
+                    frameCount: MANY_FRAMES,
+                    channels: 1,
+                    sampleRate: 44100,
+                });
+            }
+
+            function chunkCount(port: FakePort): number {
+                return postedTypes(port).filter((type) => type === 'sampleChunk').length;
+            }
+
+            it('never has more chunks unacknowledged than the in-flight limit, and still posts them all', async () => {
+                stubManyChunks();
+                const port = makePort({ chunkAnswers: 'later' });
+
+                await load(port);
+
+                expect(chunkCount(port)).toBe(8);
+                expect(port.peakUnacknowledgedChunks()).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                expect(postedTypes(port)).toContain('sealSample');
+            });
+
+            it.each(['disposed', 'error'] as const)(
+                'settles the load when the processor ends (%s) while it waits for an acknowledgement',
+                async (type) => {
+                    stubManyChunks();
+                    const port = makePort({ chunkAnswers: 'never' });
+                    const pending = load(port);
+                    void pending.catch(() => {});
+                    await vi.waitFor(() => {
+                        expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                    });
+
+                    port.emit({ type, message: 'trapped' });
+
+                    await expect(pending).rejects.toThrow(/processor ended/);
+                    expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                    expect(postedTypes(port)).not.toContain('sealSample');
+                },
+                2000
+            );
+
+            it('settles the load when the worklet refuses a chunk while it waits for an acknowledgement', async () => {
+                stubManyChunks();
+                const port = makePort({ chunkAnswers: 'never' });
+                const pending = load(port);
+                void pending.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const loadToken = (postedMessages(port)[0] as { loadToken: number }).loadToken;
+
+                port.emit({ type: 'sampleBankError', loadToken, message: 'Levain sample chunk does not fit' });
+
+                await expect(pending).rejects.toThrow(/does not fit/);
+                expect(postedTypes(port)).not.toContain('sealSample');
+            }, 2000);
+
+            it('settles the load when it is aborted while it waits for an acknowledgement', async () => {
+                stubManyChunks();
+                const port = makePort({ chunkAnswers: 'never' });
+                const controller = new AbortController();
+                const pending = load(port, controller.signal);
+                void pending.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+
+                controller.abort();
+
+                await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+                expect(postedTypes(port)).toContain('abortSampleBank');
+                expect(postedTypes(port)).not.toContain('sealSample');
+            }, 2000);
+        });
+
+        it('stops posting chunks once the load is aborted mid-sample, and never seals', async () => {
+            stubLargeSample();
+            const port = makePort();
+            const controller = new AbortController();
+            const forward = port.postMessage.getMockImplementation();
+            if (!forward) {
+                throw new Error('Expected the fake port to model the worklet');
+            }
+            let chunks = 0;
+            port.postMessage.mockImplementation((message: unknown, transfer?: unknown) => {
+                if (isRecord(message) && message.type === 'sampleChunk' && ++chunks === 2) {
+                    controller.abort();
+                }
+                return Reflect.apply(forward, undefined, [message, transfer]);
+            });
+
+            await expect(load(port, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+
+            const types = postedTypes(port);
+            expect(types.filter((type) => type === 'sampleChunk')).toHaveLength(2);
+            expect(types).not.toContain('sealSample');
+            expect(types).not.toContain('buildZoneMap');
+            expect(types).toContain('abortSampleBank');
+        });
+    });
+
     it('skips PCM upload when the worklet assigns this loader as a shared-bank follower', async () => {
         const port = makePort({ uploadRequired: false });
 
@@ -397,7 +619,9 @@ describe('loadInstrumentFromManifest', () => {
             nodePort: port,
         });
 
-        expect(postedTypes(port)).not.toContain('addSample');
+        for (const type of UPLOAD_TYPES) {
+            expect(postedTypes(port)).not.toContain(type);
+        }
         expect(postedTypes(port)).toContain('addZone');
         expect(postedTypes(port)).toContain('buildZoneMap');
     });
@@ -715,7 +939,7 @@ describe('loadInstrumentFromManifest', () => {
 
                 port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: true });
                 await expect(second).resolves.toBeDefined();
-                expect(postedTypes(port).filter((type) => type !== 'addSample' && type !== 'addZone')).toEqual([
+                expect(postedTypes(port).filter((type) => !UPLOAD_TYPES.includes(type) && type !== 'addZone')).toEqual([
                     'beginSampleBank',
                     'abortSampleBank',
                     'releaseRetiredBank',
@@ -963,14 +1187,17 @@ describe('loadInstrumentFromManifest', () => {
         expect(fetch).toHaveBeenCalledTimes(1);
         expect(fetchAndDecode).toHaveBeenCalledTimes(1);
         const firstSample = firstPort.postMessage.mock.calls.find(([message]) => {
-            return (message as { type: string }).type === 'addSample';
+            return (message as { type: string }).type === 'sampleChunk';
         });
         const secondSample = secondPort.postMessage.mock.calls.find(([message]) => {
-            return (message as { type: string }).type === 'addSample';
+            return (message as { type: string }).type === 'sampleChunk';
         });
-        expect(firstSample?.[0]).toMatchObject({ type: 'addSample', sampleId: 0 });
-        expect(secondSample?.[0]).toMatchObject({ type: 'addSample', sampleId: 0 });
-        expect(getPostedSampleData(firstSample).buffer).toBe(getPostedSampleData(secondSample).buffer);
+        expect(firstSample?.[0]).toMatchObject({ type: 'sampleChunk', sampleId: 0 });
+        expect(secondSample?.[0]).toMatchObject({ type: 'sampleChunk', sampleId: 0 });
+        // Each port gets its own copy of the one decoded sample's PCM: a chunk
+        // is transferred, so two ports cannot be handed the same buffer.
+        expect(getPostedSampleData(firstSample)).toEqual(getPostedSampleData(secondSample));
+        expect(getPostedSampleData(firstSample).buffer).not.toBe(getPostedSampleData(secondSample).buffer);
         const firstBegin = firstPort.postMessage.mock.calls.find(([message]) => {
             return (message as { type: string }).type === 'beginSampleBank';
         });
