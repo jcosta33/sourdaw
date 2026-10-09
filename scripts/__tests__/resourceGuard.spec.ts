@@ -812,9 +812,7 @@ describe('resource CLI', () => {
         expect(readFileSync(join(process.cwd(), 'vite.config.ts'), 'utf8')).toMatch(
             /maxWorkers:\s*Number\(env\.VITEST_MAX_WORKERS \?\? 2\)/
         );
-        expect(readFileSync(join(process.cwd(), 'playwright.config.ts'), 'utf8')).toMatch(
-            /workers:\s*builtShardRun \? 2 : 1,/
-        );
+        expect(readFileSync(join(process.cwd(), 'playwright.config.ts'), 'utf8')).toMatch(/workers:\s*1,/);
     });
 
     it('requires narrow lint targets unless full lint is explicit', () => {
