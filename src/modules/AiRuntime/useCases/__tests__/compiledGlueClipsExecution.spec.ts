@@ -132,12 +132,19 @@ function seedProject(): void {
         migratedAbsoluteNoteClipIds: ['clip-a', 'clip-b'],
     });
     // Clip automation on the track's own device parameters: the compiled glue carries every source
-    // lane, and a parameter the project does not hold would fail the batch's target preflight.
+    // lane.
+    seedClipAutomation([
+        { clipId: 'clip-a', parameterId: 'dist-drive' },
+        { clipId: 'clip-a', parameterId: 'phaser-stages' },
+    ]);
+}
+
+function seedClipAutomation(lanes: ReadonlyArray<{ clipId: string; parameterId: string }>): void {
     automationStore.set({
-        lanes: ['dist-drive', 'phaser-stages'].map((parameterId) => ({
+        lanes: lanes.map(({ clipId, parameterId }) => ({
             id: `lane-${parameterId}`,
             trackId: TRACK_ID,
-            clipId: 'clip-a',
+            clipId,
             parameterId,
             parameterName: parameterId,
             points: [{ id: `point-${parameterId}`, beat: 9, value: 0.5, curve: 'linear', tension: 0 }],
@@ -251,6 +258,43 @@ describe('a compiled glueClips command at execution', () => {
         await redo();
         expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([recorded.targetClipId]);
         expect(automationStore.value?.lanes.map((lane) => lane.id).toSorted()).toEqual(recordedLaneIds);
+    });
+
+    // Red when a lane's parameter id is read as an object the batch targets: a track parameter has
+    // no project object, so the preflight refuses with `Command batch target does not exist: gain`.
+    it('commits, undoes and redoes a glue whose clips carry gain and pan automation', async () => {
+        seedClipAutomation([
+            { clipId: 'clip-a', parameterId: 'gain' },
+            { clipId: 'clip-b', parameterId: 'pan' },
+        ]);
+        const commandBatch = compileGlue();
+        const recorded = readRecordedIds(commandBatch);
+        const recordedLaneIds = Object.entries(recorded)
+            .filter(([argument]) => argument.startsWith('replacement.clipAutomationLanes['))
+            .map(([, laneId]) => laneId)
+            .toSorted();
+        const readLanes = () =>
+            (automationStore.value?.lanes ?? [])
+                .map(({ id, clipId, parameterId }) => ({ id, clipId, parameterId }))
+                .toSorted((left, right) => left.parameterId.localeCompare(right.parameterId));
+        const lanesBefore = readLanes();
+
+        const committed = await executeVersionedCommandBatchEnvelope(commandBatch);
+
+        expect(committed, JSON.stringify(committed)).toMatchObject({ status: 'committed' });
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([recorded.targetClipId]);
+        const gluedLanes = readLanes();
+        expect(gluedLanes.map(({ parameterId }) => parameterId)).toEqual(['gain', 'pan']);
+        expect(gluedLanes.map(({ id }) => id).toSorted()).toEqual(recordedLaneIds);
+        expect(gluedLanes.every(({ clipId }) => clipId === recorded.targetClipId)).toBe(true);
+
+        await undo();
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-a', 'clip-b']);
+        expect(readLanes()).toEqual(lanesBefore);
+
+        await redo();
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([recorded.targetClipId]);
+        expect(readLanes()).toEqual(gluedLanes);
     });
 
     // Red when a carried plan is not checked against the project at execution. The revision pin

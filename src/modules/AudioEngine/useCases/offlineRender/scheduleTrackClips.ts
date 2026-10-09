@@ -49,6 +49,7 @@ import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants
 import { getSourceOccurrenceOffset } from './getSourceOccurrenceOffset';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
+import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveTrackClipsWithComping, type ResolvedClip } from './resolveTrackClipsWithComping';
 import { scheduleOfflineClipSource } from './scheduleOfflineClipSource';
 import { type OfflineScheduleTally, type PendingNoteWorkletEvent, type PendingWorkletEvent } from './types';
@@ -221,6 +222,8 @@ export async function scheduleTrackClips({
     function resolveClipTempo(beat: number): number {
         return resolveTempoAtBeat({ changes, beat, defaultTempo });
     }
+    // The map comp resolution writes each fragment's offset against.
+    const tempoTimeline = renderTempoTimeline(projectBeatToSeconds, resolveClipTempo);
     const regionStartSec = projectBeatToSeconds(regionStartBeat);
     const compensationDelay = captured
         ? getCompensationDelay(track.id, undefined, undefined, captured.latency)
@@ -371,8 +374,7 @@ export async function scheduleTrackClips({
     }
 
     const clipsToProcess: { clip: ResolvedClip; padIndex: number; sourceTrack: Track }[] = [];
-    const compTime = { projectBeatToSeconds, resolveTempoAtBeat: resolveClipTempo };
-    for (const clip of resolveTrackClipsWithComping(track.id, track.clips, captured?.takeLanes, compTime)) {
+    for (const clip of resolveTrackClipsWithComping(track.id, track.clips, captured?.takeLanes, tempoTimeline)) {
         clipsToProcess.push({ clip, padIndex: -1, sourceTrack: track });
     }
 
@@ -406,7 +408,7 @@ export async function scheduleTrackClips({
                 childTrack.id,
                 childTrack.clips,
                 captured?.takeLanes,
-                compTime
+                tempoTimeline
             );
             clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: index, sourceTrack: childTrack })));
         }

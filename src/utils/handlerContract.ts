@@ -194,6 +194,8 @@ export type TakeSourceDepthSnapshot = {
     readonly takeId: string;
     readonly sourceOffsetSeconds: number | null;
     readonly sourceOffsetBeats: number | null;
+    readonly passAnchorSeconds?: number;
+    readonly passDepthSeconds?: number;
 };
 /** An absent canonical field resolved under the pre-edit tempo, for targeted setTempo replay. */
 export type TempoAudioSourceTransition = {
@@ -591,6 +593,8 @@ export type TakeSnapshot = {
     selected: boolean;
     sourceOffsetBeats?: number;
     sourceOffsetSeconds?: number;
+    passAnchorSeconds?: number;
+    passDepthSeconds?: number;
 };
 /** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
 export type CompRegionSnapshot = {

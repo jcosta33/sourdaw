@@ -1,7 +1,7 @@
 import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { type TakeSourceDepthSnapshot } from '#/utils/handlerContract';
 
-import { type Take } from '../../models/TakeLane';
+import { isValidTakeSourceDepthFields, type Take } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 type TakeSourceDepthMove = {
@@ -11,12 +11,17 @@ type TakeSourceDepthMove = {
 };
 
 function capture(laneId: string, take: Take): TakeSourceDepthSnapshot {
-    return {
+    const source: TakeSourceDepthSnapshot = {
         laneId,
         takeId: take.id,
         sourceOffsetSeconds: Object.hasOwn(take, 'sourceOffsetSeconds') ? (take.sourceOffsetSeconds ?? null) : null,
         sourceOffsetBeats: Object.hasOwn(take, 'sourceOffsetBeats') ? (take.sourceOffsetBeats ?? null) : null,
     };
+    if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
+        source.passAnchorSeconds = take.passAnchorSeconds;
+        source.passDepthSeconds = take.passDepthSeconds;
+    }
+    return source;
 }
 
 function withSource(take: Take, source: TakeSourceDepthSnapshot): Take {
@@ -30,6 +35,13 @@ function withSource(take: Take, source: TakeSourceDepthSnapshot): Take {
     }
     if (source.sourceOffsetBeats === null) {
         delete next.sourceOffsetBeats;
+    }
+    if (source.passAnchorSeconds !== undefined && source.passDepthSeconds !== undefined) {
+        next.passAnchorSeconds = source.passAnchorSeconds;
+        next.passDepthSeconds = source.passDepthSeconds;
+    } else {
+        delete next.passAnchorSeconds;
+        delete next.passDepthSeconds;
     }
     return next;
 }
@@ -51,16 +63,7 @@ function resolveRestoredTakeSources(
         if (!source || typeof source.laneId !== 'string' || typeof source.takeId !== 'string') {
             return null;
         }
-        if (
-            source.sourceOffsetSeconds !== null &&
-            (!Number.isFinite(source.sourceOffsetSeconds) || source.sourceOffsetSeconds < 0)
-        ) {
-            return null;
-        }
-        if (
-            source.sourceOffsetBeats !== null &&
-            (!Number.isFinite(source.sourceOffsetBeats) || source.sourceOffsetBeats < 0)
-        ) {
+        if (!isValidTakeSourceDepthFields(source)) {
             return null;
         }
         if (!before.some((candidate) => candidate.laneId === source.laneId && candidate.takeId === source.takeId)) {
@@ -83,6 +86,10 @@ function resolveMaterializedTakeSources(
 ): TakeSourceDepthSnapshot[] | null {
     const after: TakeSourceDepthSnapshot[] = [];
     for (const source of before) {
+        if (source.passAnchorSeconds !== undefined && source.passDepthSeconds !== undefined) {
+            after.push(source);
+            continue;
+        }
         const seconds = resolveAudioSourceOffsetSeconds(
             {
                 audioOffsetSeconds: source.sourceOffsetSeconds ?? undefined,
@@ -139,7 +146,9 @@ export function prepareTakeSourceDepthMove(input: {
                         previous?.laneId === source.laneId &&
                         previous.takeId === source.takeId &&
                         Object.is(previous.sourceOffsetSeconds, source.sourceOffsetSeconds) &&
-                        Object.is(previous.sourceOffsetBeats, source.sourceOffsetBeats)
+                        Object.is(previous.sourceOffsetBeats, source.sourceOffsetBeats) &&
+                        Object.is(previous.passAnchorSeconds, source.passAnchorSeconds) &&
+                        Object.is(previous.passDepthSeconds, source.passDepthSeconds)
                     );
                 })
             ) {

@@ -44,7 +44,9 @@ function expectedSplitTakes(takes: readonly Take[], after: readonly Take[], seam
             !right ||
             right.sourceOffsetBeats !== take.sourceOffsetBeats ||
             (take.sourceOffsetSeconds !== undefined && right.sourceOffsetSeconds !== take.sourceOffsetSeconds) ||
-            (take.sourceOffsetBeats !== undefined && right.sourceOffsetSeconds === undefined)
+            (take.sourceOffsetBeats !== undefined &&
+                take.passAnchorSeconds === undefined &&
+                right.sourceOffsetSeconds === undefined)
         ) {
             return null;
         }
@@ -53,6 +55,7 @@ function expectedSplitTakes(takes: readonly Take[], after: readonly Take[], seam
             id,
             clipId: rightClipId,
             startBeat: Math.max(take.startBeat, seam),
+            selected: take.selected && take.startBeat >= seam,
         };
         if (right.sourceOffsetSeconds !== undefined) {
             expectedRight.sourceOffsetSeconds = right.sourceOffsetSeconds;

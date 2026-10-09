@@ -54,6 +54,7 @@ export function captureClipSplitTakeLanes(
                 id: rightId,
                 clipId: rightClipId,
                 startBeat: Math.max(take.startBeat, seam),
+                selected: take.selected && take.startBeat >= seam,
             });
         }
         const afterRegions = [];

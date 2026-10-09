@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
 import {
+    decodeExactTakeLaneSnapshots,
     defaultTakeLaneStoreState,
     sanitize_take_lane_store_state,
     takeLaneStore,
@@ -68,6 +69,8 @@ describe('sanitize_take_lane_store_state', () => {
                             selected: true,
                             sourceOffsetBeats: 4,
                             sourceOffsetSeconds: 2,
+                            passAnchorSeconds: -1,
+                            passDepthSeconds: 3,
                         },
                     ],
                     activeCompRegions: [{ startBeat: 0, endBeat: 2, takeId: 'take-1' }],
@@ -467,6 +470,81 @@ describe('sanitize_take_lane_store_state', () => {
                     activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-pass-2' }],
                 },
             ],
+        });
+    });
+
+    it('should read a lane holding a placed pass as exact, taking it as it is', () => {
+        // Exactness is what a time operation's inverse plan is decoded with, so
+        // a lane holding a placed pass that read as inexact could not be undone.
+        const lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [
+                {
+                    id: 'pass-2',
+                    clipId: 'clip-1',
+                    name: 'Pass 2',
+                    startBeat: 8,
+                    endBeat: 16,
+                    selected: false,
+                    sourceOffsetBeats: 4,
+                    passAnchorSeconds: -2,
+                    passDepthSeconds: 2,
+                },
+            ],
+            activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: 'pass-2' }],
+        };
+        const state = { lanes: [lane] };
+
+        expect(sanitize_take_lane_store_state(state)).toBe(state);
+        expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
+    });
+
+    it('should preserve a pass placement, a negative anchor included, and drop takes carrying a malformed one', () => {
+        const take = (id: string, fields: Record<string, unknown>) => ({
+            id,
+            clipId: 'clip-1',
+            name: id,
+            startBeat: 8,
+            endBeat: 16,
+            selected: false,
+            ...fields,
+        });
+        const placed = take('ahead-of-media', { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 });
+
+        expect(
+            sanitize_take_lane_store_state({
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        takes: [
+                            placed,
+                            take('non-numeric-anchor', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: '-2',
+                                passDepthSeconds: 2,
+                            }),
+                            take('infinite-anchor', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: Number.NEGATIVE_INFINITY,
+                                passDepthSeconds: 2,
+                            }),
+                            take('negative-depth', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: -2,
+                                passDepthSeconds: -1,
+                            }),
+                            take('anchor-alone', { sourceOffsetBeats: 4, passAnchorSeconds: -2 }),
+                            take('depth-alone', { sourceOffsetBeats: 4, passDepthSeconds: 2 }),
+                            take('placed-without-depth-beats', { passAnchorSeconds: -2, passDepthSeconds: 2 }),
+                        ],
+                        activeCompRegions: [],
+                    },
+                ],
+            })
+        ).toEqual({
+            lanes: [{ id: 'lane-1', trackId: 'track-1', takes: [placed], activeCompRegions: [] }],
         });
     });
 });

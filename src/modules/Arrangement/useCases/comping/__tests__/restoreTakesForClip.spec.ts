@@ -186,6 +186,30 @@ describe('restoreTakesForClip', () => {
         expect(restored?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }]);
     });
 
+    it.each(['selected', 'unselected', 'absent'] as const)(
+        'restores a selected take with the live lane %s and preserves placed source fields',
+        (resident) => {
+            const retiredTake = {
+                ...createTake('c1', 'Retired selected pass', 0, 4, 8),
+                selected: true,
+                passAnchorSeconds: 4,
+                passDepthSeconds: 2,
+            };
+            const survivor = { ...createTake('c2', 'Later choice', 4, 8), selected: resident === 'selected' };
+            const captured = laneWithTakes('t1', [retiredTake]);
+            mocks.takeLaneStoreValue.value = {
+                lanes: resident === 'absent' ? [] : [{ ...captured, takes: [survivor] }],
+            };
+
+            restoreTakesForClip([{ laneIndex: 0, lane: captured, retiredTakeIds: [retiredTake.id] }]);
+
+            const expectedRetired = { ...retiredTake, selected: resident !== 'selected' };
+            const expectedTakes = resident === 'absent' ? [expectedRetired] : [expectedRetired, survivor];
+            expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes).toEqual(expectedTakes);
+            expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes.filter((take) => take.selected)).toHaveLength(1);
+        }
+    );
+
     it('merges a retired lane into the track lane instead of leaving two lanes for one track', () => {
         const retiredTake = createTake('c1', 'Retired', 0, 4);
         const capturedLane: TakeLane = {
@@ -334,6 +358,28 @@ describe('restoreTakesForClip', () => {
             { startBeat: 0, endBeat: 4, takeId: retiredTake.id },
             { startBeat: 4, endBeat: 8, takeId: survivorTake.id },
         ]);
+    });
+
+    it('drops the whole captured region on live overlap while preserving the later selection', () => {
+        const retiredTake = { ...createTake('c1', 'Retired', 0, 4), selected: true };
+        const survivor = { ...createTake('c2', 'Later choice', 0, 4), selected: true };
+        const captured: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        const liveRegion = { startBeat: 1, endBeat: 2, takeId: survivor.id };
+        mocks.takeLaneStoreValue.value = {
+            lanes: [{ ...captured, takes: [survivor], activeCompRegions: [liveRegion] }],
+        };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: captured, retiredTakeIds: [retiredTake.id] }]);
+
+        expect(mocks.takeLaneStoreValue.value?.lanes[0]).toEqual({
+            ...captured,
+            takes: [{ ...retiredTake, selected: false }, survivor],
+            activeCompRegions: [liveRegion],
+        });
     });
 
     it('orders the restored regions by beat with the ones already live', () => {

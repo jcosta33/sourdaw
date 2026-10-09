@@ -157,11 +157,11 @@ commands legitimately have different inverse types, so global type equality is n
 
 ## Lesson from the persisted clip-edit undo escape
 
-PR #3354 introduced the session mirror but did not prove that the real Delete Time, split, move,
-and remove handlers could save their generated inverse and redo payloads. Their live undo stacks
-worked until a reload; the mirror silently omitted entries whose internal restore actions lacked
-owner replay contracts. A neutral generated schema can also be narrower than the complete clip or
-time-operation snapshot captured by its owning handler.
+PR #3354 introduced internal replay contracts for the existing session mirror but did not prove that
+the real Delete Time, split, move, and remove handlers could save their generated inverse and redo
+payloads. Their live undo stacks worked until a reload; the mirror silently omitted entries whose
+internal restore actions lacked owner replay contracts. A neutral generated schema can also be
+narrower than the complete clip or time-operation snapshot captured by its owning handler.
 
 For each affected edit, execute the production action, wait until the session mirror contains its
 entry, register fresh production handlers to hydrate it, and exercise Undo and Redo against the
@@ -190,12 +190,53 @@ admission. Keep a valid producer-capture/reload/Undo/Redo control with two clip 
 lane, then corrupt one nested lane field in the saved sibling entry. Hydration must drop that entry,
 and real Undo must leave raw document, track, MIDI, gain, Automation projections and history unchanged.
 
+The next #5064 repair checked each captured automation lane's shape but missed identity across
+siblings. A real two-lane `removeClip` can save an inverse where both captured lanes later carry
+one ID; Undo then appends duplicate IDs, or silently skips both when that ID belongs to a resident
+unrelated lane. Produce the saved entry through the registered action, change only the saved sibling
+IDs, hydrate fresh production contracts, and invoke real Undo. Require hydration to reject the whole
+entry before any write; raw document, owner projections, and complete history must remain unchanged.
+Keep the valid two-lane remove/save/hydrate/Undo/Redo control. A nested-shape-only stance cannot
+detect a duplicate identity among individually valid siblings.
+
+The #5064 removal validator at `06ed9f7c42` also admitted individually valid satellite and
+automation rows owned by a different clip. From a genuine saved removal of clip-a, change only the
+satellite's `clipId` and nested envelope `clipId` to clip-b, then separately redirect just one
+captured automation lane's `clipId`. Shape and duplicate-ID checks cannot detect either relationship
+failure. Require fresh production hydration to drop each entry, and real Undo to leave raw CRDT,
+every exercised owner projection, and the complete public history unchanged. Keep a genuine saved
+gain/warp/multiple-lane control with distinct clip-b owners through repeated Undo/Redo. Bind owners
+to the removed clip without rejecting empty captures or imposing track relationships the producer
+does not guarantee.
+
 The #5064 move capture also needs Automation's point contract at saved-history admission. It records
 partial lane snapshots with only id, trackId, and points, so a full-lane validator is the wrong shape.
 Move a clip with two rich automation lanes through real save and hydration, then corrupt the same
 point in the paired inverse and redo snapshots with an unsupported curve, negative beat, empty id,
 or negative stair steps. Require hydration to discard the entry before real Undo can change raw
 authority, projections, or history; keep a valid rich Undo/Redo control and an empty capture control.
+
+PR #860 (`ad46a80c7e`) introduced a time-operation guard that compared the whole captured track-store state,
+including local selection and ghost clips. The #5064 persisted Delete Time control hydrated handlers
+without resetting projections, so it missed the production load boundary: `loadProject` resets
+projections, clears selection, and leaves durable tracks unchanged. A saved replay then refused solely
+because that UI state differed. Require a genuine registered Delete Time with joined audio, MIDI,
+Automation, gain, warp, and take owners; wait for its saved entry, reset projections as a fresh load
+does, hydrate production handlers, and run real Undo and Redo with different current selection and
+ghosts. Both durable authority and projections must round-trip exactly while current UI state survives.
+Keep strict saved-shape validation and zero-write refusal for changed durable content. The missed
+stance obligation for #5064's newly persisted history is the actual fresh-load boundary, not handler
+registration alone; the historical #860 review prompt is unverified.
+
+PR #4519 (`00f29b9ca2`) restored retired takes by cloning their captured selection before appending
+live-only takes. After split Undo retires a peer's selected right take, another peer can select a
+surviving left take; Redo then revived both selections and the first stale take won resolution. A
+project-integrity stance must synchronize real same-lineage Automerge messages before Undo and again
+before Redo, hydrate both saved history stacks, and inspect the raw lane, projection, and selected-take
+resolver. Restore the retired take and its placed source fields while preserving the later resident
+selection uniquely. Also prove selected restoration when no live selection or lane exists. Retain the
+existing conservative comp policy: any live overlap drops the whole captured region, while disjoint
+regions return. Direct store fixtures without a later selected survivor missed this failure mode.
 
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 

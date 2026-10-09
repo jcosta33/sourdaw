@@ -1,5 +1,6 @@
 import { type TakeSourceDepthSnapshot } from '#/utils/handlerContract';
 
+import { isValidTakeSourceDepthFields } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 export function takeSourceDepthsMatch(clipId: string, expected: readonly TakeSourceDepthSnapshot[]): boolean {
@@ -22,20 +23,7 @@ export function takeSourceDepthsMatch(clipId: string, expected: readonly TakeSou
         if (!source || typeof source.laneId !== 'string' || typeof source.takeId !== 'string') {
             return false;
         }
-        if (
-            source.sourceOffsetSeconds !== null &&
-            (typeof source.sourceOffsetSeconds !== 'number' ||
-                !Number.isFinite(source.sourceOffsetSeconds) ||
-                source.sourceOffsetSeconds < 0)
-        ) {
-            return false;
-        }
-        if (
-            source.sourceOffsetBeats !== null &&
-            (typeof source.sourceOffsetBeats !== 'number' ||
-                !Number.isFinite(source.sourceOffsetBeats) ||
-                source.sourceOffsetBeats < 0)
-        ) {
+        if (!isValidTakeSourceDepthFields(source)) {
             return false;
         }
         const take = state.lanes
@@ -46,6 +34,11 @@ export function takeSourceDepthsMatch(clipId: string, expected: readonly TakeSou
         }
         const seconds = Object.hasOwn(take, 'sourceOffsetSeconds') ? (take.sourceOffsetSeconds ?? null) : null;
         const beats = Object.hasOwn(take, 'sourceOffsetBeats') ? (take.sourceOffsetBeats ?? null) : null;
-        return Object.is(seconds, source.sourceOffsetSeconds) && Object.is(beats, source.sourceOffsetBeats);
+        return (
+            Object.is(seconds, source.sourceOffsetSeconds) &&
+            Object.is(beats, source.sourceOffsetBeats) &&
+            Object.is(take.passAnchorSeconds, source.passAnchorSeconds) &&
+            Object.is(take.passDepthSeconds, source.passDepthSeconds)
+        );
     });
 }

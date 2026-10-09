@@ -3,13 +3,15 @@ import { describe, it, expect, vi } from 'vitest';
 import { type Clip } from '#/modules/Arrangement/stores';
 
 import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
+import { renderTempoTimeline } from '../renderTempoTimeline';
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
 const mocks = vi.hoisted(() => ({
     takeLaneStoreValue: { value: null as { lanes: unknown[] } | null },
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     takeLaneStore: {
         get value() {
             return mocks.takeLaneStoreValue.value;
@@ -49,10 +51,12 @@ describe('resolveTrackClipsWithComping', () => {
         const source = { ...testClip({ id: 'src', endBeat: 12, audioOffsetBeats: 0 }), audioOffsetSeconds: 0 };
         const beatToSeconds = (beat: number): number => (beat <= 4 ? beat / 2 : 2 + beat - 4);
         const resolveTempoAtBeat = (beat: number): number => (beat < 4 ? 120 : 60);
-        const tail = resolveTrackClipsWithComping('t1', [source], undefined, {
-            projectBeatToSeconds: beatToSeconds,
-            resolveTempoAtBeat,
-        }).find((clip) => clip.startBeat === 8);
+        const tail = resolveTrackClipsWithComping(
+            't1',
+            [source],
+            undefined,
+            renderTempoTimeline(beatToSeconds, resolveTempoAtBeat)
+        ).find((clip) => clip.startBeat === 8);
         expect(tail).toBeDefined();
         const playbacks = projectOfflineAudioClipPlaybacks({
             clip: tail!,

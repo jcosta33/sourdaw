@@ -438,6 +438,37 @@ describe('prepareTimeOperationStateRestore', () => {
         expect(mocks.markerState.value).toBe(markerState);
     });
 
+    it.each(['global', 'selected-range'] as const)(
+        '%s replays durable tracks while keeping current selection and ghosts',
+        (scope) => {
+            const expectedTrackState = createTrackState(2);
+            const replacementTrackState = createTrackState(1);
+            const markerState = createMarkerState(8);
+            const current = {
+                ...expectedTrackState,
+                selectedTrackId: null,
+                ghostClips: [ClipDummy.create({ id: 'live-ghost', trackId: 'track-1', isGhost: true })],
+            };
+            setCurrentState(current, markerState);
+            installDependencies();
+            const plan = createPlan({
+                scope,
+                expectedTrackState,
+                replacementTrackState,
+                expectedMarkerState: markerState,
+                replacementMarkerState: markerState,
+            });
+
+            const transaction = prepareTimeOperationStateRestore(JSON.parse(JSON.stringify(plan)));
+
+            expect(transaction.status).toBe('ready');
+            expect(transaction.apply()).toBe(true);
+            expect(mocks.trackState.value).toEqual({ ...current, tracks: replacementTrackState.tracks });
+            expect(transaction.revert()).toBe(true);
+            expect(mocks.trackState.value).toEqual(current);
+        }
+    );
+
     it('restores and redoes exact values with fresh reversed owner preparations', () => {
         const expectedTrackState = createTrackState(2, -0);
         const replacementTrackState = createTrackState(1, 0);

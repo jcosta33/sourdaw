@@ -24,6 +24,8 @@ function ownedFields(take: Take) {
         endBeat: take.endBeat,
         sourceOffsetBeats: take.sourceOffsetBeats,
         sourceOffsetSeconds: take.sourceOffsetSeconds,
+        passAnchorSeconds: take.passAnchorSeconds,
+        passDepthSeconds: take.passDepthSeconds,
     };
 }
 

@@ -19,7 +19,9 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
         take.endBeat !== other.endBeat ||
         take.name !== other.name ||
         take.sourceOffsetBeats !== other.sourceOffsetBeats ||
-        take.sourceOffsetSeconds !== other.sourceOffsetSeconds
+        take.sourceOffsetSeconds !== other.sourceOffsetSeconds ||
+        take.passAnchorSeconds !== other.passAnchorSeconds ||
+        take.passDepthSeconds !== other.passDepthSeconds
     );
 }
 
@@ -28,7 +30,9 @@ function sourceMatches(left: Take, right: Take): boolean {
         Object.hasOwn(left, 'sourceOffsetSeconds') === Object.hasOwn(right, 'sourceOffsetSeconds') &&
         Object.hasOwn(left, 'sourceOffsetBeats') === Object.hasOwn(right, 'sourceOffsetBeats') &&
         Object.is(left.sourceOffsetSeconds, right.sourceOffsetSeconds) &&
-        Object.is(left.sourceOffsetBeats, right.sourceOffsetBeats)
+        Object.is(left.sourceOffsetBeats, right.sourceOffsetBeats) &&
+        Object.is(left.passAnchorSeconds, right.passAnchorSeconds) &&
+        Object.is(left.passDepthSeconds, right.passDepthSeconds)
     );
 }
 
@@ -37,12 +41,18 @@ function preserveLiveSource(target: Take, live: Take): Take {
         ...target,
         sourceOffsetSeconds: live.sourceOffsetSeconds,
         sourceOffsetBeats: live.sourceOffsetBeats,
+        passAnchorSeconds: live.passAnchorSeconds,
+        passDepthSeconds: live.passDepthSeconds,
     };
     if (!Object.hasOwn(live, 'sourceOffsetSeconds')) {
         delete result.sourceOffsetSeconds;
     }
     if (!Object.hasOwn(live, 'sourceOffsetBeats')) {
         delete result.sourceOffsetBeats;
+    }
+    if (!Object.hasOwn(live, 'passAnchorSeconds')) {
+        delete result.passAnchorSeconds;
+        delete result.passDepthSeconds;
     }
     return result;
 }
@@ -205,7 +215,9 @@ function takesMatch(left: readonly Take[], right: readonly Take[]): boolean {
                 take.endBeat === other.endBeat &&
                 take.selected === other.selected &&
                 take.sourceOffsetBeats === other.sourceOffsetBeats &&
-                take.sourceOffsetSeconds === other.sourceOffsetSeconds
+                take.sourceOffsetSeconds === other.sourceOffsetSeconds &&
+                take.passAnchorSeconds === other.passAnchorSeconds &&
+                take.passDepthSeconds === other.passDepthSeconds
             );
         })
     );

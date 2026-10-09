@@ -196,15 +196,20 @@ function isRippleDeleteShift(value: unknown, removedClipId: string): boolean {
 }
 
 function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: string): boolean {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const satellites = clipSatelliteStateCodec.decodeEntries(value.clipSatellites);
     return (
-        isRecord(value) &&
         Array.isArray(value.removedClips) &&
         value.removedClips.length === 1 &&
         valuesEqual(value.removedClips[0], clipSnapshot) &&
         Array.isArray(value.shiftedClips) &&
         value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId)) &&
-        clipSatelliteStateCodec.decodeEntries(value.clipSatellites) !== null &&
-        isExactAutomationLaneSnapshots(value.clipAutomationLanes)
+        satellites !== null &&
+        satellites.every((entry) => entry.clipId === clipId) &&
+        isExactAutomationLaneSnapshots(value.clipAutomationLanes) &&
+        value.clipAutomationLanes.every((lane) => lane.clipId === clipId)
     );
 }
 
@@ -235,7 +240,22 @@ export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): bool
 function isTakeSourceDepthSnapshot(value: unknown): value is TakeSourceDepthSnapshot {
     return (
         isRecord(value) &&
-        Object.keys(value).length === 4 &&
+        Object.keys(value).every((key) =>
+            [
+                'laneId',
+                'takeId',
+                'sourceOffsetSeconds',
+                'sourceOffsetBeats',
+                'passAnchorSeconds',
+                'passDepthSeconds',
+            ].includes(key)
+        ) &&
+        Object.hasOwn(value, 'passAnchorSeconds') === Object.hasOwn(value, 'passDepthSeconds') &&
+        (!Object.hasOwn(value, 'passAnchorSeconds') ||
+            (isFiniteNumber(value.passAnchorSeconds) &&
+                isFiniteNumber(value.passDepthSeconds) &&
+                value.passDepthSeconds >= 0 &&
+                value.sourceOffsetBeats !== null)) &&
         ['laneId', 'takeId', 'sourceOffsetSeconds', 'sourceOffsetBeats'].every((key) => Object.hasOwn(value, key)) &&
         typeof value.laneId === 'string' &&
         value.laneId.length > 0 &&

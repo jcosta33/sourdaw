@@ -79,7 +79,14 @@ describe('takeLaneWriteJournal', () => {
                     automationLaneId: undefined,
                     takes: firstLane.takes.map((take) => {
                         if (take.id === 'take-a') {
-                            return { ...take, name: 'A local', sourceOffsetBeats: 2, sourceOffsetSeconds: 1 };
+                            return {
+                                ...take,
+                                name: 'A local',
+                                sourceOffsetBeats: 2,
+                                sourceOffsetSeconds: 1,
+                                passAnchorSeconds: -1.5,
+                                passDepthSeconds: 1,
+                            };
                         }
                         return structuredClone(take);
                     }),
@@ -117,6 +124,8 @@ describe('takeLaneWriteJournal', () => {
             name: 'A local',
             sourceOffsetBeats: 2,
             sourceOffsetSeconds: 1,
+            passAnchorSeconds: -1.5,
+            passDepthSeconds: 1,
         });
         expect(replay.value?.lanes[0]?.activeCompRegions).toEqual(authority.lanes[0]?.activeCompRegions);
         expect(replay.value?.lanes[1]?.takes[0]?.name).toBe('D authoritative');

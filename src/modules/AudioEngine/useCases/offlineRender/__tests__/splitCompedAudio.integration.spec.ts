@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { type Clip, type Track, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { commitRecording, getArrangementHandlers, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, resetActionReplayAuthority, undo, redo } from '#/modules/Command/useCases';
 import {
@@ -19,7 +23,9 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
 
+import { audioBufferCache } from '../../../stores/audioBufferCache';
 import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
+import { renderTempoTimeline } from '../renderTempoTimeline';
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
 type Project = { tracks: { tracks: Track[] }; takeLanes: NonNullable<typeof takeLaneStore.value> };
@@ -87,7 +93,12 @@ function snapshot() {
         throw new Error('split fixture requires raw document and projected track');
     }
     const live = resolveClipsWithComping(track.id, track.clips);
-    const offline = resolveTrackClipsWithComping(track.id, raw.tracks.tracks[0]!.clips, raw.takeLanes, time);
+    const offline = resolveTrackClipsWithComping(
+        track.id,
+        raw.tracks.tracks[0]!.clips,
+        raw.takeLanes,
+        renderTempoTimeline(time.projectBeatToSeconds, time.resolveTempoAtBeat)
+    );
     const playbacks = offline.flatMap((clip) =>
         projectOfflineAudioClipPlaybacks({
             clip,
@@ -112,6 +123,8 @@ function seeks(clips: readonly Clip[]) {
 describe('split comped audio #5048 typed split of a comped audio clip', () => {
     let stopProjectionBridge: () => void;
     beforeEach(() => {
+        const manager = createControlledLockManager();
+        injectDependencies(withProjectAudioStorageLock, { resolveLockManager: () => manager.locks });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('5048 split comp integration');
         removeCrdtDoc('root');
@@ -124,11 +137,16 @@ describe('split comped audio #5048 typed split of a comped audio clip', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
     });
-    afterEach(() => {
+    afterEach(async () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
         stopProjectionBridge();
+        if (audioBufferCache.has('comp-source-buffer')) {
+            audioBufferCache.remove('comp-source-buffer');
+            await withProjectAudioStorageLock(async () => undefined);
+        }
+        Container.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -182,6 +200,9 @@ describe('split comped audio #5048 typed split of a comped audio clip', () => {
         );
         flushAutomergeStorageWrites();
         const after = snapshot();
+        expect(after.raw.takeLanes.lanes[0]?.takes.filter((take) => take.selected).map((take) => take.id)).toEqual([
+            'take-1',
+        ]);
         expect(after.raw.tracks.tracks[0]!.clips).toEqual(after.projected.clips);
         expect(after.raw.takeLanes).toEqual(after.projected.takeLanes);
         expect(spans(after.projected.clips)).toEqual([
@@ -214,10 +235,156 @@ describe('split comped audio #5048 typed split of a comped audio clip', () => {
         await redo();
         flushAutomergeStorageWrites();
         const replayed = snapshot();
+        expect(replayed.raw.takeLanes.lanes[0]?.takes.filter((take) => take.selected).map((take) => take.id)).toEqual([
+            'take-1',
+        ]);
         expect(replayed.raw.tracks.tracks[0]!.clips).toEqual(after.raw.tracks.tracks[0]!.clips);
         expect(replayed.raw.takeLanes).toEqual(after.raw.takeLanes);
         expect(replayed.projected.takeLanes).toEqual(after.projected.takeLanes);
         expect(replayed.live).toEqual(after.live);
         expect(replayed.playbacks).toEqual(after.playbacks);
+    });
+    it('keeps a genuinely placed later pass on both canonical stretched split fragments', async () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const pcm = Float32Array.from({ length: 20_000 }, (_, index) => index);
+        const buffer: AudioBuffer = {
+            duration: 20,
+            length: pcm.length,
+            numberOfChannels: 1,
+            sampleRate: 1000,
+            getChannelData: () => pcm,
+            copyFromChannel: (destination, _channel, offset = 0) =>
+                destination.set(pcm.subarray(offset, offset + destination.length)),
+            copyToChannel: (source, _channel, offset = 0) => pcm.set(source, offset),
+        };
+        audioBufferCache.set('comp-source-buffer', buffer);
+        const clip: Clip = { ...sourceClip, stretchMode: 'repitch', stretchRatio: 1.5 };
+        trackStore.set({ tracks: [{ ...sourceTrack, clips: [clip] }], selectedTrackId: 'track-1', ghostClips: [] });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: clip.id,
+                            name: 'Later recorded pass',
+                            startBeat: 2,
+                            endBeat: 8,
+                            selected: true,
+                            sourceOffsetBeats: 6,
+                            sourceOffsetSeconds: 1,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 2, endBeat: 8, takeId: 'take-1' }],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        // The real capture terminal places the pass before the real command captures it.
+        await commitRecording(clip, { provisionalStartBeat: 2, mediaOriginSeconds: 0.5 });
+        flushAutomergeStorageWrites();
+        projectCrdtToStores();
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]).toMatchObject({
+            passAnchorSeconds: 0.5,
+            passDepthSeconds: 5.5,
+            sourceOffsetSeconds: 1,
+        });
+        const samplesAt = (state: ReturnType<typeof snapshot>, songSeconds: readonly number[]) =>
+            songSeconds.map((second) => {
+                const playback = state.playbacks.find(
+                    (item) => item.startSec <= second && second < item.startSec + item.playDuration
+                );
+                const cached = audioBufferCache.get('comp-source-buffer');
+                if (!playback || !cached) {
+                    throw new Error('Expected audible cached PCM at the requested song second');
+                }
+                const frame = Math.round(
+                    (playback.bufferOffsetSec + (second - playback.startSec) * playback.playbackRate) *
+                        cached.sampleRate
+                );
+                return cached.getChannelData(0)[frame];
+            });
+        const before = snapshot();
+        expect(seeks(before.live)).toEqual([5.5]);
+        expect(seeks(before.offline)).toEqual([5.5]);
+        expect(samplesAt(before, [1, 2, 4])).toEqual([5500, 7000, 10000]);
+        clearUndoHistory();
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'source', beat: 4, rightClipId: 'right' } },
+            { source: 'manual' }
+        );
+        flushAutomergeStorageWrites();
+        const after = snapshot();
+        expect(spans(after.live)).toEqual([
+            [2, 4],
+            [4, 8],
+        ]);
+        expect(spans(after.offline)).toEqual([
+            [2, 4],
+            [4, 8],
+        ]);
+        expect(seeks(after.live)).toEqual([5.5, 7]);
+        expect(seeks(after.offline)).toEqual([5.5, 7]);
+        expect(samplesAt(after, [1, 2, 4])).toEqual(samplesAt(before, [1, 2, 4]));
+        expect(
+            after.raw.takeLanes.lanes[0]?.takes.map((take) => [take.passAnchorSeconds, take.passDepthSeconds])
+        ).toEqual([
+            [0.5, 5.5],
+            [0.5, 5.5],
+        ]);
+        expect(
+            after.playbacks.map((playback) => [playback.bufferOffsetSec, playback.playbackRate, playback.playDuration])
+        ).toEqual([
+            [5.5, 1.5, 1],
+            [7, 1.5, 4],
+        ]);
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(snapshot().raw.takeLanes).toEqual(before.raw.takeLanes);
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(snapshot().playbacks).toEqual(after.playbacks);
+        await executeAppAction(
+            { type: 'trimClipStart', payload: { clipId: 'right', newStartBeat: 5 } },
+            { source: 'manual' }
+        );
+        flushAutomergeStorageWrites();
+        const trimmed = snapshot();
+        expect(seeks(trimmed.live)).toEqual([5.5, 8.5]);
+        expect(seeks(trimmed.offline)).toEqual([5.5, 8.5]);
+        expect(samplesAt(trimmed, [3, 4])).toEqual(samplesAt(before, [3, 4]));
+        await executeAppAction(
+            { type: 'moveClip', payload: { clipId: 'right', trackId: 'track-1', startBeat: 6 } },
+            { source: 'manual' }
+        );
+        flushAutomergeStorageWrites();
+        const moved = snapshot();
+        expect(spans(moved.live)).toEqual([
+            [2, 4],
+            [6, 8],
+            [8, 9],
+        ]);
+        expect(spans(moved.offline)).toEqual([
+            [2, 4],
+            [6, 8],
+            [8, 9],
+        ]);
+        expect(seeks(moved.live)).toEqual([5.5, 8.5, 6.5]);
+        expect(seeks(moved.offline)).toEqual([5.5, 8.5, 6.5]);
+        expect(samplesAt(moved, [4, 5])).toEqual(samplesAt(trimmed, [3, 4]));
+        expect(moved.raw.takeLanes).toEqual(trimmed.raw.takeLanes);
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(snapshot().playbacks).toEqual(trimmed.playbacks);
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(snapshot().playbacks).toEqual(after.playbacks);
     });
 });

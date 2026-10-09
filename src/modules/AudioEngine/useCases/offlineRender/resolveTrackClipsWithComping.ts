@@ -1,6 +1,7 @@
-import { takeLaneStore, type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
-import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
-import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
+import { resolveTakeMedia } from '#/modules/Arrangement/useCases';
+
+import { liveTempoTimeline, type ResolutionTempoTimeline } from '../livePlayback/liveTempoTimeline';
 
 export type ResolvedClip = Track['clips'][number] & {
     regionStartBeat: number;
@@ -8,82 +9,11 @@ export type ResolvedClip = Track['clips'][number] & {
     sourceStartBeat: number;
 };
 
-type SourceTime = {
-    projectBeatToSeconds: (beat: number) => number;
-    resolveTempoAtBeat: (beat: number) => number;
-};
-
-type Take = TakeLaneStoreState['lanes'][number]['takes'][number];
-
-const liveSourceTime: SourceTime = {
-    projectBeatToSeconds: (beat) => readSecondsAtBeat({ beat }),
-    resolveTempoAtBeat: (beat) => readTempoAtBeat({ beat }),
-};
-
-/**
- * A fragment's own media-entry offset.
- *
- * Every consumer — `projectOfflineAudioClipPlaybacks`, the Web Audio clip
- * scheduler, and the MIDI note projections — enters the material at the
- * fragment's own `startBeat` using the offset field alone; none of them adds a
- * displacement term of its own, and `sourceStartBeat` only carries the
- * loop-occurrence count for probability rolls. So a fragment that begins
- * partway into its source must carry that whole displacement here, or it sounds
- * the material from the clip's origin, late by the span it was displaced.
- *
- * `displacement` is measured from the media origin, which loop recording moves
- * behind the clip's own start: every pass lands in one continuous clip, and the
- * take — not the shared clip — names how deep its pass sits in that buffer.
- *
- * A fragment sitting exactly on the media origin leaves the clip's fields
- * untouched, so an unshifted region stays byte-identical to its source.
- * Mirrors the web resolver (`Arrangement/useCases/resolveComping.ts`) so both
- * renderers read the same material for the same fragment (#2225).
- */
-function withFragmentOffset(
-    clip: Track['clips'][number],
-    displacement: number,
-    fragmentStartBeat: number,
-    time: SourceTime,
-    take?: Take
-): Track['clips'][number] {
-    if (displacement === 0 && (take?.sourceOffsetSeconds ?? take?.sourceOffsetBeats ?? 0) === 0) {
-        return clip;
-    }
-    if (clip.type === 'audio') {
-        const tempoAtStart = time.resolveTempoAtBeat(clip.startBeat);
-        const entrySeconds = resolveAudioSourceOffsetSeconds(clip, tempoAtStart);
-        const takeDepthSeconds = resolveAudioSourceOffsetSeconds(
-            { audioOffsetSeconds: take?.sourceOffsetSeconds, audioOffsetBeats: take?.sourceOffsetBeats },
-            tempoAtStart
-        );
-        const elapsedSeconds = time.projectBeatToSeconds(fragmentStartBeat) - time.projectBeatToSeconds(clip.startBeat);
-        const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
-        return {
-            ...clip,
-            audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + displacement,
-            audioOffsetSeconds:
-                getAudioSourcePositionSeconds(entrySeconds, elapsedSeconds, stretchRatio) + takeDepthSeconds,
-        };
-    }
-    return { ...clip, midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + displacement };
-}
-
-/**
- * The clip set a track actually plays: comped takes where a take lane has
- * active regions, gap fills where the original clip still shows through, and
- * the clips unchanged when no comping applies.
- *
- * Shared by both renderers (#2225): the Web Audio scheduler
- * (`scheduleTrackClips`) and the native export path must schedule exactly the
- * same clip set — comped takes and gap fills included — for the two to be
- * interchangeable.
- */
 export function resolveTrackClipsWithComping(
     trackId: string,
     clips: Track['clips'],
     laneState = takeLaneStore.value,
-    time: SourceTime = liveSourceTime
+    timeline: ResolutionTempoTimeline = liveTempoTimeline
 ): ResolvedClip[] {
     if (!laneState) {
         return clips.map((clip) => ({
@@ -117,22 +47,20 @@ export function resolveTrackClipsWithComping(
             continue;
         }
 
-        const overlapStart = Math.max(region.startBeat, sourceClip.startBeat);
+        const media = resolveTakeMedia(take, sourceClip, timeline);
+        const overlapStart = Math.max(region.startBeat, media.earliestBeat);
         const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat);
         if (overlapStart >= overlapEnd) {
             continue;
         }
 
-        const passOffsetBeats = take.sourceOffsetBeats ?? 0;
-        const mediaOriginBeat = sourceClip.startBeat - passOffsetBeats;
-
         resolvedClips.push({
-            ...withFragmentOffset(sourceClip, overlapStart - mediaOriginBeat, overlapStart, time, take),
+            ...media.clipAt(overlapStart),
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
-            sourceStartBeat: mediaOriginBeat,
+            sourceStartBeat: media.sourceStartBeat,
         });
     }
 
@@ -158,7 +86,7 @@ export function resolveTrackClipsWithComping(
 
         for (const gap of gaps) {
             resolvedClips.push({
-                ...withFragmentOffset(clip, gap.start - clip.startBeat, gap.start, time),
+                ...resolveTakeMedia({}, clip, timeline).clipAt(gap.start),
                 startBeat: gap.start,
                 endBeat: gap.end,
                 regionStartBeat: gap.start,

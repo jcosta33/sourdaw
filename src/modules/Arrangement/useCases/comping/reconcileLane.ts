@@ -32,7 +32,9 @@ import { regionsOverlap } from './regionsOverlap';
  * region overlaps itself, and a zero-length region (which `compRegionInterval`'s
  * `endBeat > startBeat` law never produces) is the only shape it could not absorb.
  * Order follows the capture for the takes it knows and appends the live-only ones;
- * regions are ordered by beat, as the store's own shape requires.
+ * regions are ordered by beat, as the store's own shape requires. A live selection
+ * takes precedence over a restored take's captured selection. When live has no
+ * selection, at most one restored selected take regains it.
  */
 export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds: readonly string[]): TakeLane | null {
     const retiredTakeIdSet = new Set(retiredTakeIds);
@@ -40,6 +42,7 @@ export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds
 
     const reAddedTakeIds = new Set<string>();
     const takes: Take[] = [];
+    let hasSelectedTake = live.takes.some((take) => take.selected);
     for (const take of captured.takes) {
         const liveTake = liveTakesById.get(take.id);
         if (liveTake !== undefined) {
@@ -47,7 +50,10 @@ export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds
             continue;
         }
         if (retiredTakeIdSet.has(take.id)) {
-            takes.push(structuredClone(take));
+            const restored = structuredClone(take);
+            restored.selected = take.selected && !hasSelectedTake;
+            hasSelectedTake = hasSelectedTake || restored.selected;
+            takes.push(restored);
             reAddedTakeIds.add(take.id);
         }
     }

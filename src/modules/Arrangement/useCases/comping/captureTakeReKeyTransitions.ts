@@ -319,8 +319,10 @@ function mapLaneRegions(
  * take per fragment when the clip splits (the left fragment keeps the take's
  * id, matching the split convention that the left half keeps the clip id),
  * shifted or trimmed in place when the clip keeps its id. `sourceOffsetBeats`
- * rides along untouched: the fragment clips carry the consumed head in their
- * own offset fields, so the take's pass offset means the same as before.
+ * and a placed pass's `passAnchorSeconds` and `passDepthSeconds` ride along
+ * untouched: the fragment clips carry the consumed head in their own offset
+ * fields, so each fragment's media begins where its material does, and the
+ * pass's depth and anchor, both media time, mean the same as before.
  * A take whose whole span the deletion consumed is dropped — its material is
  * no longer in the arrangement — and every capture rides the transition record
  * so undo puts it back.
