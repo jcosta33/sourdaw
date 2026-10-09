@@ -1,15 +1,17 @@
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { clipSplitStateRestorable } from '../../useCases/clipEditing/clipSplitStateRestorable';
+import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 import { clipSplitCaptureOwnersMatch, isRestoreClipSplitSessionPayload } from './validateClipEditSessionEntries';
 
@@ -21,7 +23,10 @@ type RestoreClipSplitStateAction = Extract<AppAction, { type: 'restoreClipSplitS
  * precondition to check. The guard is scoped to the right clip id — the left
  * half keeps its id and its lanes untouched on both legs of the transition.
  */
-function clipAutomationLanesMatch(action: RestoreClipSplitStateAction): boolean {
+function clipAutomationLanesMatch(
+    action: RestoreClipSplitStateAction,
+    lanes: NonNullable<ReturnType<typeof projectClipReplayPrefix>>['lanes']
+): boolean {
     const expectedLanes = action.payload.expected.clipAutomationLanes;
     const replacementLanes = action.payload.replacement.clipAutomationLanes;
     if (expectedLanes === undefined && replacementLanes === undefined) {
@@ -30,7 +35,8 @@ function clipAutomationLanesMatch(action: RestoreClipSplitStateAction): boolean 
     return clipAutomationLaneTransitionMatchesStore(
         [action.payload.rightClipId],
         expectedLanes ?? [],
-        replacementLanes ?? []
+        replacementLanes ?? [],
+        lanes
     );
 }
 
@@ -39,22 +45,36 @@ function clipAutomationLanesMatch(action: RestoreClipSplitStateAction): boolean 
  *  `restoreMidiClipSplitState` and `execute`'s own satellite guard exactly, reused by
  *  `validate` so a batch preflight refuses a diverged clip instead of executing into a
  *  conflict. */
-function clipSplitStateMatches(action: RestoreClipSplitStateAction): boolean {
+function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: HandlerValidationContext): boolean {
+    const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
+    const projected = projectClipReplayPrefix(priorActions);
+    if (!projected) {
+        return false;
+    }
+    const tracks =
+        getTrackStoreState()?.tracks.map((track) => ({
+            id: track.id,
+            clips: projected.clips.filter((owner) => owner.owningTrackId === track.id).map((owner) => owner.clip),
+        })) ?? [];
     return (
         clipSplitCaptureOwnersMatch(action.payload) &&
-        retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? []) &&
-        clipSplitStateRestorable(action.payload) &&
-        midiClipSplitStateMatches({
-            sourceClipId: action.payload.clipId,
-            rightClipId: action.payload.rightClipId,
-            expectedSource: action.payload.expected.sourceMidi,
-            expectedRight: action.payload.expected.rightMidi,
-            replacementSource: action.payload.replacement.sourceMidi,
-            replacementRight: action.payload.replacement.rightMidi,
-        }) &&
+        retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], priorActions) &&
+        clipSplitStateRestorable(action.payload, { tracks }) &&
+        midiClipSplitStateMatches(
+            {
+                sourceClipId: action.payload.clipId,
+                rightClipId: action.payload.rightClipId,
+                expectedSource: action.payload.expected.sourceMidi,
+                expectedRight: action.payload.expected.rightMidi,
+                replacementSource: action.payload.replacement.sourceMidi,
+                replacementRight: action.payload.replacement.rightMidi,
+            },
+            undefined,
+            priorActions
+        ) &&
         (action.payload.expected.clipSatellites === undefined ||
-            clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites)) &&
-        clipAutomationLanesMatch(action)
+            clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites, priorActions)) &&
+        clipAutomationLanesMatch(action, projected.lanes)
     );
 }
 

@@ -1,3 +1,4 @@
+import { type AppAction } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
@@ -23,7 +24,7 @@ export type MidiClipSplitStateMatchInput = {
     replacementRight: MidiClipDataActionSnapshot;
 };
 
-function snapshotsEqual(left: MidiClipDataActionSnapshot, right: MidiClipDataActionSnapshot): boolean {
+function snapshotsEqual(left: unknown, right: unknown): boolean {
     return valuesEqual(left, right);
 }
 
@@ -48,6 +49,41 @@ function snapshotClipData(state: MidiStoreState, clipId: string): MidiClipDataAc
     };
 }
 
+function projectSnapshot(state: MidiStoreState, clipId: string, priorActions: readonly AppAction[]) {
+    let snapshot: {
+        notes: { present: boolean; value: readonly unknown[] };
+        controlChanges: { present: boolean; value: readonly unknown[] };
+        pitchBends: { present: boolean; value: readonly unknown[] };
+    } = snapshotClipData(state, clipId);
+    for (const action of priorActions) {
+        if (action.type === 'restoreClip' && action.payload.clipId === clipId) {
+            const payload = action.payload;
+            let notes = snapshot.notes;
+            let controlChanges = snapshot.controlChanges;
+            let pitchBends = snapshot.pitchBends;
+            if (payload.midiNotesSnapshot !== null) {
+                notes = { present: true, value: payload.midiNotesSnapshot };
+            }
+            if (payload.midiCcSnapshot !== null) {
+                controlChanges = { present: true, value: payload.midiCcSnapshot };
+            }
+            if (payload.midiPitchBendSnapshot !== null) {
+                pitchBends = { present: true, value: payload.midiPitchBendSnapshot };
+            }
+            snapshot = { notes, controlChanges, pitchBends };
+        }
+        if (action.type === 'restoreClipSplitState') {
+            if (action.payload.clipId === clipId) {
+                snapshot = action.payload.replacement.sourceMidi;
+            }
+            if (action.payload.rightClipId === clipId) {
+                snapshot = action.payload.replacement.rightMidi;
+            }
+        }
+    }
+    return snapshot;
+}
+
 /** Same precondition `restoreMidiClipSplitState` writes against, kept as the sole export of its
  *  own file (rather than a second export alongside the write) so a handler's `validate` can
  *  preflight a batch without triggering the write that `restoreMidiClipSplitState` performs once
@@ -64,13 +100,14 @@ export function midiClipSplitStateMatches(
         replacementSource,
         replacementRight,
     }: MidiClipSplitStateMatchInput,
-    state: MidiStoreState | null = midiStore.value
+    state: MidiStoreState | null = midiStore.value,
+    priorActions: readonly AppAction[] = []
 ): boolean {
     if (!state) {
         return [expectedSource, expectedRight, replacementSource, replacementRight].every(snapshotIsAbsent);
     }
     return (
-        snapshotsEqual(snapshotClipData(state, sourceClipId), expectedSource) &&
-        snapshotsEqual(snapshotClipData(state, rightClipId), expectedRight)
+        snapshotsEqual(projectSnapshot(state, sourceClipId, priorActions), expectedSource) &&
+        snapshotsEqual(projectSnapshot(state, rightClipId, priorActions), expectedRight)
     );
 }

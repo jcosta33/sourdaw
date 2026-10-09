@@ -1,4 +1,10 @@
 import { getClipAutomationMoveState } from '#/modules/Automation/useCases';
+import { commitRedoInverseCapture } from '#/modules/Command/useCases';
+import {
+    captureDurableDocumentWitness,
+    captureProjectMutationAuthorization,
+    getCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
@@ -6,6 +12,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
 import { removeClip } from '../../useCases/clip/removeClip';
+import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
@@ -22,10 +29,6 @@ type RemoveClipAction = Extract<AppAction, { type: 'removeClip' }>;
 
 function findOwningTrackId(clipId: string): string | undefined {
     return getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId))?.id;
-}
-
-function clipStillExists(clipId: string): boolean {
-    return (getTrackStoreState()?.tracks ?? []).some((track) => track.clips.some((clip) => clip.id === clipId));
 }
 
 /**
@@ -64,18 +67,47 @@ export const handleRemoveClip = createHandler<'removeClip'>({
     // batch once a target is gone. Single-action dispatch never calls validate,
     // so the per-clip fallbacks in execute below are unchanged.
     validate: (action, context) =>
-        clipStillExists(action.payload.clipId) && batchMembersAreIndependent(action, context),
+        (projectClipReplayPrefix(context.actions.slice(0, context.actionIndex))?.clips.some(
+            (owner) => owner.clip.id === action.payload.clipId
+        ) ??
+            false) &&
+        batchMembersAreIndependent(action, context),
     execute: (alpha) => {
         // Redo runs with skipUndo. Retain its actual producer capture so the
         // following Undo authenticates the shifted owners this replay wrote,
         // and restores exactly the material this replay retired.
-        const inverse = pairedInverseForRedo(alpha);
-        if (inverse?.type === 'restoreClip') {
-            const fresh = handleRemoveClip.describe(alpha).inverseAction;
+        const paired = pairedInverseForRedo(alpha);
+        const fresh = paired?.type === 'restoreClip' ? handleRemoveClip.describe(alpha).inverseAction : null;
+        const installCapture = () => {
             if (fresh?.type === 'restoreClip') {
-                inverse.payload = fresh.payload;
+                commitRedoInverseCapture(alpha, fresh);
             }
-        }
+        };
+        const documentBeforeReplay = fresh ? captureDurableDocumentWitness() : null;
+        const ownsPublication = fresh ? captureProjectMutationAuthorization() : null;
+        // Bind now, inside the actual handler scope, while its exact transaction
+        // owner is visible. Later group members publish under this same owner.
+        ownsPublication?.();
+        const committedResult = () => {
+            if (!fresh) {
+                return undefined;
+            }
+            return {
+                status: 'written' as const,
+                afterCommit: installCapture,
+                afterAmbiguousCommit: () => {
+                    // A published flush error still needs fresh durable authority:
+                    // peer/replacement writes cannot stand in for this transaction.
+                    if (
+                        getCrdtDoc('root') &&
+                        captureDurableDocumentWitness() !== documentBeforeReplay &&
+                        ownsPublication?.()
+                    ) {
+                        installCapture();
+                    }
+                },
+            };
+        };
 
         const state = getTrackStoreState();
         let trackId: string | null = null;
@@ -89,14 +121,15 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         }
         if (!trackId) {
             removeClip(alpha.payload.clipId);
-            return;
+            return committedResult();
         }
         const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId] });
         if (rippleResult === null) {
             removeClip(alpha.payload.clipId);
-            return;
+            return committedResult();
         }
         removeMidiClipData(rippleResult.removedClips.map((clip) => clip.id));
+        return committedResult();
     },
     describe: (alpha) => {
         const state = getTrackStoreState();

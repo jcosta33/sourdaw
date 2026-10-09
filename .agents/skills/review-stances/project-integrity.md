@@ -374,3 +374,20 @@ track and on another active track. Undo must keep the original history head and 
 after a successful undo, the same duplicate-ID states must keep redo pending and preserve the restored
 notes. Replay authority requires one live MIDI clip under the captured track owner, not merely a first
 matching clip in that track.
+
+### 2026-10-09 — copied split automation identities broke saved-project replay (PR #4036)
+
+Commit `7961816964ebfe247ead1f057a2cd0f33571f624`, merged through PR #4036, copied
+surviving automation point IDs onto the right fragment while retaining the source lane.
+A split before those points therefore violated global ID uniqueness after binary reload.
+PR #4036's public round-four review described curve, stretch, and link-law probes, but
+its published evidence did not include binary reload or a global identity census. The
+missed stance was reload identity and global-ID preservation; its historical tier is not inferred.
+
+Split before surviving identified main, trim, and ghost points, using both a dyadic cut
+and a non-dyadic cut. Produce entries through real Command, save/load the Automerge
+document, replace it in its lineage, reset every owner projection, and hydrate the separate
+session history mirror. Require a full global-ID census, valid project invariants, exact
+scalar values/order/curves, and all owner projections before real Undo and Redo. Retaining
+copied point IDs must turn that reload assertion red; fresh in-memory curve checks alone
+do not observe this obligation.

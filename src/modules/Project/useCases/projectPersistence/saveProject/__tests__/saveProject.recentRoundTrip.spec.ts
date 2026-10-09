@@ -48,6 +48,8 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(() => ''),
+
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRevision: mocks.captureProjectRevision,
     compactProject: vi.fn().mockResolvedValue(undefined),
@@ -165,6 +167,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
     executeUserAppAction: vi.fn(),

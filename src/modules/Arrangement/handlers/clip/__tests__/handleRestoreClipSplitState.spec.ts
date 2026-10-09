@@ -169,7 +169,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
         );
 
         expect(result).toEqual({ status: 'conflict' });
-        expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites);
+        expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites, []);
         expect(mockedReplaceTrackState).not.toHaveBeenCalled();
         expect(mockedRestoreMidi).not.toHaveBeenCalled();
         expect(mockedWriteSatellite).not.toHaveBeenCalled();
@@ -202,7 +202,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
         const action = makeAction(makeSnapshot({ clipSatellites: satellites }), makeSnapshot());
 
         expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
-        expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites);
+        expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites, []);
     });
 
     it('validate skips the satellite check for a legacy payload', () => {
@@ -255,7 +255,7 @@ describe('handleRestoreClipSplitState — clip automation lanes', () => {
         );
 
         expect(result).toEqual({ status: 'conflict' });
-        expect(mockedLaneTransitionMatches).toHaveBeenCalledWith(['c2'], [fragmentLane], []);
+        expect(mockedLaneTransitionMatches).toHaveBeenCalledWith(['c2'], [fragmentLane], [], []);
         expect(mockedReplaceTrackState).not.toHaveBeenCalled();
         expect(mockedApplyLaneTransition).not.toHaveBeenCalled();
         expect(mockedWriteSatellite).not.toHaveBeenCalled();

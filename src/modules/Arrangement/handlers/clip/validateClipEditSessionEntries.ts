@@ -171,7 +171,12 @@ function isClipSnapshot(value: unknown, clipId: string, trackId: string): boolea
     );
 }
 
-function isRippleDeleteShift(value: unknown, removedClipId: string, trackId: string): boolean {
+function isRippleDeleteShift(
+    value: unknown,
+    removedClipId: string,
+    trackId: string,
+    removed: { startBeat: number; endBeat: number }
+): boolean {
     return (
         isRecord(value) &&
         typeof value.clipId === 'string' &&
@@ -184,6 +189,8 @@ function isRippleDeleteShift(value: unknown, removedClipId: string, trackId: str
         value.origEndBeat > value.origStartBeat &&
         typeof value.automationDelta === 'number' &&
         Number.isFinite(value.automationDelta) &&
+        value.origStartBeat >= removed.endBeat &&
+        value.automationDelta === -(removed.endBeat - removed.startBeat) &&
         optionalField(
             value,
             'expectedAutomationLanes',
@@ -196,16 +203,22 @@ function isRippleDeleteShift(value: unknown, removedClipId: string, trackId: str
 }
 
 function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: string, trackId: string): boolean {
-    if (!isRecord(value)) {
+    if (
+        !isRecord(value) ||
+        !isRecord(clipSnapshot) ||
+        typeof clipSnapshot.startBeat !== 'number' ||
+        typeof clipSnapshot.endBeat !== 'number'
+    ) {
         return false;
     }
+    const removedBounds = { startBeat: clipSnapshot.startBeat, endBeat: clipSnapshot.endBeat };
     const satellites = clipSatelliteStateCodec.decodeEntries(value.clipSatellites);
     return (
         Array.isArray(value.removedClips) &&
         value.removedClips.length === 1 &&
         valuesEqual(value.removedClips[0], clipSnapshot) &&
         Array.isArray(value.shiftedClips) &&
-        value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId, trackId)) &&
+        value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId, trackId, removedBounds)) &&
         new Set(value.shiftedClips.map((shift) => (isRecord(shift) ? shift.clipId : undefined))).size ===
             value.shiftedClips.length &&
         satellites !== null &&

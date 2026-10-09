@@ -100,6 +100,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
@@ -112,6 +114,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(() => ''),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
+
     captureProjectRevision: vi.fn(),
     compactProject: vi.fn(),
     createCrdtDoc: vi.fn(),

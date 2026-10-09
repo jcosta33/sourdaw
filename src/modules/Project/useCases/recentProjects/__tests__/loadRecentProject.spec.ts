@@ -103,6 +103,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
@@ -115,6 +117,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(() => ''),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
+
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
     resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
