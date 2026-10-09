@@ -179,6 +179,7 @@ function remote(
         extraComment?: boolean;
         driftAfterFirst?: boolean;
         dismissAfterFirst?: boolean;
+        reidAfterFirst?: boolean;
         laterReviewerState?: string;
         laterReviewerHead?: string;
         reviewerVisibility?: 'missing' | 'null-id';
@@ -271,6 +272,9 @@ function remote(
             }
             if (input.dismissAfterFirst && state.inspections > 1) {
                 return JSON.stringify([[{ ...review, state: 'DISMISSED' }]]);
+            }
+            if (input.reidAfterFirst && state.inspections > 1) {
+                return JSON.stringify([[{ ...review, id: reviewId + 2 }]]);
             }
             return JSON.stringify([[review]]);
         }
@@ -555,6 +559,18 @@ describe('already recovered landed receipt binds its modern dossier', () => {
         const { root, ownerOid } = fixture();
         const before = readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');
         const github = remote({ liveHead: 'c'.repeat(40), dismissAfterFirst: true });
+
+        await expect(recover(root, ownerOid, github.gh)).rejects.toThrow(/remote state changed during reconciliation/);
+
+        expect(github.state.inspections).toBe(2);
+        expect(readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8')).toBe(before);
+        expect(github.state.posts).toBe(0);
+    });
+
+    it('refuses an otherwise exact review served under a different id on the second inspection', async () => {
+        const { root, ownerOid } = fixture();
+        const before = readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');
+        const github = remote({ reidAfterFirst: true });
 
         await expect(recover(root, ownerOid, github.gh)).rejects.toThrow(/remote state changed during reconciliation/);
 
