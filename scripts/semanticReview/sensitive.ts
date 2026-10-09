@@ -306,7 +306,9 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
 /** Literal scheme values do not inherit assignment-expression exemptions. */
 function hasOpaqueBearerValue(text: string): boolean {
     // Match every candidate with a fresh iterator: a benign first example cannot hide later material.
-    // Literal quoted keys may close a bracket before colon/equals; comma pairs require quoted values.
+    // Literal keys may close a bracket; paired arguments admit only terminated comments.
+    // Closed one-level header arrays inspect every quoted literal, so placeholders cannot mask peers.
+    // These lexical forms do not decode text or evaluate expressions and nested arrays.
     // Raw and JSON-escaped tabs remain whitespace at these explicit header boundaries.
     // Unqualified scheme text retains the generic assignment screen's 16-character opaque-value floor.
     const quote = String.raw`\\*["'\x60]`;
@@ -314,12 +316,19 @@ function hasOpaqueBearerValue(text: string): boolean {
     const schemeGap = String.raw`(?:[ \t]|\\+t)+`;
     const quotedKeyEnd = `${quote}(?:${gap}\\])?`;
     const assignment = `(?:${quotedKeyEnd})?${gap}[:=]${gap}(?:${quote}${gap})?`;
-    const commaPair = `${quote}${gap},${gap}${quote}${gap}`;
+    const blockComment = String.raw`\/\*[\s\S]*?\*\/`;
+    const lineComment = String.raw`\/\/[^\r\n]*?(?:\r?\n|\\+r\\+n|\\+n)`;
+    const argumentGap = `${gap}(?:(?:${blockComment}|${lineComment})${gap})*`;
+    const commaKey = `${quote}${argumentGap},${argumentGap}`;
+    const commaPair = `${commaKey}${quote}${gap}`;
+    const arrayAssignment = `(?:${quotedKeyEnd})?${gap}[:=]${gap}`;
+    const arrayHeader = String.raw`\bauthorization(?:${arrayAssignment}|${commaKey})\[([^\[\]]*)\]`;
+    const arrayLiteral = String.raw`(?:^|,)${gap}${quote}${gap}bearer${schemeGap}([A-Za-z0-9+/_~.-]+=*)`;
     const explicitHeader = String.raw`\bauthorization(?:${assignment}|${commaPair})bearer${schemeGap}([A-Za-z0-9+/_~.-]+=*)`;
     const genericScheme = String.raw`\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})`;
     for (const match of text.matchAll(new RegExp(`${explicitHeader}|${genericScheme}`, 'giu'))) {
         const value = match[1] ?? match[2]!;
-        if (PLACEHOLDER_VALUE.test(value) || /^[A-Z][A-Z0-9_]*_PLACEHOLDER$/u.test(value)) {
+        if (isBearerPlaceholder(value)) {
             continue;
         }
         // Only this explicit documentation descriptor receives the prose-context exemption.
@@ -333,7 +342,18 @@ function hasOpaqueBearerValue(text: string): boolean {
         }
         return true;
     }
+    for (const header of text.matchAll(new RegExp(arrayHeader, 'giu'))) {
+        for (const literal of header[1]!.matchAll(new RegExp(arrayLiteral, 'giu'))) {
+            if (!isBearerPlaceholder(literal[1]!)) {
+                return true;
+            }
+        }
+    }
     return false;
+}
+
+function isBearerPlaceholder(value: string): boolean {
+    return PLACEHOLDER_VALUE.test(value) || /^[A-Z][A-Z0-9_]*_PLACEHOLDER$/u.test(value);
 }
 
 /**

@@ -11331,6 +11331,31 @@ describe('opaque bearer source and caller admission', () => {
             { shape: 'template-assignment', text: `headers.Authorization = \`${scheme}\`;` },
         ];
     }
+    function additionalHeaderForms(value: string) {
+        const scheme = ['Bearer', value].join(' ');
+        const comments = [
+            { kind: 'block', gap: '/* retained */' },
+            { kind: 'line', gap: '// retained\n' },
+        ];
+        const setters = comments.flatMap(({ kind, gap }) =>
+            [
+                { quote: "'", before: '', after: gap },
+                { quote: '"', before: gap, after: '' },
+                { quote: '`', before: gap, after: gap },
+            ].map(({ quote, before, after }, index) => ({
+                shape: `commented-setter-${kind}-${String(index)}`,
+                text: `headers.set(${quote}Authorization${quote} ${before}, ${after} ${quote}${scheme}${quote});`,
+            }))
+        );
+        const arrays = [[scheme], ['Bearer <token>', scheme], [scheme, 'Bearer <token>']].flatMap((values, index) => [
+            { shape: `array-record-${String(index)}`, text: JSON.stringify({ Authorization: values }) },
+            { shape: `array-tuple-${String(index)}`, text: JSON.stringify([['Authorization', values]]) },
+        ]);
+        return [...setters, ...arrays].flatMap((form) => [
+            { ...form, shape: `${form.shape}-raw` },
+            { shape: `${form.shape}-serialized`, text: JSON.stringify(form.text) },
+        ]);
+    }
     function whitespaceHeaderForms(value: string) {
         return [
             { whitespace: 'space', padding: ' ', separator: ' ' },
@@ -11345,6 +11370,11 @@ describe('opaque bearer source and caller admission', () => {
         );
     }
     const unsafeSources = [
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                additionalHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+            ),
         ...headerValues
             .slice(0, 2)
             .flatMap(({ shape, value }) =>
@@ -11410,6 +11440,9 @@ describe('opaque bearer source and caller admission', () => {
             ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER', ''].flatMap(
                 (value) => whitespaceHeaderForms(value).map(({ text }) => text)
             ),
+            ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER']
+                .flatMap(additionalHeaderForms)
+                .map(({ text }) => text),
             ...explicitHeaderForms('<token>').map(({ text }) => text),
             ...explicitHeaderForms('${runtimeCredentialReference}').map(({ text }) => text),
             ...explicitHeaderForms('').map(({ text }) => text),
@@ -11460,10 +11493,12 @@ describe('opaque bearer source and caller admission', () => {
         const effect = effects();
         const blobs: Record<string, string> = {};
         const line = side === 'fallback' ? 99 : 1;
-        let hunk: PathHunks = { path, before: [], after: [{ startLine: line, endLine: line }] };
+        // A line comment moves its paired value past line one; the admitted hunk must carry the binding.
+        const endLine = side === 'fallback' ? line : text.split('\n').length;
+        let hunk: PathHunks = { path, before: [], after: [{ startLine: line, endLine }] };
         if (side === 'before') {
             blobs[`${MERGE_BASE}:${path}`] = text;
-            hunk = { path, before: [{ startLine: 1, endLine: 1 }], after: [] };
+            hunk = { path, before: [{ startLine: 1, endLine }], after: [] };
         } else {
             blobs[`${HEAD}:${path}`] = text;
         }
@@ -11560,6 +11595,11 @@ describe('opaque bearer source and caller admission', () => {
         'allegedObservedBehavior',
     ] as const;
     const findingLiterals = [
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                additionalHeaderForms(value).map((form) => ({ shape: `${form.shape}-${shape}`, value: form.text }))
+            ),
         ...headerValues
             .slice(0, 2)
             .flatMap(({ shape, value }) =>

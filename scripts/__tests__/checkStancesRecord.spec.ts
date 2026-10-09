@@ -593,6 +593,31 @@ describe('opaque bearer stance admission', () => {
             { shape: 'template-assignment', value: `headers.Authorization = \`${scheme}\`;` },
         ];
     }
+    function additionalHeaderForms(value: string) {
+        const scheme = ['Bearer', value].join(' ');
+        const comments = [
+            { kind: 'block', gap: '/* retained */' },
+            { kind: 'line', gap: '// retained\n' },
+        ];
+        const setters = comments.flatMap(({ kind, gap }) =>
+            [
+                { quote: "'", before: '', after: gap },
+                { quote: '"', before: gap, after: '' },
+                { quote: '`', before: gap, after: gap },
+            ].map(({ quote, before, after }, index) => ({
+                shape: `commented-setter-${kind}-${String(index)}`,
+                value: `headers.set(${quote}Authorization${quote} ${before}, ${after} ${quote}${scheme}${quote});`,
+            }))
+        );
+        const arrays = [[scheme], ['Bearer <token>', scheme], [scheme, 'Bearer <token>']].flatMap((values, index) => [
+            { shape: `array-record-${String(index)}`, value: JSON.stringify({ Authorization: values }) },
+            { shape: `array-tuple-${String(index)}`, value: JSON.stringify([['Authorization', values]]) },
+        ]);
+        return [...setters, ...arrays].flatMap((form) => [
+            { ...form, shape: `${form.shape}-raw` },
+            { shape: `${form.shape}-serialized`, value: JSON.stringify(form.value) },
+        ]);
+    }
     function whitespaceHeaderForms(value: string) {
         return [
             { whitespace: 'space', padding: ' ', separator: ' ' },
@@ -607,6 +632,9 @@ describe('opaque bearer stance admission', () => {
         );
     }
     const literals = [
+        ...[String.fromCharCode(81), ['Q1w2E3', 'r4T5y6', 'U7i'].join('')].flatMap((value, index) =>
+            additionalHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-short-${String(index)}` }))
+        ),
         ...[String.fromCharCode(81), ['Q1w2E3', 'r4T5y6', 'U7i'].join('')].flatMap((value, index) =>
             whitespaceHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-short-${String(index)}` }))
         ),
@@ -698,6 +726,9 @@ describe('opaque bearer stance admission', () => {
         fields.flatMap((field) =>
             [
                 ...explicitHeaderForms('<token>'),
+                ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap(
+                    additionalHeaderForms
+                ),
                 ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap(
                     whitespaceHeaderForms
                 ),

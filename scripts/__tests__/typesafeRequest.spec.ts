@@ -475,6 +475,31 @@ describe('opaque bearer complete request admission', () => {
             { shape: 'template-assignment', value: `headers.Authorization = \`${scheme}\`;` },
         ];
     }
+    function additionalHeaderForms(value: string) {
+        const scheme = ['Bearer', value].join(' ');
+        const comments = [
+            { kind: 'block', gap: '/* retained */' },
+            { kind: 'line', gap: '// retained\n' },
+        ];
+        const setters = comments.flatMap(({ kind, gap }) =>
+            [
+                { quote: "'", before: '', after: gap },
+                { quote: '"', before: gap, after: '' },
+                { quote: '`', before: gap, after: gap },
+            ].map(({ quote, before, after }, index) => ({
+                shape: `commented-setter-${kind}-${String(index)}`,
+                value: `headers.set(${quote}Authorization${quote} ${before}, ${after} ${quote}${scheme}${quote});`,
+            }))
+        );
+        const arrays = [[scheme], ['Bearer <token>', scheme], [scheme, 'Bearer <token>']].flatMap((values, index) => [
+            { shape: `array-record-${String(index)}`, value: JSON.stringify({ Authorization: values }) },
+            { shape: `array-tuple-${String(index)}`, value: JSON.stringify([['Authorization', values]]) },
+        ]);
+        return [...setters, ...arrays].flatMap((form) => [
+            { ...form, shape: `${form.shape}-raw` },
+            { shape: `${form.shape}-serialized`, value: JSON.stringify(form.value) },
+        ]);
+    }
     function whitespaceHeaderForms(value: string) {
         return [
             { whitespace: 'space', padding: ' ', separator: ' ' },
@@ -489,6 +514,11 @@ describe('opaque bearer complete request admission', () => {
         );
     }
     const literals = [
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                additionalHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+            ),
         ...headerValues
             .slice(0, 2)
             .flatMap(({ shape, value }) =>
@@ -565,7 +595,14 @@ describe('opaque bearer complete request admission', () => {
             },
         ])
     );
-    it.each(headerStructures)(
+    const arrayStructures = headerValues.slice(0, 2).flatMap(({ shape, value }) => {
+        const scheme = ['Bearer', value].join(' ');
+        return [[scheme], ['Bearer <token>', scheme], [scheme, 'Bearer <token>']].flatMap((values, index) => [
+            { shape: `array-record-${shape}-${String(index)}`, value, state: { Authorization: values } },
+            { shape: `array-tuple-${shape}-${String(index)}`, value, state: [['Authorization', values]] },
+        ]);
+    });
+    it.each([...headerStructures, ...arrayStructures])(
         'opaque bearer paired header $shape requires the serialized screen',
         ({ value, state }) => {
             expect(sensitiveContentReason('Authorization')).toBeUndefined();
@@ -647,6 +684,93 @@ describe('opaque bearer complete request admission', () => {
         }
     );
 
+    const newRequests = [
+        ...headerValues.slice(0, 2).flatMap(({ shape, value }) =>
+            additionalHeaderForms(value).map((form) => ({
+                shape: `${form.shape}-${shape}`,
+                state: { source: form.value },
+            }))
+        ),
+        ...arrayStructures,
+    ];
+    it.each(newRequests.flatMap((request) => ['hit', 'miss'].map((cacheMode) => ({ ...request, cacheMode }))))(
+        'opaque bearer bounded $shape refuses cache-$cacheMode and offline SDK effects',
+        async ({ state, cacheMode }) => {
+            const request = body(state);
+            const expectedBody = JSON.stringify(request);
+            const cached = { model: MODEL, answers: { check: { type: 'noul', noul: 0.9 } } };
+            const read = vi.fn(() => (cacheMode === 'hit' ? cached : undefined));
+            const write = vi.fn();
+            const wireBodies: unknown[] = [];
+            const fetch = vi.fn<Fetch>(async (_url, init) => {
+                wireBodies.push(init?.body);
+                expect(init?.body).toBe(expectedBody);
+                return response();
+            });
+            const sdk = createSdkProviderPort({ apiKey: KEY, fetch });
+            const systemOne = vi.fn(sdk.systemOne);
+            const profile = SEMANTIC_BUDGET_PROFILES.ci;
+            const budget = createBudgetController(profile);
+            const reserve = vi.spyOn(budget, 'reserve');
+            const before = budget.totals();
+            let failure: unknown;
+            try {
+                await assessUnit({
+                    port: { systemOne },
+                    cache: { read, write },
+                    budget,
+                    profile,
+                    deadline: Date.now() + 60_000,
+                    state,
+                    questions: QUESTIONS,
+                    requestedModel: MODEL,
+                    signal: signal(),
+                });
+            } catch (error) {
+                failure = error;
+            }
+            expect({
+                reads: read.mock.calls.length,
+                writes: write.mock.calls.length,
+                reservations: reserve.mock.calls.length,
+                providers: systemOne.mock.calls.length,
+                fetches: fetch.mock.calls.length,
+                wireBodies,
+            }).toEqual({
+                reads: 0,
+                writes: 0,
+                reservations: 0,
+                providers: 0,
+                fetches: 0,
+                wireBodies: [],
+            });
+            expect(budget.totals()).toEqual(before);
+            expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
+            expect(() => prepare(request)).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
+            expect(sensitiveContentReason(expectedBody)).toBeDefined();
+        }
+    );
+
+    it.each(
+        ['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap((value) => {
+            const scheme = ['Bearer', value].join(' ');
+            return [
+                { shape: `record-${value}`, state: { Authorization: ['Bearer <token>', scheme] } },
+                { shape: `tuple-${value}`, state: [['Authorization', [scheme, 'Bearer <token>']]] },
+            ];
+        })
+    )('opaque bearer benign-only $shape retains frozen complete SDK bytes', async ({ state }) => {
+        const request = body(state);
+        const prepared = prepare(request);
+        expect(prepared.serializedBody).toBe(JSON.stringify(request));
+        const fetch = vi.fn<Fetch>(async (_url, init) => {
+            expect(init?.body).toBe(prepared.serializedBody);
+            return response();
+        });
+        await sendTypeSafeRequest({ prepared, apiKey: KEY, signal: signal(), timeoutMs: 1000, fetch });
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
     it.each([
         ...positions.flatMap((position) => [
             // A reference needs actual interpolation; a bare alphabetic scheme value is a literal.
@@ -654,6 +778,9 @@ describe('opaque bearer complete request admission', () => {
             { position, control: 'short-prose', value: 'A reviewer mentions Bearer schemes in this note.' },
             { position, control: 'header-placeholder', value: 'Authorization: Bearer <token>' },
             { position, control: 'header-reference', value: 'Authorization: Bearer ${runtimeCredentialReference}' },
+            ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER']
+                .flatMap(additionalHeaderForms)
+                .map((form) => ({ position, control: `${form.shape}-benign`, value: form.value })),
             ...explicitHeaderForms('<token>').map((form) => ({
                 position,
                 control: `${form.shape}-placeholder`,

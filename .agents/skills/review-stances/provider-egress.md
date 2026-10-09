@@ -152,3 +152,18 @@ the generic sixteen-character floor. The committed production-only revert must b
 these same source, complete-envelope and stance caller oracles without changing specs.
 Literal brackets and JSON tab escapes are recognized syntactic forms; runtime key
 expressions, concatenated values and arbitrary encodings are not evaluated by this screen.
+
+PR #5156's review of unlanded head `1b4a06324514e7c182d460888056cd4cf087e656`
+found terminated comments between literal setter arguments broke their pairing, and an
+Authorization record/tuple with a one-level array value admitted short literal material.
+The provider-egress matrix omitted inter-argument comment gaps and array-valued headers;
+this is another explicit-context escape in this unlanded PR, not introducing history on
+`main`. Probe raw and JSON-serialized block/line comments, actual record/tuple arrays,
+and every quoted array candidate in both placeholder-first and opaque-first orderings.
+Require complete preparation to refuse before both a valid would-hit cache and a cache
+miss leading to the installed SDK delegate, with every effect counter zero. Pair these
+with benign-only arrays and comment-separated placeholders/interpolation, retaining exact
+prepared/SDK wire bytes. A screen-only reproduction establishes recognition, not caller
+or cache/provider effects. The committed production-only revert must fail these same
+caller tests without changing specs. Recognition remains lexical: terminated comments and
+closed one-level arrays, without decoding, nested-array evaluation or runtime expressions.

@@ -686,3 +686,11 @@ insufficient. Use a schema-valid would-hit cache, a later unsafe candidate after
 placeholder, repeated calls, ordinary controls and clean independent units. Preserve the separate
 serialized-only fixture. On a committed head, removing the recognizer must redden the caller cases,
 and bypassing preparation before cache must redden the would-hit-cache cases.
+
+PR #5156's unlanded comment/array repair extended a source fixture to raw line comments,
+but its scan hunk still ended at line one. The paired value was on a later line, so the
+fixture screened a different input and could not establish the intended withholding.
+Derive the fixture's admitted range from the complete multiline binding; preserve an
+independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
+only the committed recognizer is reverted. A full-source screen assertion does not prove
+which region the real scan caller admitted.
