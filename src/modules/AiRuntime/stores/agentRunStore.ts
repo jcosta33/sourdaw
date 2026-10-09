@@ -38,7 +38,11 @@ import {
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
-import { type ThreadContextEvidence } from '../models/ThreadContext';
+import {
+    THREAD_COMMIT_STANDINGS,
+    type ThreadCommitStanding,
+    type ThreadContextEvidence,
+} from '../models/ThreadContext';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
@@ -959,6 +963,18 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     };
 }
 
+function isThreadCommitStanding(value: unknown): value is ThreadCommitStanding {
+    return THREAD_COMMIT_STANDINGS.some((standing) => standing === value);
+}
+
+/** A recorded standing, `null` for a thread with no commit, or `undefined` when the value is neither. */
+function readCommitStanding(value: unknown): ThreadCommitStanding | null | undefined {
+    if (value === null) {
+        return null;
+    }
+    return isThreadCommitStanding(value) ? value : undefined;
+}
+
 function readThreadContextEvidence(value: unknown): ThreadContextEvidence | null {
     if (!isRecord(value) || typeof value.pendingProposal !== 'boolean' || typeof value.lastCommit !== 'boolean') {
         return null;
@@ -972,7 +988,9 @@ function readThreadContextEvidence(value: unknown): ThreadContextEvidence | null
     const measuredDeltaCount = readNonNegativeInteger(value.measuredDeltaCount);
     const omittedMeasuredDeltaCount = readNonNegativeInteger(value.omittedMeasuredDeltaCount);
     const bytes = readNonNegativeInteger(value.bytes);
+    const commitStanding = readCommitStanding(value.commitStanding);
     if (
+        commitStanding === undefined ||
         requestCount === null ||
         omittedRequestCount === null ||
         pendingCommandCount === null ||
@@ -992,6 +1010,7 @@ function readThreadContextEvidence(value: unknown): ThreadContextEvidence | null
         pendingCommandCount,
         omittedPendingCommandCount,
         lastCommit: value.lastCommit,
+        commitStanding,
         committedCommandCount,
         omittedCommittedCommandCount,
         measuredDeltaCount,

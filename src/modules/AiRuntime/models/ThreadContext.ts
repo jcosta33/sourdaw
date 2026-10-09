@@ -38,6 +38,16 @@ export type ThreadMeasuredDelta = {
 };
 
 /**
+ * Whether a committed batch's change is still in the project, as the undo history can tell:
+ * `standing` while its revert group's entries are in `past` (whatever a panel revert flag says),
+ * `undone` while they are in `future` or a panel revert retired them and `past` no longer holds
+ * them, and `unknown` when the history holds them in neither — a cleared redo stack after a later
+ * edit, entries the size cap pushed out, or a batch whose entries carry no group.
+ */
+export const THREAD_COMMIT_STANDINGS = ['standing', 'undone', 'unknown'] as const;
+export type ThreadCommitStanding = (typeof THREAD_COMMIT_STANDINGS)[number];
+
+/**
  * What a chat thread holds when a new request is planned: its earlier requests, oldest first, the
  * proposal still waiting for the user, and the last run of the thread that committed. It exists
  * only while a proposal is pending or a commit sits inside the window; a thread with neither has
@@ -49,7 +59,7 @@ export type ThreadContext = {
     lastCommit: {
         runId: string;
         receiptIds: string[];
-        reverted: boolean;
+        standing: ThreadCommitStanding;
         commands: ThreadCommand[];
         measuredDeltas: ThreadMeasuredDelta[];
     } | null;
@@ -63,6 +73,8 @@ export type ThreadContextEvidence = {
     pendingCommandCount: number;
     omittedPendingCommandCount: number;
     lastCommit: boolean;
+    /** The last commit's standing, or `null` when the thread has no commit. */
+    commitStanding: ThreadCommitStanding | null;
     committedCommandCount: number;
     omittedCommittedCommandCount: number;
     measuredDeltaCount: number;

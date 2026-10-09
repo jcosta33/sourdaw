@@ -54,7 +54,7 @@ function serializeLastCommit(commit: ThreadContext['lastCommit'], fitted: Fitted
         receiptIds: commit.receiptIds
             .slice(-MAX_THREAD_RECEIPT_IDS)
             .map((receiptId) => receiptId.slice(0, MAX_THREAD_RECEIPT_ID_LENGTH)),
-        reverted: commit.reverted,
+        standing: commit.standing,
         commands: fitted.committedCommands,
         omittedCommandCount: commit.commands.length - fitted.committedCommands.length,
         measuredDeltas: fitted.measuredDeltas,
@@ -84,6 +84,7 @@ function describeFit(thread: ThreadContext, fitted: FittedThread, bytes: number)
         pendingCommandCount: fitted.pendingCommands.length,
         omittedPendingCommandCount: (thread.pendingProposal?.commands.length ?? 0) - fitted.pendingCommands.length,
         lastCommit: thread.lastCommit !== null,
+        commitStanding: thread.lastCommit?.standing ?? null,
         committedCommandCount: fitted.committedCommands.length,
         omittedCommittedCommandCount: (thread.lastCommit?.commands.length ?? 0) - fitted.committedCommands.length,
         measuredDeltaCount: fitted.measuredDeltas.length,

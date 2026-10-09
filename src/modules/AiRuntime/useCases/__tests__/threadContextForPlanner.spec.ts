@@ -121,7 +121,7 @@ const OTHER_PROJECT = 'project-other';
 function confirmation(input: {
     runId: string;
     assistantMessageId: string;
-    status: 'proposed' | 'executed' | 'cancelled';
+    status: 'proposed' | 'executed' | 'cancelled' | 'failed';
     supersededBy?: string | null;
     measuredPreview?: MeasuredPreview;
     groupId?: string;
@@ -159,7 +159,8 @@ function sources(partial: Partial<ThreadContextSources>): ThreadContextSources {
         runs: [],
         actionGroups: [],
         projectId: OPEN_PROJECT,
-        undoneGroupIds: new Set(),
+        pastGroupIds: new Set(),
+        futureGroupIds: new Set(),
         ...partial,
     };
 }
@@ -319,13 +320,14 @@ describe('thread context for the planner', () => {
                     ],
                     runs: [{ runId: 'run-committed', receipts: [receipt('run-committed')] }],
                     actionGroups: [{ groupId: 'run-committed:batch-1', reverted: false, actions: [] }],
+                    pastGroupIds: new Set(['run-committed:batch-1']),
                 })
             );
 
             expect(thread?.lastCommit).toEqual({
                 runId: 'run-committed',
                 receiptIds: ['command:run-committed:batch-1'],
-                reverted: false,
+                standing: 'standing',
                 commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB', arguments: GAIN_ACTION.payload }],
                 measuredDeltas: [{ targetId: 'master', metric: 'integratedLoudness', delta: -1.5, unit: 'LUFS' }],
             });
@@ -333,6 +335,7 @@ describe('thread context for the planner', () => {
                 lastCommit: {
                     receiptIds: ['command:run-committed:batch-1'],
                     commands: [{ name: 'setTrackGain' }],
+                    standing: 'standing',
                     measuredDeltas: [{ metric: 'integratedLoudness', delta: -1.5, unit: 'LUFS' }],
                 },
             });
@@ -364,14 +367,14 @@ describe('thread context for the planner', () => {
             expect(thread?.lastCommit).toEqual({
                 runId: 'run-newer',
                 receiptIds: ['command:run-newer:batch-1'],
-                reverted: true,
+                standing: 'undone',
                 commands: [{ name: 'setTempo', label: 'Set tempo to 128 BPM' }],
                 measuredDeltas: [],
             });
         });
 
         describe('a run committed in two batches', () => {
-            function twoBatchThread(undoneGroupIds: readonly string[]) {
+            function twoBatchThread(history: { past: readonly string[]; future: readonly string[] }) {
                 return buildThreadContext(
                     sources({
                         messages: [
@@ -404,55 +407,134 @@ describe('thread context for the planner', () => {
                                 ],
                             },
                         ],
-                        undoneGroupIds: new Set(undoneGroupIds),
+                        pastGroupIds: new Set(history.past),
+                        futureGroupIds: new Set(history.future),
                     })
                 );
             }
 
             it('reports the newest batch undone when only that batch was undone', () => {
-                expect(twoBatchThread(['run-batched:batch-2'])?.lastCommit).toMatchObject({
+                expect(
+                    twoBatchThread({ past: ['run-batched:batch-1'], future: ['run-batched:batch-2'] })?.lastCommit
+                ).toMatchObject({
                     receiptIds: ['command:run-batched:batch-2'],
-                    reverted: true,
+                    standing: 'undone',
                     commands: [{ label: 'Set Pad gain to -6 dB' }],
                 });
             });
 
             it('reports the newest batch standing when only the earlier batch was undone', () => {
-                expect(twoBatchThread(['run-batched:batch-1'])?.lastCommit).toMatchObject({
-                    receiptIds: ['command:run-batched:batch-2'],
-                    reverted: false,
-                });
+                expect(
+                    twoBatchThread({ past: ['run-batched:batch-2'], future: ['run-batched:batch-1'] })?.lastCommit
+                ).toMatchObject({ receiptIds: ['command:run-batched:batch-2'], standing: 'standing' });
             });
         });
 
-        function singleCommitThread(undoneGroupIds: readonly string[]) {
-            return buildThreadContext(
+        describe("a commit's standing, read from where the undo history holds its group", () => {
+            const GROUP = 'run-single:batch-1';
+
+            function singleCommitThread(input: {
+                past?: readonly string[];
+                future?: readonly string[];
+                panelReverted?: boolean;
+                revertGroupId?: string | null;
+            }) {
+                const batchReceipt = {
+                    ...receipt('run-single'),
+                    revertGroupId: input.revertGroupId === undefined ? GROUP : input.revertGroupId,
+                };
+                return buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'mute the pad'),
+                            commandMessage('assistant-1', 'run-single'),
+                        ],
+                        runs: [{ runId: 'run-single', receipts: [batchReceipt] }],
+                        actionGroups: [
+                            {
+                                groupId: GROUP,
+                                reverted: input.panelReverted ?? false,
+                                actions: [{ actionType: 'muteTrack', label: 'Mute Pad' }],
+                            },
+                        ],
+                        pastGroupIds: new Set(input.past ?? []),
+                        futureGroupIds: new Set(input.future ?? []),
+                    })
+                )?.lastCommit?.standing;
+            }
+
+            it('reads standing while the group is applied in past', () => {
+                expect(singleCommitThread({ past: [GROUP] })).toBe('standing');
+            });
+
+            it('reads undone after an undo moved the group to future', () => {
+                expect(singleCommitThread({ future: [GROUP] })).toBe('undone');
+            });
+
+            it('reads unknown after an undo and a later edit emptied future', () => {
+                expect(singleCommitThread({})).toBe('unknown');
+            });
+
+            it('reads undone after a panel revert, and standing again once a redo puts it back in past', () => {
+                expect(singleCommitThread({ future: [GROUP], panelReverted: true })).toBe('undone');
+                expect(singleCommitThread({ past: [GROUP], panelReverted: true })).toBe('standing');
+            });
+
+            it('reads unknown for a batch with no revert group, even with ungrouped entries in past', () => {
+                expect(singleCommitThread({ past: [GROUP], revertGroupId: null })).toBe('unknown');
+            });
+        });
+
+        it('reports a batch committed with effects pending as the last commit, though its confirmation failed', () => {
+            const thread = buildThreadContext(
                 sources({
-                    messages: [message('user-1', 'user', 'mute the pad'), commandMessage('assistant-1', 'run-undone')],
-                    runs: [{ runId: 'run-undone', receipts: [receipt('run-undone')] }],
-                    actionGroups: [
-                        {
-                            groupId: 'run-undone:batch-1',
-                            reverted: false,
-                            actions: [{ actionType: 'muteTrack', label: 'Mute Pad' }],
-                        },
+                    messages: [
+                        message('user-1', 'user', 'mute the pad'),
+                        commandMessage('assistant-1', 'run-older'),
+                        message('user-2', 'user', 'render the chorus'),
+                        message('assistant-2', 'assistant', 'Committed; render follow-up failed.'),
                     ],
-                    undoneGroupIds: new Set(undoneGroupIds),
+                    confirmations: [
+                        confirmation({ runId: 'run-failed', assistantMessageId: 'assistant-2', status: 'failed' }),
+                    ],
+                    runs: [
+                        { runId: 'run-older', receipts: [receipt('run-older')] },
+                        { runId: 'run-failed', receipts: [receipt('run-failed')] },
+                    ],
                 })
             );
-        }
 
-        it('reports a commit the undo history holds to redo as undone, though its group was never reverted', () => {
-            expect(singleCommitThread(['run-undone:batch-1'])?.lastCommit).toMatchObject({
-                runId: 'run-undone',
-                reverted: true,
+            expect(thread?.lastCommit).toMatchObject({
+                runId: 'run-failed',
+                receiptIds: ['command:run-failed:batch-1'],
             });
         });
 
-        // A singleton batch records undo entries with no group, and the history's size cap pushes old
-        // entries out of `past`: neither undid the change, so absence from the history is standing.
-        it('reports a commit the undo history holds in neither past nor future as standing', () => {
-            expect(singleCommitThread([])?.lastCommit).toMatchObject({ runId: 'run-undone', reverted: false });
+        it("picks a direct commit's receipt and a confirmed batch's receipt apart within one run", () => {
+            const threadWith = (status: 'executed' | 'proposed', receipts: readonly string[]) =>
+                buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'set every verse track to -6 dB'),
+                            commandMessage('assistant-1', 'run-mixed'),
+                            message('assistant-2', 'assistant', 'Batch 2 of 2.'),
+                        ],
+                        confirmations: [
+                            confirmation({
+                                runId: 'run-mixed',
+                                assistantMessageId: 'assistant-2',
+                                status,
+                                groupId: 'run-mixed:batch-2',
+                            }),
+                        ],
+                        runs: [{ runId: 'run-mixed', receipts: receipts.map((batch) => receipt('run-mixed', batch)) }],
+                    })
+                )?.lastCommit?.receiptIds;
+
+            expect(threadWith('executed', ['run-mixed:batch-2', 'run-mixed:batch-1'])).toEqual([
+                'command:run-mixed:batch-2',
+            ]);
+            expect(threadWith('proposed', ['run-mixed:batch-1'])).toEqual(['command:run-mixed:batch-1']);
         });
 
         it('reports no commit for a proposed or cancelled batch, though its run holds an earlier receipt', () => {
@@ -531,6 +613,32 @@ describe('thread context for the planner', () => {
 
             expect(threadWith(THREAD_CONTEXT_MAX_TURNS - 1)?.lastCommit).toMatchObject({ runId: 'run-early' });
             expect(threadWith(THREAD_CONTEXT_MAX_TURNS)).toBeNull();
+        });
+
+        it('reads the requests and the pending proposal from the window alone', () => {
+            const laterRequests = Array.from({ length: THREAD_CONTEXT_MAX_TURNS + 1 }, (_, index) =>
+                message(`user-${String(index + 1)}`, 'user', `question ${String(index + 1)}`)
+            );
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-0', 'user', 'make the bass louder'),
+                        message('assistant-0', 'assistant', 'Review the change.'),
+                        ...laterRequests,
+                        commandMessage('assistant-last', 'run-late'),
+                    ],
+                    confirmations: [
+                        confirmation({ runId: 'run-stale', assistantMessageId: 'assistant-0', status: 'proposed' }),
+                    ],
+                    runs: [{ runId: 'run-late', receipts: [receipt('run-late')] }],
+                })
+            );
+
+            expect(thread?.pendingProposal).toBeNull();
+            expect(thread?.lastCommit).toMatchObject({ runId: 'run-late' });
+            expect(thread?.requests).toEqual(
+                laterRequests.slice(-THREAD_CONTEXT_MAX_TURNS).map((request) => request.content)
+            );
         });
 
         it('reads the chat, confirmation, run and history stores before the request joins the thread', () => {
@@ -684,12 +792,57 @@ describe('thread context for the planner', () => {
 
             for (const profile of ['local', 'hosted'] as const) {
                 const fitted = fitThreadContext(thread, profile);
+                const encodedBytes = new TextEncoder().encode(fitted.section).byteLength;
 
-                expect(new TextEncoder().encode(fitted.section).byteLength).toBeLessThanOrEqual(
-                    THREAD_CONTEXT_MAX_BYTES[profile]
-                );
+                expect(encodedBytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES[profile]);
+                expect(fitted.evidence.bytes).toBe(encodedBytes);
                 expect(fitted.evidence.requestCount).toBeGreaterThan(0);
             }
+        });
+
+        it('keeps a committed command whose arguments alone exceed the cap by its name and label', () => {
+            const notes = Array.from({ length: 96 }, (_, index) => ({
+                pitch: 36 + (index % 24),
+                startBeat: index / 4,
+                durationBeats: 0.25,
+                velocity: 100,
+                releaseVelocity: 64,
+                probability: 1,
+                muted: false,
+            }));
+            const thread: ThreadContext = {
+                requests: ['write a riff'],
+                pendingProposal: null,
+                lastCommit: {
+                    runId: 'run-riff',
+                    receiptIds: ['command:run-riff:batch-1'],
+                    standing: 'standing',
+                    commands: [
+                        {
+                            name: 'createMidiClip',
+                            label: 'Create MIDI clip "Riff" with 96 notes',
+                            arguments: { trackId: 'track-lead', startBeat: 0, endBeat: 24, notes },
+                        },
+                    ],
+                    measuredDeltas: [],
+                },
+            };
+
+            const local = fitThreadContext(thread, 'local');
+
+            expect(readSection(`\n\n${local.section}\n\n`)).toMatchObject({
+                lastCommit: {
+                    commands: [
+                        {
+                            name: 'createMidiClip',
+                            label: 'Create MIDI clip "Riff" with 96 notes',
+                            argumentsOmitted: true,
+                        },
+                    ],
+                    omittedCommandCount: 0,
+                },
+            });
+            expect(local.evidence).toMatchObject({ committedCommandCount: 1, omittedCommittedCommandCount: 0 });
         });
 
         it('keeps no older request once a newer one did not fit, however short the older one is', () => {

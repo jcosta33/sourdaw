@@ -4,6 +4,7 @@ import { type MeasuredPreview } from '../models/MeasuredPreview';
 import {
     THREAD_CONTEXT_MAX_TURNS,
     type ThreadCommand,
+    type ThreadCommitStanding,
     type ThreadContext,
     type ThreadMeasuredDelta,
 } from '../models/ThreadContext';
@@ -38,12 +39,10 @@ export type ThreadContextSources = {
     actionGroups: readonly ThreadActionGroup[];
     /** The open project's identity; a proposal or commit of any other project is not this thread's state. */
     projectId: string;
-    /**
-     * The revert groups the undo history holds to redo, which an ordinary undo moved there. A group
-     * the history does not hold at all — a singleton batch's ungrouped entries, or entries the size
-     * cap pushed out — still stands.
-     */
-    undoneGroupIds: ReadonlySet<string>;
+    /** The revert groups whose entries the undo history holds applied, in `past`. */
+    pastGroupIds: ReadonlySet<string>;
+    /** The revert groups whose entries the undo history holds to redo, in `future`. */
+    futureGroupIds: ReadonlySet<string>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -86,20 +85,32 @@ function deltasOfPreview(preview: MeasuredPreview | undefined): ThreadMeasuredDe
 }
 
 /**
- * Whether one batch's change is no longer standing: its history group was reverted, or the undo
- * history holds the group to redo, as after an ordinary undo. Absence from the history never means
- * undone. A batch with no revert group (a runtime-only command) has nothing to undo and stands.
+ * Whether one batch's change is still in the project, as far as the undo history can tell. Its
+ * entries in `past` mean standing, even when a panel revert flagged the group earlier and a redo
+ * put it back. Entries in `future`, or a panel revert flag with nothing in `past`, mean undone.
+ * Anything else is unknown: a later edit empties `future`, the size cap drops old entries, and a
+ * batch with no revert group or ungrouped entries is never in the history by group at all.
  */
-function isUndone(receipt: AgentRunReceipt, sources: ThreadContextSources): boolean {
+function readStanding(receipt: AgentRunReceipt, sources: ThreadContextSources): ThreadCommitStanding {
     const groupId = receipt.revertGroupId;
     if (groupId === null) {
-        return false;
+        return 'unknown';
+    }
+    if (sources.pastGroupIds.has(groupId)) {
+        return 'standing';
     }
     const group = sources.actionGroups.find((candidate) => candidate.groupId === groupId);
-    return group?.reverted === true || sources.undoneGroupIds.has(groupId);
+    if (sources.futureGroupIds.has(groupId) || group?.reverted === true) {
+        return 'undone';
+    }
+    return 'unknown';
 }
 
-/** A confirmed batch's commit: the receipt of that batch alone, never another batch of the same run. */
+/**
+ * A confirmed batch's commit: the run's receipt for that very batch, whatever status the
+ * confirmation settled in, since a batch that committed with effects still pending settles as
+ * `failed` yet its change is in the project. Without that receipt the batch committed nothing.
+ */
 function readConfirmedCommit(
     confirmation: ThreadConfirmation,
     sources: ThreadContextSources
@@ -115,7 +126,7 @@ function readConfirmedCommit(
     return {
         runId: confirmation.runId,
         receiptIds: [receipt.receiptIdentity],
-        reverted: isUndone(receipt, sources),
+        standing: readStanding(receipt, sources),
         commands: commandsOfSnapshot(confirmation.approvalSnapshot),
         measuredDeltas: deltasOfPreview(confirmation.approvalSnapshot.measuredPreview),
     };
@@ -145,28 +156,30 @@ function readDirectCommit(message: ChatMessage, sources: ThreadContextSources): 
     return {
         runId,
         receiptIds: [receipt.receiptIdentity],
-        reverted: isUndone(receipt, sources),
+        standing: readStanding(receipt, sources),
         commands: (group?.actions ?? []).map((action) => ({ name: action.actionType, label: action.label })),
         measuredDeltas: [],
     };
 }
 
 /**
- * The commit a thread message reports, if it reports one. A message that carries a confirmation
- * reports a commit only when that confirmation executed; a proposed, cancelled or superseded one
- * reports none, whatever receipts its run holds from other batches. A message without one reports
- * the direct commit of the run it was written for.
+ * The commit a thread message reports, if it reports one. A message that carries confirmations
+ * reports the batch of the one whose receipt its run holds; with no such receipt it reports none,
+ * whatever receipts the run holds for other batches. A message without one reports the direct
+ * commit of the run it was written for.
  */
 function readCommitAt(message: ChatMessage, sources: ThreadContextSources): ThreadContext['lastCommit'] {
     const confirmations = sources.confirmations.filter((candidate) => candidate.assistantMessageId === message.id);
     if (confirmations.length === 0) {
         return readDirectCommit(message, sources);
     }
-    const executed = confirmations.find((candidate) => candidate.status === 'executed');
-    if (executed === undefined) {
-        return null;
+    for (const confirmation of confirmations) {
+        const commit = readConfirmedCommit(confirmation, sources);
+        if (commit !== null) {
+            return commit;
+        }
     }
-    return readConfirmedCommit(executed, sources);
+    return null;
 }
 
 function readPendingProposal(

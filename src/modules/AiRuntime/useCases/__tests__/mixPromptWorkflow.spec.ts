@@ -15,6 +15,7 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -32,12 +33,13 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
-import { clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { revertAiActionGroup } from '../aiHistoryActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
@@ -567,18 +569,24 @@ describe('mix prompt workflow', () => {
     });
 
     // The thread the next chat request reads is the live stores', so a commit through the chat
-    // route, an ordinary undo and a redo must each show in it.
-    it('reads the confirmed commit into the thread, retired by an undo and standing again after a redo', async () => {
+    // route and every undo-history move after it must each show in its standing.
+    async function commitTheMixThroughTheChat(): Promise<void> {
         await sendChatMessage(PROMPT);
-        const confirmationId = getConfirmationId();
         expect(readChatThreadContext()?.pendingProposal?.commands).toHaveLength(4);
+        await confirmPendingChatActions({ confirmationId: getConfirmationId() });
+    }
 
-        await confirmPendingChatActions({ confirmationId });
+    function readCommitStanding() {
+        return readChatThreadContext()?.lastCommit?.standing;
+    }
+
+    it('reads the confirmed commit into the thread: undone by an undo, standing after a redo', async () => {
+        await commitTheMixThroughTheChat();
 
         const committed = readChatThreadContext();
         expect(committed?.pendingProposal).toBeNull();
         expect(committed?.lastCommit).toMatchObject({
-            reverted: false,
+            standing: 'standing',
             commands: [
                 { name: 'setTrackGain' },
                 { name: 'setTrackPan' },
@@ -590,16 +598,49 @@ describe('mix prompt workflow', () => {
 
         await undo();
 
-        expect(readChatThreadContext()?.lastCommit).toMatchObject({ reverted: true });
+        expect(readCommitStanding()).toBe('undone');
 
         await redo();
 
-        expect(readChatThreadContext()?.lastCommit).toMatchObject({ reverted: false });
+        expect(readCommitStanding()).toBe('standing');
 
-        // A history that no longer holds the group at all never undid it.
         clearUndoHistory();
 
-        expect(readChatThreadContext()?.lastCommit).toMatchObject({ reverted: false });
+        expect(readCommitStanding()).toBe('unknown');
+    });
+
+    it('reads the commit as unknown, never standing, once an edit after its undo clears the redo stack', async () => {
+        await commitTheMixThroughTheChat();
+        await undo();
+        expect(readCommitStanding()).toBe('undone');
+
+        await executeAppAction({
+            type: 'muteTrack',
+            payload: { trackId: 'track-bass', muted: true, expectedMuted: false },
+        });
+
+        expect(getTrack('track-bass')).toMatchObject({ muted: true });
+        expect(undoStore.value?.future).toHaveLength(0);
+        expect(readCommitStanding()).toBe('unknown');
+    });
+
+    it('reads the commit as undone after a panel revert, and standing once a redo re-applies it', async () => {
+        await commitTheMixThroughTheChat();
+        const group = aiActionHistoryStore.value?.groups.at(-1);
+        if (group === undefined) {
+            throw new Error('Expected the commit to record its history group.');
+        }
+
+        await revertAiActionGroup(group);
+
+        expect(aiActionHistoryStore.value?.groups.at(-1)?.reverted).toBe(true);
+        expect(readCommitStanding()).toBe('undone');
+
+        await redo();
+
+        expectExactMix();
+        expect(aiActionHistoryStore.value?.groups.at(-1)?.reverted).toBe(true);
+        expect(readCommitStanding()).toBe('standing');
     });
 
     it('reads a direct commit into the thread through the run its chat message names', async () => {
@@ -612,12 +653,12 @@ describe('mix prompt workflow', () => {
         expect(readChatThreadContext()).toMatchObject({
             requests: ['Set Room Mic gain to 50%, leaving the Drum Bus unchanged.'],
             pendingProposal: null,
-            lastCommit: { reverted: false, commands: [{ name: 'setTrackGain' }] },
+            lastCommit: { standing: 'standing', commands: [{ name: 'setTrackGain' }] },
         });
 
         await undo();
 
-        expect(readChatThreadContext()?.lastCommit).toMatchObject({ reverted: true });
+        expect(readCommitStanding()).toBe('undone');
     });
 
     it('grounds the hosted OpenAI-compatible fixture to the same terminal result', async () => {

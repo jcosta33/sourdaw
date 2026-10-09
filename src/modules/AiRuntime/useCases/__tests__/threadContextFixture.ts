@@ -39,7 +39,7 @@ export function createFullThreadContext(): ThreadContext {
                 { length: 8 },
                 (_, index) => `command:${committedRunId}:${fixtureUuid(`thread:batch:${String(index)}`)}`
             ),
-            reverted: false,
+            standing: 'standing',
             commands: Array.from({ length: MAX_LLM_ACTIONS_PER_BATCH }, (_, index) => gainCommand('committed', index)),
             measuredDeltas: Array.from({ length: 16 }, (_, index) => ({
                 targetId: `track-${fixtureUuid(`committed:${String(index)}`)}`,
