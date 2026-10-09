@@ -15,8 +15,6 @@ const SMF_NOTE_OFF = 0x80;
 const SMF_NOTE_ON = 0x90;
 const SMF_CONTROL_CHANGE = 0xb0;
 const SUSTAIN_PEDAL = 64;
-// A wrap remainder of float noise (around 1e-16 to 1e-15 beats) is no hit; the export writes none.
-const FLOAT_NOISE_BEATS = 1e-9;
 
 const mocks = vi.hoisted(() => ({
     getAllTracks: vi.fn(),
@@ -622,7 +620,7 @@ describe('exportMidiClip writes what the clip plays', () => {
     describe('in the coordinates the scheduler projects in', () => {
         type SchedulerClip = { startBeat: number; endBeat: number; loopLength: number };
 
-        /** The segments of positive length the note scheduler's projection returns, pass by pass. */
+        /** Every segment the note scheduler's projection returns, pass by pass. */
         function schedulerSegments(clip: SchedulerClip, stored: NoteFixture[]) {
             const passes = Math.ceil((clip.endBeat - clip.startBeat) / clip.loopLength);
             return Array.from({ length: passes }, (_, pass) =>
@@ -636,10 +634,20 @@ describe('exportMidiClip writes what the clip plays', () => {
                     midiOffsetBeats: 0,
                     loopEnabled: true,
                 })
-            )
-                .flat()
-                .filter((segment) => segment.duration > FLOAT_NOISE_BEATS);
+            ).flat();
         }
+
+        it('writes no extra one-tick note at the head of a pass for a third-of-a-beat kick that ends on the loop end', () => {
+            const clip = { startBeat: 4, endBeat: 12, loopLength: 4 };
+            const stored = [note('kick', 11 / 3, 1 / 3, 36)];
+
+            const events = exportClip({ ...clip, loopEnabled: true }, stored, []);
+
+            // One hit per pass, at 4 + 11/3 and 8 + 11/3 beats, and no strike at beats 4 or 8.
+            expect(schedulerSegments(clip, stored)).toHaveLength(2);
+            expect(ticks(events, 'on')).toEqual([3680, 5600]);
+            expect(ticks(events, 'off')).toEqual([3840, 5760]);
+        });
 
         it('writes a loop pass of a clip not at beat 0 once, without a rounding sliver of its wrap', () => {
             const clip = { startBeat: 4, endBeat: 12, loopLength: 4 };
