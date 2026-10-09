@@ -8,7 +8,10 @@
  * tempo map can be authored in. The engine is addressed in frames, and only it
  * knows the sample rate its device opened, so the wire coordinate is seconds:
  * integrated here through the same tempo map the scheduler integrates
- * (`secondsBetweenBeats`), converted to frames there.
+ * (`secondsBetweenBeats`), converted to frames there. A beat tolerance here
+ * cannot keep two segments off one frame, because a frame's width in beats
+ * depends on that rate, so the native install keeps the last of the segments
+ * that round onto one frame (#5214).
  *
  * ## Ramps become steps, at a stated resolution
  *
@@ -226,9 +229,10 @@ function tempoAtBeat(sorted: readonly TempoChange[], beat: number, defaultTempo:
  * `60 · Δbeat / Δseconds` (#4657). The last segment has no following boundary
  * to average across: its span is the rest of the arrangement, which holds the
  * tempo the arrangement is at, so it states that. A boundary that opens no
- * time (two beats on one second) cannot state a mean either, and the engine
- * refuses equal segment frames outright, so the segment installs nothing
- * either way and keeps the arrangement's tempo rather than dividing by zero.
+ * time (two beats on one second) cannot state a mean either, and the native
+ * install keeps only the last segment on a frame, so the segment installs
+ * nothing either way and keeps the arrangement's tempo rather than dividing by
+ * zero.
  */
 function segmentBeatsPerMinute(
     sorted: readonly TempoChange[],

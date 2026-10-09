@@ -43,7 +43,8 @@ use crate::commands::graph::{finite, seconds_to_frames};
 use crate::state::AppState;
 use daw_engine::scheduler::{GraphCommand, ScoringReading, StripPeak, TransportPositionSnapshot};
 use daw_engine::transport_map::{
-    LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment, TransportMaps,
+    LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment, TransportMapError,
+    TransportMaps,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -290,32 +291,74 @@ fn strip_peaks_payload(
         .collect()
 }
 
+/// One segment per start frame: the last of those that convert onto it.
+///
+/// The renderer integrates its maps in seconds and collapses changes only
+/// within a beat tolerance, because it does not know the rate the device
+/// opened at; two changes, or a change and a ramp sample, under one frame
+/// apart therefore round onto one frame here. The engine's maps refuse a
+/// segment that does not start on a strictly later frame than the one before
+/// it, and that refusal installs nothing, so the session would keep playing
+/// its previous map. The last segment on a frame is the one that governs it —
+/// the renderer's own rule for two changes on one beat, "arrive at the first,
+/// govern from the last" — and every segment sharing a frame started within
+/// one frame of it, so dropping the others moves no change by more than the
+/// rounding to frames already does. Only adjacent segments are compared:
+/// a frame that goes backwards is a producer fault the engine still refuses.
+fn last_per_frame<T>(segments: Vec<T>, start_frame: fn(&T) -> u64) -> Vec<T> {
+    let mut kept: Vec<T> = Vec::with_capacity(segments.len());
+    for segment in segments {
+        match kept.last_mut() {
+            Some(previous) if start_frame(previous) == start_frame(&segment) => *previous = segment,
+            _ => kept.push(segment),
+        }
+    }
+    kept
+}
+
+// Each segment is checked for the engine's own refusals before the collapse,
+// because the collapse may drop it: a malformed segment is refused wherever it
+// sits, never hidden by a later one on its frame.
 fn tempo_segments(
     payload: &[TempoSegmentPayload],
     sample_rate: f32,
 ) -> Result<Vec<TempoSegment>, String> {
-    payload
+    let segments = payload
         .iter()
         .map(|segment| {
+            let beats_per_minute = finite(segment.beats_per_minute, "tempo segment bpm")?;
+            if beats_per_minute <= 0.0 {
+                return Err(format!(
+                    "tempo map is unusable: {}",
+                    TransportMapError::NonPositiveTempo
+                ));
+            }
             Ok(TempoSegment {
                 start_frame: seconds_to_frames(
                     segment.start_seconds,
                     sample_rate,
                     "tempo segment start",
                 )?,
-                beats_per_minute: finite(segment.beats_per_minute, "tempo segment bpm")?,
+                beats_per_minute,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(last_per_frame(segments, |segment| segment.start_frame))
 }
 
 fn time_signature_segments(
     payload: &[TimeSignatureSegmentPayload],
     sample_rate: f32,
 ) -> Result<Vec<TimeSignatureSegment>, String> {
-    payload
+    let segments = payload
         .iter()
         .map(|segment| {
+            if segment.numerator == 0 || segment.denominator == 0 {
+                return Err(format!(
+                    "time signature map is unusable: {}",
+                    TransportMapError::NonPositiveTimeSignature
+                ));
+            }
             Ok(TimeSignatureSegment {
                 start_frame: seconds_to_frames(
                     segment.start_seconds,
@@ -326,7 +369,8 @@ fn time_signature_segments(
                 denominator: segment.denominator,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(last_per_frame(segments, |segment| segment.start_frame))
 }
 
 fn loop_region(payload: Option<LoopRegionPayload>, sample_rate: f32) -> Result<LoopRegion, String> {
@@ -576,6 +620,349 @@ mod tests {
         assert!(
             error.starts_with("tempo map is unusable:"),
             "unexpected error: {error}"
+        );
+    }
+
+    const ONE_FRAME_AT_48K: f64 = 1.0 / 48_000.0;
+
+    fn tempo_at_seconds(start_seconds: f64, beats_per_minute: f64) -> TempoSegmentPayload {
+        TempoSegmentPayload {
+            start_seconds,
+            beats_per_minute,
+        }
+    }
+
+    fn meter_at_seconds(
+        start_seconds: f64,
+        numerator: u16,
+        denominator: u16,
+    ) -> TimeSignatureSegmentPayload {
+        TimeSignatureSegmentPayload {
+            start_seconds,
+            numerator,
+            denominator,
+        }
+    }
+
+    /// The maps a payload installs, or why the conversion refused them.
+    fn installed_maps(
+        payload: &TransportMapsPayload,
+        sample_rate: f32,
+    ) -> Result<Box<TransportMaps>, String> {
+        let (mut ops, _) = transport_maps_commands(payload, sample_rate)?;
+        match ops.remove(0) {
+            GraphCommand::SetTransportMaps(maps) => Ok(maps),
+            _ => panic!("the first command should be the maps"),
+        }
+    }
+
+    /// Two tempo changes 0.4 of a frame apart round onto one frame. The engine
+    /// refuses two segments on one frame, so without the collapse the whole map
+    /// is refused and the session keeps its previous one (#5214).
+    #[test]
+    fn tempo_segments_under_one_frame_apart_install_as_the_later_one() {
+        let payload = TransportMapsPayload {
+            tempo: vec![
+                tempo_at_seconds(0.0, 120.0),
+                tempo_at_seconds(1.0, 100.0),
+                tempo_at_seconds(1.0 + 0.4 * ONE_FRAME_AT_48K, 90.0),
+            ],
+            ..maps_payload()
+        };
+
+        let maps = installed_maps(&payload, 48_000.0)
+            .expect("two tempo changes under one frame apart should install");
+
+        assert_eq!(maps.tempo.segment_count(), 2);
+        assert_eq!(maps.tempo.tempo_at(47_999), 120.0);
+        assert_eq!(maps.tempo.tempo_at(48_000), 90.0);
+    }
+
+    #[test]
+    fn meter_segments_under_one_frame_apart_install_as_the_later_one() {
+        let payload = TransportMapsPayload {
+            time_signature: vec![
+                meter_at_seconds(0.0, 4, 4),
+                meter_at_seconds(1.0, 3, 4),
+                meter_at_seconds(1.0 + 0.4 * ONE_FRAME_AT_48K, 7, 8),
+            ],
+            ..maps_payload()
+        };
+
+        let maps = installed_maps(&payload, 48_000.0)
+            .expect("two meter changes under one frame apart should install");
+
+        assert_eq!(maps.time_signature.segment_count(), 2);
+        assert_eq!(maps.time_signature.at(47_999), (4, 4));
+        assert_eq!(maps.time_signature.at(48_000), (7, 8));
+    }
+
+    /// The collapse drops a segment, so it must not drop the refusal a
+    /// malformed one earns: a producer fault stays a refusal wherever it sits.
+    #[test]
+    fn a_malformed_segment_sharing_a_frame_is_still_refused() {
+        let tempo = TransportMapsPayload {
+            tempo: vec![
+                tempo_at_seconds(0.0, 120.0),
+                tempo_at_seconds(1.0, 0.0),
+                tempo_at_seconds(1.0 + 0.4 * ONE_FRAME_AT_48K, 90.0),
+            ],
+            ..maps_payload()
+        };
+        let meter = TransportMapsPayload {
+            time_signature: vec![
+                meter_at_seconds(0.0, 4, 4),
+                meter_at_seconds(1.0, 0, 4),
+                meter_at_seconds(1.0 + 0.4 * ONE_FRAME_AT_48K, 7, 8),
+            ],
+            ..maps_payload()
+        };
+
+        let tempo_error = installed_maps(&tempo, 48_000.0).expect_err("a zero tempo is refused");
+        let meter_error = installed_maps(&meter, 48_000.0).expect_err("a zero meter is refused");
+
+        assert_eq!(
+            tempo_error,
+            format!(
+                "tempo map is unusable: {}",
+                TransportMapError::NonPositiveTempo
+            )
+        );
+        assert_eq!(
+            meter_error,
+            format!(
+                "time signature map is unusable: {}",
+                TransportMapError::NonPositiveTimeSignature
+            )
+        );
+    }
+
+    /// Only segments on one frame collapse. A segment on an earlier frame than
+    /// the one before it is a producer fault, and the engine still refuses it.
+    #[test]
+    fn a_segment_behind_the_one_before_it_is_still_refused() {
+        let payload = TransportMapsPayload {
+            tempo: vec![
+                tempo_at_seconds(0.0, 120.0),
+                tempo_at_seconds(2.0, 100.0),
+                tempo_at_seconds(1.0, 90.0),
+            ],
+            ..maps_payload()
+        };
+
+        let error = installed_maps(&payload, 48_000.0).expect_err("a backwards map is refused");
+
+        assert_eq!(
+            error,
+            format!("tempo map is unusable: {}", TransportMapError::OutOfOrder)
+        );
+    }
+
+    /// The issue's repro as the renderer projects it: tempo 120 at beat 4 and
+    /// 90 at beat 4.00002, 0.48 of a 48 kHz frame apart. The payload is the one
+    /// `projectEngineTransportMaps.spec.ts` pins the projection to, read from
+    /// the same file, so the two sides cannot drift apart.
+    #[test]
+    fn the_sub_frame_tempo_step_repro_installs_the_later_tempo() {
+        let payload: TransportMapsPayload = serde_json::from_str(include_str!(
+            "../../tests/fixtures/sub_frame_tempo_step_maps.json"
+        ))
+        .expect("the fixture is the wire payload");
+
+        let maps = installed_maps(&payload, 48_000.0).expect("the repro should install");
+
+        assert_eq!(maps.tempo.segment_count(), 2);
+        assert_eq!(maps.tempo.tempo_at(95_999), 120.0);
+        assert_eq!(maps.tempo.tempo_at(96_000), 90.0);
+    }
+
+    /// splitmix64: seeded and dependency-free, so every case reproduces from
+    /// its seed.
+    struct SplitMix64(u64);
+
+    impl SplitMix64 {
+        fn next(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut mixed = self.0;
+            mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            mixed ^ (mixed >> 31)
+        }
+
+        /// Uniform in `[0, 1)`.
+        fn unit(&mut self) -> f64 {
+            (self.next() >> 11) as f64 / (1u64 << 53) as f64
+        }
+
+        fn below(&mut self, bound: u64) -> u64 {
+            self.next() % bound
+        }
+    }
+
+    /// A gap between two segments, in frames: under one, exactly one, or many.
+    fn gap_frames(rng: &mut SplitMix64) -> f64 {
+        match rng.below(3) {
+            0 => 0.01 + 0.98 * rng.unit(),
+            1 => 1.0,
+            _ => (2 + rng.below(4_000)) as f64 + rng.unit(),
+        }
+    }
+
+    /// A tempo in the arrangement's own tempo-change range.
+    fn tempo_bpm(rng: &mut SplitMix64) -> f64 {
+        20.0 + 979.0 * rng.unit()
+    }
+
+    /// A projected map: instant changes and ramp runs whose samples step
+    /// toward the run's target, every segment a generated gap after the one
+    /// before, and a meter change beside every tempo segment.
+    fn generated_payload(rng: &mut SplitMix64, sample_rate: f32) -> TransportMapsPayload {
+        let frame_seconds = 1.0 / f64::from(sample_rate);
+        let mut bpm = tempo_bpm(rng);
+        let mut tempo = vec![tempo_at_seconds(0.0, bpm)];
+        let mut time_signature = vec![meter_at_seconds(0.0, 4, 4)];
+        let mut seconds = 0.0;
+        for _ in 0..1 + rng.below(12) {
+            let from = bpm;
+            let target = tempo_bpm(rng);
+            let samples = if rng.below(2) == 0 {
+                1
+            } else {
+                2 + rng.below(16)
+            };
+            for sample in 1..=samples {
+                seconds += gap_frames(rng) * frame_seconds;
+                bpm = from + (target - from) * sample as f64 / samples as f64;
+                tempo.push(tempo_at_seconds(seconds, bpm));
+                time_signature.push(meter_at_seconds(
+                    seconds,
+                    1 + rng.below(15) as u16,
+                    1 << rng.below(5),
+                ));
+            }
+        }
+        TransportMapsPayload {
+            tempo,
+            time_signature,
+            loop_region: None,
+        }
+    }
+
+    /// Every projected map installs, whatever its changes' spacing against the
+    /// device's frames; the segment in force at every frame is the last change
+    /// at or before it; no change moves by a frame or more; and the collapse
+    /// adds no beat error beyond what rounding each boundary to its frame
+    /// already makes (#5214).
+    #[test]
+    fn every_projected_map_installs_with_the_last_change_governing_each_frame() {
+        let mut collapsed = 0usize;
+        for sample_rate in [44_100.0f32, 48_000.0, 96_000.0] {
+            let rate = f64::from(sample_rate);
+            let frame_seconds = 1.0 / rate;
+            for seed in 0..400u64 {
+                let case = format!("seed {seed} at {rate} Hz");
+                let mut rng = SplitMix64(seed);
+                let payload = generated_payload(&mut rng, sample_rate);
+                let frames: Vec<u64> = payload
+                    .tempo
+                    .iter()
+                    .map(|segment| {
+                        seconds_to_frames(segment.start_seconds, sample_rate, "oracle")
+                            .expect("generated seconds are finite and non-negative")
+                    })
+                    .collect();
+
+                let maps = installed_maps(&payload, sample_rate)
+                    .unwrap_or_else(|error| panic!("{case}: refused: {error}"));
+
+                let tempo = tempo_segments(&payload.tempo, sample_rate).expect("tempo converts");
+                let meter = time_signature_segments(&payload.time_signature, sample_rate)
+                    .expect("meter converts");
+                assert!(
+                    tempo
+                        .windows(2)
+                        .all(|pair| pair[0].start_frame < pair[1].start_frame),
+                    "{case}: tempo frames do not strictly increase"
+                );
+                assert!(
+                    meter
+                        .windows(2)
+                        .all(|pair| pair[0].start_frame < pair[1].start_frame),
+                    "{case}: meter frames do not strictly increase"
+                );
+                collapsed += frames.len() - tempo.len();
+
+                let governing = |frame: u64| {
+                    frames
+                        .iter()
+                        .rposition(|start| *start <= frame)
+                        .expect("the map opens at frame zero")
+                };
+                for &start in &frames {
+                    for frame in [start.saturating_sub(1), start, start + 1] {
+                        let index = governing(frame);
+                        let change = &payload.time_signature[index];
+                        assert_eq!(
+                            maps.tempo.tempo_at(frame),
+                            payload.tempo[index].beats_per_minute,
+                            "{case}: tempo at frame {frame}"
+                        );
+                        assert_eq!(
+                            maps.time_signature.at(frame),
+                            (change.numerator, change.denominator),
+                            "{case}: meter at frame {frame}"
+                        );
+                    }
+                }
+                for (index, change) in payload.tempo.iter().enumerate() {
+                    let moved_to = payload.tempo[governing(frames[index])].start_seconds;
+                    assert!(
+                        (moved_to - change.start_seconds).abs() < frame_seconds,
+                        "{case}: change {index} gave way to one a frame or more away"
+                    );
+                }
+
+                // One second past the last change, integrated three ways: by the
+                // installed map; over every payload segment on its rounded frame,
+                // a collapsed one spanning nothing; and over every payload
+                // segment in exact seconds.
+                let end_frame = frames.last().expect("the map opens at zero") + rate as u64;
+                let installed = maps.tempo.beats_at(end_frame, rate);
+                let mut on_frames = 0.0;
+                let mut exact = 0.0;
+                let mut rounding_bound = 0.0;
+                for (index, segment) in payload.tempo.iter().enumerate() {
+                    let (next_frame, next_seconds) = payload
+                        .tempo
+                        .get(index + 1)
+                        .map_or((end_frame, end_frame as f64 / rate), |next| {
+                            (frames[index + 1], next.start_seconds)
+                        });
+                    on_frames += (next_frame - frames[index]) as f64 / rate
+                        * segment.beats_per_minute
+                        / 60.0;
+                    exact +=
+                        (next_seconds - segment.start_seconds) * segment.beats_per_minute / 60.0;
+                    if let Some(previous) = index.checked_sub(1).map(|at| payload.tempo[at]) {
+                        rounding_bound += 0.5
+                            * frame_seconds
+                            * (previous.beats_per_minute - segment.beats_per_minute).abs()
+                            / 60.0;
+                    }
+                }
+                assert!(
+                    (installed - on_frames).abs() <= 1e-9 * on_frames.max(1.0),
+                    "{case}: installed {installed} beats, uncollapsed on frames {on_frames}"
+                );
+                assert!(
+                    (installed - exact).abs() <= rounding_bound + 1e-9 * exact.max(1.0),
+                    "{case}: installed {installed} beats, exact {exact}, bound {rounding_bound}"
+                );
+            }
+        }
+        assert!(
+            collapsed > 0,
+            "the generator must produce segments that share a frame"
         );
     }
 
