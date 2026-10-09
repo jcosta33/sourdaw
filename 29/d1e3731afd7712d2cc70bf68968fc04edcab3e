@@ -1,0 +1,147 @@
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_b3844865736923 10
+.agents/skills/review-stances/correctness.md
+  s_2bfd55a4393d7c::t_a7ae92d762c8ba 496-512
+.agents/skills/review-stances/test-validity.md
+  s_2bfd55a4393d7c::t_944f519b11add4 143-150
+.github/workflows/nightly.yml
+  s_2bfd55a4393d7c::t_95a4df88857bdd 312-313,315-328
+.github/workflows/validation.yml
+  s_2bfd55a4393d7c::t_d2966d1592fd97 696-706,709,713
+crates/daw-dsp/src/fermenter/fm.rs
+  s_2bfd55a4393d7c::t_c0ae8713af17fa 52-58,75-76,94,102-104,109-110,115-117,126-129,134-135,141-143,149,153-169,217-287
+crates/daw-dsp/src/fermenter/layer.rs
+  s_2bfd55a4393d7c::t_4f87613e8466a2 113-117,219,368,764,766,877-1002
+crates/daw-dsp/src/fermenter/voice.rs
+  s_2bfd55a4393d7c::t_5a2a3fb96557cc 320-327,435
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_0964f078111c85 1,983-1056,1058-1114
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_3dd0080cbcedbd 1,5-78,80-136
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_e3eea060f3919b 12,16-18,21
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_1bfd69b84ffd0b 1211,1344,1350,1770
+scripts/__tests__/e2eLaunchOverlayBound.spec.ts
+  s_2bfd55a4393d7c::t_51bec29e11ee70 1-467
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_2bfd55a4393d7c::t_cba9838322089f 867-868,1453-1455
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_ebe2e1230c330c 100-113,772-774,786-811,3305-3478
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStartTakes.integration.spec.ts
+  s_2bfd55a4393d7c::t_fdd9d6f0d3e5f2 1-242
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_2bfd55a4393d7c::t_dc297649b6b68d 333-334,343,353,552-597
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_2bfd55a4393d7c::t_dbe9143f4ffc69 1-262
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptorGuidanceSources.ts
+  s_2bfd55a4393d7c::t_c536a84d51577e 134,438,442
+src/modules/Arrangement/models/TakeLane.ts
+  s_2bfd55a4393d7c::t_1d5db6ee9458cc 1-2,12-20,23-43,83-164
+src/modules/Arrangement/models/TempoTimeline.ts
+  s_2bfd55a4393d7c::t_65e63bbf5761c9 1-36
+src/modules/Arrangement/stores/__tests__/takeLaneStore.spec.ts
+  s_2bfd55a4393d7c::t_7ea32cec440dd4 6,471-545
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  s_2bfd55a4393d7c::t_f11a1f099a7a3a 82-88,122-127
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_2bfd55a4393d7c::t_90d77c013bb6a1 28,48-51,91-113,135-138
+src/modules/Arrangement/stores/takeLaneWriteJournal.ts
+  s_2bfd55a4393d7c::t_469ebec62f06a6 20-21,47,50,143,189-201,430-431,436,438
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_2bfd55a4393d7c::t_045a6d61af6916 76
+src/modules/Arrangement/useCases/__tests__/resolveCompingLoopRunUp.spec.ts
+  s_2bfd55a4393d7c::t_f9cfcd17cd4606 1-278
+src/modules/Arrangement/useCases/__tests__/resolveCompingMainProjectCompatibility.spec.ts
+  s_2bfd55a4393d7c::t_8a6a752fca06f4 1-336
+src/modules/Arrangement/useCases/clipMediaOffsetAt.ts
+  s_2bfd55a4393d7c::t_52606f6acd0f15 1-34
+src/modules/Arrangement/useCases/comping/__tests__/writeTakeReKeyTransitions.spec.ts
+  s_2bfd55a4393d7c::t_3bcf8293ce267c 177-203
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_2bfd55a4393d7c::t_de733de570a7e6 318-321
+src/modules/Arrangement/useCases/comping/writeTakeReKeyTransitions.ts
+  s_2bfd55a4393d7c::t_e3eba17d444a45 21-23,182-184
+src/modules/Arrangement/useCases/liveTempoTimeline.ts
+  s_2bfd55a4393d7c::t_1c80df60b84ca5 1-10
+src/modules/Arrangement/useCases/recording/__tests__/placeRecordingClipStart.spec.ts
+  s_2bfd55a4393d7c::t_e2ea10ed193d35 1-64
+src/modules/Arrangement/useCases/recording/__tests__/placeRecordingTakes.spec.ts
+  s_2bfd55a4393d7c::t_6618d3109bf0fe 1-201
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingLoopPass.spec.ts
+  s_2bfd55a4393d7c::t_8c0cc321723f0a 1-209
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_2bfd55a4393d7c::t_06f173df3d3522 2,4,6-35,48-54,62-76
+src/modules/Arrangement/useCases/recording/placeRecordingClipStart.ts
+  s_2bfd55a4393d7c::t_1c81e573550533 1-31
+src/modules/Arrangement/useCases/recording/placeRecordingTakes.ts
+  s_2bfd55a4393d7c::t_8b487eb1cdfb36 1-38
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_2bfd55a4393d7c::t_fdeebca73ef327 5,15-45,86,101-104,113-117,123-133
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_2bfd55a4393d7c::t_a05833954cac11 4-8,49-50,57,62,92
+src/modules/Arrangement/useCases/resolveTakeMedia.ts
+  s_2bfd55a4393d7c::t_59e7d0c8d0bd24 1-119
+src/modules/Arrangement/useCases/withMediaOffsetBeats.ts
+  s_2bfd55a4393d7c::t_731c86bd65a748 1-21
+src/modules/AudioEngine/repositories/devices/modulation/createAutoPan.ts
+  s_2bfd55a4393d7c::t_72637d67b84477 1-2,9
+src/modules/AudioEngine/repositories/devices/modulation/createStereoWidener.ts
+  s_2bfd55a4393d7c::t_14475e6205bf4f 1-2,9
+src/modules/AudioEngine/useCases/livePlayback/liveTempoTimeline.ts
+  s_2bfd55a4393d7c::t_5c77fa988a9d42 1-22
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphProgramme.ts
+  s_2bfd55a4393d7c::t_c15b4f18064eed 77,187-188,255
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTempoTimeline.spec.ts
+  s_2bfd55a4393d7c::t_a8cf6d3dc58d84 1-37
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingLoopRunUp.spec.ts
+  s_2bfd55a4393d7c::t_fd72f84c12c82e 1-277
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingMainProjectCompatibility.spec.ts
+  s_2bfd55a4393d7c::t_89202b008e3489 1-150
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_2bfd55a4393d7c::t_d86bd33d911fd0 1-318
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingSlippedLoop.integration.spec.ts
+  s_2bfd55a4393d7c::t_36dab306d49667 1-195
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_2bfd55a4393d7c::t_8afa7993cdf720 107,383-389
+src/modules/AudioEngine/useCases/offlineRender/renderTempoTimeline.ts
+  s_2bfd55a4393d7c::t_e168806f5d51fd 1-35
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_2bfd55a4393d7c::t_7fdafc90d2af57 1-6,14-44,46-49,51-57,59-143,145-148,150-153,164-166,171-172,206-207,214,219,245
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_2bfd55a4393d7c::t_d8987ec18e0786 52,225-226,377,407-412
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_378fe71cca3f96 1,983-1056,1058-1114
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_2bfd55a4393d7c::t_6323a07009de4e 821-822
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_2bfd55a4393d7c::t_d609822b8af122 23-27,55-57,444-477
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRollLoop.integration.spec.ts
+  s_2bfd55a4393d7c::t_7fa06368c33e35 1-548
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_2bfd55a4393d7c::t_30c72ab2eb97d9 61-66,79-82,92-95,97,100,106,110,173,225
+src/utils/handlerContract.ts
+  s_2bfd55a4393d7c::t_1969281b621327 531-532
+tests/e2e/monoModulationInput.spec.ts
+  s_2bfd55a4393d7c::t_228095e6ae097f 1-100
+tests/e2e/promptBarCancelRecentTestId.spec.ts
+  s_2bfd55a4393d7c::t_7c1224a59d0493 4-9,151,171
+tests/e2e/smoke.spec.ts
+  s_2bfd55a4393d7c::t_6659423329ba58 4-10,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29d1e3731afd7712d2cc70bf68968fc04edcab3e",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
