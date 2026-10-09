@@ -1,0 +1,257 @@
+release/open-source-inventory.json
+  s_97ab82e0b4f10c::t_f178d365f3a34e 1711-1712,2356
+  s_97ab82e0b4f10c::t_d0a5ebd424fb81 1344,1350,1770
+scripts/__tests__/semanticReviewMeasurement.spec.ts
+  s_2bfd55a4393d7c::t_265bd1c8881465 676-700,702-751,753
+scripts/__tests__/typesafeRequest.spec.ts
+  s_2bfd55a4393d7c::t_1ebd17af4d52b3 289-313
+  s_97ab82e0b4f10c::t_a57fe000682e9c 30-36,38,90-128,256-288
+  s_97ab82e0b4f10c::t_fdb10adf65d7b9 37
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_2bfd55a4393d7c::t_0c788f10c10d22 5660-5664,5666-5684,5701-5703,5710-5711
+  s_97ab82e0b4f10c::t_630d405cd73c06 12,5665,5685-5700,5704-5709
+  s_97ab82e0b4f10c::t_c8616596c73124 5712,5714-5716,5720-5754,5861,5867
+scripts/semanticReviewMeasurement/record.ts
+  s_1c08b47ac3792f::t_05e3dd73bb2872 168-172
+scripts/typesafeRequest.ts
+  s_4c8cd08893b364::t_b095679f235f91 93-103,315
+  s_97ab82e0b4f10c::t_0a3341f63ee855 1-2,115-118
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_97ab82e0b4f10c::t_122da5be2459d7 1-96
+.agents/decisions/README.md
+  s_97ab82e0b4f10c::t_4774d0079237d9 67
+.agents/skills/review-stances/browser-inventory.md
+  s_97ab82e0b4f10c::t_4bed3ee6db9530 9
+.agents/skills/review-stances/correctness.md
+  s_97ab82e0b4f10c::t_035bcbff79ae3c 97-103,483
+.agents/skills/review-stances/nightly-failure-observation.md
+  s_97ab82e0b4f10c::t_e82de92a6ba27c 1-41
+.agents/skills/review-stances/public-repair-records.md
+  s_97ab82e0b4f10c::t_477a52955ddbd2 1-67
+.agents/skills/review-stances/review-authorization.md
+  s_97ab82e0b4f10c::t_136bed3c24f132 1-47
+.github/workflows/heavy-gates.yml
+  s_97ab82e0b4f10c::t_1c5678c0f53afc 29,56-79,85-88,198-201,203
+.github/workflows/nightly.yml
+  s_97ab82e0b4f10c::t_c9a0e7c3ce0000 9-13,553,585-611,615-616,677-680,682,735-736,1101-1104,1118
+.github/workflows/validation.yml
+  s_97ab82e0b4f10c::t_e14be2ff3c43aa 559,583,587-613,617-618
+crates/daw-dsp/AGENTS.md
+  s_97ab82e0b4f10c::t_eb83895ca28041 44-60
+crates/daw-dsp/src/levain/engine.rs
+  s_97ab82e0b4f10c::t_7299ae196d6b89 52-55,67-117,134-135,211,278-279,281,285-299,304-305,319-321,347-351,353-356,368-373,387-405,407,431,1384-1385,1391,2042-2148
+crates/daw-dsp/src/levain/mod.rs
+  s_97ab82e0b4f10c::t_2ca78446a48221 159-163,177-180,185-196
+crates/daw-dsp/src/levain/zone.rs
+  s_97ab82e0b4f10c::t_967b8c10eaa0a9 71-81
+crates/daw-dsp/tests/device_process_rt.rs
+  s_97ab82e0b4f10c::t_b6acfcd9dcb440 1701-1862
+crates/daw-dsp/tests/levain_bank_retirement.rs
+  s_97ab82e0b4f10c::t_16ab29587d7978 1-310
+evidence/agent-campaign/manifest.json
+  s_97ab82e0b4f10c::t_f1be1d106f9fa9 539
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_97ab82e0b4f10c::t_dd0384472fc468 1,678-680,682,748-751,768-771,815-820,1024,1043,1058,1068,1154-1199
+public/wasm/daw-dsp/daw_dsp.js
+  s_97ab82e0b4f10c::t_6e0ca5452c62cf 1445-1448,1451-1452,1593-1596,1629-1636,1730-1740
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_97ab82e0b4f10c::t_1b931b5f725c3d 1,46,65,80,90,176-221
+public/wasm/manifest.json
+  s_97ab82e0b4f10c::t_527f591f547b69 12,15-18,20-21
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_97ab82e0b4f10c::t_01499080974da9 279-365,567
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_97ab82e0b4f10c::t_5dd39f2b69159f 3-12,52,394-409,411,415,452-469,518,577-583,585,10729,10873,11934-11946,11948-11956
+scripts/__tests__/deliveryRiskPlanLoss.spec.ts
+  s_97ab82e0b4f10c::t_687738e92d18cd 1-224
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_97ab82e0b4f10c::t_cf351aea6af152 178,214,339,766,793,1648,1698,1761,2063
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_97ab82e0b4f10c::t_569c82f7ae64e8 83-108,274,731-768,774,785,787-789,791-794,797,1597-1602,1617,1645,3149-3261,3322-3323,3326-3334,3339-3340,3342,3397-3399,3779-3783,3817-3819,3883-3894,3975-4063
+scripts/__tests__/prValidationScope.spec.ts
+  s_97ab82e0b4f10c::t_a67b5af782111a 100-127,252-426,473-480
+scripts/__tests__/publishReview.spec.ts
+  s_97ab82e0b4f10c::t_e7b213de742f65 11-16,5745-5806
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  s_97ab82e0b4f10c::t_ba8ecfe4f9ef19 3,5,67-75,94-99,111,130-168,173-225
+scripts/confirmReviewRepairs.ts
+  s_97ab82e0b4f10c::t_527c1cbd5599f8 137-144,156,187
+scripts/deliverPullRequest.ts
+  s_97ab82e0b4f10c::t_2f54310fd9a610 135-138,149-195,3686
+scripts/prValidationScope.ts
+  s_97ab82e0b4f10c::t_c09f19b9b2e5f3 15,24,35,40-41,58,62-66,69-71,77,83-86,113-114,139-141,145-147
+scripts/reconstructReviewRounds.ts
+  s_97ab82e0b4f10c::t_c40c1a268ee87d 23,50,125-128,366
+src/app/__tests__/bootstrap.spec.ts
+  s_97ab82e0b4f10c::t_835c188e3dbce5 173-179,257-267,326,382-384,412,509-518,558,607-608,659,738-745,1065-1088,1348-1374
+src/app/__tests__/initDeviceStateReconciliation.spec.ts
+  s_97ab82e0b4f10c::t_5fe9a6738f7041 1-96
+src/app/bootstrap.ts
+  s_97ab82e0b4f10c::t_57d3c58870849b 14,65-69,128,173-174,227-228,367-373,393,667-679
+src/app/initCrumbsModePush.ts
+  s_97ab82e0b4f10c::t_bf359039bd4c1a 4-5,8,10-16,18-23,25-27,29-43
+src/app/initDeviceStateReconciliation.ts
+  s_97ab82e0b4f10c::t_4b1ab25dc46961 1-60
+src/app/registerDependencies.ts
+  s_97ab82e0b4f10c::t_de1c3e880346f0 9,33
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_97ab82e0b4f10c::t_c63bfdca640211 3-4,6,86-186,648-708
+src/modules/AiRuntime/useCases/__tests__/cancelActiveAgentRuns.spec.ts
+  s_97ab82e0b4f10c::t_93d44ecff904d5 1-84
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_97ab82e0b4f10c::t_4209b55fad1911 28-35,77-106,363,469
+src/modules/AiRuntime/useCases/cancelActiveAgentRuns.ts
+  s_97ab82e0b4f10c::t_a45d919f60a13e 1-28
+src/modules/AiRuntime/useCases/index.ts
+  s_97ab82e0b4f10c::t_eb35250a596cc9 83
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_97ab82e0b4f10c::t_77e76537f0c930 718-721,746-750
+src/modules/Arrangement/useCases/__tests__/exportMidiClipPlayback.spec.ts
+  s_97ab82e0b4f10c::t_e03150f536cc9a 324-347
+src/modules/AudioEngine/engine/__tests__/panelReachesTheEngine.spec.tsx
+  s_97ab82e0b4f10c::t_cac103a86efa8a 4-5,12,289-291,436-450
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_97ab82e0b4f10c::t_f1fd405ab36119 37-39,98-99,102,106,113,118-120,124,127-133,193-194,775-953
+src/modules/AudioEngine/services/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_97ab82e0b4f10c::t_0c0bebf374aea8 1-154
+src/modules/AudioEngine/services/__tests__/levainProcessorStopQueue.spec.ts
+  s_97ab82e0b4f10c::t_45d90155da3037 94,97,108,113-115,119
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_97ab82e0b4f10c::t_ae721ba803845f 22,24-31,163,185-192,209-211,294-295,297,325,458,477-481,707-709,716-732
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_97ab82e0b4f10c::t_7a4394129c03c9 1,678-680,682,748-751,768-771,815-820,1024,1043,1058,1068,1154-1199
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_97ab82e0b4f10c::t_cd80330a47cab9 1622-1625,1628-1629,1770-1773,1806-1813,1907-1917
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_97ab82e0b4f10c::t_79996b35ef3e1c 643-711
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_97ab82e0b4f10c::t_dbe77e168825cf 33-34,225-228,279-287
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_97ab82e0b4f10c::t_d763d67834eef7 105-112
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_97ab82e0b4f10c::t_c17b4e02773e0c 5,281-323
+src/modules/Crumbs/events/CrumbsModeChangedPayload.ts
+  s_97ab82e0b4f10c::t_5416683f6b7300 1-15
+src/modules/Crumbs/events/index.ts
+  s_97ab82e0b4f10c::t_cdaad24b80a8a8 1
+src/modules/Crumbs/stores/__tests__/sampleLoadGate.spec.ts
+  s_97ab82e0b4f10c::t_8c6b5166f800e5 1-43
+src/modules/Crumbs/stores/crumbsEventBus.ts
+  s_97ab82e0b4f10c::t_266040365bcd54 1-36
+src/modules/Crumbs/stores/index.ts
+  s_97ab82e0b4f10c::t_26c3483201857d 10
+src/modules/Crumbs/stores/sampleLoadGate.ts
+  s_97ab82e0b4f10c::t_2077646bc7e292 1-73
+src/modules/Crumbs/useCases/__tests__/initCrumbsDeviceStatePersistence.spec.ts
+  s_97ab82e0b4f10c::t_74d76ece24513c 16-18,130-177
+src/modules/Crumbs/useCases/__tests__/loadSample.spec.ts
+  s_97ab82e0b4f10c::t_2e7d309bd36699 16-19,188-250
+src/modules/Crumbs/useCases/__tests__/reconcileCrumbsDeviceStatesFromProject.spec.ts
+  s_97ab82e0b4f10c::t_c5ffd4550ada78 1-543
+src/modules/Crumbs/useCases/crumbsDeviceStateMirror.ts
+  s_97ab82e0b4f10c::t_05981757ad41a9 1-26
+src/modules/Crumbs/useCases/index.ts
+  s_97ab82e0b4f10c::t_032b903be70e94 11
+src/modules/Crumbs/useCases/initCrumbsDeviceStatePersistence.ts
+  s_97ab82e0b4f10c::t_28b7f5368c1d6f 2,5,22-24,34-56,63,74-80
+src/modules/Crumbs/useCases/loadSample.ts
+  s_97ab82e0b4f10c::t_7ed25f20ca6dad 13,80,85-94,151-155
+src/modules/Crumbs/useCases/reconcileCrumbsDeviceStateFromProject.ts
+  s_97ab82e0b4f10c::t_3ba6133616841e 1-182
+src/modules/Crumbs/useCases/reconcileCrumbsDeviceStatesFromProject.ts
+  s_97ab82e0b4f10c::t_1f3d407aa1ea9a 1-22
+src/modules/Crumbs/useCases/setCrumbsMode.ts
+  s_97ab82e0b4f10c::t_ea77e224ac668e 4,6-10,13-17,23,30
+src/modules/Crumbs/useCases/triggerPad/resolveCrumbsPadControls.ts
+  s_97ab82e0b4f10c::t_09a4fc3a9aae35 16,18-19
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_97ab82e0b4f10c::t_f4a8ae28d65064 97-107,128,180-190,405-648,661-751,997-1000,1012,1014-1021,1033-1034
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_97ab82e0b4f10c::t_1af86a2ce349ae 1-2,42-51,112-113,199-281,350-359,363-376,385,465-468,502-503,509-520
+src/modules/Levain/useCases/__tests__/loadSamplesForInstrumentCommitOrder.spec.ts
+  s_97ab82e0b4f10c::t_2913b03c399bef 167-174
+src/modules/Levain/useCases/__tests__/reconcileLevainDeviceStatesFromProject.spec.ts
+  s_97ab82e0b4f10c::t_0327ec4022fb6d 1-151
+src/modules/Levain/useCases/index.ts
+  s_97ab82e0b4f10c::t_a992479c3320da 10
+src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts
+  s_97ab82e0b4f10c::t_55f54415242c9b 1-67
+src/modules/Levain/useCases/reconcileLevainDeviceStatesFromProject.ts
+  s_97ab82e0b4f10c::t_743c67c83023ad 1-22
+src/modules/MIDI/useCases/__tests__/exportMidiFile.spec.ts
+  s_97ab82e0b4f10c::t_8bffa152848c88 414-452
+src/modules/MIDI/useCases/exportMidiFile.ts
+  s_97ab82e0b4f10c::t_dc4da8995f1741 151-152,219,243-266,269,271,300-302
+src/modules/Project/useCases/index.ts
+  s_97ab82e0b4f10c::t_0a3ae931aa9d0c 17-18
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_97ab82e0b4f10c::t_469dd03ec4e6e0 3,114,116,268-332
+src/modules/Project/useCases/projectPersistence/helpers/activeAgentRunCancellationState.ts
+  s_97ab82e0b4f10c::t_38bcd63b052034 1-15
+src/modules/Project/useCases/projectPersistence/helpers/agentSectionRenderArtifactsClearingState.ts
+  s_97ab82e0b4f10c::t_093527f9613b25 1-16
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_97ab82e0b4f10c::t_788bf153d5d4ca 24,26,48-57
+src/modules/Project/useCases/projectPersistence/setActiveAgentRunsCanceller.ts
+  s_97ab82e0b4f10c::t_c84c438aa212c3 1-10
+src/modules/Project/useCases/projectPersistence/setAgentSectionRenderArtifactsClearer.ts
+  s_97ab82e0b4f10c::t_ef5e164f0f4a2b 1-13
+src/modules/Toaster/useCases/__tests__/reconcileToasterKitsFromProject.spec.ts
+  s_97ab82e0b4f10c::t_28909b83b18a74 1-150
+src/modules/Toaster/useCases/index.ts
+  s_97ab82e0b4f10c::t_bfade363fd4d21 10
+src/modules/Toaster/useCases/reconcileToasterKitFromProject.ts
+  s_97ab82e0b4f10c::t_e3879da82964b5 1-52
+src/modules/Toaster/useCases/reconcileToasterKitsFromProject.ts
+  s_97ab82e0b4f10c::t_197f89249a8b9f 1-23
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_97ab82e0b4f10c::t_691c7422bfd013 1,15-22,786,788-793,814-822,843,850-852,877-972
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_97ab82e0b4f10c::t_7f91e95982c526 488-500
+src/modules/Transport/useCases/scheduling/applyAutomation/deviceReadBeatByTrack.ts
+  s_97ab82e0b4f10c::t_263a9c72002cde 9-12
+.agents/skills/review-stances/provider-egress.md
+  s_4c8cd08893b364::t_ba6fc83757f632 57-61
+scripts/semanticReview/provider.ts
+  s_97ab82e0b4f10c::t_baef237cfb9500 485
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3ac3d8c8106ec61b31d6a72de7de706bac6958f",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
