@@ -1,5 +1,5 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
-import { shiftLoopOrigin } from '#/utils/clipLoopOrigin';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { moveClip } from '../clip/moveClip';
 import { getTrackStoreState } from '../getTrackStoreState';
@@ -79,7 +79,7 @@ export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, pl
                         // A collateral shift relocates the clip without touching
                         // its content offset; the loop anchor moves with it so
                         // the shift cannot re-roll which passes sound (#4988).
-                        loopOriginBeat: shiftLoopOrigin(clip, delta),
+                        ...shiftLoopOriginEntry(clip, delta),
                     };
                 }),
             };

@@ -77,10 +77,6 @@ const CLIP_UNDEFINED_PROPERTIES = new Set([
     'stretchRatio',
     'loopEnabled',
     'loopLength',
-    // The loop anchor rides the clip object through every global time
-    // operation's inverse plan (#4988); relocation writers leave it undefined
-    // on clips that never carried one.
-    'loopOriginBeat',
     'followAction',
     'generating',
     'isGhost',

@@ -1,4 +1,4 @@
-import { shiftLoopOrigin } from '#/utils/clipLoopOrigin';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { createHandler } from '#/utils/createHandler';
 
 import { moveClip } from '../../useCases/clip/moveClip';
@@ -45,7 +45,7 @@ export const handleRestoreClipMoves = createHandler<'restoreClipMoves'>({
                         // The recorded neighbors were relocated by the forward
                         // gesture's ripple; the undo reverses that relocation,
                         // so the loop anchor rides the same delta back (#4988).
-                        loopOriginBeat: shiftLoopOrigin(clip, origin.origStartBeat - clip.startBeat),
+                        ...shiftLoopOriginEntry(clip, origin.origStartBeat - clip.startBeat),
                     };
                 }),
             })),

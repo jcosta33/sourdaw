@@ -1,5 +1,5 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
-import { shiftLoopOrigin } from '#/utils/clipLoopOrigin';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -37,7 +37,7 @@ export function nudgeClip(clipId: string, beats: number): boolean {
             ...context,
             startBeat: newStart,
             endBeat: newStart + duration,
-            loopOriginBeat: shiftLoopOrigin(context, appliedDelta),
+            ...shiftLoopOriginEntry(context, appliedDelta),
         };
     });
 

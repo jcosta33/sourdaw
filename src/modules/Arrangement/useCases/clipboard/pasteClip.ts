@@ -1,7 +1,7 @@
 import { cloneClipAutomationLanes, shiftClipAutomation } from '#/modules/Automation/useCases';
 import { restoreMidiClipData, setNotesForClip } from '#/modules/MIDI/useCases';
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
-import { shiftLoopOrigin } from '#/utils/clipLoopOrigin';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNoteViewTypes';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -145,7 +145,7 @@ export function pasteClip(): boolean {
                 // The paste is the same looped clip elsewhere: the anchor
                 // shifts by the paste offset so the pasted clip's loop window
                 // and pass count read identically to the source's (#4988).
-                loopOriginBeat: shiftLoopOrigin(entry.clip, offset),
+                ...shiftLoopOriginEntry(entry.clip, offset),
                 followAction: entry.clip.followAction,
             });
 

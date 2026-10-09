@@ -1,5 +1,5 @@
 import { type getAutomationLanes, restoreAutomationLanes, shiftClipAutomation } from '#/modules/Automation/useCases';
-import { shiftLoopOrigin } from '#/utils/clipLoopOrigin';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { type ClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
@@ -64,7 +64,7 @@ export function undoRippleDelete({
                     // The undo reverses the forward ripple's relocation: the
                     // anchor rides the same delta back or the restored
                     // placement would read a spurious advance (#4988).
-                    loopOriginBeat: shiftLoopOrigin(clip, originalShift.origStartBeat - clip.startBeat),
+                    ...shiftLoopOriginEntry(clip, originalShift.origStartBeat - clip.startBeat),
                 };
             });
 

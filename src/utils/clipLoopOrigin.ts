@@ -62,6 +62,23 @@ export function shiftLoopOrigin({ loopOriginBeat }: ClipLoopOriginShiftInput, de
     return loopOriginBeat === undefined ? undefined : loopOriginBeat + deltaBeats;
 }
 
+/**
+ * The spread entry a whole-clip relocation writes for the loop anchor. A clip
+ * with no anchor stays unanchored by leaving the key absent, never by writing
+ * it `undefined`: clip objects carry optional fields either present or absent
+ * (the CRDT normalizer rebuilds them that way), and the global time operations
+ * compare their inverse plans' clip snapshots structurally against the
+ * normalized live state, so an explicit-undefined key could never match the
+ * state it was captured from.
+ */
+export function shiftLoopOriginEntry(
+    clip: ClipLoopOriginShiftInput,
+    deltaBeats: number
+): { loopOriginBeat: number } | Record<string, never> {
+    const shifted = shiftLoopOrigin(clip, deltaBeats);
+    return shifted === undefined ? {} : { loopOriginBeat: shifted };
+}
+
 type ClipLoopWindowMembershipInput = Readonly<{
     /**
      * The candidate's position in the coordinate the loop window reads — for a
