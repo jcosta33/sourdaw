@@ -6,7 +6,12 @@ import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits'
 import { type ChatMessage } from '../../models/Chat';
 import { type MeasuredPreview } from '../../models/MeasuredPreview';
 import { type ProjectContext } from '../../models/ProjectContext';
-import { THREAD_CONTEXT_MAX_BYTES, THREAD_CONTEXT_MAX_TURNS, type ThreadContext } from '../../models/ThreadContext';
+import {
+    THREAD_COMMIT_STANDINGS,
+    THREAD_CONTEXT_MAX_BYTES,
+    THREAD_CONTEXT_MAX_TURNS,
+    type ThreadContext,
+} from '../../models/ThreadContext';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { chatStore, clearChatMessages } from '../../stores/chatStore';
@@ -357,10 +362,11 @@ describe('thread context for the planner', () => {
                     actionGroups: [
                         {
                             groupId: 'run-newer:batch-1',
-                            reverted: true,
+                            reverted: false,
                             actions: [{ actionType: 'setTempo', label: 'Set tempo to 128 BPM' }],
                         },
                     ],
+                    futureGroupIds: new Set(['run-newer:batch-1']),
                 })
             );
 
@@ -480,6 +486,14 @@ describe('thread context for the planner', () => {
                 expect(singleCommitThread({ past: [GROUP], panelReverted: true })).toBe('standing');
             });
 
+            it('reads unknown when a panel revert flag stands but the history holds the group nowhere', () => {
+                expect(singleCommitThread({ panelReverted: true })).toBe('unknown');
+            });
+
+            it('reads unknown for a group split across past and future by a partial undo', () => {
+                expect(singleCommitThread({ past: [GROUP], future: [GROUP] })).toBe('unknown');
+            });
+
             it('reads unknown for a batch with no revert group, even with ungrouped entries in past', () => {
                 expect(singleCommitThread({ past: [GROUP], revertGroupId: null })).toBe('unknown');
             });
@@ -535,6 +549,68 @@ describe('thread context for the planner', () => {
                 'command:run-mixed:batch-2',
             ]);
             expect(threadWith('proposed', ['run-mixed:batch-1'])).toEqual(['command:run-mixed:batch-1']);
+        });
+
+        it('reports the unclaimed receipt for a direct commit, though a confirmed batch of its run is listed first', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'set every verse track to -6 dB'),
+                        message('assistant-1', 'assistant', 'Batch 2 of 2 executed.'),
+                        message('user-2', 'user', 'thanks'),
+                        commandMessage('assistant-2', 'run-direct'),
+                    ],
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-direct',
+                            assistantMessageId: 'assistant-1',
+                            status: 'executed',
+                            groupId: 'run-direct:batch-2',
+                        }),
+                    ],
+                    runs: [
+                        {
+                            runId: 'run-direct',
+                            receipts: [
+                                receipt('run-direct', 'run-direct:batch-2'),
+                                receipt('run-direct', 'run-direct:batch-1'),
+                            ],
+                        },
+                    ],
+                })
+            );
+
+            expect(thread?.lastCommit?.receiptIds).toEqual(['command:run-direct:batch-1']);
+        });
+
+        it('reports no commit from a message whose executed confirmation names a batch its run holds no receipt for', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'mute the pad'),
+                        commandMessage('assistant-1', 'run-older'),
+                        message('user-2', 'user', 'now the chorus'),
+                        commandMessage('assistant-2', 'run-unreceipted'),
+                    ],
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-unreceipted',
+                            assistantMessageId: 'assistant-2',
+                            status: 'executed',
+                            groupId: 'run-unreceipted:batch-9',
+                        }),
+                    ],
+                    runs: [
+                        { runId: 'run-older', receipts: [receipt('run-older')] },
+                        { runId: 'run-unreceipted', receipts: [receipt('run-unreceipted')] },
+                    ],
+                })
+            );
+
+            expect(thread?.lastCommit).toMatchObject({
+                runId: 'run-older',
+                receiptIds: ['command:run-older:batch-1'],
+            });
         });
 
         it('reports no commit for a proposed or cancelled batch, though its run holds an earlier receipt', () => {
@@ -1017,6 +1093,47 @@ describe('thread context for the planner', () => {
             expect(rereadRun?.contextEvidence?.included.thread).toEqual(threadEvidence);
             // Malformed evidence refuses its run whole, as every other malformed evidence field does.
             expect(malformed.runs.map((candidate) => candidate.runId)).not.toContain(run.runId);
+        });
+
+        it("records the commit's standing as evidence that survives the run store's read, and refuses a bogus one", async () => {
+            chatStore.set({
+                ...chatStore.value!,
+                messages: [message('user-1', 'user', 'what is the tempo?')],
+            });
+            await orchestratePromptChatRequest({
+                userText: 'a bit less',
+                requestedRoute: 'auto',
+                backend: 'webllm',
+                interactionMode: 'apply',
+                options: undefined,
+            });
+            const state = readAgentRunState();
+            const run = state.runs.find((candidate) => candidate.request === 'a bit less');
+            if (!run) {
+                throw new Error('Expected the request to admit a run.');
+            }
+            const withEvidence = (contextEvidence: unknown) =>
+                sanitizeAgentRunState(structuredClone({ ...state, runs: [{ ...run, contextEvidence }] })).runs[0];
+
+            for (const standing of THREAD_COMMIT_STANDINGS) {
+                const full = createFullThreadContext();
+                const evidence = buildContext({ ...full, lastCommit: { ...full.lastCommit!, standing } }).evidence;
+
+                expect(evidence.included.thread?.hosted.commitStanding).toBe(standing);
+                expect(evidence.included.thread?.local.commitStanding).toBe(standing);
+                expect(withEvidence(evidence)?.contextEvidence?.included.thread).toEqual(evidence.included.thread);
+            }
+
+            const committed = buildContext(createFullThreadContext()).evidence;
+            const thread = committed.included.thread!;
+            const bogus = {
+                ...committed,
+                included: {
+                    ...committed.included,
+                    thread: { hosted: { ...thread.hosted, commitStanding: 'bogus' }, local: thread.local },
+                },
+            };
+            expect(withEvidence(bogus)).toBeUndefined();
         });
     });
 });

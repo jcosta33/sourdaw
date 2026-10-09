@@ -85,22 +85,24 @@ function deltasOfPreview(preview: MeasuredPreview | undefined): ThreadMeasuredDe
 }
 
 /**
- * Whether one batch's change is still in the project, as far as the undo history can tell. Its
- * entries in `past` mean standing, even when a panel revert flagged the group earlier and a redo
- * put it back. Entries in `future`, or a panel revert flag with nothing in `past`, mean undone.
- * Anything else is unknown: a later edit empties `future`, the size cap drops old entries, and a
- * batch with no revert group or ungrouped entries is never in the history by group at all.
+ * Whether one batch's change is still in the project, read from the undo history alone: its
+ * group in `past` only means standing, in `future` only means undone. A panel revert moves the
+ * entries to `future` like an undo does, so its flag adds nothing, and the flag is never cleared
+ * by a redo. Everything else is unknown: a group split across both (a partial undo or revert), a
+ * group in neither (a later edit emptied `future`, the size cap or a cleared history dropped
+ * `past`), and a batch with no revert group, whose entries the history never holds by group.
  */
 function readStanding(receipt: AgentRunReceipt, sources: ThreadContextSources): ThreadCommitStanding {
     const groupId = receipt.revertGroupId;
     if (groupId === null) {
         return 'unknown';
     }
-    if (sources.pastGroupIds.has(groupId)) {
+    const inPast = sources.pastGroupIds.has(groupId);
+    const inFuture = sources.futureGroupIds.has(groupId);
+    if (inPast && !inFuture) {
         return 'standing';
     }
-    const group = sources.actionGroups.find((candidate) => candidate.groupId === groupId);
-    if (sources.futureGroupIds.has(groupId) || group?.reverted === true) {
+    if (inFuture && !inPast) {
         return 'undone';
     }
     return 'unknown';

@@ -641,6 +641,13 @@ describe('mix prompt workflow', () => {
         expectExactMix();
         expect(aiActionHistoryStore.value?.groups.at(-1)?.reverted).toBe(true);
         expect(readCommitStanding()).toBe('standing');
+
+        // The panel flag outlives the redo; once the history holds the group nowhere, it must not
+        // make an applied commit read as undone.
+        clearUndoHistory();
+
+        expect(aiActionHistoryStore.value?.groups.at(-1)?.reverted).toBe(true);
+        expect(readCommitStanding()).toBe('unknown');
     });
 
     it('reads a direct commit into the thread through the run its chat message names', async () => {
