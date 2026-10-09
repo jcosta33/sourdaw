@@ -45,15 +45,15 @@ type TransportHold = {
     endedAtContextSeconds: number | null;
 };
 
-/** A take stopped before the roll answered is placed against the clock at its stop, so the whole wait so far counts. */
-function heldTransportSeconds(hold: TransportHold, sourceContextSeconds: number, nowContextSeconds: number): number {
+/**
+ * Signed distance from sample zero to the roll (or stop while held). Capture
+ * may begin on either side of that clock; a late first frame moves media ahead.
+ */
+function captureToRollSeconds(hold: TransportHold, sourceContextSeconds: number, nowContextSeconds: number): number {
     if (hold.requestedAtContextSeconds === null) {
         return 0;
     }
-    return Math.max(
-        (hold.rolledAtContextSeconds ?? hold.endedAtContextSeconds ?? nowContextSeconds) - sourceContextSeconds,
-        0
-    );
+    return (hold.rolledAtContextSeconds ?? hold.endedAtContextSeconds ?? nowContextSeconds) - sourceContextSeconds;
 }
 
 type CapturePlacementInput = {
@@ -145,18 +145,17 @@ function completeManualRecording(input: ManualRecordingTerminalInput): void {
         const transport = getTransportState();
         const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
         const tempoChanges = tempoMapStore.value?.changes ?? [];
-        // The capture is open before the transport is asked to roll, and
-        // on a desktop build the roll waits for the native session, so
-        // the buffer's first sample predates the beat the clip is
-        // anchored on by that wait. It is subtracted like hardware
-        // latency. The wait and the take both sit on the timeline the
+        // Recorder admission can precede its first input block. Sample zero
+        // can fall before the native roll or after it, so preserve the signed
+        // distance between their clocks alongside hardware latency. The roll
+        // and the take both sit on the timeline the
         // active tempo map shapes, so both convert through the map's own
         // integration — the base tempo only falls back where no change
         // governs. `samplesToBeat` inverts exactly that integration; a
         // rate of one sample per second makes its coordinate seconds.
         const offsetSeconds =
             totalLatencySec +
-            heldTransportSeconds(transportHold, result.sampleZeroContextFrame / result.sampleRate, nowContextSeconds);
+            captureToRollSeconds(transportHold, result.sampleZeroContextFrame / result.sampleRate, nowContextSeconds);
         // The capture runs from wherever the transport rolls from,
         // which is ahead of the record point by the pre-roll when
         // one is enabled. With no pre-roll, or no roll of its own

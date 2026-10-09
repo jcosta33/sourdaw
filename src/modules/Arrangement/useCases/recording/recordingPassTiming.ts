@@ -117,13 +117,20 @@ function observeRecordingPassEntry(
             timing.previousSeamContextSeconds = timing.pendingSeam.contextSeconds;
             timing.pendingSeam = null;
         }
-        if (timing.firstPassContextSeconds !== null || timing.previousSeamContextSeconds !== null) {
+        // A staged pass owns its start even if its planned seam is cancelled:
+        // stageRecordingTake reuses that take's geometry when replacing it.
+        if (timing.previousSeamContextSeconds !== null || timing.starts.size > 0) {
             continue;
         }
         const firstPassBeat = Math.max(timing.recordPointBeat, transport.loopStart);
         const entryMoved = firstPassBeat !== timing.firstPassBeat;
-        timing.firstPassBeat = firstPassBeat;
-        if (beat < firstPassBeat) {
+        if (entryMoved) {
+            // Before the first sounded seam, loop edits redefine that pass's
+            // entry. Its old clock cannot follow the new musical start.
+            timing.firstPassBeat = firstPassBeat;
+            timing.firstPassContextSeconds = null;
+        }
+        if (timing.firstPassContextSeconds !== null || beat < firstPassBeat) {
             continue;
         }
         if (relocated || entryMoved) {

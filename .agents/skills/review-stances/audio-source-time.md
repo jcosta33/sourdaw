@@ -78,3 +78,25 @@ ordinary advancement cap, or account separately for its delayed physical seam.
 PR #4987 introduced completion-time depth conversion; the #5050
 review of PR #5165 initially checked only sample-zero origin after the tempo
 edit. It missed selection of a later pass, which sought 7.1 s rather than 1.1 s.
+
+## Recording starts on either side of roll and editable first entry
+
+Hold the real recorder worker ready until after the native transport rolls,
+then drive the first nonempty recording processor block at a known
+`currentFrame`. With roll at context second 50.2 / beat 10, sample zero at
+50.4, latency 0.1, and stop at 50.6 at 120 BPM, retained PCM must span beats
+10.2–10.6. The existing one-beat carrier minimum (#4994) ends that short clip
+at 11.2; it cannot fabricate PCM beyond the measured sample count.
+A prepared recorder's successful boolean can precede that input;
+placement must retain the signed sample-zero-to-roll distance, not clamp it.
+
+Begin capture at beat 6 with loop [8, 12], let beat 8 sound, and move the loop
+start to 10 before beat 10 or the first wrap. Select the first pass at beat 10:
+its source depth must be 2.1 seconds with 0.1-second latency, not the old entry's
+1.1 seconds. A backwards edit that the scheduler reports as a relocation
+uses that receipt's physical clock, never a reconstructed past crossing.
+After a seam actually sounds, an entry edit cannot redate the completed pass.
+Check the selected PCM, raw document/store agreement, and one Undo/Redo.
+The PR #5165 review initially covered edits before the old entry and capture
+before roll; it missed both late first input and an edit after the old entry
+but before the first completed seam.

@@ -97,6 +97,46 @@ describe('recording pass capture-clock witnesses', () => {
         expect(recordingPassTiming.depthSeconds(first, 50.9, 2.9)).toBeCloseTo(4.1, 10);
     });
 
+    it.each([10, 7])('refreshes an already observed first entry when loop start moves to %s', (entryBeat) => {
+        clock.beat = 6;
+        clock.audioTimeSeconds = 51;
+        recordingPassTiming.begin('capture', 6);
+        recordingPassTiming.observeEntry(['capture'], 8, 52, false);
+        clock.loopStart = entryBeat;
+        recordingPassTiming.observeEntry(['capture'], 8.5, 52.25, true);
+        if (entryBeat === 10) {
+            recordingPassTiming.observeEntry(['capture'], 10.1, 53.05, false);
+        }
+        const first = pass('first', 'capture', entryBeat - 6);
+        recordingPassTiming.stage(first, 54);
+        expect(recordingPassTiming.depthSeconds(first, 50.9, 2.9)).toBeCloseTo(entryBeat === 10 ? 2.1 : 1.35, 10);
+    });
+
+    it('keeps a staged first entry when its unsounded seam is cancelled and reused', () => {
+        recordingPassTiming.begin('capture', 10);
+        const first = pass('first');
+        recordingPassTiming.stage(first, 52, true);
+        recordingPassTiming.cancelBoundary('capture', 51.975);
+        clock.loopStart = 11.9;
+        recordingPassTiming.observeEntry(['capture'], 11.95, 51.975, true);
+        recordingPassTiming.stage(first, 51.975);
+        expect(recordingPassTiming.depthSeconds(first, 50.9, 4.9)).toBeCloseTo(0.1, 10);
+    });
+
+    it('does not redate a first entry after its seam completed', () => {
+        clock.beat = 6;
+        clock.audioTimeSeconds = 51;
+        recordingPassTiming.begin('capture', 6);
+        recordingPassTiming.observeEntry(['capture'], 8, 52, false);
+        const first = pass('first', 'capture', 2);
+        recordingPassTiming.stage(first, 54, true);
+        recordingPassTiming.observeEntry(['capture'], 8, 54, true);
+        clock.loopStart = 10;
+        recordingPassTiming.observeEntry(['capture'], 8.5, 54.25, false);
+        recordingPassTiming.stage(pass('second', 'capture', 6), 55);
+        expect(recordingPassTiming.depthSeconds(first, 50.9, 2.9)).toBeCloseTo(1.1, 10);
+    });
+
     it('reuses a cancelled planned pass while later starts follow sounded boundaries', () => {
         recordingPassTiming.begin('capture', 10);
         const first = pass('first');
