@@ -1,0 +1,26 @@
+scripts/reviewPublicationReceiptAdoption.ts
+  s_2bfd55a4393d7c::t_c777745e0441b6 212
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_2bfd55a4393d7c::t_da35d4dbc96c56 1249
+  s_2bfd55a4393d7c::t_1727dc44eed323 1236-1248,1250-1269
+scripts/__tests__/recoverPublishReviewLockReceiptReplay.spec.ts
+  s_2bfd55a4393d7c::t_8798763c7c0a2c 167
+  s_2bfd55a4393d7c::t_1e6038c93cc7d9 540-551
+  s_2bfd55a4393d7c::t_4b726e70f5e1b2 258-260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b83a245ecff4117bd02957ef2c89ee8b13eb96e0",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
