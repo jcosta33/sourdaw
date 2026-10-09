@@ -266,13 +266,14 @@ export const BACTERIA_EFFECTS_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     convolutionMix: parameterGuidance(
         'Body convolution wet and dry mix',
         'Blends the resonant body character with the direct signal.',
-        0.01,
-        0.1,
+        0.2,
+        0.8,
         [
-            'The built-in body impulse responses are peak-normalised, not level-normalised, so the wet path is far louder than the dry; convolutionSeparation widens side content in it, and gain trims the result afterwards.',
+            'The built-in body impulse responses are normalised to unit energy, so a mix of 1 leaves white noise within 0.4 dB of its dry level; convolutionSeparation widens side content in the convolved signal, and gain trims the result afterwards.',
+            'Dry and body add as a crossfade of two mostly uncorrelated signals: measured on mono white noise at 48 kHz, every built-in body lowers the level by 0.9 dB at mix 0.1, 2.0 dB at 0.25, 2.8 to 3.0 dB at 0.5 and 1.7 to 2.0 dB at 0.75.',
         ],
         [
-            'The built-in bodies gain 20 to 23 dB on broadband material and 46 to 49 dB at their resonances at 48 kHz, so even a small mix is much louder than the dry and the 0.3 default is dominated by the body.',
+            'Each body still lifts its own resonance by 25.7 to 26.4 dB, so material concentrated there gets louder: on mono pink noise at 48 kHz, wood (800 Hz) measures +1.7 dB at mix 0.5 and +6.3 dB at 1, while ceramic and metal stay between -1.7 and +1.9 dB at mixes 0.1, 0.25, 0.3, 0.5, 0.75 and 1.',
         ],
         noExternalModulation
     ),

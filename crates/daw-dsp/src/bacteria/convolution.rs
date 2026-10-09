@@ -136,15 +136,11 @@ impl ConvolutionProcessor {
             }
         }
 
-        // Normalize
-        let max_val = ir
-            .iter()
-            .map(|x| x.abs())
-            .fold(0.0_f32, f32::max)
-            .max(0.001);
-        for s in &mut ir {
-            *s /= max_val;
-        }
+        // Unity energy here, at load, and not a precomputed per-body constant:
+        // the energy grows with the sample count, so a constant would hold at
+        // one session rate only, while this one pass over the response runs
+        // beside the allocation that builds it and never in `process_stereo`.
+        normalise_to_unit_energy(&mut ir);
 
         self.load_ir(&ir, &ir);
     }
@@ -211,9 +207,24 @@ impl ConvolutionProcessor {
     }
 }
 
+/// Scale `ir` so its squared samples sum to one: white noise then leaves the
+/// convolution at the level it entered, and `convolutionMix` trades dry for
+/// body at matched loudness. A pure gain, so the body's colour is unchanged.
+fn normalise_to_unit_energy(ir: &mut [f32]) {
+    let energy: f32 = ir.iter().map(|s| s * s).sum();
+    if energy <= 0.0 {
+        return;
+    }
+    let scale = energy.sqrt().recip();
+    for s in ir.iter_mut() {
+        *s *= scale;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fermenter::noise::{NoiseGen, NOISE_WHITE};
 
     /// Peak amplitude of `signal` at `freq`, sampled at `sample_rate`.
     fn amplitude_at(signal: &[f32], freq: f32, sample_rate: f32) -> f64 {
@@ -239,6 +250,138 @@ mod tests {
             }
         }
         best
+    }
+
+    const BODY_TEST_RATE: f32 = 48_000.0;
+
+    /// Every built-in body by the `convolutionIr` index that selects it.
+    const BUILTIN_BODIES: [(f32, &str); 4] = [
+        (0.0, "ceramic"),
+        (1.0, "wood"),
+        (2.0, "metal"),
+        (3.0, "spring"),
+    ];
+
+    /// A built-in body loaded through `set_param`, as the engine loads one,
+    /// fully wet.
+    fn builtin_body(index: f32) -> ConvolutionProcessor {
+        let mut body = ConvolutionProcessor::new(BODY_TEST_RATE);
+        body.set_param("convolutionIr", index);
+        body.set_param("convolutionMix", 1.0);
+        body
+    }
+
+    /// Output energy over input energy, in dB, of four seconds of the crate's
+    /// white noise fed identically to both channels, counted once the IR has
+    /// filled. Identical channels carry no side signal, so `separation` cannot
+    /// move the figure. The narrowest resonance (metal's, decaying at 15/s)
+    /// needs the long average: four seconds measures every body within 0.4 dB
+    /// of its unit-energy 0 dB.
+    fn white_noise_gain_db(body: &mut ConvolutionProcessor) -> f64 {
+        let mut noise = NoiseGen::new();
+        noise.color = NOISE_WHITE;
+        let settle = body.ir_length;
+        let (mut input, mut output) = (0.0_f64, 0.0_f64);
+        for n in 0..settle + 4 * BODY_TEST_RATE as usize {
+            let x = noise.tick();
+            let (left, _) = body.process_stereo(x, x);
+            if n >= settle {
+                input += f64::from(x).powi(2);
+                output += f64::from(left).powi(2);
+            }
+        }
+        10.0 * (output / input).log10()
+    }
+
+    /// `convolutionMix` is a dry/body crossfade, so the body has to arrive at
+    /// the dry signal's loudness. Peak-normalised responses put every
+    /// built-in body 20.2 to 23.4 dB above the dry on white noise at 48 kHz,
+    /// so even the default 0.3 mix was mostly body.
+    #[test]
+    fn every_builtin_body_passes_broadband_noise_at_unity_gain() {
+        for (index, name) in BUILTIN_BODIES {
+            let mut body = builtin_body(index);
+            let gain = white_noise_gain_db(&mut body);
+            assert!(
+                gain.abs() <= 1.0,
+                "the {name} body changes white noise by {gain:.2} dB at mix 1; \
+                 it must leave broadband material within 1 dB of its dry level"
+            );
+        }
+    }
+
+    /// Magnitude response at a handful of frequencies, in dB, of each body's
+    /// pre-change peak-normalised impulse response scaled to unit energy — the
+    /// colour each body had before its level changed. Spring is metal's
+    /// response.
+    const PRE_CHANGE_SHAPE_DB: [(&str, [(f32, f64); 6]); 4] = [
+        (
+            "ceramic",
+            [
+                (200.0, -8.942),
+                (800.0, -7.653),
+                (2_200.0, 25.729),
+                (3_500.0, -30.822),
+                (4_400.0, 17.114),
+                (7_000.0, -21.505),
+            ],
+        ),
+        (
+            "wood",
+            [
+                (200.0, -4.319),
+                (800.0, 26.411),
+                (2_200.0, -12.197),
+                (3_500.0, -22.448),
+                (4_400.0, -26.232),
+                (7_000.0, -36.863),
+            ],
+        ),
+        (
+            "metal",
+            [
+                (200.0, -10.775),
+                (800.0, -7.153),
+                (2_200.0, -17.263),
+                (3_500.0, 26.197),
+                (4_400.0, -23.243),
+                (7_000.0, 17.342),
+            ],
+        ),
+        (
+            "spring",
+            [
+                (200.0, -10.775),
+                (800.0, -7.153),
+                (2_200.0, -17.263),
+                (3_500.0, 26.197),
+                (4_400.0, -23.243),
+                (7_000.0, 17.342),
+            ],
+        ),
+    ];
+
+    /// Normalising a body changes its level and nothing else: each loaded
+    /// response, read against its own energy, still matches the pre-change
+    /// response read the same way, to 0.05 dB at every frequency.
+    #[test]
+    fn energy_normalising_a_body_keeps_its_spectral_shape() {
+        for ((index, name), (expected_name, expected)) in
+            BUILTIN_BODIES.into_iter().zip(PRE_CHANGE_SHAPE_DB)
+        {
+            assert_eq!(name, expected_name);
+            let body = builtin_body(index);
+            let energy: f64 = body.ir_left.iter().map(|s| f64::from(*s).powi(2)).sum();
+            for (hz, expected_db) in expected {
+                let level_db = 20.0
+                    * (amplitude_at(&body.ir_left, hz, BODY_TEST_RATE) / energy.sqrt()).log10();
+                assert!(
+                    (level_db - expected_db).abs() < 0.05,
+                    "the {name} body sits at {level_db:.3} dB at {hz} Hz against its energy; \
+                     it sat at {expected_db} dB before its level changed"
+                );
+            }
+        }
     }
 
     /// A "wood" body resonates at 800 Hz. It has to do that at whatever rate
