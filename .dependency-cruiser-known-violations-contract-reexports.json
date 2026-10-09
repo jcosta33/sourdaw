@@ -1,0 +1,137 @@
+[
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/AiRuntime/useCases/agentToolCatalog.ts",
+    "to": "src/modules/AiRuntime/models/AgentToolCatalogNames.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts",
+    "to": "src/modules/AiRuntime/models/ApplicationOwnedTool.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/AiRuntime/useCases/getProjectContext.ts",
+    "to": "src/modules/AiRuntime/models/ProjectContext.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Arrangement/stores/trackStore.ts",
+    "to": "src/modules/Arrangement/models/Track.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/AudioEngine/useCases/audioEngineQueries/getFactoryDrumKitByIndex.ts",
+    "to": "src/modules/AudioEngine/models/FactoryDrumKits.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/BrowserAi/events/ModelDownloadProgressEvent.ts",
+    "to": "src/modules/BrowserAi/models/ModelDownloadProgress.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/CrdtDocument/stores/actionHistoryStore.ts",
+    "to": "src/modules/CrdtDocument/models/ActionHistoryState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/CrdtDocument/useCases/crdtDocumentTypes.ts",
+    "to": "src/modules/CrdtDocument/models/CrdtDocumentTypes.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Fermenter/useCases/fermenterQueries/FERMENTER_PARAMS.ts",
+    "to": "src/modules/Fermenter/models/FermenterPatch.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/MIDI/stores/grooveTemplateStore.ts",
+    "to": "src/modules/MIDI/models/GrooveTemplateState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/MIDI/stores/midiStore.ts",
+    "to": "src/modules/MIDI/models/MidiNote.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/MIDI/useCases/webMidiInput/resolveDeviceNode.ts",
+    "to": "src/modules/MIDI/models/ResolveDeviceNode.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Preferences/useCases/preferencesDefaults.ts",
+    "to": "src/modules/Preferences/models/Preferences.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts",
+    "to": "src/modules/WorkspaceShell/models/EditingTool.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Yeast/stores/yeastStore.ts",
+    "to": "src/modules/Yeast/models/YeastState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  }
+]

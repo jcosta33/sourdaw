@@ -1,32 +1,43 @@
 packages:
-  - .
+    - .
 
 allowBuilds:
-  esbuild: true
-  core-js: false
-  protobufjs: false
-  unrs-resolver: false
-  # Decided, not optional: pnpm refuses to run any script in the workspace
-  # while an undecided dependency is present, so without this entry every
-  # `pnpm typecheck` in the repository fails with ERR_PNPM_IGNORED_BUILDS.
-  #
-  # `true` grants nothing in practice — this Electron release ships no install
-  # lifecycle script at all. Its ~300 MB platform binary is fetched by the
-  # `install-electron` bin instead, which is why `desktop:dev` calls it.
-  electron: true
-  # Reached only through `electron-builder`'s Squirrel.Windows target, which
-  # this repository does not build — the Windows target is NSIS. Its install
-  # script fetches the Squirrel toolchain, so denying it costs nothing and
-  # keeps a Windows-only download out of every developer's install. Same
-  # reason as above for stating it at all: an undecided dependency fails every
-  # script in the workspace.
-  electron-winstaller: false
-  # The postinstall only hard-links the native binary from the already-installed
-  # platform optional dependency over the JS fallback shim — audited as fs
-  # link/copy, no network. Denying it leaves every `pnpm exec ast-grep` spawning
-  # a node shim that prints a stderr warning per invocation.
-  '@ast-grep/cli': true
+    esbuild: true
+    core-js: false
+    protobufjs: false
+    unrs-resolver: false
+    # Decided, not optional: pnpm refuses to run any script in the workspace
+    # while an undecided dependency is present, so without this entry every
+    # `pnpm typecheck` in the repository fails with ERR_PNPM_IGNORED_BUILDS.
+    #
+    # `true` grants nothing in practice — this Electron release ships no install
+    # lifecycle script at all. Its ~300 MB platform binary is fetched by the
+    # `install-electron` bin instead, which is why `desktop:dev` calls it.
+    electron: true
+    # Reached only through `electron-builder`'s Squirrel.Windows target, which
+    # this repository does not build — the Windows target is NSIS. Its install
+    # script fetches the Squirrel toolchain, so denying it costs nothing and
+    # keeps a Windows-only download out of every developer's install. Same
+    # reason as above for stating it at all: an undecided dependency fails every
+    # script in the workspace.
+    electron-winstaller: false
+    # The postinstall only hard-links the native binary from the already-installed
+    # platform optional dependency over the JS fallback shim — audited as fs
+    # link/copy, no network. Denying it leaves every `pnpm exec ast-grep` spawning
+    # a node shim that prints a stderr warning per invocation.
+    '@ast-grep/cli': true
 
 minimumReleaseAgeExclude:
-  - '@vitejs/plugin-react@6.1.0'
-  - vite@8.2.2
+    - '@vitejs/plugin-react@6.1.0'
+    - vite@8.2.2
+
+# One tfjs-core identity for the whole tree (#4466). @spotify/basic-pitch pulls
+# @tensorflow/tfjs 3.21.0 (exact-pinned sub-packages) while the app pins
+# tfjs-core 4.22.0 for its WebGPU DDSP worker; two same-named type identities in
+# one program made `pnpm typecheck:test` fail nondeterministically (TS2345) via
+# the native tsc shim. Audited before pinning: every tfjs-core name imported by
+# the 3.21.0 stack exists in 4.22.0 with matching or widened signatures, and
+# basic-pitch itself never imports tfjs-core directly. pnpm 11 no longer reads
+# overrides from package.json's pnpm field; this settings block is their home.
+overrides:
+    '@tensorflow/tfjs-core': 4.22.0
