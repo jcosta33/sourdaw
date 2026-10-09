@@ -1,0 +1,68 @@
+scripts/reviewRiskPolicy.ts
+  s_97ab82e0b4f10c::t_523f3e372b03b5 128
+scripts/trustedGithubWriteBootstrap.ts
+  s_97ab82e0b4f10c::t_523f3e372b03b5 235,272,311
+scripts/prValidationScope.ts
+  s_97ab82e0b4f10c::t_72d90e231bf68a 47
+.agents/skills/delivery-orchestration/SKILL.md
+  s_97ab82e0b4f10c::t_4be6304ac04d53 216-230
+scripts/__tests__/prValidationScope.spec.ts
+  s_97ab82e0b4f10c::t_72d90e231bf68a 146,291-310
+  s_97ab82e0b4f10c::t_0a4b27407eb6b2 311-313
+scripts/__tests__/reviewStructuralAdmission.spec.ts
+  s_97ab82e0b4f10c::t_04adb55307e1b2 54
+  s_97ab82e0b4f10c::t_5421555c2f818b 1-30,32-33,49-53,55-86
+  s_97ab82e0b4f10c::t_949be6ffd1d98f 31,34-48
+scripts/reviewStructuralAdmission.ts
+  s_97ab82e0b4f10c::t_f6a91de919d5f0 6,12-20,133
+  s_97ab82e0b4f10c::t_2fe38b217f9b16 72-79,81,83,86-88,90,117-119,134,140,145-147,149-153,155-157,162-164
+  s_97ab82e0b4f10c::t_d374aecee58627 1
+  s_97ab82e0b4f10c::t_4300c2c5625d83 7
+  s_97ab82e0b4f10c::t_19b6793d0a06a0 38,46,62
+  s_97ab82e0b4f10c::t_52b189aa00205e 2-5,8-11,21-37,39-45,47-61,63-71,80,82,84-85,89,91-116,120-132,135-139,141-144,148,154,158-161,165-167
+scripts/reviewPublicationBinding.ts
+  s_97ab82e0b4f10c::t_f6a91de919d5f0 52
+  s_97ab82e0b4f10c::t_523f3e372b03b5 353
+  s_97ab82e0b4f10c::t_04adb55307e1b2 35-41,300,334,349,351-352,600
+scripts/__tests__/publishReview.spec.ts
+  s_97ab82e0b4f10c::t_c5af0960132889 5018
+  s_97ab82e0b4f10c::t_481a04a42b1a5c 5670-5685
+  s_97ab82e0b4f10c::t_dc99d5ac4a860b 5641-5656
+  s_97ab82e0b4f10c::t_a88985e62fc374 5399-5401,5403-5424,5636-5640
+  s_97ab82e0b4f10c::t_949be6ffd1d98f 5021-5029,5038-5039,5452-5530,5559-5587,7550-7554,7804-7806
+  s_97ab82e0b4f10c::t_4bc1b2d6df5ed6 5030,5040-5041,5691,5857-5861,5864-5865,5995,6974,7446,7485,7512,7768
+  s_97ab82e0b4f10c::t_3355f38e71b1b4 5058-5109,5425-5451,5588-5598,5617-5635
+  s_97ab82e0b4f10c::t_42ca30c94b6a08 5019-5020,5402
+  s_97ab82e0b4f10c::t_90ccde61b304ae 7436
+  s_97ab82e0b4f10c::t_e94a6b1d3ea762 4989,5017,5031-5037,5042-5057
+  s_97ab82e0b4f10c::t_e7a4351427c5ea 6990-6996,7025-7026
+  s_97ab82e0b4f10c::t_2aeecf24e17a22 7029-7030
+  s_97ab82e0b4f10c::t_a2e99ad6bdc147 5232-5235
+  s_97ab82e0b4f10c::t_9dd864ec3b42b1 63,5230-5231
+  s_97ab82e0b4f10c::t_c133d9d16754a8 77,5236,5531-5558,5616
+  s_97ab82e0b4f10c::t_c48cf6ccaf393f 5599-5615
+  s_97ab82e0b4f10c::t_7299180a361cce 7028
+  s_97ab82e0b4f10c::t_8be169aea90add 7033
+  s_97ab82e0b4f10c::t_fbfffdd9a277fa 7468,7476,7504,7517,7530,7543
+  s_97ab82e0b4f10c::t_b0f0ab47be7d73 7602,7694,7724,7736,7744,7793,7796,7807-7808
+AGENTS.md
+  s_97ab82e0b4f10c::t_4be6304ac04d53 89-100
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  s_97ab82e0b4f10c::t_9070176c79e0ca 210-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa488fb8482c5a9024ccb77a34cb37b865351a28",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
