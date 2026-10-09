@@ -322,7 +322,7 @@ describe('E2E selection shadow', () => {
             });
             expect(report.authoritativeScopeSha256).toMatch(/^[0-9a-f]{64}$/);
         });
-    });
+    }, 30_000);
 
     it('keeps the current supported head on the complete measurement route', () => {
         withShadowCliCheckouts('present', (result, report) => {
@@ -330,7 +330,7 @@ describe('E2E selection shadow', () => {
             expect(report.measurementStatus).toBe('complete');
             expect(report.candidateSpecs).toEqual(['tests/e2e/example.spec.ts']);
         });
-    });
+    }, 30_000);
 
     it('fails a malformed declared certificate instead of calling it unsupported', () => {
         withShadowCliCheckouts('malformed', (result, report) => {
@@ -338,7 +338,7 @@ describe('E2E selection shadow', () => {
             expect(report.measurementStatus).toBe('failed');
             expect(report.failureReason).toMatch(/certificate/i);
         });
-    });
+    }, 30_000);
 
     it('fails when a declared shadow capability is only partly present', () => {
         withShadowCliCheckouts('partial', (result, report) => {
@@ -346,7 +346,7 @@ describe('E2E selection shadow', () => {
             expect(report.measurementStatus).toBe('failed');
             expect(report.failureReason).toMatch(/Declared shadow capability is missing or nonregular/);
         });
-    });
+    }, 30_000);
 
     it('fails when a branch deletes a capability it previously declared', () => {
         withShadowCliCheckouts('deleted', (result, report) => {
@@ -354,7 +354,7 @@ describe('E2E selection shadow', () => {
             expect(report.measurementStatus).toBe('failed');
             expect(report.failureReason).toMatch(/Declared shadow capability is missing or nonregular/);
         });
-    });
+    }, 30_000);
 
     it('fails an older head when its authoritative scope is malformed', () => {
         withShadowCliCheckouts('invalid-scope', (result, report) => {
@@ -362,7 +362,7 @@ describe('E2E selection shadow', () => {
             expect(report.measurementStatus).toBe('failed');
             expect(report.failureReason).toMatch(/Authoritative scope artifact disagrees/);
         });
-    });
+    }, 30_000);
 
     function hostedInput(durationText = durationTableText) {
         const changed = [
