@@ -43,11 +43,27 @@ function nearestClip(clips: RecordedClip[], beat: number): RecordedClip {
     return clips.reduce((best, clip) => (clipDistance(clip, beat) < clipDistance(best, beat) ? clip : best));
 }
 
+/** Whether a key still held went through this Yeast on this instrument track. */
+function isYeastRouteHeld(instrumentTrackId: string, yeastDeviceId: string): boolean {
+    for (const held of activeNotes.values()) {
+        if (held.instrumentTrackId === instrumentTrackId && held.yeastDeviceId === yeastDeviceId) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * Release every voice a Yeast note-on started when the chain no longer holds
  * that Yeast (removed, or its track gone): no rack is left to send the
  * note-offs, so a held voice would otherwise sound until panic. Generated
  * voices release through the shared registry, which skips any already ended.
+ *
+ * A voice the Yeast generated is recorded on whichever key's session drained
+ * it, not on the key it musically belongs to, and a key-up session records
+ * its voices on no key at all. So once the last key that went through the
+ * Yeast is up, every voice still registered on its route is released too;
+ * while another such key is held, only this key's own voices are.
  */
 function releaseVoicesWithoutYeast(
     noteData: ActiveNoteData,
@@ -71,6 +87,9 @@ function releaseVoicesWithoutYeast(
         release(sampleFrame, releaseVelocity);
     }
     noteData.yeastVoiceReleases?.clear();
+    if (!isYeastRouteHeld(noteData.instrumentTrackId, yeastDeviceId)) {
+        pendingYeastRelease.releaseRoute(routeId, sampleFrame, releaseVelocity);
+    }
 }
 
 export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
@@ -201,7 +220,10 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 if (generatedId === undefined) {
                     noteData.yeastVoiceReleases?.get(pitch)?.(sampleFrame, 0);
                     start();
-                    (noteData.yeastVoiceReleases ??= new Map()).set(pitch, release);
+                    // The key is already up: the voice lives on this release
+                    // session, where its source-pitch note-off, a route
+                    // release and a reset can still reach it.
+                    pendingYeastRelease.addSourceVoice(pendingRelease, pitch, voiceChannel, release);
                 } else {
                     start();
                     // The voice registers in the shared route-keyed registry

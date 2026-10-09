@@ -69,6 +69,24 @@ function toasterPad(note: number, toasterChildPad: number | null): { pad: number
     return pad === null ? null : { pad, midiNote: TOASTER_NEUTRAL_MIDI_NOTE };
 }
 
+/**
+ * A generated voice starts ahead of the key that caused it, by the Yeast
+ * worker's lookahead, while a key-up releases at its own frame. A note-off
+ * framed before its note-on leaves the voice sounding on an instrument that
+ * orders its events by frame, so a timed release never precedes the voice's
+ * onset.
+ */
+function captureReleasingAfterOnset(input: VoiceYeastNoteOnInput): VoiceYeastNoteOnInput['capture'] {
+    return (start, release) =>
+        input.capture(start, (releaseFrame, releaseVelocity) => {
+            if (releaseFrame === undefined) {
+                release(undefined, releaseVelocity);
+                return;
+            }
+            release(Math.max(releaseFrame, input.sampleFrame), releaseVelocity);
+        });
+}
+
 function generatedNoteSeconds(input: VoiceYeastNoteOnInput): number {
     if (input.durationSamples === undefined) {
         return FALLBACK_GENERATED_NOTE_SECONDS;
@@ -195,7 +213,8 @@ function voiceBuiltinSynth(input: VoiceYeastNoteOnInput): void {
  * A bypassed receiver plays nothing, and a chain with no instrument plays the
  * built-in synth.
  */
-export function voiceYeastNoteOn(input: VoiceYeastNoteOnInput): void {
+export function voiceYeastNoteOn(voicing: VoiceYeastNoteOnInput): void {
+    const input: VoiceYeastNoteOnInput = { ...voicing, capture: captureReleasingAfterOnset(voicing) };
     const { receiver } = input;
     if (isBypassedNoteReceiver(receiver)) {
         return;

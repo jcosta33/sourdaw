@@ -2108,4 +2108,16 @@ describe('scheduleTrackClips — the receiving instrument', () => {
         expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
         expect(mocks.scheduleNoteOffline.mock.calls[0]?.[2]).toBe(60);
     });
+
+    // A second instrument of the receiver's own kind is still not the
+    // receiver: its entry must not stand in for the one that failed to load.
+    it('renders a receiver that failed to load on the fallback synth, never on a same-kind instrument behind it', async () => {
+        const levainB = { id: 'levain-2', type: 'levain' };
+
+        const events = await renderNote([levain, levainB], [levainB]);
+
+        expect(events).toEqual([]);
+        expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
+        expect(mocks.scheduleNoteOffline.mock.calls[0]?.[2]).toBe(60);
+    });
 });
