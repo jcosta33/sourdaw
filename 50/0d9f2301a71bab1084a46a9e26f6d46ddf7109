@@ -1,0 +1,28 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_97ab82e0b4f10c::t_3f96502c5e1993 11452-11453
+  s_97ab82e0b4f10c::t_48127a92f9768a 11350-11359,11447-11451,11454-11459
+scripts/semanticReview/sensitive.ts
+  s_97ab82e0b4f10c::t_fafc87e6f8a73f 372-376
+  s_97ab82e0b4f10c::t_a61f8819cf3ebe 325,346-350,359-371,377-389
+  s_97ab82e0b4f10c::t_d634ac62fbde65 390-391
+scripts/__tests__/checkStancesRecord.spec.ts
+  s_97ab82e0b4f10c::t_d2a29d4ae78e7e 612-621
+scripts/__tests__/typesafeRequest.spec.ts
+  s_97ab82e0b4f10c::t_8f96b82056da8b 494-503,609-618,710,717,768,778-779
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "500d9f2301a71bab1084a46a9e26f6d46ddf7109",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
