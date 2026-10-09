@@ -222,6 +222,24 @@ selection uniquely. Also prove selected restoration when no live selection or la
 existing conservative comp policy: any live overlap drops the whole captured region, while disjoint
 regions return. Direct store fixtures without a later selected survivor missed this failure mode.
 
+PR #2169 (`bfbf1dd69b1`) added gain, warp, and automation restoration to clip removal inverses.
+PR #3809 (`b34f9c49345`) guarded grouped restoration only by track presence and clip absence;
+single-entry restoration bypassed that preflight. The missing risk was freshness of target-owned
+material while the clip rectangle remained absent. After a real removal, saved capture, and fresh
+hydration, independently publish later target MIDI notes, CC, pitch bend, gain, warp, and automation.
+Both single and grouped Undo must write no owner or raw document state, keep the complete history
+pending, and leave an earlier independent grouped inverse unapplied. Keep genuine unchanged-capture
+Undo/Redo controls and later disjoint peer owners, current selection, and ghosts. The historical
+review prompts and tiers are unverified. PR #239 routed MIDI restoration through its owner but
+preserved an older unguarded overwrite; it is not evidence of the original MIDI defect introduction.
+
+Saved replay admission also binds relationships between valid rows. For a real rich move, change
+only a captured automation lane's track owner in each mirrored placement leg. For a placed audio
+removal and a split whose Undo retires a later right-fragment pass, redirect the retired lane's track
+owner while preserving its take and placement fields. Fresh hydration must discard each forged entry
+before Undo or Redo writes. Keep rich, fractional, empty, and historical captures and the later
+surviving selected take controls; shape validation alone does not prove containing-owner authority.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose

@@ -118,7 +118,7 @@ function hasValidClipFields(value: Record<string, unknown>): boolean {
     );
 }
 
-function isRetiredTakeLane(value: unknown, clipId: string): boolean {
+function isRetiredTakeLane(value: unknown, clipId: string, trackId: string): boolean {
     if (
         !isRecord(value) ||
         typeof value.laneIndex !== 'number' ||
@@ -128,7 +128,7 @@ function isRetiredTakeLane(value: unknown, clipId: string): boolean {
         return false;
     }
     const lane = decodeExactTakeLaneSnapshots([value.lane])?.[0];
-    if (!lane) {
+    if (!lane || lane.trackId !== trackId) {
         return false;
     }
     return (
@@ -145,8 +145,8 @@ function isRetiredTakeLane(value: unknown, clipId: string): boolean {
     );
 }
 
-function isRetiredTakeLanes(value: unknown, clipId: string): boolean {
-    return Array.isArray(value) && value.every((entry) => isRetiredTakeLane(entry, clipId));
+function isRetiredTakeLanes(value: unknown, clipId: string, trackId: string): boolean {
+    return Array.isArray(value) && value.every((entry) => isRetiredTakeLane(entry, clipId, trackId));
 }
 
 function isClipSnapshot(value: unknown, clipId: string, trackId: string): boolean {
@@ -214,7 +214,7 @@ export function isRestoreClipSessionPayload(value: unknown): boolean {
         value.trackId.length > 0 &&
         isClipSnapshot(value.clipSnapshot, value.clipId, value.trackId) &&
         (value.ripplePlan === null || isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId)) &&
-        isRetiredTakeLanes(value.retiredTakeLanes, value.clipId) &&
+        isRetiredTakeLanes(value.retiredTakeLanes, value.clipId, value.trackId) &&
         hasFiniteNumbers(value)
     );
 }
@@ -241,6 +241,7 @@ function isPlacement(value: unknown): boolean {
         Number.isFinite(value.endBeat) &&
         value.endBeat > value.startBeat &&
         isExactClipAutomationMoveSnapshots(value.automationLanes) &&
+        value.automationLanes.every((lane) => lane.trackId === value.trackId) &&
         hasFiniteNumbers(value.automationLanes)
     );
 }
@@ -279,7 +280,7 @@ export function isMoveClipSessionEntry(entry: HandlerSessionActionEntry): boolea
     );
 }
 
-function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): boolean {
+function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): value is { trackId: string } {
     return (
         isRecord(value) &&
         typeof value.trackId === 'string' &&
@@ -303,7 +304,9 @@ export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
         value.rightClipId !== value.clipId &&
         isSplitSnapshot(value.expected, value.clipId, value.rightClipId) &&
         isSplitSnapshot(value.replacement, value.clipId, value.rightClipId) &&
-        (value.retiredTakeLanes === undefined || isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId))
+        (value.retiredTakeLanes === undefined ||
+            (isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId, value.expected.trackId) &&
+                isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId, value.replacement.trackId)))
     );
 }
 

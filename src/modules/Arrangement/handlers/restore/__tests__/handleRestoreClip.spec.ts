@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createTrack } from '../../../models/Track';
+import { trackStore } from '../../../stores/trackStore';
 import { type undoRippleDelete } from '../../../useCases/rippleDelete/undoRippleDelete';
 import { type updateTrack } from '../../../useCases/updateTrack';
 import { handleRestoreClip } from '../handleRestoreClip';
@@ -57,6 +58,7 @@ vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    getMidiStoreState: () => null,
     restoreMidiClipData: mocks.restoreMidiClipData,
 }));
 
@@ -175,6 +177,7 @@ function expectMidiRestoreFromAction(action: RestoreClipAction): number {
 describe('handleRestoreClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        trackStore.set({ tracks: [createTrack({ id: 't1', name: 'Track 1', kind: 'midi' })], selectedTrackId: 't1' });
     });
 
     describe.each(['ripple', 'track'] as const)('%s restore path', (path) => {
