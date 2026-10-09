@@ -1,3 +1,4 @@
+import { getDeviceAutomationOwnerId } from '#/utils/automationDeviceTarget';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
@@ -53,6 +54,20 @@ function getProjectSlotTargetId(action: AppAction): string | null {
     }
 }
 
+/**
+ * A device parameter key (`<deviceId>:<paramId>`) is not an object reference, so the owning device
+ * a lane or range write reads is named here instead: removing it must classify as a deleted target.
+ */
+function getParameterDeviceTargetId(action: AppAction): string | null {
+    switch (action.type) {
+        case 'addAutomationLane':
+        case 'automateParameterRange':
+            return getDeviceAutomationOwnerId(action.payload.parameterId);
+        default:
+            return null;
+    }
+}
+
 export function getCommandDivergenceTargetIds(input: {
     actions: readonly AppAction[];
     targetIds: readonly string[];
@@ -64,6 +79,10 @@ export function getCommandDivergenceTargetIds(input: {
             for (const reference of compileCommandArgumentMetadata(payload).objectReferences) {
                 targetIds.add(reference.id);
             }
+        }
+        const parameterDeviceTargetId = getParameterDeviceTargetId(action);
+        if (parameterDeviceTargetId) {
+            targetIds.add(parameterDeviceTargetId);
         }
         if (action.type === 'setTempo') {
             targetIds.add(COMMAND_TEMPO_TARGET_ID);

@@ -196,6 +196,34 @@ describe('renderToClip', () => {
             expect(ends.redo).toBe(16);
         });
     });
+
+    it('re-adds the clip with the same start beat as the first add when redo is run with a non-zero startBeat', () => {
+        const input: Omit<RenderToClipInput, 'targetTrackId' | 'name'> = {
+            startBeat: 8,
+            endBeat: 16,
+            tailSeconds: 0,
+            buffer: createRenderedBuffer(SAMPLE_RATE * 4.8),
+        };
+        mocks.addClip.mockReturnValue({ id: 'clip-placed', trackId: 'track-1' });
+        renderToClip({ ...input, targetTrackId: 'track-1', name: 'Rendered' });
+
+        // First add should have the input startBeat and endBeat values.
+        const firstAdd = mocks.addClip.mock.calls[0]?.[0];
+        expect(firstAdd).toBeDefined();
+        expect(firstAdd).toMatchObject({ startBeat: 8, endBeat: 16 });
+
+        const recordedUndo = mocks.pushUndoEntry.mock.calls[0];
+        if (!recordedUndo) {
+            throw new Error('expected a render-to-clip undo entry');
+        }
+        const redo: () => void = recordedUndo[2];
+        mocks.addClip.mockClear();
+        mocks.addClip.mockReturnValue({ id: 'clip-placed', trackId: 'track-1' });
+        redo();
+
+        // Redo re-creates the clip with the first add's arguments, under the id that add returned.
+        expect(mocks.addClip).toHaveBeenNthCalledWith(1, { ...firstAdd, id: 'clip-placed' });
+    });
 });
 
 function resetTempo(): void {

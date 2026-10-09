@@ -93,21 +93,66 @@ export async function createLevainNode(
     let destroyed = false;
 
     const handshake = createReadyHandshake({ pluginName: 'LevainNode' });
+    let portClosed = false;
+    let drainingDisposal = false;
+
+    // A closed live AudioContext no longer answers port messages, so only it is
+    // treated as gone. A completed OfflineAudioContext also reports 'closed' but
+    // its worklet scope still answers (measured in Chromium), so it drains.
+    // `instanceof` is the check because the closed state alone cannot tell them apart.
+    const isContextGone = (): boolean =>
+        ctx.state === 'closed' && !(typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext);
+
+    // The port stays open from `destroy()` until the drain ends: on `done` (the
+    // engine freed, or poisoned by a throwing step and deliberately left unfreed)
+    // or when a live context closes and takes the worklet scope with it. A
+    // disposed processor never posts `error` during the drain, so closing on one
+    // is a defensive stop only.
+    const closePort = (): void => {
+        if (portClosed) {
+            return;
+        }
+        portClosed = true;
+        ctx.removeEventListener('statechange', handleContextStateChange);
+        node.port.close();
+    };
+    function handleContextStateChange(): void {
+        if (isContextGone()) {
+            closePort();
+        }
+    }
+    const requestDisposalRelease = (): void => {
+        node.port.postMessage({ type: 'releaseDisposedBanks' });
+    };
+
     node.port.onmessage = (event: MessageEvent<unknown>) => {
-        if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'disposed') {
+        const data: unknown = event.data;
+        const type = data && typeof data === 'object' && 'type' in data ? data.type : undefined;
+        if (type === 'disposed') {
             handshake.reject(new Error('LevainNode disposed before initialization completed'));
-            node.port.close();
+            if (!drainingDisposal) {
+                drainingDisposal = true;
+                requestDisposalRelease();
+            }
+            return;
+        }
+        if (drainingDisposal) {
+            // One bounded step per message keeps each free a fraction of a render quantum.
+            if (type === 'disposedBanksReleased' && data && typeof data === 'object' && 'done' in data) {
+                if (data.done === true) {
+                    closePort();
+                } else {
+                    requestDisposalRelease();
+                }
+            } else if (type === 'error') {
+                closePort();
+            }
             return;
         }
         const outcome = handshake.onMessage(event);
-        if (
-            outcome === 'late' &&
-            event.data &&
-            typeof event.data === 'object' &&
-            'type' in event.data &&
-            event.data.type === 'error'
-        ) {
-            const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
+        if (outcome === 'late' && type === 'error') {
+            const message =
+                data && typeof data === 'object' && 'message' in data ? String(data.message) : 'Unknown error';
             logger.warn('LevainNode runtime fault (WASM panic — processor faulted):', message);
             onFault?.(message);
         }
@@ -219,6 +264,11 @@ export async function createLevainNode(
         }
         destroyed = true;
         disconnect();
+        ctx.addEventListener('statechange', handleContextStateChange);
+        if (isContextGone()) {
+            closePort();
+            return;
+        }
         node.port.postMessage({ type: 'dispose' });
     };
 

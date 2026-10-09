@@ -1,6 +1,8 @@
-import { REQUIRED_REPOSITORY, parseJson } from './githubAppIdentity.ts';
+import { REQUIRED_REPOSITORY, REVIEWER_BOT_NODE_ID, parseJson } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail } from './prContract.ts';
 import { EXPECTED_REVIEW_STATE, type ReviewDocument } from './publishReview.ts';
+
+const DISMISSED_REVIEW_STATE = 'DISMISSED';
 
 export type RemotePublishedReview = {
     id: number;
@@ -279,4 +281,85 @@ export function exactPublishedReview(
             comment.body === composeReviewCommentBody(expected)
         );
     });
+}
+
+/**
+ * Recovery only (#5046): an exact copy of an APPROVE document that a later push dismissed. The
+ * live main ruleset dismisses stale approvals on push, so once the pull request head moved past
+ * the review's commit GitHub reports the approval as DISMISSED and `exactPublishedReview` refuses
+ * it. Every other field must still match exactly; a DISMISSED review on an unmoved head and a
+ * dismissed REQUEST_CHANGES (a stale-review push never dismisses one) are not a copy here. This
+ * is the match for the reviewer's own review standing as the publication; the actor is not
+ * judged here, and recovery's unauthorized-evidence check uses `exactOrDismissedCopy`, which
+ * drops the moved-head and APPROVE conditions.
+ */
+export function dismissedApprovalCopy(
+    review: RemotePublishedReview,
+    document: ReviewDocument,
+    head: string,
+    actorNodeId: string,
+    liveHead: string
+): boolean {
+    return (
+        review.state === DISMISSED_REVIEW_STATE &&
+        document.event === 'APPROVE' &&
+        liveHead !== head &&
+        exactPublishedReview({ ...review, state: EXPECTED_REVIEW_STATE.APPROVE }, document, head, actorNodeId)
+    );
+}
+
+/**
+ * Recovery only (#5046): a review that is an exact copy of the document, in the state its event
+ * expects or in DISMISSED, whatever the head or event. Recovery's unauthorized-evidence check
+ * flags another actor's copy with this match, so a dismissed copy is refused exactly as a live
+ * one is.
+ */
+export function exactOrDismissedCopy(
+    review: RemotePublishedReview,
+    document: ReviewDocument,
+    head: string,
+    actorNodeId: string
+): boolean {
+    if (exactPublishedReview(review, document, head, actorNodeId)) {
+        return true;
+    }
+    return (
+        review.state === DISMISSED_REVIEW_STATE &&
+        exactPublishedReview({ ...review, state: EXPECTED_REVIEW_STATE[document.event] }, document, head, actorNodeId)
+    );
+}
+
+/**
+ * Recovery only (#5046): the landed review is exact, or it is the reviewer App's APPROVE that a
+ * later push dismissed (see `dismissedApprovalCopy`). Normal publication and delivery never call
+ * this; they keep `exactPublishedReview`.
+ */
+export function landedPublishedReview(
+    review: RemotePublishedReview,
+    document: ReviewDocument,
+    head: string,
+    actorNodeId: string,
+    liveHead: string
+): boolean {
+    if (exactPublishedReview(review, document, head, actorNodeId)) {
+        return true;
+    }
+    return actorNodeId === REVIEWER_BOT_NODE_ID && dismissedApprovalCopy(review, document, head, actorNodeId, liveHead);
+}
+
+/**
+ * The match a recorded publication's replay applies: `exactPublishedReview`, or
+ * `landedPublishedReview` when recovery supplies the pull request's live head (#5046).
+ */
+export function recordedReviewStands(
+    remote: RemotePublishedReview,
+    document: ReviewDocument,
+    head: string,
+    actorNodeId: string,
+    recoveryLiveHead: string | undefined
+): boolean {
+    if (recoveryLiveHead === undefined) {
+        return exactPublishedReview(remote, document, head, actorNodeId);
+    }
+    return landedPublishedReview(remote, document, head, actorNodeId, recoveryLiveHead);
 }
