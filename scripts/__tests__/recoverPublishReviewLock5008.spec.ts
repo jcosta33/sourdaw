@@ -692,6 +692,32 @@ describe('review-publication recovery of a landed review among thread-reply revi
         expect(lockOid(fixture.root)).not.toBeUndefined();
     });
 
+    it('refuses and leaves the dossier unbound when the exact review carries another id by the second inspection', async () => {
+        const fixture = fixtureFor({ planCarrying: true });
+        const remote = fakeGitHub({ posted: false });
+        crashAfterPost(fixture.root, remote);
+        const reissuedReviewId = landedReviewId + 1;
+        const reissued = fakeGitHub({
+            posted: true,
+            reviews: [...prePublicationReviews(), { ...landedReview('request-changes'), id: reissuedReviewId }],
+            comments: [
+                ...prePublicationComments(),
+                ...landedComments('request-changes').map((comment) => ({
+                    ...comment,
+                    pull_request_review_id: reissuedReviewId,
+                })),
+            ],
+        });
+
+        await expect(
+            recoverWith(fixture.root, fixture.ownerOid, remote.gh, (inspection) =>
+                inspection === 1 ? remote.gh : reissued.gh
+            )
+        ).rejects.toThrow(/remote state changed during reconciliation/);
+        expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+        expect(lockOid(fixture.root)).not.toBeUndefined();
+    });
+
     it('refuses and leaves the dossier unbound when a third actor posts an exact copy only by the second inspection', async () => {
         const fixture = fixtureFor({ planCarrying: true });
         const remote = fakeGitHub({ posted: false });
