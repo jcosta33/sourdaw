@@ -1,3 +1,4 @@
+import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { type GrooveTemplateState } from '../../stores/grooveTemplateStore';
 
 import { applyGrooveTemplate } from './applyGrooveTemplate';
@@ -116,13 +117,18 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
             }
 
             const offsetFromIteration = intervalStartBeat - iterationStartBeat;
-            const wrappedOffset = ((offsetFromIteration % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
+            const moduloOffset = ((offsetFromIteration % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
+            // A start that float noise leaves just below a loop length is the next pass head,
+            // not a sliver at the loop end followed by the whole note again at that head.
+            const wrappedOffset = loopLengthBeats - moduloOffset <= SAME_BEAT_TOLERANCE ? 0 : moduloOffset;
             const wrappedStartBeat = iterationStartBeat + wrappedOffset;
             const preservedDuration = Math.min(intervalDurationBeats, loopLengthBeats);
             const firstEndBeat = Math.min(iterationStartBeat + loopLengthBeats, wrappedStartBeat + preservedDuration);
             const firstSegments = createSegment(wrappedStartBeat, firstEndBeat);
             const remainingDuration = preservedDuration - (firstEndBeat - wrappedStartBeat);
-            if (remainingDuration <= 0) {
+            // On a non-dyadic grid the first segment's end misses the note's end by float noise,
+            // so a note that stops at or before the loop end still leaves a remainder of that size.
+            if (remainingDuration <= SAME_BEAT_TOLERANCE) {
                 return firstSegments;
             }
             const wrappedSegments = createSegment(iterationStartBeat, iterationStartBeat + remainingDuration);

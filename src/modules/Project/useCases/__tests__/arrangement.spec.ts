@@ -18,6 +18,8 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 // switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    reconcileAutoInputMonitoring: vi.fn(),
+    suspendAutoInputMonitoring: vi.fn(() => vi.fn()),
     stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),
