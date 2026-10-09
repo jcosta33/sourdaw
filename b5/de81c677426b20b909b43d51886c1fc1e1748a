@@ -1,0 +1,35 @@
+src/modules/Arrangement/handlers/clip/handleRestoreClipMoves.ts
+  s_97ab82e0b4f10c::t_a16ab17c735214 1,48
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_97ab82e0b4f10c::t_e38515e9113961 3,103
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_97ab82e0b4f10c::t_f375e1e8074b42 2,61
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_97ab82e0b4f10c::t_eb2c12dd548be4 2,40
+src/modules/Arrangement/useCases/clipboard/pasteClip.ts
+  s_97ab82e0b4f10c::t_6eb78e4e5927d1 4,148
+src/modules/Arrangement/useCases/rippleDelete/planRippleDelete.ts
+  s_97ab82e0b4f10c::t_765c6d02fa6144 2,77
+src/modules/Arrangement/useCases/rippleDelete/undoRippleDelete.ts
+  s_97ab82e0b4f10c::t_873cec8ab3b8ac 2,67
+src/modules/Arrangement/useCases/rippleInsert/rippleInsertClip.ts
+  s_97ab82e0b4f10c::t_e4bd55b43c0b80 2,46
+src/modules/Arrangement/useCases/rippleMove/rippleMoveClip.ts
+  s_97ab82e0b4f10c::t_39dcffb4bc72bb 2,82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5de81c677426b20b909b43d51886c1fc1e1748a",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
