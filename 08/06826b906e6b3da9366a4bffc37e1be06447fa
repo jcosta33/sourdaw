@@ -1,0 +1,27 @@
+scripts/__tests__/hostedWasmArtifacts.spec.ts
+  s_1f0dcd815e8946::t_8523458d9f235b 404
+  s_1f0dcd815e8946::t_b03cf1598a98d5 32,339,387,402-403,418-420,481,494-497
+  s_1f0dcd815e8946::t_41f66e64069045 393
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_cfa3904c4fb8d0 156,158-164,166-167,169-174
+  s_1f0dcd815e8946::t_1dcc87032ea1b9 157,165,168,175
+.agents/skills/review-stances/security-and-platform.md
+  s_1f0dcd815e8946::t_1dcc87032ea1b9 53,59-60,62-63,70-71
+  s_1f0dcd815e8946::t_cfa3904c4fb8d0 52,54-58,61,64-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0806826b906e6b3da9366a4bffc37e1be06447fa",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
