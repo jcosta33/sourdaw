@@ -1,0 +1,81 @@
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_1c08b47ac3792f::t_3bb7c2b997e10b 15-16
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineWithNativeEngine.spec.ts
+  s_1c08b47ac3792f::t_8d80e169e93bbc 169
+  s_1c08b47ac3792f::t_c2c9591795cc9d 2-3
+  s_1c08b47ac3792f::t_047cf9c2913ed0 123
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_1c08b47ac3792f::t_5bb9459df0e6b2 507-537
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_1c08b47ac3792f::t_90071f7fe8d5d8 64
+  s_1c08b47ac3792f::t_2c629dbedce57f 75
+  s_1c08b47ac3792f::t_0dfd107b726295 463-472
+  s_1c08b47ac3792f::t_67adbec0b2e338 408-411
+crates/daw-engine/src/timeline.rs
+  s_1c08b47ac3792f::t_65e3adcc8977d5 2870-2892,2900-2915,2917-2918
+  s_1c08b47ac3792f::t_ca057c95a1e227 1427-1432
+  s_1c08b47ac3792f::t_8d96f36a0ec00e 1555-1559
+  s_1c08b47ac3792f::t_f62051c16bc7be 2124-2149,2153,2157,2162,2174-2175,2189-2207,2211,2216,2221-2222,2242,2364
+  s_1c08b47ac3792f::t_c6a228de9290ba 2647-2652
+  s_1c08b47ac3792f::t_ebc3f1c053d816 2239,2504,4598-4786
+  s_1c08b47ac3792f::t_a3582a42ed33d7 32-33
+  s_1c08b47ac3792f::t_8f15aac671c03c 145-148
+  s_1c08b47ac3792f::t_649d73a0834db4 1371-1373
+  s_1c08b47ac3792f::t_a2d59f54a7b731 2357-2362
+  s_1c08b47ac3792f::t_a42d78a74b5715 2489-2492,2494-2501
+  s_1c08b47ac3792f::t_c4af96e54e2d8d 2588-2593
+  s_1c08b47ac3792f::t_86f97a16e72ecf 2653
+  s_1c08b47ac3792f::t_59e0721f157e5e 139-142,149-151,1185,1192,1237,1374-1376,1385,1409,1433-1435,1560-1562,2223-2227,2238,2240-2241,2243-2246,2363,2365,2413-2415,2502,2594-2596,2654-2656,2777,2807,2916,3278,3285,3296,4787-4790
+crates/sourdaw-native/src/commands/graph.rs
+  s_1c08b47ac3792f::t_ab574739f26d0c 1465-1470
+  s_1c08b47ac3792f::t_1ec24c4070e7fb 3444,3446-3470
+  s_1c08b47ac3792f::t_1d10e365d09d6f 4111-4112,4116-4121
+  s_1c08b47ac3792f::t_4259b5848f6665 10935-10960,10962-11040,11053-11054,11056,11059,11062-11102,11104-11107,11109-11112,11116-11123
+  s_1c08b47ac3792f::t_f5ced837949b0f 11103,11108,11113-11115
+  s_1c08b47ac3792f::t_1d4bdcdccba693 3496-3504
+  s_1c08b47ac3792f::t_b81df32c92288a 145-153
+  s_1c08b47ac3792f::t_50a062b8c8c238 11124
+src/modules/AudioEngine/useCases/livePlayback/stripCarriers.ts
+  s_1c08b47ac3792f::t_f346f056c02fef 279-285,296-297,304-315
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  s_1c08b47ac3792f::t_ea533edaaf8375 277-279,281-282
+  s_1c08b47ac3792f::t_666d6016a5bc77 252-255,257
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_1c08b47ac3792f::t_3ca2991d136a63 176-179
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_1c08b47ac3792f::t_420dad52366500 46-48
+  s_1c08b47ac3792f::t_ca0444b457a852 155
+crates/daw-engine/src/scheduler.rs
+  s_1c08b47ac3792f::t_8d6b1300f40f06 812-825
+  s_1c08b47ac3792f::t_da347f2a9d99d3 1004-1005
+  s_1c08b47ac3792f::t_c6438bec550387 1060-1061
+  s_1c08b47ac3792f::t_9137978cfe86f2 6923-6943
+  s_1c08b47ac3792f::t_ed31c42b1fd385 18130-18195
+  s_1c08b47ac3792f::t_2244750da51a7f 11258-11333
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_1c08b47ac3792f::t_a413b7f0a5ef42 628-692
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_1c08b47ac3792f::t_ccb09096fead55 326,328-329,336-339,342,348-349,353-360
+  s_1c08b47ac3792f::t_c93cb894992298 361-362
+src/modules/AudioEngine/useCases/livePlayback/admittedSendBusIds.ts
+  s_1c08b47ac3792f::t_979547cd6b42c8 2,12-15
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_1c08b47ac3792f::t_239a9d9e086659 74-76
+  s_1c08b47ac3792f::t_861cb50f6deffe 200,202-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8511c8ac0f84621a505df9a3ce7fafeee0434d4e",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
