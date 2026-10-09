@@ -633,9 +633,22 @@ export function gitCredentialHelperPath(helperDir: string): string {
     return resolve(helperDir, 'git-credential-github');
 }
 
+export function posixSingleQuote(text: string): string {
+    return `'${text.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * Git runs a helper that starts with an absolute path verbatim through the shell, so a directory
+ * holding a space splits the command. A leading `!` makes the quoted text the shell command instead
+ * (`git help credentials`); quoting without it would send the value to the `git credential-` rule.
+ */
+export function gitCredentialHelperValue(helperPath: string): string {
+    return `!${posixSingleQuote(helperPath)}`;
+}
+
 export function gitAuthenticatedArgs(token: string, helperDir: string, args: string[]): string[] {
     const helperPath = installGitCredentialHelper(helperDir, token);
-    return ['-c', 'credential.helper=', '-c', `credential.helper=${helperPath}`, ...args];
+    return ['-c', 'credential.helper=', '-c', `credential.helper=${gitCredentialHelperValue(helperPath)}`, ...args];
 }
 
 export function spawnCapture(

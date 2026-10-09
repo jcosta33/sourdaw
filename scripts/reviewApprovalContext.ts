@@ -4,6 +4,7 @@ import {
     REQUIRED_BASE_BRANCH,
     trustedChildExecutable,
     parseJson,
+    posixSingleQuote,
     type GhSession,
     type spawnCapture,
 } from './githubAppIdentity.ts';
@@ -68,13 +69,13 @@ export function readLiveApprovalContext(
 ): ReviewBundleContext {
     const gh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
     const git = (args: string[]) => capture('git', args, { cwd: primaryRoot, env: session.env });
-    const ghExecutable = trustedChildExecutable('gh', session.env).replaceAll("'", "'\\''");
+    const ghExecutable = posixSingleQuote(trustedChildExecutable('gh', session.env));
     const fetch = (shas: string[]) =>
         git([
             '-c',
             'credential.helper=',
             '-c',
-            `credential.helper=!'${ghExecutable}' auth git-credential`,
+            `credential.helper=!${ghExecutable} auth git-credential`,
             'fetch',
             '--no-write-fetch-head',
             GITHUB_HTTPS_REMOTE,
