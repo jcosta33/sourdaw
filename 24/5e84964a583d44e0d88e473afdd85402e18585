@@ -1,0 +1,29 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_1c08b47ac3792f::t_771bf7d98227e5 11999
+scripts/githubAppIdentity.ts
+  s_1c08b47ac3792f::t_39b64d5c3dc244 636-648,651
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_1c08b47ac3792f::t_dbfacfdaa4917d 1176-1206
+  s_1c08b47ac3792f::t_888e9e2137e54b 33,35
+  s_1c08b47ac3792f::t_835c9451b10f94 1153
+scripts/reviewApprovalContext.ts
+  s_1c08b47ac3792f::t_09d4303e4adc82 7
+  s_1c08b47ac3792f::t_175b81814ab9fe 72
+  s_1c08b47ac3792f::t_9cec4e703508b2 78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "245e84964a583d44e0d88e473afdd85402e18585",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
