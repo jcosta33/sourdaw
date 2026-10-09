@@ -52,6 +52,7 @@ import {
 } from './reviewPublicationRecoveryReceipt.ts';
 import {
     exactPublishedReview,
+    landedPublishedReview,
     inspectReviewPublicationRemote,
     type RecoveryInspection,
 } from './reviewPublicationRemoteInspection.ts';
@@ -491,7 +492,13 @@ function assertSingleExactLandedReview(
     if (
         inspection.reviews.length > 1 ||
         (inspection.reviews.length === 1 &&
-            !exactPublishedReview(inspection.reviews[0]!, document, expectedHead, expectedActorNodeId))
+            !landedPublishedReview(
+                inspection.reviews[0]!,
+                document,
+                expectedHead,
+                expectedActorNodeId,
+                inspection.head
+            ))
     ) {
         fail('review-publication recovery found ambiguous or non-exact remote review evidence');
     }
@@ -621,7 +628,7 @@ function assertReconciliationStable(
         second.head !== first.head ||
         second.reviews.length !== first.reviews.length ||
         (second.reviews.length === 1 &&
-            !exactPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId))
+            !landedPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId, second.head))
     ) {
         fail('review-publication recovery remote state changed during reconciliation');
     }

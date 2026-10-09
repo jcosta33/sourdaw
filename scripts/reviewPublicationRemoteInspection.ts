@@ -1,6 +1,8 @@
-import { REQUIRED_REPOSITORY, parseJson } from './githubAppIdentity.ts';
+import { REQUIRED_REPOSITORY, REVIEWER_BOT_NODE_ID, parseJson } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail } from './prContract.ts';
 import { EXPECTED_REVIEW_STATE, type ReviewDocument } from './publishReview.ts';
+
+const DISMISSED_REVIEW_STATE = 'DISMISSED';
 
 export type RemotePublishedReview = {
     id: number;
@@ -279,4 +281,32 @@ export function exactPublishedReview(
             comment.body === composeReviewCommentBody(expected)
         );
     });
+}
+
+/**
+ * Recovery only (#5046): the reviewer App's landed APPROVE that a later push dismissed. The live
+ * main ruleset dismisses stale approvals on push, so once the pull request head moved past the
+ * review's commit GitHub reports the approval as DISMISSED and `exactPublishedReview` refuses it.
+ * Every other field must still match exactly, and the state relaxes only for an APPROVE document,
+ * the reviewer App, and a head that moved: a DISMISSED review on an unmoved head, a dismissed
+ * REQUEST_CHANGES (a stale-review push never dismisses one), and any other actor stay refused.
+ * Normal publication and delivery never call this; they keep `exactPublishedReview`.
+ */
+export function landedPublishedReview(
+    review: RemotePublishedReview,
+    document: ReviewDocument,
+    head: string,
+    actorNodeId: string,
+    liveHead: string
+): boolean {
+    if (exactPublishedReview(review, document, head, actorNodeId)) {
+        return true;
+    }
+    return (
+        review.state === DISMISSED_REVIEW_STATE &&
+        document.event === 'APPROVE' &&
+        actorNodeId === REVIEWER_BOT_NODE_ID &&
+        liveHead !== head &&
+        exactPublishedReview({ ...review, state: EXPECTED_REVIEW_STATE.APPROVE }, document, head, actorNodeId)
+    );
 }
