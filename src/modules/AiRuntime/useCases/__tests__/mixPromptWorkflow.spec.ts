@@ -39,6 +39,7 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
@@ -563,6 +564,55 @@ describe('mix prompt workflow', () => {
         expectExactMix();
         expect(getTrack('track-drum-bus')).toEqual(protectedBefore);
         expect(getTrack('track-bass')).toEqual(unrelatedBefore);
+    });
+
+    // The thread the next chat request reads is the live stores', so a commit through the chat
+    // route, an ordinary undo and a redo must each show in it.
+    it('reads the confirmed commit into the thread, retired by an undo and standing again after a redo', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmationId = getConfirmationId();
+        expect(readChatThreadContext()?.pendingProposal?.commands).toHaveLength(4);
+
+        await confirmPendingChatActions({ confirmationId });
+
+        const committed = readChatThreadContext();
+        expect(committed?.pendingProposal).toBeNull();
+        expect(committed?.lastCommit).toMatchObject({
+            reverted: false,
+            commands: [
+                { name: 'setTrackGain' },
+                { name: 'setTrackPan' },
+                { name: 'setTrackPan' },
+                { name: 'muteTrack' },
+            ],
+        });
+        expect(committed?.lastCommit?.receiptIds).toHaveLength(1);
+
+        await undo();
+
+        expect(readChatThreadContext()?.lastCommit).toMatchObject({ reverted: true });
+
+        await redo();
+
+        expect(readChatThreadContext()?.lastCommit).toMatchObject({ reverted: false });
+    });
+
+    it('reads a direct commit into the thread through the run its chat message names', async () => {
+        setProviderPlan([{ name: 'setTrackGain', arguments: { trackId: 'track-room-mic', gain: 0.5 } }]);
+
+        await sendChatMessage('Set Room Mic gain to 50%, leaving the Drum Bus unchanged.');
+
+        expect(getTrack('track-room-mic')).toMatchObject({ gain: 0.5 });
+        expect(chatStore.value?.messages.some((message) => message.pendingActionConfirmationId)).toBe(false);
+        expect(readChatThreadContext()).toMatchObject({
+            requests: ['Set Room Mic gain to 50%, leaving the Drum Bus unchanged.'],
+            pendingProposal: null,
+            lastCommit: { reverted: false, commands: [{ name: 'setTrackGain' }] },
+        });
+
+        await undo();
+
+        expect(readChatThreadContext()?.lastCommit).toMatchObject({ reverted: true });
     });
 
     it('grounds the hosted OpenAI-compatible fixture to the same terminal result', async () => {

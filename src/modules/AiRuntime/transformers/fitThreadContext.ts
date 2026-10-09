@@ -96,7 +96,8 @@ function describeFit(thread: ThreadContext, fitted: FittedThread, bytes: number)
  * The `thread_context` section for one message profile, within that profile's byte cap. The cap
  * is filled in the order a refinement needs: the newest earlier request, then the pending
  * proposal's commands, then the last commit's commands and measured deltas, then the earlier
- * requests from newest back. An entry that does not fit is left out whole and counted; the entries
+ * requests from newest back. A command whose arguments do not fit is kept by name and label alone,
+ * marked `argumentsOmitted`. An entry that does not fit even so is left out whole and counted; the entries
  * after a command or delta that did not fit are still tried, but requests stop at the first that
  * does not fit, so what survives is always the newest run of turns and the oldest go first. Only
  * the section's ids and counts are always present, and their bounds keep them within either cap.
@@ -111,14 +112,22 @@ export function fitThreadContext(thread: ThreadContext, profile: LlmActionMessag
         fitted = candidate;
         return true;
     };
+    // A command whose arguments do not fit is still named: its name and label are what a refinement
+    // points at, and they cost a fraction of the arguments.
+    const tryAddCommand = (command: ThreadCommand, withCommand: (entry: ThreadCommand) => FittedThread): void => {
+        if (tryAdd(withCommand(command)) || command.arguments === undefined) {
+            return;
+        }
+        tryAdd(withCommand({ name: command.name, label: command.label, argumentsOmitted: true }));
+    };
     const newestFirstRequests = [...thread.requests].reverse();
     const newestRequest = newestFirstRequests[0];
     const requestsFit = newestRequest === undefined || tryAdd({ ...fitted, requests: [newestRequest] });
     for (const command of thread.pendingProposal?.commands ?? []) {
-        tryAdd({ ...fitted, pendingCommands: [...fitted.pendingCommands, command] });
+        tryAddCommand(command, (entry) => ({ ...fitted, pendingCommands: [...fitted.pendingCommands, entry] }));
     }
     for (const command of thread.lastCommit?.commands ?? []) {
-        tryAdd({ ...fitted, committedCommands: [...fitted.committedCommands, command] });
+        tryAddCommand(command, (entry) => ({ ...fitted, committedCommands: [...fitted.committedCommands, entry] }));
     }
     for (const delta of thread.lastCommit?.measuredDeltas ?? []) {
         tryAdd({ ...fitted, measuredDeltas: [...fitted.measuredDeltas, delta] });

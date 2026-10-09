@@ -13,10 +13,13 @@ type ThreadConfirmation = {
     assistantMessageId: string;
     status: ChatActionConfirmationStatus;
     supersededBy: string | null;
+    /** The batch's revert group, which is also its batch id: the id its receipt's work carries. */
+    groupId?: string;
     approvalSnapshot: {
         actions: ReadonlyArray<{ type: string; payload?: unknown }>;
         actionLabels: readonly string[];
         measuredPreview?: MeasuredPreview;
+        commandBatch?: { authority: { projectId: string } };
     };
 };
 
@@ -33,6 +36,10 @@ export type ThreadContextSources = {
     confirmations: readonly ThreadConfirmation[];
     runs: readonly ThreadRun[];
     actionGroups: readonly ThreadActionGroup[];
+    /** The open project's identity; a proposal or commit of any other project is not this thread's state. */
+    projectId: string;
+    /** The revert groups the undo history still holds applied: a group undone or never recorded there is not. */
+    appliedGroupIds: ReadonlySet<string>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -46,6 +53,10 @@ function readThreadWindow(messages: readonly ChatMessage[]): readonly ChatMessag
         return messages;
     }
     return messages.slice(requestIndexes[requestIndexes.length - THREAD_CONTEXT_MAX_TURNS]);
+}
+
+function isOpenProjectConfirmation(confirmation: ThreadConfirmation, sources: ThreadContextSources): boolean {
+    return confirmation.approvalSnapshot.commandBatch?.authority.projectId === sources.projectId;
 }
 
 function commandsOfSnapshot(snapshot: ThreadConfirmation['approvalSnapshot']): ThreadCommand[] {
@@ -70,37 +81,88 @@ function deltasOfPreview(preview: MeasuredPreview | undefined): ThreadMeasuredDe
     return deltas;
 }
 
-function commandsOfHistory(groups: readonly ThreadActionGroup[]): ThreadCommand[] {
-    return groups.flatMap((group) => group.actions.map((action) => ({ name: action.actionType, label: action.label })));
+/**
+ * Whether one batch's change is no longer standing: its history group was reverted, or the undo
+ * history no longer holds the group applied, as after an ordinary undo. A batch with no revert
+ * group (a runtime-only command) has nothing to undo and stands.
+ */
+function isUndone(receipt: AgentRunReceipt, sources: ThreadContextSources): boolean {
+    const groupId = receipt.revertGroupId;
+    if (groupId === null) {
+        return false;
+    }
+    const group = sources.actionGroups.find((candidate) => candidate.groupId === groupId);
+    return group?.reverted === true || !sources.appliedGroupIds.has(groupId);
+}
+
+/** A confirmed batch's commit: the receipt of that batch alone, never another batch of the same run. */
+function readConfirmedCommit(
+    confirmation: ThreadConfirmation,
+    sources: ThreadContextSources
+): ThreadContext['lastCommit'] {
+    if (!isOpenProjectConfirmation(confirmation, sources) || confirmation.groupId === undefined) {
+        return null;
+    }
+    const run = sources.runs.find((candidate) => candidate.runId === confirmation.runId);
+    const receipt = run?.receipts.find((candidate) => candidate.workId === confirmation.groupId);
+    if (receipt === undefined) {
+        return null;
+    }
+    return {
+        runId: confirmation.runId,
+        receiptIds: [receipt.receiptIdentity],
+        reverted: isUndone(receipt, sources),
+        commands: commandsOfSnapshot(confirmation.approvalSnapshot),
+        measuredDeltas: deltasOfPreview(confirmation.approvalSnapshot.measuredPreview),
+    };
 }
 
 /**
- * The commit a thread message reports, if it reports one: a confirmation that executed there, or
- * the run the message was written for. Either counts only once its run holds a receipt. A confirmed
- * commit states its commands from the approval it executed; a direct commit states them from the
- * history entry its receipt's revert group recorded.
+ * A direct commit's batch: the run's receipt no confirmation of the run claims, since every later
+ * batch of a run is proposed and receipted through its own confirmation. Its commands are the ones
+ * the history recorded under its revert group.
  */
-function readCommitAt(message: ChatMessage, sources: ThreadContextSources): ThreadContext['lastCommit'] {
-    const confirmation = sources.confirmations.find(
-        (candidate) => candidate.assistantMessageId === message.id && candidate.status === 'executed'
-    );
-    const runId = confirmation?.runId ?? message.agentRunId;
-    const run = runId === undefined ? undefined : sources.runs.find((candidate) => candidate.runId === runId);
-    if (run === undefined || run.receipts.length === 0) {
+function readDirectCommit(message: ChatMessage, sources: ThreadContextSources): ThreadContext['lastCommit'] {
+    if (message.agentRunId === undefined || message.projectId !== sources.projectId) {
         return null;
     }
-    const groups = run.receipts.flatMap((receipt) =>
-        sources.actionGroups.filter(
-            (group) => receipt.revertGroupId !== null && group.groupId === receipt.revertGroupId
+    const runId = message.agentRunId;
+    const confirmedBatchIds = new Set(
+        sources.confirmations.flatMap((candidate) =>
+            candidate.runId === runId && candidate.groupId !== undefined ? [candidate.groupId] : []
         )
     );
+    const run = sources.runs.find((candidate) => candidate.runId === runId);
+    const receipt = run?.receipts.find((candidate) => !confirmedBatchIds.has(candidate.workId));
+    if (receipt === undefined) {
+        return null;
+    }
+    const group = sources.actionGroups.find((candidate) => candidate.groupId === receipt.revertGroupId);
     return {
-        runId: run.runId,
-        receiptIds: run.receipts.map((receipt) => receipt.receiptIdentity),
-        reverted: groups.length > 0 && groups.every((group) => group.reverted),
-        commands: confirmation ? commandsOfSnapshot(confirmation.approvalSnapshot) : commandsOfHistory(groups),
-        measuredDeltas: deltasOfPreview(confirmation?.approvalSnapshot.measuredPreview),
+        runId,
+        receiptIds: [receipt.receiptIdentity],
+        reverted: isUndone(receipt, sources),
+        commands: (group?.actions ?? []).map((action) => ({ name: action.actionType, label: action.label })),
+        measuredDeltas: [],
     };
+}
+
+/**
+ * The commit a thread message reports, if it reports one. A message that carries a confirmation
+ * reports a commit only when that confirmation executed; a proposed, cancelled or superseded one
+ * reports none, whatever receipts its run holds from other batches. A message without one reports
+ * the direct commit of the run it was written for.
+ */
+function readCommitAt(message: ChatMessage, sources: ThreadContextSources): ThreadContext['lastCommit'] {
+    const confirmations = sources.confirmations.filter((candidate) => candidate.assistantMessageId === message.id);
+    if (confirmations.length === 0) {
+        return readDirectCommit(message, sources);
+    }
+    const executed = confirmations.find((candidate) => candidate.status === 'executed');
+    if (executed === undefined) {
+        return null;
+    }
+    return readConfirmedCommit(executed, sources);
 }
 
 function readPendingProposal(
@@ -112,7 +174,8 @@ function readPendingProposal(
             (candidate) =>
                 candidate.assistantMessageId === message.id &&
                 candidate.status === 'proposed' &&
-                candidate.supersededBy === null
+                candidate.supersededBy === null &&
+                isOpenProjectConfirmation(candidate, sources)
         );
         if (pending !== undefined) {
             return { runId: pending.runId, commands: commandsOfSnapshot(pending.approvalSnapshot) };
@@ -133,9 +196,10 @@ function readLastCommit(window: readonly ChatMessage[], sources: ThreadContextSo
 
 /**
  * What the chat thread holds for the request about to be planned, read from the thread's messages,
- * the pending confirmations, the agent runs and the AI action history. The request being planned is
- * not yet in the thread, so every request returned is an earlier one. A thread with no pending
- * proposal and no commit inside its window has no state, and returns `null`.
+ * the pending confirmations, the agent runs, the AI action history and the undo history, for the
+ * open project only. The request being planned is not yet in the thread, so every request returned
+ * is an earlier one. A thread with no pending proposal and no commit inside its window has no
+ * state, and returns `null`.
  */
 export function buildThreadContext(sources: ThreadContextSources): ThreadContext | null {
     const window = readThreadWindow(sources.messages);

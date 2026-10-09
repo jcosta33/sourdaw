@@ -1,5 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
-import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectIdentity,
+    captureProjectRevision,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
@@ -377,6 +381,7 @@ async function dispatchPromptPlan(input: {
             timestamp: Date.now(),
             isCommandAction: true,
             agentRunId: admission.runId,
+            projectId: captureProjectIdentity(),
         });
         const confirmationDescription = describePendingActionConfirmation({
             actions: result.actions,

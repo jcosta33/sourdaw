@@ -22,6 +22,8 @@ export type ChatMessage = {
     isCommandAction?: boolean;
     /** The agent run a command message reports, so the thread can name the run it committed. */
     agentRunId?: string;
+    /** The identity of the project that run planned against, so another project's commit never reads as this one's. */
+    projectId?: string;
     /** Pending prompt-action confirmation owned by AiRuntime. */
     pendingActionConfirmationId?: string;
     pendingActionConfirmationStatus?: ChatActionConfirmationStatus;

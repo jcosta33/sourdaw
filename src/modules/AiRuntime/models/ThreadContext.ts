@@ -25,6 +25,8 @@ export type ThreadCommand = {
     name: string;
     label: string;
     arguments?: Record<string, unknown>;
+    /** Set when the arguments did not fit the section's cap and the command is stated by name and label alone. */
+    argumentsOmitted?: true;
 };
 
 /** One `preview − baseline` figure a measured preview of the committed batch reported. */
