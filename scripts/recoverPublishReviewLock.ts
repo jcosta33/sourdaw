@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -13,7 +13,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
-import { reviewBundlePath } from './prepareReview.ts';
+import { readBundleGeneratedSet, reviewBundlePath } from './prepareReview.ts';
 import {
     parseReviewDocument,
     parseAcceptanceDocument,
@@ -21,6 +21,7 @@ import {
     reviewPublicationPayload,
     reviewPublicationPayloadDigest,
     type PublishReviewAuthentication,
+    type PublishReviewPort,
     type ReviewDocument,
 } from './publishReview.ts';
 import {
@@ -38,7 +39,15 @@ import {
     type PullRequestMutationLockOwnerFence,
 } from './pullRequestMutationLock.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
+import { recordRecoveredPublicationBindings } from './reviewPublicationBinding.ts';
 import { legacyReviewPublicationIncidents } from './reviewPublicationLegacyIncidents.ts';
+import {
+    adoptLandedRecoveryReceipt,
+    assertNoUnauthorizedLandedEvidence,
+    assertReconciliationStable,
+    assertSingleExactLandedReview,
+    recoveryPublicationPort,
+} from './reviewPublicationReceiptAdoption.ts';
 import {
     OPERATOR_ABSENT_ATTESTATION,
     hasExactRecoveryReceipt,
@@ -47,11 +56,7 @@ import {
     recoveryReceipt,
     type RecoveryReceipt,
 } from './reviewPublicationRecoveryReceipt.ts';
-import {
-    exactPublishedReview,
-    inspectReviewPublicationRemote,
-    type RecoveryInspection,
-} from './reviewPublicationRemoteInspection.ts';
+import { inspectReviewPublicationRemote, type RecoveryInspection } from './reviewPublicationRemoteInspection.ts';
 
 type ReviewPublicationLockOwner = Extract<PullRequestMutationLockOwner, { version: 3 }>;
 
@@ -76,6 +81,8 @@ export type RecoverPublishReviewDependencies = {
         session: GhSession,
         primaryRoot: string
     ) => RecoveryInspection;
+    /** The publication port a landed reviewer recovery binds the head's dossier through. */
+    publicationPort?: (session: GhSession, primaryRoot: string) => PublishReviewPort;
     isOwnerLive?: (owner: ReviewPublicationLockOwner) => boolean;
     currentOwnerFence?: () => PullRequestMutationLockOwnerFence;
     isLegacyOwnerLive?: (pid: number) => boolean;
@@ -142,7 +149,7 @@ function requireReviewPublicationOwner(
     return owner;
 }
 
-type AttestedRecoveryOwner = {
+export type AttestedRecoveryOwner = {
     originalOwner: PullRequestMutationLockOwner;
     journaledOwner: ReviewPublicationLockOwner | undefined;
     legacyIncident: LegacyReviewPublicationIncident | undefined;
@@ -163,7 +170,7 @@ export async function runRecoverPublishReviewLockCli(
     const number = parsed.number!;
     const ownerOid = parsed.owner!;
     const primaryRoot = dependencies.primaryRoot();
-    const replayed = recoverFromPersistedReceiptIfPossible(primaryRoot, number, ownerOid, dependencies);
+    const replayed = await recoverFromPersistedReceiptIfPossible(primaryRoot, number, ownerOid, dependencies);
     if (replayed !== undefined) {
         return replayed;
     }
@@ -171,26 +178,47 @@ export async function runRecoverPublishReviewLockCli(
     return reconcileRecoveredOwner(primaryRoot, number, ownerOid, attestation, dependencies);
 }
 
-function recoverFromPersistedReceiptIfPossible(
+async function recoverFromPersistedReceiptIfPossible(
     primaryRoot: string,
     number: number,
     ownerOid: string,
     dependencies: RecoverPublishReviewDependencies
-): number | undefined {
+): Promise<number | undefined> {
     const currentOid = readPullRequestMutationLockOid(primaryRoot, pullRequestMutationLockRef(number), number);
     const persistedReceipt = readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid);
-    if (currentOid === undefined) {
-        if (isMatchingRecoveryReceipt(persistedReceipt, number, ownerOid)) {
-            console.log(`review-publication-lock-already-recovered:${number}:${ownerOid}`);
-            return 0;
-        }
-        fail(`PR #${number} review-publication lock is absent without an exact recovery receipt`);
-    }
-    if (currentOid !== ownerOid) {
+    if (currentOid !== undefined && currentOid !== ownerOid) {
         replayAdoptedRecoveryReceipt(primaryRoot, number, ownerOid, currentOid, persistedReceipt, dependencies);
         return 0;
     }
-    return undefined;
+    if (currentOid !== undefined) {
+        return undefined;
+    }
+    if (!isMatchingRecoveryReceipt(persistedReceipt, number, ownerOid)) {
+        fail(`PR #${number} review-publication lock is absent without an exact recovery receipt`);
+    }
+    if (persistedReceipt.version !== 2 || persistedReceipt.outcome !== 'landed') {
+        console.log(`review-publication-lock-already-recovered:${number}:${ownerOid}`);
+        return 0;
+    }
+    const originalOwner = readPullRequestMutationLockOwner(primaryRoot, ownerOid, number);
+    if (!isReviewPublicationPullRequestMutationLockOwner(originalOwner)) {
+        console.log(`review-publication-lock-already-recovered:${number}:${ownerOid}`);
+        return 0;
+    }
+    const bundle = reviewBundlePath(primaryRoot, number, originalOwner.expectedHead);
+    const planExists = existsSync(join(bundle, 'risk-plan.json'));
+    if (!planExists && existsSync(join(bundle, 'dossier.json'))) {
+        fail(`review-publication recovery found a dossier without its risk plan at ${bundle}`);
+    }
+    if (!planExists && readBundleGeneratedSet(bundle)?.has('risk-plan.json') !== true) {
+        console.log(`review-publication-lock-already-recovered:${number}:${ownerOid}`);
+        return 0;
+    }
+    return adoptLandedRecoveryReceipt(primaryRoot, number, ownerOid, persistedReceipt, dependencies, {
+        attestOwner: attestRecoveryOwner,
+        readDocument: readRecoveryBundleDocument,
+        requireDigest: requireMatchingRecoveryDigest,
+    });
 }
 
 function replayAdoptedRecoveryReceipt(
@@ -441,57 +469,6 @@ function requireMatchingRecoveryDigest(
     return expectedDigest;
 }
 
-/**
- * The other sanctioned publication identity for a recovery: recovering the orchestrator's
- * acceptance treats a landed reviewer approval as authorized, and recovering the reviewer's
- * approval treats a landed orchestrator acceptance as authorized. The reviewer's approval and the
- * orchestrator's acceptance are independently written prose that can be byte-identical at one
- * head, and compact-v1 carries no evidence footer to disambiguate them — that overlap alone is
- * expected, not evidence of an unauthorized third party.
- */
-function sanctionedOtherPublicationActorNodeId(expectedActorNodeId: string): string {
-    if (expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID) {
-        return REVIEWER_BOT_NODE_ID;
-    }
-    if (expectedActorNodeId !== REVIEWER_BOT_NODE_ID) {
-        fail(`review-publication recovery attested an unexpected actor: ${expectedActorNodeId}`);
-    }
-    return ORCHESTRATOR_USER_NODE_ID;
-}
-
-function assertNoUnauthorizedLandedEvidence(
-    inspection: RecoveryInspection,
-    document: ReviewDocument,
-    expectedHead: string,
-    expectedActorNodeId: string
-): void {
-    const sanctionedOtherActorNodeId = sanctionedOtherPublicationActorNodeId(expectedActorNodeId);
-    if (
-        (inspection.otherActorReviews ?? []).some(
-            (review) =>
-                review.actorNodeId !== sanctionedOtherActorNodeId &&
-                exactPublishedReview(review, document, expectedHead, review.actorNodeId)
-        )
-    ) {
-        fail('review-publication recovery found unauthorized landed review evidence');
-    }
-}
-
-function assertSingleExactLandedReview(
-    inspection: RecoveryInspection,
-    document: ReviewDocument,
-    expectedHead: string,
-    expectedActorNodeId: string
-): void {
-    if (
-        inspection.reviews.length > 1 ||
-        (inspection.reviews.length === 1 &&
-            !exactPublishedReview(inspection.reviews[0]!, document, expectedHead, expectedActorNodeId))
-    ) {
-        fail('review-publication recovery found ambiguous or non-exact remote review evidence');
-    }
-}
-
 function adoptedRecoveryOwner(
     number: number,
     ownerOid: string,
@@ -566,6 +543,22 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
             'review-publication recovery cannot release an owner that attempted a remote mutation without landed evidence'
         );
     }
+    // The dossier binding precedes the receipt: a crash between them leaves the adopted owner, whose
+    // own recovery finds the binding already recorded and goes on to the receipt.
+    if (outcome === 'landed' && attestation.expectedActorNodeId === REVIEWER_BOT_NODE_ID) {
+        recordRecoveredPublicationBindings(
+            {
+                number,
+                head: attestation.expectedHead,
+                liveHead: second.head,
+                state: second.state,
+                reviewId: second.reviews[0]!.id,
+                actorNodeId: attestation.expectedActorNodeId,
+            },
+            document,
+            (dependencies.publicationPort ?? recoveryPublicationPort)(session, primaryRoot)
+        );
+    }
     const receipt = recoveryReceipt(
         number,
         ownerOid,
@@ -583,22 +576,4 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
     releasePullRequestMutationLockOwner(primaryRoot, number, adoptedOid);
     console.log(`review-publication-lock-recovered:${number}:${ownerOid}:${outcome}`);
     return 0;
-}
-
-function assertReconciliationStable(
-    first: RecoveryInspection,
-    second: RecoveryInspection,
-    document: ReviewDocument,
-    expectedHead: string,
-    expectedActorNodeId: string
-): void {
-    if (
-        second.state !== first.state ||
-        second.head !== first.head ||
-        second.reviews.length !== first.reviews.length ||
-        (second.reviews.length === 1 &&
-            !exactPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId))
-    ) {
-        fail('review-publication recovery remote state changed during reconciliation');
-    }
 }

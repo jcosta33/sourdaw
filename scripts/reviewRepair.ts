@@ -20,7 +20,9 @@
  * publication-safety contract instead of restating its rules.
  */
 
-import { canonicalJson, lastMarkerLine, parseMarkerPayload } from './canonicalRecord.ts';
+import { createHash } from 'node:crypto';
+
+import { canonicalJson, isMarkerLine, lastMarkerLine, parseMarkerPayload } from './canonicalRecord.ts';
 import { REVIEW_EVIDENCE_FIELD_MAX_BYTES, assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
 
@@ -29,8 +31,11 @@ export const REVIEW_REPAIR_SUMMARY_MAX_BYTES = 512;
 
 /** The marker token; the payload follows it on the same, final record line of the reply. */
 const REPAIR_MARKER = 'sourdaw-repair-v1';
+const CONFIRMATION_MARKER = 'sourdaw-repair-confirmation-v1';
+const REVIEW_REPAIR_CONFIRMATION_FORMAT = 'repair-confirmation-v1';
 const REPAIR_HEADER_PREFIX = 'Repair for ';
 const FORTY_LOWER_HEX = /^[0-9a-f]{40}$/u;
+const SIXTY_FOUR_LOWER_HEX = /^[0-9a-f]{64}$/u;
 const MAX_EVIDENCE_ENTRIES = 8;
 const SIDES: ReadonlySet<string> = new Set(['LEFT', 'RIGHT']);
 const EVIDENCE_FIELDS = ['observable', 'verification', 'observed'] as const;
@@ -38,6 +43,7 @@ const BLANK_CHECKED_FIELDS = ['thread', 'commit', 'head', 'summary'] as const;
 const HASH_FIELDS = ['commit', 'head'] as const;
 const RECORD_KEYS = ['format', 'pr', 'thread', 'finding', 'commit', 'summary', 'evidence', 'head'] as const;
 const FINDING_KEYS = ['commentId', 'path', 'line', 'side'] as const;
+const CONFIRMATION_KEYS = ['format', 'pr', 'thread', 'confirmationHead', 'recordDigest'] as const;
 
 /**
  * A repair summary is published like a dossier evidence value, so this contract's own tighter budget
@@ -77,6 +83,19 @@ export type ReviewRepairRecord = {
     head: string;
 };
 
+export type ReviewRepairConfirmation = {
+    format: 'repair-confirmation-v1';
+    pr: number;
+    thread: string;
+    confirmationHead: string;
+    recordDigest: string;
+};
+
+export type ParsedReviewRepairReply =
+    | { kind: 'repair'; record: ReviewRepairRecord }
+    | { kind: 'legacy-confirmation'; record: ReviewRepairRecord }
+    | { kind: 'confirmation'; confirmation: ReviewRepairConfirmation };
+
 export type ReviewRepairThreadState = {
     thread: string;
     resolved: boolean;
@@ -108,6 +127,11 @@ type RepairConfirmation = {
 
 function serializeReviewRepairRecord(record: ReviewRepairRecord): string {
     return canonicalJson(record);
+}
+
+/** SHA-256 over the one canonical byte representation of every V1 record field. */
+export function reviewRepairRecordDigest(record: ReviewRepairRecord): string {
+    return createHash('sha256').update(serializeReviewRepairRecord(record)).digest('hex');
 }
 
 function describeValue(value: unknown): string {
@@ -209,6 +233,54 @@ function readRecord(value: unknown): ReviewRepairRecord {
     };
 }
 
+function readReviewRepairConfirmation(value: unknown): ReviewRepairConfirmation {
+    if (!isRecord(value)) {
+        fail(`review repair confirmation marker payload must be a JSON object, found ${describeValue(value)}`);
+    }
+    assertExactKeys(value, CONFIRMATION_KEYS, 'confirmation');
+    const format = readLiteral(
+        'confirmation format',
+        value.format,
+        (candidate): candidate is typeof REVIEW_REPAIR_CONFIRMATION_FORMAT =>
+            candidate === REVIEW_REPAIR_CONFIRMATION_FORMAT,
+        REVIEW_REPAIR_CONFIRMATION_FORMAT
+    );
+    const pr = readNumber('confirmation pr', value.pr);
+    assertPositiveInteger('confirmation pr', pr);
+    const thread = readString('confirmation thread', value.thread);
+    if (thread.trim() === '') {
+        fail('review repair confirmation thread must not be blank');
+    }
+    const confirmationHead = readString('confirmation head', value.confirmationHead);
+    if (!FORTY_LOWER_HEX.test(confirmationHead)) {
+        fail(
+            `review repair confirmation head must be a full lowercase commit SHA, found ${describeValue(confirmationHead)}`
+        );
+    }
+    const recordDigest = readString('confirmation recordDigest', value.recordDigest);
+    if (!SIXTY_FOUR_LOWER_HEX.test(recordDigest)) {
+        fail(
+            `review repair confirmation recordDigest must be a lowercase SHA-256 digest, found ${describeValue(recordDigest)}`
+        );
+    }
+    return { format, pr, thread, confirmationHead, recordDigest };
+}
+
+function markerLines(body: string, marker: string): string[] {
+    return body
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => isMarkerLine(line, marker));
+}
+
+function parseReviewRepairConfirmationLine(line: string): ReviewRepairConfirmation {
+    const payload = line.slice(CONFIRMATION_MARKER.length).trim();
+    if (payload === '') {
+        fail('review repair confirmation marker line carries no record');
+    }
+    return readReviewRepairConfirmation(parseMarkerPayload(payload, 'review repair confirmation'));
+}
+
 export function renderReviewRepairReply(record: ReviewRepairRecord): string {
     const header = `${REPAIR_HEADER_PREFIX}${record.finding.path}:${record.finding.line} ${record.finding.side}`;
     return [header, record.summary, '', `${REPAIR_MARKER} ${serializeReviewRepairRecord(record)}`].join('\n');
@@ -224,6 +296,53 @@ export function parseReviewRepairReply(body: string): ReviewRepairRecord | undef
         fail('review repair marker line carries no record');
     }
     return readRecord(parseMarkerPayload(payload, 'review repair'));
+}
+
+/**
+ * Builds the compact reviewer marker. The record itself is never copied into reviewer content; its
+ * digest binds the confirmation to the exact canonical author record, including evidence and summary.
+ */
+export function renderReviewRepairConfirmationMarker(record: ReviewRepairRecord, confirmationHead: string): string {
+    const confirmation: ReviewRepairConfirmation = {
+        format: REVIEW_REPAIR_CONFIRMATION_FORMAT,
+        pr: record.pr,
+        thread: record.thread,
+        confirmationHead,
+        recordDigest: reviewRepairRecordDigest(record),
+    };
+    return `${CONFIRMATION_MARKER} ${canonicalJson(confirmation)}`;
+}
+
+/**
+ * Parse only after the caller has admitted the immutable actor for the supplied role. Author replies
+ * admit only V1 repairs. Reviewer replies admit the historical full V1 confirmation or the compact
+ * confirmation marker, and refuse multiple admitted marker lines rather than selecting one by order.
+ */
+export function parseReviewRepairReplyForRole(
+    body: string,
+    role: 'author' | 'reviewer'
+): ParsedReviewRepairReply | undefined {
+    if (role === 'author') {
+        const record = parseReviewRepairReply(body);
+        return record === undefined ? undefined : { kind: 'repair', record };
+    }
+    const repairs = markerLines(body, REPAIR_MARKER);
+    const confirmations = markerLines(body, CONFIRMATION_MARKER);
+    if (repairs.length + confirmations.length > 1) {
+        fail('review repair reviewer reply carries ambiguous or duplicate confirmation markers');
+    }
+    if (repairs.length === 1) {
+        const record = parseReviewRepairReply(body);
+        if (record === undefined) {
+            fail('review repair reviewer marker could not be read');
+        }
+        return { kind: 'legacy-confirmation', record };
+    }
+    const confirmationLine = confirmations[0];
+    if (confirmationLine === undefined) {
+        return undefined;
+    }
+    return { kind: 'confirmation', confirmation: parseReviewRepairConfirmationLine(confirmationLine) };
 }
 
 function assertPositiveInteger(label: string, value: number): void {
@@ -389,10 +508,11 @@ function authorRepairRecords(
         if (reply.authorNodeId !== authorNodeId) {
             continue;
         }
-        const record = parseReviewRepairReply(reply.body);
-        if (record === undefined) {
+        const parsed = parseReviewRepairReplyForRole(reply.body, 'author');
+        if (parsed === undefined || parsed.kind !== 'repair') {
             continue;
         }
+        const record = parsed.record;
         const key = serializeReviewRepairRecord(record);
         if (seen.has(key)) {
             continue;
@@ -463,36 +583,66 @@ function confirmationRefusal(
 }
 
 /**
- * A confirmation names exactly the record it accepted. A reviewer reply that parses to any other
- * record means the author rewrote the repair after the confirmation landed, so resolving would accept
- * a record no reviewer read; refusing keeps the thread open for a fresh confirmation. Two byte-identical
- * confirmations are refused too: a rerun may skip a single already-posted reply, but resolving a
- * duplicated one would settle a thread that carries two confirmations for the same record.
+ * A reviewer confirmation must name the exact selected V1 record. A digest mismatch, incompatible
+ * pull request or thread, or invalid confirmation-head ancestry means the author changed the record or
+ * the confirmation does not belong to this live finding. Two admitted confirmations are refused too:
+ * a rerun may skip one already-posted reply, but resolving duplicates would settle twice-confirmed state.
  */
-function reviewerConfirmationRefusal(
+export type ReviewerConfirmationState = { alreadyPosted: boolean; refusal?: string };
+type ReviewerConfirmationContext = Pick<RepairConfirmation, 'pr' | 'head' | 'isAncestor'> & {
+    authorReplyId: number;
+};
+
+/**
+ * Shared selection/replay inspection for admitted reviewer confirmation markers. A single matching
+ * legacy or compact marker permits replay; every other admitted marker must bind this exact source
+ * record and an ancestry chain from its recorded head through the confirmation head to the live head.
+ */
+export function reviewerConfirmationState(
     thread: ReviewRepairThreadState,
     record: ReviewRepairRecord,
-    reviewerNodeId: string
-): string | undefined {
-    const accepted = renderReviewRepairReply(record);
+    reviewerNodeId: string,
+    confirmation: ReviewerConfirmationContext
+): ReviewerConfirmationState {
+    const accepted = serializeReviewRepairRecord(record);
+    const acceptedDigest = reviewRepairRecordDigest(record);
     let confirmations = 0;
     for (const reply of thread.replies) {
         if (reply.authorNodeId !== reviewerNodeId) {
             continue;
         }
-        const posted = parseReviewRepairReply(reply.body);
-        if (posted === undefined) {
+        const parsed = parseReviewRepairReplyForRole(reply.body, 'reviewer');
+        if (parsed === undefined) {
             continue;
         }
-        if (renderReviewRepairReply(posted) !== accepted) {
-            return DIFFERENT_RECORD_CONFIRMATION_REFUSAL;
+        if (parsed.kind === 'legacy-confirmation') {
+            if (serializeReviewRepairRecord(parsed.record) !== accepted) {
+                return { alreadyPosted: false, refusal: DIFFERENT_RECORD_CONFIRMATION_REFUSAL };
+            }
+        } else if (parsed.kind === 'confirmation') {
+            const posted = parsed.confirmation;
+            if (
+                posted.pr !== confirmation.pr ||
+                posted.thread !== thread.thread ||
+                posted.recordDigest !== acceptedDigest ||
+                !confirmation.isAncestor(record.head, posted.confirmationHead) ||
+                !confirmation.isAncestor(posted.confirmationHead, confirmation.head)
+            ) {
+                return { alreadyPosted: false, refusal: DIFFERENT_RECORD_CONFIRMATION_REFUSAL };
+            }
+        }
+        if (reply.id <= confirmation.authorReplyId) {
+            return {
+                alreadyPosted: false,
+                refusal: 'reviewer confirmation does not follow the selected author repair',
+            };
         }
         confirmations += 1;
     }
     if (confirmations > 1) {
-        return `thread already carries ${confirmations} identical confirmations`;
+        return { alreadyPosted: false, refusal: `thread already carries ${confirmations} identical confirmations` };
     }
-    return undefined;
+    return { alreadyPosted: confirmations === 1 };
 }
 
 export function selectEligibleRepairs(input: {
@@ -525,7 +675,10 @@ export function selectEligibleRepairs(input: {
         assertReviewRepairRecord(found.candidate.record);
         const reason =
             confirmationRefusal(input, thread, found.candidate.record) ??
-            reviewerConfirmationRefusal(thread, found.candidate.record, input.reviewerNodeId);
+            reviewerConfirmationState(thread, found.candidate.record, input.reviewerNodeId, {
+                ...input,
+                authorReplyId: found.candidate.replyId,
+            }).refusal;
         if (reason !== undefined) {
             refused.push({ thread: thread.thread, reason });
             continue;

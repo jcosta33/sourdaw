@@ -1,5 +1,6 @@
 {
   "workflowFileInventory": [
+    "cargo-dependency-seed.yml",
     "health-gates.yml",
     "heavy-gates.yml",
     "nightly.yml",
@@ -64,6 +65,81 @@
             "with": {
               "name": "pr-validation-scope",
               "path": "pr-validation-scope.json",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
+      "selection-shadow": {
+        "name": "E2E selection shadow",
+        "needs": "scope",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "steps": [
+          {
+            "name": "Checkout candidate head",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.head.sha }}",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Checkout immutable integration commit",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "path": "shadow-integration",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Download authoritative scope",
+            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "with": {
+              "name": "pr-validation-scope",
+              "path": "shadow-scope"
+            }
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Measure shadow selection",
+            "env": {
+              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "INTEGRATION_SHA": "${{ github.sha }}",
+              "INTEGRATION_ROOT": "shadow-integration"
+            },
+            "run": "node scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json"
+          },
+          {
+            "name": "Upload shadow measurement",
+            "if": "${{ always() }}",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "e2e-selection-shadow",
+              "path": "e2e-selection-shadow.json",
               "if-no-files-found": "error",
               "retention-days": 7
             }
@@ -175,7 +251,7 @@
         "name": "Affected end-to-end ${{ matrix.id }}",
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 60,
+        "timeout-minutes": 75,
         "strategy": {
           "fail-fast": false,
           "matrix": "${{ fromJSON(inputs.matrix) }}"
@@ -211,7 +287,7 @@
           {
             "name": "Install Playwright browsers",
             "timeout-minutes": 35,
-            "run": "for attempt in 1 2 3; do\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if pnpm exits while an installer child survives.\n  if timeout --signal=KILL 10m pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if pnpm exits while an installer child survives,\n  # so the browser download is killed outright; apt gets a TERM first.\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -336,6 +412,7 @@
           },
           {
             "name": "Install Chromium",
+            "timeout-minutes": 5,
             "run": "pnpm exec playwright install chromium"
           },
           {
@@ -762,7 +839,7 @@
         "needs": "decide",
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 20,
+        "timeout-minutes": 45,
         "steps": [
           {
             "name": "Checkout",
@@ -789,7 +866,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run offline smoke set",
@@ -863,7 +940,8 @@
           {
             "name": "Install ALSA development headers",
             "shell": "bash",
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo apt-get update && sudo apt-get install -y libasound2-dev; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "timeout-minutes": 30,
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -874,6 +952,15 @@
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
           },
           {
+            "name": "Cache Cargo dependencies",
+            "id": "cargo-deps",
+            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "with": {
+              "path": "~/.cargo/registry\n~/.cargo/git\n",
+              "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
+            }
+          },
+          {
             "name": "Install server dependencies",
             "working-directory": "server",
             "run": "npm ci"
@@ -881,7 +968,8 @@
           {
             "name": "Server and Rust workspace health gates",
             "env": {
-              "CARGO_HTTP_MULTIPLEXING": "false"
+              "CARGO_HTTP_MULTIPLEXING": "false",
+              "CARGO_NET_OFFLINE": "${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}"
             },
             "run": "pnpm health:server:full"
           }
@@ -904,14 +992,31 @@
           },
           {
             "name": "Cache cargo build",
+            "id": "rust-cache",
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
           },
           {
+            "name": "Cache the cargo registry index",
+            "id": "cargo-index",
+            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "with": {
+              "path": "~/.cargo/registry/index",
+              "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
+              "restore-keys": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
+            }
+          },
+          {
             "name": "Test the audio crates",
+            "env": {
+              "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+            },
             "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
           },
           {
             "name": "Test the native crate",
+            "env": {
+              "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+            },
             "run": "cargo test --package sourdaw-native"
           }
         ]
@@ -933,10 +1038,24 @@
           },
           {
             "name": "Cache cargo build",
+            "id": "rust-cache",
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
           },
           {
+            "name": "Cache the cargo registry index",
+            "id": "cargo-index",
+            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "with": {
+              "path": "~/.cargo/registry/index",
+              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
+              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
+            }
+          },
+          {
             "name": "Test the audio crates",
+            "env": {
+              "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+            },
             "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
           }
         ]
@@ -958,7 +1077,18 @@
           },
           {
             "name": "Cache cargo build",
+            "id": "rust-cache",
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Cache the cargo registry index",
+            "id": "cargo-index",
+            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "with": {
+              "path": "~/.cargo/registry/index",
+              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
+              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
+            }
           },
           {
             "name": "Set up pnpm",
@@ -1448,7 +1578,9 @@
           },
           {
             "name": "Install ALSA development headers",
-            "run": "sudo apt-get update && sudo apt-get install -y libasound2-dev"
+            "shell": "bash",
+            "timeout-minutes": 30,
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1644,7 +1776,7 @@
         "needs": "decide",
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 60,
+        "timeout-minutes": 75,
         "strategy": {
           "fail-fast": false,
           "matrix": {
@@ -1694,7 +1826,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -1757,6 +1889,7 @@
           },
           {
             "name": "Install Chromium",
+            "timeout-minutes": 5,
             "run": "pnpm exec playwright install chromium"
           },
           {
@@ -2058,6 +2191,7 @@
           "native-windows",
           "desktop-measure",
           "e2e",
+          "e2e-report",
           "browser-ai-webgpu",
           "codeql",
           "secrets",
@@ -2157,7 +2291,7 @@
       "measure": {
         "name": "Measure browser audio quanta",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 60,
+        "timeout-minutes": 30,
         "env": {
           "MEASUREMENT_REPOSITORY": "${{ github.repository }}",
           "MEASUREMENT_PR": "${{ github.event.pull_request.number }}",
@@ -2192,7 +2326,8 @@
           },
           {
             "name": "Install Google Chrome",
-            "run": "pnpm exec playwright install chrome"
+            "timeout-minutes": 20,
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 5m node_modules/.bin/playwright install --force chrome; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Verify committed WASM artifacts",
@@ -2480,6 +2615,106 @@
               "COVERAGE_LINE": "${{ needs.assess.outputs.coverage }}"
             },
             "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nreport=\"$report_directory/scan.json\"\nwithheld_list=\"$report_directory/withheld-notices.txt\"\n# Three absences, told apart by what the fetch proved. A missing or\n# empty report with a failed fetch is either a retrieval failure (the\n# line exists, so this run published one) or a run that published\n# nothing; a missing or empty report with a successful fetch disproves\n# \"published nothing\" and is a report that cannot be read.\nif [ ! -s \"$report\" ]; then\n  if [ \"$DOWNLOAD_OUTCOME\" = 'failure' ]; then\n    if [ -n \"$COVERAGE_LINE\" ]; then\n      printf '::notice title=Jev coverage::The advisory report could not be retrieved: this run published one, but the artifact download failed.\\n'\n    else\n      printf '::notice title=Jev coverage::No coverage was reported: the assessment published no artifact or report for this run.\\n'\n    fi\n    exit 0\n  fi\n  printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\\n'\n  exit 0\nfi\n\n# One annotation per distinct withheld path-and-reason pair, in the\n# order the report lists them. The producer emits one identical entry\n# per over-budget region of a file, so the pairs are deduplicated while\n# every distinct reason is kept: emitting the repeats would spend the\n# budget on the same notice and hide a distinct reason, and sorting the\n# survivors would let the ten-pair budget fall on alphabet rather than\n# on the report's own order. The `file=` property is identity-bearing,\n# so it is escaped exactly and never folded: folding a control\n# character into a space would annotate two paths under one name and\n# attribute a reason to the wrong file. The property escapes `%`, a\n# carriage return, a newline, `:`, and `,`; the displayed text escapes\n# `%`, a carriage return, and a newline.\nif ! jq -r '\n  def esc_data: gsub(\"%\"; \"%25\") | gsub(\"\\r\"; \"%0D\") | gsub(\"\\n\"; \"%0A\");\n  def esc_prop: esc_data | gsub(\":\"; \"%3A\") | gsub(\",\"; \"%2C\");\n  [.scope.unassessed[], .scope.truncated[]]\n  | reduce .[] as $entry (\n      { seen: {}, distinct: [] };\n      ($entry | [.path, .reason] | tojson) as $key\n      | if .seen[$key] then . else .seen[$key] = true | .distinct += [$entry] end\n    )\n  | .distinct[]\n  | \"::notice file=\\(.path | esc_prop),line=1::\\(.path | esc_data): \\(.reason | esc_data)\"\n' \"$report\" > \"$withheld_list\" 2>/dev/null; then\n  printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\\n'\n  exit 0\nfi\n\n# At most ten annotations, one per distinct pair, then one notice\n# counting the pairs that were not annotated.\nwithheld=0\nannotated=0\nwhile IFS= read -r notice; do\n  withheld=$((withheld + 1))\n  if [ \"$annotated\" -lt 10 ]; then\n    printf '%s\\n' \"$notice\"\n    annotated=$((annotated + 1))\n  fi\ndone < \"$withheld_list\"\n\nprintf '::notice title=Jev coverage::%s further distinct path-and-reason pairs were not annotated.\\n' \"$((withheld - annotated))\"\n"
+          }
+        ]
+      }
+    }
+  },
+  "cargo-dependency-seed.yml": {
+    "name": "Cargo dependency seed",
+    "on": {
+      "push": {
+        "branches": [
+          "main"
+        ],
+        "paths": [
+          ".github/workflows/cargo-dependency-seed.yml",
+          "Cargo.lock",
+          "**/Cargo.toml",
+          ".cargo/config.toml",
+          "rust-toolchain.toml"
+        ]
+      }
+    },
+    "permissions": {
+      "contents": "read"
+    },
+    "jobs": {
+      "rust": {
+        "name": "Seed Linux Rust dependencies",
+        "if": "github.ref == 'refs/heads/main'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 60,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Install ALSA development headers",
+            "shell": "bash",
+            "timeout-minutes": 30,
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Cache Cargo dependencies",
+            "id": "cargo-deps",
+            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "with": {
+              "path": "~/.cargo/registry\n~/.cargo/git\n",
+              "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
+            }
+          },
+          {
+            "name": "Rust workspace health gates",
+            "run": "sh scripts/health-gates-rust.sh"
+          }
+        ]
+      },
+      "native-macos": {
+        "name": "Seed macOS native index",
+        "if": "github.ref == 'refs/heads/main'",
+        "runs-on": "macos-latest",
+        "timeout-minutes": 60,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "id": "rust-cache",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Cache the cargo registry index",
+            "id": "cargo-index",
+            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "with": {
+              "path": "~/.cargo/registry/index",
+              "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
+              "restore-keys": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
+            }
+          },
+          {
+            "name": "Test the audio crates",
+            "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
+          },
+          {
+            "name": "Test the native crate",
+            "run": "cargo test --package sourdaw-native"
           }
         ]
       }

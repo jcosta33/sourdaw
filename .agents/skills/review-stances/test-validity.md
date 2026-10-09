@@ -6,6 +6,47 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-09 — authority tests fixed PR state for the whole run (introduced by PR #4586)
+
+PR #4586 introduced the authority append with a publication fixture whose PR reader always
+returned `OPEN` at the same head. Its recorded test-validity stance asked whether reverting the
+writer would stay green, but did not mutate PR state after approval inspection. PR #5032 extended the
+same binder to recovery; its moved-head fixture changed the head before reconciliation and held
+it constant through the two inspections and later dossier write.
+
+Probe that would have caught it: make the first two inspections return the same open head, then
+return merged, closed, or another head on the next PR read. Assert the publication binds without
+`delivery-authorized`, replay is byte-identical, and no second POST occurs. Revert only the live
+PR-state check and require these cases to fail; retain an open current-head approval control.
+
+### 2026-10-09 — cold navigation expired before its warmup allowance (introduced by PR #3222)
+
+The E2E global warmup gave the launch overlay 180 seconds but left the preceding `page.goto('/')`
+at Playwright's default 30 seconds. On a cold review server, navigation timed out before any selected
+spec could start. The slow load's underlying cause was not established.
+
+Blind spot: review checked the overlay wait's allowance without tracing every awaited operation that
+must complete before it. Probe the real warmup entry with a controlled monotonic clock: a 35-second
+navigation followed by a prompt overlay must pass under one 180-second deadline, while a hung
+navigation or late overlay must fail within that same deadline. Assert explicit positive remaining
+timeouts at both Playwright calls, identity validation before browser launch, and browser closure on
+success and failure. A controlled unit probe alone does not prove hosted browser-spec admission.
+
+### 2026-10-08 — a shutdown timing assertion measured more than its budget (introduced by PR #2976)
+
+A native CI run for PR #5064 completed plugin reclamation but failed the test's `elapsed < 250 ms`
+assertion at 252.790917 ms. The production budget charges only measured sleep during scheduler
+polling; the test timed the whole synchronous shutdown cascade and a separate releasing thread.
+The source of that run's extra wall time is unknown.
+
+Blind spot: a wall-clock bound on a larger operation cannot distinguish a slow unrelated cascade
+step or thread scheduling from a polling regression. Probe the private wait seam with a retained
+runtime: require the first requested poll to be exactly 2 ms, release the runtime in that callback,
+return a synthetic 252.790917 ms wait, and require reclamation with no second wait. Hold the runtime
+through a synthetic 502 ms wait in a companion case and require one poll plus an abandoned report.
+Mutating the request to the full budget, deferring the sweep until the end, or charging requested
+instead of measured time must turn the respective case red.
+
 ### 2026-10-07 — a retryable Playwright install could hang forever (introduced by PR #4228; tracked by #5047)
 
 PR #4228 added three attempts and backoff around `playwright install --with-deps`, but only a returned
@@ -21,6 +62,17 @@ attempts reach the final nonzero exit. Separately pin each real attempt and the 
 attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Standing probes
+
+- An aggregation test claiming a stored report route must use the production reader's filename and
+  assert that both input records were admitted. An ignored artifact can make a boundary control pass
+  while never reaching the claimed addition. For TypeSafe usage, prove stored scan plus verification
+  and evaluation-reader outcomes independently: exact `MAX_SAFE_INTEGER + 0` succeeds and the next
+  count refuses before record output. PR #4933 introduced the unchecked measurement addition; no
+  historical reviewer stance or tier is established by this lesson.
+- An SDK request test must execute in the server environment and capture the installed SDK's actual
+  fetch body. A browser-environment refusal or a caller-only serialization assertion proves neither
+  the exact wire string nor response-body timeout and cancellation. Preserve failed harness attempts
+  separately from qualified behavior reproductions.
 
 - For a queued MIDI expression test, cover both sides of the note lifetime: note-on before each member gesture, and every admitted gesture before note-off and the next same-channel note. Assert the recorded note fields through the byte dispatcher; a mocked handler call order that ends before release can pass while the curve is lost (PR #805).
 
@@ -100,6 +152,14 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-09 — a newly declared "every spec owes the first-paint bound" left literal 15 s and 30 s waits in place (escaped via commit `04c28be0f8`)
+
+Commit `04c28be0f8` declared in `tests/e2e/e2eUtils.ts` that every spec waiting on the launch overlay itself owes `LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS`, but did not sweep the specs that already waited with a literal bound; the 15 s in `promptBarCancelRecentTestId.spec.ts` came from commit `d78dac728a`. It surfaced only when two Playwright workers per runner added CPU contention and a cold boot was still on its loading overlay at 15 s.
+
+Blind spot: a contract written as prose ("every X owes Y") binds sites the diff never touches, and a green suite on the declaring head cannot show them, because the literals were sufficient until contention changed boot time.
+
+Probe that would have caught it: when a change declares an "every X owes Y" contract, grep every existing X, run a census of them against Y, and land the census as a spec that reads the real files and cannot pass by matching nothing.
 
 ### 2026-09-28 — one aggregate deadline hid cumulative closure work (CI run 36366521880, job 108754137864; introduced by PR #4775)
 
@@ -237,6 +297,18 @@ and cache counters to survive without being added twice.
 Blind spot: the stance asked what each assertion would do under a mutation of the logic under test, but treated one spawned end-to-end case as covering the command without checking which branch it took — that tree had nothing to restamp, so every write-path mutation stayed green — and it never asked what the spec's own imports do to the tree.
 
 Probe that would have caught it: for a spec that imports the module it tests, import it against a deliberately drifted fixture and require every tracked file to be unchanged; then require the command's happy path to be exercised on a drifted fixture and delete the write, retarget the path, drop the refusal call and remove the printing, requiring each mutation to fail the suite.
+
+### 2026-10-09 — a landed recovery receipt left a modern dossier unbound (issue #5111)
+
+An absent-lock replay returned success from its receipt before authenticating or inspecting the
+landed review. The fresh-owner recovery test exercised a different branch, so it did not prove
+historical receipt adoption or native publication replay.
+
+Probe that would have caught it: start with an exact landed version-2 receipt, no lock, and a modern
+unbound dossier; require two stable exact remote reads, one append-only publication binding, and a
+second recovery plus native publish replay with no new POST. Restore the old early return and require
+the owning assertion to fail. On a merged PR, require publication binding without retrospective
+delivery authorization; on an open current approval, require zero unresolved threads for authority.
 
 ### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
 
@@ -644,3 +716,27 @@ real dispatcher, and assert notes plus both history stacks stay unchanged. One r
 cannot carry the family-wide claim. For replay, duplicate the clip ID on the same track and on another
 track after commit for undo, then again after undo for redo; assert the live notes remain exact and the
 blocked history entry stays on its original stack.
+
+## Escape: opaque Bearer fixtures missed complete caller admission
+
+[PR #4491](https://github.com/jcosta33/sourdaw/pull/4491) introduced the screen and
+adapter in `9effe3689c72384f30f60971ca40f26a44c0a355`. Issue #5144 exposed a
+value-bearing HTTP scheme outside vendor prefixes and secret assignments. Synthetic offline
+SDK/CLI captures established admission into request bytes, not real credential disclosure; the
+historical stance name, prompt and tier are unestablished.
+
+Compose opaque fixtures at runtime and exercise actual scan, verify, complete request and stance
+callers. Assert refusal unconditionally together with zero cache read/write, budget reservation,
+recording/provider invocation and delegated fetch; an empty answer or caught provider error is
+insufficient. Use a schema-valid would-hit cache, a later unsafe candidate after an admitted
+placeholder, repeated calls, ordinary controls and clean independent units. Preserve the separate
+serialized-only fixture. On a committed head, removing the recognizer must redden the caller cases,
+and bypassing preparation before cache must redden the would-hit-cache cases.
+
+PR #5156's unlanded comment/array repair extended a source fixture to raw line comments,
+but its scan hunk still ended at line one. The paired value was on a later line, so the
+fixture screened a different input and could not establish the intended withholding.
+Derive the fixture's admitted range from the complete multiline binding; preserve an
+independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
+only the committed recognizer is reverted. A full-source screen assertion does not prove
+which region the real scan caller admitted.

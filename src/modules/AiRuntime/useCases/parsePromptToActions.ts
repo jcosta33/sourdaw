@@ -58,6 +58,7 @@ import {
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
+    ANSWER_RESPOND_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
@@ -522,6 +523,7 @@ const planPromptIntent = inject({ logger })(
                     WORKFLOW_CAPABILITY_TOOL_NAME,
                     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
                     COMMAND_BATCH_DECLINE_TOOL_NAME,
+                    ANSWER_RESPOND_TOOL_NAME,
                     RENDER_REQUEST_TOOL_NAME,
                     ANALYSIS_REQUEST_TOOL_NAME,
                     ...WORKFLOW_ACTION_TOOL_NAMES,
@@ -720,7 +722,8 @@ const planPromptIntent = inject({ logger })(
                             // A hosted turn repeats the run's first message unchanged and carries the
                             // receipts as its own earlier turns; only a local backend reads the text
                             // form above, which restates them inside the prompt.
-                            { firstUserMessage: initialPlanningContext.message, history, budgetNote }
+                            { firstUserMessage: initialPlanningContext.message, history, budgetNote },
+                            planningContext.localMessage
                         );
                     },
                 });
@@ -786,6 +789,18 @@ const planPromptIntent = inject({ logger })(
                         ...creativeAuthorityFields,
                         ...(outcome.kind === 'denied' ? { rejectionReason: outcome.reason } : {}),
                         planningOutcome: outcome,
+                    };
+                }
+                // The loop admitted the answer only as the sole call of its turn, with every cited
+                // receipt resolved, so it reaches the caller as a reply with no batch beside it.
+                if (planningOutcome.answer) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
+                        planningOutcome: { kind: 'answer', ...planningOutcome.answer },
                     };
                 }
                 const providerProposal =

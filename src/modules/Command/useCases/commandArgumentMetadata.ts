@@ -6,6 +6,8 @@ import {
     type CommandTimeReference,
 } from '../models/VersionedCommandEnvelope';
 
+import { collectCommandIdReferences } from './collectCommandIdReferences';
+
 type CommandArgumentMetadata = {
     objectReferences: CommandObjectReference[];
     parameterUnits: CommandParameterUnit[];
@@ -73,6 +75,16 @@ function getTimeReference(argument: string, value: number): CommandTimeReference
     return null;
 }
 
+/**
+ * A parameter id names a control on a track or device (`gain`, `pan`, a device parameter, or
+ * `<deviceId>:<paramId>`), not a project object, so a batch preflight has nothing to find under it.
+ * Bare `paramId` stays a reference: setDeviceParameter declares it a device-parameter target, which
+ * the preflight resolves against the device's parameter values.
+ */
+function namesParameter(argument: string): boolean {
+    return /^(?:parameter|[a-z]\w*Param(?:eter)?)Ids?$/.test(getLeafName(argument));
+}
+
 function appendValueMetadata(metadata: CommandArgumentMetadata, value: unknown, path: string): void {
     if (Array.isArray(value)) {
         for (const [index, item] of value.entries()) {
@@ -87,13 +99,6 @@ function appendValueMetadata(metadata: CommandArgumentMetadata, value: unknown, 
         return;
     }
     const leaf = getLeafName(path);
-    if (typeof value === 'string' && value !== '' && (leaf === 'id' || leaf.endsWith('Id') || leaf.endsWith('Ids'))) {
-        metadata.objectReferences.push({
-            argument: path,
-            id: value,
-            scope: value.startsWith('$') ? 'batch-local' : 'stable',
-        });
-    }
     if (typeof value === 'number' && Number.isFinite(value) && leaf !== 'seed') {
         metadata.parameterUnits.push({ argument: path, unit: getUnit(path) });
         const timeReference = getTimeReference(path, value);
@@ -108,7 +113,9 @@ export function compileCommandArgumentMetadata(
     operation?: string
 ): CommandArgumentMetadata {
     const metadata: CommandArgumentMetadata = {
-        objectReferences: [],
+        objectReferences: collectCommandIdReferences(argumentsValue).filter(
+            (reference) => !namesParameter(reference.argument)
+        ),
         parameterUnits: [],
         time: [],
     };

@@ -22,6 +22,18 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
+
+PR #4586 first appended `delivery-authorized` after reading review state without a final PR state
+and head read. Its recorded stances attacked wrong digest or head binding and unsolicited or
+duplicate authorization, but did not admit a late PR state transition. PR #5032 extended that
+vulnerable binder to recovered publications; its recovery-authority stance and moved-head probe
+covered a head already moved at inspection, not a merge, close, or move after both inspections.
+
+Probe that would have caught it: hold the landed review exact across both inspections, change the
+PR state or head before the final authorization read, and require a publication-only dossier with
+zero review POSTs. Keep an open, unchanged PR as the positive authorization control.
+
 ### 2026-09-09 — hosted WASM control and source revisions were assumed identical (introduced via PR #4057)
 
 PR #4057 validated artifact provenance when the workflow helper and checked-out source shared a
@@ -54,6 +66,17 @@ Probe that would have caught it: enumerate every implicit root, create a synthet
 sibling one component outside each owned child, and drive every exposed read, list and write route.
 Require the sibling to be refused without mutation while the owned child and an explicit recursive
 grant remain positive controls.
+
+### 2026-10-09 — an old receipt bypassed publication authority checks (issue #5111)
+
+Receipt shape and exact owner alone did not prove that a modern dossier could adopt a landed
+publication. The absent-lock replay branch exited before authenticating the reviewer, serializing
+the write, and comparing the retained payload with stable live evidence.
+
+Probe that would have caught it: present a foreign lock, a live original owner, and changed actor,
+head, body, or payload one at a time to the production recovery route. Require no dossier mutation
+or review POST. Permit exact adoption only under the native lock, and require a merged historical
+approval to remain without delivery authorization.
 
 ### 2026-09-19 — the reviewer confirm token could not perform its own mutation (introduced via PR #4411)
 

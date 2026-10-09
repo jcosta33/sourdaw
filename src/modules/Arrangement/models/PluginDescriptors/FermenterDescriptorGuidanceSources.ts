@@ -131,7 +131,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         0,
         0.5,
         ['Multiplies the pitch set by oscCoarse, oscFine and the modulators.'],
-        ['Written into existing voices only, so a voice swapped in from the steal-fade pool lacks it.'],
+        ['Applies to every voice, including one that replaces a stolen voice.'],
         noExternalModulation
     ),
 
@@ -435,13 +435,11 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     ),
     fmModAmount: parameterGuidance(
         'Global FM modulation depth',
-        'Rescales every active routing to this amount; keep it above 0, which latches the routing off.',
+        'Scales every modulation routing of the chosen algorithm by this amount; 0 silences the modulation, and raising it again restores the routing on held and new notes alike.',
         0.25,
         2,
         ['Multiplies the depths of fmLevel2, fmLevel3 and fmLevel4 wherever they modulate.'],
-        [
-            'At 0 each voice configured then loses its routing, and raising fmModAmount restores none until fmAlgorithm changes.',
-        ],
+        ['fmAlgorithm 3 routes no operator into another, so this has no effect there.'],
         noExternalModulation
     ),
 };

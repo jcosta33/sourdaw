@@ -6,6 +6,9 @@ import { join, resolve } from 'node:path';
 
 import {
     AUTHOR_BOT_NODE_ID,
+    AUTHOR_MINT_PERMISSIONS,
+    DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+    authorWorkflowWriteRequired,
     isOrchestratorUserNodeId,
     isHistoricalMergerActor,
     assertRequiredRepository,
@@ -19,6 +22,7 @@ import {
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
+    type MintPermissions,
 } from './githubAppIdentity.ts';
 import {
     TITLE_PATTERN,
@@ -132,10 +136,10 @@ export type DeliveryPort = CheckEvidencePort & {
 
 /**
  * What the head's review bundle says about delivery authorization (#4584, #3376, spec #3367 AC-005).
- * A bundle without a risk plan predates the attributable-evidence contract and is exempt (`legacy`);
- * a planned bundle must record exactly one delivery authorization, and delivery binds it against the
- * live reviewer approval review and the publication-time dossier digest — the dossier as it stood
- * before the authorization event itself was appended.
+ * A bundle whose head-bound manifest never generated a risk plan predates the attributable-evidence
+ * contract and is exempt (`legacy`). A planned bundle must record exactly one delivery authorization,
+ * and delivery binds it against the live reviewer approval review and publication-time dossier digest —
+ * the dossier as it stood before the authorization event itself was appended.
  */
 export type DeliveryAuthorizationBinding =
     | { kind: 'legacy' }
@@ -145,6 +149,53 @@ export type DeliveryAuthorizationBinding =
           /** The dossier digest with any delivery-authorized event stripped — what acceptance authorized. */
           dossierDigest: string;
       };
+
+/**
+ * A plan-less bundle is legacy only when its head-bound manifest says it never generated one.
+ * The original producer wrote only pr, baseSha, and headSha. Later producers recorded generated;
+ * a present generated list or baseRefName still has to be valid.
+ */
+function assertLegacyReviewBundle(number: number, head: string, bundle: string): void {
+    const manifestPath = join(bundle, 'manifest.json');
+    let contents: string;
+    try {
+        contents = readFileSync(manifestPath, 'utf8');
+    } catch {
+        fail(`PR #${number} review bundle manifest at ${manifestPath} is missing or unreadable`);
+    }
+    const manifest = parseJson<unknown>(contents, `PR #${number} review bundle manifest at ${manifestPath}`);
+    const generated =
+        isRecord(manifest) &&
+        Array.isArray(manifest.generated) &&
+        manifest.generated.every((entry): entry is string => typeof entry === 'string')
+            ? manifest.generated
+            : undefined;
+    const originalManifest =
+        isRecord(manifest) &&
+        Object.keys(manifest).length === 3 &&
+        !Object.hasOwn(manifest, 'generated') &&
+        !Object.hasOwn(manifest, 'baseRefName');
+    if (
+        !isRecord(manifest) ||
+        manifest.pr !== number ||
+        manifest.headSha !== head ||
+        (Object.hasOwn(manifest, 'baseRefName') &&
+            (typeof manifest.baseRefName !== 'string' || manifest.baseRefName.trim() === '')) ||
+        typeof manifest.baseSha !== 'string' ||
+        manifest.baseSha === '' ||
+        (generated === undefined && !originalManifest)
+    ) {
+        fail(`PR #${number} review bundle manifest at ${manifestPath} has invalid provenance`);
+    }
+    if (generated?.includes('risk-plan.json')) {
+        fail(
+            `missing review risk plan at ${join(bundle, 'risk-plan.json')}; the bundle manifest records generating it`
+        );
+    }
+    if (existsSync(join(bundle, 'dossier.json'))) {
+        fail(`PR #${number} review bundle has a dossier but no risk plan at ${join(bundle, 'risk-plan.json')}`);
+    }
+}
 
 export type DeliveryReceiptAuthorityExpectation =
     { mode: 'absent' } | { mode: 'present'; authority: PersistedDeliveryReceiptAuthority };
@@ -3635,9 +3686,8 @@ export function shellPort(
             readPullRequestReviewState(number, expectedHead, repository, (args) => shell.capture('gh', args)),
         reviewBundleDeliveryAuthorization: (number, head) => {
             const bundle = reviewBundlePath(primaryRoot, number, head);
-            // A bundle without a risk plan predates the attributable-evidence contract and is exempt,
-            // matching the review side's tolerance for legacy bundles.
             if (!existsSync(join(bundle, 'risk-plan.json'))) {
+                assertLegacyReviewBundle(number, head, bundle);
                 return { kind: 'legacy' };
             }
             const dossierPath = join(bundle, 'dossier.json');
@@ -4385,7 +4435,7 @@ export { withPullRequestMutationLock as withPullRequestDeliveryLock };
 export type DeliveryCoordinatorDependencies = {
     primaryRoot: () => string;
     serializeDelivery: DeliverySerialization;
-    authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
+    authenticateAuthor: (primaryRoot: string, permissions: MintPermissions) => Promise<DeliveryAuthentication>;
     authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
     deliveryPort: (
@@ -4408,7 +4458,8 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
     return {
         primaryRoot: () => resolvePrimaryRoot(),
         serializeDelivery: withPullRequestMutationLock,
-        authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
+        authenticateAuthor: (primaryRoot, permissions) =>
+            authenticateRole({ primaryRoot, role: 'author', permissions }),
         authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
@@ -4475,14 +4526,35 @@ export async function coordinateDelivery(
         primaryRoot,
         number,
         async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
-            const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
+            let authorAuth = await dependencies.authenticateAuthor(primaryRoot, AUTHOR_MINT_PERMISSIONS);
             let trackerAuth: DeliveryAuthentication | undefined;
             try {
+                const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
+                assertRequiredRepository(repository);
+                // The snapshot read itself needs a session token, so delivery authenticates
+                // ordinarily first and classifies the pull request's committed merge diff
+                // afterwards: GitHub refuses a merge whose diff changes workflows unless the
+                // merging token carries workflows write. The derivation is fixed here, never
+                // caller input, and runs before any remote mutation.
+                const classificationPort = dependencies.deliveryPort(
+                    repository,
+                    authorAuth,
+                    primaryRoot,
+                    markRemoteMutationAttempt
+                );
+                classificationPort.fetch();
+                const mergeSnapshot = classificationPort.pullRequest(number);
+                if (authorWorkflowWriteRequired(primaryRoot, mergeSnapshot.baseRefOid, mergeSnapshot.headRefOid)) {
+                    const ordinary = authorAuth;
+                    authorAuth = await dependencies.authenticateAuthor(
+                        primaryRoot,
+                        DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS
+                    );
+                    ordinary.session.dispose();
+                }
                 if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
                     fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
                 }
-                const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
-                assertRequiredRepository(repository);
                 const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
                 trackerAuth = authenticatedTracker;
                 const trackerPort = markTrackerMutationAttempts(

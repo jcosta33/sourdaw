@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import {
+    readPublicReviewComments,
     reconstructReviewRounds,
     runReviewReconstruction,
     runReconstructReviewRoundsCli,
@@ -13,7 +14,12 @@ import {
 import { appendReviewDossierEvents, parseReviewDossier } from '../reviewDossier.ts';
 import { buildDossier } from '../reviewDossierChain.ts';
 import { buildReviewDossier, type ReviewDossierInput } from '../reviewDossierPublication.ts';
-import { renderReviewRepairReply, type ReviewRepairRecord } from '../reviewRepair.ts';
+import {
+    renderReviewRepairConfirmationMarker,
+    renderReviewRepairReply,
+    reviewRepairRecordDigest,
+    type ReviewRepairRecord,
+} from '../reviewRepair.ts';
 
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
@@ -53,9 +59,22 @@ function repairRecord(rootCommentId: number, commit: string): ReviewRepairRecord
         finding: { commentId: rootCommentId, path: 'scripts/target.ts', line: 5, side: 'RIGHT' },
         commit,
         summary: 'fixed the gate',
-        evidence: [],
+        evidence: [
+            {
+                observable: 'the repair is confirmed once',
+                verification: 'pnpm review:reconstruct 42',
+                observed: 'the public repair and confirmation are distinct records',
+            },
+        ],
         head,
     };
+}
+
+function confirmationBody(format: 'compact' | 'legacy', record: ReviewRepairRecord): string {
+    if (format === 'compact') {
+        return renderReviewRepairConfirmationMarker(record, head);
+    }
+    return renderReviewRepairReply(record);
 }
 
 function reviewerReview(id: number, commitId: string, state: string): PublicReview {
@@ -63,7 +82,15 @@ function reviewerReview(id: number, commitId: string, state: string): PublicRevi
 }
 
 function rootComment(id: number, reviewId: number): PublicReviewComment {
-    return { id, reviewId, path: 'scripts/target.ts', line: 5, side: 'RIGHT', body: 'blocking' };
+    return {
+        id,
+        reviewId,
+        actorNodeId: REVIEWER_BOT_NODE_ID,
+        path: 'scripts/target.ts',
+        line: 5,
+        side: 'RIGHT',
+        body: 'blocking',
+    };
 }
 
 describe('reconstruct review rounds', () => {
@@ -82,6 +109,12 @@ describe('reconstruct review rounds', () => {
             {
                 ...rootComment(102, 11),
                 id: 102,
+                actorNodeId: AUTHOR_BOT_NODE_ID,
+                inReplyToId: 101,
+                body: renderReviewRepairReply(repairRecord(101, head)),
+            },
+            {
+                ...rootComment(104, 11),
                 inReplyToId: 101,
                 body: renderReviewRepairReply(repairRecord(101, head)),
             },
@@ -93,8 +126,14 @@ describe('reconstruct review rounds', () => {
         expect(first).toMatchObject({ headSha: olderHead, role: 'reviewer', verdict: 'changes-requested' });
         expect(first?.findings.map((finding) => finding.commentId)).toEqual([100]);
         expect(second?.findings).toHaveLength(1);
-        expect(second?.findings[0]?.repairs).toHaveLength(1);
-        expect(second?.findings[0]?.repairs[0]?.commit).toBe(head);
+        expect(second?.findings[0]?.repairs).toEqual([repairRecord(101, head)]);
+        expect(second?.findings[0]?.confirmations).toEqual([
+            {
+                format: 'legacy-repair-v1',
+                recordDigest: reviewRepairRecordDigest(repairRecord(101, head)),
+                confirmationHead: head,
+            },
+        ]);
         expect(acceptance).toMatchObject({ role: 'orchestrator', verdict: 'approved' });
         expect(approval).toMatchObject({ role: 'reviewer', verdict: 'approved' });
     });
@@ -113,10 +152,164 @@ describe('reconstruct review rounds', () => {
         ).toThrow(/answers an unknown root comment/u);
     });
 
-    it('fails closed on a malformed repair marker rather than reading it as absent', () => {
+    it('reconstructs a modern compact confirmation only when its whole-record digest binds the author repair and root', () => {
+        const record = repairRecord(100, head);
         const comments: PublicReviewComment[] = [
             rootComment(100, 10),
-            { ...rootComment(101, 10), id: 101, inReplyToId: 100, body: 'sourdaw-repair-v1 {not json' },
+            {
+                ...rootComment(101, 10),
+                actorNodeId: AUTHOR_BOT_NODE_ID,
+                inReplyToId: 100,
+                body: renderReviewRepairReply(record),
+            },
+            {
+                ...rootComment(102, 10),
+                inReplyToId: 100,
+                body: renderReviewRepairConfirmationMarker(record, head),
+            },
+        ];
+        const reconstruction = reconstructReviewRounds(
+            42,
+            { state: 'OPEN', head },
+            [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+            comments
+        );
+        expect(reconstruction.rounds[0]?.findings[0]).toMatchObject({
+            repairs: [record],
+            confirmations: [
+                {
+                    format: 'repair-confirmation-v1',
+                    recordDigest: expect.any(String),
+                    confirmationHead: head,
+                },
+            ],
+        });
+    });
+
+    it.each([
+        { format: 'compact', authorId: 102 },
+        { format: 'legacy', authorId: 102 },
+        { format: 'compact', authorId: 101 },
+        { format: 'legacy', authorId: 101 },
+    ] as const)(
+        'refuses a $format confirmation whose matching author repair has ID $authorId',
+        ({ format, authorId }) => {
+            const record = repairRecord(100, head);
+            const comments: PublicReviewComment[] = [
+                rootComment(100, 10),
+                { ...rootComment(101, 10), inReplyToId: 100, body: confirmationBody(format, record) },
+                {
+                    ...rootComment(authorId, 10),
+                    actorNodeId: AUTHOR_BOT_NODE_ID,
+                    inReplyToId: 100,
+                    body: renderReviewRepairReply(record),
+                },
+            ];
+            expect(() =>
+                reconstructReviewRounds(
+                    42,
+                    { state: 'OPEN', head },
+                    [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+                    comments
+                )
+            ).toThrow(/confirmation/u);
+        }
+    );
+
+    it.each(['compact', 'legacy'] as const)(
+        'reconstructs a valid %s confirmation from shuffled REST comments by immutable ID',
+        (format) => {
+            const record = repairRecord(100, head);
+            const comments: PublicReviewComment[] = [
+                { ...rootComment(102, 10), inReplyToId: 100, body: confirmationBody(format, record) },
+                rootComment(100, 10),
+                {
+                    ...rootComment(101, 10),
+                    actorNodeId: AUTHOR_BOT_NODE_ID,
+                    inReplyToId: 100,
+                    body: renderReviewRepairReply(record),
+                },
+            ];
+            const reconstruction = reconstructReviewRounds(
+                42,
+                { state: 'OPEN', head },
+                [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+                comments
+            );
+            expect(reconstruction.rounds[0]?.findings[0]).toMatchObject({
+                repairs: [record],
+                confirmations: [
+                    {
+                        format: format === 'compact' ? 'repair-confirmation-v1' : 'legacy-repair-v1',
+                        recordDigest: reviewRepairRecordDigest(record),
+                    },
+                ],
+            });
+        }
+    );
+
+    it('keeps empty-evidence V1 author records and legacy reviewer confirmations readable', () => {
+        const record = { ...repairRecord(100, head), evidence: [] };
+        const comments: PublicReviewComment[] = [
+            rootComment(100, 10),
+            {
+                ...rootComment(101, 10),
+                actorNodeId: AUTHOR_BOT_NODE_ID,
+                inReplyToId: 100,
+                body: renderReviewRepairReply(record),
+            },
+            { ...rootComment(102, 10), inReplyToId: 100, body: renderReviewRepairReply(record) },
+        ];
+        const reconstruction = reconstructReviewRounds(
+            42,
+            { state: 'OPEN', head },
+            [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+            comments
+        );
+        expect(reconstruction.rounds[0]?.findings[0]).toMatchObject({
+            repairs: [record],
+            confirmations: [
+                {
+                    format: 'legacy-repair-v1',
+                    recordDigest: reviewRepairRecordDigest(record),
+                    confirmationHead: head,
+                },
+            ],
+        });
+    });
+
+    it.each([
+        { label: 'wrong pull request', confirmation: (record: ReviewRepairRecord) => ({ ...record, pr: 43 }) },
+        {
+            label: 'wrong thread',
+            confirmation: (record: ReviewRepairRecord) => ({ ...record, thread: 'thread-other' }),
+        },
+        {
+            label: 'different author record digest',
+            confirmation: (record: ReviewRepairRecord) => ({ ...record, summary: 'a changed source record' }),
+        },
+        {
+            label: 'wrong root finding',
+            confirmation: (record: ReviewRepairRecord) => ({
+                ...record,
+                finding: { ...record.finding, commentId: 999 },
+            }),
+        },
+    ])('refuses a compact confirmation with $label', ({ confirmation }) => {
+        const source = repairRecord(100, head);
+        const comments: PublicReviewComment[] = [
+            rootComment(100, 10),
+            {
+                ...rootComment(101, 10),
+                actorNodeId: AUTHOR_BOT_NODE_ID,
+                inReplyToId: 100,
+                body: renderReviewRepairReply(source),
+            },
+            {
+                ...rootComment(102, 10),
+                inReplyToId: 100,
+                body: renderReviewRepairConfirmationMarker(confirmation(source), head),
+            },
         ];
         expect(() =>
             reconstructReviewRounds(
@@ -125,7 +318,164 @@ describe('reconstruct review rounds', () => {
                 [reviewerReview(10, head, 'CHANGES_REQUESTED')],
                 comments
             )
-        ).toThrow(/repair/u);
+        ).toThrow(/confirmation/u);
+    });
+
+    it.each([
+        { label: 'pull request', change: (record: ReviewRepairRecord): ReviewRepairRecord => ({ ...record, pr: 43 }) },
+        {
+            label: 'root comment ID',
+            change: (record: ReviewRepairRecord): ReviewRepairRecord => ({
+                ...record,
+                finding: { ...record.finding, commentId: 999 },
+            }),
+        },
+        {
+            label: 'path',
+            change: (record: ReviewRepairRecord): ReviewRepairRecord => ({
+                ...record,
+                finding: { ...record.finding, path: 'scripts/other.ts' },
+            }),
+        },
+        {
+            label: 'side',
+            change: (record: ReviewRepairRecord): ReviewRepairRecord => ({
+                ...record,
+                finding: { ...record.finding, side: 'LEFT' },
+            }),
+        },
+    ])('refuses an author repair bound to a different $label', ({ change }) => {
+        const record = change(repairRecord(100, head));
+        const comments: PublicReviewComment[] = [
+            rootComment(100, 10),
+            {
+                ...rootComment(101, 10),
+                actorNodeId: AUTHOR_BOT_NODE_ID,
+                inReplyToId: 100,
+                body: renderReviewRepairReply(record),
+            },
+        ];
+        expect(() =>
+            reconstructReviewRounds(
+                42,
+                { state: 'OPEN', head },
+                [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+                comments
+            )
+        ).toThrow(/does not bind pull request 42 and root finding 100/u);
+    });
+
+    it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
+        'fails closed on a malformed repair marker from authorized actor %s',
+        (actorNodeId) => {
+            const comments: PublicReviewComment[] = [
+                rootComment(100, 10),
+                { ...rootComment(101, 10), actorNodeId, inReplyToId: 100, body: 'sourdaw-repair-v1 {not json' },
+                {
+                    ...rootComment(105, 10),
+                    actorNodeId,
+                    inReplyToId: 100,
+                    body: 'sourdaw-repair-confirmation-v1 {not json',
+                },
+            ];
+            expect(() =>
+                reconstructReviewRounds(
+                    42,
+                    { state: 'OPEN', head },
+                    [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+                    comments
+                )
+            ).toThrow(/repair/u);
+        }
+    );
+
+    it.each(['BOT_foreign', ORCHESTRATOR_USER_NODE_ID, null])(
+        'ignores malformed and well-formed repair markers from untrusted actor %s before parsing or root lookup',
+        (actorNodeId) => {
+            const comments: PublicReviewComment[] = [
+                rootComment(100, 10),
+                { ...rootComment(101, 10), actorNodeId, inReplyToId: 100, body: 'sourdaw-repair-v1 {not json' },
+                { ...rootComment(102, 10), actorNodeId, inReplyToId: 999, body: 'sourdaw-repair-v1 {not json' },
+                {
+                    ...rootComment(103, 10),
+                    actorNodeId,
+                    inReplyToId: 100,
+                    body: renderReviewRepairReply(repairRecord(100, head)),
+                },
+                {
+                    ...rootComment(104, 10),
+                    actorNodeId,
+                    inReplyToId: 999,
+                    body: renderReviewRepairReply(repairRecord(999, head)),
+                },
+            ];
+            const reconstruction = reconstructReviewRounds(
+                42,
+                { state: 'OPEN', head },
+                [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+                comments
+            );
+            expect(reconstruction.rounds).toEqual([
+                {
+                    headSha: head,
+                    reviewId: 10,
+                    role: 'reviewer',
+                    verdict: 'changes-requested',
+                    findings: [
+                        {
+                            commentId: 100,
+                            path: 'scripts/target.ts',
+                            line: 5,
+                            side: 'RIGHT',
+                            repairs: [],
+                            confirmations: [],
+                        },
+                    ],
+                },
+            ]);
+        }
+    );
+});
+
+describe('readPublicReviewComments', () => {
+    it('retains immutable actors across all REST pages and represents absent or unreadable actors as null', () => {
+        const users = [
+            { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]' },
+            { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+            { node_id: 'BOT_foreign', login: 'hplovecraft208[bot]' },
+            { login: 'hplovecraft208[bot]' },
+            null,
+            undefined,
+            { node_id: 42 },
+        ];
+        const entries = users.map((user, index) => ({
+            id: index + 100,
+            pull_request_review_id: 10,
+            path: 'scripts/target.ts',
+            original_line: 5,
+            side: 'RIGHT',
+            body: 'sourdaw-repair-v1 {not json',
+            in_reply_to_id: 99,
+            user,
+        }));
+        const requests: string[][] = [];
+        const comments = readPublicReviewComments((args) => {
+            requests.push(args);
+            return JSON.stringify([entries.slice(0, 2), entries.slice(2, 5), entries.slice(5)]);
+        }, 42);
+
+        expect(requests).toEqual([
+            ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/pulls/42/comments?per_page=100'],
+        ]);
+        expect(comments.map((comment) => [comment.id, comment.actorNodeId, comment.inReplyToId])).toEqual([
+            [100, AUTHOR_BOT_NODE_ID, 99],
+            [101, REVIEWER_BOT_NODE_ID, 99],
+            [102, 'BOT_foreign', 99],
+            [103, null, 99],
+            [104, null, 99],
+            [105, null, 99],
+            [106, null, 99],
+        ]);
     });
 });
 
@@ -163,6 +513,103 @@ describe('shadow comparison', () => {
         const dossier = dossierWithPublication([{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' }], 99);
         expect(shadowCompareDossier(reconstruction, head, dossier).mismatches).toEqual([]);
     });
+
+    it.each([
+        {
+            label: 'compact with evidence at the repair coordinate',
+            compact: true,
+            emptyEvidence: false,
+            currentLine: 367,
+        },
+        {
+            label: 'compact historical empty evidence after another move',
+            compact: true,
+            emptyEvidence: true,
+            currentLine: 374,
+        },
+        { label: 'legacy with evidence after another move', compact: false, emptyEvidence: false, currentLine: 374 },
+        {
+            label: 'legacy historical empty evidence when outdated',
+            compact: false,
+            emptyEvidence: true,
+            currentLine: null,
+        },
+    ])(
+        'reconstructs moved $label without rebinding the original dossier',
+        ({ compact, emptyEvidence, currentLine }) => {
+            const originalLine = 358;
+            const repairLine = 367;
+            const source = repairRecord(100, head);
+            const record: ReviewRepairRecord = {
+                ...source,
+                finding: { ...source.finding, line: repairLine },
+                evidence: emptyEvidence ? [] : source.evidence,
+            };
+            let confirmationBody: string;
+            if (compact) {
+                confirmationBody = renderReviewRepairConfirmationMarker(record, head);
+            } else {
+                confirmationBody = renderReviewRepairReply(record);
+            }
+            const entries = [
+                {
+                    id: 100,
+                    pull_request_review_id: 99,
+                    path: record.finding.path,
+                    original_line: originalLine,
+                    line: currentLine,
+                    side: record.finding.side,
+                    body: 'blocking',
+                    user: { node_id: REVIEWER_BOT_NODE_ID },
+                },
+                {
+                    id: 101,
+                    pull_request_review_id: 99,
+                    path: record.finding.path,
+                    original_line: repairLine,
+                    line: currentLine,
+                    side: record.finding.side,
+                    body: renderReviewRepairReply(record),
+                    in_reply_to_id: 100,
+                    user: { node_id: AUTHOR_BOT_NODE_ID },
+                },
+                {
+                    id: 102,
+                    pull_request_review_id: 99,
+                    path: record.finding.path,
+                    original_line: repairLine,
+                    line: currentLine,
+                    side: record.finding.side,
+                    body: confirmationBody,
+                    in_reply_to_id: 100,
+                    user: { node_id: REVIEWER_BOT_NODE_ID },
+                },
+            ];
+            const comments = readPublicReviewComments(() => JSON.stringify([entries]), 42);
+            expect(comments[0]?.line).toBe(originalLine);
+            const reconstruction = reconstructReviewRounds(
+                42,
+                { state: 'OPEN', head },
+                [reviewerReview(99, head, 'CHANGES_REQUESTED')],
+                comments
+            );
+            const finding = reconstruction.rounds[0]?.findings[0];
+            expect(finding?.line).toBe(originalLine);
+            expect(finding?.repairs).toEqual([record]);
+            expect(finding?.confirmations).toEqual([
+                {
+                    format: compact ? 'repair-confirmation-v1' : 'legacy-repair-v1',
+                    recordDigest: reviewRepairRecordDigest(record),
+                    confirmationHead: head,
+                },
+            ]);
+            const dossier = dossierWithPublication(
+                [{ path: record.finding.path, line: originalLine, side: 'RIGHT' }],
+                99
+            );
+            expect(shadowCompareDossier(reconstruction, head, dossier).mismatches).toEqual([]);
+        }
+    );
 
     it('records a mismatch when the recorded publication stands in no public round', () => {
         const reconstruction = reconstructReviewRounds(
@@ -302,6 +749,31 @@ describe('reconstruction run', () => {
         expect(run.mismatches).toBe(1);
         expect(logged.some((line) => line.startsWith('shadow mismatch'))).toBe(true);
         expect(logged.at(-1)).toBe('review-reconstruction:42:rounds=1:compared=1:mismatches=1');
+    });
+
+    it('prints repair and confirmation counts separately for a cold public reconstruction', () => {
+        const record = repairRecord(100, head);
+        const { port: reconstructed, logged } = port({
+            reviews: [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+            comments: [
+                rootComment(100, 10),
+                {
+                    ...rootComment(101, 10),
+                    actorNodeId: AUTHOR_BOT_NODE_ID,
+                    inReplyToId: 100,
+                    body: renderReviewRepairReply(record),
+                },
+                {
+                    ...rootComment(102, 10),
+                    inReplyToId: 100,
+                    body: renderReviewRepairConfirmationMarker(record, head),
+                },
+            ],
+        });
+        runReviewReconstruction(42, reconstructed);
+        expect(logged[0]).toBe(
+            `round: head ${head} review 10 reviewer changes-requested findings 1 repairs 1 confirmations 1`
+        );
     });
 
     it('completes for a bundle holding an unpublished historical dossier with no assessment impact', () => {

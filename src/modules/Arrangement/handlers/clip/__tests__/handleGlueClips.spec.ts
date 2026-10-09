@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { handleGlueClips } from '../handleGlueClips';
 
 const mocks = vi.hoisted(() => ({
@@ -46,8 +48,7 @@ describe('handleGlueClips', () => {
         expect(result).toEqual({ status: 'no-write' });
     });
 
-    it('clears stale internal replay fields when fresh preflight rejects the action', () => {
-        mocks.glueClips.mockReturnValue(false);
+    it('refuses a carried plan the project no longer yields and leaves it as recorded', () => {
         const stale = {
             trackId: 'track-1',
             clips: [],
@@ -65,15 +66,46 @@ describe('handleGlueClips', () => {
                 replacement: stale,
             },
         };
+        const recorded = structuredClone(action.payload);
+
+        handleGlueClips.materializeCommandArguments?.(action);
+        const description = handleGlueClips.describe(action);
+        const result = handleGlueClips.execute(action);
+
+        expect(description.inverseAction).toBeNull();
+        expect(action.payload).toEqual(recorded);
+        expect(mocks.prepareClipGlue).toHaveBeenCalledWith({
+            clipIds: ['c1', 'c2'],
+            targetClipId: 'stale-target',
+            automationLaneIds: [],
+        });
+        expect(mocks.glueClips).not.toHaveBeenCalled();
+        expect(mocks.restoreClipGlueState).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'conflict', reason: expect.any(String) });
+    });
+
+    it('refuses a partial carried plan without planning a new one', () => {
+        const snapshot = {
+            trackId: 'track-1',
+            clips: [],
+            clipOrder: [],
+            midi: { clips: [], migratedAbsoluteNoteClipIds: { present: false, value: [] } },
+            clipSatellites: [],
+            clipAutomationLanes: [],
+        };
+        const action = {
+            type: 'glueClips' as const,
+            payload: { clipIds: ['c1', 'c2'], targetClipId: 'target', expected: snapshot },
+        };
 
         const description = handleGlueClips.describe(action);
         const result = handleGlueClips.execute(action);
 
         expect(description.inverseAction).toBeNull();
-        expect(action.payload).toEqual({ clipIds: ['c1', 'c2'] });
-        expect(mocks.glueClips).toHaveBeenCalledWith(['c1', 'c2'], undefined);
-        expect(mocks.restoreClipGlueState).not.toHaveBeenCalled();
-        expect(result).toEqual({ status: 'no-write' });
+        expect(action.payload).toEqual({ clipIds: ['c1', 'c2'], targetClipId: 'target', expected: snapshot });
+        expect(mocks.prepareClipGlue).not.toHaveBeenCalled();
+        expect(mocks.glueClips).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'conflict', reason: expect.any(String) });
     });
 
     it('provides a description', () => {
@@ -103,15 +135,27 @@ describe('handleGlueClips', () => {
             clipAutomationLanes: [],
         };
         mocks.prepareClipGlue.mockReturnValue({ previous, next, targetClipId: 'target' });
-        const action = {
-            type: 'glueClips' as const,
-            payload: { clipIds: ['c1', 'c2'], targetClipId: 'stale-target', expected: next, replacement: previous },
+        mocks.restoreClipGlueState.mockReturnValue(true);
+        const action: Extract<AppAction, { type: 'glueClips' }> = {
+            type: 'glueClips',
+            payload: { clipIds: ['c1', 'c2'] },
         };
 
+        handleGlueClips.materializeCommandArguments?.(action);
         const desc = handleGlueClips.describe(action);
 
-        expect(mocks.prepareClipGlue).toHaveBeenCalledWith({ clipIds: ['c1', 'c2'] });
-        expect(action.payload).toMatchObject({ targetClipId: 'target', expected: previous, replacement: next });
+        expect(mocks.prepareClipGlue).toHaveBeenNthCalledWith(1, { clipIds: ['c1', 'c2'] });
+        expect(mocks.prepareClipGlue).toHaveBeenNthCalledWith(2, {
+            clipIds: ['c1', 'c2'],
+            targetClipId: 'target',
+            automationLaneIds: [],
+        });
+        expect(action.payload).toEqual({
+            clipIds: ['c1', 'c2'],
+            targetClipId: 'target',
+            expected: previous,
+            replacement: next,
+        });
         expect(desc.inverseAction).toEqual({
             type: 'restoreClipGlueState',
             payload: { expected: next, replacement: previous },
@@ -120,6 +164,12 @@ describe('handleGlueClips', () => {
             type: 'restoreClipGlueState',
             payload: { expected: previous, replacement: next },
         });
+
+        const result = handleGlueClips.execute(action);
+
+        expect(mocks.restoreClipGlueState).toHaveBeenCalledWith({ expected: previous, replacement: next });
+        expect(mocks.glueClips).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'written' });
     });
 
     it('is undoable', () => {

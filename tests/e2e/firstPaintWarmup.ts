@@ -18,6 +18,14 @@ import { LAUNCH_SCREEN_NAME } from './e2eUtils';
  */
 const COLD_FIRST_PAINT_TIMEOUT_MS = 180_000;
 
+function remainingWarmupTime(deadline: number): number {
+    const remaining = Math.floor(deadline - performance.now());
+    if (remaining <= 0) {
+        throw new Error('First-paint warmup exceeded its deadline before the launch overlay appeared');
+    }
+    return remaining;
+}
+
 /**
  * Global setup: navigate to the app once and wait for the launch overlay, so
  * the dev server's module graph is warm before the first test observes it.
@@ -46,8 +54,9 @@ export default async function warmFirstPaint(config: FullConfig): Promise<void> 
         await page.addInitScript((viewportName: string) => {
             window.name = viewportName;
         }, DIRECT_E2E_VIEWPORT_NAME);
-        await page.goto('/');
-        await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({ state: 'visible', timeout: COLD_FIRST_PAINT_TIMEOUT_MS });
+        const deadline = performance.now() + COLD_FIRST_PAINT_TIMEOUT_MS;
+        await page.goto('/', { timeout: remainingWarmupTime(deadline) });
+        await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({ state: 'visible', timeout: remainingWarmupTime(deadline) });
     } finally {
         await browser.close();
     }
