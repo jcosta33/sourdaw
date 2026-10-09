@@ -1,0 +1,141 @@
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_1f0dcd815e8946::t_b9a8020d1c595e 5,20-23,70-71
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_1f0dcd815e8946::t_f8a4677637a90d 1-118
+.agents/decisions/0053-freeze-pull-requests-at-five-review-rounds.md
+  s_1f0dcd815e8946::t_c374a93fb95a9a 3,14
+.agents/decisions/README.md
+  s_1f0dcd815e8946::t_d2824c48423df5 17-69
+.agents/skills/delivery-orchestration/SKILL.md
+  s_1f0dcd815e8946::t_0c429482c8b933 662-677
+.agents/skills/review-stances/browser-inventory.md
+  s_1f0dcd815e8946::t_b9f87283f4466e 19-30
+.agents/skills/review-stances/security-and-platform.md
+  s_1f0dcd815e8946::t_43fea45706fca5 52-71
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_9a83487aed78c6 156-175
+.github/workflows/health-gates.yml
+  s_1f0dcd815e8946::t_e6fbfd7a7c6934 71-77,86,92,94,102-103
+AGENTS.md
+  s_1f0dcd815e8946::t_b5de03ad79d5c4 267
+crates/daw-dsp/AGENTS.md
+  s_1f0dcd815e8946::t_9a4ea920c511b9 61-67
+crates/daw-dsp/src/levain/engine.rs
+  s_1f0dcd815e8946::t_203a5ca6fc43a3 91-106,407-434,2119-2157
+crates/daw-dsp/src/levain/mod.rs
+  s_1f0dcd815e8946::t_ed5dee254e7092 185-192
+crates/daw-dsp/tests/levain_bank_retirement.rs
+  s_1f0dcd815e8946::t_da0d4509425131 10-13,37,48,60,66,72,82,85-88,90-92,102-103,326-439
+evidence/agent-campaign/manifest.json
+  s_1f0dcd815e8946::t_e6da077bfda4cc 286
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_1f0dcd815e8946::t_65fced64355478 1,821-827,1023-1038,1080,1122-1207
+public/wasm/daw-dsp/daw_dsp.js
+  s_1f0dcd815e8946::t_19bf142fcc3e47 1741-1751
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_1f0dcd815e8946::t_83aca0775cbdd3 1,38-53,95,137-222
+public/wasm/manifest.json
+  s_1f0dcd815e8946::t_669800a44ff34a 12,15-18,20-21
+release/open-source-inventory.json
+  s_1f0dcd815e8946::t_c9e3b0c9935dc2 1344,1350,1770
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_1f0dcd815e8946::t_62384882715b35 96-99,1516,2495,2530,2630,2652,2654-2655,2658,2665,3128,3218,3256,3279,3340-3374,3376,3421,3454,3541,3574,3604,3639,3669,3696,3725,3745,3774-3802,3804-3807,3809-3811,3830,3969,3996,4018,4036,4171,4196,4217,4243,4274,4309,4371,4568,4573,4578,4642,4670
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_1f0dcd815e8946::t_67b62692c45c11 65-68,1387,1392,6860,6889,6918,6950,6979,7012,7041,7075,7107,7140,9755,9785,9844,9879,10508,10580,10705,10775,10810,10891,10950,10994,11048,11126,11284,11330,11388,11415,11453,11526,11557,11601,11638,11643,11702,11725,12363,12420,12575,13343
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_1f0dcd815e8946::t_8898d7453d039c 1,5-6,21,121-338,393-527
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_1f0dcd815e8946::t_ef1ef9c68db900 99-108,121,129-130,135,144-145,147
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_1f0dcd815e8946::t_74b81b65387464 4026-4031,4036-4040,4047,4054
+scripts/__tests__/hostedWasmArtifacts.spec.ts
+  s_1f0dcd815e8946::t_8650cff7b5fb28 32,339,387,393,402-404,418-420,481,494-497
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_1f0dcd815e8946::t_8ddfaf2c97c86f 36,695-720,930-1322
+scripts/__tests__/recoverPublishReviewLockReceiptReplay.spec.ts
+  s_1f0dcd815e8946::t_9e4378739bf8b8 64-87,163-166,181-182,273-278,351-353,363,560-583,632-650
+scripts/e2eSelectionShadow.ts
+  s_1f0dcd815e8946::t_ef0ca9ac3c26c4 9-15,454,474-482,540-593,608-609
+scripts/e2eSelectionShadowCompatibility.ts
+  s_1f0dcd815e8946::t_a2c7c12e6bd775 1-209
+scripts/healthGateWorkflowContract.ts
+  s_1f0dcd815e8946::t_1cd7b95a637206 153
+scripts/reviewPublicationBinding.ts
+  s_1f0dcd815e8946::t_122e408aff2035 37,382-383,390-391,419,586-589
+scripts/reviewPublicationReceiptAdoption.ts
+  s_1f0dcd815e8946::t_97e42975be0eaa 18-22,172,188-194,212,214
+scripts/reviewPublicationRemoteInspection.ts
+  s_1f0dcd815e8946::t_5c640cae5dd97e 1,5-6,285-365
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_1f0dcd815e8946::t_e285dd1a219b00 394-415
+src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts
+  s_1f0dcd815e8946::t_a683be96d29bc4 26-51,158-160,162-183,186,191,193-196,200,205,208,210
+src/modules/AudioEngine/AGENTS.md
+  s_1f0dcd815e8946::t_cca30b9c9b04aa 35
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_1f0dcd815e8946::t_f725c97bcea8d3 96-127,129-131,133-149,153-155,267-271
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_1f0dcd815e8946::t_bc2ac9ced43a04 102,104-157,167-173,175-181,184-306
+src/modules/AudioEngine/services/__tests__/levainProcessorDisposalRelease.spec.ts
+  s_1f0dcd815e8946::t_673ebd5b18524a 1-357
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_1f0dcd815e8946::t_f99f2abe329969 23,34-48,177,207-213,222-224,251-256,456-461,473-475,491-525
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_1f0dcd815e8946::t_8c82cd91fdf4ee 1,821-827,1023-1038,1080,1122-1207
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_1f0dcd815e8946::t_dc10b5668af6e9 1918-1928
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_1f0dcd815e8946::t_abf1ee9535d2ba 914-949
+src/modules/AudioRendering/useCases/__tests__/renderToClip.spec.ts
+  s_1f0dcd815e8946::t_bb028850003798 199-226
+src/modules/Command/AGENTS.md
+  s_1f0dcd815e8946::t_2c3fc005d07445 32
+src/modules/Command/useCases/__tests__/captureCommandTargetFingerprints.spec.ts
+  s_1f0dcd815e8946::t_b4ffa673c9c973 12,103-233
+src/modules/Command/useCases/captureCommandTargetFingerprints.ts
+  s_1f0dcd815e8946::t_2a7b864bd7fbef 85-101,106-111
+src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts
+  s_1f0dcd815e8946::t_08183978ae2293 126-163,412-637
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_1f0dcd815e8946::t_d96511c8c95485 206-209,242-244,376
+src/modules/Transport/AGENTS.md
+  s_1f0dcd815e8946::t_27831ceefccc79 22-23
+src/modules/Transport/models/TempoMap.ts
+  s_1f0dcd815e8946::t_e424aaf86ad744 137-148,151-152,156,230-231,236-237
+src/modules/Transport/models/__tests__/TempoMap.spec.ts
+  s_1f0dcd815e8946::t_f08c28cb769f19 300-336
+src/modules/Transport/useCases/tempoMap/__tests__/addTempoChange.spec.ts
+  s_1f0dcd815e8946::t_b8712ddcff4fe3 82-105
+src/modules/Transport/useCases/tempoMap/__tests__/deleteTimeLaw.property.spec.ts
+  s_1f0dcd815e8946::t_96c9cfe744bb1f 1-477
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_1f0dcd815e8946::t_4f086c8dbf5a5c 424,435-436,438,442-464,467-486,501,505,509-602,669-890,916-927,993-1022
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_1f0dcd815e8946::t_d075ef54050cda 8,162-315
+src/modules/Transport/useCases/tempoMap/addTempoChange.ts
+  s_1f0dcd815e8946::t_bbb45667431289 10-12
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_1f0dcd815e8946::t_6e5430ca3137f8 44-53,176-196,198,223-230,253-260,271,299-300,312-360,363-371,373,375-379,411,425-431,459-462,467-468,471-472,476,489,492-493,495,499,503
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_1f0dcd815e8946::t_0c1eb5f8b4b44b 39,166-167,174-189,258-263,281-282,284-285,304-308,316,329
+src/modules/Yeast/models/MidiEvent.ts
+  s_1f0dcd815e8946::t_1ac1790bb37fbc 143,146,151,154-158
+src/modules/Yeast/models/__tests__/MidiEvent.spec.ts
+  s_1f0dcd815e8946::t_e8df5c8eda975d 106-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d0b1768b0413da0c5b88bca46e7c7b3957761e81",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
