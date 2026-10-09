@@ -487,4 +487,27 @@ mod tests {
             }
         }
     }
+
+    /// Unit energy belongs to 48 kHz, where the guidance levels are measured,
+    /// and at any other rate the energy is 48 kHz over that rate. The noise
+    /// check's 0.5 dB band admits a 44.1 kHz reference, which leaves the
+    /// 48 kHz body 0.37 dB low, and the rate check compares rates with each
+    /// other, so only the stored energy pins the reference rate.
+    #[test]
+    fn a_builtin_body_carries_unit_energy_at_48_khz_and_scales_it_with_the_rate() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let expected = 48_000.0 / f64::from(sample_rate);
+            for (index, name) in BUILTIN_BODIES {
+                let body = builtin_body_at(index, sample_rate);
+                for (channel, ir) in [("left", &body.ir_left), ("right", &body.ir_right)] {
+                    let energy: f64 = ir.iter().map(|s| f64::from(*s).powi(2)).sum();
+                    assert!(
+                        (energy - expected).abs() < 1e-3,
+                        "the {name} body's {channel} response carries energy {energy:.6} at \
+                         {sample_rate} Hz; it must carry {expected:.6}, 48 kHz over the rate"
+                    );
+                }
+            }
+        }
+    }
 }
