@@ -111,3 +111,13 @@ documentation-marker residual, like the explicit placeholder marker above; this 
 classification or sanitization of arbitrary source. Pair the exact descriptive sentence with a valid
 matching-cache read and zero provider or fetch calls; keep dotted/alphabetic literals with trailing
 words as refusal controls.
+
+Explicit Authorization headers use RFC 6750's one-character minimum, including a quoted header
+key paired with its value and the escaped representation inside serialized JSON. Do not borrow
+the generic assignment screen's 16-character floor for that context. Probe one-, fifteen- and
+sixteen-character literals and the public RFC example in complete request leaves and keys and
+through source, finding and stance callers. An actual header object must refuse when neither
+individual key nor short value triggers the screen: the final serialized envelope carries their
+pairing. Keep these assertions load-bearing by reverting only the explicit-header handling.
+Unqualified short scheme text retains the opaque-value floor; this bounded screen does not claim
+universal credential detection. Header context cannot take the descriptor prose exemption.

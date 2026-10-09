@@ -578,6 +578,23 @@ describe('opaque bearer stance admission', () => {
     const header = ['Authorization:', 'Bearer', opaque].join(' ');
     const fields = ['stance', 'admittedBy'] as const;
     const literals = [
+        ...[
+            { shape: 'one-character', value: String.fromCharCode(81) },
+            { shape: 'fifteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7i'].join('') },
+            { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
+            { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
+        ].map(({ shape, value }) => ({
+            shape: `explicit-header-${shape}`,
+            value: ['Authorization:', 'Bearer', value].join(' '),
+        })),
+        {
+            shape: 'quoted-header',
+            value: JSON.stringify({ Authorization: ['Bearer', String.fromCharCode(81)].join(' ') }),
+        },
+        {
+            shape: 'escaped-header',
+            value: JSON.stringify(JSON.stringify({ Authorization: ['Bearer', String.fromCharCode(81)].join(' ') })),
+        },
         { shape: 'alphanumeric', value: header },
         { shape: 'dotted', value: ['Bearer', ['abcde', 'fghij', 'klmnop'].join('.')].join(' ') },
         { shape: 'alphabetic', value: ['Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join('')].join(' ') },

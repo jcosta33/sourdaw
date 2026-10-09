@@ -11309,13 +11309,32 @@ describe('opaque bearer source and caller admission', () => {
     const unsafe = `const header = '${header}';\n`;
     const opaqueProse = ['Reviewer saw Bearer', ['qzxvpmrt', 'ncbwksjg'].join('-'), 'expire'].join(' ');
     const unsafeProse = `const note = '${opaqueProse}';\n`;
+    const headerValues = [
+        { shape: 'one-character', value: String.fromCharCode(81) },
+        { shape: 'fifteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7i'].join('') },
+        { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
+        { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
+    ];
     const unsafeSources = [
         { shape: 'header', text: unsafe },
         { shape: 'hyphenated-prose', text: unsafeProse },
+        ...headerValues.map(({ shape, value }) => ({
+            shape: `object-header-${shape}`,
+            text: `const headers = { Authorization: '${['Bearer', value].join(' ')}' };\n`,
+        })),
     ];
 
     it('opaque bearer source and JSON values reject all candidates without echoing material', () => {
         const values = [
+            ...headerValues.flatMap(({ value }) => {
+                const scheme = ['Bearer', value].join(' ');
+                return [
+                    ['Authorization:', scheme].join(' '),
+                    `const headers = { Authorization: '${scheme}' };`,
+                    JSON.stringify({ Authorization: scheme }),
+                    JSON.stringify({ source: JSON.stringify({ Authorization: scheme }) }),
+                ];
+            }),
             header,
             unsafe,
             opaqueProse,
@@ -11355,6 +11374,11 @@ describe('opaque bearer source and caller admission', () => {
             'Bearer ${apiKey}',
             'Bearer RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER',
             'Bearer ${runtimeCredentialReference}',
+            'Authorization: Bearer <token>',
+            'Authorization: Bearer ${runtimeCredentialReference}',
+            "const headers = { Authorization: 'Bearer ' + runtimeCredentialReference };",
+            JSON.stringify({ Authorization: 'Bearer RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER' }),
+            'A reviewer mentions Bearer schemes in this note.',
             "'Bearer ' + runtimeCredentialReference",
             'CREDENTIAL_PATTERN = /\\bbearer\\s+/iu',
             'A bearer header carries authentication material supplied by the caller.',
@@ -11488,6 +11512,14 @@ describe('opaque bearer source and caller admission', () => {
         'allegedObservedBehavior',
     ] as const;
     const findingLiterals = [
+        ...headerValues.map(({ shape, value }) => ({
+            shape: `explicit-header-${shape}`,
+            value: ['Authorization:', 'Bearer', value].join(' '),
+        })),
+        {
+            shape: 'quoted-header',
+            value: JSON.stringify({ Authorization: ['Bearer', String.fromCharCode(81)].join(' ') }),
+        },
         { shape: 'alphanumeric', value: header },
         { shape: 'header-tail', value: `${header} expired` },
         { shape: 'hyphenated-prose', value: opaqueProse },

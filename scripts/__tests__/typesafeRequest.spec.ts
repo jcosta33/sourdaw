@@ -453,7 +453,21 @@ describe('installed SDK prepared handoff', () => {
 describe('opaque bearer complete request admission', () => {
     const opaque = ['A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0'].join('');
     const header = ['Authorization:', 'Bearer', opaque].join(' ');
+    const headerValues = [
+        { shape: 'one-character', value: String.fromCharCode(81) },
+        { shape: 'fifteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7i'].join('') },
+        { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
+        { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
+    ];
     const literals = [
+        ...headerValues.flatMap(({ shape, value }) => [
+            { shape: `explicit-header-${shape}`, value: ['Authorization:', 'Bearer', value].join(' ') },
+            { shape: `quoted-header-${shape}`, value: JSON.stringify({ Authorization: ['Bearer', value].join(' ') }) },
+        ]),
+        {
+            shape: 'escaped-header',
+            value: JSON.stringify(JSON.stringify({ Authorization: ['Bearer', headerValues[0]!.value].join(' ') })),
+        },
         { shape: 'alphanumeric', value: header },
         { shape: 'dotted', value: ['Bearer', ['abcde', 'fghij', 'klmnop'].join('.')].join(' ') },
         { shape: 'alphabetic', value: ['Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join('')].join(' ') },
@@ -500,10 +514,33 @@ describe('opaque bearer complete request admission', () => {
         };
     }
 
-    it.each(positions.flatMap((position) => literals.map((literal) => ({ position, ...literal }))))(
+    it.each(headerValues)('opaque bearer object header $shape requires the serialized screen', ({ value }) => {
+        const state = { Authorization: ['Bearer', value].join(' ') };
+        expect(sensitiveContentReason('Authorization')).toBeUndefined();
+        if (value.length < 16) {
+            // Neither leaf carries header context; the final envelope must pair the key and value.
+            expect(sensitiveContentReason(state.Authorization)).toBeUndefined();
+        }
+        expect(sensitiveContentReason(JSON.stringify(state))).toBeDefined();
+        expect(sensitiveContentReason(JSON.stringify({ source: JSON.stringify(state) }))).toBeDefined();
+        expect(() => prepare(body(state))).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
+    });
+
+    it.each([
+        ...positions.flatMap((position) => literals.map((literal) => ({ position, ...literal, objectHeader: false }))),
+        ...headerValues.map(({ shape, value }) => ({
+            position: 'state' as const,
+            shape: `object-header-${shape}`,
+            value,
+            objectHeader: true,
+        })),
+    ])(
         'opaque bearer $shape $position rejects before a would-hit cache and SDK delegate',
-        async ({ position, value }) => {
+        async ({ position, value, objectHeader }) => {
             const request = payload(position, value);
+            if (objectHeader) {
+                request.state = { Authorization: ['Bearer', value].join(' ') };
+            }
             const validCachedResponse = {
                 model: request.model,
                 answers: Object.fromEntries(
@@ -561,6 +598,9 @@ describe('opaque bearer complete request admission', () => {
         positions.flatMap((position) => [
             // A reference needs actual interpolation; a bare alphabetic scheme value is a literal.
             { position, control: 'reference', value: 'Bearer ${runtimeCredentialReference}' },
+            { position, control: 'short-prose', value: 'A reviewer mentions Bearer schemes in this note.' },
+            { position, control: 'header-placeholder', value: 'Authorization: Bearer <token>' },
+            { position, control: 'header-reference', value: 'Authorization: Bearer ${runtimeCredentialReference}' },
             {
                 position,
                 control: 'prose',

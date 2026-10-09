@@ -306,14 +306,18 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
 /** Literal scheme values do not inherit assignment-expression exemptions. */
 function hasOpaqueBearerValue(text: string): boolean {
     // Match every candidate with a fresh iterator: a benign first example cannot hide later material.
-    // The 16-character floor matches the generic assignment screen's opaque-value floor.
-    for (const match of text.matchAll(/\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})/giu)) {
-        const value = match[1]!;
+    // Explicit headers follow RFC 6750's one-character minimum, including quoted/JSON-escaped key/value pairs.
+    // Unqualified scheme text retains the generic assignment screen's 16-character opaque-value floor.
+    for (const match of text.matchAll(
+        /\bauthorization(?:\\*["'])?\s*:\s*(?:\\*["'])?bearer[ \t]+([A-Za-z0-9+/_~.-]+=*)|\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})/giu
+    )) {
+        const value = match[1] ?? match[2]!;
         if (PLACEHOLDER_VALUE.test(value) || /^[A-Z][A-Z0-9_]*_PLACEHOLDER$/u.test(value)) {
             continue;
         }
         // Only this explicit documentation descriptor receives the prose-context exemption.
         if (
+            match[1] === undefined &&
             value === 'credential-shaped' &&
             /\b[A-Za-z]+[ \t]+$/u.test(text.slice(0, match.index)) &&
             /^[ \t]+[A-Za-z]+\b/u.test(text.slice(match.index + match[0].length))
