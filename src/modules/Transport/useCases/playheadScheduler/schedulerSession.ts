@@ -1,3 +1,5 @@
+import type { TempoChange } from '../../stores/tempoMapStore';
+
 /**
  * A buffer source the scheduler tracks, with the handle its fade rides and —
  * for sources scheduled on the compensated clock (#4784) — the compensation it
@@ -109,7 +111,7 @@ export const schedulerSession = {
     // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
     // to either changes the beat→time alignment of already-scheduled clips, but
     // the dedup Set would keep them suppressed; we detect the change and invalidate.
-    lastTempoMapChanges: null as unknown[] | null,
+    lastTempoMapChanges: null as TempoChange[] | null,
     lastLoopSignature: '',
     // The loop seam the scheduler has scheduled but the playhead has not
     // reached yet (#4656): the audio instant both passes pivot on, plus where
