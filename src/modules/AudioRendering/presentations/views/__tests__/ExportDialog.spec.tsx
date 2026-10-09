@@ -1058,6 +1058,112 @@ describe('ExportDialog', () => {
         expect(mocks.loggerError).not.toHaveBeenCalled();
     });
 
+    describe('a Cancel that has ended the export', () => {
+        const stemTracks: TestTrack[] = [
+            { id: 'track-bass', name: 'Bass', kind: 'audio', clips: [] },
+            { id: 'track-lead', name: 'Lead', kind: 'audio', clips: [] },
+        ];
+
+        const startStemExport = (): void => {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        };
+
+        const cancelStemExportWhileRendering = async (): Promise<(fraction: number) => void> => {
+            setProjectTracks(stemTracks);
+            const rendering = createDeferred<Map<string, AudioBuffer>>();
+            mocks.exportStems.mockReturnValue(rendering.promise);
+            startStemExport();
+            await waitFor(() => {
+                expect(mocks.exportStems).toHaveBeenCalledTimes(1);
+            });
+            const renderedWith: { onProgress?: (fraction: number) => void } | undefined =
+                mocks.exportStems.mock.calls[0]?.[0];
+            const reportProgress = renderedWith?.onProgress;
+            if (!reportProgress) {
+                throw new TypeError('expected exportStems to receive onProgress');
+            }
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                rendering.reject(new Error('Export cancelled'));
+            });
+            await waitFor(() => {
+                expect(screen.getByText('Oven turned off.')).toBeInTheDocument();
+            });
+            return reportProgress;
+        };
+
+        it('keeps the cancelled state when a stem that was past its last checkpoint reports progress', async () => {
+            const reportProgress = await cancelStemExportWhileRendering();
+
+            act(() => {
+                reportProgress(0.5);
+            });
+
+            expect(screen.getByText('Oven turned off.')).toBeInTheDocument();
+            expect(screen.queryByText('Proofing slices...')).not.toBeInTheDocument();
+            expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+            await expectCancelledExportState();
+        });
+
+        it('keeps "Oven turned off." when Turn off Oven is pressed again during the unlock delay', async () => {
+            await cancelStemExportWhileRendering();
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+
+            expect(screen.getByText('Oven turned off.')).toBeInTheDocument();
+            expect(screen.queryByText('Cooling down...')).not.toBeInTheDocument();
+            await expectCancelledExportState();
+        });
+    });
+
+    describe('a Cancel pressed while the buffers are still being restored', () => {
+        it('starts no mixdown render', async () => {
+            const restoring = createDeferred<number>();
+            mocks.restoreCachedAudioBuffersFromIdb.mockReturnValue(restoring.promise);
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => {
+                expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                restoring.resolve(0);
+            });
+
+            await expectCancelledExportState();
+            expect(mocks.renderOffline).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+        });
+
+        it('starts no stem export', async () => {
+            const restoring = createDeferred<number>();
+            mocks.restoreCachedAudioBuffersFromIdb.mockReturnValue(restoring.promise);
+            setProjectTracks([
+                { id: 'track-bass', name: 'Bass', kind: 'audio', clips: [] },
+                { id: 'track-lead', name: 'Lead', kind: 'audio', clips: [] },
+            ]);
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => {
+                expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                restoring.resolve(0);
+            });
+
+            await expectCancelledExportState();
+            expect(mocks.exportStems).not.toHaveBeenCalled();
+            expect(mocks.writeNativeAudioStemFile).not.toHaveBeenCalled();
+        });
+    });
+
     it('reports a failed browser save as an error even when Cancel was pressed while it was closing', async () => {
         vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
         encodeWavReportingDone();
