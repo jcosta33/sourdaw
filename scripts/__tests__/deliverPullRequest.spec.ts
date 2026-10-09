@@ -62,8 +62,9 @@ import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
 
 const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 
-// Real git subprocesses and fixture cleanup measured up to ~6 s per case or hook on a loaded machine (#5229).
-vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+// Cases that spawn git or node, or create and remove real fixture directories, pass an explicit 30 s ceiling
+// because they measured up to ~6 s on a loaded machine (#5229). In-memory cases keep vitest's 5 s default so an
+// injected delay in them still fails.
 
 /**
  * A throwaway mint key composed at runtime, so no credential-shaped literal is committed: the
@@ -1383,12 +1384,12 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it.each([
         ['releases the lock after definitive HTTP 422', '422', false],
         ['retains the lock and refuses reacquisition after ambiguous HTTP 409', '409', true],
-    ] as const)('%s', async (_label, status, retainsLock) => {
+    ] as const)('%s', { timeout: 30_000 }, async (_label, status, retainsLock) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-rejection-lock-'));
         initializeDeliveryLockRepository(root);
         const restorePs = writeTrustedPsFixture(root);
@@ -6856,7 +6857,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head whose required checks are all green, blaming a review thread or another ruleset rule rather than a check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-green-lock-'));
@@ -6885,7 +6886,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head whose required check turned red after an older green attempt, naming the check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-newest-red-lock-'));
@@ -6914,7 +6915,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('reads a BLOCKED head whose required check recovered after an older red attempt as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-newest-green-lock-'));
@@ -6946,7 +6947,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head whose required check has a newer attempt still in flight, naming the check whether the newest attempt is pending or failed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-inflight-lock-'));
@@ -6975,7 +6976,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('reads a BLOCKED head whose required check failed between two green attempts as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-retired-mid-lock-'));
@@ -7008,7 +7009,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head whose required check has a failure and a success sharing one start, naming the check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-tied-start-lock-'));
@@ -7037,7 +7038,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('reads a BLOCKED head whose required check ended skipped after an older failure as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-skipped-lock-'));
@@ -7071,7 +7072,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('reads a BLOCKED head whose only newer failure belongs to a different check name as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-other-name-lock-'));
@@ -7103,7 +7104,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     // An attempt GitHub reports no start for supersedes nothing: the green
     // attempt cannot be proven newer than the settled failure beside it, so
@@ -7136,7 +7137,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head even when the live ruleset cannot be read, naming the check(s) as unlistable', () => {
         const { port, calls } = fakePort({
@@ -9751,7 +9752,7 @@ describe('delivery author authentication', () => {
             'dispose',
             'dispose',
         ]);
-    });
+    }, 30_000);
 
     it('keeps the ordinary author mint when the merge diff touches no workflow', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
@@ -9781,7 +9782,7 @@ describe('delivery author authentication', () => {
             'dispose',
             'dispose',
         ]);
-    });
+    }, 30_000);
 
     it('mints the deliver workflow set through the real author role when the coordinator classifies a workflow diff', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
@@ -9840,7 +9841,7 @@ describe('delivery author authentication', () => {
             'deliver:42',
             'dispose',
         ]);
-    });
+    }, 30_000);
 
     it('disposes the ordinary author session exactly once when the workflow re-mint fails before the tracker mint', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
@@ -9875,7 +9876,7 @@ describe('delivery author authentication', () => {
             'mint:author-workflow',
             'dispose',
         ]);
-    });
+    }, 30_000);
 });
 
 describe('delivery shell boundary', () => {
@@ -10504,7 +10505,7 @@ describe('delivery shell boundary', () => {
         }
 
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it('fails merged shellPort recovery when GraphQL marks a same-timestamp author receipt as edited', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10576,7 +10577,7 @@ describe('delivery shell boundary', () => {
             expect.stringContaining(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT),
         ]);
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it.each([
         {
@@ -10701,7 +10702,7 @@ describe('delivery shell boundary', () => {
         expect(captures[0]).toContain('pr view 42');
         expect(captures[1]).toContain('mergedBy{__typename');
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it('ignores legacy v1 persisted authority until shellPort proves the complete stable merged lineage', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10771,7 +10772,7 @@ describe('delivery shell boundary', () => {
         }
 
         expect(effects).toEqual(['complete:2372']);
-    });
+    }, 30_000);
 
     it('round-trips prepared shellPort authority with a skipped advisory receiptBody and post-merge validation across fresh instances', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10806,7 +10807,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort authority CAS when the ref changes before the expected-old update', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10887,7 +10888,7 @@ describe('delivery shell boundary', () => {
             removeTemporaryGitRepository(primaryRoot);
             removeTemporaryGitRepository(wrapperRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort adapter writes when expectedCurrent mismatches the newer stored authority', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10946,7 +10947,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort adapter writes when expected authority must still be absent and a newer authority already exists', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10990,7 +10991,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort adapter clears when expectedCurrent mismatches the newer stored authority', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11044,7 +11045,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort clear when a hostile authority is recreated after the delete succeeds but before readback', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11122,7 +11123,7 @@ describe('delivery shell boundary', () => {
             removeTemporaryGitRepository(primaryRoot);
             removeTemporaryGitRepository(wrapperRoot);
         }
-    });
+    }, 30_000);
 
     it('fails before merge when a shellPort authority ref changes immediately after the prepared-authority CAS succeeds', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11280,7 +11281,7 @@ describe('delivery shell boundary', () => {
             removeTemporaryGitRepository(primaryRoot);
             removeTemporaryGitRepository(wrapperRoot);
         }
-    });
+    }, 30_000);
 
     it.each([
         {
@@ -11326,6 +11327,7 @@ describe('delivery shell boundary', () => {
         },
     ])(
         'rejects a raw v2 authority ref with malformed nested postMergeValidation: $label',
+        { timeout: 30_000 },
         ({ postMergeValidation }) => {
             const closes = relationshipBody('Closes #2372');
             const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
@@ -11383,7 +11385,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects a raw v2 authority ref with duplicate nested postMergeValidation members before JSON.parse collapses them', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11410,7 +11412,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects an exact symlink delivery receipt authority ref path', () => {
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
@@ -11448,7 +11450,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects a delivery receipt authority ref that becomes symbolic after the path check but before the bound git read', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11521,7 +11523,7 @@ describe('delivery shell boundary', () => {
             removeTemporaryGitRepository(primaryRoot);
             removeTemporaryGitRepository(wrapperRoot);
         }
-    });
+    }, 30_000);
 
     it('reads an exact packed delivery receipt authority ref when no loose ref path exists', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11552,7 +11554,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('never accepts a packed descendant delivery receipt authority ref when the exact ref does not exist', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11596,7 +11598,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects an exact loose directory that conflicts with a packed delivery receipt authority ref', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11633,12 +11635,12 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it.each([
         { label: 'loose', pack: false },
         { label: 'packed', pack: true },
-    ])('rejects a $label annotated-tag delivery receipt authority ref', ({ pack }) => {
+    ])('rejects a $label annotated-tag delivery receipt authority ref', { timeout: 30_000 }, ({ pack }) => {
         const closes = relationshipBody('Closes #2372');
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
@@ -11697,7 +11699,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('treats an exact delivery receipt authority child-prefix directory as absent', () => {
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
@@ -11720,7 +11722,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort merged recovery when proof count exceeds the complete REST lineage even if the latest id matches', () => {
         const bodyX = relationshipBody('Closes #2372');
@@ -12358,7 +12360,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects malformed repository merge settings', () => {
         let attempted = false;
@@ -12415,7 +12417,7 @@ describe('delivery shell boundary', () => {
         } finally {
             rmSync(helperDir, { recursive: true, force: true });
         }
-    });
+    }, 30_000);
 
     it('fetches origin heads and authorship notes when unauthenticated', () => {
         const runs: Array<{ command: string; args: string[] }> = [];
@@ -12570,7 +12572,7 @@ describe('delivery shell boundary', () => {
         } finally {
             rmSync(helperDir, { recursive: true, force: true });
         }
-    });
+    }, 30_000);
 
     it('swallows errors and logs a warning when authorship note sync throws, without failing delivery', () => {
         const warnings: string[] = [];
@@ -13338,5 +13340,5 @@ describe('trusted child run', () => {
         expect(() => run(process.execPath, ['-e', "console.error('trusted-child-boom'); process.exit(1)"])).toThrow(
             /trusted-child-boom/
         );
-    });
+    }, 30_000);
 });
