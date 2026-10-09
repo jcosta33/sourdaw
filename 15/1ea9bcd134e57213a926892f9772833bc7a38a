@@ -1,0 +1,24 @@
+src/modules/MIDI/useCases/__tests__/exportMidiFile.spec.ts
+  s_2bfd55a4393d7c::t_f1472318d269f4 285-302
+src/modules/MIDI/useCases/grooveTemplates/getGrooveProjection.ts
+  s_2bfd55a4393d7c::t_cd691e427b275f 120-123
+src/modules/MIDI/useCases/midiClipData/__tests__/projectMidiClipPlayback.spec.ts
+  s_2bfd55a4393d7c::t_88bbe7440b9867 68-77
+  s_2bfd55a4393d7c::t_325124b5f34a8d 24-67,78-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "151ea9bcd134e57213a926892f9772833bc7a38a",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
