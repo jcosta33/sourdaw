@@ -700,7 +700,8 @@ jobs:
       # 523s and 1252s on a slow Ubuntu mirror, so the cap matches that
       # install's 8 minutes and a merely slow mirror is not killed. The root
       # `timeout` is required because one owned by the runner user cannot
-      # signal apt under sudo; apt gets a TERM, then a KILL after 15 seconds.
+      # signal apt under sudo; the deadline sends a TERM, and the KILL after
+      # 15 seconds only reaches a `bash -c` wrapper that survives it.
       # Three timed-out attempts take 3 x 495s plus 45s of backoff, 1530s, so
       # the step carries a 30 minute limit inside the 60 minute job limit.
       - name: Install ALSA development headers

@@ -3379,6 +3379,78 @@ describe('health gates workflow contract', () => {
         }
     });
 
+    // Executes the ALSA run script with shims standing in for the privileged
+    // and slow commands, so a loop edit that keeps the contract's substrings
+    // but changes what the loop does is observed (#5072).
+    const runAlsaInstall = (
+        run: string,
+        succeedOnAttempt: number
+    ): { attempts: number; sleeps: string[]; status: number | null; stderr: string } => {
+        const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
+        const attemptLog = join(probeDirectory, 'attempts.log');
+        const sleepLog = join(probeDirectory, 'sleeps.log');
+        const shim = (name: string, lines: string[]): void => {
+            writeFileSync(join(probeDirectory, name), ['#!/usr/bin/env bash', ...lines].join('\n'), { mode: 0o755 });
+        };
+        try {
+            shim('sudo', ['exec "$@"']);
+            // Drops the --kill-after and duration operands, then runs the command.
+            shim('timeout', ['shift 2', 'exec "$@"']);
+            shim('sleep', ['printf "%s\\n" "$1" >> "$SLEEP_LOG"']);
+            // Each attempt runs `apt-get update` once; that call is the attempt count.
+            shim('apt-get', [
+                'if [ "$1" = update ]; then',
+                '  printf "attempt\\n" >> "$ATTEMPT_LOG"',
+                '  [ "$(wc -l < "$ATTEMPT_LOG")" -ge "$SUCCEED_ON_ATTEMPT" ] || exit 100',
+                'fi',
+            ]);
+            const result = spawnSync('bash', ['-c', run], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    ATTEMPT_LOG: attemptLog,
+                    SLEEP_LOG: sleepLog,
+                    SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
+                    PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
+                },
+                timeout: 10_000,
+            });
+            expect(result.error).toBeUndefined();
+            const lines = (path: string): string[] =>
+                existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n') : [];
+            return {
+                attempts: lines(attemptLog).length,
+                sleeps: lines(sleepLog),
+                status: result.status,
+                stderr: result.stderr,
+            };
+        } finally {
+            rmSync(probeDirectory, { force: true, recursive: true });
+        }
+    };
+
+    for (const { label, workflow } of [
+        { label: 'the validation Rust job', workflow: validationWorkflow },
+        { label: 'the nightly Rust job', workflow: nightly },
+    ]) {
+        const alsaRun = stringAt(stepNamed(jobAt(workflow, 'rust'), 'Install ALSA development headers'), 'run');
+
+        it(`${label} makes three ALSA install attempts, then fails the step`, () => {
+            const outcome = runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
+            expect(outcome.attempts).toBe(3);
+            expect(outcome.sleeps).toEqual(['15', '30']);
+            expect(outcome.status).toBe(1);
+            expect(outcome.stderr).toContain('ALSA header install failed (attempt 3/3)');
+        });
+
+        it(`${label} stops retrying the ALSA install once an attempt succeeds`, () => {
+            const outcome = runAlsaInstall(alsaRun, 2);
+            expect(outcome.attempts).toBe(2);
+            expect(outcome.sleeps).toEqual(['15']);
+            expect(outcome.status).toBe(0);
+        });
+    }
+
     it('fails every Linux browser install step after its third failed attempt', () => {
         const installs = [
             { label: 'the offline smoke job', workflow: validationWorkflow, job: 'smoke' },
