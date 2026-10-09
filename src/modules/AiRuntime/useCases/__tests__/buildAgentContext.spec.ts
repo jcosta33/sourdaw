@@ -964,6 +964,14 @@ describe('buildAgentContext', () => {
                 return change(track);
             });
         }
+        // Track 1 as the fixture builds it with `count` clips; the selected track 0 keeps its three.
+        const withClips = (count: number): ProjectContext => {
+            const crowded = plannedProject(2, count).tracks[1];
+            if (crowded === undefined) {
+                throw new Error('Expected the planned project to build track 1.');
+            }
+            return { ...fiveTrackProject, tracks: withTrackChanged(1, () => crowded) };
+        };
         const withSends = (count: number): ProjectContext => ({
             ...fiveTrackProject,
             tracks: withTrackChanged(1, (track) => ({
@@ -981,9 +989,10 @@ describe('buildAgentContext', () => {
         it.each([
             {
                 label: 'a track with 30 clips',
-                project: plannedProject(2, 30),
+                project: withClips(30),
                 omitted: (data: ProjectSectionData) => {
-                    expect(data.selectableTargets[0]?.omittedClipCount).toBe(14);
+                    expect(data.selectableTargets[0]?.omittedClipCount).toBe(0);
+                    expect(data.selectableTargets[1]?.omittedClipCount).toBe(14);
                 },
             },
             {

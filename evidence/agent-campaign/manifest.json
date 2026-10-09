@@ -536,7 +536,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts",
-                    "digest": "afa7d066f117a92fcab686df11312a4edef4d240c623b21dd6fdf229017bafe1"
+                    "digest": "083f504cc742c2724982bc973988065946ccc794b91d5c3f21ef556bf35aa519"
                 }
             ]
         },
