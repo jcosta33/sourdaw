@@ -1,0 +1,33 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_c417d595f47fb2 43
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  s_1c08b47ac3792f::t_d56c7c58e11e0c 428-429,440,443-450,452-455
+  s_1c08b47ac3792f::t_bfebe398a59c21 374
+  s_1c08b47ac3792f::t_68b31ff4c4e89b 421
+  s_1c08b47ac3792f::t_c502ba930eabb9 162
+  s_1c08b47ac3792f::t_f59959e79ae817 407,413
+src/modules/AiRuntime/transformers/buildThreadContext.ts
+  s_1c08b47ac3792f::t_352f7e4a8b3ea5 41-46
+  s_1c08b47ac3792f::t_ae7faca2adaf57 90-91,99
+src/modules/AiRuntime/useCases/readChatThreadContext.ts
+  s_1c08b47ac3792f::t_0219853f5bb57f 13-15,18-19
+  s_1c08b47ac3792f::t_fc223ba7b98ed1 27
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_1c08b47ac3792f::t_78bc39026f4374 598-602
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1db803f33f24f0fa0f9f63abb4c3ef3d33e64772",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
