@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  s_1c08b47ac3792f::t_485995507e959a 489-496
+  s_1c08b47ac3792f::t_0ebe64bbd1be2e 554-615
+  s_1c08b47ac3792f::t_de7d14bca81f14 9-14
+  s_1c08b47ac3792f::t_4a56bc946ef7b7 365,369
+  s_1c08b47ac3792f::t_273f81ae688398 1097-1137
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_1c08b47ac3792f::t_bd1af318cb79a8 644-650
+src/modules/AiRuntime/transformers/buildThreadContext.ts
+  s_1c08b47ac3792f::t_354e71f6adc134 88-93,100-102,105
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_e9e5500afa6b84 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b43d3eff9dfe5c1669bca6b95f65a3519998d40",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
