@@ -459,9 +459,13 @@ describe('opaque bearer complete request admission', () => {
         { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
         { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
     ];
-    function explicitHeaderForms(value: string) {
-        const scheme = ['Bearer', value].join(' ');
+    function explicitHeaderForms(value: string, padding = '', separator = ' ') {
+        const scheme = `${padding}${['Bearer', value].join(separator)}${padding}`;
         return [
+            { shape: 'template-bracket', value: `headers[\`Authorization\`] = \`${scheme}\`;` },
+            { shape: 'bracket-assignment', value: `headers['Authorization'] = '${scheme}';` },
+            { shape: 'computed-key', value: `const headers = { ['Authorization']: '${scheme}' };` },
+            { shape: 'quoted-object', value: JSON.stringify({ Authorization: scheme }) },
             { shape: 'assignment', value: `headers.Authorization = '${scheme}';` },
             { shape: 'setter', value: `headers.set('Authorization', '${scheme}');` },
             { shape: 'append', value: `headers.append("Authorization", "${scheme}");` },
@@ -471,7 +475,25 @@ describe('opaque bearer complete request admission', () => {
             { shape: 'template-assignment', value: `headers.Authorization = \`${scheme}\`;` },
         ];
     }
+    function whitespaceHeaderForms(value: string) {
+        return [
+            { whitespace: 'space', padding: ' ', separator: ' ' },
+            { whitespace: 'tab', padding: String.fromCharCode(9), separator: ' ' },
+            { whitespace: 'mixed', padding: ` ${String.fromCharCode(9)}`, separator: ' ' },
+            { whitespace: 'scheme-tab', padding: '', separator: String.fromCharCode(9) },
+        ].flatMap(({ whitespace, padding, separator }) =>
+            explicitHeaderForms(value, padding, separator).flatMap((form) => [
+                { ...form, shape: `${form.shape}-${whitespace}-raw` },
+                { shape: `${form.shape}-${whitespace}-escaped`, value: JSON.stringify(form.value) },
+            ])
+        );
+    }
     const literals = [
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                whitespaceHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+            ),
         ...headerValues.flatMap(({ shape, value }) =>
             explicitHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
         ),
@@ -529,10 +551,20 @@ describe('opaque bearer complete request admission', () => {
         };
     }
 
-    const headerStructures = headerValues.flatMap(({ shape, value }) => [
-        { shape: `object-${shape}`, value, state: { Authorization: ['Bearer', value].join(' ') } },
-        { shape: `tuple-${shape}`, value, state: [['Authorization', ['Bearer', value].join(' ')]] },
-    ]);
+    const headerStructures = headerValues.flatMap(({ shape, value }) =>
+        ['', ' ', String.fromCharCode(9), ` ${String.fromCharCode(9)}`].flatMap((padding, index) => [
+            {
+                shape: `object-${shape}-padding-${String(index)}`,
+                value,
+                state: { Authorization: `${padding}${['Bearer', value].join(' ')}` },
+            },
+            {
+                shape: `tuple-${shape}-padding-${String(index)}`,
+                value,
+                state: [['Authorization', `${padding}${['Bearer', value].join(' ')}`]],
+            },
+        ])
+    );
     it.each(headerStructures)(
         'opaque bearer paired header $shape requires the serialized screen',
         ({ value, state }) => {
@@ -615,8 +647,8 @@ describe('opaque bearer complete request admission', () => {
         }
     );
 
-    it.each(
-        positions.flatMap((position) => [
+    it.each([
+        ...positions.flatMap((position) => [
             // A reference needs actual interpolation; a bare alphabetic scheme value is a literal.
             { position, control: 'reference', value: 'Bearer ${runtimeCredentialReference}' },
             { position, control: 'short-prose', value: 'A reviewer mentions Bearer schemes in this note.' },
@@ -637,8 +669,15 @@ describe('opaque bearer complete request admission', () => {
                 control: 'prose',
                 value: 'A reviewer notes Bearer credential-shaped examples remain synthetic and contain no credential.',
             },
-        ])
-    )('opaque bearer $control $position reaches a valid matching cache', async ({ position, value }) => {
+        ]),
+        ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap((value) =>
+            whitespaceHeaderForms(value).map((form) => ({
+                position: 'state' as const,
+                control: `${form.shape}-benign`,
+                value: form.value,
+            }))
+        ),
+    ])('opaque bearer $control $position reaches a valid matching cache', async ({ position, value }) => {
         const request = payload(position, value);
         const read = vi.fn(() => ({
             model: request.model,

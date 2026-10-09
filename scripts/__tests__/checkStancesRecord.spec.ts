@@ -577,9 +577,13 @@ describe('opaque bearer stance admission', () => {
     const opaque = ['A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0'].join('');
     const header = ['Authorization:', 'Bearer', opaque].join(' ');
     const fields = ['stance', 'admittedBy'] as const;
-    function explicitHeaderForms(value: string) {
-        const scheme = ['Bearer', value].join(' ');
+    function explicitHeaderForms(value: string, padding = '', separator = ' ') {
+        const scheme = `${padding}${['Bearer', value].join(separator)}${padding}`;
         return [
+            { shape: 'template-bracket', value: `headers[\`Authorization\`] = \`${scheme}\`;` },
+            { shape: 'bracket-assignment', value: `headers['Authorization'] = '${scheme}';` },
+            { shape: 'computed-key', value: `const headers = { ['Authorization']: '${scheme}' };` },
+            { shape: 'quoted-object', value: JSON.stringify({ Authorization: scheme }) },
             { shape: 'assignment', value: `headers.Authorization = '${scheme}';` },
             { shape: 'setter', value: `headers.set('Authorization', '${scheme}');` },
             { shape: 'append', value: `headers.append("Authorization", "${scheme}");` },
@@ -589,7 +593,23 @@ describe('opaque bearer stance admission', () => {
             { shape: 'template-assignment', value: `headers.Authorization = \`${scheme}\`;` },
         ];
     }
+    function whitespaceHeaderForms(value: string) {
+        return [
+            { whitespace: 'space', padding: ' ', separator: ' ' },
+            { whitespace: 'tab', padding: String.fromCharCode(9), separator: ' ' },
+            { whitespace: 'mixed', padding: ` ${String.fromCharCode(9)}`, separator: ' ' },
+            { whitespace: 'scheme-tab', padding: '', separator: String.fromCharCode(9) },
+        ].flatMap(({ whitespace, padding, separator }) =>
+            explicitHeaderForms(value, padding, separator).flatMap((form) => [
+                { ...form, shape: `${form.shape}-${whitespace}-raw` },
+                { shape: `${form.shape}-${whitespace}-escaped`, value: JSON.stringify(form.value) },
+            ])
+        );
+    }
     const literals = [
+        ...[String.fromCharCode(81), ['Q1w2E3', 'r4T5y6', 'U7i'].join('')].flatMap((value, index) =>
+            whitespaceHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-short-${String(index)}` }))
+        ),
         ...[
             { shape: 'one-character', value: String.fromCharCode(81) },
             { shape: 'fifteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7i'].join('') },
@@ -674,7 +694,16 @@ describe('opaque bearer stance admission', () => {
         expect(result.stderr).not.toContain(opaque);
     });
 
-    it.each(fields.flatMap((field) => explicitHeaderForms('<token>').map((form) => ({ field, ...form }))))(
+    it.each(
+        fields.flatMap((field) =>
+            [
+                ...explicitHeaderForms('<token>'),
+                ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap(
+                    whitespaceHeaderForms
+                ),
+            ].map((form) => ({ field, ...form }))
+        )
+    )(
         'opaque bearer $shape $field placeholder reaches one installed SDK delegate unchanged',
         async ({ field, value }) => {
             const admission = { ...GENUINE_ADMISSIONS[0]!, [field]: value };

@@ -306,12 +306,18 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
 /** Literal scheme values do not inherit assignment-expression exemptions. */
 function hasOpaqueBearerValue(text: string): boolean {
     // Match every candidate with a fresh iterator: a benign first example cannot hide later material.
-    // Explicit headers bind colon/assignment values or quoted comma pairs (setters and tuples),
-    // including their JSON-escaped source strings, at RFC 6750's one-character minimum.
+    // Literal quoted keys may close a bracket before colon/equals; comma pairs require quoted values.
+    // Raw and JSON-escaped tabs remain whitespace at these explicit header boundaries.
     // Unqualified scheme text retains the generic assignment screen's 16-character opaque-value floor.
-    for (const match of text.matchAll(
-        /\bauthorization(?:(?:\\*["'\x60])?\s*[:=]\s*(?:\\*["'\x60])?|\\*["'\x60]\s*,\s*\\*["'\x60])bearer[ \t]+([A-Za-z0-9+/_~.-]+=*)|\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})/giu
-    )) {
+    const quote = String.raw`\\*["'\x60]`;
+    const gap = String.raw`(?:\s|\\+t)*`;
+    const schemeGap = String.raw`(?:[ \t]|\\+t)+`;
+    const quotedKeyEnd = `${quote}(?:${gap}\\])?`;
+    const assignment = `(?:${quotedKeyEnd})?${gap}[:=]${gap}(?:${quote}${gap})?`;
+    const commaPair = `${quote}${gap},${gap}${quote}${gap}`;
+    const explicitHeader = String.raw`\bauthorization(?:${assignment}|${commaPair})bearer${schemeGap}([A-Za-z0-9+/_~.-]+=*)`;
+    const genericScheme = String.raw`\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})`;
+    for (const match of text.matchAll(new RegExp(`${explicitHeader}|${genericScheme}`, 'giu'))) {
         const value = match[1] ?? match[2]!;
         if (PLACEHOLDER_VALUE.test(value) || /^[A-Z][A-Z0-9_]*_PLACEHOLDER$/u.test(value)) {
             continue;

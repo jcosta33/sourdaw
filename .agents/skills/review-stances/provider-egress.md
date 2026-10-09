@@ -136,3 +136,19 @@ with placeholders, interpolation, concatenation, empty values, unrelated header 
 unpaired prose and unqualified short Bearer controls. This lexical screen recognizes the
 bounded colon, equals and quoted comma forms; it does not evaluate runtime expressions
 or claim arbitrary encoded credential detection.
+
+PR #5156's review of unlanded head `00db7233619228839ea2db96a9da02927fac3897`
+found literal bracket assignments, computed literal object keys, and leading whitespace
+inside quoted values still admitted short scheme values. The provider-egress coverage
+varied operators but omitted the key-closing bracket and value-whitespace dimensions,
+including the tab escapes produced by the final serialized envelope. The incomplete
+grammar is in this unlanded PR; this is not an introducing-history claim about `main`.
+Keep one bounded context matrix across literal direct/object/assignment, setter/append,
+tuple and bracket/computed forms, single/double/backtick delimiters, raw and JSON-escaped
+space/tab, and one/fifteen-character values. Prove actual object/tuple pairing refuses
+when short individual leaves pass, before a would-hit cache, reservation, provider or SDK
+delegate. Pair every whitespace form with placeholder/interpolation controls and retain
+the generic sixteen-character floor. The committed production-only revert must break
+these same source, complete-envelope and stance caller oracles without changing specs.
+Literal brackets and JSON tab escapes are recognized syntactic forms; runtime key
+expressions, concatenated values and arbitrary encodings are not evaluated by this screen.
