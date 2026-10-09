@@ -21,6 +21,7 @@ import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoo
 import { agentRunCancellation } from '../cancelAgentRun';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { planPromptActions } from '../planPromptActions';
+import { readChatThreadContext } from '../readChatThreadContext';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
 import { appendAnswerChatMessages } from './appendAnswerChatMessages';
@@ -375,6 +376,7 @@ async function dispatchPromptPlan(input: {
             content: 'Executing...',
             timestamp: Date.now(),
             isCommandAction: true,
+            agentRunId: admission.runId,
         });
         const confirmationDescription = describePendingActionConfirmation({
             actions: result.actions,
@@ -696,6 +698,8 @@ export async function orchestratePromptChatRequest(
                 );
             },
             providerPlanning: admission.providerPlanning ? 'enabled' : 'disabled',
+            // Read before this request joins the thread, so the thread holds only its earlier turns.
+            thread: readChatThreadContext(),
         });
         if (!settleCompletedPlanning(admission, input.userText)) {
             return undefined;

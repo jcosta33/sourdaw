@@ -20,6 +20,8 @@ export type ChatMessage = {
     answerEvidence?: readonly AnswerEvidenceEntry[];
     /** Whether this message is an executable prompt-command receipt rather than ordinary chat. */
     isCommandAction?: boolean;
+    /** The agent run a command message reports, so the thread can name the run it committed. */
+    agentRunId?: string;
     /** Pending prompt-action confirmation owned by AiRuntime. */
     pendingActionConfirmationId?: string;
     pendingActionConfirmationStatus?: ChatActionConfirmationStatus;

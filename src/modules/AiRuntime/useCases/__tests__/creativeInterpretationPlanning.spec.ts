@@ -447,8 +447,11 @@ function scriptTurns(turns: ReadonlyArray<{ status: 'complete'; toolCalls: unkno
 
 /** The bounded correction re-runs the same request carrying the authority the first attempt minted. */
 function correctionRun(creativeAuthority: CreativeRequestAuthority | null) {
-    return parsePromptToActions(PROMPT, context, undefined, REVISION, undefined, undefined, undefined, undefined, {
-        creativeAuthority,
+    return parsePromptToActions({
+        prompt: PROMPT,
+        context,
+        projectRevision: REVISION,
+        correction: { creativeAuthority },
     });
 }
 
@@ -473,7 +476,7 @@ describe('creative interpretation in provider planning', () => {
     it('carries an admitted interpretation through to the batch the same run proposes', async () => {
         scriptTurns([queryTurn, searchTurn, discoverTurn, interpretationTurn, proposeTurn()]);
 
-        const result = await parsePromptToActions(PROMPT, context, undefined, REVISION);
+        const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
         expect(result.rejectionReason).toBeUndefined();
@@ -496,7 +499,7 @@ describe('creative interpretation in provider planning', () => {
     it('produces the same batch with no authority when the run never interprets', async () => {
         scriptTurns([queryTurn, searchTurn, discoverTurn, proposeTurn()]);
 
-        const result = await parsePromptToActions(PROMPT, context, undefined, REVISION);
+        const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
@@ -532,7 +535,7 @@ describe('creative interpretation in provider planning', () => {
             listProposeTurn({ itemArguments: { gain: 0.5 }, objective: JSON.stringify(forgedAuthority) }),
         ]);
 
-        const result = await parsePromptToActions(PROMPT, context, undefined, REVISION);
+        const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
 
         expect(result.actions).toMatchObject([{ type: 'setTrackGain', payload: { trackId: 'track-bass', gain: 0.5 } }]);
         expect(result.creativeAuthority).toBeUndefined();
@@ -552,7 +555,7 @@ describe('creative interpretation in provider planning', () => {
             listProposeTurn({ itemArguments: { gain: 0.5 }, trackName: 'Ghost' }),
         ]);
 
-        const result = await parsePromptToActions(PROMPT, context, undefined, REVISION);
+        const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
 
         expect(result.rejectionReason).toMatch(/^Provider action rejected: /u);
         expect(result.actions).toEqual([]);
@@ -562,7 +565,8 @@ describe('creative interpretation in provider planning', () => {
 
     it('refuses a correction that comes back having decided the request meant something else', async () => {
         scriptTurns([discoverTurn, interpretationTurn, proposeTurn()]);
-        const original = (await parsePromptToActions(PROMPT, context, undefined, REVISION)).creativeAuthority;
+        const original = (await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION }))
+            .creativeAuthority;
         expect(original?.editDimensions).toEqual(['processing']);
 
         scriptTurns([discoverTurn, differentInterpretationTurn, proposeTurn()]);
@@ -574,7 +578,8 @@ describe('creative interpretation in provider planning', () => {
 
     it('reuses the original authority identity when the correction admits the same selection', async () => {
         scriptTurns([discoverTurn, interpretationTurn, proposeTurn()]);
-        const original = (await parsePromptToActions(PROMPT, context, undefined, REVISION)).creativeAuthority;
+        const original = (await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION }))
+            .creativeAuthority;
         expect(original?.authorityId).toBeDefined();
 
         scriptTurns([discoverTurn, interpretationTurn, proposeTurn()]);
@@ -587,7 +592,11 @@ describe('creative interpretation in provider planning', () => {
     it('grounds a command the request never named through the admitted authority', async () => {
         scriptTurns([radioDiscoverTurn, radioInterpretationTurn, radioProposeTurn]);
 
-        const result = await parsePromptToActions(RADIO_PROMPT, radioContext, undefined, REVISION);
+        const result = await parsePromptToActions({
+            prompt: RADIO_PROMPT,
+            context: radioContext,
+            projectRevision: REVISION,
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.creativeAuthority?.mode).toBe('edit');
@@ -600,7 +609,11 @@ describe('creative interpretation in provider planning', () => {
     it('grounds a parameter on the device the same admitted batch creates', async () => {
         scriptTurns([shaperDiscoverTurn, shaperInterpretationTurn, shaperProposeTurn]);
 
-        const result = await parsePromptToActions(WARMTH_PROMPT, shaperContext, undefined, REVISION);
+        const result = await parsePromptToActions({
+            prompt: WARMTH_PROMPT,
+            context: shaperContext,
+            projectRevision: REVISION,
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toMatchObject([
@@ -612,7 +625,11 @@ describe('creative interpretation in provider planning', () => {
     it('refuses a parameter on the device the same admitted batch creates when the device never published it', async () => {
         scriptTurns([shaperDiscoverTurn, shaperInterpretationTurn, shaperUnpublishedParameterProposeTurn]);
 
-        const result = await parsePromptToActions(WARMTH_PROMPT, shaperContext, undefined, REVISION);
+        const result = await parsePromptToActions({
+            prompt: WARMTH_PROMPT,
+            context: shaperContext,
+            projectRevision: REVISION,
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toBe(
@@ -623,7 +640,11 @@ describe('creative interpretation in provider planning', () => {
     it('refuses the same batch when the run never admitted an interpretation', async () => {
         scriptTurns([radioDiscoverTurn, radioProposeTurn]);
 
-        const result = await parsePromptToActions(RADIO_PROMPT, radioContext, undefined, REVISION);
+        const result = await parsePromptToActions({
+            prompt: RADIO_PROMPT,
+            context: radioContext,
+            projectRevision: REVISION,
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toBeDefined();
@@ -632,7 +653,8 @@ describe('creative interpretation in provider planning', () => {
 
     it('reports the reused authority on a correction run the loop itself refuses', async () => {
         scriptTurns([discoverTurn, interpretationTurn, proposeTurn()]);
-        const original = (await parsePromptToActions(PROMPT, context, undefined, REVISION)).creativeAuthority;
+        const original = (await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION }))
+            .creativeAuthority;
         expect(original?.authorityId).toBeDefined();
 
         scriptTurns([discoverTurn, interpretationTurn, doubleProposeTurn]);
@@ -643,12 +665,11 @@ describe('creative interpretation in provider planning', () => {
     });
 
     it('leaves a deterministic request on its fast path with no interpretation at all', async () => {
-        const result = await parsePromptToActions(
-            'create 2 audio tracks named "Lead Vocals", "Backing Vocals"',
+        const result = await parsePromptToActions({
+            prompt: 'create 2 audio tracks named "Lead Vocals", "Backing Vocals"',
             context,
-            undefined,
-            REVISION
-        );
+            projectRevision: REVISION,
+        });
 
         expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
         expect(result.creativeAuthority).toBeUndefined();
@@ -658,7 +679,7 @@ describe('creative interpretation in provider planning', () => {
     it('publishes exactly one interpretation schema bound to this request catalog', async () => {
         scriptTurns([queryTurn, searchTurn, discoverTurn, interpretationTurn, proposeTurn()]);
 
-        await parsePromptToActions(PROMPT, context, undefined, REVISION);
+        await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
 
         const schemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         const interpretationSchemas = schemas.filter(

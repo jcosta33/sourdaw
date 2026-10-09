@@ -270,6 +270,9 @@ vi.mock('../planPromptActions', () => ({
     planPromptActions: mocks.planPromptActions,
 }));
 
+// The chat and confirmation stores are mocked without their state, so the thread reads as empty.
+vi.mock('../readChatThreadContext', () => ({ readChatThreadContext: () => null }));
+
 const commandGraphContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],

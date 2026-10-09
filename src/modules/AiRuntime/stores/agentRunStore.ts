@@ -38,6 +38,7 @@ import {
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
+import { type ThreadContextEvidence } from '../models/ThreadContext';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
@@ -958,6 +959,60 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     };
 }
 
+function readThreadContextEvidence(value: unknown): ThreadContextEvidence | null {
+    if (!isRecord(value) || typeof value.pendingProposal !== 'boolean' || typeof value.lastCommit !== 'boolean') {
+        return null;
+    }
+    const requestCount = readNonNegativeInteger(value.requestCount);
+    const omittedRequestCount = readNonNegativeInteger(value.omittedRequestCount);
+    const pendingCommandCount = readNonNegativeInteger(value.pendingCommandCount);
+    const omittedPendingCommandCount = readNonNegativeInteger(value.omittedPendingCommandCount);
+    const committedCommandCount = readNonNegativeInteger(value.committedCommandCount);
+    const omittedCommittedCommandCount = readNonNegativeInteger(value.omittedCommittedCommandCount);
+    const measuredDeltaCount = readNonNegativeInteger(value.measuredDeltaCount);
+    const omittedMeasuredDeltaCount = readNonNegativeInteger(value.omittedMeasuredDeltaCount);
+    const bytes = readNonNegativeInteger(value.bytes);
+    if (
+        requestCount === null ||
+        omittedRequestCount === null ||
+        pendingCommandCount === null ||
+        omittedPendingCommandCount === null ||
+        committedCommandCount === null ||
+        omittedCommittedCommandCount === null ||
+        measuredDeltaCount === null ||
+        omittedMeasuredDeltaCount === null ||
+        bytes === null
+    ) {
+        return null;
+    }
+    return {
+        requestCount,
+        omittedRequestCount,
+        pendingProposal: value.pendingProposal,
+        pendingCommandCount,
+        omittedPendingCommandCount,
+        lastCommit: value.lastCommit,
+        committedCommandCount,
+        omittedCommittedCommandCount,
+        measuredDeltaCount,
+        omittedMeasuredDeltaCount,
+        bytes,
+    };
+}
+
+/** A thread record is optional; when present, both profiles' records must read, or the evidence is refused whole. */
+function readIncludedThreadEvidence(value: unknown): AgentContextEvidence['included']['thread'] | null {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value)) {
+        return null;
+    }
+    const hosted = readThreadContextEvidence(value.hosted);
+    const local = readThreadContextEvidence(value.local);
+    return hosted === null || local === null ? null : { hosted, local };
+}
+
 function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
     if (value === null) {
         return null;
@@ -973,6 +1028,7 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
         return null;
     }
     const included = value.included;
+    const thread = readIncludedThreadEvidence(included.thread);
     const revision = readNullableString(value.revision);
     const trackId = readNullableString(value.selection.trackId);
     const clipId = readNullableString(value.selection.clipId);
@@ -1119,7 +1175,8 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
         validationFailures === undefined ||
         snapshot === undefined ||
         grants === undefined ||
-        budgets === undefined
+        budgets === undefined ||
+        thread === null
     ) {
         return null;
     }
@@ -1135,6 +1192,7 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             validationFailures,
             measurementCount: readNonNegativeInteger(included.measurementCount)!,
             trackCount: readNonNegativeInteger(included.trackCount)!,
+            ...(thread === undefined ? {} : { thread }),
         },
         snapshot,
         delta: { mode: value.delta.mode, baseRevision: deltaBaseRevision, currentRevision: deltaCurrentRevision },
