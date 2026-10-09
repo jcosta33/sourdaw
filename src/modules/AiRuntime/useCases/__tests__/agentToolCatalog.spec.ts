@@ -11,6 +11,7 @@ import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANSWER_RESPOND_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     getAgentToolCatalogSchemas,
     RECIPE_DISCOVERY_TOOL_NAME,
@@ -172,6 +173,28 @@ describe('agent tool catalog', () => {
         expect(declineSchema?.function.parameters.properties).not.toHaveProperty('list');
     });
 
+    it('publishes a bounded answer contract that carries text and cited call ids and no batch', () => {
+        const answerSchema = getAgentToolCatalogSchemas().find(
+            (schema) => schema.function.name === ANSWER_RESPOND_TOOL_NAME
+        );
+
+        expect(answerSchema?.function.parameters).toEqual({
+            type: 'object',
+            properties: {
+                text: { type: 'string', minLength: 1, maxLength: 4096 },
+                evidenceCallIds: {
+                    type: 'array',
+                    maxItems: 32,
+                    items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
+            },
+            required: ['text', 'evidenceCallIds'],
+            additionalProperties: false,
+        });
+        expect(answerSchema?.function.description).toContain('analysis.measure');
+        expect(answerSchema?.function.description).toContain('return this call alone in its turn');
+    });
+
     it('publishes a recipe-discovery contract whose role enum matches the mixing recipe catalog', () => {
         const roles = getMixRecipeCatalog().roles;
         const recipeSchema = getAgentToolCatalogSchemas().find(
@@ -312,6 +335,7 @@ describe('agent tool catalog', () => {
             'device.factory-manifest.read',
             'command.batch.propose',
             'command.batch.decline',
+            'answer.respond',
             'command.history',
             'render.request',
             'analysis.request',

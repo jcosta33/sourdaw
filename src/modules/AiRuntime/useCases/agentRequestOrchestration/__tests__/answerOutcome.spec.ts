@@ -14,6 +14,9 @@ import { orchestratePromptChatRequest } from '../orchestratePromptChatRequest';
 const mocks = vi.hoisted(() => ({
     planPromptActions: vi.fn(),
     persistPromptActionConfirmation: vi.fn(),
+    materializePromptCommandPlan: vi.fn(() => {
+        throw new Error('An answer must never materialize a command plan.');
+    }),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -55,6 +58,9 @@ vi.mock('../../../repositories/webLlm/getActiveModelId', () => ({ getActiveModel
 vi.mock('../../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
 vi.mock('../persistPromptActionConfirmation', () => ({
     persistPromptActionConfirmation: mocks.persistPromptActionConfirmation,
+}));
+vi.mock('../materializePromptCommandPlan', () => ({
+    materializePromptCommandPlan: mocks.materializePromptCommandPlan,
 }));
 
 const RUN_ID = 'agent-run-00000000-0000-0000-0000-000000000001';
@@ -169,6 +175,76 @@ describe('answer outcome in the agent chat', () => {
 
         const receipts = agentRunLifecycle.get(RUN_ID)?.plan?.applicationToolReceipts;
         expect(receipts?.map((entry) => entry.callId)).toEqual(['call-1', 'call-2']);
+    });
+
+    it('reads an answer before the actions, so a batch beside an answer never runs', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions: [{ type: 'togglePlayback' }],
+                rawText: PROMPT,
+                requiresConfirmation: false,
+                applicationToolReceipts: RECEIPTS,
+                planningOutcome: { kind: 'answer', text: ANSWER_TEXT, evidence: [] },
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await submitInChat();
+
+        expect(mocks.materializePromptCommandPlan).not.toHaveBeenCalled();
+        expect(mocks.persistPromptActionConfirmation).not.toHaveBeenCalled();
+        const messages = chatStore.value?.messages ?? [];
+        expect(messages.map(({ role, content, error }) => ({ role, content, error }))).toEqual([
+            { role: 'user', content: PROMPT, error: undefined },
+            { role: 'assistant', content: ANSWER_TEXT, error: undefined },
+        ]);
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('completed');
+    });
+
+    it('completes a decision resume that answers, settling the decision instead of failing for a missing plan', async () => {
+        const onResumedPlanAccepted = vi.fn();
+
+        await orchestratePromptChatRequest({
+            userText: PROMPT,
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: {
+                resume: {
+                    sourceRunId: 'source-run',
+                    decisionId: 'decision-1',
+                    selectedAlternativeId: 'drum-bus',
+                    selectedAlternative: { id: 'drum-bus', label: 'The drum bus', changesAuthority: false },
+                    proposalIdentity: 'proposal-1',
+                    capabilitySchemaIdentity: 'catalog-v1',
+                    revision: 'revision-1',
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    grants: {
+                        allowedOperationPrefixes: [],
+                        create: false,
+                        delete: false,
+                        routing: false,
+                        tempo: false,
+                        master: false,
+                        file: false,
+                        audioUpload: false,
+                        remoteGeneration: false,
+                        autoCommit: false,
+                    },
+                    budgets: { limits: {}, consumed: {} },
+                },
+                onResumedPlanAccepted,
+            },
+        });
+
+        expect(onResumedPlanAccepted).toHaveBeenCalledTimes(1);
+        const messages = chatStore.value?.messages ?? [];
+        expect(messages.map(({ role, content, error }) => ({ role, content, error }))).toEqual([
+            { role: 'user', content: PROMPT, error: undefined },
+            { role: 'assistant', content: ANSWER_TEXT, error: undefined },
+        ]);
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('completed');
     });
 
     it('still reports a decline as an error, so only an answer is exempt', async () => {

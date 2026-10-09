@@ -15,6 +15,13 @@ vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/undoLastAction', () => ({
     },
 }));
 
+const mockOpenAnswerInChat = vi.fn();
+vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/openAnswerInChat', () => ({
+    openAnswerInChat: (...args: unknown[]) => {
+        mockOpenAnswerInChat(...args);
+    },
+}));
+
 const mockSubscribeAiChangeNotification = vi.fn<(handler: AiChangeNotificationHandler) => () => void>(() => vi.fn());
 vi.mock('../../../useCases/subscribeAiChangeNotification', () => ({
     subscribeAiChangeNotification: (handler: AiChangeNotificationHandler) => mockSubscribeAiChangeNotification(handler),
@@ -253,5 +260,62 @@ describe('AiChangeToast', () => {
         });
 
         expect(screen.queryByText('Auto dismiss test')).toBeNull();
+    });
+
+    describe('a Prompt Bar answer', () => {
+        const answer = {
+            prompt: 'How loud is the master?',
+            text: 'The master integrates at -14.2 LUFS.',
+            evidence: [{ callId: 'call-1', toolName: 'analysis.measure', summary: 'Measured the master.' }],
+        };
+        const answerNotification: AiChangeNotification = {
+            id: 'test-answer',
+            summary: answer.text,
+            details: [],
+            timestamp: 1_700_000_000_000,
+            kind: 'answer',
+            answer,
+        };
+
+        it('stays until dismissed, so a long answer can be read', () => {
+            const { emit } = captureNotificationHandler();
+            render(<AiChangeToast />);
+
+            act(() => {
+                emit(answerNotification);
+            });
+            act(() => {
+                vi.advanceTimersByTime(60_000);
+            });
+
+            expect(screen.getByText(answer.text)).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: /Dismiss/i }));
+            expect(screen.queryByText(answer.text)).toBeNull();
+        });
+
+        it('opens the whole answer in the chat and leaves the notice', () => {
+            const { emit } = captureNotificationHandler();
+            render(<AiChangeToast />);
+
+            act(() => {
+                emit(answerNotification);
+            });
+            expect(screen.queryByRole('button', { name: /Undo/i })).not.toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: /Open in chat/i }));
+
+            expect(mockOpenAnswerInChat).toHaveBeenCalledExactlyOnceWith(answer);
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('offers no chat action on an ordinary notice', () => {
+            const { emit } = captureNotificationHandler();
+            render(<AiChangeToast />);
+
+            act(() => {
+                emit(createNotification({ summary: 'Command not executed.', details: [], kind: 'notice' }));
+            });
+
+            expect(screen.queryByRole('button', { name: /Open in chat/i })).not.toBeInTheDocument();
+        });
     });
 });

@@ -411,6 +411,7 @@ describe('application-owned tool loop', () => {
             'analysis.compareReference',
             'analysis.measure',
             'analysis.request',
+            'answer.respond',
             'command.batch.decline',
             'command.batch.propose',
             'command.history',
