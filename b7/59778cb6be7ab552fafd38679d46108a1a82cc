@@ -1,0 +1,25 @@
+.agents/skills/review-stances/browser-inventory.md
+  s_97ab82e0b4f10c::t_489b69a159b239 27-30
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_97ab82e0b4f10c::t_50c86b76993138 126-127,195-200,474-484
+  s_97ab82e0b4f10c::t_a5c50ae6eeb386 485-487
+scripts/e2eSelectionShadowCompatibility.ts
+  s_97ab82e0b4f10c::t_489b69a159b239 124,126,134-135
+  s_97ab82e0b4f10c::t_86a3ef8adb5fb6 136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b759778cb6be7ab552fafd38679d46108a1a82cc",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
