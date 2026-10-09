@@ -1,0 +1,31 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_4c8cd08893b364::t_8c2180736d57e2 344-375
+  s_4c8cd08893b364::t_38ea24615517ba 30
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_4c8cd08893b364::t_e3a4c7ea416c53 3-10
+  s_4c8cd08893b364::t_2645bbd95b9df0 378-385,387,392,399-400
+  s_4c8cd08893b364::t_9a40a1bbe4a1c5 426-429
+  s_4c8cd08893b364::t_c897671190ab8e 37-43,45
+  s_4c8cd08893b364::t_341be34bfddc7b 167-196,221-228,240-244,261-262,265-266,337,342,344,346-347,350-351,363,372,420,425
+  s_4c8cd08893b364::t_87628e3cc13308 355,377,405
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_4c8cd08893b364::t_3dd4372cce232a 26
+  s_4c8cd08893b364::t_acecce2fe43b98 193-201,208-226,230-234,236,265-370,372-374,376-378,380-384,424-441,577-600,602-634
+  s_4c8cd08893b364::t_8fbb66e030ff45 635-637
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a6e1b58d7e214f8be0c52fec47066aae2e80aa1",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
