@@ -209,6 +209,30 @@ function releaseYeastRoute(routeId: string, sampleFrame: number, releaseVelocity
     }
 }
 
+/**
+ * Release every voice registered for an instrument track at one channel and
+ * pitch, whichever of the track's routes and sessions holds it, through the
+ * release its note-on captured.
+ */
+function releaseYeastTrackPitch(
+    trackId: string,
+    channel: number,
+    pitch: number,
+    sampleFrame?: number,
+    releaseVelocity?: number
+): void {
+    for (const pending of [...pendingReleases]) {
+        if (pending.trackId !== trackId) {
+            continue;
+        }
+        for (const voice of [...pending.voices]) {
+            if (voice.channel === channel && voice.pitch === pitch) {
+                releaseVoice(voice, sampleFrame, releaseVelocity);
+            }
+        }
+    }
+}
+
 function releasePendingYeastEvent(event: PendingYeastEvent): boolean {
     if (event.noteInstanceId === undefined) {
         return false;
@@ -248,6 +272,7 @@ export const pendingYeastRelease = {
     registerVoice: registerStartedYeastVoice,
     addSourceVoice: addPendingYeastSourceVoice,
     releaseRoute: releaseYeastRoute,
+    releaseTrackPitch: releaseYeastTrackPitch,
     retire: retirePendingYeastVoice,
     wasRetired: wasPendingYeastVoiceRetired,
     release: releasePendingYeastVoice,

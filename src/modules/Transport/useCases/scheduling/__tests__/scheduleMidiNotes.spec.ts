@@ -1647,6 +1647,68 @@ describe('scheduleMidiNotes', () => {
             expect(scheduleNote).not.toHaveBeenCalled();
         });
 
+        it('sends a faust instrument ahead of a levain to the faust instrument, never the levain', async () => {
+            const levainNoteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                {
+                    type: 'levain',
+                    deviceId: 'levain-1',
+                    levainControls: { noteOn: levainNoteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'f1', type: FAUST_INSTRUMENT_TYPE, parameterValues: {} },
+                    { id: 'levain-1', type: 'levain', parameterValues: {} },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 80 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleFaustNote).toHaveBeenCalledOnce();
+            expect(vi.mocked(scheduleFaustNote).mock.calls[0]?.slice(0, 3)).toEqual(['track-1', 'f1', 60]);
+            expect(levainNoteOn).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('sends a levain ahead of a toaster to the levain, never the toaster', async () => {
+            const levainNoteOn = vi.fn();
+            const toasterNoteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                {
+                    type: 'levain',
+                    deviceId: 'levain-1',
+                    levainControls: { noteOn: levainNoteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+                { type: 'toaster', deviceId: 'toaster-1', toasterControls: { noteOn: toasterNoteOn } },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'levain-1', type: 'levain', parameterValues: {} },
+                    { id: 'toaster-1', type: 'toaster', parameterValues: {} },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 36, startBeat: 0, duration: 0.5, velocity: 100 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(levainNoteOn).toHaveBeenCalledOnce();
+            expect(levainNoteOn.mock.calls[0]?.[0]).toBe(36);
+            expect(toasterNoteOn).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
         // A bypassed instrument keeps the notes and plays none, as a deactivated
         // instrument does in a DAW and as the export renders it: neither the
         // instrument behind it nor the default synth takes them.

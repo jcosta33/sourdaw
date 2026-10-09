@@ -12,6 +12,7 @@ import { memberExpressionState } from '../../repositories/webMidi/memberExpressi
 import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
 import { type RealtimeMidiEvent } from '../../repositories/webMidi/realtimeMidiProcessorState';
+import { releaseCapturedYeastVoices } from '../../repositories/webMidi/releaseCapturedYeastVoices';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { captureEventBeatAt } from './captureEventBeat';
@@ -342,6 +343,11 @@ export const handleWebMidiNoteOn = inject({
             if (isBypassedNoteReceiver(receiver)) {
                 return;
             }
+
+            // A voice a removed Yeast left sounding at this pitch and channel is
+            // addressed by pitch, as this key's voice is: the key takes the pitch
+            // over, so the removed rack's last key-up cannot end the key's voice.
+            releaseCapturedYeastVoices(instrumentTrackId, channel, note, dispatchFrame);
 
             // Each branch below addresses the receiver's node, or the first node of
             // its kind when the receiver's own is not built, and records the node it

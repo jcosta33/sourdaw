@@ -62,6 +62,7 @@ const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
 const { releaseAllActiveNotes } = await import('../../../repositories/webMidi/releaseAllActiveNotes');
 const { pendingYeastRelease } = await import('../../../repositories/webMidi/pendingYeastRelease');
+const { releaseCapturedYeastVoices } = await import('../../../repositories/webMidi/releaseCapturedYeastVoices');
 const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 const { resetLiveInputDispatchFrameFloor } = await import('../../../services/liveInputDispatchFrameFloor');
 
@@ -1422,6 +1423,84 @@ describe('handleWebMidiNoteOn', () => {
             expect(schedule_note).not.toHaveBeenCalled();
         });
 
+        // A direct key with no Yeast on the chain: the instrument first in chain
+        // order takes it, whatever its kind, and the levain behind it never does.
+        it('plays a key on a drum kit ahead of a levain on the kit, never on the levain', async () => {
+            const nodes = instrument_strip();
+            const schedule_drum_kit_note = vi.fn();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'kit-1', type: 'builtin-drum-machine-808', parameterValues: { kit: 0 } },
+                        { id: 'lev-1', type: 'levain' },
+                    ]),
+                    getDrumKitDefByIndex: (index: number) => ({ id: `kit-def-${index}` }),
+                    scheduleDrumKitNote: schedule_drum_kit_note,
+                })
+            );
+
+            await fn(0, 36, 110);
+
+            expect(schedule_drum_kit_note).toHaveBeenCalledExactlyOnceWith(
+                audio_clock,
+                {},
+                { id: 'kit-def-0' },
+                36,
+                LIVE_DISPATCH_FRAME / 48_000,
+                110
+            );
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
+        it('plays a key on a faust instrument ahead of a levain on the faust instrument, never on the levain', async () => {
+            const nodes = instrument_strip();
+            faust_instrument_types.value = new Set(['faust-epiano']);
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'faust-1', type: 'faust-epiano' },
+                        { id: 'lev-1', type: 'levain' },
+                    ]),
+                })
+            );
+
+            await fn(0, 60, 100);
+
+            expect(start_faust_note).toHaveBeenCalledExactlyOnceWith(
+                'track-1',
+                'faust-1',
+                60,
+                100,
+                LIVE_DISPATCH_FRAME / 48_000
+            );
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
+        it('plays a key on a toaster ahead of a levain on the toaster, never on the levain', async () => {
+            const nodes = instrument_strip();
+            const toaster_note_on = vi.fn();
+            ensure_track_strip.mockReturnValue({
+                gainNode: {},
+                deviceNodes: [
+                    ...Object.values(nodes),
+                    { type: 'toaster', deviceId: 'toast-1', toasterControls: { noteOn: toaster_note_on } },
+                ],
+            });
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'toast-1', type: 'toaster' },
+                        { id: 'lev-1', type: 'levain' },
+                    ]),
+                })
+            );
+
+            await fn(0, 60, 100);
+
+            expect(toaster_note_on).toHaveBeenCalledExactlyOnceWith(0, 100, 60, LIVE_DISPATCH_FRAME);
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
         const generated_note_on = async (): Promise<TestMidiEvent[]> => [
             { timeSamples: 96_240, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
         ];
@@ -1717,6 +1796,44 @@ describe('handleWebMidiNoteOn', () => {
             expect(nodes.levain.levainControls.noteOff).toHaveBeenLastCalledWith(71, expect.any(Number), 0);
         });
 
+        // A direct key struck on a pitch a removed Yeast's voice still holds
+        // takes that pitch over: the rack's last key-up ends the voices it left,
+        // never the key the musician is holding.
+        it('keeps a direct key held on a pitch a removed Yeast’s voice held when the rack’s last key comes up', async () => {
+            const nodes = keyboard_strip();
+            const drains = new Map<number, NonNullable<RealtimeMidiInput['onDrainedEvents']>>();
+            const live = live_chain(
+                [
+                    { id: 'y', type: 'yeast' },
+                    { id: 'lev-1', type: 'levain' },
+                ],
+                async (input) => {
+                    drains.set(input.note, input.onDrainedEvents!);
+                    return [];
+                }
+            );
+            const generated = (noteInstanceId: string, note: number): TestMidiEvent[] => [
+                { timeSamples: 96_240, noteInstanceId, kind: { type: 'noteOn', channel: 0, note, velocity: 100 } },
+            ];
+
+            await live.noteOn(0, 60, 100);
+            drains.get(60)!(generated('arp:direct-takeover:72', 72));
+            await live.noteOn(0, 64, 100);
+            drains.get(64)!(generated('arp:direct-takeover:76', 76));
+            await live.noteOff(0, 64);
+            live.chain.devices = [{ id: 'lev-1', type: 'levain' }];
+            await live.noteOn(0, 76, 100);
+            await live.noteOff(0, 60);
+
+            const { noteOn, noteOff } = nodes.levain.levainControls;
+            expect(noteOn.mock.calls.map((call) => call[0])).toEqual([72, 76, 76]);
+            const directNoteOnOrder = noteOn.mock.invocationCallOrder[2]!;
+            const releasesAfterDirectKey = noteOff.mock.calls
+                .filter((_, index) => noteOff.mock.invocationCallOrder[index]! > directNoteOnOrder)
+                .map((call) => call[0]);
+            expect(releasesAfterDirectKey).toEqual([72]);
+        });
+
         // Yeast voices start at the key frame plus the worker lookahead, while
         // the key-up releases at its own frame; an instrument that orders its
         // events by frame would see the note-off before the note-on.
@@ -1794,6 +1911,159 @@ describe('handleWebMidiNoteOn', () => {
             expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(67, 100, 96_240, 0);
             expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
             expect(live.processNoteOff).not.toHaveBeenCalled();
+        });
+    });
+
+    // A Yeast rack topology change (a processor removed, added or reordered)
+    // ends every note the rack had sounding with a forced off for its track,
+    // channel and pitch (`yeast.notesOff`, delivered through
+    // `releaseCapturedYeastVoices`). The off ends the voice the rack's note-on
+    // started, on the instrument that voice sounds on.
+    describe('a Yeast rack topology change ending its notes', () => {
+        type Instrument = { id: string; type: string; parameterValues?: Record<string, number> };
+
+        function lifecycle_strip() {
+            const voice = () => ({ ready: true, noteOn: vi.fn(), noteOff: vi.fn() });
+            const nodes = {
+                levain: { type: 'levain', deviceId: 'lev-1', levainControls: voice() },
+                fermenter: { type: 'fermenter', deviceId: 'ferm-1', fermenterControls: voice() },
+                crumbs: { type: 'builtin-crumbs', deviceId: 'crumbs-1', crumbsControls: voice() },
+                toaster: { type: 'toaster', deviceId: 'toaster-1', toasterControls: voice() },
+            };
+            const strip = { gainNode: {}, deviceNodes: Object.values(nodes) };
+            ensure_track_strip.mockReturnValue(strip);
+            get_track_strip.mockReturnValue(strip);
+            return nodes;
+        }
+
+        /** Note-on and note-off handlers over `track-1` with the given chain and Yeast output. */
+        function yeast_chain(
+            instruments: Instrument[],
+            processNoteOn: (input: RealtimeMidiInput) => Promise<TestMidiEvent[]>,
+            processNoteOff: (input: RealtimeMidiInput) => Promise<TestMidiEvent[]> = async () => []
+        ) {
+            const devices = [{ id: 'y', type: 'yeast' }, ...instruments];
+            const getTrackStoreState = () => ({ tracks: [{ id: 'track-1', devices }], selectedTrackId: 'track-1' });
+            return {
+                noteOn: handleWebMidiNoteOn._factory(
+                    make_dependencies({ getTrackStoreState, processRealtimeMidiInput: processNoteOn })
+                ),
+                noteOff: handleWebMidiNoteOff._factory({
+                    ...make_dependencies({ getTrackStoreState, processRealtimeMidiInput: processNoteOff }),
+                    getCompensationDelay: () => 0,
+                    stepRecordNoteOff: () => {},
+                }),
+            };
+        }
+
+        /** Yeast generates one note of its own from the key. */
+        const generates =
+            (note: number) =>
+            async (input: RealtimeMidiInput): Promise<TestMidiEvent[]> => [
+                {
+                    timeSamples: 96_240,
+                    noteInstanceId: `lifecycle:${input.noteInstanceId}:${note}`,
+                    kind: { type: 'noteOn', channel: 0, note, velocity: 100 },
+                },
+            ];
+
+        beforeEach(() => {
+            pendingYeastRelease.releaseAllPending();
+            schedule_device_key_on.mockClear();
+            schedule_device_key_off.mockClear();
+        });
+
+        it('releases a generated note on the levain ahead of a fermenter, never the fermenter', async () => {
+            const nodes = lifecycle_strip();
+            const live = yeast_chain(
+                [
+                    { id: 'lev-1', type: 'levain' },
+                    { id: 'ferm-1', type: 'fermenter' },
+                ],
+                generates(67)
+            );
+
+            await live.noteOn(0, 60, 100);
+            releaseCapturedYeastVoices('track-1', 0, 67);
+            // The rack reports one off per voice it counted; the voice ends once.
+            releaseCapturedYeastVoices('track-1', 0, 67);
+
+            expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(67, 100, 96_240, 0);
+            expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, undefined, 0);
+            expect(nodes.fermenter.fermenterControls.noteOff).not.toHaveBeenCalled();
+        });
+
+        it('releases a generated note on a Crumbs', async () => {
+            const nodes = lifecycle_strip();
+            const live = yeast_chain([{ id: 'crumbs-1', type: 'builtin-crumbs' }], generates(72));
+
+            await live.noteOn(0, 60, 100);
+            releaseCapturedYeastVoices('track-1', 0, 72);
+
+            expect(nodes.crumbs.crumbsControls.noteOn).toHaveBeenCalledExactlyOnceWith(72, 100, 96_240, 0);
+            expect(nodes.crumbs.crumbsControls.noteOff).toHaveBeenCalledExactlyOnceWith(72, undefined, 0);
+        });
+
+        it('releases a generated note on the Toaster pad it struck', async () => {
+            const nodes = lifecycle_strip();
+            const live = yeast_chain([{ id: 'toaster-1', type: 'toaster' }], generates(36));
+
+            await live.noteOn(0, 60, 100);
+            releaseCapturedYeastVoices('track-1', 0, 36);
+
+            // Note 36 is the low bank's first pad.
+            expect(nodes.toaster.toasterControls.noteOn).toHaveBeenCalledExactlyOnceWith(0, 100, 60, 96_240);
+            expect(nodes.toaster.toasterControls.noteOff).toHaveBeenCalledExactlyOnceWith(0, undefined);
+        });
+
+        it('keys a generated note on a Faust instrument off', async () => {
+            lifecycle_strip();
+            faust_instrument_types.value = new Set(['faust-epiano']);
+            const live = yeast_chain([{ id: 'f', type: 'faust-epiano' }], generates(67));
+
+            await live.noteOn(0, 60, 100);
+            releaseCapturedYeastVoices('track-1', 0, 67);
+
+            expect(schedule_device_key_on).toHaveBeenCalledExactlyOnceWith('track-1', 'f', 67, 100, 96_240 / 48_000);
+            expect(schedule_device_key_off).toHaveBeenCalledExactlyOnceWith(
+                'track-1',
+                'f',
+                67,
+                0,
+                audio_clock.currentTime
+            );
+        });
+
+        // A held key's own transformed voice lives on the key, not in the
+        // registry; the off ends it there, and the key-up does not end it again.
+        it('releases a held key’s transformed voice once, not again at its key-up', async () => {
+            const nodes = lifecycle_strip();
+            const live = yeast_chain(
+                [{ id: 'lev-1', type: 'levain' }],
+                async () => [{ timeSamples: 96_240, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } }],
+                // The key-up's own transformed off reaches the release as well.
+                async () => [{ timeSamples: 96_500, kind: { type: 'noteOff', channel: 0, note: 67 } }]
+            );
+
+            await live.noteOn(0, 60, 100);
+            releaseCapturedYeastVoices('track-1', 0, 67);
+
+            expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, undefined, 0);
+
+            await live.noteOff(0, 60);
+
+            expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledOnce();
+        });
+
+        it('leaves another track’s and another channel’s voices sounding', async () => {
+            const nodes = lifecycle_strip();
+            const live = yeast_chain([{ id: 'lev-1', type: 'levain' }], generates(67));
+
+            await live.noteOn(0, 60, 100);
+            releaseCapturedYeastVoices('track-2', 0, 67);
+            releaseCapturedYeastVoices('track-1', 1, 67);
+
+            expect(nodes.levain.levainControls.noteOff).not.toHaveBeenCalled();
         });
     });
 
