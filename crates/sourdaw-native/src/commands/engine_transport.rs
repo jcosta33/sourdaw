@@ -758,6 +758,46 @@ mod tests {
         );
     }
 
+    /// A frame repeated after a later one is a backwards map, not a shared
+    /// frame: only adjacent segments collapse, so neither map may fold the
+    /// repeat into the earlier segment on that frame and install.
+    #[test]
+    fn a_frame_repeated_after_a_later_one_is_still_refused() {
+        let tempo = TransportMapsPayload {
+            tempo: vec![
+                tempo_at_seconds(0.0, 120.0),
+                tempo_at_seconds(1.0, 100.0),
+                tempo_at_seconds(2.0, 90.0),
+                tempo_at_seconds(1.0, 80.0),
+            ],
+            ..maps_payload()
+        };
+        let meter = TransportMapsPayload {
+            time_signature: vec![
+                meter_at_seconds(0.0, 4, 4),
+                meter_at_seconds(1.0, 3, 4),
+                meter_at_seconds(2.0, 7, 8),
+                meter_at_seconds(1.0, 5, 4),
+            ],
+            ..maps_payload()
+        };
+
+        let tempo_error = installed_maps(&tempo, 48_000.0).expect_err("a repeat is refused");
+        let meter_error = installed_maps(&meter, 48_000.0).expect_err("a repeat is refused");
+
+        assert_eq!(
+            tempo_error,
+            format!("tempo map is unusable: {}", TransportMapError::OutOfOrder)
+        );
+        assert_eq!(
+            meter_error,
+            format!(
+                "time signature map is unusable: {}",
+                TransportMapError::OutOfOrder
+            )
+        );
+    }
+
     /// The issue's repro as the renderer projects it: tempo 120 at beat 4 and
     /// 90 at beat 4.00002, 0.48 of a 48 kHz frame apart. The payload is the one
     /// `projectEngineTransportMaps.spec.ts` pins the projection to, read from
