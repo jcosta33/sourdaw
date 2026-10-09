@@ -1,0 +1,39 @@
+scripts/__tests__/typesafeRequest.spec.ts
+  s_97ab82e0b4f10c::t_bf480d7bbab25c 456-461,463-470,517-527,601-603
+  s_97ab82e0b4f10c::t_17c7105d7c87c6 529-537,539,541-543
+  s_1f0dcd815e8946::t_31853de4eb3386 528
+scripts/__tests__/checkStancesRecord.spec.ts
+  s_97ab82e0b4f10c::t_17c7105d7c87c6 581-594
+  s_97ab82e0b4f10c::t_183941e0387df7 595-597
+scripts/semanticReview/sensitive.ts
+  s_97ab82e0b4f10c::t_ecc968d6464960 309-314,320
+.agents/skills/review-stances/provider-egress.md
+  s_97ab82e0b4f10c::t_ecc968d6464960 114-123
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_97ab82e0b4f10c::t_17c7105d7c87c6 11312-11317,11321-11324,11329-11337,11377-11381,11515-11519
+  s_97ab82e0b4f10c::t_c05f02872f9226 11520-11522
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f9217af2afaf8c9d55e096ad620ce71a9cc8f81",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
