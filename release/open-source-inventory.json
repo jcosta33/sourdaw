@@ -2238,6 +2238,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/retargetCapabilityPlan.ts",
+            "value": "https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/retargetCapabilitySnapshot.ts",
             "value": "https://api.github.com/${slot}${slot}per_page=100&page=${slot}",
             "templateSha256": "3922199f6821c354d4734cda7d408d616ef2f881c16d52c41a0de012cc8bbe9c"
