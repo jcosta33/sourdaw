@@ -91,3 +91,17 @@ controls and a clean independent unit. A benign first candidate must not hide la
 repeated calls must not inherit regex state. Revert only the recognizer on a committed head and
 require these caller oracles to fail. Keep the serialization-only screen probe independently
 load-bearing; decoded Bearer rejection does not prove the final-envelope screen.
+
+Bearer literals follow scheme-value rules: dotted or mixed-case alphabetic material is not a member
+access or identifier, including in raw finding/stance descriptions and before explanatory words.
+Actual interpolation/concatenation remains a reference. Explicit placeholders remain controls;
+an uppercase name ending `_PLACEHOLDER` is deliberately treated as documentation, so real material
+using that marker is an accepted residual. Other underscore-bearing values receive no name exemption.
+Generic secret-assignment reference rules remain separate.
+
+The prose heuristic admits a case-sensitive lowercase hyphenated compound only between surrounding
+ordinary words, as in a reviewer noting Bearer credential-shaped examples. The same compound alone,
+quoted as a scheme, or in an Authorization header must be refused. A lowercase hyphenated opaque value
+embedded in that prose shape remains indistinguishable and is a bounded residual, not sanitization of
+arbitrary source. Pair the exact prose sentence with a valid matching-cache read and zero provider or
+fetch calls; keep dotted/alphabetic literals with trailing words as refusal controls.

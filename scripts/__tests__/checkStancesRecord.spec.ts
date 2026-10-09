@@ -577,9 +577,24 @@ describe('opaque bearer stance admission', () => {
     const opaque = ['A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0'].join('');
     const header = ['Authorization:', 'Bearer', opaque].join(' ');
     const fields = ['stance', 'admittedBy'] as const;
+    const literals = [
+        { shape: 'alphanumeric', value: header },
+        { shape: 'dotted', value: ['Bearer', ['abcde', 'fghij', 'klmnop'].join('.')].join(' ') },
+        { shape: 'alphabetic', value: ['Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join('')].join(' ') },
+        { shape: 'header-tail', value: `${header} expired` },
+        {
+            shape: 'dotted-tail',
+            value: ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),
+        },
+        {
+            shape: 'alphabetic-tail',
+            value: ['finding: Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''), 'was logged'].join(' '),
+        },
+    ];
+    const cases = fields.flatMap((field) => literals.map((literal) => ({ field, ...literal })));
 
-    it.each(fields)('opaque bearer %s refuses parser and manual builder safely', (field) => {
-        const admission = { ...GENUINE_ADMISSIONS[0]!, [field]: header };
+    it.each(cases)('opaque bearer $shape $field refuses parser and manual builder safely', ({ field, value }) => {
+        const admission = { ...GENUINE_ADMISSIONS[0]!, [field]: value };
         for (const operation of [
             () => readStancesCheckRecord({ stances: [admission] }, STANCES_PATH),
             () => buildStancesCheckBody(checkRecord([admission])),
@@ -596,23 +611,29 @@ describe('opaque bearer stance admission', () => {
         }
     });
 
-    it.each(fields)('opaque bearer %s refuses a direct request bypassing the builder', async (field) => {
-        const body = buildStancesCheckBody(checkRecord());
-        body.state.stances[0]![field] = header;
-        const fetch = vi.fn(async () => new Response('{}'));
-        let failure: unknown;
-        try {
-            await requestStancesVerdicts(body, 'unused-offline-key', { signal: new AbortController().signal, fetch });
-        } catch (error) {
-            failure = error;
+    it.each(cases)(
+        'opaque bearer $shape $field refuses a direct request bypassing the builder',
+        async ({ field, value }) => {
+            const body = buildStancesCheckBody(checkRecord());
+            body.state.stances[0]![field] = value;
+            const fetch = vi.fn(async () => new Response('{}'));
+            let failure: unknown;
+            try {
+                await requestStancesVerdicts(body, 'unused-offline-key', {
+                    signal: new AbortController().signal,
+                    fetch,
+                });
+            } catch (error) {
+                failure = error;
+            }
+            expect(fetch).not.toHaveBeenCalled();
+            expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
+            expect(String(failure)).not.toContain(opaque);
         }
-        expect(fetch).not.toHaveBeenCalled();
-        expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
-        expect(String(failure)).not.toContain(opaque);
-    });
+    );
 
-    it.each(fields)('opaque bearer %s refuses actual offline CLI admission', (field) => {
-        const result = runOfflineCheck({ stances: [{ ...GENUINE_ADMISSIONS[0]!, [field]: header }] });
+    it.each(cases)('opaque bearer $shape $field refuses actual offline CLI admission', ({ field, value }) => {
+        const result = runOfflineCheck({ stances: [{ ...GENUINE_ADMISSIONS[0]!, [field]: value }] });
         expect(result.error).toBeUndefined();
         expect(result.stdout).not.toContain('OFFLINE_REQUEST');
         expect(result.status).toBe(1);

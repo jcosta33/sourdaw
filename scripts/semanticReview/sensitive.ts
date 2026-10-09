@@ -303,15 +303,24 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
     return !PLACEHOLDER_VALUE.test(value);
 }
 
-/** A scheme value stays a reference/placeholder even inside a quoted source or JSON string. */
+/** Literal scheme values do not inherit assignment-expression exemptions. */
 function hasOpaqueBearerValue(text: string): boolean {
     // Match every candidate with a fresh iterator: a benign first example cannot hide later material.
     // The 16-character floor matches the generic assignment screen's opaque-value floor.
     for (const match of text.matchAll(/\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})/giu)) {
         const value = match[1]!;
-        if (looksLikeCredentialValue(value, text[match.index + match[0].length] ?? '', false)) {
-            return true;
+        if (PLACEHOLDER_VALUE.test(value) || /^[A-Z][A-Z0-9_]*_PLACEHOLDER$/u.test(value)) {
+            continue;
         }
+        // A lowercase compound between prose words describes the scheme rather than supplying it.
+        if (
+            /^[a-z]+(?:-[a-z]+)+$/u.test(value) &&
+            /\b[A-Za-z]+[ \t]+$/u.test(text.slice(0, match.index)) &&
+            /^[ \t]+[A-Za-z]+\b/u.test(text.slice(match.index + match[0].length))
+        ) {
+            continue;
+        }
+        return true;
     }
     return false;
 }

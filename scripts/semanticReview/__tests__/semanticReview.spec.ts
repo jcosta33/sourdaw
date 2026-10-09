@@ -11312,6 +11312,18 @@ describe('opaque bearer source and caller admission', () => {
         const values = [
             header,
             unsafe,
+            ...[
+                ['abcde', 'fghij', 'klmnop'].join('.'),
+                ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''),
+                'credential-shaped',
+            ].flatMap((value) => {
+                const scheme = ['Bearer', value].join(' ');
+                return [scheme, `const header = '${scheme}';`, JSON.stringify({ nested: [{ scheme }] })];
+            }),
+            ['Authorization:', 'Bearer', 'credential-shaped'].join(' '),
+            `${header} expired`,
+            ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),
+            ['finding: Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''), 'was logged'].join(' '),
             JSON.stringify({ nested: [{ header }] }),
             ['bEaReR', opaque].join(' '),
             ['Bearer', opaque].join('\t'),
@@ -11333,9 +11345,11 @@ describe('opaque bearer source and caller admission', () => {
             'Bearer <token>',
             'Bearer ${apiKey}',
             'Bearer RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER',
-            'Bearer runtimeCredentialReference',
+            'Bearer ${runtimeCredentialReference}',
+            "'Bearer ' + runtimeCredentialReference",
             'CREDENTIAL_PATTERN = /\\bbearer\\s+/iu',
             'A bearer header carries authentication material supplied by the caller.',
+            'A reviewer notes Bearer credential-shaped examples remain synthetic and contain no credential.',
         ]) {
             expect(sensitiveContentReason(value), value).toBeUndefined();
             expect(sensitiveContentReason(JSON.stringify({ value })), value).toBeUndefined();
@@ -11456,30 +11470,46 @@ describe('opaque bearer source and caller admission', () => {
         expectZero(effect);
     });
 
-    it.each([
+    const findingFields = [
         'claim',
         'expectedBehavior',
         'reproductionReferences',
         'allegedFailureInputOrState',
         'allegedObservedBehavior',
-    ] as const)('opaque bearer finding %s rejects before cache or SDK delegate', async (field) => {
-        const effect = effects();
-        let candidate = finding();
-        if (field === 'reproductionReferences') {
-            candidate = {
-                ...candidate,
-                reproductionReferences: [{ path: 'probe.txt', note: header, verifiedExecution: false }],
-            };
-        } else {
-            candidate = { ...candidate, [field]: header };
+    ] as const;
+    const findingLiterals = [
+        { shape: 'alphanumeric', value: header },
+        { shape: 'header-tail', value: `${header} expired` },
+        {
+            shape: 'dotted-tail',
+            value: ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),
+        },
+        {
+            shape: 'alphabetic-tail',
+            value: ['finding: Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''), 'was logged'].join(' '),
+        },
+    ];
+    it.each(findingFields.flatMap((field) => findingLiterals.map((literal) => ({ field, ...literal }))))(
+        'opaque bearer finding $shape $field rejects before cache or SDK delegate',
+        async ({ field, value }) => {
+            const effect = effects();
+            let candidate = finding();
+            if (field === 'reproductionReferences') {
+                candidate = {
+                    ...candidate,
+                    reproductionReferences: [{ path: 'probe.txt', note: value, verifiedExecution: false }],
+                };
+            } else {
+                candidate = { ...candidate, [field]: value };
+            }
+            const result = await verify(candidate, clean, effect);
+            expect(result.report.failureCode).toBe('sensitive_content_excluded');
+            expect(result.report.findingAssessments).toEqual([]);
+            expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
+            expect(result.report.scope.cacheHits).toBe(0);
+            expectZero(effect);
         }
-        const result = await verify(candidate, clean, effect);
-        expect(result.report.failureCode).toBe('sensitive_content_excluded');
-        expect(result.report.findingAssessments).toEqual([]);
-        expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
-        expect(result.report.scope.cacheHits).toBe(0);
-        expectZero(effect);
-    });
+    );
 
     it('opaque bearer verify ordinary caller descriptions remain assessable', async () => {
         const effect = effects();

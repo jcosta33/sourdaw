@@ -453,6 +453,24 @@ describe('installed SDK prepared handoff', () => {
 describe('opaque bearer complete request admission', () => {
     const opaque = ['A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0'].join('');
     const header = ['Authorization:', 'Bearer', opaque].join(' ');
+    const literals = [
+        { shape: 'alphanumeric', value: header },
+        { shape: 'dotted', value: ['Bearer', ['abcde', 'fghij', 'klmnop'].join('.')].join(' ') },
+        { shape: 'alphabetic', value: ['Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join('')].join(' ') },
+        { shape: 'header-tail', value: `${header} expired` },
+        {
+            shape: 'dotted-tail',
+            value: ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),
+        },
+        {
+            shape: 'alphabetic-tail',
+            value: ['finding: Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''), 'was logged'].join(' '),
+        },
+        { shape: 'hyphenated', value: ['Bearer', 'credential-shaped'].join(' ') },
+        { shape: 'quoted-hyphenated', value: `'${['Bearer', 'credential-shaped'].join(' ')}'` },
+        { shape: 'header-hyphenated', value: ['Authorization:', 'Bearer', 'credential-shaped'].join(' ') },
+        { shape: 'uppercase-underscore', value: ['Bearer', ['ABCD1234', 'EFGH5678'].join('_')].join(' ') },
+    ];
     const positions = ['state', 'instructions', 'criteria', 'key', 'questionName', 'criterionKey', 'model'] as const;
     function payload(position: (typeof positions)[number], value: string) {
         let state: unknown = {};
@@ -478,62 +496,75 @@ describe('opaque bearer complete request admission', () => {
         };
     }
 
-    it.each(positions)('opaque bearer %s rejects before a would-hit cache and SDK delegate', async (position) => {
-        const request = payload(position, header);
-        const validCachedResponse = {
-            model: request.model,
-            answers: Object.fromEntries(
-                Object.keys(request.questions).map((key) => [
-                    key,
-                    {
-                        type: 'choice',
-                        choice: Object.keys(request.questions[key]!.criteria)[0],
-                        probabilities: Object.fromEntries(
-                            Object.keys(request.questions[key]!.criteria).map((label) => [label, 1])
-                        ),
-                        confidence: 0.9,
-                    },
-                ])
-            ),
-        };
-        const read = vi.fn(() => validCachedResponse);
-        const write = vi.fn();
-        const fetch = vi.fn<Fetch>(async () => response());
-        const sdk = createSdkProviderPort({ apiKey: KEY, fetch });
-        const systemOne = vi.fn(sdk.systemOne);
-        const profile = SEMANTIC_BUDGET_PROFILES.ci;
-        const budget = createBudgetController(profile);
-        const reserve = vi.spyOn(budget, 'reserve');
-        const before = budget.totals();
-        let failure: unknown;
-        try {
-            await assessUnit({
-                port: { systemOne },
-                cache: { read, write },
-                budget,
-                profile,
-                deadline: Date.now() + 60_000,
-                state: request.state,
-                questions: request.questions,
-                requestedModel: request.model,
-                signal: signal(),
-            });
-        } catch (error) {
-            failure = error;
+    it.each(positions.flatMap((position) => literals.map((literal) => ({ position, ...literal }))))(
+        'opaque bearer $shape $position rejects before a would-hit cache and SDK delegate',
+        async ({ position, value }) => {
+            const request = payload(position, value);
+            const validCachedResponse = {
+                model: request.model,
+                answers: Object.fromEntries(
+                    Object.keys(request.questions).map((key) => [
+                        key,
+                        {
+                            type: 'choice',
+                            choice: Object.keys(request.questions[key]!.criteria)[0],
+                            probabilities: Object.fromEntries(
+                                Object.keys(request.questions[key]!.criteria).map((label) => [label, 1])
+                            ),
+                            confidence: 0.9,
+                        },
+                    ])
+                ),
+            };
+            const read = vi.fn(() => validCachedResponse);
+            const write = vi.fn();
+            const fetch = vi.fn<Fetch>(async () => response());
+            const sdk = createSdkProviderPort({ apiKey: KEY, fetch });
+            const systemOne = vi.fn(sdk.systemOne);
+            const profile = SEMANTIC_BUDGET_PROFILES.ci;
+            const budget = createBudgetController(profile);
+            const reserve = vi.spyOn(budget, 'reserve');
+            const before = budget.totals();
+            let failure: unknown;
+            try {
+                await assessUnit({
+                    port: { systemOne },
+                    cache: { read, write },
+                    budget,
+                    profile,
+                    deadline: Date.now() + 60_000,
+                    state: request.state,
+                    questions: request.questions,
+                    requestedModel: request.model,
+                    signal: signal(),
+                });
+            } catch (error) {
+                failure = error;
+            }
+            expect(read).not.toHaveBeenCalled();
+            expect(write).not.toHaveBeenCalled();
+            expect(reserve).not.toHaveBeenCalled();
+            expect(systemOne).not.toHaveBeenCalled();
+            expect(fetch).not.toHaveBeenCalled();
+            expect(budget.totals()).toEqual(before);
+            expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
+            expect(() => prepare(request)).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
+            expect(sensitiveContentReason(JSON.stringify(request))).toBeDefined();
         }
-        expect(read).not.toHaveBeenCalled();
-        expect(write).not.toHaveBeenCalled();
-        expect(reserve).not.toHaveBeenCalled();
-        expect(systemOne).not.toHaveBeenCalled();
-        expect(fetch).not.toHaveBeenCalled();
-        expect(budget.totals()).toEqual(before);
-        expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
-        expect(() => prepare(request)).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
-        expect(sensitiveContentReason(JSON.stringify(request))).toBeDefined();
-    });
+    );
 
-    it.each(positions)('opaque bearer placeholder %s reaches a valid matching cache', async (position) => {
-        const request = payload(position, 'Bearer runtimeCredentialReference');
+    it.each(
+        positions.flatMap((position) => [
+            // A reference needs actual interpolation; a bare alphabetic scheme value is a literal.
+            { position, control: 'reference', value: 'Bearer ${runtimeCredentialReference}' },
+            {
+                position,
+                control: 'prose',
+                value: 'A reviewer notes Bearer credential-shaped examples remain synthetic and contain no credential.',
+            },
+        ])
+    )('opaque bearer $control $position reaches a valid matching cache', async ({ position, value }) => {
+        const request = payload(position, value);
         const read = vi.fn(() => ({
             model: request.model,
             answers: Object.fromEntries(
@@ -550,11 +581,17 @@ describe('opaque bearer complete request admission', () => {
                 ])
             ),
         }));
-        const systemOne = vi.fn();
+        const fetch = vi.fn<Fetch>(async () => response());
+        const sdk = createSdkProviderPort({ apiKey: KEY, fetch });
+        const systemOne = vi.fn(sdk.systemOne);
+        const write = vi.fn();
+        const budget = createBudgetController(SEMANTIC_BUDGET_PROFILES.ci);
+        const reserve = vi.spyOn(budget, 'reserve');
+        const before = budget.totals();
         const result = await assessUnit({
             port: { systemOne },
-            cache: { read, write: vi.fn() },
-            budget: createBudgetController(SEMANTIC_BUDGET_PROFILES.ci),
+            cache: { read, write },
+            budget,
             profile: SEMANTIC_BUDGET_PROFILES.ci,
             deadline: Date.now() + 60_000,
             state: request.state,
@@ -564,7 +601,13 @@ describe('opaque bearer complete request admission', () => {
         });
         expect(result.fromCache).toBe(true);
         expect(read).toHaveBeenCalledTimes(1);
+        expect(read).toHaveBeenCalledWith(result.cacheKey);
+        expect(result.response.model).toBe(request.model);
+        expect(write).not.toHaveBeenCalled();
+        expect(reserve).not.toHaveBeenCalled();
         expect(systemOne).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
+        expect(budget.totals()).toEqual({ ...before, cacheHits: 1 });
     });
 
     it('opaque bearer serialized envelope control reaches one installed SDK delegate unchanged', async () => {
