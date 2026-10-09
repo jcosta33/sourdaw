@@ -1,0 +1,31 @@
+scripts/e2eSelectionShadowIntegration.ts
+  s_97ab82e0b4f10c::t_814b41bfc20a73 6,31-62
+  s_97ab82e0b4f10c::t_4dfbc44342869a 63-64
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_97ab82e0b4f10c::t_96a85fc9310f0a 173,214,216-220,226,229-234,240-258
+  s_97ab82e0b4f10c::t_d722aaf41e8410 236-238
+  s_97ab82e0b4f10c::t_ecea278b11fde3 132
+  s_97ab82e0b4f10c::t_ddfb50c475a21a 134-136,188-193,200-213,215,636
+  s_97ab82e0b4f10c::t_8dbfdc02dd3f0a 235
+  s_97ab82e0b4f10c::t_e1ec3909aae5b1 35,43,128,137,154-155,161,174-187,194-199,221-225,227-228,239
+scripts/e2eSelectionShadow.ts
+  s_97ab82e0b4f10c::t_411e0f74620c6e 16-17,20,272,292,549
+  s_97ab82e0b4f10c::t_0456b2bdb1bd88 55,291,553,584
+  s_97ab82e0b4f10c::t_ecea278b11fde3 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c8f1eca916c2bcfdc41ea0f1ded947244c340d2",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
