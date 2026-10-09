@@ -1,0 +1,100 @@
+name: Cargo dependency seed
+
+# A trusted main push populates complete dependency archives for the required
+# Rust jobs. The workflow file itself triggers the first seed after landing.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cargo-dependency-seed.yml'
+      - 'Cargo.lock'
+      - '**/Cargo.toml'
+      - '.cargo/config.toml'
+      - 'rust-toolchain.toml'
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Seed Linux Rust dependencies
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # daw-engine's Linux audio backend needs the ALSA headers. Keep the
+      # bounded install used by the required Rust job.
+      - name: Install ALSA development headers
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
+              exit 0
+            fi
+            printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          exit 1
+
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Restore after rust-cache so this complete dependency layer wins over
+      # its pruned registry. Reverse post-step order saves it before rust-cache
+      # performs cleanup. A target-cache miss can still use this archive.
+      - name: Cache Cargo dependencies
+        id: cargo-deps
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
+
+      # This is the actual Linux dependency graph consumed by the required job;
+      # a whole-workspace fetch would include macOS-only sourdaw-native.
+      - name: Rust workspace health gates
+        run: sh scripts/health-gates-rust.sh
+
+  native-macos:
+    name: Seed macOS native index
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo build
+        id: rust-cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Match validation's native-macos job ID, key, path, and restore prefix.
+      # The index post-save precedes rust-cache cleanup.
+      - name: Cache the cargo registry index
+        id: cargo-index
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/registry/index
+          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
+
+      - name: Test the audio crates
+        run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
+
+      - name: Test the native crate
+        run: cargo test --package sourdaw-native
