@@ -13,8 +13,11 @@ import {
     hashInventoryFile,
     listIntegrationInventory,
     listInventory,
+    parseBoundDurations,
+    PLANNER_SOURCES,
     readHeadSourceBindings,
     readIntegrationSourceHashes,
+    shadowSourcePaths,
     sortInventoryRows,
     treeEntry,
     verifyIntegrationCheckout,
@@ -49,6 +52,7 @@ type ShadowInput = {
     healthRequiredPolicySha256: string;
     candidateBase: string | null;
     candidateHead: string | null;
+    durationText: string;
     livePlan: unknown;
 };
 
@@ -56,7 +60,7 @@ const CANDIDATE_PATH = certificate.candidatePath;
 const WITNESS = 'DIRECT_TUNER_WITNESS';
 const UNPROVEN = 'SOURCE_ONLY_UNPROVEN';
 const CERTIFICATE_SHA256 = '906c986190c48180e234cbb0fb1adb15f3a08b2a2e4631c966e32006b843b9ba';
-const INTEGRATION_READER_SHA256 = '5d774576933ff4b07af65d326d2acbca20ac3d8af4d29d73f226f85c491cbb6a';
+const INTEGRATION_READER_SHA256 = '53f814094c2d05455c5682ff98e6b5ff40a9152fbb231da151f393a3c8c30a12';
 const ALLOWED_ATTRIBUTES = new Set(['className', 'title', 'detail', 'label', 'aria-label', 'aria-live', 'aria-atomic']);
 const SHA = /^[0-9a-f]{40}$/;
 
@@ -265,6 +269,7 @@ function validateMeasurementInput(input: ShadowInput): {
             throw new Error(`Integration selector or collector differs from candidate head: ${path}`);
         }
     }
+    const durations = parseBoundDurations(input);
     for (const path of [
         'playwright.config.ts',
         '.github/workflows/health-gates.yml',
@@ -283,7 +288,8 @@ function validateMeasurementInput(input: ShadowInput): {
     assert.match(String(input.integrationSourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
     const expectedPlan = selectValidationPlan(
         paths,
-        inventory.map((row) => row.path)
+        inventory.map((row) => row.path),
+        durations
     );
     if (canonical(expectedPlan) !== canonical(input.livePlan)) {
         throw new Error('Authoritative scope artifact disagrees with the current selector or inventory');
@@ -540,15 +546,11 @@ function main(): void {
         newMode: record.newPath ? (treeEntry(head, record.newPath)?.mode ?? null) : null,
     }));
     const onlyCandidate = records.length === 1 && records[0]?.status === 'M' && records[0].oldPath === CANDIDATE_PATH;
-    const sourcePaths = [
-        ...Object.keys(certificate.sourceHashes),
-        '.github/workflows/health-gates.yml',
-        'scripts/e2eSelectionShadow.ts',
-        'scripts/e2eSelectionShadowIntegration.ts',
-    ];
+    const sourcePaths = shadowSourcePaths(Object.keys(certificate.sourceHashes));
     const { sourceModes, sourceHashes } = readHeadSourceBindings(root, head, sourcePaths, [
         'scripts/e2eSelectionShadow.ts',
         'scripts/e2eSelectionShadowIntegration.ts',
+        ...PLANNER_SOURCES,
     ]);
     const integrationSourceHashes = readIntegrationSourceHashes(integrationRoot, integrationSha, sourcePaths);
     const certificateSha256 = sha256(git(['show', `${head}:scripts/e2eSelectionShadowCertificate.json`]));
@@ -579,6 +581,7 @@ function main(): void {
         healthRequiredPolicySha256,
         candidateBase,
         candidateHead,
+        durationText: git(['show', `${head}:scripts/e2eSpecDurations.json`]).toString('utf8'),
         livePlan: plan,
     });
     writeFileSync('e2e-selection-shadow.json', `${JSON.stringify(report, null, 2)}\n`);

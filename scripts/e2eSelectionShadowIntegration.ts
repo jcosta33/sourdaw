@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, constants, fstatSync, openSync, readFileSync, readdirSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 
+import { parseSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 export type InventoryRow = { path: string; gitBlob: string; sha256: string; mode: string };
@@ -27,6 +28,40 @@ type InventoryFileAccess = {
 };
 
 const SHA = /^[0-9a-f]{40}$/;
+export const PLANNER_SOURCES = ['scripts/e2eShardPartition.ts', 'scripts/e2eSpecDurations.json'] as const;
+
+export function shadowSourcePaths(certifiedPaths: readonly string[]): string[] {
+    return [
+        ...certifiedPaths,
+        ...PLANNER_SOURCES,
+        '.github/workflows/health-gates.yml',
+        'scripts/e2eSelectionShadow.ts',
+        'scripts/e2eSelectionShadowIntegration.ts',
+    ];
+}
+
+export function parseBoundDurations(input: {
+    sourceModes: Readonly<Record<string, string>>;
+    sourceHashes: Readonly<Record<string, string>>;
+    integrationSourceHashes: Readonly<Record<string, string>>;
+    durationText: string;
+}): SpecDurations {
+    for (const path of PLANNER_SOURCES) {
+        if (
+            input.sourceModes[path] !== '100644' ||
+            !/^[0-9a-f]{64}$/.test(input.sourceHashes[path] ?? '') ||
+            input.integrationSourceHashes[path] !== input.sourceHashes[path]
+        ) {
+            throw new Error(
+                `Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`
+            );
+        }
+    }
+    if (sha256(input.durationText) !== input.sourceHashes['scripts/e2eSpecDurations.json']) {
+        throw new Error('Duration table differs from immutable head');
+    }
+    return parseSpecDurations(input.durationText);
+}
 
 function sha256(value: string | Buffer): string {
     return createHash('sha256').update(value).digest('hex');

@@ -32,6 +32,7 @@ import {
     verifyIntegrationCheckout,
 } from '../e2eSelectionShadow';
 import certificate from '../e2eSelectionShadowCertificate.json' with { type: 'json' };
+import { parseSpecDurations } from '../e2eShardPartition';
 import { selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
 
 const candidate = certificate.candidatePath;
@@ -39,6 +40,7 @@ const baseText = readFileSync(candidate, 'utf8');
 const certificateSha256 = createHash('sha256')
     .update(readFileSync('scripts/e2eSelectionShadowCertificate.json'))
     .digest('hex');
+const durationTableText = readFileSync('scripts/e2eSpecDurations.json', 'utf8');
 const sha = 'a'.repeat(40);
 const head = 'b'.repeat(40);
 const inventory = [
@@ -123,11 +125,16 @@ function fixture(
     const rawDiff = Buffer.from(`M\0${candidate}\0`);
     const selectedInventory = Array.isArray(overrides.inventory) ? overrides.inventory : inventory;
     const suppliedSourceHashes = overrides.sourceHashes ?? certificate.sourceHashes;
+    const durationText = typeof overrides.durationText === 'string' ? overrides.durationText : '{}';
     const sourceHashes = {
         '.github/workflows/health-gates.yml': 'e'.repeat(64),
         'scripts/e2eSelectionShadow.ts': 'f'.repeat(64),
-        'scripts/e2eSelectionShadowIntegration.ts': '5d774576933ff4b07af65d326d2acbca20ac3d8af4d29d73f226f85c491cbb6a',
+        'scripts/e2eSelectionShadowIntegration.ts': '53f814094c2d05455c5682ff98e6b5ff40a9152fbb231da151f393a3c8c30a12',
         ...suppliedSourceHashes,
+        'scripts/e2eShardPartition.ts': createHash('sha256')
+            .update(readFileSync('scripts/e2eShardPartition.ts'))
+            .digest('hex'),
+        'scripts/e2eSpecDurations.json': createHash('sha256').update(durationText).digest('hex'),
     };
     return {
         base: sha,
@@ -144,11 +151,14 @@ function fixture(
                 '.github/workflows/health-gates.yml',
                 'scripts/e2eSelectionShadow.ts',
                 'scripts/e2eSelectionShadowIntegration.ts',
+                'scripts/e2eShardPartition.ts',
+                'scripts/e2eSpecDurations.json',
             ].map((path) => [path, '100644'])
         ),
         healthRequiredPolicySha256: certificate.healthRequiredPolicySha256,
         candidateBase: baseText,
         candidateHead: baseText.replace('Scoring', 'Pitch display'),
+        durationText,
         livePlan: selectValidationPlan(
             [candidate],
             inventory.map((row) => row.path)
@@ -160,6 +170,92 @@ function fixture(
 }
 
 describe('E2E selection shadow', () => {
+    function hostedInput(durationText = durationTableText) {
+        const changed = [
+            ['M', '.github/workflows/health-gates.yml'],
+            ['A', 'scripts/__tests__/e2eSelectionShadow.spec.ts'],
+            ['M', 'scripts/__tests__/fixtures/health-gate-workflows.snapshot.json'],
+            ['M', 'scripts/__tests__/healthGatesWorkflow.spec.ts'],
+            ['A', 'scripts/e2eSelectionShadow.ts'],
+            ['A', 'scripts/e2eSelectionShadowCertificate.json'],
+            ['A', 'scripts/e2eSelectionShadowIntegration.ts'],
+            ['M', 'scripts/healthGateWorkflowContract.ts'],
+        ] as const;
+        const rawDiff = Buffer.from(changed.map(([status, path]) => `${status}\0${path}\0`).join(''));
+        const paths = changed.map(([, path]) => path);
+        const integrationInventory = [
+            ...inventory,
+            {
+                path: 'tests/e2e/monoModulationInput.spec.ts',
+                gitBlob: 'e'.repeat(40),
+                sha256: 'f'.repeat(64),
+                mode: '100644',
+            },
+        ];
+        const livePlan = selectValidationPlan(
+            paths,
+            integrationInventory.map((row) => row.path),
+            parseSpecDurations(durationTableText)
+        );
+        return {
+            ...fixture({
+                rawDiff,
+                records: changed.map(([status, path]) => ({
+                    status,
+                    oldPath: status === 'A' ? null : path,
+                    newPath: path,
+                    oldMode: status === 'A' ? null : '100644',
+                    newMode: '100644',
+                })),
+                integrationInventory,
+                durationText,
+                livePlan,
+            }),
+            livePlan,
+        };
+    }
+
+    it('recomputes the hosted 314-spec matrix from the exact bound duration table', () => {
+        const input = hostedInput();
+        const livePlan = input.livePlan;
+        expect(livePlan.matrix.include).toHaveLength(12);
+        expect(livePlan.matrix.include.flatMap((group) => group.specs)).toHaveLength(314);
+        expect(createHash('sha256').update(JSON.stringify(livePlan.matrix)).digest('hex')).toBe(
+            '5eab5299f22ffbc15ae9b89d3fa0799f10b29cd765815aaf53f103afc46733ad'
+        );
+        const report = measureShadow(input);
+        expect(report.counts).toEqual({ inventory: 314, candidate: 314, liveSelected: 314 });
+        expect(report.fallbackReasons).toContain('scope-head-inventory-drift');
+    });
+
+    it('refuses a default, wrong, or unbound duration table rather than accepting its matrix', () => {
+        expect(() => measureShadow(hostedInput('{}'))).toThrow('Authoritative scope artifact disagrees');
+        const wrong = JSON.stringify({ ...JSON.parse(durationTableText), 'tests/e2e/voiceTempoTestId.spec.ts': 99999 });
+        expect(() => measureShadow(hostedInput(wrong))).toThrow('Authoritative scope artifact disagrees');
+        expect(() => measureShadow(hostedInput('{invalid'))).toThrow();
+        expect(() => measureShadow({ ...hostedInput(), durationText: '{}' })).toThrow(
+            'Duration table differs from immutable head'
+        );
+    });
+
+    it.each(['scripts/e2eShardPartition.ts', 'scripts/e2eSpecDurations.json'])(
+        'refuses missing, nonregular, or integration-drifted duration source %s',
+        (path) => {
+            const input = hostedInput();
+            expect(() => measureShadow({ ...input, sourceModes: { ...input.sourceModes, [path]: '120000' } })).toThrow(
+                `Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`
+            );
+            expect(() =>
+                measureShadow({ ...input, sourceHashes: { ...input.sourceHashes, [path]: 'missing-or-nonregular' } })
+            ).toThrow(`Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`);
+            expect(() =>
+                measureShadow({
+                    ...input,
+                    integrationSourceHashes: { ...input.integrationSourceHashes, [path]: '0'.repeat(64) },
+                })
+            ).toThrow(`Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`);
+        }
+    );
     it('binds the two-parent integration commit and reads exact regular Git bytes', () => {
         withIntegrationCheckout((root, merge, head, base, first) => {
             expect(() => verifyIntegrationCheckout(root, merge, head, base)).not.toThrow();
@@ -537,8 +633,7 @@ describe('E2E selection shadow', () => {
     });
 
     it('falls back for a changed source mode', () => {
-        const sourceModes = Object.fromEntries(Object.keys(certificate.sourceHashes).map((path) => [path, '100644']));
-        sourceModes['playwright.config.ts'] = '120000';
+        const sourceModes = { ...fixture().sourceModes, 'playwright.config.ts': '120000' };
         expect(measureShadow(fixture({ sourceModes })).fallbackReasons).toContain(
             'route-certificate-drift: playwright.config.ts'
         );
