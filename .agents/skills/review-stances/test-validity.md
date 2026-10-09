@@ -6,6 +6,19 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-09 — authority tests fixed PR state for the whole run (introduced by PR #4586)
+
+PR #4586 introduced the authority append with a publication fixture whose PR reader always
+returned `OPEN` at the same head. Its recorded test-validity stance asked whether reverting the
+writer would stay green, but did not mutate PR state after approval inspection. PR #5032 extended the
+same binder to recovery; its moved-head fixture changed the head before reconciliation and held
+it constant through the two inspections and later dossier write.
+
+Probe that would have caught it: make the first two inspections return the same open head, then
+return merged, closed, or another head on the next PR read. Assert the publication binds without
+`delivery-authorized`, replay is byte-identical, and no second POST occurs. Revert only the live
+PR-state check and require these cases to fail; retain an open current-head approval control.
+
 ### 2026-10-09 — cold navigation expired before its warmup allowance (introduced by PR #3222)
 
 The E2E global warmup gave the launch overlay 180 seconds but left the preceding `page.goto('/')`
@@ -139,6 +152,14 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-09 — a newly declared "every spec owes the first-paint bound" left literal 15 s and 30 s waits in place (escaped via commit `04c28be0f8`)
+
+Commit `04c28be0f8` declared in `tests/e2e/e2eUtils.ts` that every spec waiting on the launch overlay itself owes `LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS`, but did not sweep the specs that already waited with a literal bound; the 15 s in `promptBarCancelRecentTestId.spec.ts` came from commit `d78dac728a`. It surfaced only when two Playwright workers per runner added CPU contention and a cold boot was still on its loading overlay at 15 s.
+
+Blind spot: a contract written as prose ("every X owes Y") binds sites the diff never touches, and a green suite on the declaring head cannot show them, because the literals were sufficient until contention changed boot time.
+
+Probe that would have caught it: when a change declares an "every X owes Y" contract, grep every existing X, run a census of them against Y, and land the census as a spec that reads the real files and cannot pass by matching nothing.
 
 ### 2026-09-28 — one aggregate deadline hid cumulative closure work (CI run 36366521880, job 108754137864; introduced by PR #4775)
 
@@ -276,6 +297,18 @@ and cache counters to survive without being added twice.
 Blind spot: the stance asked what each assertion would do under a mutation of the logic under test, but treated one spawned end-to-end case as covering the command without checking which branch it took — that tree had nothing to restamp, so every write-path mutation stayed green — and it never asked what the spec's own imports do to the tree.
 
 Probe that would have caught it: for a spec that imports the module it tests, import it against a deliberately drifted fixture and require every tracked file to be unchanged; then require the command's happy path to be exercised on a drifted fixture and delete the write, retarget the path, drop the refusal call and remove the printing, requiring each mutation to fail the suite.
+
+### 2026-10-09 — a landed recovery receipt left a modern dossier unbound (issue #5111)
+
+An absent-lock replay returned success from its receipt before authenticating or inspecting the
+landed review. The fresh-owner recovery test exercised a different branch, so it did not prove
+historical receipt adoption or native publication replay.
+
+Probe that would have caught it: start with an exact landed version-2 receipt, no lock, and a modern
+unbound dossier; require two stable exact remote reads, one append-only publication binding, and a
+second recovery plus native publish replay with no new POST. Restore the old early return and require
+the owning assertion to fail. On a merged PR, require publication binding without retrospective
+delivery authorization; on an open current approval, require zero unresolved threads for authority.
 
 ### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
 
@@ -687,3 +720,44 @@ blocked history entry stays on its original stack.
 ## Lesson from PR #826's real-storage numeric oracle escape
 
 The composite writer introduced by PR #826 (`ec6a9c18f260536996af1c28f92be30636d33a62`) reaches Automerge 3.5's implicit importer, whose numeric inference changes the exact predecessor of 1 into zero. That upstream predicate was not introduced by #826. A plain-object mock and approximate offset assertions cannot observe the stored operation. The ten real-storage cases accompanying `6e626aa2ecfbdbd062ee7d4a1d2b0c1471c24582` in `createAutomergeStorage.numericFidelity.spec.ts` compare exact raw and projected values, binary reload, unrelated peer merges and retained identities. The baseline probe must restore bulk composite import at both `writeChild` and row materialization, then require exact-value failures. Do not launder corruption with rounding or epsilon Undo equality. Ordinary reconciler proof does not cover custom raw callbacks or conflict repair (#5120).
+
+## Escape: opaque Bearer fixtures missed complete caller admission
+
+[PR #4491](https://github.com/jcosta33/sourdaw/pull/4491) introduced the screen and
+adapter in `9effe3689c72384f30f60971ca40f26a44c0a355`. Issue #5144 exposed a
+value-bearing HTTP scheme outside vendor prefixes and secret assignments. Synthetic offline
+SDK/CLI captures established admission into request bytes, not real credential disclosure; the
+historical stance name, prompt and tier are unestablished.
+
+Compose opaque fixtures at runtime and exercise actual scan, verify, complete request and stance
+callers. Assert refusal unconditionally together with zero cache read/write, budget reservation,
+recording/provider invocation and delegated fetch; an empty answer or caught provider error is
+insufficient. Use a schema-valid would-hit cache, a later unsafe candidate after an admitted
+placeholder, repeated calls, ordinary controls and clean independent units. Preserve the separate
+serialized-only fixture. On a committed head, removing the recognizer must redden the caller cases,
+and bypassing preparation before cache must redden the would-hit-cache cases.
+
+PR #5156's unlanded comment/array repair extended a source fixture to raw line comments,
+but its scan hunk still ended at line one. The paired value was on a later line, so the
+fixture screened a different input and could not establish the intended withholding.
+Derive the fixture's admitted range from the complete multiline binding; preserve an
+independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
+only the committed recognizer is reverted. A full-source screen assertion does not prove
+which region the real scan caller admitted.
+
+### 2026-10-09 — copied split automation identities broke saved-project replay (PR #4036)
+
+Commit `7961816964ebfe247ead1f057a2cd0f33571f624`, merged through PR #4036, copied
+surviving automation point IDs onto the right fragment while retaining the source lane.
+A split before those points therefore violated global ID uniqueness after binary reload.
+PR #4036's public round-four review described curve, stretch, and link-law probes, but
+its published evidence did not include binary reload or a global identity census. The
+missed stance was reload identity and global-ID preservation; its historical tier is not inferred.
+
+Split before surviving identified main, trim, and ghost points, using both a dyadic cut
+and a non-dyadic cut. Produce entries through real Command, save/load the Automerge
+document, replace it in its lineage, reset every owner projection, and hydrate the separate
+session history mirror. Require a full global-ID census, valid project invariants, exact
+scalar values/order/curves, and all owner projections before real Undo and Redo. Retaining
+copied point IDs must turn that reload assertion red; fresh in-memory curve checks alone
+do not observe this obligation.

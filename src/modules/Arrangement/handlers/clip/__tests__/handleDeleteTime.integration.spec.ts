@@ -39,7 +39,7 @@ import {
     prepareMidiGlobalTimeTransaction,
     prepareMidiTimeStateRestore,
 } from '#/modules/MIDI/useCases';
-import { tempoMapStore } from '#/modules/Transport/stores';
+import { readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
 import {
     getTransportHandlers,
     prepareTimelineMapStateRestore,
@@ -950,6 +950,38 @@ describe('Time operation take ownership through Command and CRDT', () => {
             expectAuthority();
         }
     );
+
+    it('global keeps the tempo of a clip after the deleted span, and undo restores the previous map', async () => {
+        arrangeComp(0, 10);
+        mutateCrdtDoc<Project>({
+            id: 'root',
+            changeFn: (project) => {
+                project.tracks.tracks[0]!.clips.push(
+                    ClipDummy.create({ id: 'after', trackId: 'track-1', startBeat: 12, endBeat: 14 })
+                );
+            },
+        });
+        const capturedTempoMap = {
+            changes: [
+                { id: 'tempo-120', beat: 0, tempo: 120, curve: 'instant' as const },
+                { id: 'tempo-60', beat: 10, tempo: 60, curve: 'instant' as const },
+            ],
+        };
+        tempoMapStore.set(capturedTempoMap);
+        flushAutomergeStorageWrites();
+        const tempoBeforeCut = readTempoAtBeat({ beat: 12 });
+        expect(tempoBeforeCut).toBe(60);
+
+        await removeTime('global', 9.5, 10.5);
+
+        const after = clips().find((clip) => clip.id === 'after');
+        expect(after?.startBeat).toBe(11);
+        expect(readTempoAtBeat({ beat: after?.startBeat ?? Number.NaN })).toBe(tempoBeforeCut);
+        expect(readTempoAtBeat({ beat: 9 })).toBe(120);
+
+        await undo();
+        expect(tempoMapStore.value).toEqual(capturedTempoMap);
+    });
 
     it('selected keeps exact fractional fragment edges through its UI entry', async () => {
         arrangeComp(0.3, 4.3);

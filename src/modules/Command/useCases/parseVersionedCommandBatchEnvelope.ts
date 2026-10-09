@@ -15,6 +15,7 @@ import {
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
 import { commandRequiresDynamicEffects } from './commandRequiresDynamicEffects';
+import { getBatchCreatedTargetIndex } from './getBatchCreatedTargetIndex';
 import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
@@ -422,15 +423,51 @@ function parseCommands(value: unknown): VersionedCommandEnvelope[] | null {
     return commands;
 }
 
-function validateCommandScope(commands: readonly VersionedCommandEnvelope[], scope: CommandBatchScope): string | null {
+/**
+ * An id a command records as one it creates may not also be an object another command targets
+ * as existing. Commands execute in order, so a target reference at or before the assignment
+ * names a pre-existing object, and a protected or declared-existing reference contradicts the
+ * creation itself. The per-command form of this collision is refused by the envelope parser;
+ * this check covers the cross-command form no single envelope can see.
+ */
+function validateAssignedIdsAgainstTargets(
+    commands: readonly VersionedCommandEnvelope[],
+    scope: CommandBatchScope,
+    preconditions: readonly CommandBatchCondition[]
+): string | null {
+    const index = getBatchCreatedTargetIndex(commands);
+    const protectedTargets = new Set(scope.protectedTargetIds);
+    const declaredExisting = new Set(
+        preconditions
+            .filter((condition) => condition.kind === 'targets-exist')
+            .flatMap((condition) => condition.targetIds ?? [])
+    );
+    for (const [targetId, creator] of index.firstAssignedAt) {
+        const firstReference = index.firstReferencedAt.get(targetId);
+        if (firstReference === undefined) {
+            continue;
+        }
+        if (firstReference <= creator) {
+            return `Assigned command id ${targetId} is targeted before the command that claims to create it`;
+        }
+        if (protectedTargets.has(targetId)) {
+            return `Assigned command id ${targetId} names a protected batch target`;
+        }
+        if (declaredExisting.has(targetId)) {
+            return `Assigned command id ${targetId} is declared to exist before the batch creates it`;
+        }
+    }
+    return null;
+}
+
+function validateCommandScope(
+    commands: readonly VersionedCommandEnvelope[],
+    scope: CommandBatchScope,
+    preconditions: readonly CommandBatchCondition[]
+): string | null {
     const declaredTargets = new Set(scope.targetIds);
     const protectedTargets = new Set(scope.protectedTargetIds);
-    const createdTargetIds = new Set(
-        commands.flatMap((command) =>
-            command.operation === 'armTrack' ? [] : command.applicationAssignedIds.map((assigned) => assigned.value)
-        )
-    );
-    const batchLocalDependentTargetIds = getBatchLocalDependentTargetIds(commands, createdTargetIds);
+    const batchLocalDependentTargetIds = getBatchLocalDependentTargetIds(commands);
     const overlapsProtectedRange = scope.targetRanges.some((targetRange) =>
         scope.protectedRanges.some((protectedRange) => {
             if (targetRange.startBeat === targetRange.endBeat) {
@@ -443,6 +480,10 @@ function validateCommandScope(commands: readonly VersionedCommandEnvelope[], sco
     );
     if (overlapsProtectedRange) {
         return 'Command target range overlaps a protected range';
+    }
+    const assignedIdCollision = validateAssignedIdsAgainstTargets(commands, scope, preconditions);
+    if (assignedIdCollision) {
+        return assignedIdCollision;
     }
     for (const command of commands) {
         for (const targetId of getCommandTargetIds(command)) {
@@ -767,7 +808,7 @@ export function parseVersionedCommandBatchEnvelope(
         return { status: 'invalid', reason: 'Command group IDs do not match the batch identity' };
     }
     const failure =
-        validateCommandScope(commands, scope) ??
+        validateCommandScope(commands, scope, preconditions) ??
         validateDynamicEffects(commands, scope, dynamicEffects) ??
         validateDependencies(commands, dependencies) ??
         validateBatchLocalBindings(commands, batchLocalBindings) ??

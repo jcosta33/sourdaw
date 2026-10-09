@@ -310,7 +310,7 @@ function seamPointFor(
  * played before the cut).
  *
  * Lane points live in the ABSOLUTE timeline frame, so the copy keeps them
- * verbatim and is only clamped to the fragment's window — points left of the
+ * at their original coordinates and values and is only clamped to the fragment's window — points left of the
  * cut stay on the source lane (inert beyond its shrunken edge, and alive
  * again if that edge is extended back out), points at or right of the cut
  * follow the right fragment. Re-basing them would move the curve off the
@@ -412,9 +412,17 @@ function buildLaneCopy(
     includeSeam: boolean
 ): AutomationLaneValue {
     const atOrAfterCut = (point: { beat: number }): boolean => point.beat >= absoluteSplitBeats;
-    const points = lane.points.filter(atOrAfterCut).map((point) => ({ ...point }));
-    const trimPoints = lane.trimPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
-    const ghostPoints = lane.ghostPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
+    // Both fragments survive. Identified points on their copied lanes therefore
+    // need distinct, replay-stable identities; retaining source ids makes the
+    // saved project fail the global identity invariant on reload.
+    function copyPoint<Point extends { id?: string }>(point: Point, kind: string, index: number): Point {
+        return point.id === undefined
+            ? { ...point }
+            : { ...point, id: `asp-split-${rightClipId}-${laneIndex}-${kind}-${index}` };
+    }
+    const points = lane.points.filter(atOrAfterCut).map((point, index) => copyPoint(point, 'point', index));
+    const trimPoints = lane.trimPoints?.filter(atOrAfterCut).map((point, index) => copyPoint(point, 'trim', index));
+    const ghostPoints = lane.ghostPoints?.filter(atOrAfterCut).map((point, index) => copyPoint(point, 'ghost', index));
     if (includeSeam && lane.points.length > 0) {
         const seamPoint = seamPointFor(lane, rightClipId, laneIndex, absoluteSplitBeats);
         if (seamPoint !== null) {

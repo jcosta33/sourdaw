@@ -146,6 +146,7 @@ export function prepareClipSplitTakeReplay(input: Input): readonly TakeReKeyLane
     }
     const knownIds = new Set(transitions.flatMap((transition) => transition.takesBefore.map((take) => take.id)));
     if (
+        input.expected.leftClip.type === 'audio' &&
         input.replacement.rightClip &&
         lanes.some(
             (lane) =>

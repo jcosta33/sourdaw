@@ -355,6 +355,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     };
 
     const handleCancel = () => {
+        // The Turn off Oven button stays visible through the cancelled window: a repeat click must
+        // not replace "Oven turned off." with "Cooling down...".
+        if (cancelledRef.current) {
+            return;
+        }
         cancelledRef.current = true;
         cancelExport();
         setStatusText('Cooling down...');
@@ -458,6 +463,16 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         let committed = false;
         const endedCancelled = (): boolean => cancelledRef.current && !committed;
 
+        // Every callback a render or encoder calls back into goes through here: work that was past
+        // its last checkpoint when Cancel landed still reports, and must not repaint the cancelled state.
+        const whileNotCancelled =
+            <Args extends unknown[]>(report: (...args: Args) => void) =>
+            (...args: Args): void => {
+                if (!endedCancelled()) {
+                    report(...args);
+                }
+            };
+
         try {
             // Restore audio buffers from IndexedDB before rendering.
             // The primary CRDT load path (loadProject → projectCrdtToStores) does not
@@ -482,6 +497,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 logger.warn(
                     'AudioContext not available during export — skipping IDB restore. Buffers may be incomplete.'
                 );
+            }
+
+            // Cancel only raises the render's flag while a render holds the lock, so one pressed
+            // during the restore above is seen here or nowhere: no render may start after it.
+            if (cancelledRef.current) {
+                return;
             }
 
             const tracks = trackStore.value?.tracks ?? [];
@@ -534,10 +555,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         return;
                     }
 
-                    const passProgress = (frac: number) => {
+                    const passProgress = whileNotCancelled((frac: number) => {
                         const subFraction = (currentPass + frac) / formatList.length;
                         setProgress(fractionOffset + subFraction * fractionRange);
-                    };
+                    });
 
                     setStatusText(`Kneading ${name} (${freq.toUpperCase()})...`);
                     let fileData: Uint8Array | ArrayBuffer;
@@ -600,17 +621,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     startBeat,
                     tailSeconds: tail,
                     sampleRate,
-                    onProgress: (frac) => {
+                    onProgress: whileNotCancelled((frac: number) => {
                         const barPct = frac * 100;
                         setProgress(barPct);
                         if (Math.round(barPct) % 5 === 0) {
                             setStatusText('Rendering clip...');
                         }
-                    },
-                    onWarning: (msg) => {
+                    }),
+                    onWarning: whileNotCancelled((msg: string) => {
                         logger.warn(msg);
                         rtcWarnings.add(msg);
-                    },
+                    }),
                 });
                 if (rtcWarnings.size > 0) {
                     notifyUser(
@@ -656,17 +677,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     startBeat,
                     tailSeconds: tail,
                     sampleRate,
-                    onProgress: (frac) => {
+                    onProgress: whileNotCancelled((frac: number) => {
                         const barPct = frac * 50;
                         setProgress(barPct);
                         if (Math.round(barPct) % 5 === 0) {
                             setStatusText('Proofing slices...');
                         }
-                    },
-                    onWarning: (msg) => {
+                    }),
+                    onWarning: whileNotCancelled((msg: string) => {
                         logger.warn(msg);
                         stemWarnings.add(msg);
-                    },
+                    }),
                 });
                 if (stemWarnings.size > 0) {
                     notifyUser(
@@ -715,17 +736,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     startBeat,
                     tailSeconds: tail,
                     sampleRate,
-                    onProgress: (frac) => {
+                    onProgress: whileNotCancelled((frac: number) => {
                         const barPct = frac * 60;
                         setProgress(barPct);
                         if (Math.round(barPct) % 5 === 0) {
                             setStatusText('Proofing whole loaf...');
                         }
-                    },
-                    onWarning: (msg) => {
+                    }),
+                    onWarning: whileNotCancelled((msg: string) => {
                         logger.warn(msg);
                         mixWarnings.add(msg);
-                    },
+                    }),
                 });
                 if (mixWarnings.size > 0) {
                     notifyUser(

@@ -18,6 +18,7 @@ import {
     AUTHOR_MINT_PERMISSIONS,
     PUBLISH_AUTHOR_MINT_PERMISSIONS,
     PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+    DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     GITHUB_HTTPS_REMOTE,
     REVIEWER_BOT_NODE_ID,
     REVIEWER_MINT_PERMISSIONS,
@@ -30,7 +31,9 @@ import {
     createGhSession,
     gitAuthenticatedArgs,
     gitCredentialHelperPath,
+    gitCredentialHelperValue,
     githubChildEnv,
+    posixSingleQuote,
     githubAuthorizationGitEnv,
     isReviewerBotNodeId,
     loadRoleCredentials,
@@ -580,6 +583,30 @@ describe('installation mint', () => {
         });
         expect(requests[0]?.body).not.toContain('administration');
         expect(requests[0]?.body).not.toContain('workflows');
+    });
+
+    it('scopes the deliver workflow mint to the author set plus workflows write only', async () => {
+        const { requests, request } = mintClient({
+            login: RENAMED_AUTHOR_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+        });
+        await mintInstallationToken({
+            appId: '4650613',
+            installationId: '1',
+            privateKey: pem,
+            permissions: DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+            expectedActorNodeId: AUTHOR_BOT_NODE_ID,
+            request,
+        });
+        expect(DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS).toEqual({
+            ...AUTHOR_MINT_PERMISSIONS,
+            workflows: 'write',
+        });
+        expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+            permissions: DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+        });
+        expect(requests[0]?.body).not.toContain('issues');
+        expect(requests[0]?.body).not.toContain('administration');
     });
 
     it('refuses workflow write returned for an ordinary publishing lane', async () => {
@@ -1148,7 +1175,7 @@ describe('isolated gh sessions', () => {
                 '-c',
                 'credential.helper=',
                 '-c',
-                `credential.helper=${helperPath}`,
+                `credential.helper=${gitCredentialHelperValue(helperPath)}`,
                 'push',
                 GITHUB_HTTPS_REMOTE,
                 'HEAD:refs/heads/agent/12/work',
@@ -1168,6 +1195,37 @@ describe('isolated gh sessions', () => {
             expect(runCredentialHelper(helperPath, 'erase', 'protocol=https\nhost=github.com\n\n')).toBe('');
         } finally {
             rmSync(helperDir, { recursive: true, force: true });
+        }
+    });
+
+    it('writes an embedded single quote as the POSIX close-escape-reopen sequence', () => {
+        expect(posixSingleQuote("/tmp/O'Brien Tools/$x;`y`")).toBe("'/tmp/O'\\''Brien Tools/$x;`y`'");
+        expect(gitCredentialHelperValue("/tmp/O'Brien Tools/helper")).toBe("!'/tmp/O'\\''Brien Tools/helper'");
+    });
+
+    it('lets Git run the helper from a directory holding a space and a single quote', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-root-'));
+        try {
+            const helperDir = join(root, "with space and 'quote' $x;`y`");
+            mkdirSync(helperDir);
+            const args = gitAuthenticatedArgs('ghs_synthetic', helperDir, ['credential', 'fill']);
+            const result = spawnSync('git', args, {
+                cwd: root,
+                encoding: 'utf8',
+                input: 'protocol=https\nhost=github.com\n\n',
+                env: {
+                    PATH: process.env.PATH,
+                    GIT_CONFIG_GLOBAL: '/dev/null',
+                    GIT_CONFIG_SYSTEM: '/dev/null',
+                    GIT_TERMINAL_PROMPT: '0',
+                },
+            });
+            expect(result.stderr).toBe('');
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('password=ghs_synthetic\n');
+            expect(result.stdout).toContain('username=x-access-token\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
         }
     });
 

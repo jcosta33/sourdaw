@@ -118,6 +118,20 @@ function initializeDeliveryLockRepository(root: string): void {
 }
 
 /**
+ * Commits one base file and returns its oid, giving a workflow classification read a real commit
+ * to diff: the coordinator derives the merge-diff classification from the snapshot's base and head
+ * oids, so a stub snapshot needs oids `git diff` can actually resolve in the case's primary root.
+ */
+function commitBase(root: string): string {
+    runGit(root, ['config', 'user.name', 'Fixture']);
+    runGit(root, ['config', 'user.email', 'fixture@example.com']);
+    writeFileSync(join(root, 'base.txt'), 'base\n');
+    runGit(root, ['add', 'base.txt']);
+    runGit(root, ['commit', '--no-gpg-sign', '--quiet', '-m', 'chore: base']);
+    return runGit(root, ['rev-parse', 'HEAD']);
+}
+
+/**
  * Acquiring a delivery lock records the owner's process fence, which the lock module reads through
  * the launcher-resolved `ps`. These cases run outside that launcher, so they supply their own.
  */
@@ -1074,6 +1088,7 @@ describe('package scripts and gitignore', () => {
             'prepareReview.ts',
             'publishReview.ts',
             'recoverPublishReviewLock.ts',
+            'reviewPublicationReceiptAdoption.ts',
             'reviewCommentDiffPreflight.ts',
             'reviewDocumentParser.ts',
             'reviewerModelDiversity.ts',
@@ -1144,6 +1159,7 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/recoverPublishReviewLock.ts',
+            'scripts/reviewPublicationReceiptAdoption.ts',
             'scripts/reconstructReviewRounds.ts',
             'scripts/reviewRepair.ts',
             'scripts/reviewRoundEscalation.ts',
@@ -1351,10 +1367,11 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:publish:recover' as const,
                 entry: 'scripts/recoverPublishReviewLock.ts',
-                required: 'scripts/pullRequestMutationLock.ts',
+                required: 'scripts/reviewPublicationReceiptAdoption.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/recoverPublishReviewLock.ts',
+                    'scripts/reviewPublicationReceiptAdoption.ts',
                     'scripts/reconstructReviewRounds.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
@@ -3799,6 +3816,7 @@ describe('package scripts and gitignore', () => {
         async (_label, mutate, expectedMethod) => {
             let dispatched = 0;
             await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
+                const baseSha = commitBase(root);
                 const authentication: DeliveryAuthentication = {
                     minted: {
                         token: 'ghs_delivery',
@@ -3809,8 +3827,11 @@ describe('package scripts and gitignore', () => {
                     session: { configDir: '/tmp/sourdaw-delivery', env: {}, dispose: () => undefined },
                 };
                 const unusedPort: DeliveryPort = {
-                    fetch: () => expect.fail('delivery domain should not run'),
-                    pullRequest: () => expect.fail('delivery domain should not run'),
+                    fetch: () => undefined,
+                    pullRequest: (snapshotNumber) => {
+                        expect(snapshotNumber).toBe(number);
+                        return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
+                    },
                     gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
                     gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
                     headCheckRuns: () => expect.fail('delivery domain should not run'),
@@ -3859,6 +3880,7 @@ describe('package scripts and gitignore', () => {
     it('forwards the known-absent marker so a definitive merge rejection releases the exact owner', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const baseSha = commitBase(root);
         const restorePs = writeTrustedPsFixture(root);
         const authentication: DeliveryAuthentication = {
             minted: {
@@ -3870,8 +3892,11 @@ describe('package scripts and gitignore', () => {
             session: { configDir: '/tmp/sourdaw-delivery', env: {}, dispose: () => undefined },
         };
         const unusedPort: DeliveryPort = {
-            fetch: () => expect.fail('delivery domain should not run'),
-            pullRequest: () => expect.fail('delivery domain should not run'),
+            fetch: () => undefined,
+            pullRequest: (number) => {
+                expect(number).toBe(2495);
+                return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
+            },
             gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
             gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
             headCheckRuns: () => expect.fail('delivery domain should not run'),
@@ -4387,6 +4412,9 @@ describe('package scripts and gitignore', () => {
     });
 
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        const baseSha = commitBase(root);
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({
             minted: { token, login: 'renamed-author[bot]', actorNodeId: AUTHOR_BOT_NODE_ID, permissions },
@@ -4400,7 +4428,10 @@ describe('package scripts and gitignore', () => {
         const tracker = authentication('ghs_tracker', { issues: 'write' });
         const deliveryPort: DeliveryPort = {
             fetch: () => undefined,
-            pullRequest: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            pullRequest: (number) => {
+                expect(number).toBe(2495);
+                return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
+            },
             gateRequiredCheckNames: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredSkipAliases: () => expect.fail('delivery domain should be injected in this coordinator test'),
             headCheckRuns: () => expect.fail('delivery domain should be injected in this coordinator test'),
@@ -4411,21 +4442,23 @@ describe('package scripts and gitignore', () => {
                 expect.fail('delivery domain should be injected in this coordinator test'),
             dependents: () => [],
             repositoryDeletesMergedBranches: () => false,
-            merge: () => undefined,
-            retarget: () => undefined,
+            merge: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            retarget: () => expect.fail('delivery domain should be injected in this coordinator test'),
             deliveryReceipts: () => [],
             deliveryReceiptProof: () => deliveryReceiptProof([]),
             addDeliveryReceipt: () => expect.fail('delivery domain should be injected in this coordinator test'),
             readDeliveryReceiptAuthority: () => undefined,
-            writeDeliveryReceiptAuthority: () => undefined,
-            clearDeliveryReceiptAuthority: () => undefined,
+            writeDeliveryReceiptAuthority: () =>
+                expect.fail('delivery domain should be injected in this coordinator test'),
+            clearDeliveryReceiptAuthority: () =>
+                expect.fail('delivery domain should be injected in this coordinator test'),
             log: () => undefined,
         };
         const seen: string[] = [];
         const adapterRequests: Array<{ args: string[]; token: string }> = [];
         let trackerPort: ReconcileTrackerIssuePort | undefined;
         const dependencies: DeliveryCoordinatorDependencies = {
-            primaryRoot: () => '/repo',
+            primaryRoot: () => root,
             serializeDelivery: async (_primaryRoot, number, operation) => {
                 seen.push(`lock:${number}:acquire`);
                 try {
@@ -4480,13 +4513,18 @@ describe('package scripts and gitignore', () => {
             },
         };
 
-        await coordinateDelivery(2495, dependencies);
+        try {
+            await coordinateDelivery(2495, dependencies);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
 
         expect(author.minted.permissions).toEqual({ contents: 'write', pull_requests: 'write' });
         expect(tracker.minted.permissions).toEqual({ issues: 'write' });
         expect(seen).toEqual([
             'lock:2495:acquire',
             'repository:ghs_author',
+            'delivery:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
             `complete:${AUTHOR_BOT_NODE_ID}`,

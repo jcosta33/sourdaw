@@ -1,9 +1,13 @@
-import { restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { getMidiStoreState, restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { clipSatelliteEntriesMatchSnapshot } from '../../stores/clipSatelliteState';
+import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
+import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { rippleDeleteShiftStateMatchesStore } from '../../useCases/rippleDelete/rippleDeleteShiftStateMatchesStore';
 import { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 import { updateTrack } from '../../useCases/updateTrack';
 import { isRestoreClipSessionPayload } from '../clip/validateClipEditSessionEntries';
@@ -17,12 +21,40 @@ import { isRestoreClipSessionPayload } from '../clip/validateClipEditSessionEntr
 
 type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
 
-function restoreStateMatches(action: RestoreClipAction): boolean {
+function restoreStateMatches(action: RestoreClipAction, context?: HandlerValidationContext): boolean {
     // The restore re-appends `clipSnapshot` as-is, so it assumes the owning track
-    // is present and the removed clip is still absent — re-appending onto a clip
-    // that is somehow back would duplicate its id.
-    const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
-    return track !== undefined && !track.clips.some((clip) => clip.id === action.payload.clipId);
+    // is present and the removed clip is absent from every track. A peer may
+    // recreate the same identity under another owner after removal.
+    const tracks = getTrackStoreState()?.tracks ?? [];
+    if (
+        !tracks.some((track) => track.id === action.payload.trackId) ||
+        tracks.some((track) => track.clips.some((clip) => clip.id === action.payload.clipId)) ||
+        !retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? []) ||
+        !rippleDeleteShiftStateMatchesStore(
+            action.payload.trackId,
+            action.payload.ripplePlan?.shiftedClips ?? [],
+            action.payload.ripplePlan?.clipAutomationLanes ?? [],
+            context?.actions.slice(0, context.actionIndex)
+        )
+    ) {
+        return false;
+    }
+    const { clipId, ripplePlan } = action.payload;
+    const midi = getMidiStoreState();
+    // Removal retires these target-owned records. A later owner is a conflict,
+    // even when the capture was empty; peer records under other ids stay free.
+    if (
+        midi &&
+        (Object.hasOwn(midi.notesByClipId, clipId) ||
+            Object.hasOwn(midi.ccByClipId, clipId) ||
+            Object.hasOwn(midi.pitchBendByClipId, clipId))
+    ) {
+        return false;
+    }
+    return (
+        clipSatelliteEntriesMatchSnapshot([{ clipId, gainEnvelope: null, warpState: null }]) &&
+        clipAutomationLaneTransitionMatchesStore([clipId], [], ripplePlan?.clipAutomationLanes ?? [])
+    );
 }
 
 /**
@@ -57,8 +89,11 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
     validateSessionActionArguments: isRestoreClipSessionPayload,
     // Grouped undo replays every inverse of the gesture as one batch; this
     // preflight keeps that batch honest. Single-entry undo never calls validate.
-    validate: (action, context) => restoreStateMatches(action) && batchMembersAreIndependent(action, context),
+    validate: (action, context) => restoreStateMatches(action, context) && batchMembersAreIndependent(action, context),
     execute: (alpha) => {
+        if (!restoreStateMatches(alpha)) {
+            return { status: 'conflict' };
+        }
         const {
             clipId,
             trackId,
@@ -90,6 +125,7 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
             controlChangeSnapshot: midiCcSnapshot,
             pitchBendSnapshot: midiPitchBendSnapshot,
         });
+        return { status: 'written' };
     },
     describe: () => ({ label: 'Restore clip' }),
     undoable: false,

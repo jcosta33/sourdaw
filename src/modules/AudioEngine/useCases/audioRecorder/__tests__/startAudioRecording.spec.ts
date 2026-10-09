@@ -84,12 +84,12 @@ describe('startAudioRecording', () => {
             expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
         });
 
-        it('opens the record-driven listening path for an Auto track', async () => {
+        it('leaves an Auto track’s listening edge to the Auto monitoring owner', async () => {
             mocks.tracks.push({ id: 'track-1', inputMonitoring: 'auto' });
 
             await expect(startAudioRecording('track-1', vi.fn())).resolves.toBe(true);
 
-            expect(mocks.startInputMonitoring).toHaveBeenCalledWith('track-1', 'selected-input');
+            expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
             expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
         });
 

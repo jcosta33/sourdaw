@@ -7,6 +7,7 @@ import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLane
 import { trackStore } from '../../../stores/trackStore';
 import { removeTakesForClips } from '../removeTakesForClips';
 import { restoreTakesForClip } from '../restoreTakesForClip';
+import { retiredTakeLaneOwnersMatchStore } from '../retiredTakeLaneOwnersMatchStore';
 
 const mocks = vi.hoisted(() => ({
     takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
@@ -72,6 +73,22 @@ describe('restoreTakesForClip', () => {
 
         restoreTakesForClip([]);
 
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+    });
+
+    it('admits an absent captured lane or a new lane for its track, but refuses a foreign reuse of its id', () => {
+        const capture = [
+            { laneIndex: 0, lane: { id: 'captured-lane', trackId: 't1', takes: [], activeCompRegions: [] } },
+        ];
+        mocks.takeLaneStoreValue.value = { lanes: [] };
+        expect(retiredTakeLaneOwnersMatchStore(capture)).toBe(true);
+        const replacement = { id: 'replacement-lane', trackId: 't1', takes: [], activeCompRegions: [] };
+        mocks.takeLaneStoreValue.value = { lanes: [replacement] };
+        expect(retiredTakeLaneOwnersMatchStore(capture)).toBe(true);
+        mocks.takeLaneStoreValue.value = {
+            lanes: [replacement, { ...replacement, id: 'captured-lane', trackId: 't2' }],
+        };
+        expect(retiredTakeLaneOwnersMatchStore(capture)).toBe(false);
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
 

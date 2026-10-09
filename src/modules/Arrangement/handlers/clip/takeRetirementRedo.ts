@@ -1,8 +1,6 @@
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
-
 /**
  * The inverse of the undo entry whose redo this dispatch is replaying.
  *
@@ -24,22 +22,4 @@ export function pairedInverseForRedo(action: object): AppAction | null | undefin
         return entry.inverseAction;
     }
     return undefined;
-}
-
-/**
- * Refresh the capture of the entry this removal is replaying.
- *
- * A removal's `describe()` re-captures on the redo leg, but the redo runs with
- * `skipUndo`, so that fresh capture never reaches an entry and the entry keeps
- * what the first removal wrote. A take that landed on the restored clip in
- * between is then absent from the capture the following undo reads, and is
- * lost. Writing the fresh capture onto the paired entry keeps its inverse
- * describing what its own replay actually retired.
- */
-export function refreshRetiredTakeLanesForRedo(action: object, clipId: string): void {
-    const inverse = pairedInverseForRedo(action);
-    if (inverse?.type !== 'restoreClip') {
-        return;
-    }
-    inverse.payload.retiredTakeLanes = captureRetiredTakeLanes([clipId]);
 }

@@ -6,6 +6,7 @@ import {
     getAudioContext,
     setMasterGainValue,
     resumeEngine,
+    syncAutoInputMonitoring,
     syncControlRoomMonitoring,
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
@@ -35,7 +36,8 @@ const FIRST_LOAD_HINT_DELAY_MS = 3000;
 export const useAppInitialization = (): void => {
     useEffect(() => {
         // syncKneadToEngine, syncTransportMapsToNativeSession,
-        // rearmNativeSessionAfterEngineRetire and syncNativeTimelineSamples
+        // rearmNativeSessionAfterEngineRetire, syncNativeTimelineSamples,
+        // syncControlRoomMonitoring and syncAutoInputMonitoring
         // each subscribe to a store and return an unsubscribe. All are created
         // inside the async boot sequence, so we hold them in a closure and tear
         // them down on cleanup. `disposed` covers the race where the effect
@@ -46,6 +48,7 @@ export const useAppInitialization = (): void => {
         let unsubscribeNativeRearm: (() => void) | null = null;
         let unsubscribeTimelineSamples: (() => void) | null = null;
         let unsubscribeControlRoomMonitoring: (() => void) | null = null;
+        let unsubscribeAutoInputMonitoring: (() => void) | null = null;
         let disposed = false;
 
         void (async () => {
@@ -61,6 +64,7 @@ export const useAppInitialization = (): void => {
                 // Applies the monitoring state held at boot before the first
                 // subscription fires, so a pre-boot toggle is not lost.
                 unsubscribeControlRoomMonitoring = syncControlRoomMonitoring();
+                unsubscribeAutoInputMonitoring = syncAutoInputMonitoring();
                 if (disposed) {
                     unsubscribeKnead();
                     unsubscribeKnead = null;
@@ -72,6 +76,8 @@ export const useAppInitialization = (): void => {
                     unsubscribeTimelineSamples = null;
                     unsubscribeControlRoomMonitoring();
                     unsubscribeControlRoomMonitoring = null;
+                    unsubscribeAutoInputMonitoring();
+                    unsubscribeAutoInputMonitoring = null;
                 }
                 const transport = getTransportState();
                 if (transport) {
@@ -118,6 +124,10 @@ export const useAppInitialization = (): void => {
             if (unsubscribeControlRoomMonitoring) {
                 unsubscribeControlRoomMonitoring();
                 unsubscribeControlRoomMonitoring = null;
+            }
+            if (unsubscribeAutoInputMonitoring) {
+                unsubscribeAutoInputMonitoring();
+                unsubscribeAutoInputMonitoring = null;
             }
         };
     }, []);

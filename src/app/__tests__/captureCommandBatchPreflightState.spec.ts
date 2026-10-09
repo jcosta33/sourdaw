@@ -31,6 +31,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     resolveTakeMedia: (await importOriginal<typeof import('#/modules/Arrangement/stores')>()).resolveTakeMedia,
+    getTrackEligibility: vi.fn(),
     readMusicalRangeInputs: vi.fn(() => []),
     readMusicalRange: vi.fn(),
     clipHasActiveGainEnvelope: vi.fn(),

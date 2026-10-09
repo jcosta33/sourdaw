@@ -1,4 +1,5 @@
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
+import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 
 type MidiClipWindow = {
@@ -44,6 +45,16 @@ function projectVisibleNote(note: MidiNote, window: MidiClipWindow): MidiNote | 
 }
 
 /**
+ * A row on the closing line is outside the window, however the window's end was
+ * reached: `offset + (end - start)` misses `offset + length` by an ulp on starts
+ * that are not dyadic fractions, and a row the extra ulp admits lands on the next
+ * pass head or clip, one ulp behind that head's own rows, where it wins the tie.
+ */
+function isAtOrPastVisibleEnd(beat: number, window: MidiClipWindow): boolean {
+    return beat >= window.visibleEndBeat - SAME_BEAT_TOLERANCE;
+}
+
+/**
  * The rows inside the window, rebased, in source order. Every lane whose value
  * in force at the window start was set by an earlier row begins with that value
  * at the window start, unless the lane has a row there already, so a pedal or
@@ -69,7 +80,7 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
             }
             continue;
         }
-        if (row.beat >= window.visibleEndBeat) {
+        if (isAtOrPastVisibleEnd(row.beat, window)) {
             continue;
         }
         if (row.beat === window.visibleStartBeat) {

@@ -3,6 +3,7 @@ import { clampMidiData7, clampVelocity } from '#/utils/midiData';
 import { SAME_FRAME_EVENT_ORDER, type SameFrameEventKind } from '#/utils/sameFrameEventOrder';
 
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
+import { SAME_BEAT_TOLERANCE } from '../models/SameBeatTolerance';
 import {
     MIDI_FILE_EXTENSION,
     MIDI_FILE_MIME_TYPE,
@@ -49,9 +50,6 @@ function write32(value: number): number[] {
 function write16(value: number): number[] {
     return [(value >> 8) & 0xff, value & 0xff];
 }
-
-// Beats closer than this are one instant: projected beats differ by float noise.
-const SAME_BEAT_TOLERANCE = 1e-9;
 
 type MidiEvent = {
     tick: number;

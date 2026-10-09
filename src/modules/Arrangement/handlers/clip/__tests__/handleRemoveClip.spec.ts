@@ -64,6 +64,17 @@ vi.mock('../../../useCases/rippleDelete/rippleDeleteClips', () => ({
     rippleDeleteClips: mocks.rippleDeleteClips,
 }));
 
+vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+    pushUndoEntry: vi.fn(),
+    getExecutableAppActionEffect: vi.fn(),
+}));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(() => ''),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
+    getCrdtDoc: vi.fn(),
+}));
+
 vi.mock('#/modules/MIDI/useCases', () => ({
     getMidiStoreState: mocks.getMidiStoreState,
     removeMidiClipData: mocks.removeMidiClipData,

@@ -579,6 +579,10 @@ export type RippleShiftSnapshot = {
     readonly origStartBeat: number;
     readonly origEndBeat: number;
     readonly automationDelta: number;
+    /** Complete shifted-clip lane membership, owner tracks and points after
+     *  the forward ripple. Historical captures without this field can only
+     *  authenticate an empty live automation scope. */
+    readonly expectedAutomationLanes?: readonly ClipAutomationLaneActionSnapshot[];
 };
 /** A take captured inside a comp take lane — structural mirror of Arrangement's
  *  `Take`, declared here because model isolation forbids importing it. Arrays

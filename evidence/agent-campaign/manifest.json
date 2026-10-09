@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "a4d365ee60ac7f2c69d9ca2f59121cad29949852b03c5e172500f82fabd44514"
+        "digest": "0c2d9bf09e7caa99580875192ebecfb2c8861e0461eacea53dc9d0565c13fddd"
     },
     "census": {
         "digest": "fab967ce35ead06daa75511f79664e42a0bc84674d23f8c20fe256def7e32e06"
@@ -247,7 +247,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts",
-                    "digest": "99f4f07d23aaf51a9511ed4841aa4dfa8f2cf43323655a79267a6cfbbfba67dc"
+                    "digest": "d802d953c2f5cddc1b8615bb5dc0f4e37ae09d9b676f050d707e083dde5b4b9a"
                 }
             ]
         },
@@ -283,7 +283,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts",
-                    "digest": "182cf73725708eea89832f14df1f883ab27e6bca9a1236425f66645c0a5b2100"
+                    "digest": "1667894043c52740d041feea4541b4e6f91870daf56133ef2b7d1f91fe2fd80a"
                 }
             ]
         },
@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "5f7a231517bc007df88af1b9b7bd20232548b463c2e1d7f16a915b9974b9d93a"
+                    "digest": "a081c4b4152aea814dbadca6ee7fb5da3e418e8c638655351381e1b836d3e60c"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "7cbb9a828366118c12cfb6fac54f834577eecc99bd8c99de8c2abc4c05d3cf30"
+                    "digest": "6202740f1d35ca4dac497715699743341243cf0ebc738e743b302e58ca5997f7"
                 }
             ]
         },
@@ -620,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "addc16bd6e2e1f38d314d84a413cb2a1760e40ce7580d5165df90cb9aacc0892"
+                    "digest": "aa9ca05134e25fba9b01ceaf1ce38b363ed44a2d6dd8156c8b7f3e5dc0f134d9"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",

@@ -693,12 +693,24 @@ jobs:
       # this job and Gate on an otherwise-green head (#4085), so the install
       # retries three times with a 15s then 30s backoff; the last failure
       # still fails the step. Package list unchanged: libasound2-dev only.
+      #
+      # An apt run has hung until the job limit (#5072), and a hung attempt
+      # never exits, so each one carries a deadline. `apt-get update` is the
+      # slow part: the browser-dependency install above saw its apt phase take
+      # 523s and 1252s on a slow Ubuntu mirror, so the cap matches that
+      # install's 8 minutes and a merely slow mirror is not killed. The root
+      # `timeout` is required because one owned by the runner user cannot
+      # signal apt under sudo; the deadline sends a TERM, and the KILL after
+      # 15 seconds only reaches a `bash -c` wrapper that survives it.
+      # Three timed-out attempts take 3 x 495s plus 45s of backoff, 1530s, so
+      # the step carries a 30 minute limit inside the 60 minute job limit.
       - name: Install ALSA development headers
         shell: bash
+        timeout-minutes: 30
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if sudo apt-get update && sudo apt-get install -y libasound2-dev; then
+            if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
               exit 0
             fi
             printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2
@@ -716,6 +728,18 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # Main's seed archives the actual Linux Rust graph after rust-cache
+      # restores. An exact dependency hit can run offline even when the
+      # compiled-target cache misses; a miss or partial restore stays online.
+      - name: Cache Cargo dependencies
+        id: cargo-deps
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
+
       - name: Install server dependencies
         working-directory: server
         run: npm ci
@@ -727,6 +751,7 @@ jobs:
       - name: Server and Rust workspace health gates
         env:
           CARGO_HTTP_MULTIPLEXING: 'false'
+          CARGO_NET_OFFLINE: ${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: pnpm health:server:full
 
   native-macos:
@@ -755,12 +780,50 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
+        id: rust-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # Even a full-match rust-cache restore does not keep these jobs off the
+      # registry index: the restored cache carries every .crate file (no
+      # "Downloading" lines) yet cargo still fetched index entries on every
+      # run — invisible while the network held, and fatal when a macOS runner
+      # could not reach index.crates.io and `cargo test` died resolving serde
+      # (#5094; run 37773587894, job 113299796465). This second layer caches
+      # ~/.cargo/registry/index under a key for Cargo.lock, every manifest,
+      # Cargo config, and toolchain: restored after
+      # rust-cache it shadows whatever index state the job cache carried, and
+      # because post steps run in reverse order its save completes before
+      # rust-cache's registry cleanup touches the index, so it always
+      # archives a complete one. The key is scoped per job (`github.job`)
+      # because the two macOS jobs' consultation sets differ — the test
+      # builds compile dev-dependencies the addon's release build skips —
+      # and actions/cache skips its post-save on an exact hit, so a key
+      # shared across jobs would let whichever job's post ran first fix the
+      # archived index for both, starving the other under a complete hit.
+      - name: Cache the cargo registry index
+        id: cargo-index
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/registry/index
+          key: cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
+
+      # Offline exactly when both layers matched their exact keys: rust-cache's
+      # `cache-hit` is true only on a full key match and actions/cache sets
+      # `cache-hit` only on a primary-key match, so together they prove every
+      # .crate file and index entry the locked build needs is on disk. A
+      # missing entry then fails fast and locally instead of hanging on runner
+      # connectivity; any miss keeps the run online so lockfile changes can
+      # still fetch, exactly as before (#5094).
       - name: Test the audio crates
+        env:
+          CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
 
       - name: Test the native crate
+        env:
+          CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package sourdaw-native
 
   native-windows:
@@ -787,9 +850,24 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
+        id: rust-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # The same index-cache layer and offline gate `native-macos` records
+      # above: its full-match restore fetched the index too and only passed
+      # because the runner's network happened to hold (#5094).
+      - name: Cache the cargo registry index
+        id: cargo-index
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/registry/index
+          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
+
       - name: Test the audio crates
+        env:
+          CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
 
   native-parity:
@@ -814,7 +892,20 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
+        id: rust-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Same registry-index layer `native-macos` records above: the addon
+      # build's cargo must not depend on runner connectivity to fetch index
+      # entries a restored cache should already cover (#5094).
+      - name: Cache the cargo registry index
+        id: cargo-index
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/registry/index
+          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a

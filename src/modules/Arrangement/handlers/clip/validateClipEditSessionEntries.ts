@@ -126,7 +126,7 @@ function hasValidClipFields(value: Record<string, unknown>): boolean {
     );
 }
 
-function isRetiredTakeLane(value: unknown, clipId: string): boolean {
+function isRetiredTakeLane(value: unknown, clipId: string, trackId: string): boolean {
     if (
         !isRecord(value) ||
         typeof value.laneIndex !== 'number' ||
@@ -136,7 +136,7 @@ function isRetiredTakeLane(value: unknown, clipId: string): boolean {
         return false;
     }
     const lane = decodeExactTakeLaneSnapshots([value.lane])?.[0];
-    if (!lane) {
+    if (!lane || lane.trackId !== trackId) {
         return false;
     }
     return (
@@ -153,8 +153,8 @@ function isRetiredTakeLane(value: unknown, clipId: string): boolean {
     );
 }
 
-function isRetiredTakeLanes(value: unknown, clipId: string): boolean {
-    return Array.isArray(value) && value.every((entry) => isRetiredTakeLane(entry, clipId));
+function isRetiredTakeLanes(value: unknown, clipId: string, trackId: string): boolean {
+    return Array.isArray(value) && value.every((entry) => isRetiredTakeLane(entry, clipId, trackId));
 }
 
 function isClipSnapshot(value: unknown, clipId: string, trackId: string): boolean {
@@ -179,7 +179,12 @@ function isClipSnapshot(value: unknown, clipId: string, trackId: string): boolea
     );
 }
 
-function isRippleDeleteShift(value: unknown, removedClipId: string): boolean {
+function isRippleDeleteShift(
+    value: unknown,
+    removedClipId: string,
+    trackId: string,
+    removed: { startBeat: number; endBeat: number }
+): boolean {
     return (
         isRecord(value) &&
         typeof value.clipId === 'string' &&
@@ -191,25 +196,43 @@ function isRippleDeleteShift(value: unknown, removedClipId: string): boolean {
         Number.isFinite(value.origEndBeat) &&
         value.origEndBeat > value.origStartBeat &&
         typeof value.automationDelta === 'number' &&
-        Number.isFinite(value.automationDelta)
+        Number.isFinite(value.automationDelta) &&
+        value.origStartBeat >= removed.endBeat &&
+        value.automationDelta === -(removed.endBeat - removed.startBeat) &&
+        optionalField(
+            value,
+            'expectedAutomationLanes',
+            (lanes) => isExactClipAutomationMoveSnapshots(lanes) && lanes.every((lane) => lane.trackId === trackId)
+        ) &&
+        Object.keys(value).every((key) =>
+            ['clipId', 'origStartBeat', 'origEndBeat', 'automationDelta', 'expectedAutomationLanes'].includes(key)
+        )
     );
 }
 
-function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: string): boolean {
-    if (!isRecord(value)) {
+function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: string, trackId: string): boolean {
+    if (
+        !isRecord(value) ||
+        !isRecord(clipSnapshot) ||
+        typeof clipSnapshot.startBeat !== 'number' ||
+        typeof clipSnapshot.endBeat !== 'number'
+    ) {
         return false;
     }
+    const removedBounds = { startBeat: clipSnapshot.startBeat, endBeat: clipSnapshot.endBeat };
     const satellites = clipSatelliteStateCodec.decodeEntries(value.clipSatellites);
     return (
         Array.isArray(value.removedClips) &&
         value.removedClips.length === 1 &&
         valuesEqual(value.removedClips[0], clipSnapshot) &&
         Array.isArray(value.shiftedClips) &&
-        value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId)) &&
+        value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId, trackId, removedBounds)) &&
+        new Set(value.shiftedClips.map((shift) => (isRecord(shift) ? shift.clipId : undefined))).size ===
+            value.shiftedClips.length &&
         satellites !== null &&
         satellites.every((entry) => entry.clipId === clipId) &&
         isExactAutomationLaneSnapshots(value.clipAutomationLanes) &&
-        value.clipAutomationLanes.every((lane) => lane.clipId === clipId)
+        value.clipAutomationLanes.every((lane) => lane.clipId === clipId && lane.trackId === trackId)
     );
 }
 
@@ -221,8 +244,9 @@ export function isRestoreClipSessionPayload(value: unknown): boolean {
         value.clipId.length > 0 &&
         value.trackId.length > 0 &&
         isClipSnapshot(value.clipSnapshot, value.clipId, value.trackId) &&
-        (value.ripplePlan === null || isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId)) &&
-        isRetiredTakeLanes(value.retiredTakeLanes, value.clipId) &&
+        (value.ripplePlan === null ||
+            isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId, value.trackId)) &&
+        isRetiredTakeLanes(value.retiredTakeLanes, value.clipId, value.trackId) &&
         hasFiniteNumbers(value)
     );
 }
@@ -292,6 +316,7 @@ function isPlacement(value: unknown): value is Record<string, unknown> {
         Number.isFinite(value.endBeat) &&
         value.endBeat > value.startBeat &&
         isExactClipAutomationMoveSnapshots(value.automationLanes) &&
+        value.automationLanes.every((lane) => lane.trackId === value.trackId) &&
         hasFiniteNumbers(value.automationLanes) &&
         (!Object.hasOwn(value, 'audioSource') || isAudioSourceStateSnapshot(value.audioSource)) &&
         (!Object.hasOwn(value, 'takeSources') || isTakeSourceDepthSnapshots(value.takeSources))
@@ -352,6 +377,56 @@ function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): v
     );
 }
 
+function splitSnapshotCaptureOwnersMatch(value: Record<string, unknown>, clipId: string, rightClipId: string): boolean {
+    if (
+        !isRecord(value.leftClip) ||
+        value.leftClip.id !== clipId ||
+        value.leftClip.trackId !== value.trackId ||
+        (value.rightClip !== null &&
+            (!isRecord(value.rightClip) ||
+                value.rightClip.id !== rightClipId ||
+                value.rightClip.trackId !== value.trackId))
+    ) {
+        return false;
+    }
+    if (value.clipAutomationLanes !== undefined) {
+        if (
+            !isExactAutomationLaneSnapshots(value.clipAutomationLanes) ||
+            !value.clipAutomationLanes.every((lane) => lane.clipId === rightClipId && lane.trackId === value.trackId)
+        ) {
+            return false;
+        }
+    }
+    if (value.clipSatellites === undefined) {
+        return true;
+    }
+    const satellites = clipSatelliteStateCodec.decodeEntries(value.clipSatellites);
+    return (
+        satellites !== null &&
+        satellites.every(
+            (entry) =>
+                (entry.clipId === clipId || entry.clipId === rightClipId) &&
+                (value.rightClip !== null ||
+                    entry.clipId !== rightClipId ||
+                    (entry.gainEnvelope === null && entry.warpState === null))
+        )
+    );
+}
+
+/** Capture ownership is structural; live owner freshness is checked at replay. */
+export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.clipId === 'string' &&
+        typeof value.rightClipId === 'string' &&
+        isRecord(value.expected) &&
+        isRecord(value.replacement) &&
+        value.expected.trackId === value.replacement.trackId &&
+        splitSnapshotCaptureOwnersMatch(value.expected, value.clipId, value.rightClipId) &&
+        splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId)
+    );
+}
+
 export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
     return (
         isRecord(value) &&
@@ -362,7 +437,10 @@ export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
         value.rightClipId !== value.clipId &&
         isSplitSnapshot(value.expected, value.clipId, value.rightClipId) &&
         isSplitSnapshot(value.replacement, value.clipId, value.rightClipId) &&
-        (value.retiredTakeLanes === undefined || isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId)) &&
+        clipSplitCaptureOwnersMatch(value) &&
+        (value.retiredTakeLanes === undefined ||
+            (isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId, value.expected.trackId) &&
+                isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId, value.replacement.trackId))) &&
         decodeClipSplitTakeTransitions({
             clipId: value.clipId,
             rightClipId: value.rightClipId,

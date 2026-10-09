@@ -3,6 +3,7 @@ import { appendFileSync, lstatSync, readdirSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
@@ -25,10 +26,21 @@ const REVIEW_TOOLING = new Set([
     'recoverDeliveryLock',
     'recoverPublishReviewLock',
     'repairReviewFinding',
+    'resolveThread',
     'reviewApprovalFormat',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',
+    'reviewDossierChain',
+    'reviewDossierPublication',
+    'reviewDossierReassessed',
+    'reviewDossierSemanticAssessment',
+    'reviewDossierViews',
+    'reviewPublicationBinding',
+    'reviewPublicationLegacyIncidents',
+    'reviewPublicationReceiptAdoption',
+    'reviewPublicationRecoveryReceipt',
+    'reviewPublicationRemoteInspection',
     'reviewerModelDiversity',
     'reviewRoundEscalation',
     'reviewRiskPolicy',
@@ -49,6 +61,9 @@ const REVIEW_TOOLING = new Set([
     'pullRequestMutationLock',
     'pruneLane',
     'removeLane',
+    'retargetCapabilityPlan',
+    'retargetCapabilitySnapshot',
+    'rulesetHardening',
     'stackedLanes',
     'stampLaneIdentity',
     'supersedePullRequest',
@@ -57,6 +72,14 @@ const REVIEW_TOOLING = new Set([
     'trustedGithubWriteBootstrap',
     'typesafeRequest',
     'trackerIssueReconciliation',
+]);
+
+const REVIEW_TOOLING_SPEC_ONLY = new Set([
+    'deliveryRiskPlanLoss',
+    'orchestratorReviewState',
+    'recoverDeliveryLockGeneral',
+    'recoverPublishReviewLockReceiptReplay',
+    'threeRoleTransitions',
 ]);
 
 const RELEASE_TOOLING_METADATA = new Set([
@@ -145,9 +168,18 @@ function isReviewTooling(path: string): boolean {
     if (path.startsWith('scripts/semanticReviewMeasurement/')) {
         return SEMANTIC_MEASUREMENT_TOOLING.has(path.slice('scripts/semanticReviewMeasurement/'.length));
     }
-    const match = /^scripts\/(?:__tests__\/)?([A-Za-z]+)(?:\.spec)?\.ts$/.exec(path);
-    const scriptName = match?.[1];
-    return scriptName !== undefined && REVIEW_TOOLING.has(scriptName);
+    const source = /^scripts\/([A-Za-z]+)\.ts$/.exec(path)?.[1];
+    if (source !== undefined) {
+        return REVIEW_TOOLING.has(source);
+    }
+    const spec = /^scripts\/__tests__\/([A-Za-z0-9]+)\.spec\.ts$/.exec(path)?.[1];
+    if (spec === undefined) {
+        return false;
+    }
+    if (REVIEW_TOOLING_SPEC_ONLY.has(spec)) {
+        return true;
+    }
+    return REVIEW_TOOLING.has(spec.replace(/\d+$/, ''));
 }
 
 function isSpec(path: string): boolean {
@@ -189,7 +221,21 @@ export function parseChangedPaths(diff: string): string[] {
     return [...paths].sort();
 }
 
-export function selectValidationPlan(paths: readonly string[], availableSpecs: readonly string[]): ValidationPlan {
+function browserMatrix(specs: readonly string[], durations: SpecDurations): BrowserMatrix {
+    if (specs.length === 0) {
+        return { include: [] };
+    }
+    const count = Math.min(12, Math.ceil(specs.length / 12));
+    return {
+        include: partitionByDuration(specs, durations, count).map((group, index) => ({ id: index + 1, specs: group })),
+    };
+}
+
+export function selectValidationPlan(
+    paths: readonly string[],
+    availableSpecs: readonly string[],
+    durations: SpecDurations = new Map()
+): ValidationPlan {
     if (paths.length === 0) {
         throw new Error('Changed path list is empty');
     }
@@ -240,17 +286,7 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
     if (broad && specs.length === 0) {
         throw new Error('Full browser coverage has no specs');
     }
-    const count = Math.min(12, Math.ceil(specs.length / 12));
-    const matrix: BrowserMatrix = {
-        include: Array.from({ length: count }, (_, index) => ({ id: index + 1, specs: [] })),
-    };
-    for (const [index, spec] of specs.entries()) {
-        const group = matrix.include[index % count];
-        if (group === undefined) {
-            throw new Error('Invalid E2E partition');
-        }
-        group.specs.push(spec);
-    }
+    const matrix = browserMatrix(specs, durations);
     let profile: ValidationPlan['profile'] = 'docs';
     if (browser) {
         profile = 'broad';
@@ -316,7 +352,7 @@ function main(): void {
         encoding: 'utf8',
         maxBuffer: 16 * 1024 * 1024,
     });
-    const plan = selectValidationPlan(parseChangedPaths(diff), listSpecs(root));
+    const plan = selectValidationPlan(parseChangedPaths(diff), listSpecs(root), readSpecDurations());
     writeFileSync('pr-validation-scope.json', `${JSON.stringify(plan, null, 2)}\n`);
     appendFileSync(
         output,
