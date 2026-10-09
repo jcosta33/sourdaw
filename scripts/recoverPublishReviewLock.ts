@@ -51,6 +51,7 @@ import {
     type RecoveryReceipt,
 } from './reviewPublicationRecoveryReceipt.ts';
 import {
+    dismissedApprovalCopy,
     exactPublishedReview,
     landedPublishedReview,
     inspectReviewPublicationRemote,
@@ -476,7 +477,8 @@ function assertNoUnauthorizedLandedEvidence(
         (inspection.otherActorReviews ?? []).some(
             (review) =>
                 review.actorNodeId !== sanctionedOtherActorNodeId &&
-                exactPublishedReview(review, document, expectedHead, review.actorNodeId)
+                (exactPublishedReview(review, document, expectedHead, review.actorNodeId) ||
+                    dismissedApprovalCopy(review, document, expectedHead, review.actorNodeId, inspection.head))
         )
     ) {
         fail('review-publication recovery found unauthorized landed review evidence');

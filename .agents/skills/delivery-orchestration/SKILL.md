@@ -666,8 +666,12 @@ differs from the journaled head; every other field must still match exactly. It 
 the publication, records no delivery authorization (a dismissed approval of a stale head
 authorizes nothing), and releases the lock. A DISMISSED review on an unmoved head, a
 dismissed REQUEST_CHANGES, or a dismissed review from another actor keeps the
-ambiguous-or-non-exact refusal. `review:publish` and `deliver` never treat DISMISSED as
-live.
+ambiguous-or-non-exact refusal. A dismissed exact copy of the approval from any actor
+other than the reviewer App and the sanctioned acceptance identity is refused as
+unauthorized landed review evidence, exactly as an approved copy is. The two
+inspections must agree: an approval that stands at the first read and is dismissed at
+the second refuses as a change during reconciliation, moved head or not.
+`review:publish` and `deliver` never treat DISMISSED as live.
 
 `--attest-absent` is the operator's explicit assertion that the review POST never
 landed, and it is the only path that releases an owner whose sole failing

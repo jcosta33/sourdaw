@@ -1002,8 +1002,43 @@ describe('review-publication recovery of a landed review among thread-reply revi
             });
 
             await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
-                /cannot release an owner that attempted a remote mutation without landed evidence/
+                /unauthorized landed review evidence/
             );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).not.toBeUndefined();
+        });
+
+        it('refuses the reviewer dismissed approval when the author App holds a dismissed exact copy', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = dismissedApprovalRemote({
+                reviews: [
+                    ...dismissedApprovalReviews(),
+                    restReview(5433790200, 'DISMISSED', approvalBody, AUTHOR_BOT_NODE_ID),
+                ],
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /unauthorized landed review evidence/
+            );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+        });
+
+        it('refuses an author App dismissed exact copy that appears only by the second inspection', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const first = dismissedApprovalRemote();
+            const second = dismissedApprovalRemote({
+                reviews: [
+                    ...dismissedApprovalReviews(),
+                    restReview(5433790200, 'DISMISSED', approvalBody, AUTHOR_BOT_NODE_ID),
+                ],
+            });
+
+            await expect(
+                recoverWith(fixture.root, fixture.ownerOid, first.gh, (inspection) =>
+                    inspection === 1 ? first.gh : second.gh
+                )
+            ).rejects.toThrow(/unauthorized landed review evidence/);
             expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
             expect(lockOid(fixture.root)).not.toBeUndefined();
         });
@@ -1101,6 +1136,21 @@ describe('review-publication recovery of a landed review among thread-reply revi
                 )
             ).rejects.toThrow(/remote state changed during reconciliation/);
             expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).not.toBeUndefined();
+        });
+
+        it('refuses when the approval stands live at the first inspection and is dismissed at the second on an unmoved head', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const live = fakeGitHub({ posted: true, landing: 'approve' });
+            const dismissed = dismissedApprovalRemote({ liveHead: head });
+
+            await expect(
+                recoverWith(fixture.root, fixture.ownerOid, dismissed.gh, (inspection) =>
+                    inspection === 1 ? live.gh : dismissed.gh
+                )
+            ).rejects.toThrow(/remote state changed during reconciliation/);
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(deliveryAuthorization(readDossier(fixture.root))).toBeUndefined();
             expect(lockOid(fixture.root)).not.toBeUndefined();
         });
 

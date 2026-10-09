@@ -284,13 +284,33 @@ export function exactPublishedReview(
 }
 
 /**
- * Recovery only (#5046): the reviewer App's landed APPROVE that a later push dismissed. The live
- * main ruleset dismisses stale approvals on push, so once the pull request head moved past the
- * review's commit GitHub reports the approval as DISMISSED and `exactPublishedReview` refuses it.
- * Every other field must still match exactly, and the state relaxes only for an APPROVE document,
- * the reviewer App, and a head that moved: a DISMISSED review on an unmoved head, a dismissed
- * REQUEST_CHANGES (a stale-review push never dismisses one), and any other actor stay refused.
- * Normal publication and delivery never call this; they keep `exactPublishedReview`.
+ * Recovery only (#5046): an exact copy of an APPROVE document that a later push dismissed. The
+ * live main ruleset dismisses stale approvals on push, so once the pull request head moved past
+ * the review's commit GitHub reports the approval as DISMISSED and `exactPublishedReview` refuses
+ * it. Every other field must still match exactly; a DISMISSED review on an unmoved head and a
+ * dismissed REQUEST_CHANGES (a stale-review push never dismisses one) stay refused. The actor is
+ * not judged here: recovery's unauthorized-evidence check flags the copy of any other actor with
+ * this same match, so a dismissed copy is refused exactly as an approved one is.
+ */
+export function dismissedApprovalCopy(
+    review: RemotePublishedReview,
+    document: ReviewDocument,
+    head: string,
+    actorNodeId: string,
+    liveHead: string
+): boolean {
+    return (
+        review.state === DISMISSED_REVIEW_STATE &&
+        document.event === 'APPROVE' &&
+        liveHead !== head &&
+        exactPublishedReview({ ...review, state: EXPECTED_REVIEW_STATE.APPROVE }, document, head, actorNodeId)
+    );
+}
+
+/**
+ * Recovery only (#5046): the landed review is exact, or it is the reviewer App's APPROVE that a
+ * later push dismissed (see `dismissedApprovalCopy`). Normal publication and delivery never call
+ * this; they keep `exactPublishedReview`.
  */
 export function landedPublishedReview(
     review: RemotePublishedReview,
@@ -302,11 +322,5 @@ export function landedPublishedReview(
     if (exactPublishedReview(review, document, head, actorNodeId)) {
         return true;
     }
-    return (
-        review.state === DISMISSED_REVIEW_STATE &&
-        document.event === 'APPROVE' &&
-        actorNodeId === REVIEWER_BOT_NODE_ID &&
-        liveHead !== head &&
-        exactPublishedReview({ ...review, state: EXPECTED_REVIEW_STATE.APPROVE }, document, head, actorNodeId)
-    );
+    return actorNodeId === REVIEWER_BOT_NODE_ID && dismissedApprovalCopy(review, document, head, actorNodeId, liveHead);
 }
