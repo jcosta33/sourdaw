@@ -175,8 +175,8 @@ const JOB_SCOPE_EXPRESSION = '${{ github.job }}';
 const CARGO_DEPENDENCY_KEY =
     "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
 const CARGO_INDEX_KEY =
-    "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}";
-const CARGO_INDEX_RESTORE = 'cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n';
+    "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+const CARGO_INDEX_RESTORE = 'cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n';
 const CARGO_DEPENDENCY_PATH = '~/.cargo/registry\n~/.cargo/git\n';
 const CARGO_OFFLINE_EXACT = "${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}";
 const NATIVE_OFFLINE_EXACT =
@@ -4399,6 +4399,33 @@ describe('health gates workflow contract', () => {
         const reorderedCache = asRecord(structuredClone(seed), 'reordered cache');
         arrayAt(jobAt(reorderedCache, 'rust'), 'steps').reverse();
         expect(() => assertCargoDependencySeed(reorderedCache, validationWorkflow)).toThrow();
+    });
+
+    it('invalidates both macOS index identities for every Cargo graph input', () => {
+        const seed = loadWorkflow('cargo-dependency-seed.yml').parsed;
+        const graphInputs = ['Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml'];
+        const expectedKey =
+            "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+        const expectedRestore = 'cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n';
+        const assertGraphIdentity = (producer: UnknownRecord, consumer: UnknownRecord): void => {
+            for (const job of [jobAt(producer, 'native-macos'), jobAt(consumer, 'native-macos')]) {
+                const options = recordAt(stepNamed(job, 'Cache the cargo registry index'), 'with');
+                expect(options.key).toBe(expectedKey);
+                expect(options['restore-keys']).toBe(expectedRestore);
+            }
+        };
+
+        expect(() => assertGraphIdentity(seed, validationWorkflow)).not.toThrow();
+        for (const input of graphInputs.slice(1)) {
+            for (const side of ['producer', 'consumer'] as const) {
+                const producer = asRecord(structuredClone(seed), `${side} producer`);
+                const consumer = asRecord(structuredClone(validationWorkflow), `${side} consumer`);
+                const job = side === 'producer' ? jobAt(producer, 'native-macos') : jobAt(consumer, 'native-macos');
+                const options = recordAt(stepNamed(job, 'Cache the cargo registry index'), 'with');
+                options.key = expectedKey.replace(`, '${input}'`, '');
+                expect(() => assertGraphIdentity(producer, consumer)).toThrow();
+            }
+        }
     });
 
     it('fetches immutable measurement provenance history only in the unit matrix', () => {
