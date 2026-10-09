@@ -1,0 +1,45 @@
+.agents/skills/review-stances/provider-egress.md
+  s_97ab82e0b4f10c::t_19a894f6238498 155-169
+.agents/skills/review-stances/test-validity.md
+  s_97ab82e0b4f10c::t_317637501ff15c 689-696
+scripts/__tests__/checkStancesRecord.spec.ts
+  s_1c08b47ac3792f::t_24ed4a1c0074cb 596-620,635-637,729-731
+scripts/__tests__/typesafeRequest.spec.ts
+  s_1c08b47ac3792f::t_02d2a146b3b51d 478-502,517-521,598-605,687-773,781-783
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_1c08b47ac3792f::t_0a674c540124ae 11334-11358,11373-11377,11443-11445,11496-11498,11501,11601-11605
+scripts/semanticReview/sensitive.ts
+  s_1f0dcd815e8946::t_a24b047a3abb80 309-311,319-326,331,345-351,355-358
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2aaade18146ea21988be51a709427bd4dff24425",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
