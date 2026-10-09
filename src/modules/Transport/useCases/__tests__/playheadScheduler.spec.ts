@@ -1,12 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { scheduleAdjustmentLayers, stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { type commitRecording, type startRecording, type updateClip } from '#/modules/Arrangement/useCases';
+import {
+    type cacheAudioBuffer,
+    type getCompensationDelay,
+    scheduleAdjustmentLayers,
+    type startAudioRecording,
+    stopAllScheduled,
+} from '#/modules/AudioEngine/useCases';
 import {
     applyModulationToEngine,
     startAutomationRecording,
     stopAutomationRecording,
 } from '#/modules/Automation/useCases';
 
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { type TempoMapStoreState } from '../../stores/tempoMapStore';
 import { evaluateFollowActions } from '../evaluateFollowActions';
@@ -29,48 +37,28 @@ type FakeWorker = {
     terminate: () => void;
 };
 
-type TestRecordingClip = {
-    id: string;
-    trackId: string;
-    name: string;
-    startBeat: number;
-    endBeat: number;
-    type: 'audio';
-    audioBufferId?: string;
-    fadeInBeats: number;
-    fadeOutBeats: number;
-    gain: number;
-    color: string;
-    locked: boolean;
-    muted: boolean;
-};
-
-type UpdateClipMock = (clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void;
-
-type StartAudioRecordingMock = (
-    trackId: string,
-    onTerminal: (result: { kind: 'completed'; buffer: AudioBuffer } | { kind: 'failed'; reason: string }) => void
-) => Promise<boolean>;
-
-type CacheAudioBufferMock = (input: { buffer: AudioBuffer; bufferId?: string }) => string;
+type TestRecordingClip = Parameters<typeof commitRecording>[0];
 
 // Shared mutable test state, hoisted so the vi.mock factories below can close
 // over it (vi.mock factories are hoisted above imports).
 const harness = vi.hoisted(() => ({
     clock: 0,
+    base_latency: 0,
+    output_latency: 0,
+    compensation_delay: vi.fn<typeof getCompensationDelay>(() => 0),
     logger: {
         error: vi.fn(),
     },
-    cache_audio_buffer: vi.fn<CacheAudioBufferMock>(({ bufferId }) => bufferId ?? 'generated-test-buffer'),
+    cache_audio_buffer: vi.fn<typeof cacheAudioBuffer>(({ bufferId }) => bufferId ?? 'generated-test-buffer'),
     setTransportInfo: vi.fn(),
-    start_audio_recording: vi.fn<StartAudioRecordingMock>(() => Promise.resolve(true)),
-    start_recording: vi.fn<() => TestRecordingClip[]>(() => []),
+    start_audio_recording: vi.fn<typeof startAudioRecording>(() => Promise.resolve(true)),
+    start_recording: vi.fn<typeof startRecording>(() => []),
     stop_audio_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     stop_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     panic_yeast_runtime: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     workers: [] as FakeWorker[],
     track_store: {
-        value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean; clips: [] }[] },
+        value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean; clips: TestRecordingClip[] }[] },
     },
     transport_store: {
         value: null as import('../../stores/transportStore').TransportState | null,
@@ -79,8 +67,8 @@ const harness = vi.hoisted(() => ({
     tempo_map_store: {
         value: { changes: [] as TempoMapStoreState['changes'] },
     },
-    update_clip: vi.fn<UpdateClipMock>(),
-    commit_recording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
+    update_clip: vi.fn<typeof updateClip>(() => true),
+    commit_recording: vi.fn<typeof commitRecording>(() => Promise.resolve()),
     stage_recording_take: vi.fn(),
 }));
 
@@ -134,6 +122,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         get currentTime() {
             return harness.clock;
         },
+        get baseLatency() {
+            return harness.base_latency;
+        },
+        get outputLatency() {
+            return harness.output_latency;
+        },
         createGain: vi.fn(() => ({
             gain: {
                 value: 1,
@@ -156,7 +150,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // MIDI re-emission gate reads — never ran under test. Any assertion about
     // scheduling windows was vacuous while that hole was open.
     refreshSidechainAlignment: vi.fn(),
-    getCompensationDelay: vi.fn(() => 0),
+    getCompensationDelay: harness.compensation_delay,
     // No native engine in this harness, so the cursor is the scheduler's own
     // integration. Omitting it throws in the same tail `refreshSidechainAlignment`
     // used to, and every assertion past that point goes vacuous again.
@@ -197,6 +191,9 @@ const OriginalWorker = globalThis.Worker;
 let schedulerTickSequence = 0;
 beforeEach(() => {
     harness.clock = 0;
+    harness.base_latency = 0;
+    harness.output_latency = 0;
+    harness.compensation_delay.mockReturnValue(0);
     harness.workers = [];
     schedulerTickSequence = 0;
     class WorkerStub {
@@ -640,13 +637,13 @@ describe('playhead scheduler tick', () => {
 
     it('should cache punch-in audio completion through the AudioEngine use case and commit the recording clip', async () => {
         const random_uuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001');
-        const recording_clip = {
+        const recording_clip: TestRecordingClip = {
             id: 'rec-clip-1',
             trackId: 'track-audio-1',
             name: 'Recording 1',
-            startBeat: 0,
-            endBeat: 0,
-            type: 'audio' as const,
+            startBeat: 0.05,
+            endBeat: 0.05,
+            type: 'audio',
             fadeInBeats: 0,
             fadeOutBeats: 0,
             gain: 1,
@@ -664,12 +661,22 @@ describe('playhead scheduler tick', () => {
             punchOutBeat: 4,
         };
         harness.start_recording.mockReturnValue([recording_clip]);
+        harness.base_latency = 0.015625;
+        harness.output_latency = 0.015625;
+        harness.compensation_delay.mockImplementation((trackId) => (trackId === 'track-audio-1' ? 0.03125 : 0));
 
         try {
             startPlayheadScheduler();
 
-            harness.clock = 0.05;
-            await fireTick();
+            harness.clock = 0.0625;
+            const worker = harness.workers.at(-1);
+            if (!worker) {
+                throw new Error('Expected the punch scheduler worker');
+            }
+            emitSchedulerTick(worker);
+            await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+            expect(playheadClockRef).toEqual({ beat: 0.125, audioTimeSeconds: 0.0625 });
+            expect(harness.start_recording).toHaveBeenCalledWith(0.05);
 
             expect(harness.start_audio_recording).toHaveBeenCalledWith(
                 'track-audio-1',
@@ -678,18 +685,39 @@ describe('playhead scheduler tick', () => {
             );
 
             const complete_recording = harness.start_audio_recording.mock.calls[0]![1];
+            const finalized_clip = { ...recording_clip, endBeat: 4 };
+            harness.track_store.value.tracks[0]!.clips = [finalized_clip];
+            // Completion arrives after a later tick and changed latency. Its
+            // source clock still correlates with the original published pair.
+            harness.clock = 10;
+            harness.base_latency = 0.5;
+            harness.output_latency = 0.5;
+            harness.compensation_delay.mockReturnValue(0.5);
+            emitSchedulerTick(worker);
+            await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+            expect(playheadClockRef.audioTimeSeconds).toBe(10);
             const buffer = create_test_audio_buffer();
-            complete_recording({ kind: 'completed', buffer });
+            complete_recording({ kind: 'completed', buffer, sampleZeroContextFrame: 6000, sampleRate: 48000 });
 
             expect(harness.cache_audio_buffer).toHaveBeenCalledWith({
                 buffer,
                 bufferId: 'rec-00000000-0000-4000-8000-000000000001',
             });
             expect(harness.update_clip).not.toHaveBeenCalled();
-            expect(harness.commit_recording).toHaveBeenCalledWith({
-                ...recording_clip,
-                audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
-            });
+            // S(0.125) + 6000/48000 - 0.0625 - (0.015625*2 + 0.03125) = 0.0625.
+            expect(harness.commit_recording).toHaveBeenCalledWith(
+                {
+                    ...finalized_clip,
+                    audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
+                },
+                { provisionalStartBeat: 0.05, mediaOriginSeconds: 0.0625 }
+            );
+            const capture = harness.commit_recording.mock.calls[0]?.[1];
+            if (!capture) {
+                throw new Error('Expected the completed punch capture timing');
+            }
+            expect(Number.isFinite(capture.mediaOriginSeconds)).toBe(true);
+            await recordingLifecycle.waitForCommits();
         } finally {
             random_uuid.mockRestore();
         }
