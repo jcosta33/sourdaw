@@ -1,0 +1,44 @@
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_23a7e9e922d713 10
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_2bfd55a4393d7c::t_8bd6cee1797c35 255-261,263-264,268-269,271-276,280-298,301-302,304-372,374-382
+  s_2bfd55a4393d7c::t_20ba2122517a3f 373
+  s_2bfd55a4393d7c::t_ea91b96781c54a 299,303
+  s_2bfd55a4393d7c::t_42ae6aa5b6cd46 210-223
+  s_2bfd55a4393d7c::t_ce527e870940bf 265-267,270,277-279
+  s_2bfd55a4393d7c::t_08a0b37afb4740 139-143
+  s_2bfd55a4393d7c::t_f68d500e3f90f8 227
+  s_2bfd55a4393d7c::t_c8cd5d29be90de 300,383-386
+  s_2bfd55a4393d7c::t_b05481ba44f7ae 262
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_2bfd55a4393d7c::t_3fd9082fbf437b 82
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  s_2bfd55a4393d7c::t_b61336d730f0ad 269-270,272-273
+  s_2bfd55a4393d7c::t_1fb5b5341a6c24 276
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_05a0e17c85341d 1,1098-1199
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_2e565101d504d6 1,120-221
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_97c2eae3b2df72 12,16-18,21
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_eb9b0a0a231dbd 1344,1350,1770
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_7a1863da82682e 1,1098-1199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a87e20cefefb4aa3b126879f60f74eb7c725f3b7",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
