@@ -12170,6 +12170,7 @@ describe('delivery shell boundary', () => {
         const port = shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture });
 
         expect(port.reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'head',
             latestReviewerReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
@@ -12652,6 +12653,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'other-head',
             latestReviewerReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
@@ -12731,6 +12733,7 @@ describe('delivery shell boundary', () => {
             expect(
                 shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
             ).toEqual({
+                latestReviewerCommitOid: 'head',
                 latestReviewerReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                 unresolvedThreads: 0,
@@ -12790,6 +12793,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'head',
             latestReviewerReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
@@ -12839,6 +12843,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'head',
             latestReviewerReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
@@ -13092,6 +13097,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: null,
             latestReviewerReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
@@ -13195,6 +13201,7 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'head',
             latestReviewerReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
@@ -13243,6 +13250,7 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'other-head',
             latestReviewerReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,

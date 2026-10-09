@@ -19,6 +19,23 @@ decision must follow the producer's provenance, not the continued presence of on
 - A stacked-delivery fixture must let initial deletion-policy reads pass and prove the final policy
   read occurred before any author merge call. If the first read already refuses, the final guard
   remains untested even when the error text matches.
+- For a recovered reviewer approval, hold the exact landed publication constant across both remote
+  reads, then introduce a later same-head reviewer decision before the complete review-state read.
+  The old review may bind its publication, but it may authorize delivery only while the latest
+  independent review is that same APPROVED review ID and no threads are unresolved. Cover a later
+  change request, comment, dismissal, and different approval ID; retain the current-approval control.
+
+## Review lesson: PR #5158 needed a later-review authority probe
+
+PR #5158 introduced adoption of exact landed recovery receipts. Its
+`historical-approval-acquires-current-delivery-authority` stance named merged, moved-head, and
+unresolved-thread states, but those probes did not cover a later same-head reviewer decision between
+publication inspection and authorization. The independent review caught this before merge: the old
+approval could bind `delivery-authorized` even when complete live state reported a newer change
+request. Delivery's separate live check refused the merge; the dossier event still overstated
+authority. Probe the production recovery route with the later decision appearing only after both
+stable publication reads, and require publication-only binding with byte-identical replay and no
+second POST. Keep an unchanged latest approval as the positive control.
 
 ## Escape: PR #4573 treated a lost modern plan as legacy
 
