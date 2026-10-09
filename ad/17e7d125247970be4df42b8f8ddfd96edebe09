@@ -1,0 +1,22 @@
+tests/e2e/audioEnginePickersTestId.spec.ts
+  s_1c08b47ac3792f::t_f30483cc2ed9f3 51
+  s_1c08b47ac3792f::t_78e9c9b87a1d18 26-50,52-56
+  s_1c08b47ac3792f::t_de3499a7966751 1
+  s_1c08b47ac3792f::t_7fbeabb6c15c6e 83-90,93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad17e7d125247970be4df42b8f8ddfd96edebe09",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
