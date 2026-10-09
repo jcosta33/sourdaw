@@ -1,0 +1,69 @@
+src/modules/AiRuntime/useCases/readChatThreadContext.ts
+  s_1c08b47ac3792f::t_776bc03f22e7e5 41-44
+  s_1c08b47ac3792f::t_eaf90a45aa3c4d 2,9-12,19-29
+  s_2bfd55a4393d7c::t_53163e11999e1f 30-31
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  s_1c08b47ac3792f::t_147f3ded31a08d 410
+  s_1c08b47ac3792f::t_beebfa752a299a 703
+  s_1c08b47ac3792f::t_b330c78a7349ec 126-130,137,142
+  s_1c08b47ac3792f::t_0c97fd6754aa0f 594-657
+  s_1c08b47ac3792f::t_14e24da1b1bb2f 674
+  s_1c08b47ac3792f::t_7cf858e7370a40 151,157-158
+  s_1c08b47ac3792f::t_4f2e4d28e11106 934-957
+  s_1c08b47ac3792f::t_7f549f919cfa0a 576
+  s_1c08b47ac3792f::t_0b539b8b7d2104 549
+  s_1c08b47ac3792f::t_d07f9ab0736dfa 23
+  s_1c08b47ac3792f::t_d027f70b6d6729 404
+  s_1f0dcd815e8946::t_0b77a2e83fffb8 658-659,958-959
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_1c08b47ac3792f::t_75f4c429fdc2d0 47
+  s_1c08b47ac3792f::t_6243250d3050c6 19
+  s_1c08b47ac3792f::t_b7d865c47107d5 703-706,718-719,725
+  s_1c08b47ac3792f::t_2459df2b12b821 691
+  s_1c08b47ac3792f::t_bab32738927c50 707-710,715
+  s_1c08b47ac3792f::t_41731d4dfdc937 656-667,670,680,684-687,689-690,692-702,711-714,716-717,720-724,726
+  s_1c08b47ac3792f::t_dbe020d850b4b2 668-669,671-677,679,681-683,688
+  s_1c08b47ac3792f::t_1802b4d73da196 37
+  s_1c08b47ac3792f::t_588b5869b81ee2 678
+  s_1c08b47ac3792f::t_d248ab97a1a465 727-728
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_60d28076866d31 43
+src/modules/AiRuntime/transformers/buildThreadContext.ts
+  s_1c08b47ac3792f::t_52768e68ef9b2f 17-22
+  s_1c08b47ac3792f::t_92c6809ad7fa73 116-119,125,129
+  s_1c08b47ac3792f::t_a8833889de8f8b 154
+src/modules/AiRuntime/transformers/fitThreadContext.ts
+  s_1c08b47ac3792f::t_881577a7802fee 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1e6db4880e5ec48f80acf16fc65b4fa9c05c051",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
