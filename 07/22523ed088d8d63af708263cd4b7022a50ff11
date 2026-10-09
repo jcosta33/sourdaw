@@ -1,0 +1,19 @@
+scripts/__tests__/recoverPublishReviewLockReceiptReplay.spec.ts
+  s_4c8cd08893b364::t_2e0b7106ba5d96 182,276-278,570-581
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0722523ed088d8d63af708263cd4b7022a50ff11",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
