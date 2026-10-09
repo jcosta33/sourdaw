@@ -131,7 +131,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     subscribeToCrdtChanges: vi.fn(),
     waitForCrdtDocumentTransition: vi.fn(),
 }));
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     reconcileSessionUndoForProject: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     executeAppActionBatch: vi.fn(),
@@ -142,7 +143,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     appendMidiNotes: vi.fn(),
     arpeggiate: vi.fn(),
     canPrepareMidiClipGlueState: vi.fn(),
