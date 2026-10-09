@@ -62,5 +62,7 @@ quantum. Teardown of a very large bank takes proportionally many messages.
   to the device registry. A context close needs no drain: its scope is discarded.
 - An engine that throws mid-drain is left for the finalizer, as before this record; the drain
   narrows the common case rather than claiming a bound for a faulted wasm instance.
-- Offline renders do not destroy their nodes through this path and are unaffected.
+- Offline renders destroy their Levain nodes through the same `destroy()` (via
+  `destroyOfflineDeviceStrategies`), so they take the same paced drain; a context already closed at
+  destroy closes the port at once.
 - The finalizer's thread is not established by this record; the design does not depend on it.

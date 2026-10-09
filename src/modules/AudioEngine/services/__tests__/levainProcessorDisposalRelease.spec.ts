@@ -239,11 +239,16 @@ describe('shipped LevainProcessor disposal release', () => {
         const processor = await startProcessor();
         const free = vi.fn();
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        // The trap leaves the engine looking drained: after the first throw it
+        // reports no retired bank and no sounding bank, so only the poison flag
+        // keeps a later request from reaching free().
+        let trapped = false;
         processor._instance = {
             all_notes_off: () => undefined,
             abort_sample_bank: () => false,
-            has_retired_bank: () => true,
+            has_retired_bank: () => !trapped,
             release_retired_bank: () => {
+                trapped = true;
                 throw new Error('unreachable');
             },
             retire_sample_bank: () => false,
@@ -268,12 +273,19 @@ describe('shipped LevainProcessor disposal release', () => {
         const processor = await startProcessor();
         const free = vi.fn();
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        // After the first throw the engine reports nothing left to retire, so
+        // only the poison flag keeps a later request from reaching free().
+        let trapped = false;
         processor._instance = {
             all_notes_off: () => undefined,
             abort_sample_bank: () => false,
             has_retired_bank: () => false,
             release_retired_bank: () => true,
             retire_sample_bank: () => {
+                if (trapped) {
+                    return false;
+                }
+                trapped = true;
                 throw new Error('unreachable');
             },
             free,
@@ -281,6 +293,12 @@ describe('shipped LevainProcessor disposal release', () => {
         send(processor, { type: 'dispose' });
         processor.port.postMessage.mockClear();
 
+        send(processor, { type: 'releaseDisposedBanks' });
+
+        expect(posted(processor)).toEqual([{ type: 'disposedBanksReleased', done: true }]);
+        expect(free).not.toHaveBeenCalled();
+
+        processor.port.postMessage.mockClear();
         send(processor, { type: 'releaseDisposedBanks' });
 
         expect(posted(processor)).toEqual([{ type: 'disposedBanksReleased', done: true }]);
