@@ -1,7 +1,7 @@
 import { isValidElement } from 'react';
 
 import { render } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     bootstrap: vi.fn(),
@@ -196,6 +196,10 @@ function expectFirstPaintRendered(): void {
 }
 
 describe('app main composition', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
@@ -205,12 +209,25 @@ describe('app main composition', () => {
         mocks.resolveAppComposition.mockReturnValue('browser-host');
     });
 
+    it.each([
+        { dev: false, mode: 'e2e', expected: true },
+        { dev: false, mode: 'production', expected: false },
+        { dev: true, mode: 'development', expected: true },
+    ])('passes isDevelopment $expected for a build with DEV $dev in $mode mode', async ({ dev, mode, expected }) => {
+        vi.stubEnv('DEV', dev);
+        vi.stubEnv('MODE', mode);
+
+        await import('../main');
+
+        expect(mocks.resolveAppComposition).toHaveBeenCalledWith(expect.objectContaining({ isDevelopment: expected }));
+    });
+
     it('mounts only the browser viewport host in the top-level browser document', async () => {
         await import('../main');
 
         expect(mocks.resolveAppComposition).toHaveBeenCalledWith({
             hasDesktopBridge: false,
-            isDevelopment: import.meta.env.DEV,
+            isDevelopment: import.meta.env.DEV || import.meta.env.MODE === 'e2e',
             isTopLevel: window.parent === window,
             protocol: window.location.protocol,
             userAgent: navigator.userAgent,

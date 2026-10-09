@@ -25,7 +25,7 @@ function paintAppShellMarker(container: HTMLElement): void {
 const hasDesktopBridge = 'sourdaw' in window;
 const composition = resolveAppComposition({
     hasDesktopBridge,
-    isDevelopment: import.meta.env.DEV,
+    isDevelopment: import.meta.env.DEV || import.meta.env.MODE === 'e2e',
     isTopLevel: window.parent === window,
     protocol: window.location.protocol,
     userAgent: navigator.userAgent,
