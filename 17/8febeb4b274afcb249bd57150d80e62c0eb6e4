@@ -1,0 +1,45 @@
+src/modules/MIDI/useCases/grooveTemplates/getGrooveProjection.ts
+  s_2bfd55a4393d7c::t_a22564dc4fb981 1
+  s_2bfd55a4393d7c::t_29c3bce536866f 126-128
+src/modules/Arrangement/useCases/__tests__/exportMidiClipPlayback.spec.ts
+  s_2bfd55a4393d7c::t_ae7ec4b3b1dabb 623
+  s_2bfd55a4393d7c::t_1b41fac654129f 637,640-650
+  s_2bfd55a4393d7c::t_1515c76bb93190 651
+src/modules/MIDI/useCases/grooveTemplates/__tests__/projectClipMidiEventsFloatResidue.spec.ts
+  s_2bfd55a4393d7c::t_211644d8121bea 1-38,40-41,43-74,76-80,82-85
+  s_2bfd55a4393d7c::t_d02d0fca9b6b0d 75,81
+  s_2bfd55a4393d7c::t_e5c7b2bd4776c6 39,42
+  s_97ab82e0b4f10c::t_925d1bc6cd6e49 86-88
+src/modules/MIDI/models/SameBeatTolerance.ts
+  s_2bfd55a4393d7c::t_1933d2cad7fb70 1-2,8-9
+  s_2bfd55a4393d7c::t_8448ac64ed01f3 3-7
+src/modules/MIDI/useCases/exportMidiFile.ts
+  s_2bfd55a4393d7c::t_a33b90c73ea1cd 6
+src/modules/MIDI/useCases/midiClipData/__tests__/projectMidiClipPlayback.spec.ts
+  s_2bfd55a4393d7c::t_fd93f49773a824 14,19-21
+  s_2bfd55a4393d7c::t_1d4d3cef254e25 1-13,15-18,22-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "178febeb4b274afcb249bd57150d80e62c0eb6e4",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
