@@ -1,0 +1,33 @@
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_4c8cd08893b364::t_c5063802ae7dd3 445-485
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_97ab82e0b4f10c::t_4d2330013ac39e 8,190-222
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_97ab82e0b4f10c::t_ed5b975d714f26 449-452
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_4c8cd08893b364::t_645938f92c80e1 39,177-180,183-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e8064f1dedd79a96dc408bd868445e08f22f703e",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
