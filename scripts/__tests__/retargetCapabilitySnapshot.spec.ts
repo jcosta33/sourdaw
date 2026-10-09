@@ -490,6 +490,64 @@ describe('bounded capability capture', () => {
         }
     );
 
+    it.each(['detail', 'effective'] as const)(
+        'does not certify two equal captures with a malformed optional check binding in %s policy',
+        (surface) => {
+            const { port } = fakePort();
+            const disposed = vi.fn();
+            const printed: string[] = [];
+            let policyReads = 0;
+            const requiredCheck = {
+                type: 'required_status_checks',
+                parameters: {
+                    strict_required_status_checks_policy: false,
+                    required_status_checks: [{ context: 'Gate', integration_id: { unreadable: true } }],
+                },
+            };
+            const result = runRetargetCapabilityPlanCli([], {
+                sourceCheck: () => SOURCE,
+                primaryRoot: () => '/primary',
+                authenticate: () => ({
+                    minted: { actorNodeId: USER.node_id },
+                    session: { configDir: '/unused', env: {}, dispose: disposed },
+                }),
+                readPort: () => ({
+                    ...port,
+                    ruleset: (id) => {
+                        if (surface === 'detail') {
+                            policyReads += 1;
+                            return { ...RULE, rules: [requiredCheck] };
+                        }
+                        return port.ruleset(id);
+                    },
+                    effectiveBranch: (branch, page) => {
+                        if (surface === 'effective' && branch === 'main') {
+                            policyReads += 1;
+                            return rest([requiredCheck]);
+                        }
+                        return port.effectiveBranch(branch, page);
+                    },
+                }),
+                now: () => '2026-10-08T00:00:00.000Z',
+                print: (value) => printed.push(value),
+            });
+            expect(result).toBe(0);
+            expect(policyReads).toBe(2);
+            expect(printed).toHaveLength(1);
+            const output = printed[0];
+            if (output === undefined) {
+                throw new Error('expected one emitted capability plan');
+            }
+            const emitted: unknown = JSON.parse(output);
+            expect(emitted).toMatchObject({
+                completeObservedInventory: false,
+                limitations: ['an applicable ruleset has incomplete required status checks'],
+                activationEligible: false,
+            });
+            expect(disposed).toHaveBeenCalledOnce();
+        }
+    );
+
     const unreadableEffectiveMain: JsonValue[][] = [
         [
             {

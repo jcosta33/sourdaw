@@ -208,7 +208,11 @@ function ruleLimitations(rule: JsonValue): string[] {
                 if (check === null || Array.isArray(check) || typeof check !== 'object') {
                     return true;
                 }
-                return typeof check.context !== 'string' || check.context.length === 0;
+                return (
+                    typeof check.context !== 'string' ||
+                    check.context.length === 0 ||
+                    (check.integration_id !== undefined && !Number.isSafeInteger(check.integration_id))
+                );
             })
         ) {
             return ['an applicable ruleset has incomplete required status checks'];

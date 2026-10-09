@@ -457,7 +457,7 @@ describe('inactive retarget capability plan', () => {
                 type: 'required_status_checks',
                 parameters: {
                     strict_required_status_checks_policy: false,
-                    required_status_checks: [{ context: 'Gate' }],
+                    required_status_checks: [{ context: 'Gate' }, { context: 'Gate', integration_id: 42 }],
                     do_not_enforce_on_create: false,
                 },
             },
@@ -470,6 +470,18 @@ describe('inactive retarget capability plan', () => {
         { strict_required_status_checks_policy: 'false', required_status_checks: [] },
         { strict_required_status_checks_policy: false, required_status_checks: [{}] },
         { strict_required_status_checks_policy: false, required_status_checks: [null] },
+        {
+            strict_required_status_checks_policy: false,
+            required_status_checks: [{ context: 'Gate', integration_id: null }],
+        },
+        {
+            strict_required_status_checks_policy: false,
+            required_status_checks: [{ context: 'Gate', integration_id: 1.5 }],
+        },
+        {
+            strict_required_status_checks_policy: false,
+            required_status_checks: [{ context: 'Gate', integration_id: '42' }],
+        },
         { strict_required_status_checks_policy: false, do_not_enforce_on_create: 'false', required_status_checks: [] },
     ];
     it.each(malformedRequiredCheckParameters)(
