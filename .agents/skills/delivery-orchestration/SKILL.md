@@ -666,9 +666,11 @@ differs from the journaled head; every other field must still match exactly. It 
 the publication, records no delivery authorization (a dismissed approval of a stale head
 authorizes nothing), and releases the lock. A DISMISSED review on an unmoved head, a
 dismissed REQUEST_CHANGES, or a dismissed review from another actor keeps the
-ambiguous-or-non-exact refusal. A dismissed exact copy of the approval from any actor
-other than the reviewer App and the sanctioned acceptance identity is refused as
-unauthorized landed review evidence, exactly as an approved copy is. The two
+ambiguous-or-non-exact refusal. A dismissed exact copy of the document from any actor
+other than the sanctioned other publication identity (the reviewer App or the
+orchestrator) is refused as unauthorized landed review evidence, exactly as a live copy
+is, whatever the head or event: unlike the reviewer's own dismissed approval, it needs
+neither a moved head nor an APPROVE document to be refused. The two
 inspections must agree: an approval that stands at the first read and is dismissed at
 the second refuses as a change during reconciliation, moved head or not.
 `review:publish` and `deliver` never treat DISMISSED as live.

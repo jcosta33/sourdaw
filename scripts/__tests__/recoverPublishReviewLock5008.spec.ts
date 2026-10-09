@@ -1043,6 +1043,85 @@ describe('review-publication recovery of a landed review among thread-reply revi
             expect(lockOid(fixture.root)).not.toBeUndefined();
         });
 
+        it('refuses the reviewer live approval when the author App holds a dismissed exact copy on an unmoved head', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = fakeGitHub({
+                posted: true,
+                landing: 'approve',
+                liveHead: head,
+                reviews: [
+                    ...prePublicationReviews(),
+                    landedReview('approve'),
+                    restReview(5433790200, 'DISMISSED', approvalBody, AUTHOR_BOT_NODE_ID),
+                ],
+                comments: prePublicationComments(),
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /unauthorized landed review evidence/
+            );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(deliveryAuthorization(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+        });
+
+        it('refuses a prepared owner as unauthorized evidence, not absent, beside a dismissed exact copy on an unmoved head', async () => {
+            const fixture = fixtureFor({ phase: 'prepared', planCarrying: true, landing: 'approve' });
+            const remote = fakeGitHub({
+                posted: true,
+                landing: 'approve',
+                liveHead: head,
+                reviews: [
+                    ...prePublicationReviews(),
+                    restReview(5433790200, 'DISMISSED', approvalBody, AUTHOR_BOT_NODE_ID),
+                ],
+                comments: prePublicationComments(),
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /unauthorized landed review evidence/
+            );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+            expect(readPullRequestMutationLockReceipt(fixture.root, number, fixture.ownerOid)).toBeUndefined();
+        });
+
+        it.each([
+            { headState: 'unmoved', liveHead: head },
+            { headState: 'moved', liveHead: movedHead },
+        ])(
+            'refuses a dismissed REQUEST_CHANGES exact copy with its comments from the author App on an $headState head',
+            async ({ liveHead }) => {
+                const fixture = fixtureFor({ planCarrying: true });
+                const copyReviewId = 5433790200;
+                const before = dossierText(fixture.root);
+                const remote = fakeGitHub({
+                    posted: true,
+                    liveHead,
+                    reviews: [
+                        ...incidentReviews(),
+                        restReview(copyReviewId, 'DISMISSED', renderedBody, AUTHOR_BOT_NODE_ID),
+                    ],
+                    comments: [
+                        ...incidentComments(),
+                        restComment(copyReviewId, 4199790200, 670, landedCommentBodies[0]!, {
+                            actor: AUTHOR_BOT_NODE_ID,
+                        }),
+                        restComment(copyReviewId, 4199790201, 64, landedCommentBodies[1]!, {
+                            actor: AUTHOR_BOT_NODE_ID,
+                            originalPosition: 5,
+                        }),
+                    ],
+                });
+
+                await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                    /unauthorized landed review evidence/
+                );
+                expect(dossierText(fixture.root)).toBe(before);
+                expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+            }
+        );
+
         it.each(['PENDING', 'COMMENTED'])(
             'refuses an otherwise exact approval in state %s on a moved head',
             async (state) => {

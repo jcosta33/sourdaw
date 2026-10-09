@@ -288,9 +288,10 @@ export function exactPublishedReview(
  * live main ruleset dismisses stale approvals on push, so once the pull request head moved past
  * the review's commit GitHub reports the approval as DISMISSED and `exactPublishedReview` refuses
  * it. Every other field must still match exactly; a DISMISSED review on an unmoved head and a
- * dismissed REQUEST_CHANGES (a stale-review push never dismisses one) stay refused. The actor is
- * not judged here: recovery's unauthorized-evidence check flags the copy of any other actor with
- * this same match, so a dismissed copy is refused exactly as an approved one is.
+ * dismissed REQUEST_CHANGES (a stale-review push never dismisses one) are not a copy here. This
+ * is the match for the reviewer's own review standing as the publication; the actor is not
+ * judged here, and recovery's unauthorized-evidence check uses `exactOrDismissedCopy`, which
+ * drops the moved-head and APPROVE conditions.
  */
 export function dismissedApprovalCopy(
     review: RemotePublishedReview,
@@ -304,6 +305,27 @@ export function dismissedApprovalCopy(
         document.event === 'APPROVE' &&
         liveHead !== head &&
         exactPublishedReview({ ...review, state: EXPECTED_REVIEW_STATE.APPROVE }, document, head, actorNodeId)
+    );
+}
+
+/**
+ * Recovery only (#5046): a review that is an exact copy of the document, in the state its event
+ * expects or in DISMISSED, whatever the head or event. Recovery's unauthorized-evidence check
+ * flags another actor's copy with this match, so a dismissed copy is refused exactly as a live
+ * one is.
+ */
+export function exactOrDismissedCopy(
+    review: RemotePublishedReview,
+    document: ReviewDocument,
+    head: string,
+    actorNodeId: string
+): boolean {
+    if (exactPublishedReview(review, document, head, actorNodeId)) {
+        return true;
+    }
+    return (
+        review.state === DISMISSED_REVIEW_STATE &&
+        exactPublishedReview({ ...review, state: EXPECTED_REVIEW_STATE[document.event] }, document, head, actorNodeId)
     );
 }
 
