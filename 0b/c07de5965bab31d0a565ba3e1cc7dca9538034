@@ -1,0 +1,34 @@
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_2bfd55a4393d7c::t_8bd6cee1797c35 265-271,273-274,283,285-287,301-303,307-325,328-329,331-332,336-339,362-421,423-431
+  s_2bfd55a4393d7c::t_20ba2122517a3f 422
+  s_2bfd55a4393d7c::t_ea91b96781c54a 326,330
+  s_2bfd55a4393d7c::t_42ae6aa5b6cd46 224-227,229-233
+  s_2bfd55a4393d7c::t_ce527e870940bf 275-277,284,304-306
+  s_2bfd55a4393d7c::t_f68d500e3f90f8 237
+  s_2bfd55a4393d7c::t_c8cd5d29be90de 327,432-435
+  s_2bfd55a4393d7c::t_b05481ba44f7ae 272
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  s_2bfd55a4393d7c::t_b61336d730f0ad 269-270
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_05a0e17c85341d 1098-1199
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_2e565101d504d6 120-221
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_7a1863da82682e 1098-1199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0bc07de5965bab31d0a565ba3e1cc7dca9538034",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
