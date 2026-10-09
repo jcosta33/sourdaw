@@ -30,6 +30,9 @@ import { inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspec
 import type { PublishReviewPort } from '../publishReview.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
+// Real git subprocesses and fixture cleanup measured up to ~6 s per case or hook on a loaded machine (#5229).
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 const number = 5111;
 const head = 'a'.repeat(40);
 const base = 'b'.repeat(40);

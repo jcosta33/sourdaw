@@ -62,6 +62,9 @@ import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
 
 const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 
+// Real git subprocesses and fixture cleanup measured up to ~6 s per case or hook on a loaded machine (#5229).
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 /**
  * A throwaway mint key composed at runtime, so no credential-shaped literal is committed: the
  * real `authenticateRole` under test signs its app JWT with it before the stubbed request client

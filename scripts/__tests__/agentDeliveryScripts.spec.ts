@@ -16,7 +16,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
 
 import { runAcceptReviewCli } from '../acceptReview.ts';
@@ -92,6 +92,9 @@ import type {
 } from '../deliverPullRequest.ts';
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
 import type { Readable, Writable } from 'node:stream';
+
+// Real git subprocesses and fixture cleanup measured up to ~6 s per case or hook on a loaded machine (#5229).
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const stackSummarySources = [
     'scripts/stackedLanes.ts',
@@ -2487,7 +2490,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(fixtureRoot);
         }
-    }, 15_000);
+    });
 
     it('publishes a pre-migration lane through the primary package without executing its package route', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-primary-lane-route-'));
@@ -3408,7 +3411,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(fixtureRoot);
         }
-    }, 15_000);
+    });
 
     it('refuses a live delivery owner before authentication or delivery starts', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -4018,7 +4021,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    }, 10_000);
+    });
 
     it('round-trips prepared, merge-authorized, and terminal receipt authority across fresh shellPort instances', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
