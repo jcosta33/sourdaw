@@ -98,6 +98,7 @@ vi.mock('../../engine/TrackNode', () => {
         private shouldFailNextRemoveDevicePrecondition = false;
         private shouldFailNextRemoveDeviceRebuild = false;
         dispose = vi.fn();
+        disposeLeavingProject = vi.fn();
         setGain = vi.fn();
         setPan = vi.fn();
         setMute = vi.fn();
