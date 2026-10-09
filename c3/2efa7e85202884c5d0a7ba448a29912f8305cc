@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_1f0dcd815e8946::t_4bedcfb0ff7a3d 3-10,17,40,46-48,52,54-55,61,70-71,125-130,153,194-196,640,644-646,664-666,671-679,688-698,700,707-720
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c32efa7e85202884c5d0a7ba448a29912f8305cc",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
