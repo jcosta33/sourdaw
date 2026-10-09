@@ -20,6 +20,7 @@ vi.mock('../../../stores/timeSignatureMapStore', async (importOriginal) => {
 const { tempoMapStore } = await import('../../../stores/tempoMapStore');
 const { timeSignatureMapStore } = await import('../../../stores/timeSignatureMapStore');
 const { prepareTimelineMapTimeOperation } = await import('../prepareTimelineMapTimeOperation');
+const { prepareTimelineMapStateRestore } = await import('../prepareTimelineMapStateRestore');
 
 type PrepareInput = Parameters<typeof prepareTimelineMapTimeOperation>[0];
 type TimelineMapTimeOperation = PrepareInput['operation'];
@@ -184,6 +185,245 @@ describe('prepareTimelineMapTimeOperation', () => {
         expect(tempoMapStore.value?.changes[1]).not.toBe(tempoEnd);
         expect(timeSignatureMapStore.value?.changes[0]).toBe(signatureBefore);
         expect(timeSignatureMapStore.value?.changes[1]).not.toBe(signatureEnd);
+    });
+
+    describe('delete carries the tempo and meter in force at the span end forward to its start', () => {
+        function deleteTime(startBeat: number, endBeat: number): void {
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'delete', startBeat, endBeat },
+            });
+            expect(transaction.status).toBe('ready');
+            expect(transaction.apply()).toBe(true);
+        }
+
+        function tempoEvents(): Array<[number, number]> {
+            return (tempoMapStore.value?.changes ?? []).map(({ beat, tempo }) => [beat, tempo]);
+        }
+
+        function meterEvents(): Array<[number, number]> {
+            return (timeSignatureMapStore.value?.changes ?? []).map(({ beat, numerator }) => [beat, numerator]);
+        }
+
+        it('inserts the tempo of a change inside the span at the span start, so later material keeps it', () => {
+            setStoreStates(tempoState([tempoChange('a', 0, 120), tempoChange('b', 10, 60)]), timeSignatureState([]));
+
+            deleteTime(9.5, 10.5);
+
+            expect(tempoEvents()).toEqual([
+                [0, 120],
+                [9.5, 60],
+            ]);
+        });
+
+        it('inserts the meter of a change inside the span at the span start', () => {
+            setStoreStates(
+                tempoState([]),
+                timeSignatureState([timeSignatureChange('a', 0, 4), timeSignatureChange('b', 10, 3)])
+            );
+
+            deleteTime(9.5, 10.5);
+
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [9.5, 3],
+            ]);
+        });
+
+        it('gives beat 0 the tempo in force at the span end when the span starts at 0', () => {
+            setStoreStates(tempoState([tempoChange('a', 0, 120), tempoChange('b', 10, 60)]), timeSignatureState([]));
+
+            deleteTime(0, 8);
+
+            expect(tempoEvents()).toEqual([
+                [0, 120],
+                [2, 60],
+            ]);
+        });
+
+        it('gives beat 0 the meter in force at the span end when the span starts at 0', () => {
+            setStoreStates(
+                tempoState([]),
+                timeSignatureState([timeSignatureChange('a', 0, 4), timeSignatureChange('b', 10, 3)])
+            );
+
+            deleteTime(0, 8);
+
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [2, 3],
+            ]);
+        });
+
+        it('keeps the governing tempo when the only change lies inside a span that starts at 0', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 2, 100)]),
+                timeSignatureState([timeSignatureChange('m', 2, 3)])
+            );
+
+            deleteTime(0, 8);
+
+            expect(tempoEvents()).toEqual([[0, 100]]);
+            expect(meterEvents()).toEqual([[0, 3]]);
+        });
+
+        it('keeps the first change governing the lead-in when the span removes it', () => {
+            setStoreStates(tempoState([tempoChange('a', 5, 100), tempoChange('b', 10, 60)]), timeSignatureState([]));
+
+            deleteTime(4, 8);
+
+            expect(tempoEvents()).toEqual([
+                [4, 100],
+                [6, 60],
+            ]);
+        });
+
+        it('carries the last of several changes inside the span', () => {
+            setStoreStates(
+                tempoState([
+                    tempoChange('a', 0, 100),
+                    tempoChange('b', 3, 110),
+                    tempoChange('c', 4, 120),
+                    tempoChange('d', 5, 130),
+                    tempoChange('e', 12, 90),
+                ]),
+                timeSignatureState([
+                    timeSignatureChange('m-a', 0, 4),
+                    timeSignatureChange('m-b', 3, 5),
+                    timeSignatureChange('m-c', 4, 6),
+                    timeSignatureChange('m-d', 5, 7),
+                    timeSignatureChange('m-e', 12, 3),
+                ])
+            );
+
+            deleteTime(3.5, 6);
+
+            expect(tempoEvents()).toEqual([
+                [0, 100],
+                [3, 110],
+                [3.5, 130],
+                [9.5, 90],
+            ]);
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [3, 5],
+                [3.5, 7],
+                [9.5, 3],
+            ]);
+        });
+
+        it('adds no duplicate when the span ends exactly on a change', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 0, 120), tempoChange('b', 6, 90)]),
+                timeSignatureState([timeSignatureChange('m-a', 0, 4), timeSignatureChange('m-b', 6, 3)])
+            );
+
+            deleteTime(4, 6);
+
+            expect(tempoEvents()).toEqual([
+                [0, 120],
+                [4, 90],
+            ]);
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [4, 3],
+            ]);
+            expect(tempoMapStore.value?.changes[1]?.id).toBe('b');
+            expect(timeSignatureMapStore.value?.changes[1]?.id).toBe('m-b');
+        });
+
+        it('adds nothing when the value in force at the span end already holds before its start', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 0, 120), tempoChange('b', 5, 90), tempoChange('c', 7, 120)]),
+                timeSignatureState([
+                    timeSignatureChange('m-a', 0, 4),
+                    timeSignatureChange('m-b', 5, 3),
+                    timeSignatureChange('m-c', 7, 4),
+                ])
+            );
+
+            deleteTime(4, 8);
+
+            expect(tempoEvents()).toEqual([[0, 120]]);
+            expect(meterEvents()).toEqual([[0, 4]]);
+        });
+
+        it('carries the value a ramp reached at the span end and keeps its slope', () => {
+            setStoreStates(
+                tempoState([
+                    { id: 'a', beat: 0, tempo: 100, curve: 'linear' },
+                    { id: 'b', beat: 10, tempo: 200, curve: 'instant' },
+                ]),
+                timeSignatureState([])
+            );
+
+            deleteTime(4, 6);
+
+            expect(tempoMapStore.value?.changes.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
+                [0, 100, 'linear'],
+                [4, 160, 'linear'],
+                [8, 200, 'instant'],
+            ]);
+        });
+
+        it('restores the exact previous maps on undo and re-creates the carried maps on redo', () => {
+            const capturedTempo = tempoState([tempoChange('a', 0, 120), tempoChange('b', 10, 60)]);
+            const capturedTimeSignature = timeSignatureState([
+                timeSignatureChange('m-a', 0, 4),
+                timeSignatureChange('m-b', 10, 3),
+            ]);
+            setStoreStates(capturedTempo, capturedTimeSignature);
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'delete', startBeat: 9.5, endBeat: 10.5 },
+            });
+            const plan = transaction.inversePlan;
+            if (!plan) {
+                throw new Error('Expected a changed delete to produce an inverse plan');
+            }
+
+            expect(transaction.apply()).toBe(true);
+            const appliedTempo = tempoMapStore.value;
+            const appliedTimeSignature = timeSignatureMapStore.value;
+            expect(tempoEvents()).toEqual([
+                [0, 120],
+                [9.5, 60],
+            ]);
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [9.5, 3],
+            ]);
+
+            const undo = prepareTimelineMapStateRestore(plan);
+            expect(undo.apply()).toBe(true);
+            expect(tempoMapStore.value).toEqual(capturedTempo);
+            expect(timeSignatureMapStore.value).toEqual(capturedTimeSignature);
+
+            const redo = prepareTimelineMapStateRestore({
+                version: 1,
+                expected: plan.replacement,
+                replacement: plan.expected,
+            });
+            expect(redo.apply()).toBe(true);
+            expect(tempoMapStore.value).toEqual(appliedTempo);
+            expect(timeSignatureMapStore.value).toEqual(appliedTimeSignature);
+        });
+
+        it('reverts the transaction to the exact captured state identities', () => {
+            const capturedTempo = tempoState([tempoChange('a', 0, 120), tempoChange('b', 10, 60)]);
+            const capturedTimeSignature = timeSignatureState([
+                timeSignatureChange('m-a', 0, 4),
+                timeSignatureChange('m-b', 10, 3),
+            ]);
+            setStoreStates(capturedTempo, capturedTimeSignature);
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'delete', startBeat: 9.5, endBeat: 10.5 },
+            });
+
+            expect(transaction.apply()).toBe(true);
+            expect(transaction.revert()).toBe(true);
+
+            expect(tempoMapStore.value).toBe(capturedTempo);
+            expect(timeSignatureMapStore.value).toBe(capturedTimeSignature);
+        });
     });
 
     it.each([
