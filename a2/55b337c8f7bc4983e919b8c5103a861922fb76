@@ -1,0 +1,27 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_2bfd55a4393d7c::t_c5fa86b657aa21 662-671
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_2bfd55a4393d7c::t_95ded4998dbf0d 36,904-1065
+scripts/recoverPublishReviewLock.ts
+  s_2bfd55a4393d7c::t_6b423f70649d13 55,495-501,631
+scripts/reviewPublicationBinding.ts
+  s_2bfd55a4393d7c::t_8c95a068546c1d 37-41,378-390,398-399,406-407,435,573-576
+scripts/reviewPublicationRemoteInspection.ts
+  s_2bfd55a4393d7c::t_be2b5b92abd462 1,5-6,285-312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a255b337c8f7bc4983e919b8c5103a861922fb76",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
