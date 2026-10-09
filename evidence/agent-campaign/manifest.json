@@ -247,7 +247,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts",
-                    "digest": "99f4f07d23aaf51a9511ed4841aa4dfa8f2cf43323655a79267a6cfbbfba67dc"
+                    "digest": "d802d953c2f5cddc1b8615bb5dc0f4e37ae09d9b676f050d707e083dde5b4b9a"
                 }
             ]
         },

@@ -243,6 +243,117 @@ describe('agent risk approval', () => {
         expect(approval.actionHashes[0]).toMatch(/^canonical-json-utf8:[0-9a-f]+$/);
     });
 
+    it('keeps an armTrack-claimed id in the approval fingerprint capture', () => {
+        registerHandlerMap({
+            armTrack: {
+                execute: vi.fn(),
+                describe: () => ({
+                    label: 'Arm Drums for recording',
+                    inverseAction: { type: 'armTrack', payload: { trackId: 'track-drums', armed: false } },
+                }),
+                undoable: true,
+            } satisfies ActionHandler<Extract<AppAction, { type: 'armTrack' }>>,
+        });
+        const revision = captureProjectRevision();
+        const compiled = compilePlannedActionCommandBatch({
+            actions: [
+                {
+                    type: 'setTrackGain',
+                    payload: { expectedGain: 0.8, gain: 0.7, trackId: 'track-vocal' },
+                },
+                // The forged-collision shape: the armTrack command claims an id an
+                // earlier command targets as existing. The parse-time created-id
+                // refusal sets armTrack assignments aside, so the batch is
+                // admitted — and the claimed id is a pre-existing object whose
+                // fingerprint the approval must capture, or a forged claim slips
+                // its target out from under drift checking.
+                {
+                    type: 'armTrack',
+                    payload: { trackId: 'track-drums', armed: true, midiInputOwnerId: 'track-vocal' },
+                },
+            ],
+            actionLabels: ['Set Vocal gain from 0.8 to 0.7', 'Arm Drums for recording'],
+            autoCommit: false,
+            context: {
+                tempo: 120,
+                timeSignature: [4, 4],
+                isPlaying: false,
+                isRecording: false,
+                isLooping: false,
+                loopStart: 0,
+                loopEnd: 16,
+                punchInEnabled: false,
+                punchInBeat: 0,
+                punchOutBeat: 16,
+                metronomeEnabled: false,
+                metronomeVolume: 0.5,
+                masterGain: 0.8,
+                tracks: [
+                    {
+                        id: 'track-vocal',
+                        name: 'Vocal',
+                        kind: 'audio',
+                        muted: false,
+                        soloed: false,
+                        soloSafe: false,
+                        armed: false,
+                        gain: 0.8,
+                        pan: 0,
+                        automationMode: 'read',
+                        clipCount: 0,
+                        deviceCount: 0,
+                        clips: [],
+                        devices: [],
+                    },
+                    {
+                        id: 'track-drums',
+                        name: 'Drums',
+                        kind: 'audio',
+                        muted: false,
+                        soloed: false,
+                        soloSafe: false,
+                        armed: false,
+                        gain: 0.8,
+                        pan: 0,
+                        automationMode: 'read',
+                        clipCount: 0,
+                        deviceCount: 0,
+                        clips: [],
+                        devices: [],
+                    },
+                ],
+                selectedTrackId: null,
+                selectedClipId: null,
+                selectedClipIds: [],
+                activeView: 'arrange',
+                playheadPosition: 0,
+            },
+            group: { groupId: 'group-arm-claim', groupLabel: 'Arm Drums' },
+            intent: 'Set the vocal gain and arm the drums',
+            projectRevision: revision,
+            runId: 'run-arm-claim',
+        });
+        const capturedTargetIds: Array<readonly string[]> = [];
+        commandBatchPreflightPort.setProvider(({ targetIds }) => {
+            capturedTargetIds.push(targetIds);
+            return {
+                audioGraphValid: true,
+                availableAssetHashes: [],
+                availableAudioBufferIds: [],
+                lockedRanges: [],
+                projectId: captureProjectIdentity(),
+                projectInvariantsValid: true,
+                targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, targetFingerprint])),
+            };
+        });
+
+        const approval = compileAgentRiskApproval({ commandBatch: compiled.commandBatch });
+
+        expect(capturedTargetIds).toHaveLength(1);
+        expect(capturedTargetIds[0]).toContain('track-vocal');
+        expect(approval.targetFingerprints).toHaveProperty('track-vocal', targetFingerprint);
+    });
+
     it('revalidates an auto-allowed policy without upgrading it to confirmation', () => {
         const revision = captureProjectRevision();
         const { commandBatch } = createBatch(revision);
