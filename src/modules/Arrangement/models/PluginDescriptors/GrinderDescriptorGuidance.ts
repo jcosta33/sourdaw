@@ -53,37 +53,38 @@ export const GRINDER_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameter
         -45,
         [
             'Only acts once the gate is switched on in the Grinder panel, which this descriptor cannot do; the gate reads the signal after inputGain, so raising inputGain raises the level the threshold is compared against.',
-            'Pairs with gateAttack, which sets the opening and closing fade time, and gateRelease, which sets how long the gate stays open before closing.',
+            'Pairs with gateAttack, which sets the opening fade time, and gateRelease, which sets both how long the gate stays open after a note stops and how fast it then fades shut.',
         ],
         [
-            'A threshold above the quiet end of a sustained note closes the gate on the decay: the gate holds open for a fixed 20 ms, uses roughly 1 dB of hysteresis either side of the threshold and then fades to about -72 dB, so notes cut off audibly rather than fade.',
+            'A threshold above the quiet end of a sustained note closes the gate on the decay: the gate holds open for a fixed 20 ms, uses roughly 1 dB of hysteresis either side of the threshold and then fades to about -72 dB at the gateRelease time, so the tail is cut short rather than left to decay.',
         ],
         noExternalModulation
     ),
     gateAttack: parameterGuidance(
-        'Noise gate fade time',
-        'Sets how fast the gate fades open on a pick and fades shut again, so short values keep the attack and give a quick cut-off and long values soften both.',
+        'Noise gate opening fade time',
+        'Sets how fast the gate fades open on a pick, so short values keep the attack and long values soften it.',
         0.5,
         10,
         [
-            'Sets the gain fade time for both opening and closing, while the detector attack follows at half of it; it only matters once the gate is on, and gateThreshold decides when opening and closing are triggered.',
-            'gateRelease does not set the closing fade: it sets how long the gate stays open before the fade starts.',
+            'Sets the opening gain fade time, while the detector attack follows at half of it; it only matters once the gate is on, and gateThreshold decides when the gate opens.',
+            'It does not set the closing fade: gateRelease sets both when the gate starts to close and how fast it fades shut.',
         ],
         [
-            'Values above about 10 ms fade the first part of every pick in, so fast palm-muted playing loses its transient, and they also stretch the closing fade so a note tail is cut off slowly rather than abruptly; very short values (about 1 ms or less) shut sustaining notes off abruptly.',
+            'For a step 36 dB above gateThreshold at 48 kHz the gain rises from 10 to 90 percent in 1.1 ms at 0.5, 4.4 ms at 2 and 22 ms at 10, so values toward 10 fade the first part of every pick in and fast palm-muted playing loses its transient.',
         ],
         noExternalModulation
     ),
     gateRelease: parameterGuidance(
-        'Noise gate hold-open time',
-        'Sets how long the gate stays open after a note stops before it begins to close, so short values close early and long values let the tail ring out.',
+        'Noise gate release time',
+        'Sets how long the gate stays open after a note stops and how slowly it then fades shut, so short values close early and quickly and long values let the tail ring out.',
         60,
         250,
         [
-            'Sets the detector release at 0.6 times this value, so the hold-open time is the fixed 20 ms plus 0.6 x release x ln(envelope / close threshold) and grows with how far the note sat above gateThreshold; for an abrupt stop at -60 dB the onset is about 110 ms at 60 and 398 ms at 250 for a note 20 dB above the threshold (-40 dBFS), 168 and 640 ms at -26 dBFS, and 232 and 908 ms at -10.5 dBFS; the closing fade itself runs at the gateAttack time, and it only matters once the gate is on.',
+            'Sets the closing gain fade time and the detector release at 0.6 times this value, so it decides both when closing starts (the fixed 20 ms hold plus the time the detector takes to fall from the note level to the close threshold) and how fast the fade runs; it only matters once the gate is on, and gateAttack sets only the opening fade.',
+            'For a 110 Hz note stopped abruptly with gateThreshold at -60 dB and gateAttack at 2, closing starts about 106 ms after the stop at 60 and 383 ms at 250 for a note peaking at -40 dBFS, 164 and 624 ms for a peak of -26 dBFS, and 228 and 892 ms for a peak of -10.5 dBFS; the gain then falls from 90 to 10 percent in about 132 ms at 60 and 550 ms at 250.',
         ],
         [
-            'On a decaying note at a gateAttack of 2 ms or shorter, the gate starts closing after the tail drops below the threshold, and the delay grows with this value: about 70 to 85 ms at 60 and about 150 to 160 ms at 250 (0.1 amplitude, 300 ms decay), so short values do not clip the decay; a long gateAttack combined with a short release is what closes early, because the slow detector attack keeps the envelope under the tail peaks, and at gateAttack 10 with release 5 closing starts about 40 to 56 ms before the tail reaches the threshold; very long values keep the gate open so audible noise stays in the gaps between phrases, and it does not change how fast the closing fade is.',
+            'On a 110 Hz note decaying from 0.1 with a 300 ms time constant and gateThreshold from -30 to -50 dB, at a gateAttack of 0.5 to 2 the gain is down to 10 percent about 186 to 194 ms after the tail passes the threshold at 60 and 693 to 709 ms at 250, so short values do not clip the decay and long ones leave noise audible in the gaps between phrases; a long gateAttack combined with a very short release closes early, because the slow detector attack keeps the envelope under the tail peaks, and at gateAttack 10 with release 5 the gain is down to 10 percent about 60 ms before the tail reaches the threshold.',
         ],
         noExternalModulation
     ),

@@ -127,6 +127,16 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     },
     'health-gates.yml': {
         scope: ['Checkout', 'Set up Node', 'Plan affected checks', 'Upload scope manifest'],
+        'selection-shadow': [
+            'Checkout candidate head',
+            'Checkout immutable integration commit',
+            'Download authoritative scope',
+            'Set up pnpm',
+            'Set up Node',
+            'Install dependencies',
+            'Measure shadow selection',
+            'Upload shadow measurement',
+        ],
         validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
@@ -335,6 +345,7 @@ const pin = (workflow: string, job: string, step: string, condition: string): Co
 });
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    pin('health-gates.yml', 'selection-shadow', 'Upload shadow measurement', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
     pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),
     pin('heavy-gates.yml', 'heavy-gate', 'Require selected browser jobs to succeed', ALWAYS_EXPRESSION),
