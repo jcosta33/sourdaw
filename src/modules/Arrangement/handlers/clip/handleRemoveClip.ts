@@ -1,3 +1,4 @@
+import { getClipAutomationMoveState } from '#/modules/Automation/useCases';
 import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
@@ -10,7 +11,7 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
-import { refreshRetiredTakeLanesForRedo } from './takeRetirementRedo';
+import { pairedInverseForRedo } from './takeRetirementRedo';
 import { isRemoveClipSessionEntry } from './validateClipEditSessionEntries';
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural
@@ -65,11 +66,16 @@ export const handleRemoveClip = createHandler<'removeClip'>({
     validate: (action, context) =>
         clipStillExists(action.payload.clipId) && batchMembersAreIndependent(action, context),
     execute: (alpha) => {
-        // A redo replays this removal with `skipUndo`, so the fresh capture
-        // `describe()` just took never reaches an entry: without this the entry
-        // keeps the first removal's capture and the undo that follows the redo
-        // cannot put back a take that landed on the restored clip in between.
-        refreshRetiredTakeLanesForRedo(alpha, alpha.payload.clipId);
+        // Redo runs with skipUndo. Retain its actual producer capture so the
+        // following Undo authenticates the shifted owners this replay wrote,
+        // and restores exactly the material this replay retired.
+        const inverse = pairedInverseForRedo(alpha);
+        if (inverse?.type === 'restoreClip') {
+            const fresh = handleRemoveClip.describe(alpha).inverseAction;
+            if (fresh?.type === 'restoreClip') {
+                inverse.payload = fresh.payload;
+            }
+        }
 
         const state = getTrackStoreState();
         let trackId: string | null = null;
@@ -114,7 +120,14 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         const ripplePlan = plan
             ? {
                   removedClips: structuredClone(plan.removedClips) as readonly MinimalClipShape[],
-                  shiftedClips: structuredClone(plan.shiftedClips),
+                  shiftedClips: plan.shiftedClips.map((shift) => ({
+                      ...shift,
+                      expectedAutomationLanes: getClipAutomationMoveState({
+                          clipId: shift.clipId,
+                          targetTrackId: trackId,
+                          beatDelta: shift.automationDelta,
+                      }).next,
+                  })),
                   clipSatellites: plan.removedClips
                       .map((clip) => readClipSatelliteEntry(clip.id))
                       .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null),

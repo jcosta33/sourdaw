@@ -215,6 +215,7 @@ function ownerProjections() {
 }
 
 type PeerProject = {
+    automation: NonNullable<typeof automationStore.value>;
     takeLanes: NonNullable<typeof takeLaneStore.value>;
     tracks: NonNullable<typeof trackStore.value>;
 };
@@ -400,6 +401,129 @@ async function persistRemovalWithDistinctOwners(grouped = false) {
     return { saved, plan, original };
 }
 
+async function persistRippleRemoval(grouped: boolean, automated = true, fractional = false): Promise<void> {
+    const offset = fractional ? 0.125 : 0;
+    trackStore.set({
+        tracks: [
+            TrackDummy.create({
+                id: TRACK_ID,
+                kind: 'midi',
+                clips: [
+                    createClipFixture('clip-a', offset, 4 + offset),
+                    createClipFixture('clip-b', 4 + offset, 8 + offset),
+                ],
+            }),
+            {
+                ...createTrack({ id: 'other-track', kind: 'midi' }),
+                clips: [
+                    { ...createClipFixture('clip-c', 2, 4), trackId: 'other-track' },
+                    { ...createClipFixture('peer-clip', 0, 1), trackId: 'other-track' },
+                ],
+            },
+        ],
+        selectedTrackId: TRACK_ID,
+        ghostClips: [],
+    });
+    const shiftedLane = automationLane('shifted-lane', 'clip-b');
+    shiftedLane.points = [
+        {
+            id: 'shift-start',
+            beat: 4.5 + offset,
+            value: 0.25,
+            curve: 'bezier',
+            tension: 0.3,
+            cp1: { x: 0.2, y: 0.4 },
+            cp2: { x: 0.7, y: 0.8 },
+        },
+        { id: 'shift-end', beat: 7.5 + offset, value: 0.75, curve: 'stairs', tension: 0, stairSteps: 3 },
+    ];
+    automationStore.set({ lanes: automated ? [shiftedLane] : [] });
+    flushAutomergeStorageWrites();
+    stopProjectionBridge = setupProjectionBridge();
+    projectCrdtToStores();
+    if (grouped) {
+        const result = await executeAppActionBatch(
+            [
+                { type: 'removeClip', payload: { clipId: 'clip-a' } },
+                { type: 'removeClip', payload: { clipId: 'clip-c' } },
+            ],
+            { source: 'manual', groupId: 'saved-ripple-removal' }
+        );
+        expect(result).toMatchObject({ status: 'committed' });
+    } else {
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+    }
+    await vi.waitFor(() => {
+        const past = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past;
+        expect(past).toHaveLength(grouped ? 2 : 1);
+    });
+    reloadSavedProject();
+    expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: offset, endBeat: 4 + offset });
+    expect(undoHistoryStore.value?.past).toHaveLength(grouped ? 2 : 1);
+}
+
+async function persistSequentialRippleGroup(secondRipples = true): Promise<void> {
+    trackStore.set({
+        tracks: [
+            TrackDummy.create({
+                id: TRACK_ID,
+                kind: 'midi',
+                clips: [
+                    createClipFixture('clip-a', 0.125, 4.125),
+                    createClipFixture('clip-c', 4.125, 8.125),
+                    createClipFixture('clip-b', 8.125, 12.125),
+                ],
+            }),
+        ],
+        selectedTrackId: TRACK_ID,
+        ghostClips: [],
+    });
+    automationStore.set({
+        lanes: [
+            automationLane('first-removed-lane', 'clip-a'),
+            {
+                ...automationLane('restored-prefix-lane', 'clip-c'),
+                points: [{ id: 'c-point', beat: 4.625, value: 0.3, curve: 'linear', tension: 0 }],
+            },
+            {
+                ...automationLane('shared-shifted-lane', 'clip-b'),
+                points: [
+                    {
+                        id: 'b-point',
+                        beat: 8.625,
+                        value: 0.7,
+                        curve: 'bezier',
+                        tension: 0.2,
+                        cp1: { x: 0.2, y: 0.4 },
+                        cp2: { x: 0.7, y: 0.8 },
+                    },
+                ],
+            },
+        ],
+    });
+    flushAutomergeStorageWrites();
+    stopProjectionBridge = setupProjectionBridge();
+    projectCrdtToStores();
+    for (const clipId of ['clip-a', 'clip-c']) {
+        if (clipId === 'clip-c' && !secondRipples) {
+            workspaceStore.set({ ...workspaceStore.value!, rippleEditing: false });
+        }
+        await executeAppAction(
+            { type: 'removeClip', payload: { clipId } },
+            { source: 'manual', groupId: 'sequential-ripple' }
+        );
+    }
+    await vi.waitFor(() =>
+        expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+    );
+    reloadSavedProject();
+    expect(undoHistoryStore.value?.past).toHaveLength(2);
+    expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({
+        startBeat: secondRipples ? 0.125 : 4.125,
+        endBeat: secondRipples ? 4.125 : 8.125,
+    });
+}
+
 /**
  * Round trips for the slice-three clip actions through the session-undo mirror.
  * Each entry is seeded through the REAL dispatch pair — `describe()` then
@@ -523,6 +647,329 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(undoHistoryStore.value?.past).toHaveLength(1);
             expect(undoHistoryStore.value?.future).toEqual([]);
         }
+    });
+
+    it('replays a saved sequential ripple group through restored automation and shared shifted owners', async () => {
+        await persistSequentialRippleGroup();
+        for (let round = 0; round < 2; round += 1) {
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipOnTrack(TRACK_ID, 'clip-c')).toMatchObject({ startBeat: 4.125, endBeat: 8.125 });
+            expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 8.125, endBeat: 12.125 });
+            expect(
+                automationStore.value?.lanes.find((lane) => lane.id === 'restored-prefix-lane')?.points[0]?.beat
+            ).toBe(4.625);
+            expect(
+                automationStore.value?.lanes.find((lane) => lane.id === 'shared-shifted-lane')?.points[0]?.beat
+            ).toBe(8.625);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(2)
+            );
+            reloadSavedProject();
+            await redo();
+            expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 0.125, endBeat: 4.125 });
+            expect(automationStore.value?.lanes.find((lane) => lane.id === 'restored-prefix-lane')).toBeUndefined();
+            expect(
+                automationStore.value?.lanes.find((lane) => lane.id === 'shared-shifted-lane')?.points[0]?.beat
+            ).toBe(0.625);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+            reloadSavedProject();
+        }
+    });
+
+    it('projects the full lane restored by a non-ripple sibling before an earlier ripple inverse', async () => {
+        await persistSequentialRippleGroup(false);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(clipOnTrack(TRACK_ID, 'clip-c')).toMatchObject({ startBeat: 4.125, endBeat: 8.125 });
+        expect(
+            automationStore.value?.lanes.find((lane) => lane.id === 'restored-prefix-lane')?.points[0]
+        ).toMatchObject({ beat: 4.625, value: 0.3 });
+        expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 8.125, endBeat: 12.125 });
+    });
+
+    it('refuses duplicated restored lane identities across a saved sequential ripple group before writes', async () => {
+        await persistSequentialRippleGroup();
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        if (!Array.isArray(saved.past)) {
+            throw new TypeError('Expected saved sequential ripple history');
+        }
+        const entry = saved.past[0];
+        if (
+            !isRecord(entry) ||
+            !isRecord(entry.inverseAction) ||
+            !isRecord(entry.inverseAction.payload) ||
+            !isRecord(entry.inverseAction.payload.ripplePlan)
+        ) {
+            throw new TypeError('Expected first removed clip capture');
+        }
+        const lanes = entry.inverseAction.payload.ripplePlan.clipAutomationLanes;
+        if (!Array.isArray(lanes) || !isRecord(lanes[0])) {
+            throw new TypeError('Expected captured removed lane');
+        }
+        lanes[0].id = 'restored-prefix-lane';
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        reloadSavedProject();
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        await expectReplayRefused('undo');
+    });
+
+    it.each(['geometry', 'automation'] as const)(
+        'refuses a peer %s change across a saved sequential ripple group without partial writes',
+        async (change) => {
+            await persistSequentialRippleGroup();
+            syncPeerProject((project) => {
+                if (change === 'geometry') {
+                    const clip = project.tracks.tracks[0]?.clips.find((row) => row.id === 'clip-b');
+                    if (!clip) {
+                        throw new Error('Expected shared shifted clip');
+                    }
+                    clip.startBeat = 1.125;
+                    clip.endBeat = 5.125;
+                } else {
+                    const point = project.automation.lanes.find((lane) => lane.id === 'shared-shifted-lane')?.points[0];
+                    if (!point) {
+                        throw new Error('Expected shared shifted automation');
+                    }
+                    point.value = 0.9;
+                }
+            });
+            await expectReplayRefused('undo');
+        }
+    );
+
+    describe.each([false, true])('saved ripple shifted-owner freshness with grouped=%s', (grouped) => {
+        it.each([
+            'geometry',
+            'track',
+            'deleted-clip',
+            'point',
+            'deleted-lane',
+            'clip-owner',
+            'track-owner',
+            'added-lane',
+        ] as const)('refuses a synced shifted %s edit before every replay write', async (change) => {
+            await persistRippleRemoval(grouped);
+            syncPeerProject((project) => {
+                const track = project.tracks.tracks.find((row) => row.id === TRACK_ID);
+                const otherTrack = project.tracks.tracks.find((row) => row.id === 'other-track');
+                const clip = track?.clips.find((row) => row.id === 'clip-b');
+                const lane = project.automation.lanes.find((row) => row.id === 'shifted-lane');
+                if (!track || !otherTrack || !clip || !lane) {
+                    throw new Error('Expected genuine ripple-shifted owners');
+                }
+                if (change === 'geometry') {
+                    clip.startBeat = 1;
+                    clip.endBeat = 5;
+                } else if (change === 'track') {
+                    track.clips = track.clips.filter((row) => row.id !== clip.id);
+                    otherTrack.clips.push({ ...clip, trackId: otherTrack.id });
+                } else if (change === 'deleted-clip') {
+                    track.clips = track.clips.filter((row) => row.id !== clip.id);
+                    project.automation.lanes = project.automation.lanes.filter((row) => row.clipId !== clip.id);
+                } else if (change === 'point') {
+                    lane.points[0]!.beat = 0.75;
+                    lane.points[0]!.value = 0.9;
+                } else if (change === 'deleted-lane') {
+                    project.automation.lanes = project.automation.lanes.filter((row) => row.id !== lane.id);
+                } else if (change === 'clip-owner') {
+                    lane.clipId = 'peer-clip';
+                    lane.trackId = otherTrack.id;
+                } else if (change === 'track-owner') {
+                    lane.trackId = otherTrack.id;
+                } else {
+                    project.automation.lanes.push(automationLane('peer-added-shifted-lane', clip.id));
+                }
+            });
+            await expectReplayRefused('undo');
+        });
+
+        it('round trips a genuine fractional automated ripple while preserving unrelated peer material', async () => {
+            await persistRippleRemoval(grouped, true, true);
+            syncPeerProject((project) => {
+                const otherTrack = project.tracks.tracks.find((row) => row.id === 'other-track');
+                const peerClip = otherTrack?.clips.find((row) => row.id === 'peer-clip');
+                if (!otherTrack || !peerClip) {
+                    throw new Error('Expected unrelated peer clip');
+                }
+                peerClip.name = 'Peer phrase';
+                const lane = automationLane('peer-unrelated-lane', peerClip.id);
+                project.automation.lanes.push({ ...lane, trackId: otherTrack.id });
+            });
+            trackStore.set({
+                ...trackStore.value!,
+                selectedTrackId: 'other-track',
+                ghostClips: [createClipFixture('local-ghost', 9, 10)],
+            });
+            const removedRaw = structuredClone(getCrdtDoc('root'));
+            const peerLane = structuredClone(
+                automationStore.value?.lanes.find((row) => row.id === 'peer-unrelated-lane')
+            );
+            for (let round = 0; round < 2; round += 1) {
+                expect((await undo()).headConsumed).toBe(true);
+                expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 4.125, endBeat: 8.125 });
+                expect(
+                    automationStore.value?.lanes
+                        .find((row) => row.id === 'shifted-lane')
+                        ?.points.map((point) => point.beat)
+                ).toEqual([4.625, 7.625]);
+                expect(clipOnTrack('other-track', 'peer-clip')?.name).toBe('Peer phrase');
+                expect(automationStore.value?.lanes.find((row) => row.id === 'peer-unrelated-lane')).toEqual(peerLane);
+                expect(trackStore.value?.selectedTrackId).toBe('other-track');
+                expect(trackStore.value?.ghostClips).toEqual([createClipFixture('local-ghost', 9, 10)]);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(
+                        grouped ? 2 : 1
+                    )
+                );
+                if (round === 1) {
+                    reloadSavedProject();
+                }
+                await redo();
+                expect(getCrdtDoc('root')).toEqual(removedRaw);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(
+                        grouped ? 2 : 1
+                    )
+                );
+                if (round === 0) {
+                    reloadSavedProject();
+                    trackStore.set({
+                        ...trackStore.value!,
+                        selectedTrackId: 'other-track',
+                        ghostClips: [createClipFixture('local-ghost', 9, 10)],
+                    });
+                }
+            }
+        });
+
+        it.each([false, true])(
+            'reads historical absent automation captures and authenticates an empty scope=%s',
+            async (empty) => {
+                await persistRippleRemoval(grouped, !empty);
+                const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+                if (!Array.isArray(saved.past)) {
+                    throw new TypeError('Expected saved ripple history');
+                }
+                for (const entry of saved.past) {
+                    if (
+                        !isRecord(entry) ||
+                        !isRecord(entry.inverseAction) ||
+                        !isRecord(entry.inverseAction.payload) ||
+                        !isRecord(entry.inverseAction.payload.ripplePlan) ||
+                        !Array.isArray(entry.inverseAction.payload.ripplePlan.shiftedClips)
+                    ) {
+                        throw new TypeError('Expected saved shifted captures');
+                    }
+                    for (const shifted of entry.inverseAction.payload.ripplePlan.shiftedClips) {
+                        if (!isRecord(shifted)) {
+                            throw new TypeError('Expected saved shifted row');
+                        }
+                        delete shifted.expectedAutomationLanes;
+                    }
+                }
+                sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+                reloadSavedProject();
+                expect(undoHistoryStore.value?.past).toHaveLength(grouped ? 2 : 1);
+                if (empty) {
+                    expect((await undo()).headConsumed).toBe(true);
+                    expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 4, endBeat: 8 });
+                    await redo();
+                    expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 0, endBeat: 4 });
+                } else {
+                    await expectReplayRefused('undo');
+                }
+            }
+        );
+
+        it('refreshes the saved automated ripple capture for the actual Redo before the next Undo', async () => {
+            await persistRippleRemoval(grouped, true, true);
+            expect((await undo()).headConsumed).toBe(true);
+            syncPeerProject((project) => {
+                const lane = project.automation.lanes.find((row) => row.id === 'shifted-lane');
+                if (!lane) {
+                    throw new Error('Expected restored automation owner');
+                }
+                lane.points[0]!.beat = 4.875;
+                lane.points[0]!.value = 0.9;
+            });
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(
+                    grouped ? 2 : 1
+                )
+            );
+            reloadSavedProject();
+            await redo();
+            expect(automationStore.value?.lanes.find((row) => row.id === 'shifted-lane')?.points[0]).toMatchObject({
+                beat: 0.875,
+                value: 0.9,
+            });
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(
+                    grouped ? 2 : 1
+                )
+            );
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(automationStore.value?.lanes.find((row) => row.id === 'shifted-lane')?.points[0]).toMatchObject({
+                beat: 4.875,
+                value: 0.9,
+            });
+            expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 4.125, endBeat: 8.125 });
+        });
+
+        it.each(['foreign-track', 'unsupported-curve', 'duplicate-shift', 'unknown-field'] as const)(
+            'rejects a genuine saved shifted capture changed to %s before hydration writes',
+            async (corruption) => {
+                await persistRippleRemoval(grouped);
+                const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+                if (!Array.isArray(saved.past)) {
+                    throw new TypeError('Expected saved ripple entry');
+                }
+                const entry = saved.past.find(
+                    (candidate) =>
+                        isRecord(candidate) &&
+                        isRecord(candidate.action) &&
+                        isRecord(candidate.action.payload) &&
+                        candidate.action.payload.clipId === 'clip-a'
+                );
+                if (
+                    !isRecord(entry) ||
+                    !isRecord(entry.inverseAction) ||
+                    !isRecord(entry.inverseAction.payload) ||
+                    !isRecord(entry.inverseAction.payload.ripplePlan)
+                ) {
+                    throw new TypeError('Expected genuine captured ripple plan');
+                }
+                const plan = entry.inverseAction.payload.ripplePlan;
+                if (!Array.isArray(plan.shiftedClips) || !isRecord(plan.shiftedClips[0])) {
+                    throw new TypeError('Expected genuine shifted clip');
+                }
+                const shifted = plan.shiftedClips[0];
+                if (!Array.isArray(shifted.expectedAutomationLanes) || !isRecord(shifted.expectedAutomationLanes[0])) {
+                    throw new TypeError('Expected genuine shifted automation capture');
+                }
+                if (corruption === 'foreign-track') {
+                    shifted.expectedAutomationLanes[0].trackId = 'other-track';
+                } else if (corruption === 'unsupported-curve') {
+                    const points = shifted.expectedAutomationLanes[0].points;
+                    if (!Array.isArray(points) || !isRecord(points[0])) {
+                        throw new TypeError('Expected captured automation point');
+                    }
+                    points[0].curve = 'unsupported';
+                } else if (corruption === 'duplicate-shift') {
+                    plan.shiftedClips.push(structuredClone(shifted));
+                } else {
+                    shifted.unrecordedOwner = 'peer-clip';
+                }
+                sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+                const raw = structuredClone(getCrdtDoc('root'));
+                reloadSavedProject();
+                expect(undoHistoryStore.value?.past).toEqual([]);
+                expect(getCrdtDoc('root')).toEqual(raw);
+                await expectReplayRefused('undo');
+            }
+        );
     });
 
     describe.each([false, true])('saved removal owner freshness with grouped=%s', (grouped) => {

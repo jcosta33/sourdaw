@@ -171,7 +171,7 @@ function isClipSnapshot(value: unknown, clipId: string, trackId: string): boolea
     );
 }
 
-function isRippleDeleteShift(value: unknown, removedClipId: string): boolean {
+function isRippleDeleteShift(value: unknown, removedClipId: string, trackId: string): boolean {
     return (
         isRecord(value) &&
         typeof value.clipId === 'string' &&
@@ -183,7 +183,15 @@ function isRippleDeleteShift(value: unknown, removedClipId: string): boolean {
         Number.isFinite(value.origEndBeat) &&
         value.origEndBeat > value.origStartBeat &&
         typeof value.automationDelta === 'number' &&
-        Number.isFinite(value.automationDelta)
+        Number.isFinite(value.automationDelta) &&
+        optionalField(
+            value,
+            'expectedAutomationLanes',
+            (lanes) => isExactClipAutomationMoveSnapshots(lanes) && lanes.every((lane) => lane.trackId === trackId)
+        ) &&
+        Object.keys(value).every((key) =>
+            ['clipId', 'origStartBeat', 'origEndBeat', 'automationDelta', 'expectedAutomationLanes'].includes(key)
+        )
     );
 }
 
@@ -197,7 +205,9 @@ function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: st
         value.removedClips.length === 1 &&
         valuesEqual(value.removedClips[0], clipSnapshot) &&
         Array.isArray(value.shiftedClips) &&
-        value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId)) &&
+        value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId, trackId)) &&
+        new Set(value.shiftedClips.map((shift) => (isRecord(shift) ? shift.clipId : undefined))).size ===
+            value.shiftedClips.length &&
         satellites !== null &&
         satellites.every((entry) => entry.clipId === clipId) &&
         isExactAutomationLaneSnapshots(value.clipAutomationLanes) &&

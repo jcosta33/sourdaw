@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { createTrack } from '../../../models/Track';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
@@ -179,7 +180,15 @@ describe('handleRestoreClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         takeLaneStore.set({ lanes: [] });
-        trackStore.set({ tracks: [createTrack({ id: 't1', name: 'Track 1', kind: 'midi' })], selectedTrackId: 't1' });
+        trackStore.set({
+            tracks: [
+                {
+                    ...createTrack({ id: 't1', name: 'Track 1', kind: 'midi' }),
+                    clips: [ClipDummy.create({ id: 'c2', trackId: 't1', startBeat: 0, endBeat: 1 })],
+                },
+            ],
+            selectedTrackId: 't1',
+        });
     });
 
     describe.each(['ripple', 'track'] as const)('%s restore path', (path) => {
@@ -263,4 +272,51 @@ describe('handleRestoreClip', () => {
     it('is not undoable', () => {
         expect(handleRestoreClip.undoable).toBe(false);
     });
+
+    it.each(['moved', 'missing', 'foreign-track'] as const)(
+        'refuses a %s shifted clip in preflight and single execution before writes',
+        (change) => {
+            const action = createRestoreClipAction({
+                ripplePlan: {
+                    removedClips: [createRestoreClipAction().payload.clipSnapshot],
+                    shiftedClips: [
+                        {
+                            clipId: 'c2',
+                            origStartBeat: 1,
+                            origEndBeat: 2,
+                            automationDelta: -1,
+                            expectedAutomationLanes: [],
+                        },
+                    ],
+                    clipSatellites: [],
+                    clipAutomationLanes: [],
+                },
+            });
+            const clip = ClipDummy.create({
+                id: 'c2',
+                trackId: change === 'foreign-track' ? 'other-track' : 't1',
+                startBeat: change === 'moved' ? 0.25 : 0,
+                endBeat: change === 'moved' ? 1.25 : 1,
+            });
+            trackStore.set({
+                tracks: [
+                    {
+                        ...createTrack({ id: 't1', kind: 'midi' }),
+                        clips: change === 'missing' || change === 'foreign-track' ? [] : [clip],
+                    },
+                    {
+                        ...createTrack({ id: 'other-track', kind: 'midi' }),
+                        clips: change === 'foreign-track' ? [clip] : [],
+                    },
+                ],
+                selectedTrackId: 't1',
+            });
+            expect(handleRestoreClip.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+            expect(handleRestoreClip.execute(action)).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+            expect(mocks.undoRippleDelete).not.toHaveBeenCalled();
+            expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+            expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+        }
+    );
 });

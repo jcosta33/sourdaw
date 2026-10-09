@@ -294,6 +294,36 @@ duplicates within one envelope, global entity collisions, and repeated
 arrangement IDs to remain repair-required. The missed stance clause was the
 identity's owning namespace, not whether recursive traversal found every ID.
 
+Ripple removal's restore changed collateral owners without authenticating them.
+Commit `7a85ce6456a79b050b0bf9aaacc79924ef34244e` introduced the unconditional
+shifted-rectangle restore; GitHub reports no associated PR for that commit.
+PR #922 (`cb5cc8fabc22a82f18225deced69e0e01b9c7f6f`) added inverse automation
+shifts to the same route. The #5064 saved-history replay at `f1b39bf9e7` guarded
+the removed clip but still rewrote a later peer move of the shifted clip and
+consumed the head. The missing stance clause was every owner the inverse will
+write, including collateral rectangles and complete shifted automation scope.
+Remove a clip with ripple, binary-save/load and hydrate real history, then sync
+a peer move, track change, owner deletion, point edit, lane deletion/rebinding,
+or added scoped lane onto a shifted clip. Require single and grouped Undo to
+refuse before any owner write with raw document, heads, projections, and history
+unchanged. Keep fractional automated ripple Undo/Redo/Undo with real reloads,
+unrelated peer owners, selection/ghosts, and current take/comp reconciliation.
+Redo's fresh producer capture must reach the retained inverse: authenticating
+the first gesture after a later actual redo is stale. Historical missing lane
+captures remain readable, but only an empty shifted automation scope can be
+authenticated without them. The old probe checked the retired clip's owners
+and left every shifted owner unchanged; its green round trip proved no peer
+protection for these collateral writes.
+
+Capture sequential real removals under one group ID, with automation on both
+the next removed clip and a shared shifted survivor. Group preflight sees the
+same state each inverse will see only after projecting already-validated
+earlier restores in order, including lanes restored by a non-ripple removal.
+Keep saved Undo/Redo/Undo across both reload legs and reject duplicate restored
+lane identities against that prefix before any member writes. A live-only
+guard falsely refuses the genuine group; checking only current lane IDs lets
+an earlier restore occupy a later restore's ID and causes partial replay.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose
