@@ -12,6 +12,7 @@ import { insertTakeLane } from '../../useCases/comping/insertTakeLane';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
+import { rearmInputMonitoring } from '../../useCases/rearmInputMonitoring';
 import { refreshToasterPadBindings } from '../../useCases/refreshToasterPadBindings';
 import { setTrackState } from '../../useCases/setTrackState';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
@@ -151,6 +152,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                     ...routingPatches.map((patch) => () => {
                         projectTrackToLiveStrip({ trackId: patch.trackId, deferSidechainWiring: true });
                     }),
+                    () => rearmRestoredTrackInputMonitoring(alpha.payload.trackId),
                     () => refreshToasterPadBindings(tracks, trackParentId),
                     finalizeSidechainRestore,
                     () =>
@@ -194,6 +196,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                     }
                 }
                 effects.push(
+                    () => rearmRestoredTrackInputMonitoring(committedTrack.id),
                     () => refreshToasterPadBindings(committedState.tracks, committedTrack.parentId),
                     () => wireSidechainRoutes(),
                     () =>
@@ -212,6 +215,14 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
     requiresAbortCompensation: false,
     undoable: false,
 });
+
+async function rearmRestoredTrackInputMonitoring(trackId: string): Promise<void> {
+    const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === trackId);
+    if (!track || track.inputMonitoring !== 'on') {
+        return;
+    }
+    await rearmInputMonitoring([track]);
+}
 
 type RoutingState = {
     readonly outputId: string;

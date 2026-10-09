@@ -202,3 +202,19 @@ owner-supported project kind, including permission still pending. Off and remova
 that owner; non-audio Auto and unadmitted store-only On must acquire nothing. The eligibility table's
 dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
 proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
+
+### 2026-10-09 — monitor release must be paired with committed Undo restoration (caught in PR #5091)
+
+The committed-deletion probes proved release and refused-deletion preservation but omitted the
+actual inverse. Real Command Undo restored the track and its saved On mode while the recorder
+held only the surviving track's edge; bulk Undo restored both On tracks with no capture owners.
+Strip reconstruction alone does not restore the independent monitoring runtime.
+
+Probe: admit two On tracks through the real recorder, delete one and Undo, then remove all and
+Undo. Inspect raw document membership and modes, the store projection, actual monitor owners,
+source connections and stream stops. Require re-admission only after the restored strip and
+project commit, preserving the survivor's shared capture and acquiring a fresh stream after
+last-owner release. Refuse restore storage, run an isolated preview, and inject a published-then-
+throwing restore; only committed, still-present On owners may rearm. Denied reacquisition must
+leave restored truth and Undo success intact. Reverting either restore commit hook must redden
+its connected runtime assertion.

@@ -189,3 +189,13 @@ track and on another active track. Undo must keep the original history head and 
 after a successful undo, the same duplicate-ID states must keep redo pending and preserve the restored
 notes. Replay authority requires one live MIDI clip under the captured track owner, not merely a first
 matching clip in that track.
+
+## Committed deletion inverses must restore saved monitoring intent (caught in PR #5091)
+
+A real track-deletion Undo restored raw document and projected tracks with monitoring On while
+the independent recorder owner stayed absent. Project round trips that assert snapshots alone
+miss this disagreement. Exercise single and bulk removal through Command and its actual inverse,
+then inspect the live source edge and capture stream as well as persisted membership and modes.
+Refused and isolated-preview restores must acquire nothing; published-but-throwing restoration
+may rearm only the committed, still-present owner. A denied device must not turn restored project
+truth or successful Undo into a failure. See the paired lifecycle probe in `session-lifecycle.md`.

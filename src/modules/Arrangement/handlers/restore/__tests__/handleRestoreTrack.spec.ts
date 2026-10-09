@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
         finalizeSidechainRestore: vi.fn(),
         ensureBusStrip: vi.fn(),
         projectTrackToLiveStrip: vi.fn(),
+        rearmInputMonitoring: vi.fn(async () => undefined),
         publishTrackAdded: vi.fn(),
         refreshToasterPadBindings: vi.fn(),
         restoreAutomationLanes: vi.fn<(laneSnapshots: readonly unknown[]) => void>(),
@@ -65,6 +66,10 @@ vi.mock('../../../useCases/setTrackState', () => ({
 
 vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
+}));
+
+vi.mock('../../../useCases/rearmInputMonitoring', () => ({
+    rearmInputMonitoring: mocks.rearmInputMonitoring,
 }));
 
 vi.mock('../../../useCases/publishTrackAdded', () => ({
@@ -305,6 +310,48 @@ describe('handleRestoreTrack', () => {
         expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
         expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
         expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
+        expect(mocks.rearmInputMonitoring).not.toHaveBeenCalled();
+    });
+
+    it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
+        'rearms only the current restored owner after strip rebuilding in %s',
+        async (hook) => {
+            const restored = TrackDummy.create({
+                id: 'track-1',
+                kind: 'midi',
+                inputMonitoring: 'on',
+                inputId: 'mic-a',
+            });
+            const survivor = TrackDummy.create({ id: 'survivor', inputMonitoring: 'on', inputId: 'mic-b' });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [survivor], selectedTrackId: null, ghostClips: [] });
+            const result = await handleRestoreTrack.execute(
+                createRestoreTrackAction({
+                    trackSnapshot: restored,
+                    trackKind: restored.kind,
+                })
+            );
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [restored, survivor],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+
+            await result?.[hook]?.();
+
+            expect(mocks.rearmInputMonitoring).toHaveBeenCalledExactlyOnceWith([restored]);
+            expect(
+                requireCallOrder(mocks.projectTrackToLiveStrip.mock.invocationCallOrder, 'strip rebuilding')
+            ).toBeLessThan(requireCallOrder(mocks.rearmInputMonitoring.mock.invocationCallOrder, 'monitor rearm'));
+        }
+    );
+
+    it('does not rearm an absent owner after a normal commit callback', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        const result = await handleRestoreTrack.execute(createRestoreTrackAction());
+
+        await result?.afterCommit?.();
+
+        expect(mocks.rearmInputMonitoring).not.toHaveBeenCalled();
     });
 
     it('restores original ordering, selection, and survivor routing snapshots', async () => {
