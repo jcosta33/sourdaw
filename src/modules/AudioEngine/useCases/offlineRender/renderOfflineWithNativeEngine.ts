@@ -104,6 +104,7 @@ import {
     REFUSE_DEVICE_AUTOMATION,
     type StripAutomationDeviceEntry,
 } from './projectStripAutomationWrites';
+import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
 
@@ -379,7 +380,13 @@ export async function renderOfflineWithNativeEngine(
         // the two schedule the same expansion into the same ceiling.
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
 
-        for (const clip of resolveTrackClipsWithComping(track.id, track.clips, input.captured?.scheduling.takeLanes)) {
+        const tempoTimeline = renderTempoTimeline(projectBeatToSeconds, resolveClipTempo);
+        for (const clip of resolveTrackClipsWithComping(
+            track.id,
+            track.clips,
+            input.captured?.scheduling.takeLanes,
+            tempoTimeline
+        )) {
             if (clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
