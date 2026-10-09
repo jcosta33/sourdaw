@@ -1,0 +1,26 @@
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_4c8cd08893b364::t_05548757228ec9 697
+  s_4c8cd08893b364::t_7b80688199b250 669-696,698-704
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_4c8cd08893b364::t_3e9dc51a161296 183,185-194,216-268
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_4c8cd08893b364::t_f32d247c33d5a1 430-445,451-456,461,465,472,488-489
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_4c8cd08893b364::t_535452014ae4d6 166-167,183,281-282,284-285,304-308,316,329
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2fdc8d4c05a1826ac2a5d3470938c1925cde2c2",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
