@@ -959,6 +959,65 @@ describe('ExportDialog', () => {
             await expectSucceededExportState();
         });
 
+        // The final file is the last format of the last stem, not the last stem's first format.
+        const useWavAndMp3 = (): void => {
+            vi.mocked(loadExportSettings).mockReturnValueOnce({
+                formats: ['wav', 'mp3'],
+                sampleRate: 44100,
+                bitDepth: 24,
+                mp3BitRate: 128,
+                dither: 'random',
+                normalization: 'off',
+            });
+            vi.mocked(audioBufferToMp3).mockResolvedValue(new Uint8Array([4, 5, 6]));
+        };
+
+        it('ends cancelled when it lands during the last stem WAV and its MP3 is still to come', async () => {
+            useWavAndMp3();
+            const writingLastWav = createDeferred<void>();
+            mocks.writeNativeAudioStemFile
+                .mockResolvedValueOnce(undefined)
+                .mockResolvedValueOnce(undefined)
+                .mockReturnValueOnce(writingLastWav.promise);
+            await startTwoStemExport();
+            await waitFor(() => {
+                expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(3);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                writingLastWav.resolve();
+            });
+
+            await expectCancelledExportState();
+            // Only the first stem's MP3 was encoded, and the last stem's MP3 was never written.
+            expect(audioBufferToMp3).toHaveBeenCalledTimes(1);
+            expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(3);
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+        });
+
+        it('ends succeeded when it lands during the last stem MP3', async () => {
+            useWavAndMp3();
+            const writingLastMp3 = createDeferred<void>();
+            mocks.writeNativeAudioStemFile
+                .mockResolvedValueOnce(undefined)
+                .mockResolvedValueOnce(undefined)
+                .mockResolvedValueOnce(undefined)
+                .mockReturnValueOnce(writingLastMp3.promise);
+            await startTwoStemExport();
+            await waitFor(() => {
+                expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(4);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                writingLastMp3.resolve();
+            });
+
+            await expectSucceededExportState();
+            expect(audioBufferToMp3).toHaveBeenCalledTimes(2);
+        });
+
         it('stops the later stems and ends cancelled when it lands during an earlier stem file', async () => {
             const writingFirst = createDeferred<void>();
             mocks.writeNativeAudioStemFile.mockReturnValueOnce(writingFirst.promise);
