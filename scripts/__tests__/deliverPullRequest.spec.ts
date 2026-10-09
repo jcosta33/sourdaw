@@ -11996,7 +11996,7 @@ describe('delivery shell boundary', () => {
             expect(runs).toHaveLength(1);
             const args = runs[0]?.args ?? [];
             expect(args.slice(0, 3)).toEqual(['-c', 'credential.helper=', '-c']);
-            expect(args[3]).toMatch(/^credential\.helper=\//);
+            expect(args[3]).toMatch(/^credential\.helper=!'\//);
             expect(args[3]).not.toContain('ghs_minted');
             expect(args.slice(4)).toEqual([
                 'fetch',
