@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { summarizeReviewDiff } from '../reviewDiffSummary.ts';
+import { changedReviewPaths, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 
 function fixtureRoot(): string {
     const root = mkdtempSync(join(tmpdir(), 'review-diff-summary-'));
@@ -76,5 +76,51 @@ describe('summarizeReviewDiff', () => {
             deleted: 4,
             binaryFiles: 0,
         });
+    });
+});
+
+describe('changedReviewPaths', () => {
+    it('classifies the source and destination of a rename record, counting the file once', () => {
+        const root = fixtureRoot();
+        const numstat = Buffer.from(['2\t4\t', 'src/components/Meter.tsx', 'src/app/Meter.tsx', ''].join('\0'));
+
+        expect(changedReviewPaths(root, numstat)).toEqual([
+            {
+                path: 'src/app/Meter.tsx',
+                group: 'handwritten',
+                added: 2,
+                deleted: 4,
+                binary: false,
+                previous: { path: 'src/components/Meter.tsx', group: 'handwritten' },
+            },
+        ]);
+        // One numstat record is one changed file: widening the classification to the rename's
+        // source must not double the size report the summary feeds (#4743).
+        expect(summarizeReviewDiff(root, numstat).files).toBe(1);
+    });
+
+    it('classifies a rename source by its own group, not the destination’s', () => {
+        const root = fixtureRoot();
+        const numstat = Buffer.from(['0\t3\t', 'src/modules/relay.ts', 'docs/relay.md', ''].join('\0'));
+
+        expect(changedReviewPaths(root, numstat)).toEqual([
+            {
+                path: 'docs/relay.md',
+                group: 'docs',
+                added: 0,
+                deleted: 3,
+                binary: false,
+                previous: { path: 'src/modules/relay.ts', group: 'handwritten' },
+            },
+        ]);
+    });
+
+    it('carries no source on a non-rename record', () => {
+        const root = fixtureRoot();
+        const numstat = Buffer.from(['1\t1\tsrc/app.ts', ''].join('\0'));
+
+        expect(changedReviewPaths(root, numstat)).toEqual([
+            { path: 'src/app.ts', group: 'handwritten', added: 1, deleted: 1, binary: false },
+        ]);
     });
 });

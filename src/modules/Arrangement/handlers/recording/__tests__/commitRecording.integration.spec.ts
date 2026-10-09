@@ -330,6 +330,8 @@ describe('recording gesture commit (issue #4439)', () => {
         // module's own actions, which this slice leaves alone.
         await stopRecording(8);
         flushAutomergeStorageWrites();
+        // A MIDI clip stays on its record point, whatever span its passes name.
+        const committedMidiClip = { id: provisional.id, startBeat: 4, endBeat: 8, type: 'midi' };
 
         const past = undoHistoryStore.value?.past ?? [];
         expect(past).toHaveLength(1);
@@ -338,7 +340,7 @@ describe('recording gesture commit (issue #4439)', () => {
             throw new Error('expected exactly one action history entry');
         }
         expect(entry.action.type).toBe('commitRecording');
-        expect(findClip(provisional.id)).toMatchObject({ id: provisional.id, startBeat: 4, endBeat: 8, type: 'midi' });
+        expect(findClip(provisional.id)).toMatchObject(committedMidiClip);
 
         await undo();
         flushAutomergeStorageWrites();
@@ -348,7 +350,7 @@ describe('recording gesture commit (issue #4439)', () => {
 
         await redo();
         flushAutomergeStorageWrites();
-        expect(findClip(provisional.id)).toMatchObject({ id: provisional.id, startBeat: 4, endBeat: 8, type: 'midi' });
+        expect(findClip(provisional.id)).toMatchObject(committedMidiClip);
         expect(takeRefs().map((take) => take.id)).toEqual(recordedTakeIds);
     });
 
@@ -546,5 +548,51 @@ describe('recording gesture commit (issue #4439)', () => {
         await redo();
         flushAutomergeStorageWrites();
         expect(clipIds().filter((id) => id === provisional.id)).toHaveLength(1);
+    });
+
+    it('commits the placed passes in the one entry and replays them on redo', async () => {
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Take 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+        });
+        flushAutomergeStorageWrites();
+        const recordedPlacements = (): (number | undefined)[][] =>
+            (takeLaneStore.value?.lanes ?? []).flatMap((lane) =>
+                lane.takes.map((take) => [take.passAnchorSeconds, take.passDepthSeconds])
+            );
+
+        // The capture began a quarter second (half a beat at 120 BPM) before the
+        // record point, and the clip opens on that origin. The take opened with
+        // the recording plays the clip's own media and is not placed; the pass
+        // starts a quarter second into the clip's media and into the recording.
+        await commitRecording(
+            { ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 3.5, endBeat: 6 },
+            { provisionalStartBeat: 4, mediaOriginSeconds: 1.75 }
+        );
+        flushAutomergeStorageWrites();
+        const placed = [
+            [undefined, undefined],
+            [0.25, 0.25],
+        ];
+
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
+        expect(recordedPlacements()).toEqual(placed);
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(recordedPlacements()).toEqual([]);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(recordedPlacements()).toEqual(placed);
     });
 });

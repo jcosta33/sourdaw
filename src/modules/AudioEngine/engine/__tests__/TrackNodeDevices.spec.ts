@@ -296,22 +296,29 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(track.getPeakLevel()).toBe(0);
         });
 
-        it('falls back to analyser time-domain peaks when SharedArrayBuffer is unavailable', () => {
+        it('falls back to per-channel analyser peaks when SharedArrayBuffer is unavailable', () => {
             mocks.hasSharedArrayBuffer.mockReturnValue(false);
             const track = new TrackNode('t1', makeDeps(ctx));
 
             expect(track.strip.meterNode).toBeNull();
-            const analyser = track.strip.analyserNode as unknown as ReturnType<typeof createMockAudioNode<'analyser'>>;
-            // Without the meter worklet the pan node feeds the analyser directly.
+            // Without the meter worklet the pan node still feeds the strip analyser.
             expect(
                 (track.strip.panNode as unknown as ReturnType<typeof createMockAudioNode<'stereo-panner'>>).connect
-            ).toHaveBeenCalledWith(analyser);
-            analyser.getFloatTimeDomainData.mockImplementation((buffer: Float32Array) => {
+            ).toHaveBeenCalledWith(track.strip.analyserNode);
+            // Creation order: the strip analyser, then the two fallback channel
+            // analysers (#5035: one per channel, so no mono down-mix).
+            const [, leftAnalyser, rightAnalyser] = ctx.createAnalyser.mock.results.map((result) => result.value);
+            leftAnalyser.getFloatTimeDomainData.mockImplementation((buffer: Float32Array) => {
                 buffer.fill(0);
                 buffer[0] = 0.3;
                 buffer[5] = -0.7;
             });
+            rightAnalyser.getFloatTimeDomainData.mockImplementation((buffer: Float32Array) => {
+                buffer.fill(0);
+                buffer[0] = 0.4;
+            });
 
+            // The louder channel's peak, not the average of the two.
             expect(track.getPeakLevel()).toBeCloseTo(0.7, 6);
         });
     });

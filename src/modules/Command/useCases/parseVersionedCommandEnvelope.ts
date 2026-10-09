@@ -7,11 +7,14 @@ import {
     type VersionedCommandEnvelope,
 } from '../models/VersionedCommandEnvelope';
 
+import { collectCommandIdReferences } from './collectCommandIdReferences';
 import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+import { getVersionedCommandReferencedTargets } from './getVersionedCommandReferencedTargets';
 import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
+import { readHandlerMintedApplicationIds } from './readHandlerMintedApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
 type ParseVersionedCommandEnvelopeResult =
@@ -216,6 +219,39 @@ function getRequiredApplicationAssignedIdArguments(
     return [rule.argument];
 }
 
+/**
+ * An envelope written before the handler-minted ids were recorded names none of them, and one
+ * written since names every one, so each is the whole set or nothing: a partial set is a record
+ * someone edited, not one either writer produced.
+ */
+function recordsAllOrNoneOf(
+    applicationAssignedIds: readonly CommandApplicationAssignedId[],
+    handlerMintedArguments: readonly string[]
+): boolean {
+    const recorded = handlerMintedArguments.filter((argument) =>
+        applicationAssignedIds.some((entry) => entry.argument === argument)
+    );
+    return recorded.length === 0 || recorded.length === handlerMintedArguments.length;
+}
+
+/**
+ * An id the command records as one it created may not also be an existing object it points at: the
+ * scope check sets assigned ids aside, so a record naming a protected target would hide it.
+ */
+function namesReferencedTarget(
+    operation: string,
+    objectReferences: readonly CommandObjectReference[],
+    applicationAssignedIds: readonly CommandApplicationAssignedId[]
+): boolean {
+    const assigned = new Set(applicationAssignedIds.map(({ value }) => value));
+    return getVersionedCommandReferencedTargets({ operation, objectReferences }).some(({ id }) => assigned.has(id));
+}
+
+/**
+ * The recorded object references are the current compilation, or the every-id list an envelope
+ * persisted before parameter ids stopped counting as objects recorded, so a pending approval or a
+ * recovery continuation written then still parses.
+ */
 function hasCanonicalArgumentMetadata(
     operation: string,
     argumentsValue: Record<string, unknown>,
@@ -224,8 +260,10 @@ function hasCanonicalArgumentMetadata(
     time: readonly CommandTimeReference[]
 ): boolean {
     const expected = compileCommandArgumentMetadata(argumentsValue, operation);
+    const recordedReferences = JSON.stringify(references);
     return (
-        JSON.stringify(references) === JSON.stringify(expected.objectReferences) &&
+        (recordedReferences === JSON.stringify(expected.objectReferences) ||
+            recordedReferences === JSON.stringify(collectCommandIdReferences(argumentsValue))) &&
         JSON.stringify(parameterUnits) === JSON.stringify(expected.parameterUnits) &&
         JSON.stringify(time) === JSON.stringify(expected.time)
     );
@@ -313,18 +351,26 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
     const requiredApplicationAssignedIdArguments = isRecord(argumentsValue)
         ? getRequiredApplicationAssignedIdArguments(value.operation, argumentsValue)
         : [];
+    const handlerMintedArguments = isRecord(argumentsValue)
+        ? readHandlerMintedApplicationIds(value.operation, argumentsValue).map(({ argument }) => argument)
+        : [];
     if (
         !Array.isArray(applicationAssignedIds) ||
         !applicationAssignedIds.every(isApplicationAssignedId) ||
         !isRecord(argumentsValue) ||
         new Set(applicationAssignedIds.map(({ argument }) => argument)).size !== applicationAssignedIds.length ||
-        applicationAssignedIds.some(({ argument }) => !requiredApplicationAssignedIdArguments.includes(argument)) ||
+        applicationAssignedIds.some(
+            ({ argument }) =>
+                !requiredApplicationAssignedIdArguments.includes(argument) && !handlerMintedArguments.includes(argument)
+        ) ||
+        !recordsAllOrNoneOf(applicationAssignedIds, handlerMintedArguments) ||
         applicationAssignedIds.some(
             ({ argument, value: assignedValue }) => getArgumentPathValue(argumentsValue, argument) !== assignedValue
         ) ||
         requiredApplicationAssignedIdArguments.some(
             (argument) => applicationAssignedIds.filter((entry) => entry.argument === argument).length !== 1
-        )
+        ) ||
+        namesReferencedTarget(value.operation, value.objectReferences, applicationAssignedIds)
     ) {
         return { status: 'invalid', reason: 'Application-assigned command IDs are invalid' };
     }

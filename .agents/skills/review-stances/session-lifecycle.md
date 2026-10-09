@@ -29,6 +29,18 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-10-08 — shutdown reclamation needs a release inside the poll pass (introduced by PR #2976)
+
+The native CI failure on PR #5064 occurred after the plugin's stop and destroy assertions passed;
+the final whole-cascade wall-clock assertion was 252.790917 ms against 250 ms. That result does not
+identify which cascade step or thread scheduling delay consumed the time.
+
+Blind spot: the test needed to pin the scheduler-release transition itself. Keep an extra runtime
+owner through the first retirement sweep, release it inside the first 2 ms poll callback, and require
+the next sweep to destroy it before another wait. Independently hold the owner across a synthetic
+wait longer than the 500 ms budget and require a retained, named abandonment with no second poll.
+This tests the lifecycle boundary and measured-wait budget without timing unrelated shutdown steps.
+
 ### 2026-08-29 — the gesture nobody walked (escaped via PR #3073, filed as #3096)
 
 PR #3073 (#3066) wired native live graph session start and stop into `startPlayback` and

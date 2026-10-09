@@ -720,7 +720,8 @@ const planPromptIntent = inject({ logger })(
                             // A hosted turn repeats the run's first message unchanged and carries the
                             // receipts as its own earlier turns; only a local backend reads the text
                             // form above, which restates them inside the prompt.
-                            { firstUserMessage: initialPlanningContext.message, history, budgetNote }
+                            { firstUserMessage: initialPlanningContext.message, history, budgetNote },
+                            planningContext.localMessage
                         );
                     },
                 });

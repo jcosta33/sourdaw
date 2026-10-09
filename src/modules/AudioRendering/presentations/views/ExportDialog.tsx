@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef } from 'react';
+import { type ReactElement, useEffect, useState, useRef } from 'react';
 
 import { zipSync } from 'fflate';
 import { Flame, X, CheckCircle2 } from 'lucide-react';
@@ -85,6 +85,7 @@ type WebFileHandle = {
     createWritable: () => Promise<{
         write: (data: Uint8Array) => Promise<void>;
         close: () => Promise<void>;
+        abort: () => Promise<void>;
     }>;
 };
 
@@ -194,7 +195,30 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [progress, setProgress] = useState(0);
     const [statusText, setStatusText] = useState('');
     const [errorText, setErrorText] = useState('');
+    // The success auto-close timers must belong to the export session that armed
+    // them: the props each timer closes over come from the render that started
+    // the export — `open` always true — so a user closing and reopening within
+    // the timer window would have the stale timer slam the fresh session shut.
+    // The session counter increments on every open transition; a timer fires
+    // only when its session still owns the dialog.
+    const openSessionRef = useRef(0);
+    const openRef = useRef(open);
+    openRef.current = open;
     const cancelledRef = useRef(false);
+
+    // AppShell keeps this dialog mounted and toggles only `open`, so the last
+    // export's progress, status and error would otherwise survive a close — a
+    // finished bake reopens showing "Baking Complete" with only Close Bakery,
+    // and a failure greets the next session with its stale error box.
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        openSessionRef.current += 1;
+        setProgress(0);
+        setStatusText('');
+        setErrorText('');
+    }, [open]);
 
     const loopAvailable = transport.loopEnd > transport.loopStart;
     const marqueeAvailable = clipSelection.marqueeSelection !== null;
@@ -362,6 +386,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const handleExport = async () => {
         setErrorText('');
         cancelledRef.current = false;
+        const session = openSessionRef.current;
         const ts = Date.now();
         const baseName = `Sourdaw_Bake_${ts}`;
 
@@ -427,6 +452,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setProgress(0);
         setStatusText('Heating the offline oven...');
 
+        // Set once the export's last file is being committed: the browser save's close, or the
+        // dispatch of the final native write. From then on the export has succeeded and a Cancel no
+        // longer decides its outcome, so the export ends in exactly one of the two states.
+        let committed = false;
+        const endedCancelled = (): boolean => cancelledRef.current && !committed;
+
         try {
             // Restore audio buffers from IndexedDB before rendering.
             // The primary CRDT load path (loadProject → projectCrdtToStores) does not
@@ -476,7 +507,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 buffer: AudioBuffer,
                 name: string,
                 fractionOffset: number,
-                fractionRange: number
+                fractionRange: number,
+                isFinalBuffer: boolean
             ) => {
                 // Normalize once, before the format loop, so every
                 // requested format is encoded from identical audio.
@@ -521,17 +553,29 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         fileData = await encodeWav(buffer, bd, passProgress, ditherOptions);
                     }
 
+                    // A Cancel pressed while this format was encoding stops here: the encoder
+                    // finished, but nothing of it may reach disk.
+                    if (cancelledRef.current) {
+                        return;
+                    }
+
                     const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
                     const finalFileName = `${name}.${freq}`;
 
+                    // The export's last file: once its write is dispatched nothing is left to stop, and a
+                    // native write cannot be recalled, so the export has succeeded whatever Cancel does next.
+                    const isFinalFile = isFinalBuffer && currentPass === formatList.length - 1;
+
                     if (isNativeProjectRuntimeAvailable()) {
                         if (mode === 'stems' && nativeDirPath) {
+                            committed = committed || isFinalFile;
                             await writeNativeAudioStemFile({
                                 bytes: uint8Data,
                                 directoryPath: nativeDirPath,
                                 fileName: finalFileName,
                             });
                         } else if (nativeFilePath) {
+                            committed = committed || isFinalFile;
                             await writeNativeAudioMixdownFile({
                                 bytes: uint8Data,
                                 format: freq,
@@ -596,7 +640,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setStatusText('Clip ready in the timeline.');
                 notifyUser('Rendered audio placed as a new clip', 'success');
                 setTimeout(() => {
-                    if (open) {
+                    if (openSessionRef.current === session && openRef.current) {
                         onClose();
                     }
                 }, 1500);
@@ -659,7 +703,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const stemOffset = 50 + (doneStems / totalStems) * 50;
                     const stemRange = 50 / totalStems;
 
-                    await serializeAudio(buffer, safeTName, stemOffset, stemRange);
+                    await serializeAudio(buffer, safeTName, stemOffset, stemRange, doneStems === totalStems - 1);
                     doneStems++;
                 }
             } else {
@@ -696,10 +740,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
 
                 // We map the remaining 40% of the progress bar to encoding the mixdown
-                await serializeAudio(buffer, baseName, 60, 40);
+                await serializeAudio(buffer, baseName, 60, 40, true);
             }
 
-            if (cancelledRef.current) {
+            if (endedCancelled()) {
                 return;
             }
 
@@ -727,7 +771,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 if (webFileHandle) {
                     // File System Access Method
                     const writable = await webFileHandle.createWritable();
+                    // A Cancel pressed while the file was being opened or written must not commit it:
+                    // closing a writable is what makes the file appear, so a cancelled one is aborted.
+                    if (cancelledRef.current) {
+                        await writable.abort();
+                        return;
+                    }
                     await writable.write(finalBytes);
+                    if (cancelledRef.current) {
+                        await writable.abort();
+                        return;
+                    }
+                    committed = true;
                     await writable.close();
                 } else {
                     // Fallback
@@ -739,16 +794,15 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             setStatusText('Ding! Baking Complete! 🍞');
             notifyUser('Ding! The audio finished baking', 'success');
 
-            // Auto-close after 2.5s
+            // Auto-close after 2.5s, only if this export's session still owns the dialog
             setTimeout(() => {
-                if (open) {
+                if (openSessionRef.current === session && openRef.current) {
                     onClose();
                 }
             }, 2500);
         } catch (error) {
-            if (cancelledRef.current) {
-                setStatusText('Oven turned off.');
-            } else {
+            // A Cancel's own failure is reported by the finally below.
+            if (!endedCancelled()) {
                 const msg = error instanceof Error ? error.message : 'Unknown oven malfunction';
                 logger.error(new Error('Export failed', { cause: error }));
                 setErrorText(msg);
@@ -758,7 +812,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
         } finally {
             // Always unlock the UI. On cancel, delay briefly so the status text is readable.
-            if (cancelledRef.current) {
+            if (endedCancelled()) {
+                // Every Cancel exit before the commit ends here, whether it threw or returned: the
+                // export is reported as cancelled, so the bar must not keep the encoder's last
+                // figure, and 100 would show the finished state. Native files written before the
+                // Cancel stay on disk; the Cancel only stops the formats or stems after them.
+                setProgress(0);
+                setStatusText('Oven turned off.');
                 setTimeout(() => setExporting(false), 1500);
             } else {
                 // Success or error — both unblock the button immediately.
@@ -780,6 +840,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         formats,
         selectedBitDepth: bitDepth,
     });
+
+    // The status slot is a fixed 40px row for the progress and ready layouts; a
+    // failure message wraps to several lines and needs the slot to grow, so the
+    // container drops to min-height exactly when this error branch renders.
+    const showOvenError = !exporting && progress !== 100 && errorText !== '';
 
     const renderOvenStatus = (): ReactElement => {
         if (exporting || progress === 100) {
@@ -814,11 +879,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 </Stack>
             );
         }
-        if (errorText) {
+        if (showOvenError) {
+            // A failure sets exporting=false and progress=0, so this branch is
+            // the only place the failure status is ever visible — keep it beside
+            // the error detail.
             return (
-                <Row className="h-full rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
-                    {errorText}
-                </Row>
+                <Stack gap={1} className="animate-in fade-in duration-300">
+                    <span className="text-xs font-medium text-red-400">{statusText}</span>
+                    <Row className="rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400">
+                        {errorText}
+                    </Row>
+                </Stack>
             );
         }
         return (
@@ -1277,7 +1348,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         title="Oven Status"
                         detail={isNativeProjectRuntimeAvailable() ? 'Desktop oven ready' : 'Web oven ready'}
                     >
-                        <div className="h-10">{renderOvenStatus()}</div>
+                        <div className={showOvenError ? 'min-h-10' : 'h-10'}>{renderOvenStatus()}</div>
                     </DawDialogSection>
 
                     {unbakedToasterPatterns.length > 0 ? (

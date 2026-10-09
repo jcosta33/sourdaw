@@ -1619,9 +1619,14 @@ export class LevainInstance {
     }
     /**
      * Discard a failed staged bank without changing the sounding bank.
+     *
+     * Allocates and frees nothing: the staged bank moves to the retired slot
+     * for `release_retired_bank` to free. Returns true when it retired a bank.
+     * @returns {boolean}
      */
     abort_sample_bank() {
-        wasm.levaininstance_abort_sample_bank(this.__wbg_ptr);
+        const ret = wasm.levaininstance_abort_sample_bank(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Get number of currently sounding voices.
@@ -1762,6 +1767,10 @@ export class LevainInstance {
     }
     /**
      * Atomically activate a successfully built staged PCM bank and zone map.
+     *
+     * Allocates and frees nothing: the displaced bank moves to a retired slot
+     * instead of being dropped. Returns false, leaving the bank staged, while
+     * that slot still holds an earlier bank.
      * @returns {boolean}
      */
     commit_sample_bank() {
@@ -1793,6 +1802,14 @@ export class LevainInstance {
      */
     handle_cc(cc, value) {
         wasm.levaininstance_handle_cc(this.__wbg_ptr, cc, value);
+    }
+    /**
+     * Whether a bank displaced by a commit is still waiting to be freed.
+     * @returns {boolean}
+     */
+    has_retired_bank() {
+        const ret = wasm.levaininstance_has_retired_bank(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * @param {number} sample_rate
@@ -1885,6 +1902,17 @@ export class LevainInstance {
         const ptr0 = passStringToWasm0(bank_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.levaininstance_publish_sample_bank(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * Free the displaced bank in bounded steps of at most `max_entries` PCM
+     * entries each. Returns true once nothing is left to free. Call it from a
+     * message of its own, never from `process` or alongside a commit.
+     * @param {number} max_entries
+     * @returns {boolean}
+     */
+    release_retired_bank(max_entries) {
+        const ret = wasm.levaininstance_release_retired_bank(this.__wbg_ptr, max_entries);
         return ret !== 0;
     }
     /**

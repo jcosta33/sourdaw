@@ -11,6 +11,7 @@ import {
     getAgentCapabilityCatalog,
     failMixAnalysis,
     initializeVoiceInputAvailability,
+    cancelActiveAgentRuns,
     recoverInterruptedAgentRuns,
     recoverRetainedSectionRenderEffects,
     setVoiceToggleEventBus,
@@ -61,7 +62,11 @@ import {
     startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
-import { clearAgentMeasurementArtifacts, stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
+import {
+    clearAgentMeasurementArtifacts,
+    clearAgentSectionRenderArtifacts,
+    stageAudioBufferAsset,
+} from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
     createOfflineAutomationEvaluator,
@@ -120,6 +125,7 @@ import {
     registerCrdtStorageRuntime,
     sessionUndoWitnessStampPort,
 } from '#/modules/CrdtDocument/useCases';
+import { setCrumbsEventBus } from '#/modules/Crumbs/stores';
 import {
     initCrumbsDeviceStatePersistence,
     prepareCrumbsEngine,
@@ -164,6 +170,8 @@ import {
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
     setAgentMeasurementArtifactsClearer,
+    setAgentSectionRenderArtifactsClearer,
+    setActiveAgentRunsCanceller,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
@@ -216,6 +224,8 @@ import {
 import { composeGrandBoule } from './composeGrandBoule';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
+import { initCrumbsModePush } from './initCrumbsModePush';
+import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
@@ -354,6 +364,13 @@ setClipAudioAssetStager(stageAudioBufferAsset);
 // imports Project's use cases, so Project cannot import AudioRendering's
 // barrel directly without a cycle. See agentMeasurementArtifactClearingState.ts.
 setAgentMeasurementArtifactsClearer(clearAgentMeasurementArtifacts);
+// Two more seams of the same shape: the retained section renders and the
+// in-flight agent runs both belong to the project being torn down, and each
+// implementation's module imports Project's barrel, so Project cannot import
+// either back. See agentSectionRenderArtifactsClearingState.ts and
+// activeAgentRunCancellationState.ts.
+setAgentSectionRenderArtifactsClearer(clearAgentSectionRenderArtifacts);
+setActiveAgentRunsCanceller(cancelActiveAgentRuns);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.
@@ -373,6 +390,7 @@ setMixAnalysisDisplayLifecycle({
 });
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
+setCrumbsEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
@@ -646,6 +664,19 @@ composeGrandBoule({ eventBus, logger });
 // stale-mirror window #4894 describes.
 initGrandBouleDocumentReconciliation();
 initCrumbsDeviceStatePersistence();
+// The same document-origin trigger the Grand Boule sweep uses, one home over:
+// a peer's Toaster kit, Levain instrument or Crumbs sample/mode commit, an
+// undo, or a bulk load rewrites the document without re-running any app
+// action, so a loaded device would keep its stale deviceState until reload
+// and its next local edit would commit that stale store over the peer's
+// change (#4764). Registered after the persistence subscribers so a device's
+// first appearance is already carrying what the document held.
+initDeviceStateReconciliation();
+// The strip half of every Crumbs mode change, panel and peer alike (#4764).
+// Registered after the persistence subscribers so a device's first appearance
+// is already carrying what the document held; the route's history and its
+// barrel-cycle home live on `initCrumbsModePush`.
+initCrumbsModePush(eventBus);
 // The native Crumbs instance follows the device's presence on the project, not
 // the panel's mount: the mapper splices a Crumbs device onto its strip by the
 // instance the engine holds, so a sampler whose window is shut would otherwise

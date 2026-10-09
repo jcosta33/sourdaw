@@ -6,6 +6,34 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-09 — cold navigation expired before its warmup allowance (introduced by PR #3222)
+
+The E2E global warmup gave the launch overlay 180 seconds but left the preceding `page.goto('/')`
+at Playwright's default 30 seconds. On a cold review server, navigation timed out before any selected
+spec could start. The slow load's underlying cause was not established.
+
+Blind spot: review checked the overlay wait's allowance without tracing every awaited operation that
+must complete before it. Probe the real warmup entry with a controlled monotonic clock: a 35-second
+navigation followed by a prompt overlay must pass under one 180-second deadline, while a hung
+navigation or late overlay must fail within that same deadline. Assert explicit positive remaining
+timeouts at both Playwright calls, identity validation before browser launch, and browser closure on
+success and failure. A controlled unit probe alone does not prove hosted browser-spec admission.
+
+### 2026-10-08 — a shutdown timing assertion measured more than its budget (introduced by PR #2976)
+
+A native CI run for PR #5064 completed plugin reclamation but failed the test's `elapsed < 250 ms`
+assertion at 252.790917 ms. The production budget charges only measured sleep during scheduler
+polling; the test timed the whole synchronous shutdown cascade and a separate releasing thread.
+The source of that run's extra wall time is unknown.
+
+Blind spot: a wall-clock bound on a larger operation cannot distinguish a slow unrelated cascade
+step or thread scheduling from a polling regression. Probe the private wait seam with a retained
+runtime: require the first requested poll to be exactly 2 ms, release the runtime in that callback,
+return a synthetic 252.790917 ms wait, and require reclamation with no second wait. Hold the runtime
+through a synthetic 502 ms wait in a companion case and require one poll plus an abandoned report.
+Mutating the request to the full budget, deferring the sweep until the end, or charging requested
+instead of measured time must turn the respective case red.
+
 ### 2026-10-07 — a retryable Playwright install could hang forever (introduced by PR #4228; tracked by #5047)
 
 PR #4228 added three attempts and backoff around `playwright install --with-deps`, but only a returned
@@ -21,6 +49,17 @@ attempts reach the final nonzero exit. Separately pin each real attempt and the 
 attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Standing probes
+
+- An aggregation test claiming a stored report route must use the production reader's filename and
+  assert that both input records were admitted. An ignored artifact can make a boundary control pass
+  while never reaching the claimed addition. For TypeSafe usage, prove stored scan plus verification
+  and evaluation-reader outcomes independently: exact `MAX_SAFE_INTEGER + 0` succeeds and the next
+  count refuses before record output. PR #4933 introduced the unchecked measurement addition; no
+  historical reviewer stance or tier is established by this lesson.
+- An SDK request test must execute in the server environment and capture the installed SDK's actual
+  fetch body. A browser-environment refusal or a caller-only serialization assertion proves neither
+  the exact wire string nor response-body timeout and cancellation. Preserve failed harness attempts
+  separately from qualified behavior reproductions.
 
 - For a queued MIDI expression test, cover both sides of the note lifetime: note-on before each member gesture, and every admitted gesture before note-off and the next same-channel note. Assert the recorded note fields through the byte dispatcher; a mocked handler call order that ends before release can pass while the curve is lost (PR #805).
 
@@ -100,6 +139,14 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-09 — a newly declared "every spec owes the first-paint bound" left literal 15 s and 30 s waits in place (escaped via commit `04c28be0f8`)
+
+Commit `04c28be0f8` declared in `tests/e2e/e2eUtils.ts` that every spec waiting on the launch overlay itself owes `LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS`, but did not sweep the specs that already waited with a literal bound; the 15 s in `promptBarCancelRecentTestId.spec.ts` came from commit `d78dac728a`. It surfaced only when two Playwright workers per runner added CPU contention and a cold boot was still on its loading overlay at 15 s.
+
+Blind spot: a contract written as prose ("every X owes Y") binds sites the diff never touches, and a green suite on the declaring head cannot show them, because the literals were sufficient until contention changed boot time.
+
+Probe that would have caught it: when a change declares an "every X owes Y" contract, grep every existing X, run a census of them against Y, and land the census as a spec that reads the real files and cannot pass by matching nothing.
 
 ### 2026-09-28 — one aggregate deadline hid cumulative closure work (CI run 36366521880, job 108754137864; introduced by PR #4775)
 

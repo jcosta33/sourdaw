@@ -156,8 +156,11 @@ impl LevainInstance {
     }
 
     /// Discard a failed staged bank without changing the sounding bank.
-    pub fn abort_sample_bank(&mut self) {
-        self.engine.abort_sample_bank();
+    ///
+    /// Allocates and frees nothing: the staged bank moves to the retired slot
+    /// for `release_retired_bank` to free. Returns true when it retired a bank.
+    pub fn abort_sample_bank(&mut self) -> bool {
+        self.engine.abort_sample_bank()
     }
 
     /// Attach an immutable PCM bank published in this rendering thread.
@@ -171,8 +174,24 @@ impl LevainInstance {
     }
 
     /// Atomically activate a successfully built staged PCM bank and zone map.
+    ///
+    /// Allocates and frees nothing: the displaced bank moves to a retired slot
+    /// instead of being dropped. Returns false, leaving the bank staged, while
+    /// that slot still holds an earlier bank.
     pub fn commit_sample_bank(&mut self) -> bool {
         self.engine.commit_sample_bank()
+    }
+
+    /// Whether a bank displaced by a commit is still waiting to be freed.
+    pub fn has_retired_bank(&self) -> bool {
+        self.engine.has_retired_bank()
+    }
+
+    /// Free the displaced bank in bounded steps of at most `max_entries` PCM
+    /// entries each. Returns true once nothing is left to free. Call it from a
+    /// message of its own, never from `process` or alongside a commit.
+    pub fn release_retired_bank(&mut self, max_entries: u32) -> bool {
+        self.engine.release_retired_bank(max_entries as usize)
     }
 
     /// Decoded PCM bytes retained by this instance's current shared bank.
