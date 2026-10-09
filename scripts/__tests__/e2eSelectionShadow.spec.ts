@@ -123,6 +123,8 @@ function withShadowCliCheckouts(
         | 'absent'
         | 'present'
         | 'malformed'
+        | 'zero-byte'
+        | 'comments-only'
         | 'partial'
         | 'deleted'
         | 'merge-deleted'
@@ -189,6 +191,12 @@ function withShadowCliCheckouts(
         writeFileSync(join(repository, 'src/feature.ts'), 'export const feature = true;\n');
         if (capability === 'malformed') {
             writeFileSync(join(repository, 'scripts/e2eSelectionShadowCertificate.json'), '{ invalid json\n');
+        }
+        if (capability === 'zero-byte' || capability === 'comments-only') {
+            writeFileSync(
+                join(repository, 'scripts/e2eSelectionShadow.ts'),
+                capability === 'zero-byte' ? '' : '// A declared capability with no TypeScript statements.\n'
+            );
         }
         if (capability === 'partial' || capability === 'deleted') {
             const removed = ['scripts/e2eSelectionShadowCertificate.json'];
@@ -462,6 +470,20 @@ describe('E2E selection shadow', () => {
             expect(report.failureReason).toMatch(/certificate/i);
         });
     }, 30_000);
+
+    it.each(['zero-byte', 'comments-only'] as const)(
+        'fails when a %s shadow TypeScript capability is declared',
+        (capability) => {
+            withShadowCliCheckouts(capability, (result, report) => {
+                expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                expect(report.measurementStatus).toBe('failed');
+                expect(report.failureReason).toMatch(
+                    /Declared shadow capability is code-free: scripts\/e2eSelectionShadow\.ts/
+                );
+            });
+        },
+        30_000
+    );
 
     it('fails when a declared shadow capability is only partly present', () => {
         withShadowCliCheckouts('partial', (result, report) => {

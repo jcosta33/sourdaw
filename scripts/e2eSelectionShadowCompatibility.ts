@@ -121,14 +121,18 @@ export function candidateShadowCapability(
                 throw new Error('Declared shadow certificate is malformed');
             }
         } else {
+            const sourceText = source.toString('utf8');
             const diagnostics =
-                ts.transpileModule(source.toString('utf8'), {
+                ts.transpileModule(sourceText, {
                     fileName: path,
                     reportDiagnostics: true,
                     compilerOptions: { target: ts.ScriptTarget.Latest },
                 }).diagnostics ?? [];
             if (diagnostics.some((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error)) {
                 throw new Error(`Declared shadow capability is malformed: ${path}`);
+            }
+            if (ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest).statements.length === 0) {
+                throw new Error(`Declared shadow capability is code-free: ${path}`);
             }
         }
     }

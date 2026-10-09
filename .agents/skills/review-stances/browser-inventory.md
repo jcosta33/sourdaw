@@ -24,3 +24,7 @@ PR #5140 added an advisory E2E shadow job but launched its CLI from the pull req
 ## Escape lesson from PR #5206
 
 For a successful older-head diagnostic, distinguish never-declared capability from deletion across every parent of a candidate merge. A path-limited default `git log` can prune the second parent when the merge tree matches an absent first parent; use full history and a real two-parent CLI fixture that declares capability only on the second parent. Also bind the integration merge's Playwright collection policy to the control revision before claiming a complete inventory: a later first-parent change to `testMatch` can admit a browser file the control collector omits even when selector and planner bytes match. The baseline probe must make both cases fail closed while genuine older absence still reports unsupported with zero measured reduction.
+
+## Further PR #5206 declaration probe
+
+The malformed-declaration stance missed a regular, head-bound TypeScript capability with no statements. An empty file or comment-only file passes transpile diagnostics, yet can be declared while the trusted control still completes the measurement. In the real candidate/integration/control CLI fixture, replace one declared TypeScript capability with each code-free form and require a failed report before measurement; keep the genuine never-declared older-head case on its unsupported full-inventory route. This probes declaration admission, not execution of candidate code.
