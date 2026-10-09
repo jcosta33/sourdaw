@@ -123,6 +123,15 @@ const NATIVE_ADDON_ARTIFACT = 'crates/sourdaw-native/sourdaw-native.node';
 // such spec added without this leg would otherwise skip on every hosted run
 // forever, and a written list is exactly what nobody updates.
 const NATIVE_ADDON_IMPORT = 'NATIVE_ADDON_FILE';
+// The cargo registry index cache layer keys its archive per job: the two
+// native macOS jobs consult different index entries, so a key shared across
+// jobs lets whichever job's post-save ran first fix the archived index for
+// both (#5094, #5136). The recorded snapshot re-records in lockstep with the
+// workflow it pins, so this scoping is asserted against the parsed workflow
+// itself, never against the fixture alone.
+const CARGO_INDEX_KEY_PREFIX = 'cargo-index-';
+const CACHE_ACTION_USES_PREFIX = 'actions/cache@';
+const JOB_SCOPE_EXPRESSION = '${{ github.job }}';
 const PNPM_SETUP_STEP = 'Set up pnpm';
 const NODE_SETUP_STEP = 'Set up Node';
 const PULL_REQUEST_EXCLUDED_JOBS = [
@@ -1060,6 +1069,93 @@ function assertNativeParityJob(candidate: UnknownRecord): void {
     for (const spec of specs) {
         if (!command.includes(spec)) {
             throw new Error(`native parity must run ${spec}`);
+        }
+    }
+}
+
+type CargoIndexCacheStep = { job: string; key: string; restorePrefixes: string[] };
+
+// Substitutes the per-job expression with the value each job evaluates it to,
+// so two templates that differ only by embedding `${{ github.job }}` compare
+// as the distinct runtime keys they are, while two jobs sharing the unscoped
+// form compare equal — the collision.
+function runtimeKeyShape(key: string, job: string): string {
+    return key.split(JOB_SCOPE_EXPRESSION).join(job);
+}
+
+function cargoIndexCacheSteps(candidate: UnknownRecord): CargoIndexCacheStep[] {
+    const found: CargoIndexCacheStep[] = [];
+    for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+        const job = asRecord(jobValue, `${jobId} job`);
+        const steps = job.steps === undefined ? [] : arrayAt(job, 'steps');
+        for (const step of steps) {
+            const stepRecord = asRecord(step, 'step');
+            if (typeof stepRecord.uses !== 'string' || !stepRecord.uses.startsWith(CACHE_ACTION_USES_PREFIX)) {
+                continue;
+            }
+            if (stepRecord.with === null || typeof stepRecord.with !== 'object' || Array.isArray(stepRecord.with)) {
+                continue;
+            }
+            const stepWith = asRecord(stepRecord.with, 'with');
+            const key = stepWith.key;
+            if (typeof key !== 'string' || !key.startsWith(CARGO_INDEX_KEY_PREFIX)) {
+                continue;
+            }
+            const restoreKeys = stepWith['restore-keys'];
+            found.push({
+                job: jobId,
+                key,
+                restorePrefixes:
+                    typeof restoreKeys === 'string'
+                        ? restoreKeys.split('\n').filter((line) => line.trim().length > 0)
+                        : [],
+            });
+        }
+    }
+    return found;
+}
+
+/**
+ * The recorded snapshot re-records in lockstep with the workflow it pins, so a
+ * cargo-index key reverted from the per-job form would re-bless itself green.
+ * This reads the parsed workflow directly: no two jobs may share a runtime key
+ * or restore prefix — the poisoning race the per-job scoping exists to end —
+ * and every key and restore line must carry the per-job expression that keeps
+ * them distinct at runtime. The equality clauses run before the expression
+ * checks so each can be observed failing on its own mutation.
+ */
+function assertCargoIndexCacheKeysJobScoped(candidate: UnknownRecord): void {
+    const cargoIndexSteps = cargoIndexCacheSteps(candidate);
+    if (cargoIndexSteps.length === 0) {
+        throw new Error('the cargo registry index cache layer must keep a keyed actions/cache step');
+    }
+    for (const [index, entry] of cargoIndexSteps.entries()) {
+        const entryShape = runtimeKeyShape(entry.key, entry.job);
+        const entryPrefixes = entry.restorePrefixes.map((prefix) => runtimeKeyShape(prefix, entry.job));
+        for (const other of cargoIndexSteps.slice(index + 1)) {
+            if (other.job === entry.job) {
+                continue;
+            }
+            const otherShape = runtimeKeyShape(other.key, other.job);
+            const otherPrefixes = other.restorePrefixes.map((prefix) => runtimeKeyShape(prefix, other.job));
+            if (otherShape === entryShape) {
+                throw new Error(`the ${entry.job} and ${other.job} cargo-index cache keys must differ per job`);
+            }
+            for (const prefix of entryPrefixes) {
+                if (otherPrefixes.includes(prefix)) {
+                    throw new Error(`the ${entry.job} and ${other.job} cargo-index restore keys must differ per job`);
+                }
+            }
+        }
+    }
+    for (const entry of cargoIndexSteps) {
+        if (!entry.key.includes(JOB_SCOPE_EXPRESSION)) {
+            throw new Error(`the ${entry.job} cargo-index cache key must embed ${JOB_SCOPE_EXPRESSION}`);
+        }
+        for (const prefix of entry.restorePrefixes) {
+            if (!prefix.includes(JOB_SCOPE_EXPRESSION)) {
+                throw new Error(`the ${entry.job} cargo-index restore keys must embed ${JOB_SCOPE_EXPRESSION}`);
+            }
         }
     }
 }
@@ -3645,6 +3741,54 @@ describe('health gates workflow contract', () => {
             `test -f ${NATIVE_ADDON_ARTIFACT}.built`;
         expect(() => assertNativeParityJob(misdirectedGuard)).toThrow(
             'native parity must accept the addon its own builder produces'
+        );
+    });
+
+    it('scopes every cargo registry index cache key and restore key to its own job', () => {
+        expect(() => assertCargoIndexCacheKeysJobScoped(validationWorkflow)).not.toThrow();
+
+        // The pre-#5136 shared forms. The recorded escape: revert a native job
+        // to these and re-record the snapshot — the snapshot leg greens in
+        // lockstep, while this named pin reads the workflow and stays red.
+        const sharedKey = "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}";
+        const sharedRestoreKeys = 'cargo-index-${{ runner.os }}-${{ runner.arch }}-\n';
+
+        const sharedKeyJob = asRecord(structuredClone(validationWorkflow), 'shared cargo-index key');
+        const sharedKeyStep = stepNamed(jobAt(sharedKeyJob, 'native-macos'), 'Cache the cargo registry index');
+        recordAt(sharedKeyStep, 'with').key = sharedKey;
+        recordAt(sharedKeyStep, 'with')['restore-keys'] = sharedRestoreKeys;
+        expect(() => assertCargoIndexCacheKeysJobScoped(sharedKeyJob)).toThrow(
+            'the native-macos cargo-index cache key must embed ${{ github.job }}'
+        );
+
+        // A key that keeps its job scope but restores on the shared prefix
+        // still hands the other macOS job's index over on a partial match.
+        const sharedRestoreJob = asRecord(structuredClone(validationWorkflow), 'shared cargo-index restore keys');
+        const sharedRestoreStep = stepNamed(jobAt(sharedRestoreJob, 'native-macos'), 'Cache the cargo registry index');
+        recordAt(sharedRestoreStep, 'with')['restore-keys'] = sharedRestoreKeys;
+        expect(() => assertCargoIndexCacheKeysJobScoped(sharedRestoreJob)).toThrow(
+            'the native-macos cargo-index restore keys must embed ${{ github.job }}'
+        );
+
+        // Both macOS jobs on the shared key is the poisoning race itself: the
+        // cross-job equality clauses refuse it before the expression checks run.
+        const collidingJobs = asRecord(structuredClone(validationWorkflow), 'colliding cargo-index keys');
+        for (const jobId of ['native-macos', 'native-parity'] as const) {
+            const collidingStep = stepNamed(jobAt(collidingJobs, jobId), 'Cache the cargo registry index');
+            recordAt(collidingStep, 'with').key = sharedKey;
+            recordAt(collidingStep, 'with')['restore-keys'] = sharedRestoreKeys;
+        }
+        expect(() => assertCargoIndexCacheKeysJobScoped(collidingJobs)).toThrow(
+            'the native-macos and native-parity cargo-index cache keys must differ per job'
+        );
+
+        // A removed layer must vacate this pin loudly rather than guard nothing.
+        const emptiedJobs = asRecord(structuredClone(validationWorkflow), 'emptied cargo-index layer');
+        for (const jobId of ['native-macos', 'native-windows', 'native-parity'] as const) {
+            removeStepNamed(jobAt(emptiedJobs, jobId), 'Cache the cargo registry index');
+        }
+        expect(() => assertCargoIndexCacheKeysJobScoped(emptiedJobs)).toThrow(
+            'the cargo registry index cache layer must keep a keyed actions/cache step'
         );
     });
 
