@@ -1,3 +1,5 @@
+import { logger } from '#/infra/logger/appLogger';
+
 import { audioEngine } from '../createWebAudioEngine';
 
 import {
@@ -7,8 +9,10 @@ import {
     type MonitorCapture,
     type MonitorCaptureKey,
 } from './inputMonitoringSession';
+import { releaseMonitorCapture } from './releaseMonitorCapture';
 import { releaseTrackMonitorEdge } from './releaseTrackMonitorEdge';
 import { stopStreamTracks } from './stopStreamTracks';
+import { stopTrackInputMonitoring } from './stopTrackInputMonitoring';
 
 /**
  * Gives one track a listening edge from the capture of its selected input.
@@ -37,11 +41,11 @@ export async function startInputMonitoring(
     }
     const key = inputId;
     const previousKey = inputMonitoringSession.trackKeys.get(trackId);
-    if (previousKey !== undefined && previousKey !== key) {
-        releaseTrackMonitorEdge(trackId, previousKey);
-    }
-    inputMonitoringSession.trackKeys.set(trackId, key);
     try {
+        if (previousKey !== undefined && previousKey !== key) {
+            releaseTrackMonitorEdge(trackId, previousKey);
+        }
+        inputMonitoringSession.trackKeys.set(trackId, key);
         const capture = inputMonitoringSession.captures.get(key);
         if (capture) {
             // Also re-ensures an existing owner's edge against HMR strip replacement.
@@ -52,9 +56,13 @@ export async function startInputMonitoring(
         await request.catch(() => null);
         // The capture settlement connected every owner still interested in this key.
         return inputMonitoringSession.captures.get(key)?.monitorEdges.has(trackId) === true;
-    } catch {
-        inputMonitoringSession.trackKeys.delete(trackId);
-        inputMonitoringAdmissionChecks.delete(trackId);
+    } catch (error) {
+        try {
+            stopTrackInputMonitoring(trackId);
+        } catch (cleanupError) {
+            logger.error(new Error(`Failed to release input monitoring on track ${trackId}`, { cause: cleanupError }));
+        }
+        logger.error(new Error(`Failed to connect input monitoring on track ${trackId}`, { cause: error }));
         return false;
     }
 }
@@ -77,13 +85,37 @@ function beginCaptureAcquisition(key: MonitorCaptureKey): Promise<MediaStream> {
     inputMonitoringSession.pendingRequests.set(key, request);
     void request.then(
         (stream) => {
-            settleCaptureGrant(key, request, stream);
+            try {
+                settleCaptureGrant(key, request, stream);
+            } catch (error) {
+                releaseFailedCaptureGrant(key, stream, error);
+            }
         },
         () => {
             refuseCaptureGrant(key, request);
         }
     );
     return request;
+}
+
+/** A failed graph attachment still owns a granted device until its terminal cleanup completes. */
+function releaseFailedCaptureGrant(key: MonitorCaptureKey, stream: MediaStream, error: unknown): void {
+    for (const trackId of monitorOwnersFor(key)) {
+        inputMonitoringSession.trackKeys.delete(trackId);
+        inputMonitoringAdmissionChecks.delete(trackId);
+    }
+    const capture = inputMonitoringSession.captures.get(key);
+    try {
+        if (capture) {
+            capture.monitorEdges.clear();
+            releaseMonitorCapture(key);
+        } else {
+            stopStreamTracks(stream);
+        }
+    } catch (cleanupError) {
+        logger.error(new Error('Failed to release granted input monitoring', { cause: cleanupError }));
+    }
+    logger.error(new Error('Failed to attach granted input monitoring', { cause: error }));
 }
 
 /** Adopts a granted stream, or releases a superseded one exactly once. */
@@ -113,7 +145,20 @@ function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
     };
     inputMonitoringSession.captures.set(key, capture);
     for (const trackId of interested) {
-        connectMonitorEdge(trackId, capture);
+        try {
+            connectMonitorEdge(trackId, capture);
+        } catch (error) {
+            inputMonitoringSession.trackKeys.delete(trackId);
+            inputMonitoringAdmissionChecks.delete(trackId);
+            logger.error(new Error(`Failed to attach granted input monitoring on track ${trackId}`, { cause: error }));
+        }
+    }
+    if (capture.monitorEdges.size === 0) {
+        try {
+            releaseMonitorCapture(key);
+        } catch (error) {
+            logger.error(new Error('Failed to release unattached input monitoring', { cause: error }));
+        }
     }
 }
 

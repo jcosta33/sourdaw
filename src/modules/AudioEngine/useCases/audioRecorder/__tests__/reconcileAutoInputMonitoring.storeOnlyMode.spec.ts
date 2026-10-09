@@ -134,6 +134,69 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
         });
     });
 
+    it.each(['mode', 'input', 'owner'] as const)(
+        'rejects a direct On grant after its %s changes without a reconciliation subscriber',
+        async (change) => {
+            publishTracks([track('on')]);
+            const grant = deferGrant();
+            const opening = startInputMonitoring('track-1', 'input-1');
+            if (change === 'owner') {
+                publishTracks([]);
+            } else {
+                publishTracks([
+                    track(change === 'mode' ? 'off' : 'on', { inputId: change === 'input' ? 'input-2' : 'input-1' }),
+                ]);
+            }
+            const granted = liveStream();
+            grant(granted);
+
+            expect(await opening).toBe(false);
+            expect(harness.createMediaStreamSource).not.toHaveBeenCalled();
+            expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it('moves an already admitted On edge to the selected input without admitting other store-only On tracks', async () => {
+        publishTracks([track('on'), track('on', { id: 'track-2' })]);
+        unsubscribe = syncAutoInputMonitoring();
+        expect(harness.getUserMedia).not.toHaveBeenCalled();
+        const oldGrant = deferGrant();
+        const opening = startInputMonitoring('track-1', 'input-1');
+        const oldStream = liveStream();
+        oldGrant(oldStream);
+        expect(await opening).toBe(true);
+        const nextGrant = deferGrant();
+
+        publishTracks([track('on', { inputId: 'input-2' }), track('on', { id: 'track-2' })]);
+
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(2);
+        expect(harness.getUserMedia).toHaveBeenLastCalledWith({
+            audio: expect.objectContaining({ deviceId: { exact: 'input-2' } }),
+        });
+        expect(oldStream.stopTrack).toHaveBeenCalledTimes(1);
+        const nextStream = liveStream();
+        nextGrant(nextStream);
+        await Promise.all(harness.opens);
+        expect(isTrackInputMonitored('track-1', 'input-2')).toBe(true);
+        expect(isTrackInputMonitored('track-2', 'input-1')).toBe(false);
+    });
+
+    it('retains an explicit global capture key through an unrelated publication of an unchanged selector', async () => {
+        publishTracks([track('on')]);
+        unsubscribe = syncAutoInputMonitoring();
+        const grant = deferGrant();
+        const opening = startInputMonitoring('track-1', 'global-input');
+        const granted = liveStream();
+        grant(granted);
+        expect(await opening).toBe(true);
+
+        publishTracks([track('on', { name: 'Renamed' })]);
+
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+        expect(isTrackInputMonitored('track-1', 'global-input')).toBe(true);
+        expect(granted.stopTrack).not.toHaveBeenCalled();
+    });
+
     it('releases a live Auto edge when a store-only write turns the track Off', async () => {
         const grant = deferGrant();
         reconcileAutoInputMonitoring();

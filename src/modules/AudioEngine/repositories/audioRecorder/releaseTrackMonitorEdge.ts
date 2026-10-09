@@ -1,3 +1,5 @@
+import { runAllEffects } from '#/utils/runEffects';
+
 import { inputMonitoringSession, type MonitorCaptureKey } from './inputMonitoringSession';
 import { releaseMonitorCapture } from './releaseMonitorCapture';
 
@@ -18,9 +20,17 @@ export function releaseTrackMonitorEdge(trackId: string, key: MonitorCaptureKey)
     const destination = capture.monitorEdges.get(trackId);
     if (destination !== undefined) {
         capture.monitorEdges.delete(trackId);
-        capture.monitorSource.disconnect(destination);
     }
-    if (capture.monitorEdges.size === 0) {
-        releaseMonitorCapture(key);
-    }
+    runAllEffects([
+        () => {
+            if (destination !== undefined) {
+                capture.monitorSource.disconnect(destination);
+            }
+        },
+        () => {
+            if (capture.monitorEdges.size === 0) {
+                releaseMonitorCapture(key);
+            }
+        },
+    ]);
 }

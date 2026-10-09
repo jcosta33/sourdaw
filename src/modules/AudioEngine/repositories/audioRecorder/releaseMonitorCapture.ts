@@ -1,3 +1,5 @@
+import { runAllEffects } from '#/utils/runEffects';
+
 import { inputMonitoringSession, type MonitorCaptureKey } from './inputMonitoringSession';
 import { stopStreamTracks } from './stopStreamTracks';
 
@@ -13,6 +15,5 @@ export function releaseMonitorCapture(key: MonitorCaptureKey): void {
         return;
     }
     inputMonitoringSession.captures.delete(key);
-    capture.monitorSource.disconnect();
-    stopStreamTracks(capture.monitorStream);
+    runAllEffects([() => capture.monitorSource.disconnect(), () => stopStreamTracks(capture.monitorStream)]);
 }

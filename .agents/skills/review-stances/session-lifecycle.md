@@ -226,3 +226,19 @@ retain an owner, or connect an edge. Change the committed selected input during 
 await and while permission is pending; admission must use current committed intent and a late
 grant must attach only current owners of that input. Include a shared pending survivor and
 last-owner removal so rejecting one stale restore cannot orphan another owner's capture.
+
+The follow-up head in PR #5091 (`fac4a4f061`) fenced restored owners but left ordinary
+On grants unfenced. Hold two direct On owners on one pending input, commit deletion of one,
+commit the survivor's input selector change, then grant the old request: it must connect neither
+removed nor switched owner, and the selected input must retain the survivor's admitted intent.
+Repeat without a reconciliation subscriber to prove the grant itself checks current intent.
+A store-only On track is not a new admission, and an unrelated publication must preserve an
+unflushed explicit On and an unchanged global input selection.
+
+The deletion probe also omitted disconnect faults. PR #4255's per-track release and PR #4449's
+keyed capture path could remove the logical owner, throw from the targeted disconnect, and
+leave the last capture's stream running; a whole-source disconnect throw could skip stream stop.
+Through real Command removal, fault targeted and whole-source disconnect independently and
+together. Inspect retained captures, actual modeled source edges and MediaStreamTrack.stop,
+not only owner keys. Last-owner release must attempt every terminal step while reporting errors;
+a failed removed edge must preserve the shared survivor until its own eventual release.

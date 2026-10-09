@@ -7,7 +7,9 @@ import { readMonitorTeardownEpoch } from '../../repositories/audioRecorder/readM
 import { isAutoInputMonitoringHeld } from '../../services/autoInputMonitoringSuspension';
 import { hasCommittedInputMonitoringTrack } from '../../stores/inputMonitoringProjectAccess';
 
+import { admitInputMonitoring } from './admitInputMonitoring';
 import { deriveAutoMonitorEdge } from './deriveAutoInputMonitoring';
+import { readChangedInputMonitoringAdmission } from './readChangedInputMonitoringAdmission';
 import { startInputMonitoring } from './startInputMonitoring';
 import { stopTrackInputMonitoring } from './stopTrackInputMonitoring';
 
@@ -44,7 +46,35 @@ function closeEdge(trackId: string): void {
     stopTrackInputMonitoring(trackId);
 }
 
-function openEdge(trackId: string, inputId: string | null): void {
+function followAdmittedOnInput(trackId: string, interestedIds: Set<string>): void {
+    if (!interestedIds.has(trackId)) {
+        return;
+    }
+    const changed = readChangedInputMonitoringAdmission(trackId);
+    if (changed) {
+        openEdge(trackId, changed.inputId, changed.readIntent);
+    }
+}
+
+function reconcileNonAudioTrack(
+    track: NonNullable<typeof trackStore.value>['tracks'][number],
+    interestedIds: Set<string>
+): void {
+    if (
+        (!getTrackEligibility(track.kind).acceptsMonitoring || track.inputMonitoring !== 'on') &&
+        interestedIds.has(track.id)
+    ) {
+        closeEdge(track.id);
+    } else if (track.inputMonitoring === 'on') {
+        followAdmittedOnInput(track.id, interestedIds);
+    }
+}
+
+function openEdge(
+    trackId: string,
+    inputId: string | null,
+    readIntent?: Parameters<typeof admitInputMonitoring>[2]
+): void {
     const previous = openRequests.get(trackId);
     if (previous?.inputId === inputId && previous.refused) {
         return;
@@ -65,7 +95,13 @@ function openEdge(trackId: string, inputId: string | null): void {
     // doing, not a refusal, so only a failure under the epoch the open began in
     // suppresses retries.
     const refusedBy = (opened: boolean): boolean => !opened && readMonitorTeardownEpoch() === teardownEpoch;
-    void startInputMonitoring(trackId, inputId).then(
+    let opening: Promise<boolean>;
+    if (readIntent) {
+        opening = admitInputMonitoring(trackId, inputId, readIntent);
+    } else {
+        opening = startInputMonitoring(trackId, inputId);
+    }
+    void opening.then(
         (opened) => {
             request.refused = refusedBy(opened);
         },
@@ -101,12 +137,7 @@ export function reconcileAutoInputMonitoring(): void {
     for (const track of tracks) {
         presentIds.add(track.id);
         if (track.kind !== 'audio') {
-            if (
-                (!getTrackEligibility(track.kind).acceptsMonitoring || track.inputMonitoring !== 'on') &&
-                interestedIds.has(track.id)
-            ) {
-                closeEdge(track.id);
-            }
+            reconcileNonAudioTrack(track, interestedIds);
             continue;
         }
         const edge = deriveAutoMonitorEdge({
@@ -125,7 +156,11 @@ export function reconcileAutoInputMonitoring(): void {
             // A store-only write (a restored version, a collaborator) can turn
             // a track Off without the gesture that admitted its capture.
             closeEdge(track.id);
-        } else if (track.inputMonitoring === 'on' && openRequests.get(track.id)?.refused) {
+        } else if (track.inputMonitoring === 'on') {
+            followAdmittedOnInput(track.id, interestedIds);
+            if (!openRequests.get(track.id)?.refused) {
+                continue;
+            }
             // On keeps whatever edge this owner holds, so a later Off can still
             // release it. Only a refusal is forgiven: the user now asks for input.
             openRequests.delete(track.id);

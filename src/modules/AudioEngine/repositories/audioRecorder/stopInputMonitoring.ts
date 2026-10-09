@@ -1,3 +1,5 @@
+import { runAllEffects } from '#/utils/runEffects';
+
 import {
     inputMonitoringAdmissionChecks,
     inputMonitoringSession,
@@ -19,16 +21,19 @@ import { releaseMonitorCapture } from './releaseMonitorCapture';
 export function stopInputMonitoring(): void {
     inputMonitoringSession.teardownEpoch++;
     const keys: MonitorCaptureKey[] = [...inputMonitoringSession.captures.keys()];
+    const effects: Array<() => void> = [];
     for (const key of keys) {
         const capture = inputMonitoringSession.captures.get(key);
         if (capture) {
             for (const destination of capture.monitorEdges.values()) {
-                capture.monitorSource.disconnect(destination);
+                effects.push(() => capture.monitorSource.disconnect(destination));
             }
+            capture.monitorEdges.clear();
         }
-        releaseMonitorCapture(key);
+        effects.push(() => releaseMonitorCapture(key));
     }
     inputMonitoringSession.trackKeys.clear();
     inputMonitoringAdmissionChecks.clear();
     inputMonitoringSession.pendingRequests.clear();
+    runAllEffects(effects);
 }

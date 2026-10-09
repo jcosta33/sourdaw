@@ -207,3 +207,13 @@ retain an owner, or connect an edge. Change the committed selected input during 
 await and while permission is pending; admission must use current committed intent and a late
 grant must attach only current owners of that input. Include a shared pending survivor and
 last-owner removal so rejecting one stale restore cannot orphan another owner's capture.
+
+PR #5091's restore repair (`319cc5b5f8`, retained by `fac4a4f061`) awaited microphone
+permission inside sequential restored-track effects and serialized Undo. A successful snapshot
+assertion after granting permission missed the blocked history. Bulk-delete two saved On tracks
+with independent inputs and Undo while the first permission stays held: both requests must
+start, the Undo promise and history transition must complete, and a later real Undo/Redo must
+finish before either grant. Permission work belongs to an admitted runtime continuation, with
+fresh committed mode/input and owner checks at settlement. Cover denial and late grant after
+committed deletion, Off and input change through both normal and published-but-throwing restore;
+none may roll back committed truth or leave an unhandled continuation.

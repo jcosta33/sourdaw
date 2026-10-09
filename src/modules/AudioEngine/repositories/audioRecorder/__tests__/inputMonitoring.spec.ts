@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { startInputMonitoring } from '../inputMonitoring';
+import { inputMonitoringSession } from '../inputMonitoringSession';
 import { stopInputMonitoring } from '../stopInputMonitoring';
 import { stopTrackInputMonitoring } from '../stopTrackInputMonitoring';
 
@@ -30,6 +33,8 @@ const getUserMedia = vi.hoisted(() => vi.fn<GetUserMedia>());
 const createMediaStreamSource = vi.hoisted(() => vi.fn<CreateMediaStreamSource>());
 const ensureTrackStrip = vi.hoisted(() => vi.fn<EnsureTrackStrip>());
 const originalMediaDevices = globalThis.navigator.mediaDevices;
+
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn() } }));
 
 vi.mock('../../createWebAudioEngine', () => ({
     audioEngine: {
@@ -190,6 +195,54 @@ describe('inputMonitoring', () => {
         expect(ensureTrackStrip).toHaveBeenNthCalledWith(2, 't2');
         expect(mockSourceNode.connect).toHaveBeenNthCalledWith(1, firstMockStrip.gainNode);
         expect(mockSourceNode.connect).toHaveBeenNthCalledWith(2, secondMockStrip.gainNode);
+    });
+
+    it('releases a granted stream and reports a graph connection failure without an unhandled continuation', async () => {
+        const { stream, trackStop } = streamWithStoppedTrack();
+        const connectionFailure = new Error('Monitor strip unavailable');
+        getUserMedia.mockResolvedValue(stream);
+        createMediaStreamSource.mockReturnValue(createMockSourceNode());
+        ensureTrackStrip.mockImplementation(() => {
+            throw connectionFailure;
+        });
+
+        expect(await startInputMonitoring('t1')).toBe(false);
+        expect(inputMonitoringSession.trackKeys.size).toBe(0);
+        expect(inputMonitoringSession.captures.size).toBe(0);
+        expect(trackStop).toHaveBeenCalledOnce();
+        expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({ cause: connectionFailure }));
+    });
+
+    it('retains a healthy shared owner when another owner fails graph attachment', async () => {
+        const { stream, trackStop } = streamWithStoppedTrack();
+        const source = createMockSourceNode();
+        const gainA = { id: 'gain-a' };
+        const connectionFailure = new Error('Second monitor strip unavailable');
+        getUserMedia.mockResolvedValue(stream);
+        createMediaStreamSource.mockReturnValue(source);
+        ensureTrackStrip.mockImplementation((trackId) => {
+            if (trackId === 'b') {
+                throw connectionFailure;
+            }
+            return createMockStrip(gainA);
+        });
+        const first = startInputMonitoring('a');
+        const failed = startInputMonitoring('b');
+
+        expect(await first).toBe(true);
+        expect(await failed).toBe(false);
+        expect([...inputMonitoringSession.trackKeys.keys()]).toEqual(['a']);
+        const capture = inputMonitoringSession.captures.get(null);
+        if (!capture) {
+            throw new Error('Expected the healthy shared capture');
+        }
+        expect([...capture.monitorEdges.keys()]).toEqual(['a']);
+        expect(source.connect).toHaveBeenCalledWith(gainA);
+        expect(source.disconnect).not.toHaveBeenCalled();
+        expect(trackStop).not.toHaveBeenCalled();
+        expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({ cause: connectionFailure }));
+        stopTrackInputMonitoring('a');
+        expect(trackStop).toHaveBeenCalledOnce();
     });
 
     it('should return false on getUserMedia failure', async () => {

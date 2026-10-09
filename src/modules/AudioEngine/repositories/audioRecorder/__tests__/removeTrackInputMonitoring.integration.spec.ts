@@ -16,7 +16,7 @@ import {
     syncAutoInputMonitoring,
 } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, undo } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { createCrdtDoc, getCrdtDoc, mutateCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { inputMonitoringSession } from '../inputMonitoringSession';
@@ -64,6 +64,7 @@ function deferredGrant() {
 describe('track deletion releases the input monitor at Command commit', () => {
     const originalMediaDevices = globalThis.navigator.mediaDevices;
     const source = { connect: vi.fn(), disconnect: vi.fn() };
+    const connectedGains = new Set<unknown>();
     const inputTrack = { stop: vi.fn() };
     const stream = { getTracks: vi.fn(() => [inputTrack]) };
     const gains = new Map([
@@ -109,6 +110,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
         docTrackIdsAtConnect = [];
         docTrackIdsAtStop = [];
         docTrackIdsAtDisconnect = [];
+        connectedGains.clear();
         clearHandlerRegistry();
         const handlers = getArrangementHandlers();
         registerHandlerMap({
@@ -116,6 +118,8 @@ describe('track deletion releases the input monitor at Command commit', () => {
             removeAllTracks: handlers.removeAllTracks,
             restoreTrack: handlers.restoreTrack,
             restoreTracks: handlers.restoreTracks,
+            setTrackInput: handlers.setTrackInput,
+            restoreTrackInput: handlers.restoreTrackInput,
         });
         clearUndoHistory();
         setArrangementEventBus({ emit: async () => undefined });
@@ -155,10 +159,16 @@ describe('track deletion releases the input monitor at Command commit', () => {
             docTrackIdsAtStop = docTrackIds();
         });
         engine.initializeTrackStripFromSnapshot.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
-        source.connect.mockImplementation(() => {
+        source.connect.mockImplementation((destination: unknown) => {
+            connectedGains.add(destination);
             docTrackIdsAtConnect.push(docTrackIds());
         });
-        source.disconnect.mockImplementation(() => {
+        source.disconnect.mockImplementation((destination?: unknown) => {
+            if (destination === undefined) {
+                connectedGains.clear();
+            } else {
+                connectedGains.delete(destination);
+            }
             docTrackIdsAtDisconnect.push(docTrackIds());
         });
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
@@ -246,6 +256,186 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(inputTrack.stop).toHaveBeenCalledOnce();
         expect(docTrackIdsAtStop).toEqual([]);
         expect(docTrackIdsAtDisconnect).toEqual([[], [], []]);
+    });
+
+    it.each(['edge', 'source', 'both'] as const)(
+        'stops the last committed owner even when %s disconnect fails',
+        async (fault) => {
+            await startInputMonitoring('a', null);
+            const retainedCapture = inputMonitoringSession.captures.get(null);
+            source.disconnect.mockImplementation((destination?: unknown) => {
+                if (
+                    (destination !== undefined && fault !== 'source') ||
+                    (destination === undefined && fault !== 'edge')
+                ) {
+                    throw new Error('Monitor disconnect refused');
+                }
+                connectedGains.clear();
+            });
+            try {
+                await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+                expect(docTrackIds()).toEqual(['b']);
+                expect(liveTrackIds()).toEqual(['b']);
+                expect(monitorOwners()).toEqual([]);
+                expect(retainedCapture?.monitorEdges.size).toBe(0);
+                expect(inputMonitoringSession.captures.size).toBe(0);
+                expect(inputTrack.stop).toHaveBeenCalledOnce();
+                expect(engine.removeTrackStrip).toHaveBeenCalledWith('a');
+                expect(source.disconnect).toHaveBeenCalledWith();
+                expect(connectedGains.size).toBe(fault === 'both' ? 1 : 0);
+            } finally {
+                source.disconnect.mockImplementation(() => connectedGains.clear());
+            }
+        }
+    );
+
+    it('preserves the shared survivor when the removed owner edge disconnect fails', async () => {
+        await startInputMonitoring('a', null);
+        await startInputMonitoring('b', null);
+        const retainedCapture = inputMonitoringSession.captures.get(null);
+        if (!retainedCapture) {
+            throw new Error('Expected shared capture before removal');
+        }
+        source.disconnect.mockImplementation((destination?: unknown) => {
+            if (destination === gains.get('a')) {
+                throw new Error('Removed monitor edge disconnect refused');
+            }
+            if (destination === undefined) {
+                connectedGains.clear();
+            } else {
+                connectedGains.delete(destination);
+            }
+        });
+        try {
+            await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+            expect(monitorOwners()).toEqual(['b']);
+            expect([...retainedCapture.monitorEdges.keys()]).toEqual(['b']);
+            expect(connectedGains.has(gains.get('b'))).toBe(true);
+            expect(inputMonitoringSession.captures.get(null)).toBe(retainedCapture);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            expect(engine.removeTrackStrip).toHaveBeenCalledWith('a');
+            await executeAppAction({ type: 'removeTrack', payload: { trackId: 'b' } });
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            expect(connectedGains.size).toBe(0);
+            expect(inputTrack.stop).toHaveBeenCalledOnce();
+        } finally {
+            source.disconnect.mockImplementation(() => connectedGains.clear());
+        }
+    });
+
+    it('moves a pending direct On survivor to the committed selected input before the old grant', async () => {
+        const old = deferredGrant();
+        const selected = deferredGrant();
+        const selectedStop = vi.fn();
+        const selectedStream = { getTracks: () => [{ stop: selectedStop }] };
+        const selectedSource = { connect: vi.fn(), disconnect: vi.fn() };
+        getUserMedia.mockReturnValueOnce(old.request).mockReturnValueOnce(selected.request);
+        engine.createMediaStreamSource.mockImplementation((captured) =>
+            captured === selectedStream ? selectedSource : source
+        );
+        const first = startInputMonitoring('a', null);
+        const survivor = startInputMonitoring('b', null);
+        await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+        await executeAppAction({ type: 'setTrackInput', payload: { trackId: 'b', inputId: 'new-input' } });
+        expect(
+            getCrdtDoc<{ tracks: { tracks: Array<{ id: string; inputId: string | null }> } }>('root')?.tracks.tracks
+        ).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'b', inputId: 'new-input' })]));
+        old.grant(stream);
+        try {
+            await first;
+            await survivor;
+            expect(source.connect).not.toHaveBeenCalled();
+            expect(inputTrack.stop).toHaveBeenCalledOnce();
+            expect(inputMonitoringSession.trackKeys.get('b')).toBe('new-input');
+            expect(inputMonitoringSession.captures.has(null)).toBe(false);
+            expect(getUserMedia).toHaveBeenCalledTimes(2);
+        } finally {
+            selected.grant(selectedStream);
+        }
+        await vi.waitFor(() => expect(selectedSource.connect).toHaveBeenCalledWith(gains.get('b')));
+        expect(selectedStop).not.toHaveBeenCalled();
+        expect(monitorOwners()).toEqual(['b']);
+        const selectedCapture = inputMonitoringSession.captures.get('new-input');
+        if (!selectedCapture) {
+            throw new Error('Expected the selected input capture');
+        }
+        expect([...selectedCapture.monitorEdges.keys()]).toEqual(['b']);
+        expect(selectedCapture.monitorStream).toBe(selectedStream);
+    });
+
+    it('completes bulk Undo and later editing while both independent input grants remain pending', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before selecting independent inputs');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => ({ ...track, inputId: `mic-${track.id}` })),
+        });
+        flushAutomergeStorageWrites();
+        await executeAppAction({ type: 'removeAllTracks', payload: undefined });
+        const first = deferredGrant();
+        const second = deferredGrant();
+        const secondStop = vi.fn();
+        const secondStream = { getTracks: () => [{ stop: secondStop }] };
+        const secondSource = { connect: vi.fn(), disconnect: vi.fn() };
+        getUserMedia.mockReturnValueOnce(first.request).mockReturnValueOnce(second.request);
+        engine.createMediaStreamSource.mockImplementation((captured) =>
+            captured === secondStream ? secondSource : source
+        );
+        let completed = false;
+        const restoring = undo().then((result) => {
+            completed = true;
+            return result;
+        });
+        try {
+            await vi.waitFor(() => {
+                expect(getUserMedia).toHaveBeenCalledTimes(2);
+                expect(completed).toBe(true);
+            });
+            expect(getUserMedia).toHaveBeenNthCalledWith(1, {
+                audio: expect.objectContaining({ deviceId: { exact: 'mic-a' } }),
+            });
+            expect(getUserMedia).toHaveBeenNthCalledWith(2, {
+                audio: expect.objectContaining({ deviceId: { exact: 'mic-b' } }),
+            });
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            expect(inputMonitoringSession.pendingRequests.size).toBe(2);
+            expect(source.connect).not.toHaveBeenCalled();
+            expect(secondSource.connect).not.toHaveBeenCalled();
+            expect(await restoring).toEqual({ headConsumed: true });
+            expect(docTrackIds()).toEqual(['a', 'b']);
+            expect(liveTrackIds()).toEqual(['a', 'b']);
+            expect(undoHistoryStore.value?.past).toEqual([]);
+            const editing = executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+            await vi.waitFor(() => expect(docTrackIds()).toEqual(['b']));
+            await editing;
+            let laterHistoryCompleted = false;
+            const laterUndo = undo().then((result) => {
+                laterHistoryCompleted = true;
+                return result;
+            });
+            await vi.waitFor(() => expect(laterHistoryCompleted).toBe(true));
+            expect(await laterUndo).toEqual({ headConsumed: true });
+            expect(docTrackIds()).toEqual(['a', 'b']);
+            await redo();
+            expect(docTrackIds()).toEqual(['b']);
+            expect(monitorOwners()).toEqual(['b']);
+        } finally {
+            first.grant(stream);
+            second.grant(secondStream);
+            await restoring;
+        }
+        await vi.waitFor(() => expect(secondSource.connect).toHaveBeenCalledWith(gains.get('b')));
+        expect(source.connect).not.toHaveBeenCalled();
+        expect(inputTrack.stop).toHaveBeenCalledOnce();
+        expect(secondStop).not.toHaveBeenCalled();
+        expect([...inputMonitoringSession.captures.keys()]).toEqual(['mic-b']);
+        const survivingCapture = inputMonitoringSession.captures.get('mic-b');
+        if (!survivingCapture) {
+            throw new Error('Expected the surviving independent input capture');
+        }
+        expect([...survivingCapture.monitorEdges.keys()]).toEqual(['b']);
     });
 
     it.each([
@@ -370,20 +560,30 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(inputTrack.stop).not.toHaveBeenCalled();
     });
 
-    it('keeps restored document truth and Undo success when microphone acquisition is denied', async () => {
-        await startInputMonitoring('a', null);
-        await startInputMonitoring('b', null);
-        await executeAppAction({ type: 'removeAllTracks', payload: undefined });
-        getUserMedia.mockRejectedValue(new Error('Microphone denied'));
+    it.each([false, true])(
+        'keeps restored truth and history completion when permission is denied, ambiguous=%s',
+        async (ambiguous) => {
+            await startInputMonitoring('a', null);
+            await startInputMonitoring('b', null);
+            await executeAppAction({ type: 'removeAllTracks', payload: undefined });
+            getUserMedia.mockRejectedValue(new Error('Microphone denied'));
 
-        await expect(undo()).resolves.toEqual({ headConsumed: true });
+            failAfterPublication = ambiguous;
+            if (ambiguous) {
+                await expect(undo()).rejects.toThrow();
+            } else {
+                await expect(undo()).resolves.toEqual({ headConsumed: true });
+            }
+            failAfterPublication = false;
+            await vi.waitFor(() => expect(monitorOwners()).toEqual([]));
 
-        expect(docTrackIds()).toEqual(['a', 'b']);
-        expect(liveTrackIds()).toEqual(['a', 'b']);
-        expect(trackStore.value?.tracks.map((track) => track.inputMonitoring)).toEqual(['on', 'on']);
-        expect(monitorOwners()).toEqual([]);
-        expect(undoHistoryStore.value?.past).toEqual([]);
-    });
+            expect(docTrackIds()).toEqual(['a', 'b']);
+            expect(liveTrackIds()).toEqual(['a', 'b']);
+            expect(trackStore.value?.tracks.map((track) => track.inputMonitoring)).toEqual(['on', 'on']);
+            expect(monitorOwners()).toEqual([]);
+            expect(undoHistoryStore.value?.past).toEqual([]);
+        }
+    );
 
     it.each([false, true])(
         'does not admit optimistic On while restoring saved Off, ambiguous=%s',
@@ -489,60 +689,109 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(docTrackIds()).toEqual(['a', 'b']);
     });
 
-    it.each(['off', 'input'] as const)('fences a pending restored grant after committed %s changes', async (change) => {
-        const state = trackStore.value;
-        if (!state) {
-            throw new Error('Expected tracks before restoring pending owner');
-        }
-        trackStore.set({
-            ...state,
-            tracks: state.tracks.map((track) => (track.id === 'b' ? { ...track, inputMonitoring: 'off' } : track)),
-        });
-        flushAutomergeStorageWrites();
-        await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
-        const pending = deferredGrant();
-        let requested: (() => void) | undefined;
-        const requestStarted = new Promise<void>((resolve) => {
-            requested = resolve;
-        });
-        getUserMedia.mockImplementation(() => {
-            requested?.();
-            return pending.request;
-        });
-        const restore = undo();
-        await requestStarted;
-        expect(monitorOwners()).toEqual(['a']);
-        mutateCrdtDoc({
-            id: 'root',
-            changeFn: (document) => {
-                const slot = document.tracks;
-                if (!slot || typeof slot !== 'object' || !('tracks' in slot) || !Array.isArray(slot.tracks)) {
-                    throw new Error('Expected restored tracks');
-                }
-                for (const track of slot.tracks) {
-                    if (change === 'off') {
-                        track.inputMonitoring = 'off';
-                    } else {
-                        track.inputId = 'new-input';
+    it.each([
+        ['off', false],
+        ['input', false],
+        ['delete', false],
+        ['off', true],
+        ['input', true],
+        ['delete', true],
+    ] as const)(
+        'fences a pending restored grant after committed %s changes, ambiguous=%s',
+        async (change, ambiguous) => {
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected tracks before restoring pending owner');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => (track.id === 'b' ? { ...track, inputMonitoring: 'off' } : track)),
+            });
+            flushAutomergeStorageWrites();
+            await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+            const pending = deferredGrant();
+            const successor = deferredGrant();
+            const selectedStop = vi.fn();
+            const selectedStream = { getTracks: () => [{ stop: selectedStop }] };
+            const selectedSource = { connect: vi.fn(), disconnect: vi.fn() };
+            engine.createMediaStreamSource.mockImplementation((captured) =>
+                captured === selectedStream ? selectedSource : source
+            );
+            let requested: (() => void) | undefined;
+            const requestStarted = new Promise<void>((resolve) => {
+                requested = resolve;
+            });
+            getUserMedia
+                .mockImplementationOnce(() => {
+                    requested?.();
+                    return pending.request;
+                })
+                .mockReturnValue(successor.request);
+            failAfterPublication = ambiguous;
+            const restore = undo();
+            let completion: Promise<unknown>;
+            if (ambiguous) {
+                completion = expect(restore).rejects.toThrow();
+            } else {
+                completion = expect(restore).resolves.toEqual({ headConsumed: true });
+            }
+            await requestStarted;
+            await completion;
+            failAfterPublication = false;
+            expect(monitorOwners()).toEqual(['a']);
+            mutateCrdtDoc({
+                id: 'root',
+                changeFn: (document) => {
+                    const slot = document.tracks;
+                    if (!slot || typeof slot !== 'object' || !('tracks' in slot) || !Array.isArray(slot.tracks)) {
+                        throw new Error('Expected restored tracks');
                     }
-                }
-            },
-        });
-        pending.grant(stream);
-        await expect(restore).resolves.toEqual({ headConsumed: true });
-        expect(monitorOwners()).toEqual([]);
-        expect(source.connect).not.toHaveBeenCalledWith(gains.get('a'));
-        expect(docTrackIds()).toEqual(['a', 'b']);
-        expect(engine.createMediaStreamSource).not.toHaveBeenCalled();
-        expect(inputTrack.stop).toHaveBeenCalledOnce();
-    });
+                    if (change === 'delete') {
+                        const index = slot.tracks.findIndex((track: { id: string }) => track.id === 'a');
+                        if (index !== -1) {
+                            slot.tracks.splice(index, 1);
+                        }
+                        return;
+                    }
+                    for (const track of slot.tracks) {
+                        if (change === 'off') {
+                            track.inputMonitoring = 'off';
+                        } else {
+                            track.inputId = 'new-input';
+                        }
+                    }
+                },
+            });
+            pending.grant(stream);
+            await vi.waitFor(() => expect(inputTrack.stop).toHaveBeenCalledOnce());
+            expect(monitorOwners()).toEqual(change === 'input' ? ['a'] : []);
+            expect(source.connect).not.toHaveBeenCalledWith(gains.get('a'));
+            expect(docTrackIds()).toEqual(change === 'delete' ? ['b'] : ['a', 'b']);
+            expect(engine.createMediaStreamSource).not.toHaveBeenCalled();
+            expect(inputTrack.stop).toHaveBeenCalledOnce();
+            if (change === 'input') {
+                expect(inputMonitoringSession.trackKeys.get('a')).toBe('new-input');
+                expect(getUserMedia).toHaveBeenCalledTimes(2);
+                successor.grant(selectedStream);
+                await vi.waitFor(() => expect(selectedSource.connect).toHaveBeenCalledWith(gains.get('a')));
+                expect(selectedStop).not.toHaveBeenCalled();
+            }
+        }
+    );
 
     it.each([false, true])(
-        'fences only the restored pending owner while sharing capture, deleteSurvivor=%s',
+        'fences the old restored grant and preserves the selected input while sharing capture, deleteSurvivor=%s',
         async (deleteSurvivor) => {
             await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
             const pending = deferredGrant();
-            getUserMedia.mockReturnValue(pending.request);
+            const successor = deferredGrant();
+            const selectedStop = vi.fn();
+            const selectedStream = { getTracks: () => [{ stop: selectedStop }] };
+            const selectedSource = { connect: vi.fn(), disconnect: vi.fn() };
+            engine.createMediaStreamSource.mockImplementation((captured) =>
+                captured === selectedStream ? selectedSource : source
+            );
+            getUserMedia.mockReturnValueOnce(pending.request).mockReturnValue(successor.request);
             const survivorStart = startInputMonitoring('b', null);
             const restore = undo();
             await vi.waitFor(() => expect(monitorOwners()).toEqual(['a', 'b']));
@@ -567,7 +816,9 @@ describe('track deletion releases the input monitor at Command commit', () => {
             pending.grant(stream);
             await restore;
             expect(await survivorStart).toBe(!deleteSurvivor);
-            expect(monitorOwners()).toEqual(deleteSurvivor ? [] : ['b']);
+            expect(monitorOwners()).toEqual(deleteSurvivor ? ['a'] : ['a', 'b']);
+            expect(inputMonitoringSession.trackKeys.get('a')).toBe('new-input');
+            expect(getUserMedia).toHaveBeenCalledTimes(2);
             expect(source.connect).not.toHaveBeenCalledWith(gains.get('a'));
             expect(inputTrack.stop).toHaveBeenCalledTimes(deleteSurvivor ? 1 : 0);
             expect(docTrackIds()).toEqual(deleteSurvivor ? ['a'] : ['a', 'b']);
@@ -576,6 +827,9 @@ describe('track deletion releases the input monitor at Command commit', () => {
             } else {
                 expect(source.connect).toHaveBeenCalledExactlyOnceWith(gains.get('b'));
             }
+            successor.grant(selectedStream);
+            await vi.waitFor(() => expect(selectedSource.connect).toHaveBeenCalledWith(gains.get('a')));
+            expect(selectedStop).not.toHaveBeenCalled();
         }
     );
 

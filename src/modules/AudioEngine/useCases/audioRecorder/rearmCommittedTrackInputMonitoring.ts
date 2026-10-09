@@ -1,6 +1,8 @@
-import { startInputMonitoring } from '../../repositories/audioRecorder/inputMonitoring';
+import { logger } from '#/infra/logger/appLogger';
+
 import { readCommittedInputMonitoringTrack } from '../../stores/inputMonitoringProjectAccess';
 
+import { admitInputMonitoring } from './admitInputMonitoring';
 import { reconcileAutoInputMonitoring } from './reconcileAutoInputMonitoring';
 
 /** Restore admission and its pending grant must both observe current committed intent. */
@@ -10,10 +12,12 @@ export async function rearmCommittedTrackInputMonitoring(trackId: string): Promi
         return;
     }
     reconcileAutoInputMonitoring();
-    const inputId = track.inputId;
-    const isCurrent = (): boolean => {
+    const readIntent = (): { inputId: string | null } | null => {
         const current = readCommittedInputMonitoringTrack(trackId);
-        return current?.inputMonitoring === 'on' && current.inputId === inputId;
+        return current?.inputMonitoring === 'on' ? { inputId: current.inputId } : null;
     };
-    await startInputMonitoring(trackId, inputId, isCurrent);
+    // Permission belongs to the runtime owner; committed history must remain available while it waits.
+    void admitInputMonitoring(trackId, undefined, readIntent).catch((error: unknown) => {
+        logger.error(new Error(`Failed to rearm input monitoring on track ${trackId}`, { cause: error }));
+    });
 }
