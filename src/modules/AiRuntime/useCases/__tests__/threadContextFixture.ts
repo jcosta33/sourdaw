@@ -31,6 +31,8 @@ export function createFullThreadContext(): ThreadContext {
         requests: Array.from({ length: THREAD_CONTEXT_MAX_TURNS }, (_, index) => threadRequest(index + 1)),
         pendingProposal: {
             runId: `agent-run-${fixtureUuid('thread:pending-run')}`,
+            confirmationId: `prompt-confirmation-${fixtureUuid('thread:pending-confirmation')}`,
+            batchPosition: null,
             commands: Array.from({ length: MAX_LLM_ACTIONS_PER_BATCH }, (_, index) => gainCommand('pending', index)),
         },
         lastCommit: {

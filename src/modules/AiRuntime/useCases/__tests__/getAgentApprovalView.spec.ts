@@ -222,6 +222,8 @@ function buildDiff(): PendingActionSemanticDiff {
 }
 
 type ProposeOverrides = {
+    actions?: AppAction[];
+    actionLabels?: string[];
     adoptedRecipes?: Parameters<typeof proposePendingActionConfirmation>[0]['adoptedRecipes'];
     measuredPreview?: Parameters<typeof proposePendingActionConfirmation>[0]['measuredPreview'];
     semanticDiff?: PendingActionSemanticDiff;
@@ -234,8 +236,8 @@ function propose(id: string, overrides: ProposeOverrides = {}) {
         runId: 'run-approval-view',
         prompt: 'Rebalance the drums',
         assistantMessageId: 'assistant-approval-view',
-        actions: [GAIN_ACTION, REMOVE_ACTION],
-        actionLabels: ['Set Kick gain', 'Remove Snare'],
+        actions: overrides.actions ?? [GAIN_ACTION, REMOVE_ACTION],
+        actionLabels: overrides.actionLabels ?? ['Set Kick gain', 'Remove Snare'],
         commandBatch,
         agentApproval: AGENT_APPROVAL,
         semanticDiff: 'semanticDiff' in overrides ? overrides.semanticDiff : buildDiff(),
@@ -587,6 +589,70 @@ describe('getAgentApprovalView', () => {
             propose('confirmation-no-recipes');
 
             expect(getAgentApprovalView({ confirmationId: 'confirmation-no-recipes' })?.recipes).toEqual([]);
+        });
+    });
+
+    describe('the changes from the proposal it replaced', () => {
+        const PAN_ACTION = {
+            type: 'setTrackPan',
+            payload: { trackId: 'track-guitar', pan: -20, expectedPan: 0 },
+        } satisfies AppAction;
+        const BASS_ACTION = {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-bass', gainDb: -3, expectedGain: 1 },
+        } satisfies AppAction;
+        const MUTE_ACTION = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-room', muted: true, expectedMuted: false },
+        } satisfies AppAction;
+
+        // Red when a value change, an added or removed command, or an unchanged count goes missing,
+        // or when commands are matched by position instead of by type and target.
+        it('lists each changed, added and removed command and counts the ones left as they were', () => {
+            propose('confirmation-previous', {
+                actions: [GAIN_ACTION, PAN_ACTION, REMOVE_ACTION, BASS_ACTION],
+                actionLabels: ['Set Kick gain to 0.8', 'Pan Guitar -20', 'Remove Snare', 'Set Bass gain to -3 dB'],
+            });
+            propose('confirmation-refined', {
+                supersedes: 'confirmation-previous',
+                actions: [
+                    MUTE_ACTION,
+                    { ...BASS_ACTION, payload: { ...BASS_ACTION.payload, gainDb: -1.5 } },
+                    PAN_ACTION,
+                    { ...GAIN_ACTION, payload: { ...GAIN_ACTION.payload, gain: 0.6 } },
+                ],
+                actionLabels: ['Mute Room', 'Set Bass gain to -1.5 dB', 'Pan Guitar -20', 'Set Kick gain to 0.6'],
+            });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-refined' })?.previousProposalDiff).toEqual({
+                previousConfirmationId: 'confirmation-previous',
+                changes: [
+                    { kind: 'added', actionType: 'muteTrack', label: 'Mute Room' },
+                    {
+                        kind: 'changed',
+                        actionType: 'setTrackGain',
+                        label: 'Set Bass gain to -1.5 dB',
+                        fields: [{ field: 'gainDb', previous: '-3 dB', next: '-1.5 dB' }],
+                    },
+                    {
+                        kind: 'changed',
+                        actionType: 'setTrackGain',
+                        label: 'Set Kick gain to 0.6',
+                        fields: [{ field: 'gain', previous: '0.8', next: '0.6' }],
+                    },
+                    { kind: 'removed', actionType: 'removeTrack', label: 'Remove Snare' },
+                ],
+                unchangedCount: 1,
+            });
+        });
+
+        // Red when a proposal that replaced none, or one whose predecessor the store let go, is shown a diff.
+        it('shows no diff for an original proposal or one whose predecessor is no longer held', () => {
+            propose('confirmation-original');
+            propose('confirmation-orphan', { supersedes: 'confirmation-gone' });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-original' })?.previousProposalDiff).toBeNull();
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-orphan' })?.previousProposalDiff).toBeNull();
         });
     });
 

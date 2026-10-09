@@ -280,6 +280,15 @@ export async function submitAdmittedPromptRequest(
             );
             return { status: 'rejected', runId };
         }
+        // The prompt bar plans without a thread, so the planner refuses any `refines`; a refinement
+        // reaching here anyway has no pending card it may retire, and a second card for the same
+        // change must never be persisted beside the one it meant to replace.
+        if (planned.result.refines !== undefined) {
+            transitionTerminalRun(runId, 'failed');
+            await releasePlanOwnedStemResources();
+            notifyAiChange('Command not executed: only the agent chat can refine a pending proposal.', []);
+            return { status: 'rejected', runId };
+        }
         if (planned.result.actions.length === 0) {
             transitionTerminalRun(runId, 'completed');
             await releasePlanOwnedStemResources();

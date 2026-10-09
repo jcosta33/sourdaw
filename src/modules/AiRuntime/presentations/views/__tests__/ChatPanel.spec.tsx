@@ -453,6 +453,45 @@ describe('ChatPanel', () => {
         expect(cancelPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
     });
 
+    // Red when the card a refinement replaced keeps a Confirm beside the replacement's own.
+    it('offers Confirm only on the refined proposal, never on the one it replaced', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            messages: [
+                {
+                    id: 'assistant-replaced',
+                    role: 'assistant',
+                    content:
+                        'This proposal was replaced by a refined one. Review and confirm the new proposal instead.',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    error: 'Replaced by a refined proposal.',
+                    pendingActionConfirmationId: 'confirm-replaced',
+                    pendingActionConfirmationStatus: 'invalidated',
+                },
+                {
+                    id: 'assistant-refined',
+                    role: 'assistant',
+                    content: 'This prompt requires confirmation',
+                    timestamp: 2,
+                    isCommandAction: true,
+                    pendingActionConfirmationId: 'confirm-refined',
+                    pendingActionConfirmationStatus: 'proposed',
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+
+        render(<ChatPanel />);
+
+        expect(screen.getByText(/This proposal was replaced by a refined one\./u)).toBeInTheDocument();
+        const confirmButtons = screen.getAllByRole('button', { name: 'Confirm pending actions' });
+        expect(confirmButtons).toHaveLength(1);
+        fireEvent.click(confirmButtons[0]!);
+        expect(confirmPendingChatActions).toHaveBeenCalledExactlyOnceWith({ confirmationId: 'confirm-refined' });
+    });
+
     it('shows an answer as an ordinary assistant reply with a collapsed evidence block that expands on activation', () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             messages: [

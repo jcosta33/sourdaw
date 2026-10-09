@@ -139,17 +139,22 @@ function confirmation(input: {
     projectId?: string;
     actions?: ThreadContextSources['confirmations'][number]['approvalSnapshot']['actions'];
     actionLabels?: readonly string[];
+    batchPosition?: { index: number; total: number };
 }): ThreadContextSources['confirmations'][number] & { groupId: string } {
     const approvalSnapshot: ThreadContextSources['confirmations'][number]['approvalSnapshot'] = {
         actions: input.actions ?? [GAIN_ACTION],
         actionLabels: input.actionLabels ?? ['Set Bass gain to -3 dB'],
         commandBatch: { authority: { projectId: input.projectId ?? OPEN_PROJECT } },
     };
+    if (input.batchPosition !== undefined) {
+        approvalSnapshot.batchPosition = input.batchPosition;
+    }
     if (input.measuredPreview !== undefined) {
         approvalSnapshot.measuredPreview = input.measuredPreview;
     }
     const batchId = input.batchId ?? `${input.runId}:batch-1`;
     return {
+        id: `confirmation:${input.runId}:${input.assistantMessageId}`,
         runId: input.runId,
         assistantMessageId: input.assistantMessageId,
         status: input.status,
@@ -291,6 +296,8 @@ describe('thread context for the planner', () => {
                 requests: ['what is the tempo?', 'make the bass louder'],
                 pendingProposal: {
                     runId: 'run-pending',
+                    confirmationId: 'confirmation:run-pending:assistant-2',
+                    batchPosition: null,
                     commands: [
                         { name: 'setTrackGain', label: 'Set Bass gain to -3 dB', arguments: GAIN_ACTION.payload },
                     ],
@@ -308,12 +315,43 @@ describe('thread context for the planner', () => {
                     omittedRequestCount: 0,
                     pendingProposal: {
                         trust: 'untrusted_project_data',
+                        confirmationId: 'confirmation:run-pending:assistant-2',
                         commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
                         omittedCommandCount: 0,
                     },
                     lastCommit: null,
                 });
             }
+        });
+
+        // Red when the pending card is named by anything but its own confirmation id, which is what a
+        // refinement binds to, or when its place in a schedule, which refuses refinement, is dropped.
+        it('names the pending card by its confirmation id and says where a scheduled batch sits', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'mute every guitar'),
+                        message('assistant-1', 'assistant', 'Review the change.', { agentRunId: 'run-scheduled' }),
+                    ],
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-scheduled',
+                            assistantMessageId: 'assistant-1',
+                            status: 'proposed',
+                            batchPosition: { index: 2, total: 3 },
+                        }),
+                    ],
+                })
+            );
+
+            expect(thread?.pendingProposal).toMatchObject({
+                runId: 'run-scheduled',
+                confirmationId: 'confirmation:run-scheduled:assistant-1',
+                batchPosition: { index: 2, total: 3 },
+            });
+            expect(readSection(buildContext(thread).message)).toMatchObject({
+                pendingProposal: { confirmationId: 'confirmation:run-scheduled:assistant-1' },
+            });
         });
 
         it("carries a confirmed commit's commands, receipt id and measured deltas", () => {
@@ -814,7 +852,12 @@ describe('thread context for the planner', () => {
 
             expect(readChatThreadContext()).toMatchObject({
                 requests: ['make the bass louder'],
-                pendingProposal: { runId: 'run-pending', commands: [{ label: 'Set Bass gain to -3 dB' }] },
+                pendingProposal: {
+                    runId: 'run-pending',
+                    confirmationId: 'confirmation-1',
+                    batchPosition: null,
+                    commands: [{ label: 'Set Bass gain to -3 dB' }],
+                },
                 lastCommit: null,
             });
             clearChatMessages();
@@ -868,7 +911,7 @@ describe('thread context for the planner', () => {
                 ...thread,
                 requests: [`${'x'.repeat(THREAD_CONTEXT_MAX_BYTES.local)}`],
                 pendingProposal: {
-                    runId: thread.pendingProposal!.runId,
+                    ...thread.pendingProposal!,
                     commands: [{ name: 'addNotes', label: 'Add notes', arguments: { notes: 'n'.repeat(8_192) } }],
                 },
                 lastCommit: {
@@ -899,6 +942,8 @@ describe('thread context for the planner', () => {
                 requests: ['write a riff', 'make it busier'],
                 pendingProposal: {
                     runId: 'run-riff',
+                    confirmationId: 'confirmation-riff',
+                    batchPosition: null,
                     commands: [
                         {
                             name: 'createMidiClip',
@@ -938,6 +983,8 @@ describe('thread context for the planner', () => {
                 requests: [long, 'a bit less'],
                 pendingProposal: {
                     runId: 'run-pending',
+                    confirmationId: 'confirmation-pending',
+                    batchPosition: null,
                     commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
                 },
                 lastCommit: null,
@@ -1028,7 +1075,12 @@ describe('thread context for the planner', () => {
             );
             const thread: ThreadContext = {
                 requests: ['old-1', 'old-2', ...longRequests],
-                pendingProposal: { runId: 'run-pending', commands: [{ name: 'muteTrack', label: 'Mute Pad' }] },
+                pendingProposal: {
+                    runId: 'run-pending',
+                    confirmationId: 'confirmation-pending',
+                    batchPosition: null,
+                    commands: [{ name: 'muteTrack', label: 'Mute Pad' }],
+                },
                 lastCommit: null,
             };
 

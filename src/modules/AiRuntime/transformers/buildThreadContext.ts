@@ -10,6 +10,7 @@ import {
 } from '../models/ThreadContext';
 
 type ThreadConfirmation = {
+    id: string;
     runId: string;
     assistantMessageId: string;
     status: ChatActionConfirmationStatus;
@@ -25,6 +26,7 @@ type ThreadConfirmation = {
         actionLabels: readonly string[];
         measuredPreview?: MeasuredPreview;
         commandBatch?: { authority: { projectId: string } };
+        batchPosition?: { index: number; total: number };
     };
 };
 
@@ -202,7 +204,12 @@ function readPendingProposal(
                 isOpenProjectConfirmation(candidate, sources)
         );
         if (pending !== undefined) {
-            return { runId: pending.runId, commands: commandsOfSnapshot(pending.approvalSnapshot) };
+            return {
+                runId: pending.runId,
+                confirmationId: pending.id,
+                batchPosition: pending.approvalSnapshot.batchPosition ?? null,
+                commands: commandsOfSnapshot(pending.approvalSnapshot),
+            };
         }
     }
     return null;

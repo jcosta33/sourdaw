@@ -200,6 +200,8 @@ describe('planPromptActions', () => {
             requests: ['make the bass louder'],
             pendingProposal: {
                 runId: 'agent-run-pending',
+                confirmationId: 'prompt-confirmation-pending',
+                batchPosition: null,
                 commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
             },
             lastCommit: null,

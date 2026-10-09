@@ -35,6 +35,7 @@ import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { proposeNextScheduledBatch } from './proposeNextScheduledBatch';
 import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
+import { refinedProposalSupersession } from './supersedeRefinedProposal';
 
 type PromptChatRequestOptions = {
     mode?: AgentExecutionMode;
@@ -264,6 +265,14 @@ function runsScheduledBatches(request: PromptChatRequestInput): boolean {
 }
 
 /**
+ * Only apply and macro runs put a batch to the user for approval. A refinement replaces the pending
+ * card with one, so preview, which never commits, and plan, which persists no batch, refuse it.
+ */
+function proposesForApproval(request: PromptChatRequestInput): boolean {
+    return request.interactionMode === 'apply' || request.interactionMode === 'macro';
+}
+
+/**
  * A preview or plan of a request that spans several batches could show only its first batch, which
  * would read as the whole change, so the run refuses it instead.
  */
@@ -272,10 +281,24 @@ function refuseScheduledPlanInMode(
     admission: PromptRequestAdmission,
     batchCount: number
 ): void {
-    const reason = `This request runs as ${String(batchCount)} successive batches, which only apply mode can run one approval at a time.`;
+    refusePlannedRequest(
+        request,
+        admission,
+        `This request runs as ${String(batchCount)} successive batches, which only apply mode can run one approval at a time.`,
+        'authorization'
+    );
+}
+
+/** Ends the run on a plan it will not carry out and tells the user why, beside their request. */
+function refusePlannedRequest(
+    request: PromptChatRequestInput,
+    admission: PromptRequestAdmission,
+    reason: string,
+    category: 'authorization' | 'conflict'
+): void {
     tryRecordTerminalFailure({
         runId: admission.runId,
-        error: normalizeAgentFailure({ category: 'authorization', source: 'provider-planning', knownDomain: true }),
+        error: normalizeAgentFailure({ category, source: 'provider-planning', knownDomain: true }),
         terminal: true,
     });
     appendChatMessage({
@@ -291,6 +314,43 @@ function refuseScheduledPlanInMode(
         timestamp: Date.now(),
         error: reason,
     });
+}
+
+type RefinementAdmission =
+    | { status: 'refused' }
+    | Extract<ReturnType<typeof refinedProposalSupersession.admit>, { status: 'admitted' }>
+    | { status: 'none' };
+
+/**
+ * Whether a plan that refines the pending card may replace it. The card is read here rather than
+ * from the thread the plan was made from, and nothing between this read and the replacement's
+ * persistence awaits, so the card cannot settle in between: confirmed, cancelled, re-previewed or
+ * left behind by a project switch while the planner ran, it is refused and the run ends with that
+ * reason instead of leaving a second applicable card for the same change.
+ */
+function admitRefinement(
+    request: PromptChatRequestInput,
+    admission: PromptRequestAdmission,
+    refines: string | undefined
+): RefinementAdmission {
+    if (refines === undefined) {
+        return { status: 'none' };
+    }
+    if (!proposesForApproval(request)) {
+        refusePlannedRequest(
+            request,
+            admission,
+            `Refining a pending proposal replaces it with a new one for approval, which ${request.interactionMode} mode never proposes.`,
+            'authorization'
+        );
+        return { status: 'refused' };
+    }
+    const refined = refinedProposalSupersession.admit(refines);
+    if (refined.status === 'refused') {
+        refusePlannedRequest(request, admission, refined.reason, 'conflict');
+        return { status: 'refused' };
+    }
+    return refined;
 }
 
 /**
@@ -364,6 +424,10 @@ async function dispatchPromptPlan(input: {
         refuseScheduledPlanInMode(request, admission, result.batchSchedule.total);
         return undefined;
     }
+    const refinement = result.actions.length > 0 ? admitRefinement(request, admission, result.refines) : null;
+    if (refinement?.status === 'refused') {
+        return undefined;
+    }
     if (result.actions.length > 0) {
         appendChatMessage({
             id: `msg-${crypto.randomUUID()}`,
@@ -426,8 +490,12 @@ async function dispatchPromptPlan(input: {
             });
             return undefined;
         }
+        const refinedProposal = refinement?.status === 'admitted' ? refinement.confirmation : null;
+        if (refinedProposal !== null && !compiledActionExecution.requiresConfirmation) {
+            throw new Error('A refinement replaces a pending proposal, so it must be put to the user for approval.');
+        }
         if (compiledActionExecution.requiresConfirmation) {
-            persistPromptActionConfirmation({
+            const confirmationId = persistPromptActionConfirmation({
                 runId: admission.runId,
                 prompt: request.userText,
                 assistantMessageId,
@@ -447,7 +515,11 @@ async function dispatchPromptPlan(input: {
                 projectRevision,
                 parsedCommandBatch,
                 content: confirmationDescription.content,
+                supersedes: refinedProposal?.id ?? null,
             });
+            if (confirmationId !== null && refinedProposal !== null) {
+                await refinedProposalSupersession.retire(refinedProposal, confirmationId);
+            }
             return undefined;
         }
         const receipt = await executeImmediatePromptCommand({
