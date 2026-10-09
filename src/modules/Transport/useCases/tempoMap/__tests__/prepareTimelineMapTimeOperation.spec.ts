@@ -913,6 +913,18 @@ describe('prepareTimelineMapTimeOperation', () => {
             expect(positionInBar(after, 3)).toEqual(positionInBar(capturedMeters, 4));
         });
 
+        it('opens the carried meter on the span start when an old downbeat lies within tolerance before the end', () => {
+            setStoreStates(tempoState([]), timeSignatureState([]));
+
+            deleteTime(1, 8.0000005);
+
+            // The old bar line at 8 is past the cut, so it lands on the start and opens a whole bar there.
+            expect(meterEvents()).toEqual([[1, 4]]);
+            const after = timeSignatureMapStore.value?.changes ?? [];
+            expect(getBarBeatAtPosition(after, 5, 4, 4)).toEqual({ bar: 2, beat: 1, tick: 0 });
+            expect(getBarBeatAtPosition(after, 4.9999995, 4, 4)).toMatchObject({ bar: 1, beat: 4 });
+        });
+
         it('carries no implied meter when the cut removes whole bars', () => {
             setStoreStates(tempoState([]), timeSignatureState([]));
 

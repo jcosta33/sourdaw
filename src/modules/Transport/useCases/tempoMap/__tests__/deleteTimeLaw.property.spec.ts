@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BEAT_EPSILON, getTempoAtBeat, secondsBetweenBeats } from '../../../models/TempoMap';
-import { getTimeSignatureSegmentAtBeat } from '../../../models/TimeSignatureMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { tempoMapStore, type TempoChange } from '../../../stores/tempoMapStore';
@@ -172,28 +171,34 @@ function readMaps(): Maps {
     };
 }
 
+function shiftedPastCut(beat: number, { startBeat, endBeat }: Cut): number {
+    const shiftedBeat = beat - (endBeat - startBeat);
+    return shiftedBeat - startBeat <= BEAT_EPSILON ? startBeat : shiftedBeat;
+}
+
 // The law, stated per change: kept below S − ε, removed up to E − ε, and shifted by
 // exactly the content span from there, landing exactly on S when within ε of it.
 function expectClassified<TChange extends { id: string; beat: number }>(
     before: readonly TChange[],
     after: readonly TChange[],
-    { startBeat, endBeat }: Cut,
+    cut: Cut,
     context: string
 ): void {
     const afterById = new Map(after.map((change) => [change.id, change]));
     for (const change of before) {
         const found = afterById.get(change.id);
-        if (change.beat < startBeat - BEAT_EPSILON) {
+        if (change.beat < cut.startBeat - BEAT_EPSILON) {
             expect(found, `${context}: kept ${change.id}`).toEqual(change);
             continue;
         }
-        if (change.beat < endBeat - BEAT_EPSILON) {
+        if (change.beat < cut.endBeat - BEAT_EPSILON) {
             expect(found, `${context}: removed ${change.id}`).toBeUndefined();
             continue;
         }
-        const shiftedBeat = change.beat - (endBeat - startBeat);
-        const expectedBeat = shiftedBeat - startBeat <= BEAT_EPSILON ? startBeat : shiftedBeat;
-        expect(found, `${context}: shifted ${change.id}`).toEqual({ ...change, beat: expectedBeat });
+        expect(found, `${context}: shifted ${change.id}`).toEqual({
+            ...change,
+            beat: shiftedPastCut(change.beat, cut),
+        });
     }
 }
 
@@ -321,7 +326,7 @@ function meterDownbeats(changes: readonly TimeSignatureChange[], fromBeat: numbe
             if (beat >= segmentEnd - BEAT_EPSILON || beat > toBeat) {
                 break;
             }
-            if (beat > fromBeat) {
+            if (beat >= fromBeat) {
                 downbeats.push({ beat, numerator: segment.numerator, denominator: segment.denominator });
             }
         }
@@ -329,28 +334,25 @@ function meterDownbeats(changes: readonly TimeSignatureChange[], fromBeat: numbe
     return downbeats;
 }
 
+function governingMeterAt(changes: readonly TimeSignatureChange[], beat: number): Downbeat {
+    const atOrBefore = byBeat(changes).filter((change) => change.beat <= beat);
+    return atOrBefore[atOrBefore.length - 1] ?? { beat: 0, ...IMPLIED_METER };
+}
+
+// Every old downbeat from E − ε on moves with its material, so it lands where a change
+// there would (exactly on S when within ε of it) and still opens a bar of its meter.
 function expectDownbeatsAfterCutKept(before: Maps, after: Maps, cut: Cut, context: string): void {
-    const { startBeat, endBeat } = cut;
-    const span = endBeat - startBeat;
-    for (const downbeat of meterDownbeats(before.meter, endBeat + 2 * BEAT_EPSILON, horizonOf(before, cut))) {
-        const newBeat = downbeat.beat - span;
-        if (newBeat <= startBeat + 2 * BEAT_EPSILON) {
-            continue;
-        }
+    for (const downbeat of meterDownbeats(before.meter, cut.endBeat - BEAT_EPSILON, horizonOf(before, cut))) {
+        const newBeat = shiftedPastCut(downbeat.beat, cut);
         // A rounding step past the position, so a change computed onto it by another
         // float expression still governs it.
-        const segment = getTimeSignatureSegmentAtBeat(
-            after.meter,
-            newBeat + 1e-9,
-            IMPLIED_METER.numerator,
-            IMPLIED_METER.denominator
-        );
+        const segment = governingMeterAt(after.meter, newBeat + 1e-9);
         expect([segment.numerator, segment.denominator], `${context}: meter at old downbeat ${downbeat.beat}`).toEqual([
             downbeat.numerator,
             downbeat.denominator,
         ]);
         const barBeats = (segment.numerator * 4) / segment.denominator;
-        const phase = (((newBeat - segment.startBeat) % barBeats) + barBeats) % barBeats;
+        const phase = (((newBeat - segment.beat) % barBeats) + barBeats) % barBeats;
         expect(
             Math.min(phase, barBeats - phase),
             `${context}: bar phase at old downbeat ${downbeat.beat}`
