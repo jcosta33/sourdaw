@@ -6,6 +6,9 @@ type RecordingLifecycle = {
     hasPendingRecordingStart: () => boolean;
     ownsPendingRecordingStart: (token: number) => boolean;
     setCountInTimerId: (id: ReturnType<typeof setTimeout> | null) => void;
+    /** Own the synchronous ending snapshot until this capture settles. */
+    registerEnding: (end: () => void) => () => void;
+    endRecording: () => void;
     /** Own the commit a capture terminal started, so a stop can await it. */
     trackCommit: (commit: Promise<void>) => void;
     /** Resolve once every tracked commit has settled, including ones registered while waiting. */
@@ -23,6 +26,8 @@ let pendingRecordingStartToken: number | null = null;
  * was still in flight (#4439). The lifecycle owns them so the stop path can wait
  * for the entry — the scheduler never does, because it must not block on it.
  */
+const recordingEndings = new Set<() => void>();
+
 const pendingCommits = new Set<Promise<void>>();
 
 function trackCommit(commit: Promise<void>): void {
@@ -63,6 +68,19 @@ export const recordingLifecycle: RecordingLifecycle = {
     ownsPendingRecordingStart: (token) => pendingRecordingStartToken === token,
     setCountInTimerId: (id) => {
         countInTimerId = id;
+    },
+    registerEnding: (end) => {
+        recordingEndings.add(end);
+        return () => {
+            recordingEndings.delete(end);
+        };
+    },
+    endRecording: () => {
+        const endings = [...recordingEndings];
+        recordingEndings.clear();
+        for (const end of endings) {
+            end();
+        }
     },
     trackCommit,
     waitForCommits,

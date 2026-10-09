@@ -1,4 +1,4 @@
-import { createTake, createTakeLane } from '../../models/TakeLane';
+import { createTake, createTakeLane, type Take } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { recordingPassTiming } from './recordingPassTiming';
@@ -12,6 +12,8 @@ type StageRecordingTakeInput = {
     sourceOffsetBeats?: number;
     /** Physical seam ending this recorded pass, on the capture clock. */
     passEndContextSeconds?: number;
+    plannedPassEnd?: boolean;
+    nextPassStartBeat?: number;
 };
 
 /**
@@ -32,9 +34,28 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
         return;
     }
 
-    const take = createTake(input.clipId, input.name, input.startBeat, input.endBeat, input.sourceOffsetBeats);
-    recordingPassTiming.stage(take, input.passEndContextSeconds);
     const lane = state.lanes.find((existing) => existing.trackId === input.trackId);
+    const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
+    let replacement: Take | undefined;
+    if (replacementId !== undefined) {
+        replacement = lane?.takes.find((take) => take.id === replacementId);
+    }
+    let take: Take;
+    if (replacement) {
+        take = { ...replacement, endBeat: input.endBeat };
+    } else {
+        take = createTake(
+            input.clipId,
+            input.name,
+            recordingPassTiming.nextStartBeat(input.clipId) ?? input.startBeat,
+            input.endBeat,
+            input.sourceOffsetBeats
+        );
+    }
+    recordingPassTiming.stage(take, input.passEndContextSeconds, input.plannedPassEnd);
+    if (input.nextPassStartBeat !== undefined) {
+        recordingPassTiming.relocateEntry(input.clipId, input.nextPassStartBeat);
+    }
     if (!lane) {
         takeLaneStore.set({
             lanes: [...state.lanes, { ...createTakeLane(input.trackId), takes: [take] }],
@@ -42,8 +63,17 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
         return;
     }
     takeLaneStore.set({
-        lanes: state.lanes.map((existing) =>
-            existing.trackId === input.trackId ? { ...existing, takes: [...existing.takes, take] } : existing
-        ),
+        lanes: state.lanes.map((existing) => {
+            if (existing.trackId !== input.trackId) {
+                return existing;
+            }
+            if (!replacement) {
+                return { ...existing, takes: [...existing.takes, take] };
+            }
+            return {
+                ...existing,
+                takes: existing.takes.map((current) => (current.id === replacement.id ? take : current)),
+            };
+        }),
     });
 }

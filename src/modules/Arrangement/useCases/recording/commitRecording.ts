@@ -2,6 +2,7 @@ import { executeAppAction } from '#/modules/Command/useCases';
 import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 
 import { clipEntrySeconds } from '../../models/TempoTimeline';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Clip } from '../../stores/trackStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
@@ -17,6 +18,7 @@ type RecordedCapture = {
     mediaOriginSeconds: number;
     /** Producer sample zero less admission latency, on the audio context clock. */
     sourceContextOriginSeconds: number;
+    sourceDurationSeconds?: number;
 };
 
 /**
@@ -35,6 +37,18 @@ function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
     }
     const leadInSeconds = readSecondsAtBeat({ beat: startBeat }) - mediaOriginSeconds;
     return { ...clip, startBeat, audioOffsetBeats: (leadInSeconds * readTempoAtBeat({ beat: startBeat })) / 60 };
+}
+
+/** A continuous capture must also carry the retained passes placed on its loop geometry. */
+function coverRecordedPasses(clip: Clip): Clip {
+    const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === clip.trackId);
+    let endBeat = clip.endBeat;
+    for (const take of lane?.takes ?? []) {
+        if (take.clipId === clip.id && take.passDepthSeconds !== undefined) {
+            endBeat = Math.max(endBeat, take.endBeat);
+        }
+    }
+    return endBeat === clip.endBeat ? clip : { ...clip, endBeat };
 }
 
 /**
@@ -65,6 +79,7 @@ function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
 export async function commitRecording(clip: Clip, capture?: RecordedCapture): Promise<void> {
     if (capture === undefined) {
         await executeAppAction({ type: 'commitRecording', payload: { clip } });
+        recordingPassTiming.retire(clip.id);
         return;
     }
     const placed = placeCapturedClip(clip, capture.mediaOriginSeconds);
@@ -73,10 +88,11 @@ export async function commitRecording(clip: Clip, capture?: RecordedCapture): Pr
         recordPointBeat: capture.provisionalStartBeat,
         mediaOriginSeconds: capture.mediaOriginSeconds,
         sourceContextOriginSeconds: capture.sourceContextOriginSeconds,
+        sourceDurationSeconds: capture.sourceDurationSeconds,
         clipMediaOriginSeconds:
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
-    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } });
+    await executeAppAction({ type: 'commitRecording', payload: { clip: coverRecordedPasses(placed) } });
     recordingPassTiming.retire(clip.id);
 }

@@ -21,7 +21,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { playheadClockRef, transportStore } from '#/modules/Transport/stores';
 
 import { finalizeAutomaticRecording } from '../finalizeAutomaticRecording';
 import { stopActiveRecording } from '../stopActiveRecording';
@@ -29,7 +29,12 @@ import { toggleRecording } from '../toggleRecording';
 
 const TRACK_ID = 'track-recording';
 
-type RecordingTerminal = (result: { kind: 'completed'; buffer: { duration: number } }) => void;
+type RecordingTerminal = (result: {
+    kind: 'completed';
+    buffer: { duration: number };
+    sampleZeroContextFrame: number;
+    sampleRate: number;
+}) => void;
 
 const mocks = vi.hoisted(() => {
     const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
@@ -53,7 +58,7 @@ const mocks = vi.hoisted(() => {
         stopAudioRecording: vi.fn<() => Promise<void>>(() => {
             const terminal = capturedAudioTerminal;
             capturedAudioTerminal = null;
-            terminal?.({ kind: 'completed', buffer: { duration: 2 } });
+            terminal?.({ kind: 'completed', buffer: { duration: 2 }, sampleZeroContextFrame: 0, sampleRate: 48000 });
             return Promise.resolve();
         }),
     };
@@ -69,7 +74,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
 }));
-vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
+vi.mock('../startPlayback', () => ({
+    startPlayback: async (onRoll?: (contextSeconds: number, beat: number) => void) => {
+        await mocks.startPlayback();
+        playheadClockRef.beat = transportStore.value!.playheadPosition;
+        playheadClockRef.audioTimeSeconds = mocks.audioClock.currentTime;
+        onRoll?.(playheadClockRef.audioTimeSeconds, playheadClockRef.beat);
+    },
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 /**

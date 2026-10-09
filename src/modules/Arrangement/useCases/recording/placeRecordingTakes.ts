@@ -14,6 +14,7 @@ type PlaceRecordingTakesInput = {
     clipMediaOriginSeconds: number;
     /** Producer sample-zero clock, corrected by the latency captured at admission. */
     sourceContextOriginSeconds?: number;
+    sourceDurationSeconds?: number;
 };
 
 /**
@@ -27,11 +28,18 @@ export function placeRecordingTakes(input: PlaceRecordingTakesInput): void {
     if (!state) {
         return;
     }
+    let captureEnd: ReturnType<typeof recordingPassTiming.captureEnd>;
+    if (input.sourceContextOriginSeconds !== undefined && input.sourceDurationSeconds !== undefined) {
+        captureEnd = recordingPassTiming.captureEnd(
+            input.clipId,
+            input.sourceContextOriginSeconds + input.sourceDurationSeconds
+        );
+    }
     const placement = { ...input, timeline: liveTempoTimeline };
     takeLaneStore.set({
         lanes: state.lanes.map((lane) => ({
             ...lane,
-            takes: lane.takes.map((take) => {
+            takes: lane.takes.flatMap((take) => {
                 if (take.clipId !== input.clipId) {
                     return take;
                 }
@@ -42,8 +50,16 @@ export function placeRecordingTakes(input: PlaceRecordingTakesInput): void {
                     return placeTakeOnClipMedia(take, placement);
                 }
                 const placed = startFirstPassAtRecordPoint(take, input.recordPointBeat);
+                let endBeat = placed.endBeat;
+                if (captureEnd && captureEnd.takeId === take.id) {
+                    endBeat = Math.min(endBeat, captureEnd.endBeat);
+                }
+                if (captureEnd && captureEnd.takeId === take.id && endBeat <= placed.startBeat) {
+                    return [];
+                }
                 return {
                     ...placed,
+                    endBeat,
                     passAnchorSeconds: liveTempoTimeline.secondsAtBeat(placed.startBeat) - input.clipMediaOriginSeconds,
                     passDepthSeconds: recordingPassTiming.depthSeconds(
                         take,

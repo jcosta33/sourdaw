@@ -11,6 +11,7 @@ import { type Clip } from '../../stores/trackStore';
 
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
+import { recordingPassTiming } from './recordingPassTiming';
 
 /**
  * A take staged at a loop wrap names its pass's media depth; the take opened
@@ -67,7 +68,10 @@ function closeTakeAt(take: Take, endBeat: number): Take {
  * events only, so mid-playback it still holds the beat playback started at.
  * Omitting it keeps the stationary behaviour — close at the store playhead.
  */
-export async function stopRecording(atBeat?: number): Promise<void> {
+export async function stopRecording(
+    atBeat?: number,
+    ending?: { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number }
+): Promise<void> {
     const clipIds = activeRecordingRef.current;
     activeRecordingRef.current = [];
 
@@ -85,6 +89,20 @@ export async function stopRecording(atBeat?: number): Promise<void> {
     const clipIdSet = new Set(clipIds);
     const lanes = takeLaneStore.value?.lanes ?? [];
     const finalizedMidiClips: Clip[] = [];
+    const pendingEnds = new Map<string, { takeId: string; endBeat: number }>();
+    if (ending) {
+        for (const track of trackState.tracks) {
+            for (const clip of track.clips) {
+                if (!clipIdSet.has(clip.id) || clip.type !== 'audio') {
+                    continue;
+                }
+                const pendingEnd = recordingPassTiming.finish(clip.id, ending, endBeat);
+                if (pendingEnd) {
+                    pendingEnds.set(clip.id, pendingEnd);
+                }
+            }
+        }
+    }
 
     setTrackState({
         ...trackState,
@@ -124,7 +142,11 @@ export async function stopRecording(atBeat?: number): Promise<void> {
                     if (!clipIdSet.has(take.clipId)) {
                         return take;
                     }
-                    const closed = closeTakeAt(take, endBeat);
+                    const pendingEnd = pendingEnds.get(take.clipId);
+                    let closed = closeTakeAt(take, endBeat);
+                    if (pendingEnd && pendingEnd.takeId === take.id) {
+                        closed = { ...take, endBeat: Math.min(take.endBeat, pendingEnd.endBeat) };
+                    }
                     const recordPointBeat = midiRecordPointBeats.get(take.clipId);
                     if (recordPointBeat === undefined) {
                         return closed;

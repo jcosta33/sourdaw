@@ -36,7 +36,11 @@ import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { getTransportHandlers } from '../../getTransportHandlers';
+import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
+import { finalizeAutomaticRecording } from '../../transportControls/finalizeAutomaticRecording';
+import { pausePlayback } from '../../transportControls/pausePlayback';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
+import { startPlayback } from '../../transportControls/startPlayback';
 import { stopActiveRecording } from '../../transportControls/stopActiveRecording';
 import { stopPlayback } from '../../transportControls/stopPlayback';
 import { toggleRecording } from '../../transportControls/toggleRecording';
@@ -50,6 +54,7 @@ const hardware = vi.hoisted(() => ({
     now: 50,
     sampleRate: 48000,
     latencySeconds: 0.1,
+    drainSeconds: 0,
     terminal: null as ((result: RecordingResult) => void) | null,
     zeroFrame: 0,
     starts: 0,
@@ -60,6 +65,7 @@ const hardware = vi.hoisted(() => ({
     admissionGate: null as Promise<void> | null,
     rollGate: null as Promise<void> | null,
     nativeHold: false,
+    followJump: null as number | null,
     rollStarts: 0,
     rollContinuationAdvance: 0,
     finalizedAtFlush: null as { active: string[]; endBeat: number | undefined } | null,
@@ -107,7 +113,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
                 active: [...activeRecordingRef.current],
                 endBeat: trackStore.value?.tracks[0]?.clips[0]?.endBeat,
             };
-            const length = Math.round(hardware.now * hardware.sampleRate) - hardware.zeroFrame;
+            const length =
+                Math.round((hardware.now + hardware.drainSeconds) * hardware.sampleRate) - hardware.zeroFrame;
             return Promise.resolve(hardware.flushGate).then(() => {
                 const pcm = Float32Array.from({ length }, (_value, index) => index);
                 const buffer: AudioBuffer = {
@@ -141,8 +148,8 @@ vi.mock('../../transportControls/startNativeSessionAtBeat', () => ({
 vi.mock('../../transportControls/startPlayback', async (original) => {
     const real = await original<typeof import('../../transportControls/startPlayback')>();
     return {
-        startPlayback: async () => {
-            await real.startPlayback();
+        startPlayback: async (...args: Parameters<typeof real.startPlayback>) => {
+            await real.startPlayback(...args);
             hardware.now += hardware.rollContinuationAdvance;
         },
     };
@@ -155,7 +162,7 @@ vi.mock('../../scheduling/applyAutomation/applyVcaGains', () => ({ applyVcaGains
 vi.mock('../../transportControls/panicYeastRuntime', () => ({ panicYeastRuntime: () => Promise.resolve() }));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
 vi.mock('../../evaluateFollowActions', () => ({
-    evaluateFollowActions: () => ({ jumpToPosition: null, shouldStop: false }),
+    evaluateFollowActions: () => ({ jumpToPosition: hardware.followJump, shouldStop: false }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/Automation/useCases', async (original) => ({
@@ -258,6 +265,7 @@ describe('punch audio capture loop placement', () => {
         hardware.now = 50;
         hardware.terminal = null;
         hardware.buffer = null;
+        hardware.drainSeconds = 0;
         hardware.starts = 0;
         hardware.correlation = null;
         hardware.flushGate = null;
@@ -266,6 +274,7 @@ describe('punch audio capture loop placement', () => {
         hardware.admissionGate = null;
         hardware.rollGate = null;
         hardware.nativeHold = false;
+        hardware.followJump = null;
         hardware.rollStarts = 0;
         hardware.rollContinuationAdvance = 0;
         sequence = 0;
@@ -443,6 +452,338 @@ describe('punch audio capture loop placement', () => {
         expectProjectProjection();
     });
 
+    it.each([8, 10])(
+        'keeps the rolling run-up on its physical clock through tempo and loop-entry %s edits',
+        async (entryBeat) => {
+            hardware.now = 51;
+            transportStore.set({
+                ...transportStore.value!,
+                isPlaying: true,
+                tempo: 120,
+                playheadPosition: 6,
+            });
+            playheadPositionRef.current = 6;
+            playheadClockRef.beat = 6;
+            playheadClockRef.audioTimeSeconds = 51;
+            toggleRecording();
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+            expect(hardware.zeroFrame / hardware.sampleRate).toBe(51);
+
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+            expect(transportStore.value?.tempo).toBe(60);
+            if (entryBeat === 10) {
+                await executeAppAction(
+                    { type: 'setLoopRegion', payload: { startBeat: 10, endBeat: 12 } },
+                    { skipUndo: true }
+                );
+            }
+            const depth = entryBeat - 6 + 0.1;
+            startPlayheadScheduler();
+            await advanceUntil(
+                () =>
+                    playheadWrapCountRef.current >= 1 &&
+                    lane().takes.some((take) => take.sourceOffsetBeats === entryBeat - 6)
+            );
+            const first = lane().takes.find((take) => take.sourceOffsetBeats === entryBeat - 6);
+            expect(first).toBeDefined();
+            await stopActiveRecording();
+            flushAutomergeStorageWrites();
+
+            const placed = lane().takes.find((take) => take.id === first!.id);
+            expect(placed!.passDepthSeconds).toBeCloseTo(depth, 10);
+            const rawTake = getCrdtDoc<Project>('root')!.takeLanes.lanes[0]?.takes.find(
+                (take) => take.id === first!.id
+            );
+            expect(rawTake!.passDepthSeconds).toBeCloseTo(depth, 10);
+            expectProjectProjection();
+            await executeAppAction(
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: TRACK_ID, takeId: first!.id, startBeat: entryBeat, endBeat: 12 },
+                },
+                { skipUndo: true }
+            );
+            const selected = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+                (fragment) => Math.abs(fragment.regionStartBeat - entryBeat) < 1e-9
+            );
+            expect(selected).toBeDefined();
+            const sourceSeconds = ((selected!.audioOffsetBeats ?? 0) * 60) / 60;
+            const expectedFrame = Math.round(depth * hardware.sampleRate);
+            expect(expectedFrame).toBe(Math.round(depth * hardware.sampleRate));
+            expect(hardware.buffer!.getChannelData(0)[expectedFrame]).toBe(Math.round(depth * hardware.sampleRate));
+            expect(sourceSeconds).toBeCloseTo(depth, 10);
+            const media = selected!.audioBufferId && audioBufferCache.get(selected!.audioBufferId);
+            expect(media).toBe(hardware.buffer);
+            expect(media && media.getChannelData(0)[Math.round(sourceSeconds * hardware.sampleRate)]).toBe(
+                Math.round(depth * hardware.sampleRate)
+            );
+            const committedClip = structuredClone(recordedClips()[0]);
+            const committedTakes = structuredClone(lane().takes);
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(recordedClips()).toEqual([]);
+            expect(takeLaneStore.value?.lanes).toEqual([]);
+            expectProjectProjection();
+            await redo();
+            flushAutomergeStorageWrites();
+            expect(recordedClips()).toEqual([committedClip]);
+            expect(lane().takes).toEqual(committedTakes);
+            expectProjectProjection();
+            await executeAppAction(
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: TRACK_ID, takeId: first!.id, startBeat: entryBeat, endBeat: 12 },
+                },
+                { skipUndo: true }
+            );
+            const replayed = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+                (fragment) => Math.abs(fragment.regionStartBeat - entryBeat) < 1e-9
+            )!;
+            expect(((replayed.audioOffsetBeats ?? 0) * 60) / 60).toBeCloseTo(depth, 10);
+            expect(replayed.audioBufferId).toBe(selected!.audioBufferId);
+        }
+    );
+
+    it('keeps the first short-loop pass on its physical run-up entry and late wrap', async () => {
+        hardware.now = 51;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 7.9, loopEnd: 8.1 });
+        playheadPositionRef.current = 7.9;
+        playheadClockRef.beat = 7.9;
+        playheadClockRef.audioTimeSeconds = 51;
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        startPlayheadScheduler();
+        await tick(0.01);
+        expect(hardware.now).toBeLessThan(51.05);
+        expect(schedulerSession.pendingSeam).toBeNull();
+        await advanceUntil(() => playheadWrapCountRef.current >= 2);
+        const first = lane().takes.find((take) => take.sourceOffsetBeats !== undefined);
+        expect(first).toBeDefined();
+        await stopActiveRecording();
+        const committed = lane().takes.find((take) => take.id === first!.id)!;
+        expect(committed.passDepthSeconds).toBeCloseTo(0.15, 10);
+        expectProjectProjection();
+        await executeAppAction(
+            { type: 'setCompRegion', payload: { trackId: TRACK_ID, takeId: committed.id, startBeat: 8, endBeat: 8.1 } },
+            { skipUndo: true }
+        );
+        const selected = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+            (clip) => Math.abs(clip.regionStartBeat - 8) < 1e-9
+        )!;
+        const sourceSeconds = (selected.audioOffsetBeats ?? 0) / 2;
+        expect(sourceSeconds).toBeCloseTo(0.15, 10);
+        expect(hardware.buffer!.getChannelData(0)[Math.round(sourceSeconds * hardware.sampleRate)]).toBe(7200);
+    });
+
+    it('dates the first physical entry when a loop edit moves its start behind the run-up', async () => {
+        hardware.now = 51;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 6 });
+        playheadPositionRef.current = 6;
+        playheadClockRef.beat = 6;
+        playheadClockRef.audioTimeSeconds = 51;
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        startPlayheadScheduler();
+        await tick(0.1);
+        await executeAppAction({ type: 'setLoopRegion', payload: { startBeat: 5, endBeat: 12 } }, { skipUndo: true });
+        await tick(0.01);
+        const entryClock = hardware.now;
+        await advanceUntil(() => lane().takes.some((take) => take.sourceOffsetBeats === 0));
+        const first = lane().takes.find((take) => take.sourceOffsetBeats === 0)!;
+        await stopActiveRecording();
+        expect(lane().takes.find((take) => take.id === first.id)!.passDepthSeconds).toBeCloseTo(
+            entryClock - 51 + hardware.latencySeconds,
+            10
+        );
+        expectProjectProjection();
+    });
+
+    it('replaces a cancelled planned seam with the edit clock and keeps the next pass PCM in order', async () => {
+        transportStore.set({ ...transportStore.value!, playheadPosition: 10 });
+        toggleRecording();
+        await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+        await advanceUntil(() => schedulerSession.pendingSeam !== null);
+        const plannedSeam = schedulerSession.pendingSeam!.seamAudioTime;
+        const first = lane().takes.find((take) => take.sourceOffsetBeats === 0)!;
+        for (let index = 0; index < 4; index++) {
+            await tick(0.01);
+        }
+        expect(hardware.now).toBeLessThan(plannedSeam);
+        const oldPair = structuredClone(playheadClockRef);
+        await executeAppAction({ type: 'setTempo', payload: { bpm: 210 } }, { skipUndo: true });
+        await executeAppAction(
+            { type: 'setLoopRegion', payload: { startBeat: 11.9, endBeat: 12 } },
+            { skipUndo: true }
+        );
+        await tick(0.01);
+        const editClock = hardware.now;
+        const incomingBeat = playheadClockRef.beat;
+        const dyingEndBeat = oldPair.beat + (editClock - oldPair.audioTimeSeconds) * 2;
+        await advanceUntil(() => lane().takes.filter((take) => take.sourceOffsetBeats !== undefined).length >= 3);
+        const second = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined)[1]!;
+        const third = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined)[2]!;
+        await stopActiveRecording();
+        flushAutomergeStorageWrites();
+        expect(lane().takes.find((take) => take.id === first.id)?.endBeat).toBeCloseTo(dyingEndBeat, 10);
+        const placedSecond = lane().takes.find((take) => take.id === second.id)!;
+        const expectedDepth = editClock - hardware.zeroFrame / hardware.sampleRate + hardware.latencySeconds;
+        expect(placedSecond.passDepthSeconds).toBeCloseTo(expectedDepth, 10);
+        expect(
+            getCrdtDoc<Project>('root')!.takeLanes.lanes[0]!.takes.find((take) => take.id === second.id)
+                ?.passDepthSeconds
+        ).toBeCloseTo(expectedDepth, 10);
+        await executeAppAction(
+            { type: 'setCompRegion', payload: { trackId: TRACK_ID, takeId: second.id, startBeat: 11.9, endBeat: 12 } },
+            { skipUndo: true }
+        );
+        const selected = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+            (clip) => clip.regionStartBeat === placedSecond.startBeat
+        )!;
+        const sourceSeconds = ((selected.audioOffsetBeats ?? 0) * 60) / 210;
+        expect(sourceSeconds).toBeCloseTo(expectedDepth, 10);
+        const media = selected.audioBufferId && audioBufferCache.get(selected.audioBufferId);
+        expect(media && media.getChannelData(0)[Math.round(sourceSeconds * hardware.sampleRate)]).toBe(
+            Math.round(expectedDepth * hardware.sampleRate)
+        );
+        const thirdDepth = expectedDepth + ((12 - incomingBeat) * 60) / 210;
+        expect(lane().takes.find((take) => take.id === third.id)?.passDepthSeconds).toBeCloseTo(thirdDepth, 10);
+        expect(thirdDepth).toBeGreaterThan(expectedDepth);
+        await executeAppAction(
+            { type: 'setCompRegion', payload: { trackId: TRACK_ID, takeId: third.id, startBeat: 11.9, endBeat: 12 } },
+            { skipUndo: true }
+        );
+        const selectedThird = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+            (clip) => clip.regionStartBeat === 11.9
+        )!;
+        const thirdSource = ((selectedThird.audioOffsetBeats ?? 0) * 60) / 210;
+        expect(thirdSource).toBeCloseTo(thirdDepth, 10);
+        expect(media && media.getChannelData(0)[Math.round(thirdSource * hardware.sampleRate)]).toBe(
+            Math.round(thirdDepth * hardware.sampleRate)
+        );
+        const committedTakes = structuredClone(lane().takes);
+        const committedClip = structuredClone(recordedClips()[0]);
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(recordedClips()).toEqual([]);
+        expectProjectProjection();
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(recordedClips()).toEqual([committedClip]);
+        expect(lane().takes).toEqual(committedTakes);
+        expectProjectProjection();
+        await executeAppAction(
+            { type: 'setCompRegion', payload: { trackId: TRACK_ID, takeId: third.id, startBeat: 11.9, endBeat: 12 } },
+            { skipUndo: true }
+        );
+        const replayed = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+            (clip) => clip.regionStartBeat === 11.9
+        )!;
+        expect(((replayed.audioOffsetBeats ?? 0) * 60) / 210).toBeCloseTo(thirdDepth, 10);
+        expect(replayed.audioBufferId).toBe(selectedThird.audioBufferId);
+    });
+
+    it('retires a planned boundary when a follow action relocates its recording before the seam sounds', async () => {
+        transportStore.set({ ...transportStore.value!, playheadPosition: 10 });
+        toggleRecording();
+        await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+        await advanceUntil(() => schedulerSession.pendingSeam !== null);
+        const first = lane().takes.find((take) => take.sourceOffsetBeats === 0)!;
+        const previousPair = structuredClone(playheadClockRef);
+        hardware.followJump = 10;
+        await tick(0.01);
+        const jumpClock = hardware.now;
+        hardware.followJump = null;
+        const dyingBeat = previousPair.beat + (jumpClock - previousPair.audioTimeSeconds) * 2;
+        expect(schedulerSession.pendingSeam).toBeNull();
+        await advanceUntil(() => lane().takes.filter((take) => take.sourceOffsetBeats !== undefined).length >= 2);
+        const second = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined)[1]!;
+        await stopActiveRecording();
+        expect(lane().takes.find((take) => take.id === first.id)?.endBeat).toBeCloseTo(dyingBeat, 10);
+        expect(lane().takes.find((take) => take.id === second.id)?.startBeat).toBe(10);
+        expect(lane().takes.find((take) => take.id === second.id)?.passDepthSeconds).toBeCloseTo(
+            jumpClock - hardware.zeroFrame / hardware.sampleRate + hardware.latencySeconds,
+            10
+        );
+        expectProjectProjection();
+    });
+
+    it.each(['stop', 'pause', 'seek', 'record', 'automatic'] as const)(
+        '%s retires the unsounded planned tail at its physical capture end',
+        async (ending) => {
+            transportStore.set({ ...transportStore.value!, playheadPosition: 10 });
+            toggleRecording();
+            await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+            await advanceUntil(() => schedulerSession.pendingSeam !== null);
+            const planned = lane().takes.find((take) => take.sourceOffsetBeats === 0)!;
+            const endingBeat = playheadClockRef.beat;
+            expect(hardware.now).toBeLessThan(schedulerSession.pendingSeam!.seamAudioTime);
+            if (ending === 'stop') {
+                await stopPlayback();
+            } else if (ending === 'pause') {
+                pausePlayback();
+            } else if (ending === 'seek') {
+                await executePlayheadSeek(16);
+            } else if (ending === 'automatic') {
+                finalizeAutomaticRecording(12);
+                await stopActiveRecording();
+            } else {
+                toggleRecording();
+            }
+            await vi.waitFor(() => expect(recordedClips()[0]?.audioBufferId).toBeTruthy(), { interval: 1 });
+            await recordingLifecycle.waitForCommits();
+            const committed = lane().takes.find((take) => take.id === planned.id)!;
+            expect(committed.endBeat).toBeCloseTo(endingBeat - hardware.latencySeconds * 2, 10);
+            expect(committed.passDepthSeconds).toBeCloseTo(0.1, 10);
+            expect((committed.endBeat - committed.startBeat) / 2 + committed.passDepthSeconds!).toBeCloseTo(
+                hardware.buffer!.duration,
+                10
+            );
+            expectProjectProjection();
+            const raw = getCrdtDoc<Project>('root')!.takeLanes.lanes[0]!.takes.find((take) => take.id === planned.id)!;
+            expect(raw).toEqual(committed);
+        }
+    );
+
+    it.each(['manual', 'automatic'] as const)(
+        '%s keeps the intended pending-tail end through a delayed excess drain',
+        async (route) => {
+            transportStore.set({ ...transportStore.value!, playheadPosition: 10 });
+            toggleRecording();
+            await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+            await advanceUntil(() => schedulerSession.pendingSeam !== null);
+            const planned = lane().takes.find((take) => take.sourceOffsetBeats === 0)!;
+            const intendedEnd = route === 'automatic' ? 11.8 : playheadClockRef.beat;
+            let release!: () => void;
+            hardware.flushGate = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            hardware.drainSeconds = 1;
+            if (route === 'automatic') {
+                finalizeAutomaticRecording(intendedEnd);
+            }
+            const stopping = stopActiveRecording();
+            expect(activeRecordingRef.current).toEqual([]);
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+            hardware.now += 1;
+            release();
+            await stopping;
+            const committed = lane().takes.find((take) => take.id === planned.id)!;
+            expect(committed.endBeat).toBeCloseTo(intendedEnd, 10);
+            expect(committed.passDepthSeconds).toBeCloseTo(0.1, 10);
+            expectProjectProjection();
+            const committedClip = structuredClone(recordedClips()[0]);
+            const committedTakes = structuredClone(lane().takes);
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(recordedClips()).toEqual([]);
+            await redo();
+            flushAutomergeStorageWrites();
+            expect(recordedClips()).toEqual([committedClip]);
+            expect(lane().takes).toEqual(committedTakes);
+            expectProjectProjection();
+        }
+    );
+
     it('finalizes a MIDI punch without an audio capture and keeps one undoable entry', async () => {
         const midiId = 'punch-midi';
         await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: false } }, { skipUndo: true });
@@ -535,6 +876,186 @@ describe('punch audio capture loop placement', () => {
         await redo();
         expect(lane().takes).toEqual(takes);
         expectProjectProjection();
+    });
+
+    it('keeps a sub-cap stopped capture on its physical stop clock while a successor roll stays live', async () => {
+        transportStore.set({ ...transportStore.value!, playheadPosition: 8 });
+        hardware.nativeHold = true;
+        hardware.rollContinuationAdvance = 0.001;
+        let releaseOldRoll!: () => void;
+        let releaseFlush!: () => void;
+        hardware.rollGate = new Promise<void>((resolve) => {
+            releaseOldRoll = resolve;
+        });
+        hardware.flushGate = new Promise<void>((resolve) => {
+            releaseFlush = resolve;
+        });
+
+        toggleRecording();
+        await vi.waitFor(() => expect(hardware.rollStarts).toBe(1), { interval: 1 });
+        const oldHoldGeneration = schedulerSession.generation;
+
+        hardware.now = 50.2;
+        const stopped = stopPlayback();
+        const stoppedGeneration = schedulerSession.generation;
+        expect(stoppedGeneration).toBeGreaterThan(oldHoldGeneration);
+        expect(hardware.flushes).toBe(1);
+
+        hardware.rollGate = null;
+        hardware.now = 50.22;
+        await startPlayback();
+        const successorGeneration = schedulerSession.generation;
+        const successorWorker = schedulerSession.worker;
+        expect(successorGeneration).toBeGreaterThan(stoppedGeneration);
+        expect(successorWorker).not.toBeNull();
+        expect(playheadClockRef).toEqual({ beat: 8, audioTimeSeconds: 50.22 });
+
+        releaseOldRoll();
+        await vi.waitFor(() => expect(hardware.now).toBeCloseTo(50.222, 10), { interval: 1 });
+        expect(schedulerSession.generation).toBe(successorGeneration);
+        expect(schedulerSession.worker).toBe(successorWorker);
+        expect(transportStore.value?.isPlaying).toBe(true);
+        expect(playheadClockRef).toEqual({ beat: 8, audioTimeSeconds: 50.22 });
+
+        releaseFlush();
+        await stopped;
+
+        const [capturedClip] = recordedClips();
+        expect(capturedClip?.startBeat).toBeCloseTo(7.4, 10);
+        expect(capturedClip?.endBeat).toBeCloseTo(8.4, 10);
+        expect({
+            terminalBufferDuration: hardware.buffer?.duration,
+            historyActions: undoHistoryStore.value?.past.map((entry) =>
+                entry.kind === 'action' ? entry.action.type : entry.kind
+            ),
+            successorStillPlaying: transportStore.value?.isPlaying,
+            successorWorkerStillOwned: schedulerSession.worker === successorWorker,
+        }).toEqual({
+            terminalBufferDuration: 0.2,
+            historyActions: ['commitRecording'],
+            successorStillPlaying: true,
+            successorWorkerStillOwned: true,
+        });
+    });
+
+    it.each(['stop', 'pause', 'seek', 'record'] as const)(
+        '%s freezes its physical ending while both the old roll and terminal remain held',
+        async (ending) => {
+            hardware.nativeHold = true;
+            hardware.rollContinuationAdvance = 0.001;
+            let releaseRoll!: () => void;
+            let releaseFlush!: () => void;
+            hardware.rollGate = new Promise<void>((resolve) => {
+                releaseRoll = resolve;
+            });
+            hardware.flushGate = new Promise<void>((resolve) => {
+                releaseFlush = resolve;
+            });
+            toggleRecording();
+            await vi.waitFor(() => expect(hardware.rollStarts).toBe(1), { interval: 1 });
+            hardware.now = 50.2;
+            let endingPromise: Promise<void> = Promise.resolve();
+            if (ending === 'stop') {
+                endingPromise = stopPlayback();
+            } else if (ending === 'pause') {
+                pausePlayback();
+            } else if (ending === 'seek') {
+                endingPromise = executePlayheadSeek(16);
+            } else {
+                toggleRecording();
+            }
+            expect(hardware.flushes).toBe(1);
+            hardware.now = 50.23;
+            releaseRoll();
+            await vi.waitFor(() => expect(hardware.now).toBeGreaterThan(50.23), { interval: 1 });
+            hardware.now = 51;
+            releaseFlush();
+            await endingPromise;
+            await vi.waitFor(() => expect(recordedClips()[0]?.audioBufferId).toBeTruthy(), { interval: 1 });
+            await recordingLifecycle.waitForCommits();
+            const committed = recordedClips()[0]!;
+            expect(hardware.buffer?.duration).toBe(0.2);
+            expect(committed.startBeat).toBeCloseTo(7.4, 10);
+            expect(committed.endBeat).toBeCloseTo(8.4, 10);
+            expectProjectProjection();
+        }
+    );
+
+    it('retains a two-second stopped capture when hold-cap processing is stalled until a successor rolls', async () => {
+        const realSetTimeout = globalThis.setTimeout;
+        let releaseCap: (() => void) | undefined;
+        const timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((handler, delay, ...args) => {
+            if (delay === 250 && typeof handler === 'function') {
+                releaseCap = () => handler(...args);
+                return realSetTimeout(() => {}, 30000);
+            }
+            return realSetTimeout(handler, delay, ...args);
+        });
+        try {
+            transportStore.set({ ...transportStore.value!, playheadPosition: 10 });
+            hardware.nativeHold = true;
+            hardware.rollGate = new Promise<void>(() => {});
+            let releaseFlush!: () => void;
+            hardware.flushGate = new Promise<void>((resolve) => {
+                releaseFlush = resolve;
+            });
+            toggleRecording();
+            await vi.waitFor(() => expect(releaseCap).toBeTypeOf('function'), { interval: 1 });
+            hardware.now = 52;
+            const stopped = stopPlayback();
+            hardware.nativeHold = false;
+            hardware.now = 70;
+            await startPlayback();
+            const successorWorker = schedulerSession.worker;
+            const successorGeneration = schedulerSession.generation;
+            hardware.rollContinuationAdvance = 0.001;
+            releaseCap!();
+            await vi.waitFor(() => expect(hardware.now).toBeCloseTo(70.001, 10), { interval: 1 });
+            releaseFlush();
+            await stopped;
+            expect(hardware.buffer?.duration).toBe(2);
+            expect(recordedClips()[0]?.startBeat).toBeCloseTo(5.8, 10);
+            expect(recordedClips()[0]?.endBeat).toBeCloseTo(9.8, 10);
+            expect(transportStore.value?.isPlaying).toBe(true);
+            expect(schedulerSession.worker).toBe(successorWorker);
+            expect(schedulerSession.generation).toBe(successorGeneration);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expectProjectProjection();
+        } finally {
+            timeoutSpy.mockRestore();
+        }
+    });
+
+    it('commits the sub-cap stopped capture at its stop clock when its terminal lands first', async () => {
+        transportStore.set({ ...transportStore.value!, playheadPosition: 8 });
+        hardware.nativeHold = true;
+        hardware.rollContinuationAdvance = 0.001;
+        let releaseOldRoll!: () => void;
+        let releaseFlush!: () => void;
+        hardware.rollGate = new Promise<void>((resolve) => {
+            releaseOldRoll = resolve;
+        });
+        hardware.flushGate = new Promise<void>((resolve) => {
+            releaseFlush = resolve;
+        });
+
+        toggleRecording();
+        await vi.waitFor(() => expect(hardware.rollStarts).toBe(1), { interval: 1 });
+        hardware.now = 50.2;
+        const stopped = stopPlayback();
+        releaseFlush();
+        await stopped;
+
+        const [capturedClip] = recordedClips();
+        expect(hardware.buffer?.duration).toBe(0.2);
+        expect(capturedClip?.startBeat).toBeCloseTo(7.4, 10);
+        expect(capturedClip?.endBeat).toBeCloseTo(8.4, 10);
+        expect(
+            undoHistoryStore.value?.past.map((entry) => (entry.kind === 'action' ? entry.action.type : entry.kind))
+        ).toEqual(['commitRecording']);
+
+        releaseOldRoll();
+        await vi.waitFor(() => expect(hardware.now).toBeCloseTo(50.201, 10), { interval: 1 });
     });
 
     it.each(['punch', 'manual'] as const)(

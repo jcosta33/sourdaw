@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
@@ -22,7 +23,7 @@ import { startSchedulerWhenNativeSessionSettles, type HoldRelease } from './star
  * browser build decides synchronously; a desktop build decides when the native
  * session settles or the hold cap expires.
  */
-export async function startPlayback(): Promise<void> {
+export async function startPlayback(onRoll?: (contextSeconds: number, beat: number) => void): Promise<void> {
     const state = getTransportState();
     if (!state) {
         return;
@@ -61,6 +62,7 @@ export async function startPlayback(): Promise<void> {
 
     if (!nativeLiveGraphSessionOffered()) {
         startPlayheadScheduler();
+        onRoll?.(playheadClockRef.audioTimeSeconds, playheadClockRef.beat);
         return;
     }
 
@@ -80,5 +82,5 @@ export async function startPlayback(): Promise<void> {
         kind: 'held',
         webAudioRollingSince: () => release.contextSeconds,
     });
-    await startSchedulerWhenNativeSessionSettles(session, generation, release);
+    await startSchedulerWhenNativeSessionSettles(session, generation, release, onRoll);
 }

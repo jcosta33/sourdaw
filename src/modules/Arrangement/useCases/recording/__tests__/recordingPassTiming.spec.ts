@@ -8,12 +8,13 @@ const clock = vi.hoisted(() => ({
     audioTimeSeconds: 51,
     tempo: 120,
     isPlaying: true,
+    loopStart: 8,
 }));
 vi.mock('#/modules/Transport/stores', () => ({
     playheadClockRef: clock,
     transportStore: {
         get value() {
-            return { isPlaying: clock.isPlaying, loopStart: 8, loopEnd: 12 };
+            return { isPlaying: clock.isPlaying, loopStart: clock.loopStart, loopEnd: 12 };
         },
     },
     readSecondsAtBeat: ({ beat }: { beat: number }) => (beat * 60) / clock.tempo,
@@ -29,7 +30,7 @@ describe('recording pass capture-clock witnesses', () => {
     beforeEach(() => {
         recordingPassTiming.retire('capture');
         recordingPassTiming.retire('successor');
-        Object.assign(clock, { beat: 10, audioTimeSeconds: 51, tempo: 120, isPlaying: true });
+        Object.assign(clock, { beat: 10, audioTimeSeconds: 51, tempo: 120, isPlaying: true, loopStart: 8 });
     });
 
     it('keeps the first partial pass and later passes on their physical seams after tempo edits', () => {
@@ -48,6 +49,7 @@ describe('recording pass capture-clock witnesses', () => {
         clock.audioTimeSeconds = 50;
         recordingPassTiming.begin('capture', 6);
         const first = pass('first', 'capture', 2);
+        recordingPassTiming.observeEntry(['capture'], 8, 51, false);
         recordingPassTiming.stage(first, 53);
         expect(recordingPassTiming.depthSeconds(first, 49.9, 2.9)).toBeCloseTo(1.1, 10);
     });
@@ -69,6 +71,49 @@ describe('recording pass capture-clock witnesses', () => {
         recordingPassTiming.stage(second);
         clock.tempo = 60;
         expect(recordingPassTiming.depthSeconds(second, 50.9, 4.9)).toBeCloseTo(1.1, 10);
+    });
+
+    it('keeps an actual entry after a run-up tempo edit', () => {
+        clock.beat = 6;
+        recordingPassTiming.begin('capture', 6);
+        clock.tempo = 60;
+        recordingPassTiming.observeEntry(['capture'], 8, 53, false);
+        const first = pass('first', 'capture', 2);
+        recordingPassTiming.stage(first, 57);
+        expect(recordingPassTiming.depthSeconds(first, 50.9, 2.9)).toBeCloseTo(2.1, 10);
+        clock.tempo = 120;
+        expect(recordingPassTiming.depthSeconds(first, 50.9, 2.9)).toBeCloseTo(2.1, 10);
+    });
+
+    it('observes the moved loop entry after a loop-bound edit during run-up', () => {
+        clock.beat = 6;
+        recordingPassTiming.begin('capture', 6);
+        clock.tempo = 60;
+        clock.loopStart = 10;
+        recordingPassTiming.observeEntry(['capture'], 8, 53, false);
+        recordingPassTiming.observeEntry(['capture'], 10, 55, false);
+        const first = pass('first', 'capture', 4);
+        recordingPassTiming.stage(first, 57);
+        expect(recordingPassTiming.depthSeconds(first, 50.9, 2.9)).toBeCloseTo(4.1, 10);
+    });
+
+    it('reuses a cancelled planned pass while later starts follow sounded boundaries', () => {
+        recordingPassTiming.begin('capture', 10);
+        const first = pass('first');
+        recordingPassTiming.stage(first, 52, true);
+        recordingPassTiming.cancelBoundary('capture', 51.5);
+        expect(recordingPassTiming.replacementTakeId('capture')).toBe(first.id);
+        recordingPassTiming.stage(first, 51.5);
+        recordingPassTiming.relocateEntry('capture', 9);
+        expect(recordingPassTiming.nextStartBeat('capture')).toBe(9);
+        const second = pass('second', 'capture', 2);
+        recordingPassTiming.stage(second, 53, true);
+        recordingPassTiming.observeEntry(['capture'], 8, 53, false);
+        const third = pass('third', 'capture', 6);
+        recordingPassTiming.stage(third, 55);
+        expect(recordingPassTiming.depthSeconds(first, 50.9, 4.9)).toBeCloseTo(0.1, 10);
+        expect(recordingPassTiming.depthSeconds(second, 50.9, 4.9)).toBeCloseTo(0.6, 10);
+        expect(recordingPassTiming.depthSeconds(third, 50.9, 4.9)).toBeCloseTo(2.1, 10);
     });
 
     it('retires only the discarded capture and refuses its stale source read', () => {

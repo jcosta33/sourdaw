@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
+import { type TimeSignatureChange } from '../../../models/TimeSignatureMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
@@ -47,7 +48,7 @@ type TestRecordingResult =
 type StartAudioRecording = (trackId: string, callback: (result: TestRecordingResult) => void) => Promise<boolean>;
 
 const mocks = vi.hoisted(() => {
-    const timeSignatureMapStore: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
+    const timeSignatureMapStore: { value: { changes: TimeSignatureChange[] } | null } = { value: { changes: [] } };
     const tempoMapStore: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
     return {
         tempoMapStore,
@@ -96,12 +97,13 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 // Side-effecting collaborators of the count-in / recording paths.
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: mocks.ensureTrackStrips }));
 vi.mock('../startPlayback', () => ({
-    startPlayback: async () => {
+    startPlayback: async (onRoll?: (contextSeconds: number, beat: number) => void) => {
         await mocks.startPlayback();
         const state = getTransportState();
         if (state) {
-            playheadClockRef.beat = resolveRollStartBeat(state, mocks.timeSignatureMapStore.value.changes);
+            playheadClockRef.beat = resolveRollStartBeat(state, mocks.timeSignatureMapStore.value?.changes ?? []);
             playheadClockRef.audioTimeSeconds = mocks.getAudioContext().currentTime;
+            onRoll?.(playheadClockRef.audioTimeSeconds, playheadClockRef.beat);
         }
     },
 }));
@@ -510,6 +512,7 @@ describe('toggleRecording', () => {
             provisionalStartBeat: 4,
             mediaOriginSeconds: expect.any(Number),
             sourceContextOriginSeconds: 9.9,
+            sourceDurationSeconds: 2,
         });
         expect(capture?.mediaOriginSeconds).toBeCloseTo(secondsBetweenBeats([], 0, 3.8, 120), 9);
     });
