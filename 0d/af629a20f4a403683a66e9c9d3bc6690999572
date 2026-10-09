@@ -1,0 +1,33 @@
+scripts/__tests__/retargetCapabilityPlan.spec.ts
+  s_97ab82e0b4f10c::t_3a92641c7e124c 128-134,146-147,150
+  s_97ab82e0b4f10c::t_3bb34956f316ba 139-145
+  s_97ab82e0b4f10c::t_16d93629ced83e 42-45,48,100-127,148-149,151-156
+  s_97ab82e0b4f10c::t_b79da613473441 158-174
+  s_97ab82e0b4f10c::t_5b91d3a3a66c89 46-47,135-138
+  s_97ab82e0b4f10c::t_0bb5fabba09faa 157
+scripts/retargetCapabilityPlan.ts
+  s_97ab82e0b4f10c::t_a69b067b34bb28 9,124-130,144,151-153,375,378-379,381-382
+  s_97ab82e0b4f10c::t_0c545f8f83889a 123,131-143,145-150
+  s_97ab82e0b4f10c::t_71f8d63d7f16a0 154-160,218,221,374
+  s_97ab82e0b4f10c::t_1fb2ecc593f5a2 219-220,373,385-387,394
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  s_97ab82e0b4f10c::t_d197423ef21e4f 40-43,46,118,388-414,416
+  s_97ab82e0b4f10c::t_7b72b624aa9be3 44-45
+  s_97ab82e0b4f10c::t_6e7f99388f7c0f 415,417-418
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0daf629a20f4a403683a66e9c9d3bc6690999572",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
