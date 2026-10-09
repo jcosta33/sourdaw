@@ -103,9 +103,11 @@ export async function createLevainNode(
     const isContextGone = (): boolean =>
         ctx.state === 'closed' && !(typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext);
 
-    // The port stays open from `destroy()` until the worklet has freed what the
-    // disposed processor held, or can no longer answer: it reported an error,
-    // or a live context closed and took the worklet scope with it.
+    // The port stays open from `destroy()` until the drain ends: on `done` (the
+    // engine freed, or poisoned by a throwing step and deliberately left unfreed)
+    // or when a live context closes and takes the worklet scope with it. A
+    // disposed processor never posts `error` during the drain, so closing on one
+    // is a defensive stop only.
     const closePort = (): void => {
         if (portClosed) {
             return;

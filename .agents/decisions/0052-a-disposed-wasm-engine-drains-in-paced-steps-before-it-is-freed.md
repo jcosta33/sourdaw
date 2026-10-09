@@ -28,7 +28,9 @@ removal, track deletion and every other route that destroys a Levain node.
 
 ## Decision
 
-This record extends 0051; it changes none of its clauses.
+This record extends 0051 and supersedes one of its clauses. 0051 says a processor that "faulted or
+was disposed, and drops every later message"; a disposed processor now answers two, `releaseDisposedBanks` and a
+repeated `dispose`, and still drops every other. Every other clause of 0051 stands.
 
 - **A disposed processor never frees its engine in `dispose`.** `dispose` still posts `disposed`
   at once, so the loader's "processor ended" contract is unchanged.
@@ -38,9 +40,11 @@ This record extends 0051; it changes none of its clauses.
   `Arc`, whatever the bank's size. It refuses (false) while the slot is occupied, so no bank is
   dropped by it, and when the sounding pool holds no PCM. It is only for an engine that will never
   render again.
-- **The host paces the drain with `releaseDisposedBanks`.** It is the one message a disposed
-  processor, faulted or not, still honours; a live processor ignores it. Each message does one
-  bounded step and is answered by `disposedBanksReleased { done }`: release a step of the retired
+- **The host paces the drain with `releaseDisposedBanks`.** A disposed processor, faulted or not,
+  answers two messages: `releaseDisposedBanks`, and a repeated `dispose`, which it re-answers with
+  `disposed`. It drops every other message, `beginSampleBank` and `releaseRetiredBank` included
+  (a faulted processor that is disposed does not re-post its `error` for them). A live processor
+  ignores `releaseDisposedBanks`. Each message does one bounded step and is answered by `disposedBanksReleased { done }`: release a step of the retired
   bank, else retire the sounding bank, else (both empty) free the engine, which then holds nothing
   bank-sized, and answer done. `LevainNode` sends the next message on each `done: false`.
 - **A throwing step poisons the engine.** The step is caught, the processor answers done, and
@@ -48,9 +52,11 @@ This record extends 0051; it changes none of its clauses.
   at once.
 - **The processor stays reachable until done.** A module-level set holds a disposed processor that
   still has an engine, so the finalizer cannot free it in one call before the drain ends.
-- **The node closes its port only when nothing more can arrive.** On done, on an `error` posted
-  during the drain, or when a live `AudioContext` becomes `closed`, which stops answering port
-  messages and discards the worklet scope with it. A completed `OfflineAudioContext` also reports
+- **The node closes its port only when nothing more can arrive.** The drain ends on done (the
+  engine freed, or poisoned by a throwing step and left unfreed) or when a live `AudioContext`
+  becomes `closed`, which stops answering port messages and discards the worklet scope with it. A
+  disposed processor posts no `error` during the drain, so the node's close on one is a defensive
+  stop that no shipped processor path triggers. A completed `OfflineAudioContext` also reports
   `closed`, but its worklet scope still answers (measured in Chromium, 3 s after `startRendering`
   resolved), so it is not treated as gone and takes the drain.
 

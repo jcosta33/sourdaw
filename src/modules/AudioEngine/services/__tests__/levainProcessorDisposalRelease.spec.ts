@@ -235,6 +235,34 @@ describe('shipped LevainProcessor disposal release', () => {
         expect(engine.__wbg_ptr).toBe(0);
     });
 
+    it('drops the bank messages a faulted processor would answer once it is disposed', async () => {
+        const processor = await startProcessor();
+        loadBank(processor, 1, 'violin-1', SMALL_BANK_SAMPLES);
+        releaseRetired(processor, 1);
+        const engine = engineOf(processor);
+        const trappingChannel = {
+            length: FRAMES,
+            set: () => {
+                throw new Error('output channel trapped');
+            },
+        };
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        processor.process([], [[trappingChannel, makeChannels(1, FRAMES)[0]]]);
+        expect(posted(processor)).toContainEqual({ type: 'error', message: 'output channel trapped' });
+        send(processor, { type: 'dispose' });
+        processor.port.postMessage.mockClear();
+
+        send(processor, { type: 'beginSampleBank', bankKey: 'bank-2', instrumentId: 'cello', loadToken: 2 });
+        send(processor, { type: 'releaseRetiredBank', loadToken: 1 });
+
+        expect(posted(processor), 'a disposed processor must not re-post the fault').toEqual([]);
+
+        const answers = drainDisposed(processor);
+
+        expect(answers.at(-1)).toBe(true);
+        expect(engine.__wbg_ptr).toBe(0);
+    });
+
     it('answers done and never frees an engine whose release step threw', async () => {
         const processor = await startProcessor();
         const free = vi.fn();
