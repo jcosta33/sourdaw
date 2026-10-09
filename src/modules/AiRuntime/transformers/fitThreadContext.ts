@@ -9,7 +9,7 @@ import {
 import { type LlmActionMessageProfile } from './llmActionBridge';
 
 /** Each earlier request is the user's own text, bounded like every other imported string. */
-const MAX_THREAD_REQUEST_LENGTH = 512;
+export const MAX_THREAD_REQUEST_LENGTH = 512;
 /** Bounds the receipt ids so the section's ids and counts alone always fit the smaller cap. */
 const MAX_THREAD_RECEIPT_IDS = 8;
 const MAX_THREAD_RECEIPT_ID_LENGTH = 128;

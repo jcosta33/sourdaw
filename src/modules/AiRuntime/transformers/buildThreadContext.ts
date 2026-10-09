@@ -14,8 +14,12 @@ type ThreadConfirmation = {
     assistantMessageId: string;
     status: ChatActionConfirmationStatus;
     supersededBy: string | null;
-    /** The batch's revert group, which is also its batch id: the id its receipt's work carries. */
-    groupId?: string;
+    /**
+     * The id of the command batch the confirmation records, read from its envelope: the id that
+     * batch's receipt work and revert group carry once it commits. Never the confirmation's own
+     * group id, which a re-proposed subset keeps from the proposal it replaced.
+     */
+    batchId: string | null;
     approvalSnapshot: {
         actions: ReadonlyArray<{ type: string; payload?: unknown }>;
         actionLabels: readonly string[];
@@ -109,19 +113,20 @@ function readStanding(receipt: AgentRunReceipt, sources: ThreadContextSources): 
 }
 
 /**
- * A confirmed batch's commit: the run's receipt for that very batch, whatever status the
- * confirmation settled in, since a batch that committed with effects still pending settles as
- * `failed` yet its change is in the project. Without that receipt the batch committed nothing.
+ * A confirmed batch's commit: the run's receipt for the very batch the confirmation records,
+ * whatever status the confirmation settled in, since a batch that committed with effects still
+ * pending settles as `failed` yet its change is in the project. Without that receipt the batch
+ * committed nothing.
  */
 function readConfirmedCommit(
     confirmation: ThreadConfirmation,
     sources: ThreadContextSources
 ): ThreadContext['lastCommit'] {
-    if (!isOpenProjectConfirmation(confirmation, sources) || confirmation.groupId === undefined) {
+    if (!isOpenProjectConfirmation(confirmation, sources) || confirmation.batchId === null) {
         return null;
     }
     const run = sources.runs.find((candidate) => candidate.runId === confirmation.runId);
-    const receipt = run?.receipts.find((candidate) => candidate.workId === confirmation.groupId);
+    const receipt = run?.receipts.find((candidate) => candidate.workId === confirmation.batchId);
     if (receipt === undefined) {
         return null;
     }
@@ -146,7 +151,7 @@ function readDirectCommit(message: ChatMessage, sources: ThreadContextSources): 
     const runId = message.agentRunId;
     const confirmedBatchIds = new Set(
         sources.confirmations.flatMap((candidate) =>
-            candidate.runId === runId && candidate.groupId !== undefined ? [candidate.groupId] : []
+            candidate.runId === runId && candidate.batchId !== null ? [candidate.batchId] : []
         )
     );
     const run = sources.runs.find((candidate) => candidate.runId === runId);

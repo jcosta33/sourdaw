@@ -16,6 +16,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     executeAppAction,
+    parseVersionedCommandBatchEnvelope,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -33,6 +34,7 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
+import { agentRunStore } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -42,6 +44,7 @@ import {
 import { revertAiActionGroup } from '../aiHistoryActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { readChatThreadContext } from '../readChatThreadContext';
+import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
@@ -648,6 +651,79 @@ describe('mix prompt workflow', () => {
 
         expect(aiActionHistoryStore.value?.groups.at(-1)?.reverted).toBe(true);
         expect(readCommitStanding()).toBe('unknown');
+    });
+
+    function readRecordedBatch(confirmationId: string) {
+        const commandBatch = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.commandBatch;
+        if (commandBatch === undefined) {
+            throw new Error(`Expected confirmation ${confirmationId} to record a command batch.`);
+        }
+        const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsed.status !== 'valid') {
+            throw new Error(parsed.reason);
+        }
+        return parsed.envelope;
+    }
+
+    // Partial acceptance previews the proposal in an isolated workspace, which only commands with an
+    // isolated-project preview can enter, so this proposal sets automation modes rather than the mix.
+    it('reads a subset accepted from the proposal as the commit, by the batch it committed under', async () => {
+        setProviderPlan([
+            { name: 'setAutomationMode', arguments: { trackId: 'track-lead-vocal', mode: 'touch' } },
+            { name: 'setAutomationMode', arguments: { trackId: 'track-guitar-left', mode: 'latch' } },
+            { name: 'setAutomationMode', arguments: { trackId: 'track-guitar-right', mode: 'latch' } },
+            { name: 'setAutomationMode', arguments: { trackId: 'track-room-mic', mode: 'write' } },
+        ]);
+        await sendChatMessage(
+            'Set automation mode of Lead Vocal to touch, set automation mode of Guitar Left to latch, set automation mode of Guitar Right to latch, and set automation mode of Room Mic to write, leaving the Drum Bus unchanged.'
+        );
+        const proposalId = getConfirmationId();
+        const [vocalCommand, guitarCommand] = readRecordedBatch(proposalId).commands;
+        if (vocalCommand === undefined || guitarCommand === undefined) {
+            throw new Error('Expected the proposal to carry the Lead Vocal and Guitar Left commands.');
+        }
+
+        const reproposed = await reproposePendingChatActions({
+            confirmationId: proposalId,
+            selectedIntentGroupIds: [vocalCommand.commandId, guitarCommand.commandId],
+        });
+        if (reproposed.status !== 'reproposed') {
+            throw new Error(`Expected the subset to be re-proposed, got ${JSON.stringify(reproposed)}.`);
+        }
+        const subset = getPendingActionConfirmation(reproposed.confirmationId);
+        const subsetBatchId = readRecordedBatch(reproposed.confirmationId).batchId;
+        // The subset keeps the replaced proposal's group id but commits under its own batch id.
+        expect(subset?.groupId).toBeDefined();
+        expect(subset?.groupId).not.toBe(subsetBatchId);
+
+        await expect(confirmPendingChatActions({ confirmationId: reproposed.confirmationId })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(getTrack('track-lead-vocal')).toMatchObject({ automationMode: 'touch' });
+        expect(getTrack('track-guitar-left')).toMatchObject({ automationMode: 'latch' });
+        expect(getTrack('track-guitar-right')).toMatchObject({ automationMode: 'read' });
+        expect(getTrack('track-room-mic')).toMatchObject({ automationMode: 'read' });
+        const subsetReceipt = agentRunStore.value?.runs
+            .find((run) => run.runId === subset?.runId)
+            ?.receipts.find((receipt) => receipt.workId === subsetBatchId);
+        expect(subsetReceipt?.revertGroupId).toBe(subsetBatchId);
+        const committed = readChatThreadContext();
+        expect(committed?.pendingProposal).toBeNull();
+        expect(committed?.lastCommit).toMatchObject({
+            runId: subset?.runId,
+            receiptIds: [subsetReceipt?.receiptIdentity],
+            standing: 'standing',
+            commands: [
+                { name: 'setAutomationMode', arguments: { trackId: 'track-lead-vocal', mode: 'touch' } },
+                { name: 'setAutomationMode', arguments: { trackId: 'track-guitar-left', mode: 'latch' } },
+            ],
+        });
+
+        await undo();
+
+        expect(getTrack('track-lead-vocal')).toMatchObject({ automationMode: 'read' });
+        expect(readCommitStanding()).toBe('undone');
     });
 
     it('reads a direct commit into the thread through the run its chat message names', async () => {

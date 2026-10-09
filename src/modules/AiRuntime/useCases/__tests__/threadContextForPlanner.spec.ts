@@ -20,7 +20,7 @@ import {
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { buildThreadContext, type ThreadContextSources } from '../../transformers/buildThreadContext';
-import { fitThreadContext } from '../../transformers/fitThreadContext';
+import { fitThreadContext, MAX_THREAD_REQUEST_LENGTH } from '../../transformers/fitThreadContext';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { orchestratePromptChatRequest } from '../agentRequestOrchestration/orchestratePromptChatRequest';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -123,17 +123,23 @@ function message(id: string, role: ChatMessage['role'], content: string, extra: 
 const OPEN_PROJECT = 'project-open';
 const OTHER_PROJECT = 'project-other';
 
+/**
+ * A confirmation as the store holds it. Its batch id is the one its command batch envelope records;
+ * its group id defaults to that batch id, as on a whole proposal, and differs on a subset re-proposed
+ * by partial acceptance, which keeps the group id of the proposal it replaced.
+ */
 function confirmation(input: {
     runId: string;
     assistantMessageId: string;
     status: 'proposed' | 'executed' | 'cancelled' | 'failed';
     supersededBy?: string | null;
     measuredPreview?: MeasuredPreview;
+    batchId?: string;
     groupId?: string;
     projectId?: string;
     actions?: ThreadContextSources['confirmations'][number]['approvalSnapshot']['actions'];
     actionLabels?: readonly string[];
-}): ThreadContextSources['confirmations'][number] {
+}): ThreadContextSources['confirmations'][number] & { groupId: string } {
     const approvalSnapshot: ThreadContextSources['confirmations'][number]['approvalSnapshot'] = {
         actions: input.actions ?? [GAIN_ACTION],
         actionLabels: input.actionLabels ?? ['Set Bass gain to -3 dB'],
@@ -142,12 +148,14 @@ function confirmation(input: {
     if (input.measuredPreview !== undefined) {
         approvalSnapshot.measuredPreview = input.measuredPreview;
     }
+    const batchId = input.batchId ?? `${input.runId}:batch-1`;
     return {
         runId: input.runId,
         assistantMessageId: input.assistantMessageId,
         status: input.status,
         supersededBy: input.supersededBy ?? null,
-        groupId: input.groupId ?? `${input.runId}:batch-1`,
+        batchId,
+        groupId: input.groupId ?? batchId,
         approvalSnapshot,
     };
 }
@@ -393,13 +401,13 @@ describe('thread context for the planner', () => {
                                 runId: 'run-batched',
                                 assistantMessageId: 'assistant-1',
                                 status: 'executed',
-                                groupId: 'run-batched:batch-1',
+                                batchId: 'run-batched:batch-1',
                             }),
                             confirmation({
                                 runId: 'run-batched',
                                 assistantMessageId: 'assistant-2',
                                 status: 'executed',
-                                groupId: 'run-batched:batch-2',
+                                batchId: 'run-batched:batch-2',
                                 actions: [{ type: 'setTrackGain', payload: { trackId: 'track-pad', gainDb: -6 } }],
                                 actionLabels: ['Set Pad gain to -6 dB'],
                             }),
@@ -538,7 +546,7 @@ describe('thread context for the planner', () => {
                                 runId: 'run-mixed',
                                 assistantMessageId: 'assistant-2',
                                 status,
-                                groupId: 'run-mixed:batch-2',
+                                batchId: 'run-mixed:batch-2',
                             }),
                         ],
                         runs: [{ runId: 'run-mixed', receipts: receipts.map((batch) => receipt('run-mixed', batch)) }],
@@ -565,7 +573,7 @@ describe('thread context for the planner', () => {
                             runId: 'run-direct',
                             assistantMessageId: 'assistant-1',
                             status: 'executed',
-                            groupId: 'run-direct:batch-2',
+                            batchId: 'run-direct:batch-2',
                         }),
                     ],
                     runs: [
@@ -583,6 +591,72 @@ describe('thread context for the planner', () => {
             expect(thread?.lastCommit?.receiptIds).toEqual(['command:run-direct:batch-1']);
         });
 
+        describe('a subset accepted from a larger proposal, which keeps the replaced group id', () => {
+            const PROPOSAL_BATCH = 'run-subset:proposal';
+            const SUBSET_BATCH = 'run-subset:subset';
+            const SUBSET_COMMIT = {
+                runId: 'run-subset',
+                receiptIds: [`command:${SUBSET_BATCH}`],
+                standing: 'standing',
+                commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB', arguments: GAIN_ACTION.payload }],
+                measuredDeltas: [],
+            };
+
+            function acceptedSubset(assistantMessageId: string) {
+                return confirmation({
+                    runId: 'run-subset',
+                    assistantMessageId,
+                    status: 'executed',
+                    batchId: SUBSET_BATCH,
+                    groupId: PROPOSAL_BATCH,
+                });
+            }
+
+            it('reports the subset by the batch it committed under, not the group it kept', () => {
+                const thread = buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'make the bass louder and pan the guitars'),
+                            message('assistant-1', 'assistant', 'Re-previewed against the current project.'),
+                            message('assistant-2', 'assistant', 'Executed.'),
+                        ],
+                        confirmations: [
+                            confirmation({
+                                runId: 'run-subset',
+                                assistantMessageId: 'assistant-1',
+                                status: 'proposed',
+                                supersededBy: 'confirmation-subset',
+                                batchId: PROPOSAL_BATCH,
+                            }),
+                            acceptedSubset('assistant-2'),
+                        ],
+                        runs: [{ runId: 'run-subset', receipts: [receipt('run-subset', SUBSET_BATCH)] }],
+                        pastGroupIds: new Set([SUBSET_BATCH]),
+                    })
+                );
+
+                expect(thread?.lastCommit).toEqual(SUBSET_COMMIT);
+            });
+
+            it("never lets a later direct commit of the same run take the subset's receipt", () => {
+                const thread = buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'make the bass louder and pan the guitars'),
+                            message('assistant-1', 'assistant', 'Executed.'),
+                            message('user-2', 'user', 'thanks'),
+                            commandMessage('assistant-2', 'run-subset'),
+                        ],
+                        confirmations: [acceptedSubset('assistant-1')],
+                        runs: [{ runId: 'run-subset', receipts: [receipt('run-subset', SUBSET_BATCH)] }],
+                        pastGroupIds: new Set([SUBSET_BATCH]),
+                    })
+                );
+
+                expect(thread?.lastCommit).toEqual(SUBSET_COMMIT);
+            });
+        });
+
         it('reports no commit from a message whose executed confirmation names a batch its run holds no receipt for', () => {
             const thread = buildThreadContext(
                 sources({
@@ -597,7 +671,7 @@ describe('thread context for the planner', () => {
                             runId: 'run-unreceipted',
                             assistantMessageId: 'assistant-2',
                             status: 'executed',
-                            groupId: 'run-unreceipted:batch-9',
+                            batchId: 'run-unreceipted:batch-9',
                         }),
                     ],
                     runs: [
@@ -626,7 +700,7 @@ describe('thread context for the planner', () => {
                                 runId: 'run-receipted',
                                 assistantMessageId: 'assistant-1',
                                 status,
-                                groupId: 'run-receipted:batch-2',
+                                batchId: 'run-receipted:batch-2',
                             }),
                         ],
                         runs: [{ runId: 'run-receipted', receipts: [receipt('run-receipted')] }],
@@ -855,6 +929,32 @@ describe('thread context for the planner', () => {
                 },
             });
             expect(local.section).not.toContain('"notes"');
+        });
+
+        it('cuts an earlier request longer than the bound to it and marks it truncated, beside a short one', () => {
+            const long = `${threadRequest(1)}${' and bring the hats down'.repeat(4)}`;
+            expect(long.length).toBeGreaterThan(MAX_THREAD_REQUEST_LENGTH);
+            const thread: ThreadContext = {
+                requests: [long, 'a bit less'],
+                pendingProposal: {
+                    runId: 'run-pending',
+                    commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
+                },
+                lastCommit: null,
+            };
+
+            for (const profile of ['local', 'hosted'] as const) {
+                const fitted = fitThreadContext(thread, profile);
+
+                expect(readSection(`\n\n${fitted.section}\n\n`).requests).toEqual([
+                    {
+                        trust: 'untrusted_user_string',
+                        value: long.slice(0, MAX_THREAD_REQUEST_LENGTH),
+                        truncated: true,
+                    },
+                    { trust: 'untrusted_user_string', value: 'a bit less', truncated: false },
+                ]);
+            }
         });
 
         it('measures the cap in UTF-8 bytes, so multi-byte requests stay within it', () => {
