@@ -17,6 +17,14 @@ tests/e2e/audioEnginePickersTestId.spec.ts
         "model": "claude-opus-5-5"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_68cfb7adce3891": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_68cfb7adce3891",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     }
   }
 }
