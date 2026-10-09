@@ -10,6 +10,7 @@ import {
     createSdkProviderPort,
 } from '../semanticReview/provider.ts';
 import { SEMANTIC_BUDGET_PROFILES } from '../semanticReview/rules.ts';
+import { sensitiveContentReason } from '../semanticReview/sensitive.ts';
 import {
     localTypeSafeFailure,
     prepareTypeSafeRequest,
@@ -445,6 +446,134 @@ describe('installed SDK prepared handoff', () => {
                 fetch,
             })
         ).rejects.toBeInstanceOf(mode === 'timeout' ? APITimeoutError : APIUserAbortError);
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('opaque bearer complete request admission', () => {
+    const opaque = ['A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0'].join('');
+    const header = ['Authorization:', 'Bearer', opaque].join(' ');
+    const positions = ['state', 'instructions', 'criteria', 'key', 'questionName', 'criterionKey', 'model'] as const;
+    function payload(position: (typeof positions)[number], value: string) {
+        let state: unknown = {};
+        if (position === 'state') {
+            state = { nested: [value] };
+        }
+        if (position === 'key') {
+            state = { [value]: 'ordinary' };
+        }
+        return {
+            state,
+            model: position === 'model' ? value : MODEL,
+            questions: {
+                [position === 'questionName' ? value : 'q']: {
+                    type: 'choice' as const,
+                    instructions: position === 'instructions' ? value : 'Is it ordinary?',
+                    criteria: {
+                        [position === 'criterionKey' ? value : 'true']:
+                            position === 'criteria' ? { nested: value } : 'ordinary',
+                    },
+                },
+            },
+        };
+    }
+
+    it.each(positions)('opaque bearer %s rejects before a would-hit cache and SDK delegate', async (position) => {
+        const request = payload(position, header);
+        const validCachedResponse = {
+            model: request.model,
+            answers: Object.fromEntries(
+                Object.keys(request.questions).map((key) => [
+                    key,
+                    {
+                        type: 'choice',
+                        choice: Object.keys(request.questions[key]!.criteria)[0],
+                        probabilities: Object.fromEntries(
+                            Object.keys(request.questions[key]!.criteria).map((label) => [label, 1])
+                        ),
+                        confidence: 0.9,
+                    },
+                ])
+            ),
+        };
+        const read = vi.fn(() => validCachedResponse);
+        const write = vi.fn();
+        const fetch = vi.fn<Fetch>(async () => response());
+        const sdk = createSdkProviderPort({ apiKey: KEY, fetch });
+        const systemOne = vi.fn(sdk.systemOne);
+        const profile = SEMANTIC_BUDGET_PROFILES.ci;
+        const budget = createBudgetController(profile);
+        const reserve = vi.spyOn(budget, 'reserve');
+        const before = budget.totals();
+        let failure: unknown;
+        try {
+            await assessUnit({
+                port: { systemOne },
+                cache: { read, write },
+                budget,
+                profile,
+                deadline: Date.now() + 60_000,
+                state: request.state,
+                questions: request.questions,
+                requestedModel: request.model,
+                signal: signal(),
+            });
+        } catch (error) {
+            failure = error;
+        }
+        expect(read).not.toHaveBeenCalled();
+        expect(write).not.toHaveBeenCalled();
+        expect(reserve).not.toHaveBeenCalled();
+        expect(systemOne).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
+        expect(budget.totals()).toEqual(before);
+        expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
+        expect(() => prepare(request)).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
+        expect(sensitiveContentReason(JSON.stringify(request))).toBeDefined();
+    });
+
+    it.each(positions)('opaque bearer placeholder %s reaches a valid matching cache', async (position) => {
+        const request = payload(position, 'Bearer runtimeCredentialReference');
+        const read = vi.fn(() => ({
+            model: request.model,
+            answers: Object.fromEntries(
+                Object.keys(request.questions).map((key) => [
+                    key,
+                    {
+                        type: 'choice',
+                        choice: Object.keys(request.questions[key]!.criteria)[0],
+                        probabilities: Object.fromEntries(
+                            Object.keys(request.questions[key]!.criteria).map((label) => [label, 1])
+                        ),
+                        confidence: 0.9,
+                    },
+                ])
+            ),
+        }));
+        const systemOne = vi.fn();
+        const result = await assessUnit({
+            port: { systemOne },
+            cache: { read, write: vi.fn() },
+            budget: createBudgetController(SEMANTIC_BUDGET_PROFILES.ci),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+            deadline: Date.now() + 60_000,
+            state: request.state,
+            questions: request.questions,
+            requestedModel: request.model,
+            signal: signal(),
+        });
+        expect(result.fromCache).toBe(true);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(systemOne).not.toHaveBeenCalled();
+    });
+
+    it('opaque bearer serialized envelope control reaches one installed SDK delegate unchanged', async () => {
+        const prepared = prepare(body({ header: 'Bearer <token>' }));
+        const fetch = vi.fn<Fetch>(async (_url, init) => {
+            expect(init?.body).toBe(prepared.serializedBody);
+            return response();
+        });
+        await sendTypeSafeRequest({ prepared, apiKey: KEY, signal: signal(), timeoutMs: 1000, fetch });
         expect(fetch).toHaveBeenCalledTimes(1);
     });
 });

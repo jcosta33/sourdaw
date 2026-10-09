@@ -71,3 +71,23 @@ historical reviewer stance and tier are not established here. Require `MAX_SAFE_
 succeed and `MAX_SAFE_INTEGER + 1` to refuse before a measurement record is returned or emitted.
 The per-run provider fold must likewise check all additions atomically before cache write and keep
 overflow terminal, with no partial total update or retry.
+
+## Escape: opaque Bearer scheme values
+
+[PR #4491](https://github.com/jcosta33/sourdaw/pull/4491), introduced by
+`9effe3689c72384f30f60971ca40f26a44c0a355`, added the shared screen and semantic
+adapter without recognizing opaque value-bearing HTTP authentication schemes outside vendor
+prefixes and secret assignments. Issue #5144 retained synthetic offline captures through scan and
+the installed SDK delegate, plus the stance CLI; these prove request admission and serialization,
+not disclosure of a real credential or remote network egress. Historical stance name and tier
+remain unestablished.
+
+Probe runtime-composed opaque Bearer values in ordinary source on either side and beyond a named
+hunk, verify evidence and every carried finding description, complete request leaves and keys,
+and both stance admission fields through parser, manual builder, direct wrapper and offline CLI.
+Require zero cache reads/writes, reservations, recording/provider calls and delegated fetches for
+the rejected unit, including a schema-valid would-hit cache. Pair refusal with placeholder/reference
+controls and a clean independent unit. A benign first candidate must not hide later material, and
+repeated calls must not inherit regex state. Revert only the recognizer on a committed head and
+require these caller oracles to fail. Keep the serialization-only screen probe independently
+load-bearing; decoded Bearer rejection does not prove the final-envelope screen.

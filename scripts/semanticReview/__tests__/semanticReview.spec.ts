@@ -69,6 +69,7 @@ import {
     assessUnit,
     computeResponseCacheKey,
     createBudgetController,
+    createSdkProviderPort,
     readUsage,
     TYPESAFE_MODEL,
     type SemanticProviderPort,
@@ -11297,5 +11298,228 @@ describe('verify refuses an omitted strongest-evidence answer', () => {
         });
         expect(report.findingAssessments).toHaveLength(0);
         expect(report.scope.unassessed[0]?.reason).toBe('invalid_response');
+    });
+});
+
+describe('opaque bearer source and caller admission', () => {
+    const opaque = secretFixture('A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0');
+    const header = ['Authorization:', 'Bearer', opaque].join(' ');
+    const path = 'src/modules/Project/__tests__/header.spec.ts';
+    const clean = 'it("ordinary", () => { expect(1).toBe(1); });\n';
+    const unsafe = `const header = '${header}';\n`;
+
+    it('opaque bearer source and JSON values reject all candidates without echoing material', () => {
+        const values = [
+            header,
+            unsafe,
+            JSON.stringify({ nested: [{ header }] }),
+            ['bEaReR', opaque].join(' '),
+            ['Bearer', opaque].join('\t'),
+            ['Bearer <token>', header].join('\n'),
+        ];
+        for (let repeat = 0; repeat < 3; repeat += 1) {
+            for (const value of values) {
+                const reason = sensitiveContentReason(value);
+                expect(reason).toBeTypeOf('string');
+                expect(reason).not.toBe('');
+                expect(reason).not.toContain(opaque);
+            }
+        }
+    });
+
+    it('opaque bearer controls remain eligible in decoded and serialized forms', () => {
+        for (const value of [
+            'Bearer',
+            'Bearer <token>',
+            'Bearer ${apiKey}',
+            'Bearer RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER',
+            'Bearer runtimeCredentialReference',
+            'CREDENTIAL_PATTERN = /\\bbearer\\s+/iu',
+            'A bearer header carries authentication material supplied by the caller.',
+        ]) {
+            expect(sensitiveContentReason(value), value).toBeUndefined();
+            expect(sensitiveContentReason(JSON.stringify({ value })), value).toBeUndefined();
+        }
+    });
+
+    function effects() {
+        const fetch = vi.fn(async () => new Response(JSON.stringify({ model: TYPESAFE_MODEL, answers: {} })));
+        const sdk = createSdkProviderPort({ apiKey: 'unused-offline-key', fetch });
+        const systemOne = vi.fn(sdk.systemOne);
+        const read = vi.fn(() => undefined);
+        const write = vi.fn();
+        return { fetch, systemOne, cache: { read, write }, provider: { systemOne }, log: vi.fn() };
+    }
+    function expectZero(effect: ReturnType<typeof effects>) {
+        expect(effect.cache.read).not.toHaveBeenCalled();
+        expect(effect.cache.write).not.toHaveBeenCalled();
+        expect(effect.systemOne).not.toHaveBeenCalled();
+        expect(effect.fetch).not.toHaveBeenCalled();
+    }
+
+    it.each(['before', 'after', 'fallback'] as const)(
+        'opaque bearer scan %s withholding has zero effects',
+        async (side) => {
+            const effect = effects();
+            const blobs: Record<string, string> = {};
+            const line = side === 'fallback' ? 99 : 1;
+            let hunk: PathHunks = { path, before: [], after: [{ startLine: line, endLine: line }] };
+            if (side === 'before') {
+                blobs[`${MERGE_BASE}:${path}`] = unsafe;
+                hunk = { path, before: [{ startLine: 1, endLine: 1 }], after: [] };
+            } else {
+                blobs[`${HEAD}:${path}`] = unsafe;
+            }
+            const source = fakeSource({
+                files: [changedFile(path, { kind: side === 'before' ? 'deleted' : 'added' })],
+                blobs,
+                hunks: new Map([[path, hunk]]),
+            });
+            const input = scanPorts(effect.provider, source, fixedClock(1_000));
+            const result = await runScan({ ...input, ports: { ...input.ports, cache: effect.cache } });
+            expect(result.report.scope.excluded).toContainEqual({
+                path,
+                reason: side === 'fallback' ? 'no-admissible-evidence' : 'credential-shaped-content-excluded',
+            });
+            expect(result.report.scope.truncated).toContainEqual({
+                path,
+                reason: 'evidence-withheld-credential-shaped',
+            });
+            expect(result.report.limitations.join(' ')).toContain('withheld');
+            expect(result.report.scope.assessed).toBe(0);
+            expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
+            expect(result.report.scope.cacheHits).toBe(0);
+            expectZero(effect);
+        }
+    );
+
+    it('opaque bearer scan placeholder admits a clean independent unit beside a withheld unit', async () => {
+        const safePath = 'src/modules/Project/__tests__/ordinary.spec.ts';
+        const provider = constantProvider(0.05);
+        const systemOne = vi.fn(provider.systemOne);
+        const result = await runScan(
+            scanPorts(
+                { systemOne },
+                fakeSource({
+                    files: [changedFile(path), changedFile(safePath)],
+                    blobs: {
+                        [`${MERGE_BASE}:${path}`]: unsafe,
+                        [`${HEAD}:${path}`]: unsafe,
+                        [`${MERGE_BASE}:${safePath}`]: clean,
+                        [`${HEAD}:${safePath}`]: `${clean}const header = 'Bearer <token>';\n`,
+                    },
+                }),
+                fixedClock(1_000)
+            )
+        );
+        expect(result.report.scope.excluded).toContainEqual({ path, reason: 'credential-shaped-content-excluded' });
+        expect(result.report.scope.assessed).toBe(1);
+        expect(systemOne).toHaveBeenCalled();
+        expect(JSON.stringify(systemOne.mock.calls)).not.toContain(opaque);
+    });
+
+    function finding(): CandidateFinding {
+        return {
+            findingId: 'f1',
+            headSha: HEAD,
+            claim: 'a claim',
+            expectedBehavior: 'expected behavior',
+            evidenceReferences: [{ path, side: 'after', startLine: 1, endLine: 1 }],
+        };
+    }
+    async function verify(candidate: CandidateFinding, text: string, effect: ReturnType<typeof effects>) {
+        const { runVerify } = await import('../verify.ts');
+        return runVerify({
+            ports: {
+                source: fakeSource({ files: [], blobs: { [`${HEAD}:${path}`]: text } }),
+                provider: effect.provider,
+                cache: effect.cache,
+                clock: fixedClock(1_000),
+                signal: new AbortController().signal,
+                log: effect.log,
+            },
+            revision: BASE_REVISION,
+            profile: SEMANTIC_BUDGET_PROFILES.local,
+            findings: [candidate],
+            runId: 'opaque-bearer-verify',
+        });
+    }
+
+    it('opaque bearer verify evidence withholding has zero effects', async () => {
+        const effect = effects();
+        const result = await verify(finding(), unsafe, effect);
+        expect(result.report.findingAssessments).toEqual([]);
+        expect(result.report.scope.truncated).toContainEqual({ path, reason: 'evidence-withheld-credential-shaped' });
+        expect(result.report.limitations.join(' ')).toContain('withheld');
+        expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
+        expect(result.report.scope.cacheHits).toBe(0);
+        expectZero(effect);
+    });
+
+    it.each([
+        'claim',
+        'expectedBehavior',
+        'reproductionReferences',
+        'allegedFailureInputOrState',
+        'allegedObservedBehavior',
+    ] as const)('opaque bearer finding %s rejects before cache or SDK delegate', async (field) => {
+        const effect = effects();
+        let candidate = finding();
+        if (field === 'reproductionReferences') {
+            candidate = {
+                ...candidate,
+                reproductionReferences: [{ path: 'probe.txt', note: header, verifiedExecution: false }],
+            };
+        } else {
+            candidate = { ...candidate, [field]: header };
+        }
+        const result = await verify(candidate, clean, effect);
+        expect(result.report.failureCode).toBe('sensitive_content_excluded');
+        expect(result.report.findingAssessments).toEqual([]);
+        expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
+        expect(result.report.scope.cacheHits).toBe(0);
+        expectZero(effect);
+    });
+
+    it('opaque bearer verify ordinary caller descriptions remain assessable', async () => {
+        const effect = effects();
+        effect.systemOne.mockImplementation(async ({ questions }) => {
+            const answers: Record<string, unknown> = {};
+            for (const [key, question] of Object.entries(questions)) {
+                if (
+                    typeof question !== 'object' ||
+                    question === null ||
+                    !('criteria' in question) ||
+                    typeof question.criteria !== 'object' ||
+                    question.criteria === null
+                ) {
+                    throw new Error('the verify fixture requires choice criteria');
+                }
+                const labels = Object.keys(question.criteria);
+                answers[key] = {
+                    type: 'choice',
+                    choice: labels[0],
+                    confidence: 0.9,
+                    probabilities: Object.fromEntries(labels.map((label) => [label, 1 / labels.length])),
+                };
+            }
+            return { model: TYPESAFE_MODEL, answers };
+        });
+        const result = await verify(
+            {
+                ...finding(),
+                allegedFailureInputOrState: 'an ordinary input',
+                allegedObservedBehavior: 'an ordinary observation',
+                reproductionReferences: [
+                    { path: 'probe.txt', note: 'a reported observation', verifiedExecution: false },
+                ],
+            },
+            clean,
+            effect
+        );
+        expect(result.report.failureCode, JSON.stringify(effect.log.mock.calls)).toBeUndefined();
+        expect(result.report.findingAssessments).toHaveLength(1);
+        expect(effect.cache.read).toHaveBeenCalledTimes(1);
+        expect(effect.systemOne).toHaveBeenCalledTimes(1);
     });
 });

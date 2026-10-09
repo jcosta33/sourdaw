@@ -670,3 +670,19 @@ real dispatcher, and assert notes plus both history stacks stay unchanged. One r
 cannot carry the family-wide claim. For replay, duplicate the clip ID on the same track and on another
 track after commit for undo, then again after undo for redo; assert the live notes remain exact and the
 blocked history entry stays on its original stack.
+
+## Escape: opaque Bearer fixtures missed complete caller admission
+
+[PR #4491](https://github.com/jcosta33/sourdaw/pull/4491) introduced the screen and
+adapter in `9effe3689c72384f30f60971ca40f26a44c0a355`. Issue #5144 exposed a
+value-bearing HTTP scheme outside vendor prefixes and secret assignments. Synthetic offline
+SDK/CLI captures established admission into request bytes, not real credential disclosure; the
+historical stance name, prompt and tier are unestablished.
+
+Compose opaque fixtures at runtime and exercise actual scan, verify, complete request and stance
+callers. Assert refusal unconditionally together with zero cache read/write, budget reservation,
+recording/provider invocation and delegated fetch; an empty answer or caught provider error is
+insufficient. Use a schema-valid would-hit cache, a later unsafe candidate after an admitted
+placeholder, repeated calls, ordinary controls and clean independent units. Preserve the separate
+serialized-only fixture. On a committed head, removing the recognizer must redden the caller cases,
+and bypassing preparation before cache must redden the would-hit-cache cases.

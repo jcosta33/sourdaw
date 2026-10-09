@@ -303,6 +303,19 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
     return !PLACEHOLDER_VALUE.test(value);
 }
 
+/** A scheme value stays a reference/placeholder even inside a quoted source or JSON string. */
+function hasOpaqueBearerValue(text: string): boolean {
+    // Match every candidate with a fresh iterator: a benign first example cannot hide later material.
+    // The 16-character floor matches the generic assignment screen's opaque-value floor.
+    for (const match of text.matchAll(/\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})/giu)) {
+        const value = match[1]!;
+        if (looksLikeCredentialValue(value, text[match.index + match[0].length] ?? '', false)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * The gap, operator, and value anchored at `stop`, when they can form a genuine second
  * assignment for a rejected value ending at `matchEnd`.
@@ -627,6 +640,9 @@ export function sensitiveContentReason(text: string): string | undefined {
         if (match !== null && (shape.validate === undefined || shape.validate(match))) {
             return shape.reason;
         }
+    }
+    if (hasOpaqueBearerValue(text)) {
+        return 'an opaque bearer credential';
     }
     return secretAssignmentReason(text);
 }

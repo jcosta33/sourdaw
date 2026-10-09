@@ -572,3 +572,51 @@ describe('parseStancesCheckThreshold', () => {
         expect(() => parseStancesCheckThreshold(raw)).toThrow(/threshold must be a number in \(0, 1\]/);
     });
 });
+
+describe('opaque bearer stance admission', () => {
+    const opaque = ['A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0'].join('');
+    const header = ['Authorization:', 'Bearer', opaque].join(' ');
+    const fields = ['stance', 'admittedBy'] as const;
+
+    it.each(fields)('opaque bearer %s refuses parser and manual builder safely', (field) => {
+        const admission = { ...GENUINE_ADMISSIONS[0]!, [field]: header };
+        for (const operation of [
+            () => readStancesCheckRecord({ stances: [admission] }, STANCES_PATH),
+            () => buildStancesCheckBody(checkRecord([admission])),
+        ]) {
+            let failure: unknown;
+            try {
+                operation();
+            } catch (error) {
+                failure = error;
+            }
+            expect(failure).toBeInstanceOf(Error);
+            expect(String(failure)).toContain(`stances[0].${field} contains`);
+            expect(String(failure)).not.toContain(opaque);
+        }
+    });
+
+    it.each(fields)('opaque bearer %s refuses a direct request bypassing the builder', async (field) => {
+        const body = buildStancesCheckBody(checkRecord());
+        body.state.stances[0]![field] = header;
+        const fetch = vi.fn(async () => new Response('{}'));
+        let failure: unknown;
+        try {
+            await requestStancesVerdicts(body, 'unused-offline-key', { signal: new AbortController().signal, fetch });
+        } catch (error) {
+            failure = error;
+        }
+        expect(fetch).not.toHaveBeenCalled();
+        expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
+        expect(String(failure)).not.toContain(opaque);
+    });
+
+    it.each(fields)('opaque bearer %s refuses actual offline CLI admission', (field) => {
+        const result = runOfflineCheck({ stances: [{ ...GENUINE_ADMISSIONS[0]!, [field]: header }] });
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).not.toContain('OFFLINE_REQUEST');
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(`stances[0].${field} contains`);
+        expect(result.stderr).not.toContain(opaque);
+    });
+});
