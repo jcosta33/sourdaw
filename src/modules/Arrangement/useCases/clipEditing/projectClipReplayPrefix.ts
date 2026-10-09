@@ -1,12 +1,12 @@
 import { getAutomationLanes, isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
-import { type AppAction, type ClipSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type ClipAutomationLaneSnapshot, type ClipSnapshot } from '#/utils/handlerContract';
 
 import { getTrackStoreState } from '../getTrackStoreState';
 
 type LocatedClip = { owningTrackId: string; clip: ClipSnapshot };
 type ShiftedOwnerState = {
     clips: readonly LocatedClip[];
-    lanes: ReturnType<typeof getAutomationLanes>;
+    lanes: readonly ClipAutomationLaneSnapshot[];
 };
 
 /** Exactly the geometry and automation `undoRippleDelete` writes, in group order.
