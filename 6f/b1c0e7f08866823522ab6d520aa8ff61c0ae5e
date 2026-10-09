@@ -1,0 +1,32 @@
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_4c8cd08893b364::t_1f27f3ce1158aa 205-211,217-249,252,267
+  s_4c8cd08893b364::t_def40688300c1c 260-262,264-265
+  s_4c8cd08893b364::t_282b26dc755381 250-251,266,271
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_4c8cd08893b364::t_407031d8959dbf 400
+  s_4c8cd08893b364::t_2e67f5f13f82ea 3
+  s_4c8cd08893b364::t_dd39b31ecaf63e 202-207
+  s_4c8cd08893b364::t_afc0ea05c9d668 263
+  s_4c8cd08893b364::t_f805ee9e4a5856 227-229,235-241,245-256,258-262,264
+  s_4c8cd08893b364::t_af3a2efc1300c1 371,375,379,385-399,401-422
+  s_4c8cd08893b364::t_1a3c8cb15dcf0b 466
+  s_4c8cd08893b364::t_7f83417337f3a0 4-5
+  s_4c8cd08893b364::t_3b44f4233bd62e 242-244
+  s_4c8cd08893b364::t_a46dba3cba7a51 423
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6fb1c0e7f08866823522ab6d520aa8ff61c0ae5e",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
