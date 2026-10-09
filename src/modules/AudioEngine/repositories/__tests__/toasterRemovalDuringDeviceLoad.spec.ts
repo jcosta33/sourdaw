@@ -9,13 +9,20 @@ import {
     type AudioEngineTopologyTestHarness,
 } from './createAudioEngineTopologyTestHarness';
 
+import type { GrandBouleNodeResult } from '../../engine/GrandBouleNode';
 import type { ToasterNodeResult } from '../../engine/ToasterNode';
 
 const toasterFactory = vi.hoisted(() => ({ createToasterNode: vi.fn() }));
+const grandBouleFactory = vi.hoisted(() => ({ createGrandBouleNode: vi.fn() }));
 
 vi.mock('../../engine/ToasterNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../../engine/ToasterNode')>()),
     createToasterNode: toasterFactory.createToasterNode,
+}));
+
+vi.mock('../../engine/GrandBouleNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../engine/GrandBouleNode')>()),
+    createGrandBouleNode: grandBouleFactory.createGrandBouleNode,
 }));
 
 class FakeWorkletNode {
@@ -74,6 +81,28 @@ function stubPendingToasterNode(): { result: ToasterNodeResult; finishLoad: () =
     return { result, finishLoad: () => construction.resolve(result) };
 }
 
+function makeGrandBouleResult(): GrandBouleNodeResult {
+    return {
+        workletNode: asWorkletNode(new FakeWorkletNode()),
+        noteOn: vi.fn(),
+        noteOff: vi.fn(),
+        noteExpression: vi.fn(),
+        setParam: vi.fn(),
+        setSustain: vi.fn(),
+        setUnaCorda: vi.fn(),
+        setSostenuto: vi.fn(),
+        discardStoredPedals: vi.fn(),
+        noteOnMidi2: vi.fn(),
+        setTemperament: vi.fn(),
+        allNotesOff: vi.fn(),
+        setBypass: vi.fn(),
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        destroy: vi.fn(),
+        ready: Promise.resolve({}),
+    };
+}
+
 function isRuntimeFailureReporter(value: unknown): value is (message: string) => void {
     return typeof value === 'function';
 }
@@ -118,7 +147,7 @@ async function settleDeviceLoad(): Promise<void> {
     });
 }
 
-function toasterDeviceIds(engine: AudioEngineTopologyTestHarness): string[] {
+function trackDeviceIds(engine: AudioEngineTopologyTestHarness): string[] {
     return engine.getTrackStrip('t1')?.deviceNodes.map((device) => device.deviceId) ?? [];
 }
 
@@ -163,7 +192,7 @@ describe('Toaster removed while its device is still loading', () => {
         expect(emitDeviceLoaded).not.toHaveBeenCalled();
         expect(emitDeviceRemoved).toHaveBeenCalledOnce();
         expect(toaster.result.destroy).toHaveBeenCalledOnce();
-        expect(toasterDeviceIds(engine)).toEqual([]);
+        expect(trackDeviceIds(engine)).toEqual([]);
     });
 
     it('notifies the removal once when the track holding the loading device is removed', () => {
@@ -207,7 +236,7 @@ describe('Toaster removed while its device is still loading', () => {
         await settleDeviceLoad();
 
         expect(toasterFactory.createToasterNode).toHaveBeenCalledTimes(2);
-        expect(toasterDeviceIds(engine)).toEqual(['toast-1']);
+        expect(trackDeviceIds(engine)).toEqual(['toast-1']);
         expect(emitDeviceRemoved).not.toHaveBeenCalled();
     });
 
@@ -227,7 +256,7 @@ describe('Toaster removed while its device is still loading', () => {
         newestRuntimeFailureReporter()('processor failed again');
         await settleDeviceLoad();
         expect(toasterFactory.createToasterNode).toHaveBeenCalledTimes(2);
-        expect(toasterDeviceIds(engine)).toEqual(['toast-1']);
+        expect(trackDeviceIds(engine)).toEqual(['toast-1']);
         expect(emitDeviceRemoved).not.toHaveBeenCalled();
 
         engine.removeDeviceFromStrip('t1', 'toast-1');
@@ -242,7 +271,7 @@ describe('Toaster removed while its device is still loading', () => {
 
         replaceDeviceChain(engine, [toasterInChain], [gainInChain, toasterInChain]);
 
-        expect(toasterDeviceIds(engine)).toEqual(['gain-1', 'toast-1']);
+        expect(trackDeviceIds(engine)).toEqual(['gain-1', 'toast-1']);
         expect(emitDeviceRemoved).not.toHaveBeenCalled();
 
         replaceDeviceChain(
@@ -288,12 +317,106 @@ describe('Toaster removed while its device is still loading', () => {
         await settleDeviceLoad();
 
         expect(toaster.result.destroy).toHaveBeenCalledOnce();
-        expect(toasterDeviceIds(engine)).toEqual(['toast-1']);
+        expect(trackDeviceIds(engine)).toEqual(['toast-1']);
         expect(emitDeviceRemoved).not.toHaveBeenCalled();
 
         engine.removeDeviceFromStrip('t1', 'toast-1');
 
         expect(emitDeviceRemoved).toHaveBeenCalledOnce();
         expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'toast-1', deviceType: 'toaster' });
+    });
+});
+
+describe('device removal announcements at strip teardown', () => {
+    let engine: AudioEngineTopologyTestHarness;
+    const emitDeviceLoaded = vi.fn();
+    const emitDeviceRemoved = vi.fn<(payload: DeviceLifecyclePayload) => void>();
+
+    function announcedRemovals(): DeviceLifecyclePayload[] {
+        return emitDeviceRemoved.mock.calls.map(([payload]) => payload);
+    }
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
+        setAudioDeviceRuntimeSink({ emitDeviceLoaded, emitDeviceRemoved });
+        engine = createAudioEngine(asAudioContext(createMockAudioContext()));
+    });
+
+    afterEach(() => {
+        setAudioDeviceRuntimeSink({});
+        vi.unstubAllGlobals();
+    });
+
+    // A failed Grand Boule leaves its stand-in in the chain: the device is still
+    // in the project, so only its later removal is announced.
+    it('announces no removal when Grand Boule fails at runtime, and once when it is removed', async () => {
+        grandBouleFactory.createGrandBouleNode.mockResolvedValue(makeGrandBouleResult());
+        engine.addDeviceToStrip('t1', 'gb-1', 'grand-boule');
+        await settleDeviceLoad();
+        expect(emitDeviceLoaded).toHaveBeenCalledWith({ deviceId: 'gb-1', deviceType: 'grand-boule' });
+        const reportRuntimeFailure: unknown = grandBouleFactory.createGrandBouleNode.mock.calls.at(-1)?.[2];
+        if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+            throw new TypeError('expected GrandBouleNode to receive a runtime failure reporter');
+        }
+
+        reportRuntimeFailure('render failed');
+        await settleDeviceLoad();
+
+        expect(trackDeviceIds(engine)).toEqual(['gb-1']);
+        expect(announcedRemovals()).toEqual([]);
+
+        engine.removeDeviceFromStrip('t1', 'gb-1');
+
+        expect(announcedRemovals()).toEqual([{ deviceId: 'gb-1', deviceType: 'grand-boule' }]);
+    });
+
+    // Removing a folder's last Toaster deactivates its strip, but the folder and
+    // the devices it still holds stay in the project.
+    it('announces only the removed Toaster when its folder strip is deactivated', () => {
+        stubPendingToasterNode();
+        engine.addDeviceToStrip('folder-1', 'toast-1', 'toaster');
+        engine.addDeviceToStrip('folder-1', 'gain-1', 'builtin-gain');
+
+        engine.removeDeviceFromStrip('folder-1', 'toast-1');
+        engine.deactivateTrackStrip('folder-1');
+
+        expect(engine.getTrackStrip('folder-1')).toBeUndefined();
+        expect(announcedRemovals()).toEqual([{ deviceId: 'toast-1', deviceType: 'toaster' }]);
+    });
+
+    it('announces each device once when the track holding them is removed', async () => {
+        const toaster = stubPendingToasterNode();
+        engine.addDeviceToStrip('t1', 'toast-1', 'toaster');
+        toaster.finishLoad();
+        await settleDeviceLoad();
+        engine.addDeviceToStrip('t1', 'gain-1', 'builtin-gain');
+
+        engine.removeTrackStrip('t1');
+
+        expect(announcedRemovals()).toEqual([
+            { deviceId: 'toast-1', deviceType: 'toaster' },
+            { deviceId: 'gain-1', deviceType: 'builtin-gain' },
+        ]);
+    });
+
+    it('announces each device once when a bus strip is removed', () => {
+        engine.ensureBusStrip('bus-1');
+        engine.addDeviceToStrip('bus-1', 'gain-b', 'builtin-gain');
+
+        engine.removeBusStrip('bus-1');
+
+        expect(engine.getTrackStrip('bus-1')).toBeUndefined();
+        expect(announcedRemovals()).toEqual([{ deviceId: 'gain-b', deviceType: 'builtin-gain' }]);
+    });
+
+    it('announces nothing when a graph reset tears down a bus strip and its device', () => {
+        engine.ensureBusStrip('bus-1');
+        engine.addDeviceToStrip('bus-1', 'gain-b', 'builtin-gain');
+
+        engine.resetGraph();
+
+        expect(engine.getTrackStrip('bus-1')).toBeUndefined();
+        expect(announcedRemovals()).toEqual([]);
     });
 });

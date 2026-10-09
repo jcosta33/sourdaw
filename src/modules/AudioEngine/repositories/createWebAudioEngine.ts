@@ -107,10 +107,12 @@ type ToasterPadOutputControls = ToasterDeviceControls & {
 
 /**
  * Why a strip is torn down. Only a strip whose track left the project takes its
- * devices out of the project; a graph reset rebuilds the same project, or one a
- * project load commits later, whose own store reset ends the outgoing devices.
+ * devices out of the project. A deactivated strip's track keeps its devices
+ * without a live strip (a folder whose last Toaster was removed); a graph reset
+ * rebuilds the same project, or one a project load commits later, whose own
+ * store reset ends the outgoing devices.
  */
-type StripTeardown = 'track-removed' | 'graph-reset';
+type StripTeardown = 'track-removed' | 'strip-deactivated' | 'graph-reset';
 
 type RuntimeGraphMutation<TValue> = Readonly<{
     value: TValue;
@@ -1808,6 +1810,13 @@ class AudioEngineImpl implements AudioEngine {
         this.mutateRuntimeGraph(() => ({
             value: undefined,
             changed: this.removeTrackStripFromGraph(trackId, 'track-removed'),
+        }));
+    }
+
+    public deactivateTrackStrip(trackId: string): void {
+        this.mutateRuntimeGraph(() => ({
+            value: undefined,
+            changed: this.removeTrackStripFromGraph(trackId, 'strip-deactivated'),
         }));
     }
 

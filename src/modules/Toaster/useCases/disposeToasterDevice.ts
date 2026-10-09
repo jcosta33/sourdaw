@@ -1,8 +1,10 @@
 /**
  * Device-teardown orchestrator for one Toaster instance.
  *
- * Called from AudioEngine's wasmDeviceRegistry on destroy(). Before this
- * existed, teardown deleted only the store record (unregisterToasterDevice),
+ * Called when the device leaves the project: on `audioDevice.removed`, and for
+ * every device at a project switch through `disposeEveryToasterDevice`. An
+ * engine rebuild of the same device never calls it. Before this existed,
+ * teardown deleted only the store record (unregisterToasterDevice),
  * which left every other per-device session live:
  *   - the sequencer kept `running:true` and its next-tick setTimeout re-armed,
  *     firing ghost hits after the device was gone;

@@ -63,6 +63,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeBusStrip: vi.fn(),
     removeMidiFxFromStrip: vi.fn(),
     removeTrackStrip: vi.fn(),
+    deactivateTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),

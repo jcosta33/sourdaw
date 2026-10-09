@@ -1670,9 +1670,10 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             if (placeholder.grandBouleControls) {
                 placeholder.grandBouleControls.setParam = () => {};
             }
+            // The failed stand-in stays in the chain, so the device has not left
+            // the project and its failure announces no removal.
             replaceRuntimeFailure?.(publishedNode, placeholder);
             publishedResult.destroy();
-            getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
         };
         const onRuntimeFailure = (message: string): void => {
             if (runtimeFailureMessage !== null) {

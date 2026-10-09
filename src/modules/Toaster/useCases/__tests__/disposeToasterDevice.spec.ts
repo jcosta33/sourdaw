@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
+
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
 import { disposeEveryToasterDevice } from '../disposeEveryToasterDevice';
@@ -33,7 +35,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         allNotesOff,
     })),
     getTrackStrip: vi.fn(() => ({
-        deviceNodes: [{ toasterControls: { ready: true, setPadParam } }],
+        deviceNodes: [DEVICE, PENDING_ONLY_DEVICE].map((deviceId) => ({
+            deviceId,
+            toasterControls: { ready: true, setPadParam },
+        })),
     })),
     applyNoteExpression: vi.fn(),
     audioEngine: {},
@@ -58,6 +63,35 @@ vi.mock('../triggerPad', () => ({
 }));
 
 const DEVICE = 'dispose-device';
+/** A device whose only trace in the Toaster module is a queued pad flush. */
+const PENDING_ONLY_DEVICE = 'pending-only-device';
+
+/**
+ * Pad writes resolve their target through the Arrangement track store, so the
+ * devices must sit on an eligible track for a flush to be queued at all.
+ */
+function placeDevicesOnTrack(): void {
+    trackStore.set({
+        ...defaultTrackState,
+        tracks: sanitizeTrackSnapshot({
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    kind: 'midi',
+                    devices: [DEVICE, PENDING_ONLY_DEVICE].map((id) => ({
+                        id,
+                        name: 'Toaster',
+                        type: 'toaster',
+                        bypassed: false,
+                        parameterValues: {},
+                    })),
+                },
+            ],
+            selectedTrackId: null,
+        }).tracks,
+    });
+}
 
 function activeStep(overrides: Partial<Step> = {}): Step {
     return {
@@ -107,6 +141,7 @@ describe('disposeToasterDevice', () => {
     afterEach(() => {
         vi.useRealTimers();
         toasterStore.set({});
+        trackStore.set(defaultTrackState);
     });
 
     // Bug #3: teardown deleted only the store record, leaving the sequencer
@@ -169,7 +204,9 @@ describe('disposeToasterDevice', () => {
     // Bug #3: a pad-param flush already queued on rAF could fire post-destroy,
     // writing to a detached worklet. Teardown must cancel the queued frame.
     it('cancels a queued rAF pad-param flush so it never reaches the worklet', () => {
+        placeDevicesOnTrack();
         seedDevice(DEVICE, activeStep());
+        const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame');
         // Queue a coalesced pad-param write (schedules a requestAnimationFrame).
         setToasterPadParam(DEVICE, 0, 'tune', 12);
 
@@ -179,6 +216,7 @@ describe('disposeToasterDevice', () => {
         // flushPadParam would push to the worklet's setPadParam here.
         vi.runAllTimers();
         expect(setPadParam).not.toHaveBeenCalled();
+        expect(cancelFrame).toHaveBeenCalledOnce();
     });
 });
 
@@ -195,6 +233,7 @@ describe('disposeEveryToasterDevice', () => {
     afterEach(() => {
         vi.useRealTimers();
         toasterStore.set({});
+        trackStore.set(defaultTrackState);
     });
 
     it('ends every device the outgoing project left a record or a session for', () => {
@@ -212,5 +251,20 @@ describe('disposeEveryToasterDevice', () => {
         scheduleHit.mockClear();
         vi.advanceTimersByTime(5000);
         expect(scheduleHit).not.toHaveBeenCalled();
+    });
+
+    // A device can leave nothing behind but a queued pad flush; the switch must
+    // still cancel it, or the frame writes the old project's edit to a worklet.
+    it('cancels a queued pad flush for a device with no store record or session', () => {
+        placeDevicesOnTrack();
+        const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame');
+        setToasterPadParam(PENDING_ONLY_DEVICE, 0, 'tune', 12);
+        expect(toasterStore.value).toEqual({});
+
+        disposeEveryToasterDevice();
+        vi.advanceTimersToNextFrame();
+
+        expect(setPadParam).not.toHaveBeenCalled();
+        expect(cancelFrame).toHaveBeenCalledOnce();
     });
 });

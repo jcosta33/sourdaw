@@ -1644,8 +1644,8 @@ describe('wasmDeviceRegistry descriptors', () => {
                 workerInstances: loaded.workerInstances,
             }).toEqual({ controllerReady: false, deviceReady: false, workerInstances: 0 });
             expect(result.destroy).toHaveBeenCalledOnce();
-            expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'gb-failed', deviceType: 'grand-boule' });
-            expect(emitDeviceRemoved).toHaveBeenCalledOnce();
+            // The demoted stand-in stays on the track: the device has not left the project.
+            expect(emitDeviceRemoved).not.toHaveBeenCalled();
         });
 
         it('does not publish a device that faults before ownership promotion', async () => {
