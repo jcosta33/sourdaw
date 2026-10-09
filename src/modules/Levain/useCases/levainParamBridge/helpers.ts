@@ -408,7 +408,15 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         });
     }
 
-    function unregisterLevainDevice(deviceId: string): void {
+    // A registration is identified by its worklet port, not by the device id
+    // alone: the engine can build a newer node under the same id (a stale
+    // load rejected after its successor registered, or an older node torn
+    // down late), and that node's teardown must not release the newer
+    // node's records, its in-flight load, or its store entry.
+    function unregisterLevainDevice(deviceId: string, port: MessagePort): void {
+        if (activePorts.get(deviceId) !== port) {
+            return;
+        }
         activeDevices.delete(deviceId);
         activePorts.delete(deviceId);
         registrationProgress.delete(deviceId);
