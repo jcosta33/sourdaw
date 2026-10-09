@@ -10,7 +10,7 @@ import {
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
-import { clearHandlerRegistry, macroStore, undoStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, undoHistoryStore, undoStore } from '#/modules/Command/stores';
 import {
     commitUndoEntry,
     createUndoEntry,
@@ -417,6 +417,64 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         ]);
         expect(undoStore.value?.past).toHaveLength(1);
     });
+
+    it.each([
+        { name: 'duplicate captured sibling identity', replacementId: 'clip-lane-a', replaceBoth: false },
+        {
+            name: 'captured siblings colliding with a resident lane',
+            replacementId: 'unrelated-lane',
+            replaceBoth: true,
+        },
+    ])(
+        'rejects saved removeClip with $name before Undo can consume history',
+        async ({ replacementId, replaceBoth }) => {
+            const first = automationLane('clip-lane-a', 'clip-a');
+            const second = automationLane('clip-lane-b', 'clip-a');
+            second.points[0]!.value = 0.75;
+            automationStore.set({ lanes: [first, second, automationLane('unrelated-lane')] });
+            flushAutomergeStorageWrites();
+
+            await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+            await vi.waitFor(() =>
+                expect(
+                    (parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length
+                ).toBe(1)
+            );
+            const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            const entries = persisted.past as {
+                inverseAction: { payload: { ripplePlan: { clipAutomationLanes: { id: string }[] } } };
+            }[];
+            const captured = entries[0]!.inverseAction.payload.ripplePlan.clipAutomationLanes;
+            expect(captured.map((lane) => lane.id)).toEqual(['clip-lane-a', 'clip-lane-b']);
+            if (replaceBoth) {
+                captured[0]!.id = replacementId;
+            }
+            captured[1]!.id = replacementId;
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(persisted));
+
+            const beforeRaw = structuredClone(getCrdtDoc('root'));
+            const beforeTrack = structuredClone(trackStore.value);
+            const beforeMidi = structuredClone(midiStore.value);
+            const beforeGain = structuredClone(gainEnvelopeStore.value);
+            const beforeWarp = structuredClone(warpStateStore.value);
+            const beforeTakes = structuredClone(takeLaneStore.value);
+            const beforeAutomation = structuredClone(automationStore.value);
+            hydrateProductionContracts();
+            expect(undoHistoryStore.value?.past).toEqual([]);
+            expect(undoHistoryStore.value?.future).toEqual([]);
+            const hydratedHistory = structuredClone(undoHistoryStore.value);
+
+            expect((await undo()).headConsumed).toBe(false);
+            expect(getCrdtDoc('root')).toEqual(beforeRaw);
+            expect(trackStore.value).toEqual(beforeTrack);
+            expect(midiStore.value).toEqual(beforeMidi);
+            expect(gainEnvelopeStore.value).toEqual(beforeGain);
+            expect(warpStateStore.value).toEqual(beforeWarp);
+            expect(takeLaneStore.value).toEqual(beforeTakes);
+            expect(automationStore.value).toEqual(beforeAutomation);
+            expect(undoHistoryStore.value).toEqual(hydratedHistory);
+        }
+    );
 
     it.each([
         {

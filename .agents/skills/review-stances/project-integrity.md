@@ -141,11 +141,11 @@ commands legitimately have different inverse types, so global type equality is n
 
 ## Lesson from the persisted clip-edit undo escape
 
-PR #3354 introduced the session mirror but did not prove that the real Delete Time, split, move,
-and remove handlers could save their generated inverse and redo payloads. Their live undo stacks
-worked until a reload; the mirror silently omitted entries whose internal restore actions lacked
-owner replay contracts. A neutral generated schema can also be narrower than the complete clip or
-time-operation snapshot captured by its owning handler.
+PR #3354 introduced internal replay contracts for the existing session mirror but did not prove that
+the real Delete Time, split, move, and remove handlers could save their generated inverse and redo
+payloads. Their live undo stacks worked until a reload; the mirror silently omitted entries whose
+internal restore actions lacked owner replay contracts. A neutral generated schema can also be
+narrower than the complete clip or time-operation snapshot captured by its owning handler.
 
 For each affected edit, execute the production action, wait until the session mirror contains its
 entry, register fresh production handlers to hydrate it, and exercise Undo and Redo against the
@@ -173,6 +173,15 @@ For saved clip-removal inverses, compare each lane with Automation's exact snaps
 admission. Keep a valid producer-capture/reload/Undo/Redo control with two clip lanes and an unrelated
 lane, then corrupt one nested lane field in the saved sibling entry. Hydration must drop that entry,
 and real Undo must leave raw document, track, MIDI, gain, Automation projections and history unchanged.
+
+The next #5064 repair checked each captured automation lane's shape but missed identity across
+siblings. A real two-lane `removeClip` can save an inverse where both captured lanes later carry
+one ID; Undo then appends duplicate IDs, or silently skips both when that ID belongs to a resident
+unrelated lane. Produce the saved entry through the registered action, change only the saved sibling
+IDs, hydrate fresh production contracts, and invoke real Undo. Require hydration to reject the whole
+entry before any write; raw document, owner projections, and complete history must remain unchanged.
+Keep the valid two-lane remove/save/hydrate/Undo/Redo control. A nested-shape-only stance cannot
+detect a duplicate identity among individually valid siblings.
 
 The #5064 move capture also needs Automation's point contract at saved-history admission. It records
 partial lane snapshots with only id, trackId, and points, so a full-lane validator is the wrong shape.
