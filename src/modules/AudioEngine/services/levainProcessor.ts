@@ -35,13 +35,17 @@
  * `releaseDisposedBanks`, one bounded step per message, answered by
  * `disposedBanksReleased { done }`: a step releases the retired bank, else
  * retires the sounding bank, else (both slots empty) frees the engine, which
- * then holds nothing bank-sized. A disposed processor honours only that message
- * and a repeated `dispose`, which it answers by posting `disposed` again.
+ * then holds nothing bank-sized. A disposed processor, faulted or not, honours
+ * only that message and a repeated `dispose`, which it answers by posting
+ * `disposed` again, and posts nothing for every other message.
  *
  * A faulted processor that has not been disposed drops every message except
+ * `dispose`, which it answers with `disposed` and starts the drain, and
  * `beginSampleBank` and `releaseRetiredBank`, which it answers by posting its
  * `error` again, so a host that began listening after the fault still learns
  * that no answer will come.
+ *
+ * ADR 0052's Message contract tables every answer by state.
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
@@ -449,10 +453,12 @@ class LevainProcessor extends AudioWorkletProcessor {
     }
 
     /**
-     * A faulted processor drops every message, so a host that registered its
-     * port listener after the fault posted `error` never saw it. A load that
-     * begins, or a release loop that asks, gets the fault posted again: that
-     * is the only way either sees that no answer will come.
+     * A faulted processor that is not disposed answers `beginSampleBank`,
+     * `releaseRetiredBank` and `dispose` and drops every other message, so a
+     * host that registered its port listener after the fault posted `error`
+     * never saw it. A load that begins, or a release loop that asks, gets the
+     * fault posted again: that is the only way either sees that no answer will
+     * come. Once disposed it posts no `error`; see ADR 0052's Message contract.
      */
     _answerAfterFault(): void {
         this.port.postMessage({ type: 'error', message: this._faultMessage });

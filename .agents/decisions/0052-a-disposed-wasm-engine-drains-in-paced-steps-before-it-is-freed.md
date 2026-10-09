@@ -30,7 +30,9 @@ removal, track deletion and every other route that destroys a Levain node.
 
 This record extends 0051 and supersedes one of its clauses. 0051 says a processor that "faulted or
 was disposed, and drops every later message"; a disposed processor now answers two, `releaseDisposedBanks` and a
-repeated `dispose`, and still drops every other. Every other clause of 0051 stands.
+repeated `dispose`, and still drops every other, and a faulted processor that is not disposed still
+answers `dispose`. Every other clause of 0051 stands. The [Message contract](#message-contract)
+below states every answer in full.
 
 - **A disposed processor never frees its engine in `dispose`.** `dispose` still posts `disposed`
   at once, so the loader's "processor ended" contract is unchanged.
@@ -62,6 +64,43 @@ repeated `dispose`, and still drops every other. Every other clause of 0051 stan
 
 The drain runs on the render thread, as 0051's release does, in steps bounded to a fraction of a
 quantum. Teardown of a very large bank takes proportionally many messages.
+
+## Message contract
+
+What `LevainProcessor` posts for each message it receives, by state. This table is the one statement
+of the contract; the processor's header, `AudioEngine`'s guidance and the loader's comments defer to it
+or restate only the rows they need. "Silent" means the message is dropped and nothing is posted.
+"Faulted" means a throw from `process()` or a message handler set `_faulted`; the processor then
+posted `error` once. A faulted processor that has not been disposed still handles `dispose`.
+
+| Message                                                                                          | Live                                                                                                                                         | Faulted, not disposed                                | Disposed, not faulted                              | Faulted, then disposed                             |
+| ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------- |
+| `init`                                                                                           | `ready` the first time, once the engine exists; silent after                                                                                 | silent                                               | silent                                             | silent                                             |
+| `noteOn`, `noteOff`, `noteExpression`, `allNotesOff`, `param`, `cc`, `discardStoredCc`, `bypass` | silent (queued or applied)                                                                                                                   | silent                                               | silent                                             | silent                                             |
+| `beginSampleBank`                                                                                | `sampleBankUploadDecision { loadToken, uploadRequired }`                                                                                     | `error { message }`, the original fault posted again | silent                                             | silent                                             |
+| `abortSampleBank`, `addSample`, `addZone`, `addLegatoTransition`                                 | silent for a stale or foreign `loadToken`; an abort of the current load posts `sampleBankError { loadToken, message }`                       | silent                                               | silent                                             | silent                                             |
+| `buildZoneMap`                                                                                   | `sampleBankLoaded { loadToken }` when the commit lands (a follower posts it when the owner's bank publishes); silent for a stale `loadToken` | silent                                               | silent                                             | silent                                             |
+| `releaseRetiredBank`                                                                             | `retiredBankReleased { loadToken, done }`, done at once for a token that retired nothing                                                     | `error { message }`, the original fault posted again | silent                                             | silent                                             |
+| `releaseDisposedBanks`                                                                           | silent                                                                                                                                       | silent                                               | `disposedBanksReleased { done }`, one bounded step | `disposedBanksReleased { done }`, one bounded step |
+| `dispose`                                                                                        | `disposed`; the processor is then disposed                                                                                                   | `disposed`; the processor is then disposed           | `disposed` again                                   | `disposed` again                                   |
+
+Where the posts come from, beyond the table:
+
+- **A throwing handler.** A throw inside a live handler posts `sampleBankError { loadToken, message }`
+  when a bank load is in flight (the load rejects, the processor stays live) and otherwise faults the
+  processor with `error { message }`. A throw in `process()` faults it.
+- **A processor that faulted before `init` completed** answers like the faulted column: it re-posts
+  `error` for `beginSampleBank` and `releaseRetiredBank`, buffers the rest unanswered, and a repeated
+  `init` retries the engine's creation.
+- **A message before `init`** is buffered, not answered, and replayed once the engine exists; `dispose`
+  clears the buffer.
+- **The disposal drain's answers.** `disposedBanksReleased { done: false }` follows a step that released
+  part of the retired bank or retired the sounding bank. `done: true` follows the step that freed the
+  emptied engine, and every request after it. A step that throws logs the error, poisons the engine
+  and answers `done: true` without freeing it; so does every later request. A disposed processor with
+  no engine answers `done: true` at once.
+- **Disposal itself** posts `disposed` even when releasing held notes or aborting the staged load
+  throws; it frees nothing. The processor then returns false from `process()`.
 
 ## Consequences
 
