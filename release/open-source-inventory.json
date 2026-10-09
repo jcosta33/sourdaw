@@ -1341,13 +1341,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:9323ae97b9cb4150a73a199406292a92be0dbac92aa913d1ac980ddc0697e470",
+                "daw-dsp sha256:af204945e2ec90754548718b2eb739ba76cb0ca91f91338c73ada12ee68819f3",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:1c3a4e4ed1ac200437a1f99ac185f1ccaf465c903afc864fa204968ff6e866b2",
                 "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
             ],
             "digests": [
-                "sha256:f15475b538b51d9f279de4ed3560956c9e51941d72610222863ee32cd74a9ba1:public/wasm/manifest.json"
+                "sha256:937ba0177947f6e11475923c62088bbbea7f2d5aeeec6218aba3b2a6e658f899:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1708,7 +1708,8 @@
             ],
             "paths": [
                 "scripts/semanticReview/**",
-                "scripts/semanticReview.ts"
+                "scripts/semanticReview.ts",
+                "scripts/typesafeRequest.ts"
             ],
             "sources": [
                 "https://api.typesafe.ai"
@@ -1766,7 +1767,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "f15475b538b51d9f279de4ed3560956c9e51941d72610222863ee32cd74a9ba1"
+            "sha256": "937ba0177947f6e11475923c62088bbbea7f2d5aeeec6218aba3b2a6e658f899"
         }
     ],
     "externalReferences": [
@@ -2352,7 +2353,7 @@
         },
         {
             "surface": "semantic-review-egress",
-            "file": "scripts/semanticReview/provider.ts",
+            "file": "scripts/typesafeRequest.ts",
             "value": "https://api.typesafe.ai"
         },
         {

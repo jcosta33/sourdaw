@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+    AUTHOR_BOT_NODE_ID,
     ORCHESTRATOR_USER_NODE_ID,
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
@@ -31,7 +32,13 @@ import { fail } from './prContract.ts';
 import { reviewBundlePath } from './reviewBundleLocator.ts';
 import { parseReviewDossier } from './reviewDossier.ts';
 import { acceptedFindings, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
-import { parseReviewRepairReply, type ReviewRepairRecord } from './reviewRepair.ts';
+import {
+    assertReviewRepairRecord,
+    parseReviewRepairReplyForRole,
+    reviewRepairRecordDigest,
+    type ReviewRepairConfirmation,
+    type ReviewRepairRecord,
+} from './reviewRepair.ts';
 
 export const REVIEW_RECONSTRUCT_USAGE = 'usage: pnpm review:reconstruct <pr-number>';
 
@@ -46,6 +53,7 @@ export type PublicReview = {
 export type PublicReviewComment = {
     id: number;
     reviewId: number;
+    actorNodeId: string | null;
     path: string;
     line: number;
     side: 'LEFT' | 'RIGHT';
@@ -59,7 +67,16 @@ export type ReconstructedFinding = {
     line: number;
     side: 'LEFT' | 'RIGHT';
     repairs: ReviewRepairRecord[];
+    confirmations: ReconstructedConfirmation[];
 };
+
+export type ReconstructedConfirmation = {
+    format: 'legacy-repair-v1' | 'repair-confirmation-v1';
+    recordDigest: string;
+    confirmationHead: string;
+};
+
+type PublicAuthorRepair = { record: ReviewRepairRecord; replyId: number };
 
 export type ReconstructedRound = {
     headSha: string;
@@ -104,7 +121,8 @@ function roleOf(actorNodeId: string): ReconstructedRound['role'] | undefined {
 /**
  * The governed rounds, oldest review first. Reviews from any other actor, and reviews that carry
  * no verdict (plain comments), are not rounds in the three-entity choreography and are skipped.
- * A reply comment is repair evidence for its root finding, never a finding of its own.
+ * Author V1 replies are repairs; immutable reviewer replies are separately linked confirmations. A
+ * reviewer record without an exact whole-record author digest and root-finding binding is unreadable.
  */
 export function reconstructReviewRounds(
     number: number,
@@ -118,22 +136,7 @@ export function reconstructReviewRounds(
             roots.set(comment.id, comment);
         }
     }
-    const repairsByRoot = new Map<number, ReviewRepairRecord[]>();
-    for (const comment of comments) {
-        if (comment.inReplyToId === undefined) {
-            continue;
-        }
-        const repair = parseReviewRepairReply(comment.body);
-        if (repair === undefined) {
-            continue;
-        }
-        if (!roots.has(comment.inReplyToId)) {
-            fail(`review reconstruction: repair reply ${comment.id} answers an unknown root comment`);
-        }
-        const list = repairsByRoot.get(comment.inReplyToId) ?? [];
-        list.push(repair);
-        repairsByRoot.set(comment.inReplyToId, list);
-    }
+    const { repairsByRoot, confirmationsByRoot } = reconstructPublicRepairEvidence(number, comments, roots);
     const findingsByReview = new Map<number, PublicReviewComment[]>();
     for (const comment of roots.values()) {
         const list = findingsByReview.get(comment.reviewId) ?? [];
@@ -152,11 +155,167 @@ export function reconstructReviewRounds(
             path: comment.path,
             line: comment.line,
             side: comment.side,
-            repairs: repairsByRoot.get(comment.id) ?? [],
+            repairs: (repairsByRoot.get(comment.id) ?? []).map((repair) => repair.record),
+            confirmations: confirmationsByRoot.get(comment.id) ?? [],
         }));
         rounds.push({ headSha: review.commitId, reviewId: review.id, role, verdict, findings });
     }
     return { pr: number, head: pullRequest.head, rounds };
+}
+
+function reconstructPublicRepairEvidence(
+    pr: number,
+    comments: readonly PublicReviewComment[],
+    roots: ReadonlyMap<number, PublicReviewComment>
+): { repairsByRoot: Map<number, PublicAuthorRepair[]>; confirmationsByRoot: Map<number, ReconstructedConfirmation[]> } {
+    const repairsByRoot = new Map<number, PublicAuthorRepair[]>();
+    const confirmationsByRoot = new Map<number, ReconstructedConfirmation[]>();
+    reconstructAuthorRepairs(pr, comments, roots, repairsByRoot);
+    reconstructReviewerConfirmations(pr, comments, roots, repairsByRoot, confirmationsByRoot);
+    return { repairsByRoot, confirmationsByRoot };
+}
+
+function reconstructAuthorRepairs(
+    pr: number,
+    comments: readonly PublicReviewComment[],
+    roots: ReadonlyMap<number, PublicReviewComment>,
+    repairsByRoot: Map<number, PublicAuthorRepair[]>
+): void {
+    for (const comment of comments) {
+        if (comment.inReplyToId === undefined || comment.actorNodeId !== AUTHOR_BOT_NODE_ID) {
+            continue;
+        }
+        const root = roots.get(comment.inReplyToId);
+        if (root === undefined) {
+            fail(`review reconstruction: repair reply ${comment.id} answers an unknown root comment`);
+        }
+        const parsed = parseReviewRepairReplyForRole(comment.body, 'author');
+        if (parsed === undefined || parsed.kind !== 'repair') {
+            continue;
+        }
+        assertPublicRepairFinding(parsed.record, pr, comment.inReplyToId, root);
+        const list = repairsByRoot.get(comment.inReplyToId) ?? [];
+        list.push({ record: parsed.record, replyId: comment.id });
+        repairsByRoot.set(comment.inReplyToId, list);
+    }
+}
+
+function reconstructReviewerConfirmations(
+    pr: number,
+    comments: readonly PublicReviewComment[],
+    roots: ReadonlyMap<number, PublicReviewComment>,
+    repairsByRoot: ReadonlyMap<number, PublicAuthorRepair[]>,
+    confirmationsByRoot: Map<number, ReconstructedConfirmation[]>
+): void {
+    for (const comment of comments) {
+        if (comment.inReplyToId === undefined || comment.actorNodeId !== REVIEWER_BOT_NODE_ID) {
+            continue;
+        }
+        const root = roots.get(comment.inReplyToId);
+        if (root === undefined) {
+            fail(`review reconstruction: confirmation reply ${comment.id} answers an unknown root comment`);
+        }
+        const parsed = parseReviewRepairReplyForRole(comment.body, 'reviewer');
+        if (parsed === undefined) {
+            continue;
+        }
+        if (parsed.kind === 'legacy-confirmation') {
+            addLegacyConfirmation(comment, pr, root, parsed.record, repairsByRoot, confirmationsByRoot);
+            continue;
+        }
+        if (parsed.kind === 'confirmation') {
+            addCompactConfirmation(comment, pr, root, parsed.confirmation, repairsByRoot, confirmationsByRoot);
+        }
+    }
+}
+
+function addLegacyConfirmation(
+    comment: PublicReviewComment,
+    pr: number,
+    root: PublicReviewComment,
+    record: ReviewRepairRecord,
+    repairsByRoot: ReadonlyMap<number, PublicAuthorRepair[]>,
+    confirmationsByRoot: Map<number, ReconstructedConfirmation[]>
+): void {
+    const rootId = comment.inReplyToId;
+    if (rootId === undefined) {
+        return;
+    }
+    assertPublicRepairFinding(record, pr, rootId, root);
+    const digest = reviewRepairRecordDigest(record);
+    const source = (repairsByRoot.get(rootId) ?? []).find(
+        (candidate) => candidate.replyId < comment.id && reviewRepairRecordDigest(candidate.record) === digest
+    );
+    if (source === undefined) {
+        fail(`review reconstruction: legacy confirmation ${comment.id} does not match an author repair record`);
+    }
+    addReconstructedConfirmation(confirmationsByRoot, rootId, {
+        format: 'legacy-repair-v1',
+        recordDigest: digest,
+        confirmationHead: source.record.head,
+    });
+}
+
+function addCompactConfirmation(
+    comment: PublicReviewComment,
+    pr: number,
+    root: PublicReviewComment,
+    confirmation: ReviewRepairConfirmation,
+    repairsByRoot: ReadonlyMap<number, PublicAuthorRepair[]>,
+    confirmationsByRoot: Map<number, ReconstructedConfirmation[]>
+): void {
+    const rootId = comment.inReplyToId;
+    if (rootId === undefined) {
+        return;
+    }
+    const source = (repairsByRoot.get(rootId) ?? []).find(
+        (candidate) =>
+            candidate.replyId < comment.id && reviewRepairRecordDigest(candidate.record) === confirmation.recordDigest
+    );
+    if (
+        source === undefined ||
+        confirmation.pr !== pr ||
+        confirmation.thread !== source.record.thread ||
+        source.record.pr !== pr
+    ) {
+        fail(
+            `review reconstruction: confirmation ${comment.id} has no matching author record, pull request, or thread`
+        );
+    }
+    assertPublicRepairFinding(source.record, pr, rootId, root);
+    addReconstructedConfirmation(confirmationsByRoot, rootId, {
+        format: confirmation.format,
+        recordDigest: confirmation.recordDigest,
+        confirmationHead: confirmation.confirmationHead,
+    });
+}
+
+function assertPublicRepairFinding(
+    record: ReviewRepairRecord,
+    pr: number,
+    rootId: number,
+    root: PublicReviewComment
+): void {
+    assertReviewRepairRecord(record);
+    // The root uses its review-time line; an immutable repair can record a later live line.
+    if (
+        record.pr !== pr ||
+        record.finding.commentId !== rootId ||
+        record.finding.path !== root.path ||
+        record.finding.side !== root.side
+    ) {
+        fail(`review reconstruction: repair record does not bind pull request ${pr} and root finding ${rootId}`);
+    }
+}
+
+function addReconstructedConfirmation(
+    confirmationsByRoot: Map<number, ReconstructedConfirmation[]>,
+    rootId: number,
+    confirmation: ReconstructedConfirmation
+): void {
+    const list = confirmationsByRoot.get(rootId) ?? [];
+    list.push(confirmation);
+    confirmationsByRoot.set(rootId, list);
 }
 
 /**
@@ -248,8 +407,10 @@ export function runReviewReconstruction(number: number, port: ReconstructReviewR
         port.reviewComments(number)
     );
     for (const round of reconstruction.rounds) {
+        const repairCount = round.findings.reduce((count, finding) => count + finding.repairs.length, 0);
+        const confirmationCount = round.findings.reduce((count, finding) => count + finding.confirmations.length, 0);
         port.log(
-            `round: head ${round.headSha} review ${round.reviewId} ${round.role} ${round.verdict} findings ${round.findings.length}`
+            `round: head ${round.headSha} review ${round.reviewId} ${round.role} ${round.verdict} findings ${round.findings.length} repairs ${repairCount} confirmations ${confirmationCount}`
         );
     }
     const comparisons: ShadowComparison[] = [];
@@ -358,6 +519,7 @@ export function readPublicReviewComments(gh: (args: string[]) => string, number:
         const comment: PublicReviewComment = {
             id,
             reviewId,
+            actorNodeId: isRecord(entry.user) && typeof entry.user.node_id === 'string' ? entry.user.node_id : null,
             path: entry.path,
             line,
             side: entry.side,

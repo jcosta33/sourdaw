@@ -72,6 +72,35 @@ describe('generateWebLlmCompletion', () => {
         });
     });
 
+    it('sends the bounded reply and the empty thinking block to the engine when tool planning asks', async () => {
+        await generateWebLlmCompletion('system', 'user', {
+            requireComplete: true,
+            maxTokens: 3_072,
+            enableThinking: false,
+        });
+
+        expect(mocks.createCompletion).toHaveBeenCalledWith(
+            expect.objectContaining({ max_tokens: 3_072, extra_body: { enable_thinking: false } })
+        );
+    });
+
+    it('leaves thinking to the model when the caller does not turn it off', async () => {
+        await generateWebLlmCompletion('system', 'user');
+
+        expect(mocks.createCompletion.mock.calls[0]?.[0]).not.toHaveProperty('extra_body');
+    });
+
+    it('logs the prompt tokens the engine reports beside the estimate', async () => {
+        mocks.createCompletion.mockResolvedValue({
+            choices: [{ finish_reason: 'stop', message: { content: '[]' } }],
+            usage: { prompt_tokens: 9_000, completion_tokens: 12 },
+        });
+
+        await generateWebLlmCompletion('system', 'user', { requireComplete: true, estimatedPromptTokens: 9_400 });
+
+        expect(mocks.info).toHaveBeenCalledWith('[WebLLM] prompt tokens reported=9000 estimated=9400 margin=400');
+    });
+
     it('preserves WebLLM runtime errors during strict tool planning', async () => {
         const error = new TypeError('WebGPU device lost');
         mocks.createCompletion.mockRejectedValue(error);

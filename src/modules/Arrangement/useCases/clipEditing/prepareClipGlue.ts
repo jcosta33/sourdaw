@@ -7,6 +7,7 @@ import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { createClipSatelliteTransitionPlan } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { keyMigratedAutomationLanes } from '../clip/keyMigratedAutomationLanes';
 import { readClipScopedAutomationLanes, type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
 
 import { getClipIdCensus } from './getClipIdCensus';
@@ -17,6 +18,8 @@ import { isPlainMidiGlueClip } from './isPlainMidiGlueClip';
 type PrepareClipGlueInput = {
     clipIds: readonly string[];
     targetClipId?: string;
+    /** The migrated lanes' ids a compiled glue recorded, in creation order; drawn fresh when absent. */
+    automationLaneIds?: readonly string[];
 };
 
 function byBeat<TPoint extends { beat: number }>(points: readonly TPoint[]): TPoint[] {
@@ -77,7 +80,7 @@ function migrateAutomationLanesToGluedClip(
     return migrated;
 }
 
-export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput): {
+export function prepareClipGlue({ clipIds, targetClipId, automationLaneIds }: PrepareClipGlueInput): {
     previous: ClipGlueActionSnapshot;
     next: ClipGlueActionSnapshot;
     targetClipId: string;
@@ -214,7 +217,13 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
     const sourceAutomationLanes = readClipScopedAutomationLanes(sourceIds).toSorted(
         (left, right) => sourceIds.indexOf(left.clipId) - sourceIds.indexOf(right.clipId)
     );
-    const gluedAutomationLanes = migrateAutomationLanesToGluedClip(sourceAutomationLanes, gluedId);
+    const gluedAutomationLanes = keyMigratedAutomationLanes(
+        migrateAutomationLanesToGluedClip(sourceAutomationLanes, gluedId),
+        automationLaneIds
+    );
+    if (!gluedAutomationLanes) {
+        return null;
+    }
 
     return {
         previous: {

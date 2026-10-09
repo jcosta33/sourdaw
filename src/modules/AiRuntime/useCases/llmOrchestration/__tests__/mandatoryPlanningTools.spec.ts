@@ -7,6 +7,14 @@ import {
     createCreativeInterpretationToolSchema,
     type CreativeInterpretationCatalog,
 } from '../../../models/CreativeInterpretation';
+import {
+    LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+    LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
+    LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS,
+} from '../../../models/LocalPlanningBudget';
+import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
+import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
+import { type ProjectContext } from '../../../models/ProjectContext';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../../models/WorkflowCapability';
 import { encodeWireToolName } from '../../../repositories/cloudLlm/cloudInference/encodeWireToolName';
@@ -18,8 +26,15 @@ import {
     compileProviderAdapterInstallation,
     OPENAI_RESPONSES_ADAPTER_ID,
 } from '../../../repositories/providerAdapterRegistry';
+import { engineState } from '../../../repositories/webLlm/engineLifecycleState';
+import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebLlmContextWindowSize';
+import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
+import { readAgentResourceLimits } from '../../../stores/agentResourceLimitsStore';
 import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSystemPrompt';
+import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
+import { describeLocalContextWindowShortfall } from '../../../transformers/localContextWindowRefusal';
+import { createPlanningProject } from '../../__tests__/planningProjectFixture';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -366,17 +381,177 @@ describe('mandatory planning tools', () => {
             expectAllMandatory(advertised);
         });
 
-        describe('system prompt size', () => {
-            // A ratchet, not a fit: the measured size of the WebLLM system prompt (the planning prompt
-            // plus its tool section) at this head, 38,327 with the creative catalogue the request and an
-            // empty project produce, rounded up to the next hundred. The merge base, before #4371 made
-            // the planning tools mandatory, measured 28,577 with 31 tools; main's bulk-set text has
-            // since grown the planning prompt (38,197 before it). Growth has to
-            // be justified in review by raising this number. It does not claim the prompt fits the model
-            // window; the whole local request already overflows it, and #4979 replaces this constant with
-            // a budget for the whole request.
-            const WEBLLM_SYSTEM_PROMPT_RATCHET_CHARACTERS = 38_400;
+        describe('the whole local request', () => {
+            const REQUEST = 'make the chorus wider and tame the harshness on the lead vocal';
+            const RECEIPT_EVIDENCE_CHARACTERS = 8_192;
 
+            // What a receipt turn carries at the evidence budget's ceiling: the loop's receipt header
+            // and receipt JSON, which the context escapes again as a JSON string.
+            function receiptEvidence(): string {
+                const receipt = {
+                    callId: 'call-1',
+                    toolName: PROJECT_DISCOVERY_TOOL_NAME,
+                    status: 'success',
+                    data: { trackId: 'track-3', name: 'Lead Vocal', gainDb: -6.2, devices: ['builtin-eq'] },
+                };
+                const receipts = JSON.stringify({ receipts: Array.from({ length: 64 }, () => receipt) });
+                return `Application-owned tool receipts from turn 1 follow as JSON.\n${receipts}`.slice(
+                    0,
+                    RECEIPT_EVIDENCE_CHARACTERS
+                );
+            }
+
+            async function sendLocalRequest(context: ProjectContext, receiptSummary?: string) {
+                const catalog = prepareCreativeInterpretationCatalog({
+                    prompt: REQUEST,
+                    context,
+                    projectRevision: 'revision-1',
+                });
+                const tools = productionToolSchemas(catalog);
+                const systemPrompt = buildPlanningSystemPrompt();
+                const built = buildAgentContext({
+                    fixedPolicy: systemPrompt,
+                    prompt: REQUEST,
+                    context,
+                    projectRevision: 'revision-1',
+                    receipts:
+                        receiptSummary === undefined ? [] : [{ id: 'application-tool-loop', summary: receiptSummary }],
+                    capabilitySchemas: tools.map((tool) => ({ name: tool.function.name, schemaVersion: 1 })),
+                    capabilityData: { creativeInterpretationCatalog: catalog },
+                });
+                const { generateWebLlmToolCalls } = await vi.importActual<
+                    typeof import('../../../repositories/webLlm/toolCalling')
+                >('../../../repositories/webLlm/toolCalling');
+                mocks.backendChain.value = ['webllm'];
+                mocks.generateWebLlmToolCalls.mockImplementation(generateWebLlmToolCalls);
+                const providerResults: ModelProviderResult[] = [];
+                const outcome = await generateToolPlanningOutcome(
+                    systemPrompt,
+                    built.message,
+                    tools,
+                    undefined,
+                    REQUEST,
+                    (result) => providerResults.push(result),
+                    undefined,
+                    undefined,
+                    AUTO_TOOL_CHOICE,
+                    undefined,
+                    built.localMessage
+                );
+                return { built, outcome, providerResults, sent: mocks.generateWebLlmCompletion.mock.calls[0] };
+            }
+
+            function emptyProject(): ProjectContext {
+                return getProjectContext();
+            }
+
+            function fiveTrackProject(): ProjectContext {
+                return createPlanningProject(getProjectContext(), 5);
+            }
+
+            // Each row is the whole request the engine receives, measured the way the budget measures
+            // it. Growth in the planning prompt, a tool description or the local message that pushes a
+            // realistic row past the window is answered by compaction or a larger window, not by
+            // dropping the row.
+            it.each([
+                { label: 'an empty project, first turn', project: emptyProject, receipts: undefined },
+                { label: 'an empty project, receipt turn', project: emptyProject, receipts: receiptEvidence },
+                { label: 'a five-track project, first turn', project: fiveTrackProject, receipts: undefined },
+                { label: 'a five-track project, receipt turn', project: fiveTrackProject, receipts: receiptEvidence },
+            ])('fits $label in the local window with the reply reserve', async ({ project, receipts }) => {
+                mocks.generateWebLlmCompletion.mockResolvedValue('[]');
+
+                const { built, outcome, sent } = await sendLocalRequest(project(), receipts?.());
+
+                expect(outcome).toMatchObject({ status: 'complete' });
+                const [systemText, userText, options] = sent ?? [];
+                if (typeof systemText !== 'string' || typeof userText !== 'string') {
+                    throw new TypeError('Expected the local request to reach the engine.');
+                }
+                expect(userText).toBe(built.localMessage);
+                const window = getWebLlmContextWindowSize();
+                const promptTokens =
+                    estimateConservativePromptTokens(systemText) +
+                    estimateConservativePromptTokens(userText) +
+                    LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS;
+                expect(promptTokens + LOCAL_PLANNING_REPLY_RESERVE_TOKENS).toBeLessThanOrEqual(window);
+                expect(options).toMatchObject({
+                    maxTokens: Math.min(readAgentResourceLimits().maxModelOutputTokens, window - promptTokens),
+                    enableThinking: false,
+                    estimatedPromptTokens: promptTokens,
+                });
+            });
+
+            it('refuses a 64-track project with the typed code, before the engine loads or runs', async () => {
+                mocks.isWebLlmLoaded.mockReturnValue(false);
+
+                const { outcome, providerResults } = await sendLocalRequest(
+                    createPlanningProject(getProjectContext(), 64)
+                );
+
+                expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+                expect(initWebLlmEngine).not.toHaveBeenCalled();
+                if (outcome.status !== 'rejected') {
+                    throw new Error('Expected the over-budget request to be refused.');
+                }
+                const figures = /needs about ([\d,]+) tokens.*the window holds ([\d,]+)\./.exec(outcome.reason);
+                const needed = Number(figures?.[1]?.replaceAll(',', ''));
+                const available = Number(figures?.[2]?.replaceAll(',', ''));
+                expect(available).toBe(getWebLlmContextWindowSize());
+                expect(needed).toBeGreaterThan(available);
+                expect(outcome.reason).toContain('Use a hosted model');
+                expect(providerResults).toHaveLength(1);
+                expect(providerResults[0]?.failure).toMatchObject({
+                    code: LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+                    retryable: false,
+                    safeMessage: outcome.reason,
+                });
+            });
+
+            it.each(['Qwen3-1.7B-q4f16_1-MLC', 'Qwen3-8B-q4f16_1-MLC'])(
+                'refuses a five-track request on %s and points at the local model whose window holds it',
+                async (modelId) => {
+                    engineState.activeModelId = modelId;
+                    try {
+                        const { outcome, providerResults } = await sendLocalRequest(fiveTrackProject());
+
+                        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+                        expect(outcome).toMatchObject({
+                            status: 'rejected',
+                            reason: expect.stringContaining(
+                                `the window holds ${getWebLlmContextWindowSize(modelId).toLocaleString('en-US')}. Switch to the Standard local model, whose window holds it, or use a hosted model.`
+                            ),
+                        });
+                        expect(providerResults[0]?.failure?.code).toBe(LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE);
+                    } finally {
+                        engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
+                    }
+                }
+            );
+
+            it("refuses the request the same way when the engine's own count overflows the window", async () => {
+                mocks.generateWebLlmCompletion.mockRejectedValue(
+                    new Error(
+                        'Prompt tokens exceed context window size: number of prompt tokens: 33000; context window size: 32768\nConsider shortening the prompt, or increase `context_window_size`, or using sliding window via `sliding_window_size`.'
+                    )
+                );
+
+                const { outcome, providerResults } = await sendLocalRequest(fiveTrackProject());
+
+                const reason = describeLocalContextWindowShortfall({
+                    neededTokens: 33_000 + LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
+                    windowTokens: 32_768,
+                });
+                expect(outcome).toEqual({ status: 'rejected', reason });
+                expect(providerResults).toHaveLength(1);
+                expect(providerResults[0]?.failure).toMatchObject({
+                    code: LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+                    safeMessage: reason,
+                });
+            });
+        });
+
+        describe('system prompt', () => {
             // The creative interpretation tool is built from the catalogue the request and the project
             // produce, as parsePromptToActions builds it, so its size is the production size.
             async function serializeWebLlmPrompt(prompt: string): Promise<{ advertised: ToolSchema[]; text: string }> {
@@ -401,7 +576,7 @@ describe('mandatory planning tools', () => {
             }
 
             it.each(['add an eq device to the vocals', 'the bass is muddy, clean it up'])(
-                'keeps the WebLLM system prompt within its size ratchet for "%s"',
+                'spells every mandatory tool in the WebLLM system prompt for "%s"',
                 async (prompt) => {
                     const { advertised, text } = await serializeWebLlmPrompt(prompt);
 
@@ -409,7 +584,6 @@ describe('mandatory planning tools', () => {
                     for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
                         expect(text, `${name} must stay in the prompt`).toContain(`- ${name}:`);
                     }
-                    expect(text.length).toBeLessThanOrEqual(WEBLLM_SYSTEM_PROMPT_RATCHET_CHARACTERS);
                 }
             );
 
