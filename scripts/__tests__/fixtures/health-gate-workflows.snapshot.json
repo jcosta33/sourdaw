@@ -864,7 +864,8 @@
           {
             "name": "Install ALSA development headers",
             "shell": "bash",
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo apt-get update && sudo apt-get install -y libasound2-dev; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "timeout-minutes": 30,
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1449,7 +1450,9 @@
           },
           {
             "name": "Install ALSA development headers",
-            "run": "sudo apt-get update && sudo apt-get install -y libasound2-dev"
+            "shell": "bash",
+            "timeout-minutes": 30,
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -2160,7 +2163,7 @@
       "measure": {
         "name": "Measure browser audio quanta",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 60,
+        "timeout-minutes": 30,
         "env": {
           "MEASUREMENT_REPOSITORY": "${{ github.repository }}",
           "MEASUREMENT_PR": "${{ github.event.pull_request.number }}",
@@ -2195,7 +2198,8 @@
           },
           {
             "name": "Install Google Chrome",
-            "run": "pnpm exec playwright install chrome"
+            "timeout-minutes": 20,
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 5m node_modules/.bin/playwright install --force chrome; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Verify committed WASM artifacts",

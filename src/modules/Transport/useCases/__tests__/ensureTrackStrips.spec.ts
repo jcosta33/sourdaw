@@ -71,6 +71,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 // Mock AudioEngine use cases
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),

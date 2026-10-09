@@ -1,9 +1,12 @@
+import { configureDualMonoPannerInput } from '#/utils/audioLevelLaw';
+
 import { type OfflineDeviceNode } from '../types';
 
 // ── Stereo Widener ───────────────────────────────────────────────────────
 
 export function createStereoWidener(ctx: BaseAudioContext): OfflineDeviceNode {
     const input = ctx.createGain();
+    configureDualMonoPannerInput(input);
     const output = ctx.createGain();
     const splitter = ctx.createChannelSplitter(2);
     const merger = ctx.createChannelMerger(2);

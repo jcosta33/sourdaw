@@ -1,7 +1,13 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-import { launch_new_project, PREFERENCES_STORAGE_KEY, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import {
+    LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+    launch_new_project,
+    PREFERENCES_STORAGE_KEY,
+    setupWorkspace,
+    wait_for_workspace_ready,
+} from './e2eUtils';
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 const OFFLINE_IDLE_WINDOW_MS = 500;
@@ -286,7 +292,7 @@ async function openSavedProjectInFreshPage(page: Page, name: string) {
     const assertOffline = await blockExternalRequests(reopenedPage);
     await reopenedPage.goto(appRootUrl);
     const launchScreen = reopenedPage.getByLabel('Sourdaw — start a project');
-    await expect(launchScreen).toBeVisible({ timeout: 30_000 });
+    await expect(launchScreen).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
     const recentProject = reopenedPage.getByRole('button', { name: `Open recent project ${name}` });
     await expect(recentProject).toBeVisible();
     await recentProject.click();
