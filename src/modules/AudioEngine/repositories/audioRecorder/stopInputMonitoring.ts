@@ -8,9 +8,12 @@ import { releaseMonitorCapture } from './releaseMonitorCapture';
  *
  * Pending acquisitions are orphaned rather than cancelled: each settlement
  * releases its late stream exactly once and can never connect a fresh edge,
- * because a start after teardown acquires its own request for that key.
+ * because a start after teardown acquires its own request for that key. The
+ * teardown epoch advances so an open that was in flight reads its settlement as
+ * cancelled rather than refused.
  */
 export function stopInputMonitoring(): void {
+    inputMonitoringSession.teardownEpoch++;
     const keys: MonitorCaptureKey[] = [...inputMonitoringSession.captures.keys()];
     for (const key of keys) {
         const capture = inputMonitoringSession.captures.get(key);
