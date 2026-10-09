@@ -1,0 +1,30 @@
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerEvents.spec.ts
+  s_2bfd55a4393d7c::t_c997273397ed29 175-177,196
+  s_2bfd55a4393d7c::t_0d2d5ee3f29682 147-174,178-195,197-218
+src/modules/MIDI/useCases/midiClipData/projectMidiClipWindow.ts
+  s_2bfd55a4393d7c::t_ae8753991082d6 83
+  s_2bfd55a4393d7c::t_411e001a0b78a2 48-56
+  s_2bfd55a4393d7c::t_a3e8eb94496aea 2
+  s_2bfd55a4393d7c::t_028d7c60ebffba 47
+src/modules/MIDI/useCases/midiClipData/__tests__/projectMidiClipWindow.spec.ts
+  s_2bfd55a4393d7c::t_0babd6c2516ba6 1-14,18,20-21,24-28,31-40,43-49
+  s_2bfd55a4393d7c::t_5c1a2a4a4b7a57 15-17,19,22-23,29-30,41-42
+src/modules/Arrangement/useCases/__tests__/exportMidiClipPlayback.spec.ts
+  s_2bfd55a4393d7c::t_fd220357a19a31 504-516
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16de3210333362b0f7a815635bba8fe5997d4162",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
