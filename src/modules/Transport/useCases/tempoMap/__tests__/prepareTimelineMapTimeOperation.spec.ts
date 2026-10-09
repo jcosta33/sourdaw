@@ -475,6 +475,46 @@ describe('prepareTimelineMapTimeOperation', () => {
             ]);
         });
 
+        it('carries the span-end tempo past a kept lead-in that would otherwise read at the span start', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 4, 80), tempoChange('b', 6, 180), tempoChange('c', 10, 180)]),
+                timeSignatureState([])
+            );
+
+            deleteTime(2, 8);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ beat, tempo }) => [beat, tempo])).toEqual([
+                [0, 80],
+                [2, 180],
+                [4, 180],
+            ]);
+            expect([0, 1, 2, 3].map((beat) => getTempoAtBeat(after, beat, 120))).toEqual([80, 80, 180, 180]);
+        });
+
+        it('carries the span-end tempo past a kept lead-in when a ramp follows the cut', () => {
+            setStoreStates(
+                tempoState([
+                    tempoChange('a', 4, 80),
+                    tempoChange('b', 6, 180),
+                    { id: 'c', beat: 10, tempo: 180, curve: 'linear' },
+                    tempoChange('d', 14, 120),
+                ]),
+                timeSignatureState([])
+            );
+
+            deleteTime(2, 8);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
+                [0, 80, 'instant'],
+                [2, 180, 'instant'],
+                [4, 180, 'linear'],
+                [8, 120, 'instant'],
+            ]);
+            expect([2, 3].map((beat) => getTempoAtBeat(after, beat, 120))).toEqual([180, 180]);
+        });
+
         it('keeps the lead-in tempo when the change at the span end becomes the first change', () => {
             setStoreStates(tempoState([tempoChange('a', 4, 100), tempoChange('b', 6, 80)]), timeSignatureState([]));
 

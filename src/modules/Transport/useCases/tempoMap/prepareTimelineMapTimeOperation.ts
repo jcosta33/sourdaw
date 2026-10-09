@@ -268,9 +268,15 @@ function keepLeadInTempo(
 }
 
 function carryTempoAcrossDeletion(input: CarryAcrossDeletionInput<TempoChange>): TempoChange[] {
-    const carried = carryTempoToSpanStart(input);
-    const leadIn = keepLeadInTempo(input, carried);
-    return [leadIn, carried].filter((change) => change !== null);
+    const provisional = carryTempoToSpanStart(input);
+    const leadIn = keepLeadInTempo(input, provisional);
+    if (!leadIn) {
+        return provisional ? [provisional] : [];
+    }
+    // The lead-in tempo now reads at the span start, so whether the start already
+    // holds the tempo in force at the span end is decided on the map that has it.
+    const carried = carryTempoToSpanStart({ ...input, remaining: [...input.remaining, leadIn] });
+    return carried ? [leadIn, carried] : [leadIn];
 }
 
 function meterBarBeats(change: TimeSignatureChange): number {
