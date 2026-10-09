@@ -1,0 +1,29 @@
+.agents/skills/review-stances/session-lifecycle.md
+  s_1f0dcd815e8946::t_dc31274d1a0ea8 195-203
+src/modules/AudioEngine/useCases/audioRecorder/reconcileAutoInputMonitoring.ts
+  s_1f0dcd815e8946::t_dc31274d1a0ea8 1,104-107
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/reconcileAutoInputMonitoring.storeOnlyMode.spec.ts
+  s_1f0dcd815e8946::t_0bda8362c91d4f 3,12,33-34,216-228,235-262,264-294,296-300,302-316
+  s_1f0dcd815e8946::t_544bc88ca2eb04 301,407-408,410-411,416-419,431,436
+  s_1f0dcd815e8946::t_27ef6b7800b45b 229-234,263,295
+  s_1f0dcd815e8946::t_dc31274d1a0ea8 357-358,368-377,384-406,409,412-415,420-430,432-435,437-442
+  s_1f0dcd815e8946::t_80efd1b4462604 317,443
+src/modules/AudioEngine/AGENTS.md
+  s_1f0dcd815e8946::t_7d7b3129ad3e64 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6fb133140227fd047d14f7f2f330d122a27a9f6",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
