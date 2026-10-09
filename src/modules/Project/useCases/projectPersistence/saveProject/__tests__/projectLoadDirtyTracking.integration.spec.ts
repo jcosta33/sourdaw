@@ -62,6 +62,7 @@ const {
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 

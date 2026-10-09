@@ -97,6 +97,20 @@ const BROWSER_INSTALL_WORST_CASE_SECONDS =
     BROWSER_INSTALL_ATTEMPTS *
         ((ROOT_DEPENDENCY_CAP_MINUTES + USER_BROWSER_CAP_MINUTES) * 60 + INSTALL_KILL_AFTER_SECONDS) +
     INSTALL_BACKOFF_SECONDS;
+// What a retry loop ends with once its last attempt has failed: the exit that
+// fails the step. Without it three failed installs fall out of the loop green.
+const BROWSER_INSTALL_FAILING_EXIT = 'if [ "$attempt" -eq 3 ]; then\n    exit 1\n  fi';
+// The ALSA headers are one small apt install, but `apt-get update` is the slow
+// part on a slow mirror, so each attempt carries the same 8 minute root cap as
+// the browser dependency install, and apt gets a TERM before the KILL.
+const ALSA_ATTEMPT_CAP_MINUTES = 8;
+const ALSA_INSTALL_COMMAND = `sudo timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ALSA_ATTEMPT_CAP_MINUTES}m bash -c 'apt-get update && apt-get install -y libasound2-dev'`;
+// The loop sleeps `attempt * 15` seconds after a failed attempt except the last.
+const ALSA_BACKOFF_SECONDS = 15 + 30;
+const ALSA_INSTALL_WORST_CASE_SECONDS =
+    BROWSER_INSTALL_ATTEMPTS * (ALSA_ATTEMPT_CAP_MINUTES * 60 + INSTALL_KILL_AFTER_SECONDS) + ALSA_BACKOFF_SECONDS;
+// What the ALSA run script ends with: the exit that fails the step.
+const ALSA_FAILING_TAIL = 'done\nexit 1';
 const HEAVY_E2E_INSTALL_STEP_MINUTES = 35;
 // Longest observed time of every step except the browser install, per job.
 const SMOKE_NON_INSTALL_SECONDS = 480;
@@ -755,6 +769,9 @@ function assertBoundedBrowserInstall(
     if (!installRun.includes(USER_BROWSER_INSTALL_COMMAND)) {
         throw new Error(`${label} must bound the browser download with its own timeout`);
     }
+    if (!installRun.includes(BROWSER_INSTALL_FAILING_EXIT)) {
+        throw new Error(`${label} must fail the step after the third failed install attempt`);
+    }
     const timeoutMinutes = job['timeout-minutes'];
     if (typeof timeoutMinutes !== 'number' || timeoutMinutes < requiredBrowserInstallJobMinutes(nonInstallSeconds)) {
         throw new Error(
@@ -763,6 +780,32 @@ function assertBoundedBrowserInstall(
     }
     if (timeoutMinutes !== declaredJobMinutes) {
         throw new Error(`${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`);
+    }
+}
+
+// A hung apt never exits, so a retry loop alone never retries (#5072): every
+// attempt carries a root-side deadline, the step a limit that holds all
+// attempts plus backoff below its job's limit, and the loop ends in the exit
+// that fails the step.
+function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
+    const step = stepNamed(job, 'Install ALSA development headers');
+    const run = stringAt(step, 'run');
+    if (!run.includes('for attempt in 1 2 3')) {
+        throw new Error(`${label} must retry the ALSA header install against mirror outages`);
+    }
+    if (!run.includes(ALSA_INSTALL_COMMAND)) {
+        throw new Error(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
+    }
+    if (!run.trimEnd().endsWith(ALSA_FAILING_TAIL)) {
+        throw new Error(`${label} must fail the step after the third failed ALSA install attempt`);
+    }
+    const stepTimeoutMinutes = step['timeout-minutes'];
+    if (typeof stepTimeoutMinutes !== 'number' || stepTimeoutMinutes * 60 <= ALSA_INSTALL_WORST_CASE_SECONDS) {
+        throw new Error(`${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`);
+    }
+    const jobTimeoutMinutes = job['timeout-minutes'];
+    if (typeof jobTimeoutMinutes !== 'number' || stepTimeoutMinutes >= jobTimeoutMinutes) {
+        throw new Error(`${label} must keep the ALSA step limit below its job limit`);
     }
 }
 
@@ -3256,6 +3299,180 @@ describe('health gates workflow contract', () => {
             expect(() => check(unlimited)).toThrow(
                 `${label} must have a job limit that holds three timed-out install attempts and its other steps`
             );
+        }
+    });
+
+    it('bounds, retries and fails every ALSA header install inside its step and job limits', () => {
+        const installs = [
+            { label: 'the validation Rust job', workflow: validationWorkflow },
+            { label: 'the nightly Rust job', workflow: nightly },
+        ];
+
+        for (const { label, workflow } of installs) {
+            const check = (candidate: UnknownRecord): void => {
+                assertBoundedAlsaInstall(jobAt(candidate, 'rust'), label);
+            };
+            const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
+                const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
+                change(jobAt(clone, 'rust'));
+                return clone;
+            };
+            const rewriteInstall = (name: string, rewrite: (run: string) => string): UnknownRecord =>
+                mutate(name, (target) => {
+                    const step = stepNamed(target, 'Install ALSA development headers');
+                    step.run = rewrite(stringAt(step, 'run'));
+                });
+
+            expect(() => check(workflow)).not.toThrow();
+
+            expect(() =>
+                check(
+                    rewriteInstall('unbounded attempt', (run) =>
+                        run.replace(
+                            ALSA_INSTALL_COMMAND,
+                            'sudo apt-get update && sudo apt-get install -y libasound2-dev'
+                        )
+                    )
+                )
+            ).toThrow(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('runner-owned timeout', (run) =>
+                        run.replace(ALSA_INSTALL_COMMAND, ALSA_INSTALL_COMMAND.replace('sudo timeout', 'timeout'))
+                    )
+                )
+            ).toThrow(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('single attempt', (run) => run.replace('for attempt in 1 2 3', 'for attempt in 1'))
+                )
+            ).toThrow(`${label} must retry the ALSA header install against mirror outages`);
+
+            expect(() =>
+                check(rewriteInstall('swallowed failure', (run) => run.replace(/\nexit 1\s*$/, '\n')))
+            ).toThrow(`${label} must fail the step after the third failed ALSA install attempt`);
+
+            const justBelowLimit = mutate('step limit just below the requirement', (target) => {
+                stepNamed(target, 'Install ALSA development headers')['timeout-minutes'] = Math.floor(
+                    ALSA_INSTALL_WORST_CASE_SECONDS / 60
+                );
+            });
+            expect(() => check(justBelowLimit)).toThrow(
+                `${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`
+            );
+
+            const unlimited = mutate('absent step limit', (target) => {
+                delete stepNamed(target, 'Install ALSA development headers')['timeout-minutes'];
+            });
+            expect(() => check(unlimited)).toThrow(
+                `${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`
+            );
+
+            const stepAtJobLimit = mutate('step limit at the job limit', (target) => {
+                stepNamed(target, 'Install ALSA development headers')['timeout-minutes'] = Number(
+                    target['timeout-minutes']
+                );
+            });
+            expect(() => check(stepAtJobLimit)).toThrow(`${label} must keep the ALSA step limit below its job limit`);
+        }
+    });
+
+    // Executes the ALSA run script with shims standing in for the privileged
+    // and slow commands, so a loop edit that keeps the contract's substrings
+    // but changes what the loop does is observed (#5072).
+    const runAlsaInstall = (
+        run: string,
+        succeedOnAttempt: number
+    ): { attempts: number; sleeps: string[]; status: number | null; stderr: string } => {
+        const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
+        const attemptLog = join(probeDirectory, 'attempts.log');
+        const sleepLog = join(probeDirectory, 'sleeps.log');
+        const shim = (name: string, lines: string[]): void => {
+            writeFileSync(join(probeDirectory, name), ['#!/usr/bin/env bash', ...lines].join('\n'), { mode: 0o755 });
+        };
+        try {
+            shim('sudo', ['exec "$@"']);
+            // Drops the --kill-after and duration operands, then runs the command.
+            shim('timeout', ['shift 2', 'exec "$@"']);
+            shim('sleep', ['printf "%s\\n" "$1" >> "$SLEEP_LOG"']);
+            // Each attempt runs `apt-get update` once; that call is the attempt count.
+            shim('apt-get', [
+                'if [ "$1" = update ]; then',
+                '  printf "attempt\\n" >> "$ATTEMPT_LOG"',
+                '  [ "$(wc -l < "$ATTEMPT_LOG")" -ge "$SUCCEED_ON_ATTEMPT" ] || exit 100',
+                'fi',
+            ]);
+            const result = spawnSync('bash', ['-c', run], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    ATTEMPT_LOG: attemptLog,
+                    SLEEP_LOG: sleepLog,
+                    SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
+                    PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
+                },
+                timeout: 10_000,
+            });
+            expect(result.error).toBeUndefined();
+            const lines = (path: string): string[] =>
+                existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n') : [];
+            return {
+                attempts: lines(attemptLog).length,
+                sleeps: lines(sleepLog),
+                status: result.status,
+                stderr: result.stderr,
+            };
+        } finally {
+            rmSync(probeDirectory, { force: true, recursive: true });
+        }
+    };
+
+    for (const { label, workflow } of [
+        { label: 'the validation Rust job', workflow: validationWorkflow },
+        { label: 'the nightly Rust job', workflow: nightly },
+    ]) {
+        const alsaRun = stringAt(stepNamed(jobAt(workflow, 'rust'), 'Install ALSA development headers'), 'run');
+
+        it(`${label} makes three ALSA install attempts, then fails the step`, () => {
+            const outcome = runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
+            expect(outcome.attempts).toBe(3);
+            expect(outcome.sleeps).toEqual(['15', '30']);
+            expect(outcome.status).toBe(1);
+            expect(outcome.stderr).toContain('ALSA header install failed (attempt 3/3)');
+        });
+
+        it(`${label} stops retrying the ALSA install once an attempt succeeds`, () => {
+            const outcome = runAlsaInstall(alsaRun, 2);
+            expect(outcome.attempts).toBe(2);
+            expect(outcome.sleeps).toEqual(['15']);
+            expect(outcome.status).toBe(0);
+        });
+    }
+
+    it('fails every Linux browser install step after its third failed attempt', () => {
+        const installs = [
+            { label: 'the offline smoke job', workflow: validationWorkflow, job: 'smoke' },
+            { label: 'the affected end-to-end job', workflow: heavyWorkflow, job: 'e2e' },
+            { label: 'the nightly end-to-end job', workflow: nightly, job: 'e2e' },
+        ];
+
+        for (const { label, workflow, job } of installs) {
+            const clone = asRecord(structuredClone(workflow), `swallowed failure ${label}`);
+            const step = stepNamed(jobAt(clone, job), 'Install Playwright browsers');
+            step.run = stringAt(step, 'run').replace(
+                BROWSER_INSTALL_FAILING_EXIT,
+                'if [ "$attempt" -eq 3 ]; then\n    true\n  fi'
+            );
+            expect(() =>
+                assertBoundedBrowserInstall(
+                    jobAt(clone, job),
+                    label,
+                    job === 'smoke' ? SMOKE_NON_INSTALL_SECONDS : E2E_SHARD_NON_INSTALL_SECONDS,
+                    job === 'smoke' ? SMOKE_JOB_MINUTES : E2E_JOB_MINUTES
+                )
+            ).toThrow(`${label} must fail the step after the third failed install attempt`);
         }
     });
 

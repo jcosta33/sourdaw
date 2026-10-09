@@ -32,6 +32,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // importCachedAudioBuffers, prepareCachedAudioBuffersFromIdb, and resetAudioGraph; every other
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()` and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 
