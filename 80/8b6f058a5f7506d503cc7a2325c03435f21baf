@@ -1,0 +1,26 @@
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  s_2bfd55a4393d7c::t_996e09e6ddad09 276
+  s_2bfd55a4393d7c::t_c1c0faa01e101e 277
+  s_2bfd55a4393d7c::t_20df94cfd76f56 272
+  s_2bfd55a4393d7c::t_9e0cac3319de71 273
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_e589077cc260af 10
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_2bfd55a4393d7c::t_ab7a74d41abf4e 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "808b6f058a5f7506d503cc7a2325c03435f21baf",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
