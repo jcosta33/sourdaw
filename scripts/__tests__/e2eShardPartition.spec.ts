@@ -143,6 +143,8 @@ describe('planned browser matrix', () => {
     });
 });
 
+const REPORTED = [spec('alpha'), spec('nested/beta')];
+
 describe('recorded browser durations', () => {
     it('parses the committed table', () => {
         expect(readSpecDurations().size).toBeGreaterThan(0);
@@ -153,24 +155,33 @@ describe('recorded browser durations', () => {
         ['a path outside the browser suite', '{"src/app/bootstrap.ts": 1}'],
         ['a zero duration', '{"tests/e2e/a.spec.ts": 0}'],
         ['a textual duration', '{"tests/e2e/a.spec.ts": "1"}'],
+        ['a non-finite duration', '{"tests/e2e/a.spec.ts": 1e999}'],
     ])('refuses %s', (_, text) => {
         expect(() => parseSpecDurations(text)).toThrow();
     });
 
     it('sums every result under a file, including nested describe blocks, keyed by repository path', () => {
-        expect(specDurationsFromReport(report())).toEqual({
+        expect(specDurationsFromReport(report(), REPORTED)).toEqual({
             'tests/e2e/alpha.spec.ts': 9,
             'tests/e2e/nested/beta.spec.ts': 0.1,
         });
     });
 
     it('refuses a report rooted outside the browser suite', () => {
-        expect(() => specDurationsFromReport(report({ rootDir: '/home/runner/work/sourdaw/sourdaw' }))).toThrow(
-            'Report root is not tests/e2e'
-        );
+        expect(() =>
+            specDurationsFromReport(report({ rootDir: '/home/runner/work/sourdaw/sourdaw' }), REPORTED)
+        ).toThrow('Report root is not tests/e2e');
     });
 
     it.each([{ unexpected: 1 }, { flaky: 1 }])('refuses a report from a run that was not clean: %o', (stats) => {
-        expect(() => specDurationsFromReport(report(stats))).toThrow('without failed or flaky tests');
+        expect(() => specDurationsFromReport(report(stats), REPORTED)).toThrow('without failed or flaky tests');
+    });
+
+    it('refuses a clean report that omits a collected file, naming it', () => {
+        expect(() => specDurationsFromReport(report(), [...REPORTED, spec('gamma')])).toThrow(spec('gamma'));
+    });
+
+    it('accepts a report covering every collected file when smoke is absent from it', () => {
+        expect(Object.keys(specDurationsFromReport(report(), [...REPORTED, SMOKE_SPEC]))).toEqual(REPORTED);
     });
 });

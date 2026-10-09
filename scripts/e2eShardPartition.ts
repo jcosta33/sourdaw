@@ -1,6 +1,8 @@
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 /**
  * Recorded seconds each browser file took on CI, keyed by repository path.
@@ -15,6 +17,9 @@ import { fileURLToPath } from 'node:url';
 const SPEC_DURATIONS_PATH = resolve(import.meta.dirname, 'e2eSpecDurations.json');
 
 const E2E_ROOT = 'tests/e2e';
+// The planned matrix runs smoke separately, so no recorded duration is needed for it.
+const SMOKE_PATH = `${E2E_ROOT}/smoke.spec.ts`;
+const MISSING_FILES_SHOWN = 10;
 
 export type SpecDurations = ReadonlyMap<string, number>;
 
@@ -112,7 +117,12 @@ function addSuiteDurations(suite: ReportSuite, file: string | undefined, totals:
     }
 }
 
-export function specDurationsFromReport(text: string): Record<string, number> {
+/**
+ * Seconds per file from a clean merged report. `collected` lists every browser
+ * file Playwright collects; a report that omits one is a partial run, and
+ * recording it would shrink the table.
+ */
+export function specDurationsFromReport(text: string, collected: readonly string[]): Record<string, number> {
     const report = JSON.parse(text) as Report;
     if (!report.config.rootDir.endsWith(`/${E2E_ROOT}`)) {
         throw new Error(`Report root is not ${E2E_ROOT}: ${report.config.rootDir}`);
@@ -124,6 +134,12 @@ export function specDurationsFromReport(text: string): Record<string, number> {
     for (const suite of report.suites) {
         addSuiteDurations(suite, undefined, totals);
     }
+    const missing = collected.filter((path) => path !== SMOKE_PATH && !totals.has(path)).sort();
+    if (missing.length > 0) {
+        const shown = missing.slice(0, MISSING_FILES_SHOWN).join(', ');
+        const rest = missing.length > MISSING_FILES_SHOWN ? ` and ${missing.length - MISSING_FILES_SHOWN} more` : '';
+        throw new Error(`Report omits ${missing.length} collected browser files: ${shown}${rest}`);
+    }
     const durations: Record<string, number> = {};
     for (const path of [...totals.keys()].sort()) {
         // A file whose tests finished in well under a tenth of a second still costs a slot.
@@ -132,12 +148,19 @@ export function specDurationsFromReport(text: string): Record<string, number> {
     return durations;
 }
 
+function collectedBrowserFiles(): string[] {
+    const repositoryRoot = resolve(import.meta.dirname, '..');
+    return readdirSync(resolve(repositoryRoot, E2E_ROOT), { recursive: true, encoding: 'utf8' })
+        .map((entry) => `${E2E_ROOT}/${entry.split(sep).join('/')}`)
+        .filter(isPlaywrightCollected);
+}
+
 function main(): void {
     const [command, reportPath] = process.argv.slice(2);
     if (command !== 'refresh' || reportPath === undefined) {
         throw new Error('Usage: node scripts/e2eShardPartition.ts refresh <merged-json-report>');
     }
-    const durations = specDurationsFromReport(readFileSync(reportPath, 'utf8'));
+    const durations = specDurationsFromReport(readFileSync(reportPath, 'utf8'), collectedBrowserFiles());
     writeFileSync(SPEC_DURATIONS_PATH, `${JSON.stringify(durations, null, 4)}\n`);
     console.log(`Recorded ${Object.keys(durations).length} browser files in ${SPEC_DURATIONS_PATH}`);
 }
