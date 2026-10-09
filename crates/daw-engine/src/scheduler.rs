@@ -18127,21 +18127,25 @@ mod timeline_tests {
         );
     }
 
-    /// A bus's send is compensated on the law a track's is: the bus it lands
-    /// on is a summing point, and the send's own line holds it to that point's
-    /// deepest arrival.
-    ///
-    /// Bus A arrives at its own chain's latency and the track feeding bus B
-    /// directly arrives later still, so the send out of A has to wait the
-    /// difference. Left unaimed it would reach B — and the master — that many
-    /// frames early.
-    #[test]
-    fn a_bus_send_waits_for_the_deepest_arrival_at_the_bus_it_lands_on() {
-        const BUS_LATENCY: usize = 7;
-        const DIRECT_LATENCY: usize = 10;
-        const SEND_LEVEL: f32 = 0.5;
-        // Bus A's own output, its send through bus B, and the direct track.
-        const ALIGNED: f32 = 1.0 + SEND_LEVEL + 1.0;
+    /// The level every bus-send latency row sends at.
+    const BUS_SEND_LEVEL: f32 = 0.5;
+
+    /// What every bus-send latency row's master carries once all of it has
+    /// arrived: bus A's own output, its send through bus B, and the direct
+    /// track. Unity faders and centred pans throughout, so a pre-fader and a
+    /// post-fader send carry the same level and the two taps share one figure.
+    const BUS_SEND_ALIGNED: f32 = 1.0 + BUS_SEND_LEVEL + 1.0;
+
+    /// Track 1 → bus A (50) → master, bus A sending into bus B (51) at `tap`,
+    /// and track 2 → bus B → master. Each latency is a genuinely late device
+    /// at the head of its chain — track 1's, bus A's, track 2's — and a zero
+    /// leaves that chain empty.
+    fn bus_send_latency_harness(
+        tap: SendTap,
+        feeder_latency: usize,
+        bus_latency: usize,
+        direct_latency: usize,
+    ) -> Harness {
         let mut harness = Harness::new(64);
         harness.playing();
         track_with_constant_clip(&mut harness, 1, 101, 1.0, 128);
@@ -18150,47 +18154,84 @@ mod timeline_tests {
         harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
         harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
         harness.send(GraphCommand::SetTrackOutput(2, RouteTarget::Bus(51)));
-        let declared = Arc::new(AtomicUsize::new(BUS_LATENCY));
-        harness.send(GraphCommand::AddPlugin(
-            900,
-            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
-            None,
-        ));
-        harness.send(insert_bus_device(50, effect(900), 0));
-        harness.send(set_latency(900, BUS_LATENCY));
-        insert_latent_device(&mut harness, 2, 901, DIRECT_LATENCY);
+        if bus_latency > 0 {
+            let declared = Arc::new(AtomicUsize::new(bus_latency));
+            harness.send(GraphCommand::AddPlugin(
+                900,
+                Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+                None,
+            ));
+            harness.send(insert_bus_device(50, effect(900), 0));
+            harness.send(set_latency(900, bus_latency));
+        }
+        if direct_latency > 0 {
+            insert_latent_device(&mut harness, 2, 901, direct_latency);
+        }
+        if feeder_latency > 0 {
+            insert_latent_device(&mut harness, 1, 902, feeder_latency);
+        }
         harness.send(GraphCommand::AddBusSend {
             source_bus_id: 50,
             bus_id: 51,
-            tap: SendTap::PreFader,
-            level: SEND_LEVEL,
+            tap,
+            level: BUS_SEND_LEVEL,
             delay: uncompensated(),
         });
+        harness
+    }
 
-        let bus_a = harness
-            .scheduler
-            .timeline()
-            .bus(50)
-            .expect("bus A is in the graph");
-        assert_eq!(
-            bus_a.send_delay_frames(51),
-            Some(DIRECT_LATENCY - BUS_LATENCY),
-            "the send waits for the direct track that lands on bus B later"
-        );
-        assert_eq!(
-            bus_a.output_delay_frames(),
-            DIRECT_LATENCY - BUS_LATENCY,
-            "bus A's own output waits for bus B at the master"
-        );
-
-        let (left, _) = harness.render(16);
-        let mut expected = vec![ALIGNED; 16];
-        expected[..DIRECT_LATENCY].fill(0.0);
+    /// Render `frames` and assert every route meets at the master from
+    /// `onset` on, with silence ahead of it.
+    fn assert_bus_send_routes_meet(
+        harness: &mut Harness,
+        frames: usize,
+        onset: usize,
+        tap: SendTap,
+    ) {
+        let (left, _) = harness.render(frames);
+        let mut expected = vec![BUS_SEND_ALIGNED; frames];
+        expected[..onset].fill(0.0);
         assert_eq!(
             left, expected,
-            "bus A's send reaches the master through bus B on the frame every other \
+            "{tap:?}: bus A's send reaches the master through bus B on the frame every other \
              route arrives"
         );
+    }
+
+    /// A bus's send is compensated on the law a track's is: the bus it lands
+    /// on is a summing point, and the send's own line holds it to that point's
+    /// deepest arrival.
+    ///
+    /// Bus A arrives at its own chain's latency and the track feeding bus B
+    /// directly arrives later still, so the send out of A has to wait the
+    /// difference. Left unaimed it would reach B — and the master — that many
+    /// frames early. Bus A's own output waits as well, and a post-fader send
+    /// taps the strip ahead of that output line, so it must not wait twice.
+    #[test]
+    fn a_bus_send_waits_for_the_deepest_arrival_at_the_bus_it_lands_on() {
+        const BUS_LATENCY: usize = 7;
+        const DIRECT_LATENCY: usize = 10;
+        for tap in [SendTap::PreFader, SendTap::PostFader] {
+            let mut harness = bus_send_latency_harness(tap, 0, BUS_LATENCY, DIRECT_LATENCY);
+
+            let bus_a = harness
+                .scheduler
+                .timeline()
+                .bus(50)
+                .expect("bus A is in the graph");
+            assert_eq!(
+                bus_a.send_delay_frames(51),
+                Some(DIRECT_LATENCY - BUS_LATENCY),
+                "{tap:?}: the send waits for the direct track that lands on bus B later"
+            );
+            assert_eq!(
+                bus_a.output_delay_frames(),
+                DIRECT_LATENCY - BUS_LATENCY,
+                "{tap:?}: bus A's own output waits for bus B at the master"
+            );
+
+            assert_bus_send_routes_meet(&mut harness, 16, DIRECT_LATENCY, tap);
+        }
     }
 
     /// The other side of the same law: a bus send is a contributor, so when
@@ -18199,59 +18240,62 @@ mod timeline_tests {
     #[test]
     fn a_bus_send_deeper_than_the_other_inputs_sets_the_depth_of_the_bus_it_lands_on() {
         const BUS_LATENCY: usize = 10;
-        const SEND_LEVEL: f32 = 0.5;
-        // Bus A's own output, its send through bus B, and the direct track.
-        const ALIGNED: f32 = 1.0 + SEND_LEVEL + 1.0;
-        let mut harness = Harness::new(64);
-        harness.playing();
-        track_with_constant_clip(&mut harness, 1, 101, 1.0, 128);
-        track_with_constant_clip(&mut harness, 2, 102, 1.0, 128);
-        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
-        harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
-        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
-        harness.send(GraphCommand::SetTrackOutput(2, RouteTarget::Bus(51)));
-        let declared = Arc::new(AtomicUsize::new(BUS_LATENCY));
-        harness.send(GraphCommand::AddPlugin(
-            900,
-            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
-            None,
-        ));
-        harness.send(insert_bus_device(50, effect(900), 0));
-        harness.send(set_latency(900, BUS_LATENCY));
-        harness.send(GraphCommand::AddBusSend {
-            source_bus_id: 50,
-            bus_id: 51,
-            tap: SendTap::PreFader,
-            level: SEND_LEVEL,
-            delay: uncompensated(),
-        });
+        for tap in [SendTap::PreFader, SendTap::PostFader] {
+            let mut harness = bus_send_latency_harness(tap, 0, BUS_LATENCY, 0);
 
-        let timeline = harness.scheduler.timeline();
-        assert_eq!(
-            timeline
-                .track(2)
-                .expect("track 2 is in the graph")
-                .output_delay_frames(),
-            BUS_LATENCY,
-            "the direct track waits for bus A's send at bus B"
-        );
-        assert_eq!(
-            timeline
-                .bus(50)
-                .expect("bus A is in the graph")
-                .send_delay_frames(51),
-            Some(0),
-            "the deepest arrival at bus B waits for nothing"
-        );
+            let timeline = harness.scheduler.timeline();
+            assert_eq!(
+                timeline
+                    .track(2)
+                    .expect("track 2 is in the graph")
+                    .output_delay_frames(),
+                BUS_LATENCY,
+                "{tap:?}: the direct track waits for bus A's send at bus B"
+            );
+            assert_eq!(
+                timeline
+                    .bus(50)
+                    .expect("bus A is in the graph")
+                    .send_delay_frames(51),
+                Some(0),
+                "{tap:?}: the deepest arrival at bus B waits for nothing"
+            );
 
-        let (left, _) = harness.render(32);
-        let mut expected = vec![ALIGNED; 32];
-        expected[..BUS_LATENCY].fill(0.0);
-        assert_eq!(
-            left, expected,
-            "bus A's send and the direct track meet at bus B on one frame, and bus A's \
-             own output meets them at the master"
-        );
+            assert_bus_send_routes_meet(&mut harness, 32, BUS_LATENCY, tap);
+        }
+    }
+
+    /// A bus send lands at the sending bus's whole arrival, not at its own
+    /// chain's latency alone: what reached bus A had already waited for the
+    /// latent track feeding it, and the hops add up.
+    #[test]
+    fn a_bus_send_lands_at_the_arrival_every_hop_ahead_of_it_adds_up_to() {
+        const FEEDER_LATENCY: usize = 4;
+        const BUS_LATENCY: usize = 10;
+        const ARRIVAL: usize = FEEDER_LATENCY + BUS_LATENCY;
+        for tap in [SendTap::PreFader, SendTap::PostFader] {
+            let mut harness = bus_send_latency_harness(tap, FEEDER_LATENCY, BUS_LATENCY, 0);
+
+            let timeline = harness.scheduler.timeline();
+            assert_eq!(
+                timeline
+                    .track(2)
+                    .expect("track 2 is in the graph")
+                    .output_delay_frames(),
+                ARRIVAL,
+                "{tap:?}: the direct track waits for both hops bus A's send took"
+            );
+            assert_eq!(
+                timeline
+                    .bus(50)
+                    .expect("bus A is in the graph")
+                    .send_delay_frames(51),
+                Some(0),
+                "{tap:?}: the deepest arrival at bus B waits for nothing"
+            );
+
+            assert_bus_send_routes_meet(&mut harness, 32, ARRIVAL, tap);
+        }
     }
 
     /// A note the control thread stamps for one timeline frame.
