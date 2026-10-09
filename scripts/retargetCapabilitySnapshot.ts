@@ -101,6 +101,9 @@ function id(value: JsonValue, label: string): string {
     }
     return value;
 }
+function nullableDatabaseId(value: JsonValue | undefined): boolean {
+    return value === null || Number.isSafeInteger(value);
+}
 function assertClassicChecks(rule: RulesetDocument): void {
     if (rule.requiredStatusChecks === null) {
         return;
@@ -115,7 +118,8 @@ function assertClassicChecks(rule: RulesetDocument): void {
         }
         if (check.app !== null) {
             const app = object(check.app, 'classic status app');
-            if (typeof app.id !== 'string' || !Number.isSafeInteger(app.databaseId)) {
+            id(app.id ?? null, 'classic status app id');
+            if (!nullableDatabaseId(app.databaseId)) {
                 throw new TypeError('classic status app is incomplete');
             }
         }
@@ -123,7 +127,7 @@ function assertClassicChecks(rule: RulesetDocument): void {
 }
 function assertClassicRule(rule: RulesetDocument): void {
     id(rule.id ?? null, 'classic rule id');
-    if (!Number.isSafeInteger(rule.databaseId) || typeof rule.pattern !== 'string' || rule.pattern.length === 0) {
+    if (!nullableDatabaseId(rule.databaseId) || typeof rule.pattern !== 'string' || rule.pattern.length === 0) {
         throw new Error('classic rule identity is incomplete');
     }
     for (const field of CLASSIC_BOOLEAN_FIELDS) {
@@ -262,7 +266,7 @@ export function captureCapabilitySnapshot(port: CapabilityReadPort): CapabilityO
         const repo = object(response.repository ?? null, 'classic repository');
         if (
             repo.id !== repoNodeId ||
-            repo.databaseId !== repository.id ||
+            (repo.databaseId !== null && repo.databaseId !== repository.id) ||
             repo.nameWithOwner !== repository.full_name ||
             object(repo.defaultBranchRef ?? null, 'classic default branch').name !== 'main'
         ) {
@@ -292,11 +296,11 @@ export function captureCapabilitySnapshot(port: CapabilityReadPort): CapabilityO
                     throw new Error('allowance bound to another rule');
                 }
                 const actor = object(allowance.actor ?? null, 'allowance actor');
+                id(actor.id ?? null, 'allowance actor id');
                 if (
                     typeof actor.__typename !== 'string' ||
                     !['User', 'Team', 'App'].includes(actor.__typename) ||
-                    typeof actor.id !== 'string' ||
-                    !Number.isSafeInteger(actor.databaseId)
+                    !nullableDatabaseId(actor.databaseId)
                 ) {
                     throw new Error('allowance actor is incomplete');
                 }

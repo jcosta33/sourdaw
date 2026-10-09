@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { canonicalJson, type JsonValue } from '../canonicalRecord.ts';
 import { TRUSTED_GH_PATH_ENV } from '../prContract.ts';
 import {
     captureCapabilitySnapshot,
@@ -14,7 +16,6 @@ import {
     type ListPage,
 } from '../retargetCapabilitySnapshot.ts';
 
-import type { JsonValue } from '../canonicalRecord.ts';
 import type { GhSession } from '../githubAppIdentity.ts';
 
 const SOURCE = 'a'.repeat(40);
@@ -71,6 +72,13 @@ const CLASSIC = {
     requiresStrictStatusChecks: true,
     restrictsPushes: false,
     restrictsReviewDismissals: false,
+};
+const CLASSIC_REPOSITORY = {
+    id: REPOSITORY.node_id,
+    databaseId: REPOSITORY.id,
+    nameWithOwner: REPOSITORY.full_name,
+    defaultBranchRef: { name: 'main' },
+    viewerPermission: 'ADMIN',
 };
 const KINDS = [
     'pushAllowances',
@@ -146,6 +154,117 @@ function fakePort() {
         },
     };
     return { port, calls };
+}
+
+function portWithClassicStatusApp(app: JsonValue): CapabilityReadPort {
+    const { port } = fakePort();
+    return {
+        ...port,
+        classicPage: () => ({
+            repository: {
+                id: REPOSITORY.node_id,
+                databaseId: REPOSITORY.id,
+                nameWithOwner: REPOSITORY.full_name,
+                defaultBranchRef: { name: 'main' },
+                viewerPermission: 'ADMIN',
+                branchProtectionRules: connection(
+                    [{ ...CLASSIC, requiredStatusChecks: [{ context: 'Gate', app }] }],
+                    1
+                ),
+            },
+        }),
+    };
+}
+
+function portWithClassicMetadata(repository: JsonValue, rule: JsonValue, actor?: JsonValue): CapabilityReadPort {
+    const { port } = fakePort();
+    const withClassic: CapabilityReadPort = {
+        ...port,
+        classicPage: () => ({
+            repository: {
+                ...requiredRecord(repository, 'classic repository'),
+                branchProtectionRules: connection([rule], 1),
+            },
+        }),
+    };
+    if (actor === undefined) {
+        return withClassic;
+    }
+    return {
+        ...withClassic,
+        allowancePage: (kind, ruleId) => ({
+            node: {
+                id: ruleId,
+                repository: { id: REPOSITORY.node_id },
+                [kind]: connection([{ id: `${kind}-node`, branchProtectionRule: { id: ruleId }, actor }], 1),
+            },
+        }),
+    };
+}
+
+function runStableClassicCli(port: CapabilityReadPort) {
+    const order: string[] = [];
+    const printed: string[] = [];
+    const disposed = vi.fn();
+    let classicReads = 0;
+    const run = () =>
+        runRetargetCapabilityPlanCli([], {
+            sourceCheck: () => {
+                order.push('source');
+                return SOURCE;
+            },
+            primaryRoot: () => {
+                order.push('primary');
+                return '/primary';
+            },
+            authenticate: () => {
+                order.push('authenticate');
+                return {
+                    minted: { actorNodeId: USER.node_id },
+                    session: { configDir: '/unused', env: {}, dispose: disposed },
+                };
+            },
+            readPort: () => {
+                order.push('readPort');
+                return {
+                    ...port,
+                    classicPage: (cursor) => {
+                        classicReads += 1;
+                        return port.classicPage(cursor);
+                    },
+                };
+            },
+            now: () => '2026-10-08T00:00:00.000Z',
+            print: (value) => printed.push(value),
+        });
+    return { run, order, printed, disposed, classicReads: () => classicReads };
+}
+
+function emittedClassicBaseline(output: string): {
+    emitted: Record<string, JsonValue>;
+    baseline: Record<string, JsonValue>;
+    classic: Record<string, JsonValue>;
+} {
+    const emitted = requiredRecord(JSON.parse(output) as JsonValue, 'emitted capability plan');
+    const baseline = requiredRecord(emitted.baseline, 'captured baseline');
+    if (!Array.isArray(baseline.classic)) {
+        throw new TypeError('expected captured classic rules');
+    }
+    const classic = requiredRecord(baseline.classic[0], 'captured classic rule');
+    expect(emitted.baselineDigest).toBe(createHash('sha256').update(canonicalJson(baseline)).digest('hex'));
+    expect(emitted.originalMainSemanticDigest).toBe(
+        createHash('sha256')
+            .update(
+                canonicalJson({
+                    rulesets: [RULE],
+                    classic: baseline.classic,
+                    effective: [],
+                    exactProtection: EXACT_MAIN_PROTECTION,
+                })
+            )
+            .digest('hex')
+    );
+    return { emitted, baseline, classic };
 }
 
 describe('bounded capability capture', () => {
@@ -316,6 +435,185 @@ describe('bounded capability capture', () => {
             }),
         };
         expect(() => captureCapabilitySnapshot(broken)).toThrow(/classic rule identity is incomplete/u);
+    });
+
+    it.each([42, null])(
+        'preserves required status app database ID %s through two stable CLI captures',
+        (databaseId) => {
+            const app = { id: 'app-node', databaseId, slug: 'example' };
+            const port = portWithClassicStatusApp(app);
+            const disposed = vi.fn();
+            const printed: string[] = [];
+            let classicReads = 0;
+            const result = runRetargetCapabilityPlanCli([], {
+                sourceCheck: () => SOURCE,
+                primaryRoot: () => '/primary',
+                authenticate: () => ({
+                    minted: { actorNodeId: USER.node_id },
+                    session: { configDir: '/unused', env: {}, dispose: disposed },
+                }),
+                readPort: () => ({
+                    ...port,
+                    classicPage: (cursor) => {
+                        classicReads += 1;
+                        return port.classicPage(cursor);
+                    },
+                }),
+                now: () => '2026-10-08T00:00:00.000Z',
+                print: (value) => printed.push(value),
+            });
+            expect(result).toBe(0);
+            expect(classicReads).toBe(2);
+            expect(printed).toHaveLength(1);
+            const output = printed[0];
+            if (output === undefined) {
+                throw new Error('expected one emitted capability plan');
+            }
+            const emitted = requiredRecord(JSON.parse(output) as JsonValue, 'emitted capability plan');
+            const baseline = requiredRecord(emitted.baseline, 'captured baseline');
+            if (!Array.isArray(baseline.classic)) {
+                throw new TypeError('expected captured classic rules');
+            }
+            const classic = requiredRecord(baseline.classic[0], 'captured classic rule');
+            expect(classic.requiredStatusChecks).toEqual([{ context: 'Gate', app }]);
+            expect(emitted.activationEligible).toBe(false);
+            expect(disposed).toHaveBeenCalledOnce();
+        }
+    );
+
+    it.each([
+        ['missing database ID', { id: 'app-node', slug: 'example' }],
+        ['string database ID', { id: 'app-node', databaseId: '42', slug: 'example' }],
+        ['fractional database ID', { id: 'app-node', databaseId: 42.5, slug: 'example' }],
+        ['missing node ID', { databaseId: null, slug: 'example' }],
+        ['empty node ID', { id: '', databaseId: null, slug: 'example' }],
+        ['nonstring node ID', { id: 42, databaseId: null, slug: 'example' }],
+    ])('refuses malformed classic status app identity: %s', (_label, app) => {
+        expect(() => captureCapabilitySnapshot(portWithClassicStatusApp(app))).toThrow();
+    });
+
+    it.each([REPOSITORY.id, null])(
+        'preserves classic repository database ID %s through two stable CLI captures',
+        (databaseId) => {
+            const capture = runStableClassicCli(
+                portWithClassicMetadata({ ...CLASSIC_REPOSITORY, databaseId }, CLASSIC)
+            );
+            expect(capture.run()).toBe(0);
+            expect(capture.classicReads()).toBe(2);
+            expect(capture.printed).toHaveLength(1);
+            const output = capture.printed[0];
+            if (output === undefined) {
+                throw new Error('expected one emitted capability plan');
+            }
+            const { emitted, baseline } = emittedClassicBaseline(output);
+            expect(baseline.repository).toEqual(REPOSITORY);
+            expect(baseline).not.toHaveProperty('classicRepository');
+            expect(emitted.activationEligible).toBe(false);
+            expect(capture.order).toEqual(['source', 'primary', 'authenticate', 'readPort']);
+            expect(capture.disposed).toHaveBeenCalledOnce();
+        }
+    );
+
+    it.each([42, null])('preserves classic rule database ID %s through two stable CLI captures', (databaseId) => {
+        const capture = runStableClassicCli(portWithClassicMetadata(CLASSIC_REPOSITORY, { ...CLASSIC, databaseId }));
+        expect(capture.run()).toBe(0);
+        expect(capture.classicReads()).toBe(2);
+        expect(capture.printed).toHaveLength(1);
+        const output = capture.printed[0];
+        if (output === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const { emitted, classic } = emittedClassicBaseline(output);
+        expect(classic.id).toBe('classic-node');
+        expect(classic.databaseId).toBe(databaseId);
+        expect(emitted.activationEligible).toBe(false);
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
+    const allowanceActors = (['User', 'Team', 'App'] as const).flatMap((typename) =>
+        [42, null].map((databaseId) => ({ typename, databaseId }))
+    );
+    it.each(allowanceActors)(
+        'preserves $typename allowance actor database ID $databaseId through two stable CLI captures',
+        ({ typename, databaseId }) => {
+            const actor: Record<string, JsonValue> = {
+                __typename: typename,
+                id: `${typename}-node`,
+                databaseId,
+            };
+            if (typename === 'User') {
+                actor.login = 'actor';
+            } else {
+                actor.slug = 'actor';
+            }
+            const capture = runStableClassicCli(portWithClassicMetadata(CLASSIC_REPOSITORY, CLASSIC, actor));
+            expect(capture.run()).toBe(0);
+            expect(capture.classicReads()).toBe(2);
+            expect(capture.printed).toHaveLength(1);
+            const output = capture.printed[0];
+            if (output === undefined) {
+                throw new Error('expected one emitted capability plan');
+            }
+            const { emitted, classic } = emittedClassicBaseline(output);
+            const allowances = requiredRecord(classic.allowances, 'captured allowances');
+            for (const kind of KINDS) {
+                const entries = allowances[kind];
+                if (!Array.isArray(entries)) {
+                    throw new TypeError(`missing ${kind} connection entries`);
+                }
+                const entry = requiredRecord(entries[0], `${kind} entry`);
+                expect(entry.actor).toEqual(actor);
+            }
+            expect(emitted.activationEligible).toBe(false);
+            expect(capture.disposed).toHaveBeenCalledOnce();
+        }
+    );
+
+    const { databaseId: _missingRepositoryDatabaseId, ...repositoryWithoutDatabaseId } = CLASSIC_REPOSITORY;
+    it.each([
+        ['missing database ID', repositoryWithoutDatabaseId],
+        ['string database ID', { ...CLASSIC_REPOSITORY, databaseId: String(REPOSITORY.id) }],
+        ['fractional database ID', { ...CLASSIC_REPOSITORY, databaseId: 42.5 }],
+        ['mismatched numeric database ID', { ...CLASSIC_REPOSITORY, databaseId: REPOSITORY.id + 1 }],
+        ['mismatched node ID', { ...CLASSIC_REPOSITORY, id: 'another-repository' }],
+        ['mismatched full name', { ...CLASSIC_REPOSITORY, nameWithOwner: 'another/repository' }],
+        ['mismatched default branch', { ...CLASSIC_REPOSITORY, defaultBranchRef: { name: 'elsewhere' } }],
+    ])('refuses malformed classic repository identity: %s', (_label, repository) => {
+        const capture = runStableClassicCli(portWithClassicMetadata(repository, CLASSIC));
+        expect(capture.run).toThrow();
+        expect(capture.printed).toEqual([]);
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
+    const { databaseId: _missingRuleDatabaseId, ...ruleWithoutDatabaseId } = CLASSIC;
+    it.each([
+        ['missing database ID', ruleWithoutDatabaseId],
+        ['string database ID', { ...CLASSIC, databaseId: '42' }],
+        ['fractional database ID', { ...CLASSIC, databaseId: 42.5 }],
+        ['missing node ID', { ...CLASSIC, id: null }],
+        ['empty node ID', { ...CLASSIC, id: '' }],
+        ['oversized node ID', { ...CLASSIC, id: 'a'.repeat(257) }],
+    ])('refuses malformed classic rule identity in CLI: %s', (_label, rule) => {
+        const capture = runStableClassicCli(portWithClassicMetadata(CLASSIC_REPOSITORY, rule));
+        expect(capture.run).toThrow();
+        expect(capture.printed).toEqual([]);
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
+    const allowanceActor = { __typename: 'App', id: 'app-node', databaseId: 42, slug: 'actor' };
+    const { databaseId: _missingActorDatabaseId, ...actorWithoutDatabaseId } = allowanceActor;
+    it.each([
+        ['missing database ID', actorWithoutDatabaseId],
+        ['string database ID', { ...allowanceActor, databaseId: '42' }],
+        ['fractional database ID', { ...allowanceActor, databaseId: 42.5 }],
+        ['missing node ID', { ...allowanceActor, id: null }],
+        ['empty node ID', { ...allowanceActor, id: '' }],
+        ['oversized node ID', { ...allowanceActor, id: 'a'.repeat(257) }],
+    ])('refuses malformed allowance actor identity in CLI: %s', (_label, actor) => {
+        const capture = runStableClassicCli(portWithClassicMetadata(CLASSIC_REPOSITORY, CLASSIC, actor));
+        expect(capture.run).toThrow();
+        expect(capture.printed).toEqual([]);
+        expect(capture.disposed).toHaveBeenCalledOnce();
     });
 
     it('refuses a changed policy between observed captures and disposes the session', () => {
