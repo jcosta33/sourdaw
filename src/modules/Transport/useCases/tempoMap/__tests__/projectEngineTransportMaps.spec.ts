@@ -266,6 +266,18 @@ describe('projectEngineTransportMaps', () => {
         });
     });
 
+    it('opens the map with the first change when it sits a float step after beat zero', () => {
+        tempoMapStore.set({ changes: [tempoChange(5e-7, 90), tempoChange(4, 140)] });
+
+        const { tempo } = projectEngineTransportMaps();
+
+        // A second segment at beat zero would start on the frame the first one does.
+        expect(tempo).toHaveLength(2);
+        expect(tempo[0]?.startSeconds).toBe(0);
+        expect(tempo[0]?.beatsPerMinute).toBeCloseTo(90, 9);
+        expect(tempo[1]?.beatsPerMinute).toBeCloseTo(140, 9);
+    });
+
     it('opens one segment where two changes sit a float step apart', () => {
         tempoMapStore.set({
             changes: [

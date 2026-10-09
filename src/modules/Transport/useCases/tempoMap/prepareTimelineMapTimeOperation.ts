@@ -429,18 +429,33 @@ function carryTimeSignatureToSpanStart(input: CarryAcrossDeletionInput<TimeSigna
 
 // A bound within BEAT_EPSILON of a change is that change's beat: a float step
 // off it is no distinction, and every comparison below would otherwise read the
-// change as inside or outside the span by accident of rounding.
+// change as inside or outside the span by accident of rounding. Changes a float
+// step apart are one beat, and the earliest of them is the one the bound joins,
+// so the span covers all of them.
 function snapToChangeBeat(changes: readonly TimelineChange[], beat: number): number {
     let snapped = beat;
-    let distance = BEAT_EPSILON;
+    let earliest = Infinity;
     for (const change of changes) {
-        const gap = Math.abs(change.beat - beat);
-        if (gap <= distance) {
+        if (Math.abs(change.beat - beat) <= BEAT_EPSILON && change.beat < earliest) {
             snapped = change.beat;
-            distance = gap;
+            earliest = change.beat;
         }
     }
     return snapped;
+}
+
+// Both maps are cut by one span, so a bound snaps once against every change in
+// either map; snapped per map, a bound near a change in only one of them would
+// cut the other map at a different beat.
+function snapDeleteOperation(
+    changes: readonly TimelineChange[],
+    operation: DeleteTimelineMapTimeOperation
+): DeleteTimelineMapTimeOperation {
+    return {
+        type: 'delete',
+        startBeat: snapToChangeBeat(changes, operation.startBeat),
+        endBeat: snapToChangeBeat(changes, operation.endBeat),
+    };
 }
 
 function prepareDeletedChanges<TChange extends TimelineChange>(
@@ -448,8 +463,7 @@ function prepareDeletedChanges<TChange extends TimelineChange>(
     operation: DeleteTimelineMapTimeOperation,
     carryAcrossDeletion: CarryAcrossDeletion<TChange>
 ): PreparedChanges<TChange> {
-    const startBeat = snapToChangeBeat(changes, operation.startBeat);
-    const endBeat = snapToChangeBeat(changes, operation.endBeat);
+    const { startBeat, endBeat } = operation;
     if (endBeat <= startBeat) {
         return { status: 'valid', hasChanges: false, changes: [...changes] };
     }
@@ -523,14 +537,19 @@ function prepareTimelineMapStates(operation: TimelineMapTimeOperation): Prepared
         return { status: 'rejected' };
     }
 
-    const preparedTempoChanges = prepareChanges(tempoState.changes, operation, carryTempoAcrossDeletion);
+    const cutOperation =
+        operation.type === 'delete'
+            ? snapDeleteOperation([...tempoState.changes, ...timeSignatureState.changes], operation)
+            : operation;
+
+    const preparedTempoChanges = prepareChanges(tempoState.changes, cutOperation, carryTempoAcrossDeletion);
     if (preparedTempoChanges.status === 'invalid') {
         return { status: 'rejected' };
     }
 
     const preparedTimeSignatureChanges = prepareChanges(
         timeSignatureState.changes,
-        operation,
+        cutOperation,
         carryTimeSignatureAcrossDeletion
     );
     if (preparedTimeSignatureChanges.status === 'invalid') {

@@ -702,6 +702,48 @@ describe('prepareTimelineMapTimeOperation', () => {
             }
         });
 
+        it('joins the earliest of two changes a float step apart when a bound sits within tolerance of both', () => {
+            const stepBelowFour = 3.999999999999991;
+            setStoreStates(
+                tempoState([
+                    tempoChange('a', 0, 120),
+                    tempoChange('b', stepBelowFour, 200),
+                    tempoChange('c', 4, 100),
+                    tempoChange('d', 8, 150),
+                ]),
+                timeSignatureState([])
+            );
+
+            // 4.0000005 is a hair nearer 4 than the change below it, yet both sit on one beat.
+            deleteTime(4.0000005, 6);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after).toHaveLength(3);
+            expect(after.map(({ tempo }) => tempo)).toEqual([120, 100, 150]);
+            expect(after[1]?.beat).toBe(stepBelowFour);
+            expect(getTempoAtBeat(after, 4, 120)).toBe(100);
+            expect(getTempoAtBeat(after, 5.5, 120)).toBe(100);
+        });
+
+        it('cuts both maps by one span when a bound is within tolerance of a change in only one of them', () => {
+            setStoreStates(
+                tempoState([tempoChange('t0', 0, 120), tempoChange('t4', 4, 100), tempoChange('t10', 10, 150)]),
+                timeSignatureState([
+                    timeSignatureChange('m0', 0, 4),
+                    timeSignatureChange('m4', 4.0000003, 3),
+                    timeSignatureChange('m10', 10, 5),
+                ])
+            );
+
+            // The tempo map has a change 7e-7 from the start and the meter map one 4e-7 from it.
+            deleteTime(4.0000007, 6);
+
+            const tempoShifted = (tempoMapStore.value?.changes ?? []).find(({ id }) => id === 't10');
+            const meterShifted = (timeSignatureMapStore.value?.changes ?? []).find(({ id }) => id === 'm10');
+            expect(tempoShifted?.beat).toBe(8);
+            expect(meterShifted?.beat).toBe(8);
+        });
+
         it('carries the implied meter of an empty map, so later bars keep their downbeats', () => {
             setStoreStates(tempoState([]), timeSignatureState([]));
 
