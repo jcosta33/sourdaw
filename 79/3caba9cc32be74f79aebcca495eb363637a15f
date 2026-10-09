@@ -1,0 +1,47 @@
+.agents/skills/review-stances/audio-source-time.md
+  s_1f0dcd815e8946::t_c952bea67b508f 57-80
+src/modules/Arrangement/useCases/recording/__tests__/recordingPassTiming.spec.ts
+  s_1f0dcd815e8946::t_0e06dc2ff97c8a 1-89
+src/modules/Arrangement/useCases/recording/recordingPassTiming.ts
+  s_1f0dcd815e8946::t_574220b76558c4 1-93
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_1f0dcd815e8946::t_dd93c0b4b1f0b2 10,31,83-85
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_1f0dcd815e8946::t_73edce08f367d9 713
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_2bfd55a4393d7c::t_459075b907a3bf 60-64,82,93,135-149,266-270,483-490,492-493,495-496,498-502,504-527,530-537,539-645
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_2bfd55a4393d7c::t_59abaa4d11306d 699,736,825,834,878,923,954,1035,1078,1131,1394,1466-1470,1475-1479,1563
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_1f0dcd815e8946::t_26635ce6db7a00 7,10,28,43-45,98-107,146,159-163,379-384,431,459-464,500-505,509-513,555-560,603-608,650-655,704-709,743,771-776,1029-1034,1039-1042,1074-1079,1086-1087,1207,1241,1312
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_1f0dcd815e8946::t_845ea2fdf7425c 5,56-60,238
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRollLoop.integration.spec.ts
+  s_1f0dcd815e8946::t_9cd2b2d1e19177 26,31,56-62
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_1f0dcd815e8946::t_1a29c1fd0b17a8 19,44-45,116-233,241-242,253-262,290-298,309-310,319-321,323-333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "793caba9cc32be74f79aebcca495eb363637a15f",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
