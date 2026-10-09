@@ -51,6 +51,8 @@ src/modules/Arrangement/useCases/clip/keyMigratedAutomationLanes.ts
   s_2bfd55a4393d7c::t_092a511424c73e 1-32
 scripts/recoverPublishReviewLock.ts
   s_1c08b47ac3792f::t_5dc7a195fe8000 487-489,557,599-600
+scripts/reviewRepair.ts
+  s_97ab82e0b4f10c::t_288e45ae9edf7e 489
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -71,6 +73,14 @@ scripts/recoverPublishReviewLock.ts
         "tool": "claude",
         "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
         "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     }

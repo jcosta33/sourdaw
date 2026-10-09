@@ -1,0 +1,67 @@
+scripts/reviewRepair.ts
+  s_97ab82e0b4f10c::t_eafe4ae1cadea3 511-512,515,591,595-601,604,606-608,614-615,618-632,643,645
+  s_97ab82e0b4f10c::t_6b418cb07d24f0 586-589
+  s_97ab82e0b4f10c::t_23d6195644bae4 23-25,34-35,38,46,86-98,132-136,236-255,259-261,265-283,301-304,306-341,346
+  s_97ab82e0b4f10c::t_7208884b59d8a6 605
+  s_97ab82e0b4f10c::t_4589c45022fd69 256-258,262-264,305,342-345
+  s_4c8cd08893b364::t_0868621c674340 347
+.agents/skills/delivery-orchestration/SKILL.md
+  s_97ab82e0b4f10c::t_6dd7fa40de2121 556-557
+  s_97ab82e0b4f10c::t_3d240be1c05d63 432-434,439-448,550-555,558
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_97ab82e0b4f10c::t_2ee19cc429e795 34,513,516,530,533,538-539,840-856,884-896,898
+  s_97ab82e0b4f10c::t_f8d6c8be290544 509-511,514-515,518-521,523-529,531-532,534
+  s_97ab82e0b4f10c::t_526f3587fe453d 512,522,535-536
+  s_97ab82e0b4f10c::t_a4fcac4cb3c686 517,537
+  s_97ab82e0b4f10c::t_59d8fc7ed4fdff 858-867,869-871
+  s_97ab82e0b4f10c::t_4cfca4fa678ac0 872-883,897,899-900
+  s_97ab82e0b4f10c::t_b27432224c16ef 868
+  s_97ab82e0b4f10c::t_11198e5689934d 62-66,77,275,278-281,461,465-470
+  s_97ab82e0b4f10c::t_782b0faec6d6e6 857,901
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  s_97ab82e0b4f10c::t_efb9b0d5f80bd2 17-19,21-22,155-188,281-314,321
+  s_97ab82e0b4f10c::t_9d973d68d81aaf 20,131-135,374-379,424-433
+  s_97ab82e0b4f10c::t_d42dcfc38b40a2 62-68,129-130,136
+  s_97ab82e0b4f10c::t_59d8fc7ed4fdff 251-280,322,777
+  s_97ab82e0b4f10c::t_d009b3b78ef2c0 315-320,754-776
+  s_97ab82e0b4f10c::t_dcfdd4ccb719b6 323,778
+.agents/skills/review-stances/public-repair-records.md
+  s_97ab82e0b4f10c::t_3d240be1c05d63 72-88
+scripts/confirmReviewRepairs.ts
+  s_97ab82e0b4f10c::t_8076b4d3bc3cff 43,47,104-105,107-108,213,231-233,235-238
+  s_97ab82e0b4f10c::t_6b418cb07d24f0 226-229
+  s_97ab82e0b4f10c::t_167080f8f70db0 209-210
+scripts/reconstructReviewRounds.ts
+  s_97ab82e0b4f10c::t_08172f8580432f 184-195,197,199-200,210-212,216,218,222,224-225
+  s_97ab82e0b4f10c::t_d009b3b78ef2c0 246,248,281-283,410-411,413
+  s_97ab82e0b4f10c::t_3082c4a44cf4c2 35-41,70-76,124-125,172,213-215,217,219-221,228-229,291-299,301-304,305-319
+  s_97ab82e0b4f10c::t_3deeef6640eaa6 139,159,166-169,173-181,183,196,201-206,208-209,223,226-227,230-236,238-245,249-254,256-263,265-271,274,284,286-290
+  s_97ab82e0b4f10c::t_bcf9ae21a57dfb 320
+scripts/__tests__/reviewRepair.spec.ts
+  s_97ab82e0b4f10c::t_df88982295c09f 10,12,14,234-274
+  s_97ab82e0b4f10c::t_99613a6dd73dba 275-278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f3ee929647e6cef85b84371663bd111b16a4232",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
