@@ -15,6 +15,13 @@ export function createDeviceAutomationTargetId(deviceId: string, parameterId: st
     return `${deviceId}:${parameterId}`;
 }
 
+/** The device a `<deviceId>:<paramId>` target names; null for a track parameter or a `send:<busId>` send level. */
+export function getDeviceAutomationOwnerId(targetId: string): string | null {
+    const separatorIndex = targetId.indexOf(':');
+    const ownerId = separatorIndex > 0 ? targetId.slice(0, separatorIndex) : null;
+    return ownerId === 'send' ? null : ownerId;
+}
+
 export function getDeviceAutomationParameterId(targetId: string): string | null {
     const separatorIndex = targetId.indexOf(':');
     const parameterId = separatorIndex < 0 ? targetId : targetId.slice(separatorIndex + 1);

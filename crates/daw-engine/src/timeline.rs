@@ -29,7 +29,8 @@ pub const MAX_TRACK_DEVICES: usize = 32;
 /// that cannot host a reverb defeats the purpose of a send bus — so its chain
 /// is built to the same fixed-capacity contract as a track's.
 pub const MAX_BUS_DEVICES: usize = 32;
-/// Sends one track holds.
+/// Sends one strip holds, a track or a bus alike: a bus sends exactly as a
+/// track does, so its send list is built to the same fixed capacity.
 pub const MAX_TRACK_SENDS: usize = 16;
 /// Clips one track holds.
 pub const MAX_TRACK_CLIPS: usize = 1024;
@@ -135,9 +136,19 @@ pub enum RampShape {
 pub enum AutomationTarget {
     TrackGain(usize),
     TrackPan(usize),
-    TrackSendLevel { track_id: usize, bus_id: usize },
+    TrackSendLevel {
+        track_id: usize,
+        bus_id: usize,
+    },
     BusGain(usize),
     BusPan(usize),
+    /// The level of a send from the bus `source_bus_id` into the bus `bus_id`.
+    /// Its own variant rather than a reuse of `TrackSendLevel`, because track
+    /// ids and bus ids are separate namespaces in the graph.
+    BusSendLevel {
+        source_bus_id: usize,
+        bus_id: usize,
+    },
     MasterGain,
 }
 
@@ -1171,14 +1182,14 @@ fn clip_fade_envelope(offset: u64, length: u64, head: u64, tail: u64) -> f32 {
     envelope
 }
 
-/// One send from a track to a bus.
+/// One send from a strip — a track or a bus — to a bus.
 ///
 /// The bus id is accepted whether or not that bus is live yet, so the order of
 /// `AddSend` and `AddBus` in a command batch cannot matter. Whether the send
 /// actually found its bus is therefore a render-time fact, latched here so a
 /// dead send is diagnosed once rather than once per callback.
 #[derive(Debug)]
-pub struct TrackSend {
+pub struct StripSend {
     bus_id: usize,
     tap: SendTap,
     level: RampedParam,
@@ -1223,7 +1234,7 @@ pub struct TimelineTrack {
     clips: Vec<Box<TimelineClip>>,
     /// The effects that make up this track's device chain, in order.
     chain: Vec<ChainEntry>,
-    sends: Vec<TrackSend>,
+    sends: Vec<StripSend>,
     gain: RampedParam,
     pan: RampedParam,
     muted: bool,
@@ -1357,9 +1368,12 @@ impl TimelineTrack {
 /// fader, and an effect belongs to one chain in the graph whether that chain is
 /// on a track or on a bus.
 ///
-/// The strip order matches a track's, minus send taps the bus does not have:
-/// summed input, then the device chain, then the solo gate, then the fader,
-/// then the mute, then the panner, then the output. The two gates stay
+/// The strip order is a track's, clips aside: summed input, then the device
+/// chain, then the solo gate, then the pre-fader send tap, then the fader,
+/// then the mute, then the panner, then the post-fader send tap and the
+/// output. A bus sends into another bus exactly as a track does — a reverb
+/// return feeding a parallel compressor is ordinary practice — so its taps sit
+/// where a track's sit, for the reasons given there. The two gates stay
 /// separate for the reason given on [`TimelineTrack`]: they are different
 /// reasons to silence, and folding them would make releasing solo clear a mute
 /// the user pressed.
@@ -1368,6 +1382,7 @@ pub struct TimelineBus {
     input_left: Vec<f32>,
     input_right: Vec<f32>,
     chain: Vec<ChainEntry>,
+    sends: Vec<StripSend>,
     gain: RampedParam,
     pan: RampedParam,
     muted: bool,
@@ -1391,6 +1406,7 @@ impl TimelineBus {
             input_left: vec![0.0; MAX_CALLBACK_FRAMES],
             input_right: vec![0.0; MAX_CALLBACK_FRAMES],
             chain: Vec::with_capacity(MAX_BUS_DEVICES),
+            sends: Vec::with_capacity(MAX_TRACK_SENDS),
             gain: RampedParam::new(1.0),
             pan: RampedParam::new(0.0),
             muted: false,
@@ -1406,6 +1422,15 @@ impl TimelineBus {
     /// [`TimelineTrack::output_delay_frames`].
     pub fn output_delay_frames(&self) -> usize {
         self.output_delay.delay()
+    }
+
+    /// Frames one of this bus's sends is currently held back by, or `None`
+    /// when no send lands on `bus_id`. See [`TimelineTrack::send_delay_frames`].
+    pub fn send_delay_frames(&self, bus_id: usize) -> Option<usize> {
+        self.sends
+            .iter()
+            .find(|send| send.bus_id == bus_id)
+            .map(|send| send.delay.delay())
     }
 
     pub const fn id(&self) -> usize {
@@ -1523,6 +1548,14 @@ pub(crate) enum RetiredTimelineObject {
 /// sends into a bus is rendered before that bus.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MixNode {
+    Track(usize),
+    Bus(usize),
+}
+
+/// The strip a send leaves from, by id. Track ids and bus ids are separate
+/// namespaces in the graph, so the kind travels with the id.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SendSource {
     Track(usize),
     Bus(usize),
 }
@@ -2088,20 +2121,45 @@ impl TimelineGraph {
         level: f32,
         delay: Box<CompensationDelay>,
     ) -> Option<Box<CompensationDelay>> {
-        let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
+        self.add_strip_send(SendSource::Track(track_id), bus_id, tap, level, delay)
+    }
+
+    /// Add a send from one bus into another, on the contract
+    /// [`TimelineGraph::add_send`] gives a track's — including the cycle
+    /// refusal, which sees bus sends and track sends as the same kind of edge.
+    pub(crate) fn add_bus_send(
+        &mut self,
+        source_bus_id: usize,
+        bus_id: usize,
+        tap: SendTap,
+        level: f32,
+        delay: Box<CompensationDelay>,
+    ) -> Option<Box<CompensationDelay>> {
+        self.add_strip_send(SendSource::Bus(source_bus_id), bus_id, tap, level, delay)
+    }
+
+    fn add_strip_send(
+        &mut self,
+        source: SendSource,
+        bus_id: usize,
+        tap: SendTap,
+        level: f32,
+        delay: Box<CompensationDelay>,
+    ) -> Option<Box<CompensationDelay>> {
+        let Some(sends) = self.sends_mut(source) else {
             self.diagnostics.record_unknown_target();
             return Some(delay);
         };
-        if track.sends.iter().any(|send| send.bus_id == bus_id) {
+        if sends.iter().any(|send| send.bus_id == bus_id) {
             self.diagnostics.record_id_collision();
             return Some(delay);
         }
-        if track.sends.len() == track.sends.capacity() {
+        if sends.len() == sends.capacity() {
             self.diagnostics.record_capacity_refusal();
             return Some(delay);
         }
 
-        track.sends.push(TrackSend {
+        sends.push(StripSend {
             bus_id,
             tap,
             level: RampedParam::new(level),
@@ -2113,8 +2171,8 @@ impl TimelineGraph {
         }
 
         let refused = self
-            .track_mut(track_id)
-            .and_then(|track| track.sends.pop())
+            .sends_mut(source)
+            .and_then(Vec::pop)
             .map(|send| send.delay);
         self.diagnostics.record_routing_cycle_refused();
         let _ = self.rebuild_mix_order();
@@ -2128,24 +2186,58 @@ impl TimelineGraph {
         track_id: usize,
         bus_id: usize,
     ) -> Option<Box<CompensationDelay>> {
-        let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
+        self.remove_strip_send(SendSource::Track(track_id), bus_id)
+    }
+
+    /// Take a send out of a bus, on the contract
+    /// [`TimelineGraph::remove_send`] gives a track's.
+    pub(crate) fn remove_bus_send(
+        &mut self,
+        source_bus_id: usize,
+        bus_id: usize,
+    ) -> Option<Box<CompensationDelay>> {
+        self.remove_strip_send(SendSource::Bus(source_bus_id), bus_id)
+    }
+
+    fn remove_strip_send(
+        &mut self,
+        source: SendSource,
+        bus_id: usize,
+    ) -> Option<Box<CompensationDelay>> {
+        let Some(sends) = self.sends_mut(source) else {
             self.diagnostics.record_unknown_target();
             return None;
         };
-        let Some(index) = track.sends.iter().position(|send| send.bus_id == bus_id) else {
+        let Some(index) = sends.iter().position(|send| send.bus_id == bus_id) else {
             self.diagnostics.record_unknown_target();
             return None;
         };
 
-        let removed = track.sends.remove(index);
+        let removed = sends.remove(index);
         let _ = self.rebuild_mix_order();
         Some(removed.delay)
+    }
+
+    fn sends_mut(&mut self, source: SendSource) -> Option<&mut Vec<StripSend>> {
+        match source {
+            SendSource::Track(id) => self.track_mut(id).map(|track| &mut track.sends),
+            SendSource::Bus(id) => self.bus_mut(id).map(|bus| &mut bus.sends),
+        }
     }
 
     /// The tap a send takes its signal from, for callers proving the strip
     /// order rather than inferring it from a mix.
     pub fn send_tap(&self, track_id: usize, bus_id: usize) -> Option<SendTap> {
         self.track(track_id)?
+            .sends
+            .iter()
+            .find(|send| send.bus_id == bus_id)
+            .map(|send| send.tap)
+    }
+
+    /// The tap a bus's send takes its signal from. See [`Self::send_tap`].
+    pub fn bus_send_tap(&self, source_bus_id: usize, bus_id: usize) -> Option<SendTap> {
+        self.bus(source_bus_id)?
             .sends
             .iter()
             .find(|send| send.bus_id == bus_id)
@@ -2262,10 +2354,15 @@ impl TimelineGraph {
             AutomationTarget::BusGain(id) => self.bus_mut(id).map(|bus| &mut bus.gain),
             AutomationTarget::BusPan(id) => self.bus_mut(id).map(|bus| &mut bus.pan),
             AutomationTarget::TrackSendLevel { track_id, bus_id } => self
-                .tracks
-                .iter_mut()
-                .find(|track| track.id == track_id)
-                .and_then(|track| track.sends.iter_mut().find(|send| send.bus_id == bus_id))
+                .sends_mut(SendSource::Track(track_id))
+                .and_then(|sends| sends.iter_mut().find(|send| send.bus_id == bus_id))
+                .map(|send| &mut send.level),
+            AutomationTarget::BusSendLevel {
+                source_bus_id,
+                bus_id,
+            } => self
+                .sends_mut(SendSource::Bus(source_bus_id))
+                .and_then(|sends| sends.iter_mut().find(|send| send.bus_id == bus_id))
                 .map(|send| &mut send.level),
         };
 
@@ -2313,6 +2410,9 @@ impl TimelineGraph {
         for bus in self.buses.iter_mut() {
             visit(&mut bus.gain);
             visit(&mut bus.pan);
+            for send in bus.sends.iter_mut() {
+                visit(&mut send.level);
+            }
         }
     }
 
@@ -2386,33 +2486,28 @@ impl TimelineGraph {
         acyclic
     }
 
+    /// Every strip `node` feeds: its output, and each bus one of its sends
+    /// lands on. A bus's sends are edges exactly as a track's are, so a send
+    /// from a bus into a bus that already feeds it is refused as a cycle by the
+    /// same walk, and the bus it lands on is ordered after it.
     fn for_each_successor(&self, node: usize, track_count: usize, mut visit: impl FnMut(usize)) {
-        if node < track_count {
+        let (output, sends) = if node < track_count {
+            let track = &self.tracks[node];
+            (track.output, &track.sends)
+        } else {
+            let bus = &self.buses[node - track_count];
+            (bus.output, &bus.sends)
+        };
+        visit_route_target(output, &self.tracks, &self.buses, track_count, &mut visit);
+        for send in sends {
             visit_route_target(
-                self.tracks[node].output,
+                RouteTarget::Bus(send.bus_id),
                 &self.tracks,
                 &self.buses,
                 track_count,
                 &mut visit,
             );
-            for send in &self.tracks[node].sends {
-                visit_route_target(
-                    RouteTarget::Bus(send.bus_id),
-                    &self.tracks,
-                    &self.buses,
-                    track_count,
-                    &mut visit,
-                );
-            }
-            return;
         }
-        visit_route_target(
-            self.buses[node - track_count].output,
-            &self.tracks,
-            &self.buses,
-            track_count,
-            &mut visit,
-        );
     }
 
     /// Re-aim every route's compensation delay so that each summing point
@@ -2490,6 +2585,15 @@ impl TimelineGraph {
                     let arrival =
                         bus_summing_depth[index] + devices.chain_latency(&buses[index].chain);
                     bus_arrival[index] = arrival;
+                    // A bus's send taps its strip where a track's does, after
+                    // the chain, so it lands at the arrival the bus's own
+                    // output has. The bus it lands on is later in the mix
+                    // order, so its depth is still open here.
+                    for send in &buses[index].sends {
+                        if let Some(bus) = buses.iter().position(|bus| bus.id == send.bus_id) {
+                            bus_summing_depth[bus] = bus_summing_depth[bus].max(arrival);
+                        }
+                    }
                     (arrival, buses[index].output)
                 }
             };
@@ -2540,6 +2644,16 @@ impl TimelineGraph {
         }
         for index in 0..bus_count {
             let arrival = bus_arrival[index];
+            // Indexed rather than iterated: the bus a send lands on is looked
+            // up among the very buses this send's own strip belongs to.
+            for send_index in 0..buses[index].sends.len() {
+                let destination = buses[index].sends[send_index].bus_id;
+                let hold = buses
+                    .iter()
+                    .position(|bus| bus.id == destination)
+                    .map_or(0, |bus| bus_summing_depth[bus].saturating_sub(arrival));
+                clamped += usize::from(buses[index].sends[send_index].delay.set_delay(hold));
+            }
 
             // A bus has no clips, so its input hold is the generators on its
             // chain and nothing else — an instrument on a bus is the same
@@ -2660,7 +2774,7 @@ impl TimelineGraph {
                         let solo_engaged = track.solo_gated;
                         track.solo_gate.run(solo_engaged, left, right);
                         run_sends(
-                            track,
+                            &mut track.sends,
                             SendTap::PreFader,
                             buses,
                             block_start,
@@ -2690,7 +2804,7 @@ impl TimelineGraph {
                             diagnostics,
                         );
                         run_sends(
-                            track,
+                            &mut track.sends,
                             SendTap::PostFader,
                             buses,
                             block_start,
@@ -2753,24 +2867,55 @@ impl TimelineGraph {
                         &mut generator_right[..frames],
                     );
 
+                    // Solo-in-place, ahead of both send taps, matching the
+                    // track law. The gate declicks like a track's.
+                    let solo_engaged = buses[index].solo_gated;
+                    buses[index].solo_gate.run(solo_engaged, left, right);
+
+                    // The sends land on other buses in this same slice, so
+                    // they are held apart from it while they run. Taking a
+                    // `Vec` leaves an empty one in its place and putting it
+                    // back frees nothing, so the swap neither allocates nor
+                    // deallocates on the callback.
+                    let mut sends = std::mem::take(&mut buses[index].sends);
+                    run_sends(
+                        &mut sends,
+                        SendTap::PreFader,
+                        buses,
+                        block_start,
+                        frames,
+                        left,
+                        right,
+                        &mut send_left[..frames],
+                        &mut send_right[..frames],
+                        diagnostics,
+                    );
                     {
                         let bus = &mut buses[index];
-                        // Solo-in-place, ahead of the fader, matching the
-                        // track law. A bus has no send taps today, so the
-                        // placement is still the one a later tap would have
-                        // to sit behind. The gate declicks like a track's.
-                        let solo_engaged = bus.solo_gated;
-                        bus.solo_gate.run(solo_engaged, left, right);
                         apply_gain(&mut bus.gain, block_start, frames, left, right, diagnostics);
                         let muted = bus.muted;
                         bus.mute_gate.run(muted, left, right);
                         apply_pan(&mut bus.pan, block_start, frames, left, right, diagnostics);
-                        // Run on every block this bus renders, for the reason
-                        // a track's output line is: mute and solo hand the
-                        // line silence or the glide toward it, never nothing,
-                        // so nothing above skips the line.
-                        bus.output_delay.run(left, right, frames);
                     }
+                    run_sends(
+                        &mut sends,
+                        SendTap::PostFader,
+                        buses,
+                        block_start,
+                        frames,
+                        left,
+                        right,
+                        &mut send_left[..frames],
+                        &mut send_right[..frames],
+                        diagnostics,
+                    );
+                    buses[index].sends = sends;
+
+                    // Run on every block this bus renders, for the reason a
+                    // track's output line is: mute and solo hand the line
+                    // silence or the glide toward it, never nothing, so
+                    // nothing above skips the line.
+                    buses[index].output_delay.run(left, right, frames);
 
                     route_sum(
                         buses[index].output,
@@ -3130,14 +3275,14 @@ fn sum_into(destination: &mut [f32], source: &[f32]) {
     }
 }
 
-/// Sum this track's sends at `tap` into the buses they land on.
+/// Sum one strip's sends at `tap` into the buses they land on.
 ///
 /// `send_left` / `send_right` are the graph's scratch pair: a send that carries
 /// compensation delays its own copy of the tapped signal, which the strip still
 /// needs unchanged for everything downstream of the tap.
 #[allow(clippy::too_many_arguments)]
 fn run_sends(
-    track: &mut TimelineTrack,
+    sends: &mut [StripSend],
     tap: SendTap,
     buses: &mut [Box<TimelineBus>],
     block_start: u64,
@@ -3148,7 +3293,7 @@ fn run_sends(
     send_right: &mut [f32],
     diagnostics: &mut TimelineRtDiagnostics,
 ) {
-    for send in track.sends.iter_mut() {
+    for send in sends.iter_mut() {
         if send.tap != tap {
             continue;
         }
@@ -4448,6 +4593,317 @@ mod tests {
         right.fill(0.0);
         graph.render(0, 4, true, &mut devices, &mut left, &mut right);
         assert_eq!(left, vec![2.0; 4]);
+    }
+
+    /// A track of constant `1.0` feeding bus A (50), which sends into bus B
+    /// (51) at `tap` and `level`. Both buses reach the master.
+    ///
+    /// B is added ahead of A, so the graph's insertion order would render B
+    /// first: only the send edge in the mix order puts A ahead of it, which is
+    /// what lets B hear A's send in the block A renders it.
+    fn bus_sending_graph(tap: SendTap, level: f32) -> TimelineGraph {
+        let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);
+        assert!(graph.add_bus(TimelineBus::new(51)).is_none());
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        graph.set_track_output(1, RouteTarget::Bus(50));
+        assert!(graph
+            .add_bus_send(50, 51, tap, level, uncompensated())
+            .is_none());
+        graph
+    }
+
+    /// Pull a bus fader to silence from the head of the timeline.
+    fn pull_bus_fader_down(graph: &mut TimelineGraph, bus_id: usize) {
+        graph.automate(
+            AutomationTarget::BusGain(bus_id),
+            AutomationWrite::Append(ramp(0, 0, 0.0, RampShape::Step)),
+        );
+    }
+
+    #[test]
+    fn a_bus_sends_into_another_bus_from_the_tap_it_names_in_the_same_block() {
+        for (tap, with_fader_down) in [(SendTap::PreFader, 0.5), (SendTap::PostFader, 0.0)] {
+            let mut graph = bus_sending_graph(tap, 0.5);
+            assert_eq!(graph.bus_send_tap(50, 51), Some(tap));
+
+            let mut left = vec![0.0; 4];
+            let mut right = vec![0.0; 4];
+            graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+            assert_eq!(
+                left,
+                vec![1.5; 4],
+                "{tap:?}: bus A's own output plus its send through bus B, from the first block"
+            );
+
+            // With A's fader down only what B received is left in the mix: a
+            // pre-fader send taps ahead of the fader and keeps its level, a
+            // post-fader one follows the fader to silence.
+            pull_bus_fader_down(&mut graph, 50);
+            left.fill(0.0);
+            right.fill(0.0);
+            graph.render(4, 4, true, &mut NoDevices, &mut left, &mut right);
+            assert_eq!(
+                left,
+                vec![with_fader_down; 4],
+                "{tap:?} with A's fader down"
+            );
+            assert_eq!(right, vec![with_fader_down; 4]);
+        }
+    }
+
+    /// A bus's taps sit where a track's do: the pre-fader send survives the
+    /// bus's mute, and the solo gate closes ahead of it. See
+    /// `the_solo_gate_closes_ahead_of_the_send_taps_and_the_mute_deliberately_does_not`.
+    #[test]
+    fn a_bus_send_meets_the_mute_and_the_solo_gate_where_a_tracks_does() {
+        let mut graph = bus_sending_graph(SendTap::PreFader, 0.5);
+        let mut left = vec![0.0; GATE_PROBE_BLOCK];
+        let mut right = vec![0.0; GATE_PROBE_BLOCK];
+
+        graph.set_bus_mute(50, true);
+        render_blocks(&mut graph, 0, GATE_PROBE_BLOCK, 2, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![0.5; GATE_PROBE_BLOCK],
+            "the muted bus still feeds its pre-fader send"
+        );
+
+        graph.set_bus_mute(50, false);
+        graph.set_bus_solo_gate(50, true);
+        render_blocks(
+            &mut graph,
+            2 * GATE_PROBE_BLOCK as u64,
+            GATE_PROBE_BLOCK,
+            2,
+            &mut left,
+            &mut right,
+        );
+        assert_eq!(
+            left,
+            vec![0.0; GATE_PROBE_BLOCK],
+            "a solo-gated bus feeds nothing, its sends included"
+        );
+    }
+
+    /// A post-fader send taps after the mute, so a muted bus feeds nothing
+    /// through it — the other half of the pre-fader row above.
+    #[test]
+    fn a_muted_bus_feeds_nothing_through_its_post_fader_send() {
+        let mut graph = bus_sending_graph(SendTap::PostFader, 0.5);
+        let mut left = vec![0.0; GATE_PROBE_BLOCK];
+        let mut right = vec![0.0; GATE_PROBE_BLOCK];
+
+        graph.set_bus_mute(50, true);
+        render_blocks(&mut graph, 0, GATE_PROBE_BLOCK, 2, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![0.0; GATE_PROBE_BLOCK],
+            "the muted bus and its post-fader send are both silent"
+        );
+        assert_eq!(right, vec![0.0; GATE_PROBE_BLOCK]);
+    }
+
+    /// A post-fader send taps after the panner, on a bus exactly as on a
+    /// track: what it carries is the panned pair, not the centred one.
+    #[test]
+    fn a_post_fader_send_carries_its_strips_pan_from_a_bus_as_from_a_track() {
+        const PAN: f32 = 0.5;
+        const LEVEL: f32 = 0.5;
+        let pan_to = |target: AutomationTarget| {
+            (
+                target,
+                AutomationWrite::Append(ramp(0, 0, PAN, RampShape::Step)),
+            )
+        };
+        // The strip's own panned output plus a copy of it at the send level:
+        // a send tapped ahead of the panner would add an unpanned copy instead.
+        let (panned_left, panned_right) = pan_frame(stereo_pan_gains(PAN), 1.0, 1.0);
+        let expected_left = panned_left * (1.0 + LEVEL);
+        let expected_right = panned_right * (1.0 + LEVEL);
+
+        let mut from_bus = bus_sending_graph(SendTap::PostFader, LEVEL);
+        let (target, write) = pan_to(AutomationTarget::BusPan(50));
+        from_bus.automate(target, write);
+
+        let mut from_track = graph_with_constant_clip(1, 1.0, 4);
+        assert!(from_track.add_bus(TimelineBus::new(51)).is_none());
+        assert!(from_track
+            .add_send(1, 51, SendTap::PostFader, LEVEL, uncompensated())
+            .is_none());
+        let (target, write) = pan_to(AutomationTarget::TrackPan(1));
+        from_track.automate(target, write);
+
+        for (graph, source) in [(&mut from_bus, "bus"), (&mut from_track, "track")] {
+            let mut left = vec![0.0; 4];
+            let mut right = vec![0.0; 4];
+            graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+            for frame in 0..4 {
+                assert!(
+                    (left[frame] - expected_left).abs() < 1e-6
+                        && (right[frame] - expected_right).abs() < 1e-6,
+                    "{source}: expected ({expected_left}, {expected_right}), got ({}, {})",
+                    left[frame],
+                    right[frame]
+                );
+            }
+        }
+    }
+
+    /// A bus send's level is a mixer parameter like any other, so a locate
+    /// keeps the change the playhead passed and drops the window beyond it,
+    /// and a stop holds it where it stands. See
+    /// `a_locate_drops_the_window_beyond_it_and_keeps_what_the_playhead_passed`.
+    #[test]
+    fn a_bus_send_level_takes_the_locate_and_the_stop_laws() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let target = AutomationTarget::BusSendLevel {
+            source_bus_id: 50,
+            bus_id: 51,
+        };
+        let send_level = |graph: &mut TimelineGraph| -> RampedParam {
+            graph
+                .bus_mut(50)
+                .expect("bus A")
+                .sends
+                .iter()
+                .find(|send| send.bus_id == 51)
+                .expect("the send into bus B")
+                .level
+                .clone()
+        };
+
+        let mut located = bus_sending_graph(SendTap::PreFader, 1.0);
+        located.automate(
+            target,
+            AutomationWrite::Append(ramp(4, 0, 0.5, RampShape::Step)),
+        );
+        located.automate(
+            target,
+            AutomationWrite::Append(ramp(12, 0, 0.25, RampShape::Step)),
+        );
+        located.seek(8);
+        let mut level = send_level(&mut located);
+        assert_eq!(level.value_at(8, &mut diagnostics), 0.5);
+        assert_eq!(level.value_at(100, &mut diagnostics), 0.5);
+
+        // The stop law `a_graph_transport_stop_drops_the_automation_window_the_stop_made_stale`
+        // pins for a fader: a change stamped past the stop must not fire later.
+        let mut stopped = bus_sending_graph(SendTap::PreFader, 1.0);
+        stopped.automate(
+            target,
+            AutomationWrite::Append(ramp(8, 0, 0.25, RampShape::Step)),
+        );
+        stopped.hold_automation(4);
+        let mut level = send_level(&mut stopped);
+        assert_eq!(level.value_at(4, &mut diagnostics), 1.0);
+        assert_eq!(
+            level.value_at(100, &mut diagnostics),
+            1.0,
+            "a stop drops the send change stamped past it"
+        );
+    }
+
+    #[test]
+    fn a_bus_send_follows_its_level_automation() {
+        let mut graph = bus_sending_graph(SendTap::PreFader, 1.0);
+        // A's own output out of the way, so every sample is B's: the send.
+        pull_bus_fader_down(&mut graph, 50);
+        let target = AutomationTarget::BusSendLevel {
+            source_bus_id: 50,
+            bus_id: 51,
+        };
+        graph.automate(
+            target,
+            AutomationWrite::Append(ramp(0, 0, 0.25, RampShape::Step)),
+        );
+        graph.automate(
+            target,
+            AutomationWrite::Append(ramp(4, 4, 0.75, RampShape::Linear)),
+        );
+
+        let mut left = vec![0.0; 8];
+        let mut right = vec![0.0; 8];
+        graph.render(0, 8, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![0.25, 0.25, 0.25, 0.25, 0.25, 0.375, 0.5, 0.625],
+            "bus B carries the send at the level its lane writes, frame by frame"
+        );
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(8, 8, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![0.75; 8], "and holds where the ramp landed");
+        assert_eq!(graph.diagnostics().unknown_targets, 0);
+    }
+
+    #[test]
+    fn a_bus_send_that_would_close_a_cycle_is_refused_and_counted() {
+        let mut graph = bus_sending_graph(SendTap::PostFader, 0.5);
+
+        // B back into A by a send, B back into A by its output, and A into
+        // itself: each closes a loop over the A → B send.
+        assert!(graph
+            .add_bus_send(51, 50, SendTap::PostFader, 0.5, uncompensated())
+            .is_some());
+        assert_eq!(graph.bus_send_tap(51, 50), None);
+        graph.set_bus_output(51, RouteTarget::Bus(50));
+        assert_eq!(graph.bus(51).expect("bus B").output(), RouteTarget::Master);
+        assert!(graph
+            .add_bus_send(50, 50, SendTap::PostFader, 0.5, uncompensated())
+            .is_some());
+        assert_eq!(graph.diagnostics().routing_cycles_refused, 3);
+
+        // The refusals left the acyclic mix exactly as it was.
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.5; 4]);
+
+        // And the other way round: B already feeding A by its output refuses
+        // a send from A into B.
+        let mut routed = graph_with_constant_clip(1, 1.0, 4);
+        assert!(routed.add_bus(TimelineBus::new(50)).is_none());
+        assert!(routed.add_bus(TimelineBus::new(51)).is_none());
+        routed.set_bus_output(51, RouteTarget::Bus(50));
+        assert!(routed
+            .add_bus_send(50, 51, SendTap::PreFader, 0.5, uncompensated())
+            .is_some());
+        assert_eq!(routed.diagnostics().routing_cycles_refused, 1);
+    }
+
+    /// Both taps of a bus send, with a ramp moving its level, render on the
+    /// callback without touching the heap: the sends are held apart from the
+    /// bus slice for the pass and put back, which must neither allocate nor
+    /// free.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_bus_send_renders_without_allocating() {
+        use assert_no_alloc::assert_no_alloc;
+
+        let mut graph = bus_sending_graph(SendTap::PreFader, 0.5);
+        assert!(graph.add_bus(TimelineBus::new(52)).is_none());
+        assert!(graph
+            .add_bus_send(50, 52, SendTap::PostFader, 0.5, uncompensated())
+            .is_none());
+        graph.automate(
+            AutomationTarget::BusSendLevel {
+                source_bus_id: 50,
+                bus_id: 51,
+            },
+            AutomationWrite::Append(ramp(512, 256, 1.0, RampShape::Linear)),
+        );
+        let mut left = vec![0.0; 512];
+        let mut right = vec![0.0; 512];
+        graph.render(0, 512, true, &mut NoDevices, &mut left, &mut right);
+
+        assert_no_alloc(|| {
+            graph.render(512, 512, true, &mut NoDevices, &mut left, &mut right);
+        });
+        assert_eq!(
+            graph.bus_send_tap(50, 52),
+            Some(SendTap::PostFader),
+            "the sends are back on their bus after the pass"
+        );
     }
 
     /// A generator's own material leaves its strip through the strip's fader,

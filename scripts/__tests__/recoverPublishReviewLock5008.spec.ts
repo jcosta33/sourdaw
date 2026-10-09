@@ -33,6 +33,7 @@ import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
 import { appendReviewDossierEvents, parseReviewDossier, serializeReviewDossier } from '../reviewDossier.ts';
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import { deliveryAuthorization, publishedFindings, publishedReviewId } from '../reviewDossierViews.ts';
+import { recordedPublicationReplay } from '../reviewPublicationBinding.ts';
 import { inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
 import {
     REASSESSMENT_FILE_NAME,
@@ -899,5 +900,398 @@ describe('review-publication recovery of a landed review among thread-reply revi
             unresolvedThreads: 0,
         });
         expect(lockOid(fixture.root)).toBeUndefined();
+    });
+
+    describe('a landed approval that a later push dismissed (#5046)', () => {
+        function dismissedApprovalReviews(overrides: Partial<RestReview> = {}): RestReview[] {
+            return [...prePublicationReviews(), { ...landedReview('approve'), state: 'DISMISSED', ...overrides }];
+        }
+
+        function dismissedApprovalRemote(input: { liveHead?: string; reviews?: RestReview[]; landing?: Landing } = {}) {
+            return fakeGitHub({
+                posted: true,
+                landing: input.landing ?? 'approve',
+                liveHead: input.liveHead ?? movedHead,
+                reviews: input.reviews ?? dismissedApprovalReviews(),
+                comments: prePublicationComments(),
+            });
+        }
+
+        it('binds the publication without a delivery authorization and releases the lock on a moved head', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = dismissedApprovalRemote();
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+
+            const dossier = readDossier(fixture.root);
+            expect(publishedReviewId(dossier)).toBe(landedReviewId);
+            expect(deliveryAuthorization(dossier)).toBeUndefined();
+            expect(dossier.events.some((event) => event.kind === 'delivery-authorized')).toBe(false);
+            expect(lockOid(fixture.root)).toBeUndefined();
+            expect(readPullRequestMutationLockReceipt(fixture.root, number, fixture.ownerOid)).toMatchObject({
+                outcome: 'landed',
+            });
+            expect(remote.state.posts).toBe(0);
+        });
+
+        it('releases again over the dossier it already bound and leaves it byte-unchanged', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = dismissedApprovalRemote();
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+            const bound = dossierText(fixture.root);
+            const nextOwnerOid = writeOwner(
+                fixture.root,
+                fixture.payloadDigest,
+                'remote-mutation-attempted',
+                '44444444-4444-4444-8444-444444444444'
+            );
+
+            await expect(recoverWith(fixture.root, nextOwnerOid, remote.gh)).resolves.toBe(0);
+
+            expect(dossierText(fixture.root)).toBe(bound);
+            expect(lockOid(fixture.root)).toBeUndefined();
+        });
+
+        it('refuses the same dismissed approval while the head has not moved', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = dismissedApprovalRemote({ liveHead: head });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /ambiguous or non-exact remote review evidence/
+            );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+        });
+
+        it('refuses a dismissed approval whose body differs from the retained document', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = dismissedApprovalRemote({
+                reviews: dismissedApprovalReviews({ body: `${approvalBody} edited` }),
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /ambiguous or non-exact remote review evidence/
+            );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+        });
+
+        it('refuses a dismissed approval that carries a comment the retained document lacks', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = fakeGitHub({
+                posted: true,
+                landing: 'approve',
+                liveHead: movedHead,
+                reviews: dismissedApprovalReviews(),
+                comments: [
+                    ...prePublicationComments(),
+                    restComment(landedReviewId, landedCommentIds[0]!, 670, landedCommentBodies[0]!),
+                ],
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /ambiguous or non-exact remote review evidence/
+            );
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+        });
+
+        it('refuses a dismissed approval posted by the author App', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = dismissedApprovalRemote({
+                reviews: dismissedApprovalReviews({ user: { node_id: AUTHOR_BOT_NODE_ID } }),
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /unauthorized landed review evidence/
+            );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).not.toBeUndefined();
+        });
+
+        it('refuses the reviewer dismissed approval when the author App holds a dismissed exact copy', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = dismissedApprovalRemote({
+                reviews: [
+                    ...dismissedApprovalReviews(),
+                    restReview(5433790200, 'DISMISSED', approvalBody, AUTHOR_BOT_NODE_ID),
+                ],
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /unauthorized landed review evidence/
+            );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+        });
+
+        it('refuses an author App dismissed exact copy that appears only by the second inspection', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const first = dismissedApprovalRemote();
+            const second = dismissedApprovalRemote({
+                reviews: [
+                    ...dismissedApprovalReviews(),
+                    restReview(5433790200, 'DISMISSED', approvalBody, AUTHOR_BOT_NODE_ID),
+                ],
+            });
+
+            await expect(
+                recoverWith(fixture.root, fixture.ownerOid, first.gh, (inspection) =>
+                    inspection === 1 ? first.gh : second.gh
+                )
+            ).rejects.toThrow(/unauthorized landed review evidence/);
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).not.toBeUndefined();
+        });
+
+        it('refuses the reviewer live approval when the author App holds a dismissed exact copy on an unmoved head', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = fakeGitHub({
+                posted: true,
+                landing: 'approve',
+                liveHead: head,
+                reviews: [
+                    ...prePublicationReviews(),
+                    landedReview('approve'),
+                    restReview(5433790200, 'DISMISSED', approvalBody, AUTHOR_BOT_NODE_ID),
+                ],
+                comments: prePublicationComments(),
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /unauthorized landed review evidence/
+            );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(deliveryAuthorization(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+        });
+
+        it('refuses a prepared owner as unauthorized evidence, not absent, beside a dismissed exact copy on an unmoved head', async () => {
+            const fixture = fixtureFor({ phase: 'prepared', planCarrying: true, landing: 'approve' });
+            const remote = fakeGitHub({
+                posted: true,
+                landing: 'approve',
+                liveHead: head,
+                reviews: [
+                    ...prePublicationReviews(),
+                    restReview(5433790200, 'DISMISSED', approvalBody, AUTHOR_BOT_NODE_ID),
+                ],
+                comments: prePublicationComments(),
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /unauthorized landed review evidence/
+            );
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+            expect(readPullRequestMutationLockReceipt(fixture.root, number, fixture.ownerOid)).toBeUndefined();
+        });
+
+        it.each([
+            { headState: 'unmoved', liveHead: head },
+            { headState: 'moved', liveHead: movedHead },
+        ])(
+            'refuses a dismissed REQUEST_CHANGES exact copy with its comments from the author App on an $headState head',
+            async ({ liveHead }) => {
+                const fixture = fixtureFor({ planCarrying: true });
+                const copyReviewId = 5433790200;
+                const before = dossierText(fixture.root);
+                const remote = fakeGitHub({
+                    posted: true,
+                    liveHead,
+                    reviews: [
+                        ...incidentReviews(),
+                        restReview(copyReviewId, 'DISMISSED', renderedBody, AUTHOR_BOT_NODE_ID),
+                    ],
+                    comments: [
+                        ...incidentComments(),
+                        restComment(copyReviewId, 4199790200, 670, landedCommentBodies[0]!, {
+                            actor: AUTHOR_BOT_NODE_ID,
+                        }),
+                        restComment(copyReviewId, 4199790201, 64, landedCommentBodies[1]!, {
+                            actor: AUTHOR_BOT_NODE_ID,
+                            originalPosition: 5,
+                        }),
+                    ],
+                });
+
+                await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                    /unauthorized landed review evidence/
+                );
+                expect(dossierText(fixture.root)).toBe(before);
+                expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+            }
+        );
+
+        it.each(['PENDING', 'COMMENTED'])(
+            'refuses an otherwise exact approval in state %s on a moved head',
+            async (state) => {
+                const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+                const remote = dismissedApprovalRemote({
+                    reviews: dismissedApprovalReviews({ state }),
+                });
+
+                await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                    /ambiguous or non-exact remote review evidence/
+                );
+                expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+                expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+            }
+        );
+
+        it('refuses a dismissed orchestrator acceptance even on a moved head', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const bundle = bundlePath(fixture.root);
+            const acceptance = parseAcceptanceDocument({
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Accepted after the independent approval; delivery may proceed.',
+                evidence: {
+                    headSha: head,
+                    claims: [
+                        {
+                            observable: 'the stacking rule matches the stack procedure',
+                            verification: 'read AGENTS.md against the delivery skill',
+                            observed: 'one consistent rule',
+                        },
+                    ],
+                },
+            });
+            writeFileSync(join(bundle, 'acceptance.json'), JSON.stringify(acceptance));
+            const acceptanceBody = renderReviewDocumentBody(acceptance);
+            const ownerOid = writeOwner(
+                fixture.root,
+                reviewPublicationPayloadDigest(
+                    reviewPublicationPayload({
+                        commitId: head,
+                        event: acceptance.event,
+                        body: acceptanceBody,
+                        comments: [],
+                    })
+                ),
+                'remote-mutation-attempted',
+                '33333333-3333-4333-8333-333333333333',
+                ORCHESTRATOR_USER_NODE_ID
+            );
+            const remote = fakeGitHub({
+                posted: true,
+                liveHead: movedHead,
+                reviews: [
+                    ...incidentReviews('approve'),
+                    restReview(5433800000, 'DISMISSED', acceptanceBody, ORCHESTRATOR_USER_NODE_ID),
+                ],
+                comments: prePublicationComments(),
+            });
+            const before = dossierText(fixture.root);
+
+            await expect(recoverWith(fixture.root, ownerOid, remote.gh)).rejects.toThrow(
+                /ambiguous or non-exact remote review evidence/
+            );
+            expect(dossierText(fixture.root)).toBe(before);
+            expect(lockOid(fixture.root)).toBe(ownerOid);
+        });
+
+        it('refuses a dismissed REQUEST_CHANGES review even on a moved head', async () => {
+            const fixture = fixtureFor({ planCarrying: true });
+            const remote = fakeGitHub({
+                posted: true,
+                liveHead: movedHead,
+                reviews: [...prePublicationReviews(), { ...landedReview('request-changes'), state: 'DISMISSED' }],
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+                /ambiguous or non-exact remote review evidence/
+            );
+            expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+        });
+
+        it('refuses when the approval stands live at the first inspection and is dismissed at the second', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const live = fakeGitHub({ posted: true, landing: 'approve' });
+            const dismissed = dismissedApprovalRemote();
+
+            await expect(
+                recoverWith(fixture.root, fixture.ownerOid, live.gh, (inspection) =>
+                    inspection === 1 ? live.gh : dismissed.gh
+                )
+            ).rejects.toThrow(/remote state changed during reconciliation/);
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).not.toBeUndefined();
+        });
+
+        it('refuses when the approval stands live at the first inspection and is dismissed at the second on an unmoved head', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const live = fakeGitHub({ posted: true, landing: 'approve' });
+            const dismissed = dismissedApprovalRemote({ liveHead: head });
+
+            await expect(
+                recoverWith(fixture.root, fixture.ownerOid, dismissed.gh, (inspection) =>
+                    inspection === 1 ? live.gh : dismissed.gh
+                )
+            ).rejects.toThrow(/remote state changed during reconciliation/);
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(deliveryAuthorization(readDossier(fixture.root))).toBeUndefined();
+            expect(lockOid(fixture.root)).not.toBeUndefined();
+        });
+
+        it('refuses when the approval is dismissed between the two inspections on a head that moved before both', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const live = fakeGitHub({ posted: true, landing: 'approve', liveHead: movedHead });
+            const dismissed = dismissedApprovalRemote();
+            const before = dossierText(fixture.root);
+
+            await expect(
+                recoverWith(fixture.root, fixture.ownerOid, live.gh, (inspection) =>
+                    inspection === 1 ? live.gh : dismissed.gh
+                )
+            ).rejects.toThrow(/remote state changed during reconciliation/);
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(dossierText(fixture.root)).toBe(before);
+            expect(lockOid(fixture.root)).not.toBeUndefined();
+        });
+
+        it('releases a dismissed approval beside another actor dismissed review whose body differs from the document', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = dismissedApprovalRemote({
+                reviews: [
+                    ...dismissedApprovalReviews(),
+                    restReview(5433790200, 'DISMISSED', `${approvalBody} edited`, AUTHOR_BOT_NODE_ID),
+                ],
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+
+            expect(publishedReviewId(readDossier(fixture.root))).toBe(landedReviewId);
+            expect(lockOid(fixture.root)).toBeUndefined();
+            expect(readPullRequestMutationLockReceipt(fixture.root, number, fixture.ownerOid)).toMatchObject({
+                outcome: 'landed',
+            });
+        });
+
+        it('keeps a dismissed approval from standing as the live publication of a normal publish replay', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const live = fakeGitHub({ posted: true, landing: 'approve' });
+            await expect(recoverWith(fixture.root, fixture.ownerOid, live.gh)).resolves.toBe(0);
+            const approval = parseReviewDocument(approvalDocumentJson);
+            const dismissed = dismissedApprovalRemote({ liveHead: head });
+
+            expect(
+                recordedPublicationReplay(
+                    number,
+                    head,
+                    approval,
+                    REVIEWER_BOT_NODE_ID,
+                    publicationPort(fixture.root, live.gh)
+                )
+            ).toBe(landedReviewId);
+            expect(() =>
+                recordedPublicationReplay(
+                    number,
+                    head,
+                    approval,
+                    REVIEWER_BOT_NODE_ID,
+                    publicationPort(fixture.root, dismissed.gh)
+                )
+            ).toThrow(/recorded review publication \d+ does not stand live and exact/);
+        });
     });
 });

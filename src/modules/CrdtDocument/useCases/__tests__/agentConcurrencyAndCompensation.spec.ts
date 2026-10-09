@@ -13,12 +13,14 @@ import {
     commandBatchPreviewPort,
     commandProjectDivergencePort,
     commandProjectRevisionPort,
+    captureCommandTargetFingerprints,
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
     executeAppAction,
     executeVersionedCommandBatch,
     executeVersionedCommandBatchEnvelope,
+    getCommandDivergenceTargetIds,
     issueCommandApprovalBinding,
     serializeVersionedCommandEnvelope,
     undo,
@@ -49,6 +51,8 @@ function statedLinearGain(payload: { gain?: number }): number {
     }
     return payload.gain;
 }
+
+type CreateEnvelopeInput = Parameters<typeof createVersionedCommandEnvelope>[0];
 
 const projectionMocks = vi.hoisted(() => ({ hydrate: vi.fn() }));
 
@@ -321,6 +325,51 @@ describe('agent concurrency and compensation', () => {
             })
         ).toMatchObject({ kind: 'invariant-breaking', mayReapply: false });
     });
+
+    it.each([
+        [
+            'addAutomationLane',
+            {
+                type: 'addAutomationLane',
+                payload: { parameterId: 'dev1:drive', parameterName: 'Drive', trackId: 'trk' },
+            },
+        ],
+        [
+            'automateParameterRange',
+            {
+                type: 'automateParameterRange',
+                payload: { parameterId: 'dev1:drive', range: { endBeat: 8, startBeat: 0 }, trackId: 'trk', value: 0.5 },
+            },
+        ],
+    ] satisfies [string, AppAction][])(
+        'classifies a removed device as the deleted target of a %s on its parameter',
+        (_name, action) => {
+            const withDevice = {
+                tracks: [{ devices: [{ id: 'dev1', parameterValues: { drive: 0.4 } }], id: 'trk', name: 'Track' }],
+            };
+            const withoutDevice = { tracks: [{ devices: [], id: 'trk', name: 'Track' }] };
+            const targetIds = getCommandDivergenceTargetIds({ actions: [action], targetIds: [] });
+
+            expect(targetIds.toSorted()).toEqual(['dev1', 'trk']);
+            expect(
+                classifyAgentProjectDivergence({
+                    audioGraphValid: true,
+                    baseRevision: 'revision-1',
+                    baseTargetFingerprints: captureCommandTargetFingerprints({ document: withDevice, targetIds }),
+                    commandsCompatible: true,
+                    currentRevision: 'revision-2',
+                    currentTargetFingerprints: captureCommandTargetFingerprints({ document: withoutDevice, targetIds }),
+                    projectInvariantsValid: true,
+                    targetIds,
+                })
+            ).toMatchObject({
+                kind: 'deleted-target',
+                mayReapply: false,
+                repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: ['dev1'] }],
+                targetIds: ['dev1'],
+            });
+        }
+    );
 
     it('uses historical Automerge heads to distinguish unrelated and compatible target edits', () => {
         seedProject();
@@ -751,6 +800,102 @@ describe('agent concurrency and compensation', () => {
         });
         expect(targetStorage.get()?.['track-bass']).toBeUndefined();
     });
+
+    it.each([
+        [
+            'addAutomationLane',
+            {
+                type: 'addAutomationLane',
+                payload: { parameterId: 'dev1:drive', parameterName: 'Drive', trackId: 'trk' },
+            },
+            [{ argument: 'trackId', id: 'trk', scope: 'stable' }],
+            [],
+            [],
+            [],
+        ],
+        [
+            'automateParameterRange',
+            {
+                type: 'automateParameterRange',
+                payload: {
+                    parameterId: 'dev1:drive',
+                    range: { endBeat: 8, startBeat: 0 },
+                    trackId: 'trk',
+                    value: 0.5,
+                    writeId: 'automation-range-command-1',
+                },
+            },
+            [
+                { argument: 'trackId', id: 'trk', scope: 'stable' },
+                { argument: 'writeId', id: 'automation-range-command-1', scope: 'stable' },
+            ],
+            [{ argument: 'writeId', value: 'automation-range-command-1' }],
+            [
+                { argument: 'range.endBeat', unit: 'beats' },
+                { argument: 'range.startBeat', unit: 'beats' },
+                { argument: 'value', unit: 'unitless' },
+            ],
+            [
+                { argument: 'range.endBeat', domain: 'musical', unit: 'beats', value: 8 },
+                { argument: 'range.startBeat', domain: 'musical', unit: 'beats', value: 0 },
+            ],
+        ],
+    ] satisfies [
+        string,
+        AppAction,
+        CreateEnvelopeInput['objectReferences'],
+        NonNullable<CreateEnvelopeInput['applicationAssignedIds']>,
+        CreateEnvelopeInput['parameterUnits'],
+        CreateEnvelopeInput['time'],
+    ][])(
+        'names the removed device as the deleted target of a %s on its parameter',
+        async (_name, action, objectReferences, applicationAssignedIds, parameterUnits, time) => {
+            seedProject();
+            registerCrdtStorageRuntime();
+            const execute = vi.fn();
+            const handler = {
+                describe: () => ({ inverseAction: null, label: 'Automate device parameter' }),
+                execute,
+                undoable: false,
+                validate: () => true,
+            };
+            registerHandlerMap({ addAutomationLane: handler, automateParameterRange: handler });
+            automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+                draft.targets.trk = { gain: 0.8, id: 'trk', name: 'Track' };
+                draft.targets.dev1 = { gain: 0, id: 'dev1', name: 'Drive device' };
+            });
+            const command = createVersionedCommandEnvelope({
+                action,
+                applicationAssignedIds,
+                availableDeviceVersions: {},
+                expectedEffect: 'Automate the drive.',
+                normalizedProjectRevision: captureProjectRevision(),
+                objectReferences,
+                parameterUnits,
+                reason: 'Automate the drive.',
+                time,
+            });
+            automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+                delete draft.targets.dev1;
+                draft.targets.trk!.name = 'Track without drive';
+            });
+
+            const result = await executeVersionedCommandBatch({
+                commands: [serializeVersionedCommandEnvelope(command)],
+            });
+
+            expect(result).toMatchObject({
+                divergence: {
+                    kind: 'deleted-target',
+                    mayReapply: false,
+                    repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: ['dev1'] }],
+                    targetIds: ['dev1'],
+                },
+                status: 'conflicted',
+            });
+            expect(execute).not.toHaveBeenCalled();
+        }
+    );
 
     it('rejects all commands while raw project invariants require repair', async () => {
         const { command, targetStorage } = prepareTargetCommand();
