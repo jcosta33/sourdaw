@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { type commitRecording, type startRecording, type updateClip } from '#/modules/Arrangement/useCases';
+import {
+    type commitRecording,
+    type startRecording,
+    type stopRecording,
+    type updateClip,
+} from '#/modules/Arrangement/useCases';
 import {
     type cacheAudioBuffer,
     type getCompensationDelay,
@@ -54,7 +59,7 @@ const harness = vi.hoisted(() => ({
     start_audio_recording: vi.fn<typeof startAudioRecording>(() => Promise.resolve(true)),
     start_recording: vi.fn<typeof startRecording>(() => []),
     stop_audio_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
-    stop_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    stop_recording: vi.fn<typeof stopRecording>(() => Promise.resolve()),
     panic_yeast_runtime: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     workers: [] as FakeWorker[],
     track_store: {

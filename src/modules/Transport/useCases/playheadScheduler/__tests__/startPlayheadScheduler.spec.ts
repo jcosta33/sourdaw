@@ -22,7 +22,10 @@ type PunchTerminalResult =
     | { kind: 'failed'; reason: string };
 type PunchTerminal = (result: PunchTerminalResult) => void;
 
-function completedPunchResult(sampleZeroContextFrame = 4800, sampleRate = 48000): PunchTerminalResult {
+function completedPunchResult(
+    sampleZeroContextFrame = 4800,
+    sampleRate = 48000
+): Extract<PunchTerminalResult, { kind: 'completed' }> {
     return { kind: 'completed', buffer: { duration: 1 }, sampleZeroContextFrame, sampleRate };
 }
 
