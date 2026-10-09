@@ -316,6 +316,34 @@ describe('thread context for the planner', () => {
             }
         });
 
+        it('carries the newer of two live proposals on different messages', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'make the bass louder'),
+                        message('assistant-1', 'assistant', 'Review the change.'),
+                        message('user-2', 'user', 'mute the pad'),
+                        message('assistant-2', 'assistant', 'Review the change.'),
+                    ],
+                    confirmations: [
+                        confirmation({ runId: 'run-older', assistantMessageId: 'assistant-1', status: 'proposed' }),
+                        confirmation({
+                            runId: 'run-newer',
+                            assistantMessageId: 'assistant-2',
+                            status: 'proposed',
+                            actions: [{ type: 'muteTrack', payload: { trackId: 'track-pad', muted: true } }],
+                            actionLabels: ['Mute Pad'],
+                        }),
+                    ],
+                })
+            );
+
+            expect(thread?.pendingProposal).toEqual({
+                runId: 'run-newer',
+                commands: [{ name: 'muteTrack', label: 'Mute Pad', arguments: { trackId: 'track-pad', muted: true } }],
+            });
+        });
+
         it("carries a confirmed commit's commands, receipt id and measured deltas", () => {
             const thread = buildThreadContext(
                 sources({
