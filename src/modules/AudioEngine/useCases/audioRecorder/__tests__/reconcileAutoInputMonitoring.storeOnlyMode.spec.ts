@@ -72,6 +72,14 @@ function publishTracks(tracks: Track[]): void {
     restoreTrackSnapshot({ tracks, selectedTrackId: null });
 }
 
+function readPublishedTrack(trackId: string): Track {
+    const publishedTrack = trackStore.value?.tracks.find((value) => value.id === trackId);
+    if (!publishedTrack) {
+        throw new Error(`Expected track ${trackId} in the published track store`);
+    }
+    return publishedTrack;
+}
+
 function liveStream(): TestStream {
     const stopTrack = vi.fn();
     return { stream: { getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream, stopTrack };
@@ -227,7 +235,7 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
             toggleInputMonitoring('track-1');
             expect(await harness.opens[0]).toBe(true);
             transportStore.set({ ...defaultTransportState, isPlaying: true });
-            expect(trackStore.value?.tracks[0].inputMonitoring).toBe('on');
+            expect(readPublishedTrack('track-1').inputMonitoring).toBe('on');
             expect(isTrackInputMonitored('track-1', 'input-1')).toBe(true);
             expect(source.disconnect).not.toHaveBeenCalled();
             expect(granted.stopTrack).not.toHaveBeenCalled();
@@ -248,7 +256,7 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
 
             toggleInputMonitoring('track-1');
 
-            expect(trackStore.value?.tracks[0].inputMonitoring).toBe('off');
+            expect(readPublishedTrack('track-1').inputMonitoring).toBe('off');
             expect(isTrackInputMonitored('track-1', 'input-1')).toBe(false);
             expect(isTrackInputMonitored('track-2', 'input-1')).toBe(true);
             expect(source.disconnect).toHaveBeenCalledExactlyOnceWith(GAIN_NODE);
@@ -257,7 +265,7 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
 
             toggleInputMonitoring('track-2');
 
-            expect(trackStore.value?.tracks[1].inputMonitoring).toBe('off');
+            expect(readPublishedTrack('track-2').inputMonitoring).toBe('off');
             expect(isTrackInputMonitored('track-2', 'input-1')).toBe(false);
             expect(source.disconnect).toHaveBeenCalledWith(SECOND_GAIN_NODE);
             expect(source.disconnect.mock.calls).toEqual([[GAIN_NODE], [SECOND_GAIN_NODE], []]);
@@ -283,7 +291,7 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
             grant(granted);
 
             expect(await harness.opens[0]).toBe(true);
-            expect(trackStore.value?.tracks[0].inputMonitoring).toBe('on');
+            expect(readPublishedTrack('track-1').inputMonitoring).toBe('on');
             expect(isTrackInputMonitored('track-1', 'input-1')).toBe(true);
             expect(source.connect).toHaveBeenCalledExactlyOnceWith(GAIN_NODE);
             expect(source.disconnect).not.toHaveBeenCalled();
@@ -307,7 +315,7 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
             transportStore.set({ ...defaultTransportState, isPlaying: true });
             transportStore.set(defaultTransportState);
 
-            expect(trackStore.value?.tracks[0].inputMonitoring).toBe('on');
+            expect(readPublishedTrack('track-1').inputMonitoring).toBe('on');
             expect(isTrackInputMonitored('track-1', 'input-1')).toBe(false);
             expect(harness.getUserMedia).not.toHaveBeenCalled();
             expect(harness.createMediaStreamSource).not.toHaveBeenCalled();
@@ -365,7 +373,7 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
 
             publishTracks([track('on', { kind })]);
 
-            expect(trackStore.value?.tracks[0].inputMonitoring).toBe('on');
+            expect(readPublishedTrack('track-1').inputMonitoring).toBe('on');
             expect(isTrackInputMonitored('track-1', 'input-1')).toBe(true);
             expect(source.disconnect).not.toHaveBeenCalled();
             expect(granted.stopTrack).not.toHaveBeenCalled();
@@ -393,52 +401,6 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
         expect(harness.getUserMedia).not.toHaveBeenCalled();
         expect(harness.createMediaStreamSource).not.toHaveBeenCalled();
         expect(source.connect).not.toHaveBeenCalled();
-    });
-
-    it('retires a same-id VCA interest while preserving the other owner of its shared input', async () => {
-        const second = track('on', { id: 'track-2' });
-        publishTracks([track('on'), second]);
-        unsubscribe = syncAutoInputMonitoring();
-        const granted = liveStream();
-        harness.getUserMedia.mockResolvedValueOnce(granted.stream);
-        expect(await startInputMonitoring('track-1', 'input-1')).toBe(true);
-        expect(await startInputMonitoring('track-2', 'input-1')).toBe(true);
-
-        // Snapshot restore excludes dormant VCA records; keep the same ID present in this controlled publication.
-        trackStore.set({ tracks: [track('on', { kind: 'vca' }), second], selectedTrackId: null });
-
-        expect(trackStore.value?.tracks[0].kind).toBe('vca');
-        expect(getTrackEligibility('vca').acceptsMonitoring).toBe(false);
-        expect(isTrackInputMonitored('track-1', 'input-1')).toBe(false);
-        expect(isTrackInputMonitored('track-2', 'input-1')).toBe(true);
-        expect(source.disconnect).toHaveBeenCalledExactlyOnceWith(GAIN_NODE);
-        expect(granted.stopTrack).not.toHaveBeenCalled();
-        trackStore.set({
-            tracks: [track('on', { kind: 'vca' }), track('off', { id: 'track-2' })],
-            selectedTrackId: null,
-        });
-        expect(source.disconnect).toHaveBeenCalledWith(SECOND_GAIN_NODE);
-        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
-        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
-    });
-
-    it('retires a same-id VCA pending interest before its permission grant settles', async () => {
-        writeStoreOnly('on');
-        unsubscribe = syncAutoInputMonitoring();
-        const grant = deferGrant();
-        const opening = startInputMonitoring('track-1', 'input-1');
-
-        trackStore.set({ tracks: [track('on', { kind: 'vca' })], selectedTrackId: null });
-        const granted = liveStream();
-        grant(granted);
-
-        expect(await opening).toBe(false);
-        expect(trackStore.value?.tracks[0].kind).toBe('vca');
-        expect(isTrackInputMonitored('track-1', 'input-1')).toBe(false);
-        expect(harness.createMediaStreamSource).not.toHaveBeenCalled();
-        expect(source.connect).not.toHaveBeenCalled();
-        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
-        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
     });
 
     it.each(['off', 'removed'] as const)(

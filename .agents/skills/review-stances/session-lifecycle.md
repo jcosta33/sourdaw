@@ -198,6 +198,7 @@ from a recorder-owned list of kinds. PR #5091's first repair incorrectly treated
 folder On as ineligible while the real toggle admitted them. Tests asserting those wrong closures
 passed without proving admission. Start a bus through the real Auto-to-On toggle, publish play and
 stop, and require saved On, admitted interest and its source edge to survive; repeat for every
-owner-supported kind, including permission still pending. Off and true ineligibility (VCA) must
-release only that owner; non-audio Auto and unadmitted store-only On must acquire nothing. Controlled
-gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
+owner-supported project kind, including permission still pending. Off and removal must release only
+that owner; non-audio Auto and unadmitted store-only On must acquire nothing. The eligibility table's
+dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
+proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
