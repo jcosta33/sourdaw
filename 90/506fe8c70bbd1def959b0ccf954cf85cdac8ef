@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts
+  s_1f0dcd815e8946::t_e2f778143f00bf 26-49,158-160,176-183,186,191,193-196,200,205,208,210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90506fe8c70bbd1def959b0ccf954cf85cdac8ef",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
