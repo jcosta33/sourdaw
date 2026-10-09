@@ -1,0 +1,19 @@
+src/modules/Toaster/presentations/views/__tests__/ToasterPadSelectBeforeRegistration.spec.tsx
+  s_2bfd55a4393d7c::t_683a3928595375 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "413d4685017da3496cecf1f1aad54f0f97303961",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
