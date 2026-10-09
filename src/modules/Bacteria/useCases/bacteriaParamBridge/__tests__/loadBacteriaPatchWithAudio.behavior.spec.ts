@@ -23,6 +23,7 @@ const getBacteriaStateMock = vi.mocked(getBacteriaState);
 
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';
+const BODY_PARAMETER = 'band0_convolutionIr';
 
 function makeDeps(parameterValues: Record<string, number> = {}) {
     return {
@@ -220,9 +221,9 @@ describe('loadBacteriaPatchWithAudio — engine sync', () => {
 
         loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, DEFAULT_PATCH);
 
-        expect(pushedParams(deps).filter(([key]) => key === 'band0_convolutionIr')).toEqual([
-            ['band0_convolutionIr', -1],
-        ]);
+        const bodyPushes = pushedParams(deps).filter(([param]) => param === BODY_PARAMETER);
+
+        expect(bodyPushes).toEqual([[BODY_PARAMETER, -1]]);
     });
 
     it('pushes the assignment table through the patch door as a wholesale replacement', () => {
