@@ -1,3 +1,5 @@
+import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
+
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { type GrooveTemplateState } from '../../stores/grooveTemplateStore';
 
@@ -19,6 +21,13 @@ type ProjectClipMidiEventsInput<Event extends ClipMidiEvent> = {
     loopLengthBeats: number;
     midiOffsetBeats: number;
     loopEnabled?: boolean;
+    /**
+     * The clip's loop anchor (#4988). Playback callers carry it so the loop
+     * window stays anchored to the source across start trims; absent, the
+     * window admits everything below the loop length, exactly as before the
+     * anchor existed (display and legacy callers).
+     */
+    loopOriginBeat?: number;
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
 };
@@ -59,6 +68,7 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
         loopLengthBeats,
         midiOffsetBeats,
         loopEnabled = false,
+        loopOriginBeat,
         clipGrooveAlreadyApplied = false,
         eventsAreAbsolute = false,
     }: ProjectClipMidiEventsInput<Event>): Event[] {
@@ -68,7 +78,15 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
 
         return clipProjected.flatMap((event) => {
             const relativeStartBeat = event.startBeat - midiOffsetBeats;
-            if (!eventsAreAbsolute && relativeStartBeat >= loopLengthBeats) {
+            if (
+                !eventsAreAbsolute &&
+                !isBeatInClipLoopWindow({
+                    relativeBeat: relativeStartBeat,
+                    startBeat: clipStartBeat,
+                    loopOriginBeat,
+                    loopLengthBeats,
+                })
+            ) {
                 return [];
             }
             const absoluteStartBeat = eventsAreAbsolute ? event.startBeat : iterationStartBeat + relativeStartBeat;

@@ -79,6 +79,12 @@ export function trimClipStart(clipId: string, newStartBeat: number): boolean {
                 ...context,
                 startBeat,
                 audioOffsetBeats: (context.audioOffsetBeats ?? 0) + delta,
+                // A trim advances the content offset but never the loop anchor:
+                // the loop window and the pass count stay anchored to the source
+                // (#4988). A clip born looped gets its anchor at this first trim;
+                // an already-anchored clip keeps theirs.
+                loopOriginBeat:
+                    context.loopOriginBeat ?? (context.loopEnabled === true ? context.startBeat : undefined),
             };
             if (context.type === 'midi') {
                 const rawOffsetBeats = (context.midiOffsetBeats ?? 0) + delta;

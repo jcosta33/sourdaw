@@ -19,7 +19,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
-            sourceStartBeat: context.startBeat,
+            // The pass count measures from the loop anchor, not the current
+            // placement: a start trim must not re-roll which passes sound
+            // (#4988). Unanchored clips anchor at their current start, which is
+            // exactly the pre-anchor reading.
+            sourceStartBeat: context.loopOriginBeat ?? context.startBeat,
         }));
     }
 
@@ -29,7 +33,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
-            sourceStartBeat: context.startBeat,
+            sourceStartBeat: context.loopOriginBeat ?? context.startBeat,
         }));
     }
 
@@ -94,7 +98,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
                 endBeat: gap.end,
                 regionStartBeat: gap.start,
                 regionEndBeat: gap.end,
-                sourceStartBeat: clip.startBeat,
+                sourceStartBeat: clip.loopOriginBeat ?? clip.startBeat,
             });
         }
     }

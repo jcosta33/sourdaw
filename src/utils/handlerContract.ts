@@ -146,6 +146,7 @@ export type ClipStateSnapshot = {
     readonly stretchRatio?: number;
     readonly loopEnabled?: boolean;
     readonly loopLength?: number;
+    readonly loopOriginBeat?: number;
     readonly followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
     readonly generating?: boolean;
     readonly isGhost?: boolean;

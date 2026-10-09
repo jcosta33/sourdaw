@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { type Clip } from '../../models/Track';
+import { type Take } from '../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../stores/takeLaneStore';
 import { resolveClipsWithComping } from '../resolveComping';
 
@@ -58,7 +59,7 @@ function passTake(id: string, loopStart: number, loopEnd: number, depthBeats: nu
     };
 }
 
-function compPass(takes: ReturnType<typeof passTake>[], takeId: string, startBeat: number, endBeat: number) {
+function compPass(takes: Take[], takeId: string, startBeat: number, endBeat: number) {
     mocks.takeLaneStoreValue.value = {
         lanes: [
             {
@@ -201,6 +202,61 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
 
         expect(bufferBeatAt(out, 2)).toBe(2.5);
         expect(bufferBeatAt(out, 0)).toBe(0.5);
+    });
+});
+
+describe('resolveClipsWithComping — legacy passes of a clip trimmed before pass placement existed', () => {
+    /** A pass as a pre-#4987 build saved it: a media depth only, no placement seconds (#4996). */
+    function legacyPassTake(id: string, startBeat: number, endBeat: number, sourceOffsetBeats: number) {
+        return {
+            id,
+            clipId: 'rec',
+            name: id,
+            startBeat,
+            endBeat,
+            selected: false,
+            sourceOffsetBeats,
+        };
+    }
+
+    it('keeps a pre-#4987 trimmed loop clip hiding its trimmed material on reopen', () => {
+        // Loop [0,4) recorded from beat 0 for two passes, then the clip start
+        // trimmed to beat 1 and saved before placement existed. Comp pass 1 and
+        // play from beat 0: nothing sounds before the clip, and the first
+        // remaining beat enters one beat into the media — not the trimmed head.
+        const takes = [legacyPassTake('pass-1', 0, 4, 0), legacyPassTake('pass-2', 0, 4, 4)];
+        compPass(takes, 'pass-1', 0, 4);
+
+        const out = resolveClipsWithComping('t1', [recording(1, 8, 1)]);
+
+        expect(bufferBeatAt(out, 0.5)).toBeNull();
+        expect(bufferBeatAt(out, 1)).toBe(1);
+        expect(bufferBeatAt(out, 3)).toBe(3);
+    });
+
+    it('keeps a deeper pass of the same clip out of the trimmed head', () => {
+        const takes = [legacyPassTake('pass-1', 0, 4, 0), legacyPassTake('pass-2', 0, 4, 4)];
+        compPass(takes, 'pass-2', 0, 4);
+
+        const out = resolveClipsWithComping('t1', [recording(1, 8, 1)]);
+
+        expect(bufferBeatAt(out, 0.5)).toBeNull();
+        expect(bufferBeatAt(out, 1)).toBe(5);
+        expect(bufferBeatAt(out, 3)).toBe(7);
+    });
+
+    it('sounds a legitimate pass from the record point when recording started inside the loop', () => {
+        // Pre-#4987 shape: the clip commits at the record point 2, and pass 2
+        // spans the loop from before it. The pass stays silent before the clip
+        // and plays its own material from the record point on.
+        const takes = [legacyPassTake('pass-1', 2, 8, 0), legacyPassTake('pass-2', 0, 4, 2)];
+        compPass(takes, 'pass-2', 0, 4);
+
+        const out = resolveClipsWithComping('t1', [recording(2, 8)]);
+
+        expect(bufferBeatAt(out, 1)).toBeNull();
+        expect(bufferBeatAt(out, 2)).toBe(2);
+        expect(bufferBeatAt(out, 3)).toBe(3);
     });
 });
 

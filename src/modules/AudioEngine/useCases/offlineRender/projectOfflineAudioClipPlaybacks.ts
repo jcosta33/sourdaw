@@ -22,6 +22,7 @@ export type OfflineProjectableAudioClip = Pick<
     | 'endBeat'
     | 'loopLength'
     | 'loopEnabled'
+    | 'loopOriginBeat'
     | 'stretchMode'
     | 'stretchRatio'
     | 'gain'
@@ -93,9 +94,11 @@ export type OfflineAudioClipPlaybackProjection = Readonly<{
     fadeIn?: OfflineClipFadeIn;
     fadeOut?: OfflineClipFadeOut;
     /**
-     * This iteration's uncropped end on the raw (region-unshifted) timeline —
+     * This playback's uncropped end on the raw (region-unshifted) timeline —
      * the boundary the schedule tally compares against, kept here so the tally
-     * question stays answerable after the arithmetic moved.
+     * question stays answerable after the arithmetic moved. One loop pass may
+     * project as two contiguous playbacks across its loop wrap (#4988); each
+     * carries its own end.
      */
     rawIterEndSec: number;
 }>;
@@ -145,10 +148,9 @@ export function projectOfflineAudioClipPlaybacks(
     const clipGainValue = clip.gain;
 
     const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
-    // Where the clip enters its own material, in *source* seconds — the same
-    // number `scheduleAudioClips` hands to `source.start(when, offset, …)`, and
-    // the same entry point both waveform renderers draw from. Two things the
-    // timeline arithmetic below does are deliberately absent here:
+    // The flat rate at the clip's start beat converts source beats into the
+    // source seconds every read below seeks with. Two things the timeline
+    // arithmetic below does are deliberately absent from it:
     //
     //   - the tempo map is not integrated. The rate is the flat one governing
     //     the clip's start beat, because the material was rendered at one
@@ -163,18 +165,44 @@ export function projectOfflineAudioClipPlaybacks(
     // malformed one from turning the seek into Infinity or NaN.
     const clipTempo = resolveTempoAtBeat(clip.startBeat);
     const clipSecondsPerBeat = Number.isFinite(clipTempo) && clipTempo > 0 ? 60 / clipTempo : 0;
-    const clipAudioOffsetSec = clipAudioOffsetBeats * clipSecondsPerBeat;
-    const baseBufferOffsetSec = Math.max(0, clipAudioOffsetSec);
-    // A negative offset — reachable by slipping content right or dragging the
-    // left edge leftward, neither of which floors it — puts the clip's head
-    // before the start of its source. The professional answer (Live, Cubase) is
-    // silence across that span and then the file from sample 0, so the sound
-    // starts later on the destination timeline by the negative span converted
-    // at the playback rate, and enters the source at 0. Clamping the offset to
-    // 0 instead would sound material the clip's head does not name, and passing
-    // the negative number to `start()` is the `RangeError` the Web Audio
-    // specification requires.
-    const sourcePreRollSec = Math.max(0, -clipAudioOffsetSec) / safeStretchRatio;
+
+    // The loop region the clip was looped with, in source beats (#4988): the
+    // content offset names where the head enters, and a start trim advances
+    // only that entry — subtracting the trim advance recovers the region the
+    // offset originally named. The pass reads that region cyclically, entering
+    // at the advance's phase, so material past the region end stays unheard
+    // however far the clip is trimmed. An unanchored clip advances zero, which
+    // puts the region at the offset itself and the entry at the region head:
+    // exactly the pre-anchor read, one segment per pass.
+    const loopAdvanceBeats = clip.startBeat - (clip.loopOriginBeat ?? clip.startBeat);
+    const regionStartBeats = clipAudioOffsetBeats - loopAdvanceBeats;
+    const regionEntryBeats = ((loopAdvanceBeats % loopLen) + loopLen) % loopLen;
+
+    type LoopPassSegment = {
+        /** Segment span inside the pass, in beats from the pass head. */
+        startBeat: number;
+        endBeat: number;
+        /** Where this segment starts reading, in source beats. */
+        sourceStartBeats: number;
+    };
+
+    function buildPassSegments(passLengthBeats: number): LoopPassSegment[] {
+        if (regionEntryBeats <= 0) {
+            return [{ startBeat: 0, endBeat: passLengthBeats, sourceStartBeats: regionStartBeats }];
+        }
+        const headSegmentEndBeat = Math.min(passLengthBeats, loopLen - regionEntryBeats);
+        const segments: LoopPassSegment[] = [
+            { startBeat: 0, endBeat: headSegmentEndBeat, sourceStartBeats: regionStartBeats + regionEntryBeats },
+        ];
+        if (passLengthBeats > headSegmentEndBeat) {
+            segments.push({
+                startBeat: headSegmentEndBeat,
+                endBeat: passLengthBeats,
+                sourceStartBeats: regionStartBeats,
+            });
+        }
+        return segments;
+    }
 
     const playbacks: OfflineAudioClipPlaybackProjection[] = [];
     for (let iter = 0; iter < maxIterations; iter++) {
@@ -189,81 +217,15 @@ export function projectOfflineAudioClipPlaybacks(
             continue;
         }
 
-        const rawIterStartSec = projectBeatToSeconds(iterStartBeat) + compensationDelay;
-        const rawIterEndSec = projectBeatToSeconds(iterEndBeat) + compensationDelay;
-        const iterEndTime = rawIterEndSec - regionStartSec;
-        // Where this iteration's *sound* begins: its placement on the timeline,
-        // pushed back by the silent span a negative offset opens at its head.
-        // The iteration still ends where the clip says it does, so the pre-roll
-        // shortens what is heard rather than moving the tail.
-        const iterStartTime = rawIterStartSec - regionStartSec + sourcePreRollSec;
-        if (iterStartTime >= durationSeconds) {
-            break;
-        }
-
         const isFirstIter = iter === 0;
         const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
+        const passSegments = buildPassSegments(remainingBeats);
 
-        const iterDurationSec = iterEndTime - iterStartTime;
-        // Destination seconds, like every other quantity in this block: the
-        // whole buffer read at this rate sounds for `duration / rate` of the
-        // timeline. `scheduleOfflineClipSource` scales the span back into
-        // source seconds for `start()`, so a ceiling stated here bounds the
-        // material that is read.
-        const remainingBufferSourceSec = Math.max(0, bufferDurationSeconds - baseBufferOffsetSec);
-        const maxBufferSec = remainingBufferSourceSec / safeStretchRatio;
-        const availableSec = Math.min(iterDurationSec, maxBufferSec);
-
-        // If this iteration straddles the region start, trim the leading portion
-        // by advancing the buffer read offset and clamping start to 0.
-        const trimBeforeSec = Math.max(0, -iterStartTime);
-        const bufferOffsetSec = baseBufferOffsetSec + trimBeforeSec * safeStretchRatio;
-        if (bufferOffsetSec >= bufferDurationSeconds) {
-            continue;
-        }
-
-        const startSec = Math.max(0, iterStartTime);
-        const playDuration = Math.max(0, availableSec - trimBeforeSec);
-
-        if (playDuration <= 0) {
-            continue;
-        }
-
-        // `isFirstIter && trimBeforeSec === 0` is what makes a fade in present
-        // at all: a later loop iteration, or one entered part-way by the region
-        // trim, continues an unbroken sound and must not dip at the seam.
-        // `isLastIter` is the same question for the tail.
-        // Within a fade that is present, a zero-length user fade leaves
-        // `userEndSec`/`userStartSec` absent, which the scheduler reads as the
-        // anti-click micro-fade.
-        const fadeIn =
-            isFirstIter && trimBeforeSec === 0
-                ? {
-                      userEndSec:
-                          clip.fadeInBeats > 0
-                              ? projectBeatToSeconds(clip.startBeat + clip.fadeInBeats) +
-                                compensationDelay -
-                                regionStartSec
-                              : undefined,
-                  }
-                : undefined;
-        const fadeOut = isLastIter
-            ? {
-                  userStartSec:
-                      clip.fadeOutBeats > 0
-                          ? projectBeatToSeconds(clip.endBeat - clip.fadeOutBeats) + compensationDelay - regionStartSec
-                          : undefined,
-              }
-            : undefined;
-
-        // #2865 — the envelope curve's breakpoints on the destination
-        // timeline, on the same law the fade times above use: beat → seconds
-        // through the caller's map, plus the compensation and the region
-        // origin. Unfolded on purpose — the consumer folds the series to
-        // where this playback's sound begins, the same fold the live
-        // scheduler makes, so a region-trimmed or pre-rolled iteration
-        // enters mid-curve on both paths rather than stepping to the next
-        // breakpoint.
+        // #2865 — the envelope curve's breakpoints over the pass's beat span,
+        // read once per pass: every segment's playback carries the same
+        // unfolded series, and its consumer folds it to where that segment's
+        // sound begins, so a segment entered mid-curve continues the curve
+        // rather than stepping to the next breakpoint.
         const envelopeSeries = readGainEnvelopeSeries?.(
             clip.id,
             iterStartBeat - clip.startBeat,
@@ -276,17 +238,101 @@ export function projectOfflineAudioClipPlaybacks(
               }))
             : undefined;
 
-        playbacks.push({
-            startSec,
-            bufferOffsetSec,
-            playDuration,
-            playbackRate: safeStretchRatio,
-            clipGainValue,
-            ...(envelope ? { envelope } : {}),
-            ...(fadeIn ? { fadeIn } : {}),
-            ...(fadeOut ? { fadeOut } : {}),
-            rawIterEndSec,
-        });
+        for (let segmentIndex = 0; segmentIndex < passSegments.length; segmentIndex++) {
+            const segment = passSegments[segmentIndex]!;
+            const segmentStartBeat = iterStartBeat + segment.startBeat;
+            const segmentEndBeat = iterStartBeat + segment.endBeat;
+
+            const rawSegmentStartSec = projectBeatToSeconds(segmentStartBeat) + compensationDelay;
+            const rawSegmentEndSec = projectBeatToSeconds(segmentEndBeat) + compensationDelay;
+            const segmentEndTime = rawSegmentEndSec - regionStartSec;
+            // Where this segment's *sound* begins: its placement on the
+            // timeline, pushed back by the silent span a negative source start
+            // opens at its head. The segment still ends where the pass says it
+            // does, so the pre-roll shortens what is heard rather than moving
+            // the tail.
+            const segmentSourceStartSec = segment.sourceStartBeats * clipSecondsPerBeat;
+            const segmentPreRollSec = Math.max(0, -segmentSourceStartSec) / safeStretchRatio;
+            const segmentStartTime = rawSegmentStartSec - regionStartSec + segmentPreRollSec;
+            if (segmentStartTime >= durationSeconds) {
+                if (segmentIndex === 0) {
+                    return playbacks;
+                }
+                break;
+            }
+
+            const segmentDurationSec = segmentEndTime - segmentStartTime;
+            // Destination seconds, like every other quantity in this block: the
+            // whole buffer read at this rate sounds for `duration / rate` of the
+            // timeline. `scheduleOfflineClipSource` scales the span back into
+            // source seconds for `start()`, so a ceiling stated here bounds the
+            // material that is read.
+            const segmentBufferStartSec = Math.max(0, segmentSourceStartSec);
+            const remainingBufferSourceSec = Math.max(0, bufferDurationSeconds - segmentBufferStartSec);
+            const maxBufferSec = remainingBufferSourceSec / safeStretchRatio;
+            const availableSec = Math.min(segmentDurationSec, maxBufferSec);
+
+            // If this segment straddles the render region start, trim the
+            // leading portion by advancing the buffer read offset and clamping
+            // start to 0. Only the pass's first segment contains the pass head,
+            // so only it can straddle.
+            const trimBeforeSec = Math.max(0, -segmentStartTime);
+            const bufferOffsetSec = segmentBufferStartSec + trimBeforeSec * safeStretchRatio;
+            if (bufferOffsetSec >= bufferDurationSeconds) {
+                continue;
+            }
+
+            const startSec = Math.max(0, segmentStartTime);
+            const playDuration = Math.max(0, availableSec - trimBeforeSec);
+
+            if (playDuration <= 0) {
+                continue;
+            }
+
+            // The fade in lives on the pass's first segment (the one carrying
+            // the pass head) and the fade out on its last: a later loop
+            // iteration, or one entered part-way by the region trim, continues
+            // an unbroken sound and must not dip at the seam. Within a fade
+            // that is present, a zero-length user fade leaves
+            // `userEndSec`/`userStartSec` absent, which the scheduler reads as
+            // the anti-click micro-fade.
+            const isHeadSegment = segmentIndex === 0;
+            const isTailSegment = segmentIndex === passSegments.length - 1;
+            const fadeIn =
+                isFirstIter && isHeadSegment && trimBeforeSec === 0
+                    ? {
+                          userEndSec:
+                              clip.fadeInBeats > 0
+                                  ? projectBeatToSeconds(clip.startBeat + clip.fadeInBeats) +
+                                    compensationDelay -
+                                    regionStartSec
+                                  : undefined,
+                      }
+                    : undefined;
+            const fadeOut =
+                isLastIter && isTailSegment
+                    ? {
+                          userStartSec:
+                              clip.fadeOutBeats > 0
+                                  ? projectBeatToSeconds(clip.endBeat - clip.fadeOutBeats) +
+                                    compensationDelay -
+                                    regionStartSec
+                                  : undefined,
+                      }
+                    : undefined;
+
+            playbacks.push({
+                startSec,
+                bufferOffsetSec,
+                playDuration,
+                playbackRate: safeStretchRatio,
+                clipGainValue,
+                ...(envelope ? { envelope } : {}),
+                ...(fadeIn ? { fadeIn } : {}),
+                ...(fadeOut ? { fadeOut } : {}),
+                rawIterEndSec: rawSegmentEndSec,
+            });
+        }
     }
     return playbacks;
 }

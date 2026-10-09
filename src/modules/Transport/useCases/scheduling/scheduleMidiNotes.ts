@@ -25,6 +25,7 @@ import {
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
+import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
@@ -1319,7 +1320,15 @@ export async function scheduleMidiNotes(
                         return;
                     }
                     const isTrackScopedYeastNote = trackScopedYeastNoteIds.has(note.id);
-                    if (!notesAreAbsolute && note.startBeat - clipMidiOffset >= loopLen) {
+                    if (
+                        !notesAreAbsolute &&
+                        !isBeatInClipLoopWindow({
+                            relativeBeat: note.startBeat - clipMidiOffset,
+                            startBeat: clip.startBeat,
+                            loopOriginBeat: clip.loopOriginBeat,
+                            loopLengthBeats: loopLen,
+                        })
+                    ) {
                         continue;
                     }
                     // #4910 — a live Yeast source note is owned once, by
@@ -1353,6 +1362,7 @@ export async function scheduleMidiNotes(
                             loopLengthBeats: loopLen,
                             midiOffsetBeats: clipMidiOffset,
                             loopEnabled: clip.loopEnabled ?? false,
+                            loopOriginBeat: clip.loopOriginBeat,
                             clipGrooveAlreadyApplied: notesAreAbsolute,
                             eventsAreAbsolute: notesAreAbsolute,
                         });

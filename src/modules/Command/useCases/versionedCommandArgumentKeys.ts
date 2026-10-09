@@ -1427,6 +1427,7 @@ const schemaDefinitions = [
             stretchRatio: 1,
             loopEnabled: 33,
             loopLength: 1,
+            loopOriginBeat: 1,
             followAction: 172,
             generating: 33,
             isGhost: 33,
