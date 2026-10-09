@@ -159,7 +159,7 @@ function sources(partial: Partial<ThreadContextSources>): ThreadContextSources {
         runs: [],
         actionGroups: [],
         projectId: OPEN_PROJECT,
-        appliedGroupIds: new Set(),
+        undoneGroupIds: new Set(),
         ...partial,
     };
 }
@@ -319,7 +319,6 @@ describe('thread context for the planner', () => {
                     ],
                     runs: [{ runId: 'run-committed', receipts: [receipt('run-committed')] }],
                     actionGroups: [{ groupId: 'run-committed:batch-1', reverted: false, actions: [] }],
-                    appliedGroupIds: new Set(['run-committed:batch-1']),
                 })
             );
 
@@ -359,7 +358,6 @@ describe('thread context for the planner', () => {
                             actions: [{ actionType: 'setTempo', label: 'Set tempo to 128 BPM' }],
                         },
                     ],
-                    appliedGroupIds: new Set(['run-older:batch-1', 'run-newer:batch-1']),
                 })
             );
 
@@ -373,7 +371,7 @@ describe('thread context for the planner', () => {
         });
 
         describe('a run committed in two batches', () => {
-            function twoBatchThread(appliedGroupIds: readonly string[]) {
+            function twoBatchThread(undoneGroupIds: readonly string[]) {
                 return buildThreadContext(
                     sources({
                         messages: [
@@ -406,13 +404,13 @@ describe('thread context for the planner', () => {
                                 ],
                             },
                         ],
-                        appliedGroupIds: new Set(appliedGroupIds),
+                        undoneGroupIds: new Set(undoneGroupIds),
                     })
                 );
             }
 
             it('reports the newest batch undone when only that batch was undone', () => {
-                expect(twoBatchThread(['run-batched:batch-1'])?.lastCommit).toMatchObject({
+                expect(twoBatchThread(['run-batched:batch-2'])?.lastCommit).toMatchObject({
                     receiptIds: ['command:run-batched:batch-2'],
                     reverted: true,
                     commands: [{ label: 'Set Pad gain to -6 dB' }],
@@ -420,15 +418,15 @@ describe('thread context for the planner', () => {
             });
 
             it('reports the newest batch standing when only the earlier batch was undone', () => {
-                expect(twoBatchThread(['run-batched:batch-2'])?.lastCommit).toMatchObject({
+                expect(twoBatchThread(['run-batched:batch-1'])?.lastCommit).toMatchObject({
                     receiptIds: ['command:run-batched:batch-2'],
                     reverted: false,
                 });
             });
         });
 
-        it('reports a commit the undo history no longer holds as not standing, though its group was never reverted', () => {
-            const thread = buildThreadContext(
+        function singleCommitThread(undoneGroupIds: readonly string[]) {
+            return buildThreadContext(
                 sources({
                     messages: [message('user-1', 'user', 'mute the pad'), commandMessage('assistant-1', 'run-undone')],
                     runs: [{ runId: 'run-undone', receipts: [receipt('run-undone')] }],
@@ -439,11 +437,22 @@ describe('thread context for the planner', () => {
                             actions: [{ actionType: 'muteTrack', label: 'Mute Pad' }],
                         },
                     ],
-                    appliedGroupIds: new Set(),
+                    undoneGroupIds: new Set(undoneGroupIds),
                 })
             );
+        }
 
-            expect(thread?.lastCommit).toMatchObject({ runId: 'run-undone', reverted: true });
+        it('reports a commit the undo history holds to redo as undone, though its group was never reverted', () => {
+            expect(singleCommitThread(['run-undone:batch-1'])?.lastCommit).toMatchObject({
+                runId: 'run-undone',
+                reverted: true,
+            });
+        });
+
+        // A singleton batch records undo entries with no group, and the history's size cap pushes old
+        // entries out of `past`: neither undid the change, so absence from the history is standing.
+        it('reports a commit the undo history holds in neither past nor future as standing', () => {
+            expect(singleCommitThread([])?.lastCommit).toMatchObject({ runId: 'run-undone', reverted: false });
         });
 
         it('reports no commit for a proposed or cancelled batch, though its run holds an earlier receipt', () => {
@@ -463,7 +472,6 @@ describe('thread context for the planner', () => {
                             }),
                         ],
                         runs: [{ runId: 'run-receipted', receipts: [receipt('run-receipted')] }],
-                        appliedGroupIds: new Set(['run-receipted:batch-1']),
                     })
                 );
 
@@ -500,7 +508,6 @@ describe('thread context for the planner', () => {
                         { runId: 'run-direct-elsewhere', receipts: [receipt('run-direct-elsewhere')] },
                         { runId: 'run-confirmed-elsewhere', receipts: [receipt('run-confirmed-elsewhere')] },
                     ],
-                    appliedGroupIds: new Set(['run-direct-elsewhere:batch-1', 'run-confirmed-elsewhere:batch-1']),
                 })
             );
 
@@ -519,7 +526,6 @@ describe('thread context for the planner', () => {
                             ),
                         ],
                         runs: [{ runId: 'run-early', receipts: [receipt('run-early')] }],
-                        appliedGroupIds: new Set(['run-early:batch-1']),
                     })
                 );
 

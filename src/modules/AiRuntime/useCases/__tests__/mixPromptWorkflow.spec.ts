@@ -595,6 +595,11 @@ describe('mix prompt workflow', () => {
         await redo();
 
         expect(readChatThreadContext()?.lastCommit).toMatchObject({ reverted: false });
+
+        // A history that no longer holds the group at all never undid it.
+        clearUndoHistory();
+
+        expect(readChatThreadContext()?.lastCommit).toMatchObject({ reverted: false });
     });
 
     it('reads a direct commit into the thread through the run its chat message names', async () => {

@@ -38,8 +38,12 @@ export type ThreadContextSources = {
     actionGroups: readonly ThreadActionGroup[];
     /** The open project's identity; a proposal or commit of any other project is not this thread's state. */
     projectId: string;
-    /** The revert groups the undo history still holds applied: a group undone or never recorded there is not. */
-    appliedGroupIds: ReadonlySet<string>;
+    /**
+     * The revert groups the undo history holds to redo, which an ordinary undo moved there. A group
+     * the history does not hold at all — a singleton batch's ungrouped entries, or entries the size
+     * cap pushed out — still stands.
+     */
+    undoneGroupIds: ReadonlySet<string>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -83,8 +87,8 @@ function deltasOfPreview(preview: MeasuredPreview | undefined): ThreadMeasuredDe
 
 /**
  * Whether one batch's change is no longer standing: its history group was reverted, or the undo
- * history no longer holds the group applied, as after an ordinary undo. A batch with no revert
- * group (a runtime-only command) has nothing to undo and stands.
+ * history holds the group to redo, as after an ordinary undo. Absence from the history never means
+ * undone. A batch with no revert group (a runtime-only command) has nothing to undo and stands.
  */
 function isUndone(receipt: AgentRunReceipt, sources: ThreadContextSources): boolean {
     const groupId = receipt.revertGroupId;
@@ -92,7 +96,7 @@ function isUndone(receipt: AgentRunReceipt, sources: ThreadContextSources): bool
         return false;
     }
     const group = sources.actionGroups.find((candidate) => candidate.groupId === groupId);
-    return group?.reverted === true || !sources.appliedGroupIds.has(groupId);
+    return group?.reverted === true || sources.undoneGroupIds.has(groupId);
 }
 
 /** A confirmed batch's commit: the receipt of that batch alone, never another batch of the same run. */
