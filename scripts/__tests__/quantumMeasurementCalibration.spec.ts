@@ -127,10 +127,12 @@ async function exercise() {
     const machine = { platform: 'fixture' };
     const options = { json: null };
     const loadTimeline = [{ atMs: 10, load: 1 }];
+    const calibrationAttempts = [2];
 ${analysis}
     const row = rows[0];
     console.log(JSON.stringify({
         id: row.id,
+        calibrationAttempts: row.calibration.attempts,
         sampleCount: row.samplesMs.length,
         firstSampleMs: row.samplesMs[0],
         stats: {
@@ -146,6 +148,63 @@ ${analysis}
 
 await exercise();
 `;
+}
+
+/**
+ * Drives the runner's own re-measure loop and spread gate over one row whose
+ * attempt N measures the spread `attemptSpreads[N - 1]`, and prints what the
+ * gate admitted or refused.
+ */
+function remeasureFixtureSource(): string {
+    const source = readFileSync(runnerPath, 'utf8');
+    const ceilings = extractBetween(
+        source,
+        'const MAX_CALIBRATION_SPREAD_PCT = ',
+        '/**\n * Fraction of samples that may read zero ticks'
+    );
+    const statisticalHelpers = extractBetween(source, 'function quantile(', 'function machineRecord(');
+    return `
+const FLOOR_QUANTILE = 0.01;
+${ceilings}
+${statisticalHelpers}
+
+const attemptSpreads = JSON.parse(process.argv[2]);
+const rowFor = (attempt) => {
+    const spread = attemptSpreads[attempt - 1];
+    if (spread === undefined) {
+        throw new Error('no fixture spread for attempt ' + attempt);
+    }
+    return { id: 'bacteria_smudge', attempt, segmentRates: [100_000, 100_000, 100_000 * (1 + spread / 100)] };
+};
+const remeasured = [];
+const { row, attempts } = await measureWithinCalibrationCeiling(rowFor(1), async (previous, attempt) => {
+    remeasured.push({ previousAttempt: previous.attempt, attempt });
+    return rowFor(attempt);
+});
+const spreadPct = calibrationSpreadPct(row.segmentRates);
+console.log(JSON.stringify({
+    maxAttempts: MAX_CALIBRATION_ATTEMPTS,
+    measuredAttempt: row.attempt,
+    attempts,
+    remeasured,
+    spreadPct,
+    refusal: calibrationSpreadRefusal({ id: row.id, calibration: { spreadPct, attempts } }),
+}));
+`;
+}
+
+function runRemeasure(attemptSpreads: readonly number[]): unknown {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-quantum-remeasure-'));
+    temporaryDirectories.push(directory);
+    const programPath = join(directory, 'runner-remeasure.mjs');
+    writeFileSync(programPath, remeasureFixtureSource());
+
+    const result = spawnSync(process.execPath, [programPath, JSON.stringify(attemptSpreads)], { encoding: 'utf8' });
+
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    const outcome: unknown = JSON.parse(result.stdout);
+    return outcome;
 }
 
 function input(overrides: Partial<QuantumMeasurementCalibrationInput> = {}): QuantumMeasurementCalibrationInput {
@@ -191,6 +250,53 @@ describe('quantum harness scoped type-aware lint', () => {
             { cwd: repositoryRoot, encoding: 'utf8' }
         );
         expect(result.status).toBe(0);
+    });
+});
+
+describe('quantum measurement re-measure of a drifting row (#5110)', () => {
+    it('re-measures a row over the ceiling and admits its first attempt within it', () => {
+        const outcome = runRemeasure([160, 40, 40]);
+
+        expect(outcome).toEqual({
+            maxAttempts: 3,
+            measuredAttempt: 2,
+            attempts: 2,
+            remeasured: [{ previousAttempt: 1, attempt: 2 }],
+            spreadPct: expect.closeTo(40),
+            refusal: null,
+        });
+    });
+
+    it('refuses a row over the ceiling on every attempt and names the attempt count', () => {
+        const outcome = runRemeasure([160, 170, 180, 190]);
+
+        expect(outcome).toEqual({
+            maxAttempts: 3,
+            measuredAttempt: 3,
+            attempts: 3,
+            remeasured: [
+                { previousAttempt: 1, attempt: 2 },
+                { previousAttempt: 2, attempt: 3 },
+            ],
+            spreadPct: expect.closeTo(180),
+            refusal:
+                'bacteria_smudge: the tick rate moved 180.0% across its own timed window (ceiling 150%) — ' +
+                'the segmentation is meaningless, not even a floor survives ' +
+                '(over the ceiling on every one of 3 attempts)',
+        });
+    });
+
+    it('never re-measures a row within the ceiling on its first attempt', () => {
+        const outcome = runRemeasure([40, 160]);
+
+        expect(outcome).toEqual({
+            maxAttempts: 3,
+            measuredAttempt: 1,
+            attempts: 1,
+            remeasured: [],
+            spreadPct: expect.closeTo(40),
+            refusal: null,
+        });
     });
 });
 
@@ -355,6 +461,7 @@ describe('quantum measurement calibration', () => {
         const summary: unknown = JSON.parse(result.stdout);
         expect(summary).toEqual({
             id: 'grand_boule',
+            calibrationAttempts: 2,
             sampleCount: 20_000,
             firstSampleMs: 0.1,
             stats: {
