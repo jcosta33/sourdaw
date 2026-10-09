@@ -609,7 +609,16 @@ describe('opaque bearer stance admission', () => {
                 value: `headers.set(${quote}Authorization${quote} ${before}, ${after} ${quote}${scheme}${quote});`,
             }))
         );
-        const arrays = [[scheme], ['Bearer <token>', scheme], [scheme, 'Bearer <token>']].flatMap((values, index) => [
+        const arrays = [
+            [scheme],
+            ['Bearer <token>', scheme],
+            [scheme, 'Bearer <token>'],
+            ['Bearer <token>', 'ordinary [note]', scheme],
+            ['Bearer <token>', 'ordinary ]note', scheme],
+            ['Bearer <token>', 'ordinary [note', scheme],
+            ['Bearer <token>', 'ordinary "[note]" and \\path', scheme],
+            ['Bearer <token>', 'ordinary [note]\\', scheme],
+        ].flatMap((values, index) => [
             { shape: `array-record-${String(index)}`, value: JSON.stringify({ Authorization: values }) },
             { shape: `array-tuple-${String(index)}`, value: JSON.stringify([['Authorization', values]]) },
         ]);

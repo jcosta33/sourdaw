@@ -322,7 +322,7 @@ function hasOpaqueBearerValue(text: string): boolean {
     const commaKey = `${quote}${argumentGap},${argumentGap}`;
     const commaPair = `${commaKey}${quote}${gap}`;
     const arrayAssignment = `(?:${quotedKeyEnd})?${gap}[:=]${gap}`;
-    const arrayHeader = String.raw`\bauthorization(?:${arrayAssignment}|${commaKey})\[([^\[\]]*)\]`;
+    const arrayHeader = String.raw`\bauthorization(?:${arrayAssignment}|${commaKey})\[`;
     const arrayLiteral = String.raw`(?:^|,)${gap}${quote}${gap}bearer${schemeGap}([A-Za-z0-9+/_~.-]+=*)`;
     const explicitHeader = String.raw`\bauthorization(?:${assignment}|${commaPair})bearer${schemeGap}([A-Za-z0-9+/_~.-]+=*)`;
     const genericScheme = String.raw`\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})`;
@@ -343,13 +343,50 @@ function hasOpaqueBearerValue(text: string): boolean {
         return true;
     }
     for (const header of text.matchAll(new RegExp(arrayHeader, 'giu'))) {
-        for (const literal of header[1]!.matchAll(new RegExp(arrayLiteral, 'giu'))) {
+        const content = closedFlatArrayContent(text, header.index + header[0].length);
+        if (content === undefined) {
+            continue;
+        }
+        for (const literal of content.matchAll(new RegExp(arrayLiteral, 'giu'))) {
             if (!isBearerPlaceholder(literal[1]!)) {
                 return true;
             }
         }
     }
     return false;
+}
+
+/** Find the closing flat-array bracket without interpreting raw or serialized quoted text. */
+function closedFlatArrayContent(text: string, start: number): string | undefined {
+    let delimiter: { quote: string; backslashes: number } | undefined;
+    let backslashes = 0;
+    for (let index = start; index < text.length; index += 1) {
+        const character = text[index]!;
+        if (character === '\\') {
+            backslashes += 1;
+            continue;
+        }
+        if (character === '"' || character === "'" || character === '`') {
+            if (delimiter === undefined) {
+                delimiter = { quote: character, backslashes };
+            } else if (
+                character === delimiter.quote &&
+                // Escaped interior quotes add one stride; trailing literal backslashes add two.
+                backslashes % (2 * (delimiter.backslashes + 1)) === delimiter.backslashes
+            ) {
+                delimiter = undefined;
+            }
+        } else if (delimiter === undefined) {
+            if (character === '[') {
+                return undefined;
+            }
+            if (character === ']') {
+                return text.slice(start, index);
+            }
+        }
+        backslashes = 0;
+    }
+    return undefined;
 }
 
 function isBearerPlaceholder(value: string): boolean {

@@ -491,7 +491,16 @@ describe('opaque bearer complete request admission', () => {
                 value: `headers.set(${quote}Authorization${quote} ${before}, ${after} ${quote}${scheme}${quote});`,
             }))
         );
-        const arrays = [[scheme], ['Bearer <token>', scheme], [scheme, 'Bearer <token>']].flatMap((values, index) => [
+        const arrays = [
+            [scheme],
+            ['Bearer <token>', scheme],
+            [scheme, 'Bearer <token>'],
+            ['Bearer <token>', 'ordinary [note]', scheme],
+            ['Bearer <token>', 'ordinary ]note', scheme],
+            ['Bearer <token>', 'ordinary [note', scheme],
+            ['Bearer <token>', 'ordinary "[note]" and \\path', scheme],
+            ['Bearer <token>', 'ordinary [note]\\', scheme],
+        ].flatMap((values, index) => [
             { shape: `array-record-${String(index)}`, value: JSON.stringify({ Authorization: values }) },
             { shape: `array-tuple-${String(index)}`, value: JSON.stringify([['Authorization', values]]) },
         ]);
@@ -597,7 +606,16 @@ describe('opaque bearer complete request admission', () => {
     );
     const arrayStructures = headerValues.slice(0, 2).flatMap(({ shape, value }) => {
         const scheme = ['Bearer', value].join(' ');
-        return [[scheme], ['Bearer <token>', scheme], [scheme, 'Bearer <token>']].flatMap((values, index) => [
+        return [
+            [scheme],
+            ['Bearer <token>', scheme],
+            [scheme, 'Bearer <token>'],
+            ['Bearer <token>', 'ordinary [note]', scheme],
+            ['Bearer <token>', 'ordinary ]note', scheme],
+            ['Bearer <token>', 'ordinary [note', scheme],
+            ['Bearer <token>', 'ordinary "[note]" and \\path', scheme],
+            ['Bearer <token>', 'ordinary [note]\\', scheme],
+        ].flatMap((values, index) => [
             { shape: `array-record-${shape}-${String(index)}`, value, state: { Authorization: values } },
             { shape: `array-tuple-${shape}-${String(index)}`, value, state: [['Authorization', values]] },
         ]);
@@ -689,13 +707,14 @@ describe('opaque bearer complete request admission', () => {
             additionalHeaderForms(value).map((form) => ({
                 shape: `${form.shape}-${shape}`,
                 state: { source: form.value },
+                value,
             }))
         ),
         ...arrayStructures,
     ];
     it.each(newRequests.flatMap((request) => ['hit', 'miss'].map((cacheMode) => ({ ...request, cacheMode }))))(
         'opaque bearer bounded $shape refuses cache-$cacheMode and offline SDK effects',
-        async ({ state, cacheMode }) => {
+        async ({ state, cacheMode, value }) => {
             const request = body(state);
             const expectedBody = JSON.stringify(request);
             const cached = { model: MODEL, answers: { check: { type: 'noul', noul: 0.9 } } };
@@ -746,6 +765,7 @@ describe('opaque bearer complete request admission', () => {
             });
             expect(budget.totals()).toEqual(before);
             expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
+            expect(String(failure)).not.toContain(['Bearer', value].join(' '));
             expect(() => prepare(request)).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
             expect(sensitiveContentReason(expectedBody)).toBeDefined();
         }
@@ -755,8 +775,8 @@ describe('opaque bearer complete request admission', () => {
         ['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap((value) => {
             const scheme = ['Bearer', value].join(' ');
             return [
-                { shape: `record-${value}`, state: { Authorization: ['Bearer <token>', scheme] } },
-                { shape: `tuple-${value}`, state: [['Authorization', [scheme, 'Bearer <token>']]] },
+                { shape: `record-${value}`, state: { Authorization: ['Bearer <token>', 'ordinary [note]', scheme] } },
+                { shape: `tuple-${value}`, state: [['Authorization', ['Bearer <token>', 'ordinary ]note', scheme]]] },
             ];
         })
     )('opaque bearer benign-only $shape retains frozen complete SDK bytes', async ({ state }) => {

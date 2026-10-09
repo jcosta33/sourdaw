@@ -11347,7 +11347,16 @@ describe('opaque bearer source and caller admission', () => {
                 text: `headers.set(${quote}Authorization${quote} ${before}, ${after} ${quote}${scheme}${quote});`,
             }))
         );
-        const arrays = [[scheme], ['Bearer <token>', scheme], [scheme, 'Bearer <token>']].flatMap((values, index) => [
+        const arrays = [
+            [scheme],
+            ['Bearer <token>', scheme],
+            [scheme, 'Bearer <token>'],
+            ['Bearer <token>', 'ordinary [note]', scheme],
+            ['Bearer <token>', 'ordinary ]note', scheme],
+            ['Bearer <token>', 'ordinary [note', scheme],
+            ['Bearer <token>', 'ordinary "[note]" and \\path', scheme],
+            ['Bearer <token>', 'ordinary [note]\\', scheme],
+        ].flatMap((values, index) => [
             { shape: `array-record-${String(index)}`, text: JSON.stringify({ Authorization: values }) },
             { shape: `array-tuple-${String(index)}`, text: JSON.stringify([['Authorization', values]]) },
         ]);
@@ -11432,6 +11441,19 @@ describe('opaque bearer source and caller admission', () => {
                 expect(reason).not.toBe('');
                 expect(reason).not.toContain(opaque);
             }
+        }
+    });
+
+    it('opaque bearer flat arrays require their closing bracket and exclude unquoted nesting', () => {
+        const scheme = ['Bearer', String.fromCharCode(81)].join(' ');
+        const unterminated = JSON.stringify({ Authorization: ['ordinary [note]', scheme] }).slice(0, -2);
+        for (const text of [
+            unterminated,
+            `${unterminated}${'ordinary '.repeat(4096)}`,
+            JSON.stringify({ Authorization: [['ordinary [note]'], scheme] }),
+        ]) {
+            expect(sensitiveContentReason(text)).toBeUndefined();
+            expect(sensitiveContentReason(JSON.stringify(text))).toBeUndefined();
         }
     });
 
