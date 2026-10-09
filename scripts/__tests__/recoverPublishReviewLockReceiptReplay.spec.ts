@@ -61,7 +61,30 @@ function bundlePath(root: string): string {
     return join(root, '.agents', 'review-bundles', `${number}-${head}`);
 }
 
-function fixture(input: { receiptHead?: string; receiptDigest?: string; planCarrying?: boolean } = {}) {
+function landedReceipt(
+    legacy: boolean,
+    ownerOid: string,
+    adoptedOwnerOid: string,
+    receiptHead: string,
+    receiptDigest: string
+) {
+    if (!legacy) {
+        return recoveryReceipt(number, ownerOid, adoptedOwnerOid, receiptHead, receiptDigest, 'landed');
+    }
+    return {
+        version: 1,
+        operation: 'review-publication-recovery',
+        number,
+        ownerOid,
+        head: receiptHead,
+        payloadDigest: receiptDigest,
+        outcome: 'landed',
+    };
+}
+
+function fixture(
+    input: { receiptHead?: string; receiptDigest?: string; planCarrying?: boolean; legacyReceipt?: boolean } = {}
+) {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-receipt-adoption-'));
     roots.push(root);
     git(root, ['init']);
@@ -137,19 +160,10 @@ function fixture(input: { receiptHead?: string; receiptDigest?: string; planCarr
         },
         number
     );
-    recordReviewPublicationRecoveryReceipt(
-        root,
-        number,
-        ownerOid,
-        recoveryReceipt(
-            number,
-            ownerOid,
-            adoptedOwnerOid,
-            input.receiptHead ?? head,
-            input.receiptDigest ?? payloadDigest,
-            'landed'
-        )
-    );
+    const receiptHead = input.receiptHead ?? head;
+    const receiptDigest = input.receiptDigest ?? payloadDigest;
+    const receipt = landedReceipt(input.legacyReceipt === true, ownerOid, adoptedOwnerOid, receiptHead, receiptDigest);
+    recordReviewPublicationRecoveryReceipt(root, number, ownerOid, receipt);
     return { root, ownerOid, bundle, payloadDigest };
 }
 
@@ -594,6 +608,25 @@ describe('already recovered landed receipt binds its modern dossier', () => {
         await expect(recover(root, ownerOid, github.gh)).resolves.toBe(0);
 
         expect(github.state.inspections).toBe(0);
+        expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBeUndefined();
+    });
+
+    it('replays a legacy version-1 landed receipt as already recovered without inspecting or binding', async () => {
+        const { root, ownerOid } = fixture({ legacyReceipt: true });
+        const before = readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');
+        const github = remote();
+        const ghCalls: string[][] = [];
+
+        await expect(
+            recover(root, ownerOid, (args) => {
+                ghCalls.push(args);
+                return github.gh(args);
+            })
+        ).resolves.toBe(0);
+
+        expect(console.log).toHaveBeenCalledWith(`review-publication-lock-already-recovered:${number}:${ownerOid}`);
+        expect(ghCalls).toEqual([]);
+        expect(readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8')).toBe(before);
         expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBeUndefined();
     });
 
