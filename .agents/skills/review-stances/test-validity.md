@@ -277,6 +277,18 @@ Blind spot: the stance asked what each assertion would do under a mutation of th
 
 Probe that would have caught it: for a spec that imports the module it tests, import it against a deliberately drifted fixture and require every tracked file to be unchanged; then require the command's happy path to be exercised on a drifted fixture and delete the write, retarget the path, drop the refusal call and remove the printing, requiring each mutation to fail the suite.
 
+### 2026-10-09 — a landed recovery receipt left a modern dossier unbound (issue #5111)
+
+An absent-lock replay returned success from its receipt before authenticating or inspecting the
+landed review. The fresh-owner recovery test exercised a different branch, so it did not prove
+historical receipt adoption or native publication replay.
+
+Probe that would have caught it: start with an exact landed version-2 receipt, no lock, and a modern
+unbound dossier; require two stable exact remote reads, one append-only publication binding, and a
+second recovery plus native publish replay with no new POST. Restore the old early return and require
+the owning assertion to fail. On a merged PR, require publication binding without retrospective
+delivery authorization; on an open current approval, require zero unresolved threads for authority.
+
 ### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
 
 Review publication treated a definitive GitHub validation rejection as an ordinary failed write and retained a generic lock owner with no immutable publication intent. A later operator could not prove whether the review landed, so neither release nor replay was safe.

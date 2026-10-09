@@ -435,8 +435,8 @@ export function recordedPublicationReplay(
  * one `review-published` and one `finding-published` per posted comment, matched to the review
  * document positionally after a path/line/side correspondence check. An APPROVE for a plan-carrying
  * bundle then appends one `delivery-authorized` event in the same write, binding the just-posted
- * reviewer review to the dossier digest and the unresolved-thread count observed at publication —
- * the reviewer publication is the delivery authorization (#4584). When the escalation gate consumed
+ * reviewer review to the dossier digest when no review threads remain unresolved — the reviewer
+ * publication is the delivery authorization (#4584). When the escalation gate consumed
  * a reassessment, one `review-reassessed` event records its observed count, threshold, action and
  * reason in that same write. The record was persisted before the POST; this binding is the record's
  * only post-write step, and it re-validates the whole chain before persisting. Legacy bundles carry
@@ -503,14 +503,16 @@ export function recordPublicationBindings(
             );
         }
         const state = port.reviewState(number, head);
-        postPublication.push({
-            kind: 'delivery-authorized',
-            reviewId,
-            approvalReviewId: reviewId,
-            unresolvedThreads: state.unresolvedThreads,
-            evidenceManifestDigest: authorizedEvidenceDigest(bound),
-            intent: 'deliver',
-        });
+        if (state.unresolvedThreads === 0) {
+            postPublication.push({
+                kind: 'delivery-authorized',
+                reviewId,
+                approvalReviewId: reviewId,
+                unresolvedThreads: 0,
+                evidenceManifestDigest: authorizedEvidenceDigest(bound),
+                intent: 'deliver',
+            });
+        }
     }
     if (reviewReassessment !== undefined) {
         postPublication.push({
@@ -536,12 +538,19 @@ export function recordPublicationBindings(
  * duplicate. The events are the ones review:publish writes. The escalation gate re-runs with the
  * landed review hidden from the public rounds, so it sees the count the posting run saw and yields
  * the reassessment that run consumed. A dossier already binding this review is left unchanged.
- * An approval recovered after the pull request's head moved binds no delivery authorization: the
- * review-state read refuses a moved head, and an approval of a stale head can never authorize
- * delivery. Every other step reads only the bundle and the review's own public record.
+ * An approval recovered after the pull request's head moved or merged binds no delivery
+ * authorization. An open current approval binds authority only with zero unresolved threads.
+ * Every other step reads only the bundle and the review's own public record.
  */
 export function recordRecoveredPublicationBindings(
-    publication: { number: number; head: string; liveHead: string; reviewId: number; actorNodeId: string },
+    publication: {
+        number: number;
+        head: string;
+        liveHead: string;
+        state: string;
+        reviewId: number;
+        actorNodeId: string;
+    },
     document: ReviewDocument,
     port: PublishReviewPort
 ): void {
@@ -570,7 +579,15 @@ export function recordRecoveredPublicationBindings(
         document,
         port: { ...port, publicReviews: (pr) => publicReviews(pr).filter((review) => review.id !== reviewId) },
     });
-    recordPublicationBindings(number, head, document, reviewId, port, reassessment, publication.liveHead === head);
+    recordPublicationBindings(
+        number,
+        head,
+        document,
+        reviewId,
+        port,
+        reassessment,
+        publication.state === 'OPEN' && publication.liveHead === head
+    );
 }
 
 /**

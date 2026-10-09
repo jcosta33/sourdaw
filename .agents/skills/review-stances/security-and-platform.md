@@ -55,6 +55,17 @@ sibling one component outside each owned child, and drive every exposed read, li
 Require the sibling to be refused without mutation while the owned child and an explicit recursive
 grant remain positive controls.
 
+### 2026-10-09 — an old receipt bypassed publication authority checks (issue #5111)
+
+Receipt shape and exact owner alone did not prove that a modern dossier could adopt a landed
+publication. The absent-lock replay branch exited before authenticating the reviewer, serializing
+the write, and comparing the retained payload with stable live evidence.
+
+Probe that would have caught it: present a foreign lock, a live original owner, and changed actor,
+head, body, or payload one at a time to the production recovery route. Require no dossier mutation
+or review POST. Permit exact adoption only under the native lock, and require a merged historical
+approval to remain without delivery authorization.
+
 ### 2026-09-19 — the reviewer confirm token could not perform its own mutation (introduced via PR #4411)
 
 `review:confirm` resolved threads through a reviewer installation token minted `contents: read`;
