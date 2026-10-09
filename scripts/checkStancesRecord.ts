@@ -47,6 +47,10 @@ import { fileURLToPath } from 'node:url';
 import { fail } from './prContract.ts';
 import { parseReviewStancesRecord } from './reviewDossierPublication.ts';
 import { TYPESAFE_MODEL } from './semanticReview/provider.ts';
+import { sensitiveContentReason } from './semanticReview/sensitive.ts';
+import { prepareTypeSafeRequest, sendTypeSafeRequest } from './typesafeRequest.ts';
+
+import type { Fetch } from '@typesafe-ai/sdk';
 
 export const TYPESAFE_STANCES_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 /**
@@ -66,12 +70,10 @@ export type StanceAdmission = {
 };
 
 /**
- * What the checker consumes from one bundle: the raw parsed `stances.json` object, which travels
- * to the model verbatim as the request `state`, plus the per-stance admission lines lifted out of
- * it. The production parser owns the base shape; this type only names what this checker reads.
+ * Only the stance names and admission lines needed for the judgment. Bundle metadata and reviewer
+ * baseline evidence stay local; the production parser still owns the record's base shape.
  */
 export type StancesCheckRecord = {
-    state: unknown;
     admissions: StanceAdmission[];
 };
 
@@ -84,7 +86,7 @@ export type StancesQuestion = {
 export type StancesCheckQuestions = Record<string, StancesQuestion>;
 
 export type StancesCheckBody = {
-    state: unknown;
+    state: { stances: StanceAdmission[] };
     model: typeof TYPESAFE_STANCES_MODEL;
     questions: StancesCheckQuestions;
 };
@@ -119,6 +121,13 @@ function stanceKey(index: number): string {
     return `stance_${String(index)}`;
 }
 
+function screenAdmissionField(value: string, index: number, field: keyof StanceAdmission): void {
+    const reason = sensitiveContentReason(value);
+    if (reason !== undefined) {
+        fail(`refusing to call TypeSafe: stances[${String(index)}].${field} contains ${reason}`);
+    }
+}
+
 /**
  * Parses the bundle's `stances.json` through the production parser and lifts each entry's
  * admission line. A missing or blank `admittedBy` is refused here, before any request: the
@@ -126,21 +135,18 @@ function stanceKey(index: number): string {
  */
 export function readStancesCheckRecord(raw: unknown, path: string): StancesCheckRecord {
     const record = parseReviewStancesRecord(raw, path);
-    // The parser guarantees raw is a record whose stances entries align 1:1 with record.stances;
-    // the fallbacks below only satisfy the unknown typing and are unreachable after the parse.
-    const entries: readonly unknown[] = isRecord(raw) && Array.isArray(raw.stances) ? raw.stances : [];
     const admissions = record.stances.map((entry, index) => {
-        const rawEntry = entries[index];
-        const admittedBy =
-            isRecord(rawEntry) && typeof rawEntry.admittedBy === 'string' ? rawEntry.admittedBy : undefined;
+        screenAdmissionField(entry.stance, index, 'stance');
+        const admittedBy = entry.admittedBy;
         if (admittedBy === undefined || admittedBy.trim() === '') {
             fail(
                 `review stances record at ${path} stances[${String(index)}] (${entry.stance}) must carry a non-empty admittedBy string naming the failure mode that admits it`
             );
         }
+        screenAdmissionField(admittedBy, index, 'admittedBy');
         return { stance: entry.stance, admittedBy };
     });
-    return { state: raw, admissions };
+    return { admissions };
 }
 
 const CRITERIA_TRUE =
@@ -176,10 +182,16 @@ export function buildStancesCheckQuestions(record: StancesCheckRecord): StancesC
     return questions;
 }
 
-/** The single TypeSafe request body: the parsed record as state, the Jev model, one question per stance. */
+/** Project and screen the actual request state, including records constructed without the reader. */
 export function buildStancesCheckBody(record: StancesCheckRecord): StancesCheckBody {
+    const stances = record.admissions.map((admission, index) => {
+        const { stance, admittedBy } = admission;
+        screenAdmissionField(stance, index, 'stance');
+        screenAdmissionField(admittedBy, index, 'admittedBy');
+        return { stance, admittedBy };
+    });
     return {
-        state: record.state,
+        state: { stances },
         model: TYPESAFE_STANCES_MODEL,
         questions: buildStancesCheckQuestions(record),
     };
@@ -345,38 +357,24 @@ function readStancesJson(path: string): unknown {
     return parsed;
 }
 
-async function requestStancesVerdicts(body: StancesCheckBody, apiKey: string): Promise<unknown> {
-    let response: Response;
-    try {
-        response = await fetch(TYPESAFE_STANCES_ENDPOINT, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(body),
-        });
-    } catch (error) {
-        fail(
-            `TypeSafe request to ${TYPESAFE_STANCES_ENDPOINT} failed: ${error instanceof Error ? error.message : String(error)}`
-        );
-    }
-    let text: string;
-    try {
-        text = await response.text();
-    } catch (error) {
-        fail(`TypeSafe response body could not be read: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if (!response.ok) {
-        fail(`TypeSafe request returned HTTP ${String(response.status)}: ${truncateAdmission(text.trim())}`);
-    }
-    let payload: unknown;
-    try {
-        payload = JSON.parse(text) as unknown;
-    } catch {
-        fail('TypeSafe response is not valid JSON');
-    }
-    return payload;
+export async function requestStancesVerdicts(
+    body: StancesCheckBody,
+    apiKey: string,
+    options: { signal: AbortSignal; fetch?: Fetch }
+): Promise<unknown> {
+    const prepared = prepareTypeSafeRequest({
+        payload: body,
+        maxStatePlusQuestionBytes: 96 * 1024,
+        maxRequestBytes: 128 * 1024,
+        signal: options.signal,
+    });
+    return sendTypeSafeRequest({
+        prepared,
+        apiKey,
+        signal: options.signal,
+        timeoutMs: 20_000,
+        fetch: options.fetch,
+    });
 }
 
 /**
@@ -404,7 +402,17 @@ async function runCheck(argv: readonly string[]): Promise<number> {
     const apiKey = readApiKey(process.env);
     const stancesPath = join(bundlePath, STANCES_FILE_NAME);
     const record = readStancesCheckRecord(readStancesJson(stancesPath), stancesPath);
-    const payload = await requestStancesVerdicts(buildStancesCheckBody(record), apiKey);
+    const controller = new AbortController();
+    const cancel = (): void => controller.abort();
+    process.once('SIGINT', cancel);
+    process.once('SIGTERM', cancel);
+    let payload: unknown;
+    try {
+        payload = await requestStancesVerdicts(buildStancesCheckBody(record), apiKey, { signal: controller.signal });
+    } finally {
+        process.removeListener('SIGINT', cancel);
+        process.removeListener('SIGTERM', cancel);
+    }
     const response = readStancesCheckAnswers(payload);
     const evaluation = evaluateStancesCheck(response.answers, threshold, record.admissions, response.model);
     const outcome = renderStancesCheckOutcome(evaluation, threshold);

@@ -56,6 +56,8 @@ export type ClipRenderModel = {
      *  waveform renderer so that trimmed or split clips show the correct
      *  portion of the underlying sample instead of the whole buffer. */
     audioOffsetBeats?: number;
+    /** Tempo governing this clip's source offset, which may differ from the project base tempo. */
+    clipStartTempo?: number;
     /** Tempo/stretch factor. `1.0` plays at native rate; `0.5` plays at half
      *  speed (so twice as many buffer samples are consumed per beat). */
     stretchRatio?: number;

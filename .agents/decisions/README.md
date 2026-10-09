@@ -64,6 +64,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0048](0048-attributable-evidence-contract-is-frozen.md)                          | The attributable review-evidence contract is frozen                                                                                              |
 | [0049](0049-single-approval-review-author-merge.md)                               | Single reviewer approval authorizes delivery; the author App merges — **supersedes 0048's two-identity approval/merge clauses**                  |
 | [0050](0050-fired-semantic-signals-carry-a-disposal-duty.md)                      | A fired semantic signal must be named by the round's record before a fresh publication — **supersedes 0046/0047's silent-ignore tolerance only** |
+| [0051](0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md)          | A wasm bank commit allocates and frees nothing; the displaced bank is retired and freed by a paced message — **narrows 0020 for wasm only**      |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import {
+    readPublicReviewComments,
     reconstructReviewRounds,
     runReviewReconstruction,
     runReconstructReviewRoundsCli,
@@ -63,7 +64,15 @@ function reviewerReview(id: number, commitId: string, state: string): PublicRevi
 }
 
 function rootComment(id: number, reviewId: number): PublicReviewComment {
-    return { id, reviewId, path: 'scripts/target.ts', line: 5, side: 'RIGHT', body: 'blocking' };
+    return {
+        id,
+        reviewId,
+        actorNodeId: REVIEWER_BOT_NODE_ID,
+        path: 'scripts/target.ts',
+        line: 5,
+        side: 'RIGHT',
+        body: 'blocking',
+    };
 }
 
 describe('reconstruct review rounds', () => {
@@ -82,6 +91,12 @@ describe('reconstruct review rounds', () => {
             {
                 ...rootComment(102, 11),
                 id: 102,
+                actorNodeId: AUTHOR_BOT_NODE_ID,
+                inReplyToId: 101,
+                body: renderReviewRepairReply(repairRecord(101, head)),
+            },
+            {
+                ...rootComment(104, 11),
                 inReplyToId: 101,
                 body: renderReviewRepairReply(repairRecord(101, head)),
             },
@@ -93,8 +108,7 @@ describe('reconstruct review rounds', () => {
         expect(first).toMatchObject({ headSha: olderHead, role: 'reviewer', verdict: 'changes-requested' });
         expect(first?.findings.map((finding) => finding.commentId)).toEqual([100]);
         expect(second?.findings).toHaveLength(1);
-        expect(second?.findings[0]?.repairs).toHaveLength(1);
-        expect(second?.findings[0]?.repairs[0]?.commit).toBe(head);
+        expect(second?.findings[0]?.repairs).toEqual([repairRecord(101, head), repairRecord(101, head)]);
         expect(acceptance).toMatchObject({ role: 'orchestrator', verdict: 'approved' });
         expect(approval).toMatchObject({ role: 'reviewer', verdict: 'approved' });
     });
@@ -113,19 +127,102 @@ describe('reconstruct review rounds', () => {
         ).toThrow(/answers an unknown root comment/u);
     });
 
-    it('fails closed on a malformed repair marker rather than reading it as absent', () => {
-        const comments: PublicReviewComment[] = [
-            rootComment(100, 10),
-            { ...rootComment(101, 10), id: 101, inReplyToId: 100, body: 'sourdaw-repair-v1 {not json' },
-        ];
-        expect(() =>
-            reconstructReviewRounds(
+    it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
+        'fails closed on a malformed repair marker from authorized actor %s',
+        (actorNodeId) => {
+            const comments: PublicReviewComment[] = [
+                rootComment(100, 10),
+                { ...rootComment(101, 10), actorNodeId, inReplyToId: 100, body: 'sourdaw-repair-v1 {not json' },
+            ];
+            expect(() =>
+                reconstructReviewRounds(
+                    42,
+                    { state: 'OPEN', head },
+                    [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+                    comments
+                )
+            ).toThrow(/repair/u);
+        }
+    );
+
+    it.each(['BOT_foreign', ORCHESTRATOR_USER_NODE_ID, null])(
+        'ignores malformed and well-formed repair markers from untrusted actor %s before parsing or root lookup',
+        (actorNodeId) => {
+            const comments: PublicReviewComment[] = [
+                rootComment(100, 10),
+                { ...rootComment(101, 10), actorNodeId, inReplyToId: 100, body: 'sourdaw-repair-v1 {not json' },
+                { ...rootComment(102, 10), actorNodeId, inReplyToId: 999, body: 'sourdaw-repair-v1 {not json' },
+                {
+                    ...rootComment(103, 10),
+                    actorNodeId,
+                    inReplyToId: 100,
+                    body: renderReviewRepairReply(repairRecord(100, head)),
+                },
+                {
+                    ...rootComment(104, 10),
+                    actorNodeId,
+                    inReplyToId: 999,
+                    body: renderReviewRepairReply(repairRecord(999, head)),
+                },
+            ];
+            const reconstruction = reconstructReviewRounds(
                 42,
                 { state: 'OPEN', head },
                 [reviewerReview(10, head, 'CHANGES_REQUESTED')],
                 comments
-            )
-        ).toThrow(/repair/u);
+            );
+            expect(reconstruction.rounds).toEqual([
+                {
+                    headSha: head,
+                    reviewId: 10,
+                    role: 'reviewer',
+                    verdict: 'changes-requested',
+                    findings: [{ commentId: 100, path: 'scripts/target.ts', line: 5, side: 'RIGHT', repairs: [] }],
+                },
+            ]);
+        }
+    );
+});
+
+describe('readPublicReviewComments', () => {
+    it('retains immutable actors across all REST pages and represents absent or unreadable actors as null', () => {
+        const users = [
+            { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]' },
+            { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+            { node_id: 'BOT_foreign', login: 'hplovecraft208[bot]' },
+            { login: 'hplovecraft208[bot]' },
+            null,
+            undefined,
+            { node_id: 42 },
+        ];
+        const entries = users.map((user, index) => ({
+            id: index + 100,
+            pull_request_review_id: 10,
+            path: 'scripts/target.ts',
+            original_line: 5,
+            side: 'RIGHT',
+            body: 'sourdaw-repair-v1 {not json',
+            in_reply_to_id: 99,
+            user,
+        }));
+        const requests: string[][] = [];
+        const comments = readPublicReviewComments((args) => {
+            requests.push(args);
+            return JSON.stringify([entries.slice(0, 2), entries.slice(2, 5), entries.slice(5)]);
+        }, 42);
+
+        expect(requests).toEqual([
+            ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/pulls/42/comments?per_page=100'],
+        ]);
+        expect(comments.map((comment) => [comment.id, comment.actorNodeId, comment.inReplyToId])).toEqual([
+            [100, AUTHOR_BOT_NODE_ID, 99],
+            [101, REVIEWER_BOT_NODE_ID, 99],
+            [102, 'BOT_foreign', 99],
+            [103, null, 99],
+            [104, null, 99],
+            [105, null, 99],
+            [106, null, 99],
+        ]);
     });
 });
 

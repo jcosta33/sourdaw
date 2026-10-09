@@ -404,7 +404,7 @@ describe('compactWebLlmToolSchema', () => {
     it('keeps the sentence that says a manifest call without types lists every device type', () => {
         const compacted = compactWebLlmToolSchema(planningTool('device.factory-manifest.read'));
 
-        expect(compacted.function.description).toContain('Call with no arguments to list every available device type');
+        expect(compacted.function.description).toContain('No arguments lists the device types');
     });
 
     it('keeps the transform grammar its document description carries, worked example and limits included', () => {

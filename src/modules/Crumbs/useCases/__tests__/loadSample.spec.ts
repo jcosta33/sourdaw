@@ -13,8 +13,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: mocks.warn },
 }));
 
-vi.mock('../../stores/crumbsStore', () => ({
-    crumbsStore: { value: {} },
+vi.mock('../../stores/crumbsStore', async (importOriginal) => ({
+    // The load-sequence guard is the module's own real bookkeeping; only the
+    // store mutators are stand-ins so the assertions observe the writes.
+    ...(await importOriginal<typeof import('../../stores/crumbsStore')>()),
     setLoading: mocks.setLoading,
     setActiveSample: mocks.setActiveSample,
     setWaveformPeaks: mocks.setWaveformPeaks,
@@ -181,6 +183,69 @@ describe('loadSampleFromPath', () => {
         mocks.loadSample.mockRejectedValue(new Error('Load failed'));
 
         await expect(loadSampleFromPath('inst1', 'bad.wav')).rejects.toThrow('Load failed');
+        expect(mocks.setLoading).toHaveBeenLastCalledWith('inst1', false);
+    });
+
+    // The finding's interleaving: start the slow decode B, start C, C
+    // completes, then B completes. C must stand — the last-STARTED load wins
+    // the sample door, not the last-finishing decode, or a peer's long file
+    // landing after the local user's short pick silently reverts the pick.
+    it('lets the last-started load win when an earlier decode finishes after a newer one', async () => {
+        let resolveSlowDecode!: (value: CrumbsLoadResult) => void;
+        const slowDecode = new Promise<CrumbsLoadResult>((resolve) => {
+            resolveSlowDecode = resolve;
+        });
+        mocks.loadSample.mockImplementation((_instanceId: string, filePath: string) =>
+            filePath === '/slow-b.wav' ? slowDecode : Promise.resolve(makeLoadResult({ sampleId: 3 }))
+        );
+        mocks.getWaveformPeaks.mockResolvedValue([]);
+
+        const slowLoad = loadSampleFromPath('inst1', '/slow-b.wav');
+        const fastLoad = loadSampleFromPath('inst1', '/fast-c.wav');
+        await fastLoad;
+
+        resolveSlowDecode(makeLoadResult({ sampleId: 2 }));
+        await slowLoad;
+
+        expect(mocks.setActiveSample).toHaveBeenCalledTimes(1);
+        expect(mocks.setActiveSample).toHaveBeenCalledWith(
+            'inst1',
+            expect.objectContaining({ filePath: '/fast-c.wav' })
+        );
+        // The superseded load also skips its peaks request — they would not
+        // match the sample that stands.
+        expect(mocks.getWaveformPeaks).toHaveBeenCalledTimes(1);
+        // The successor owns the loading flag and already cleared it.
+        expect(mocks.setLoading).toHaveBeenLastCalledWith('inst1', false);
+    });
+
+    it('does not clear the loading flag when a superseded load fails while its successor decodes', async () => {
+        let rejectSlowDecode!: (error: Error) => void;
+        let resolveFastDecode!: (value: CrumbsLoadResult) => void;
+        const slowDecode = new Promise<CrumbsLoadResult>((_resolve, reject) => {
+            rejectSlowDecode = reject;
+        });
+        const fastDecode = new Promise<CrumbsLoadResult>((resolve) => {
+            resolveFastDecode = resolve;
+        });
+        mocks.loadSample.mockImplementation((_instanceId: string, filePath: string) =>
+            filePath === '/slow-b.wav' ? slowDecode : fastDecode
+        );
+        mocks.getWaveformPeaks.mockResolvedValue([]);
+
+        const slowLoad = loadSampleFromPath('inst1', '/slow-b.wav');
+        const fastLoad = loadSampleFromPath('inst1', '/fast-c.wav');
+
+        rejectSlowDecode(new Error('slow decode failed'));
+        await expect(slowLoad).rejects.toThrow('slow decode failed');
+
+        // The successor's decode is still held open: the flag must still read
+        // loading. The superseded failure may not clear it out from under the
+        // load that owns it.
+        expect(mocks.setLoading).toHaveBeenLastCalledWith('inst1', true);
+
+        resolveFastDecode(makeLoadResult({ sampleId: 3 }));
+        await fastLoad;
         expect(mocks.setLoading).toHaveBeenLastCalledWith('inst1', false);
     });
 });

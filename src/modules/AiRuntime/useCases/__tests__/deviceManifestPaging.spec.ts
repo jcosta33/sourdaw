@@ -129,6 +129,46 @@ describe('device.factory-manifest.read paging', () => {
         }
     });
 
+    it('fits a full-limit page from every parameter offset of every released builtin type within budget using a worst-case call id', async () => {
+        // A caller may walk with any `limit` from 1 to the page limit, so a later full-limit page
+        // can start at any offset, not only at multiples of the page limit.
+        const worstCaseCallId = 'w'.repeat(WORST_CASE_CALL_ID_LENGTH);
+        const descriptors = getAgentBuiltinDeviceFactoryManifest();
+        expect(descriptors.length).toBeGreaterThan(0);
+
+        const overBudget: string[] = [];
+        for (const descriptor of descriptors) {
+            const first = await callDeviceManifest({
+                callId: worstCaseCallId,
+                arguments: { types: [descriptor.type], page: { limit: 1 } },
+            });
+            expect(first.status).toBe('success');
+            const entry = (first.data as ManifestPageData).devices[0];
+            if (!entry) {
+                throw new Error(`Missing paged manifest entry for device type: ${descriptor.type}`);
+            }
+            for (let offset = 0; offset < descriptor.parameters.length; offset += 1) {
+                const cursor = encodeManifestCursor({
+                    schemaVersion: 1,
+                    type: descriptor.type,
+                    version: entry.version,
+                    offset,
+                });
+                const receipt = await callDeviceManifest({
+                    callId: worstCaseCallId,
+                    arguments: {
+                        types: [descriptor.type],
+                        page: { cursor, limit: DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT },
+                    },
+                });
+                if (receipt.status !== 'success' || receiptByteLength(receipt) > MAX_RECEIPT_BYTES_PER_CALL) {
+                    overBudget.push(`${descriptor.type}@${String(offset)}`);
+                }
+            }
+        }
+        expect(overBudget).toEqual([]);
+    });
+
     it("returns Crust's oversampling legal set through a second parameters page", async () => {
         const first = await callDeviceManifest({
             callId: 'crust-legal-page-1',

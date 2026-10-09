@@ -77,45 +77,37 @@ export function inspectReviewPublicationRemote(
         ) {
             fail('review-publication recovery review candidate is unreadable');
         }
+        const reviewComments = commentsOfReview(remoteComments, record.id);
         const candidate: RemotePublishedReview = {
             id: record.id,
             state: record.state,
             body: record.body,
             commitId: record.commit_id,
             actorNodeId: (user as { node_id: string }).node_id,
-            comments: remoteComments
-                .filter((comment) => {
-                    if (
-                        comment === null ||
-                        typeof comment !== 'object' ||
-                        !Number.isSafeInteger((comment as { pull_request_review_id?: unknown }).pull_request_review_id)
-                    ) {
-                        fail('review-publication recovery pull-request comment is unreadable');
-                    }
-                    return (comment as { pull_request_review_id: number }).pull_request_review_id === record.id;
-                })
-                .map((comment) => {
-                    if (
-                        comment === null ||
-                        typeof comment !== 'object' ||
-                        typeof (comment as { path?: unknown }).path !== 'string' ||
-                        !Number.isSafeInteger((comment as { original_line?: unknown }).original_line) ||
-                        ((comment as { side?: unknown }).side !== 'LEFT' &&
-                            (comment as { side?: unknown }).side !== 'RIGHT') ||
-                        typeof (comment as { body?: unknown }).body !== 'string'
-                    ) {
-                        fail('review-publication recovery pull-request comment is unreadable');
-                    }
-                    return {
-                        path: (comment as { path: string }).path,
-                        line: (comment as { original_line: number }).original_line,
-                        side: (comment as { side: 'LEFT' | 'RIGHT' }).side,
-                        body: (comment as { body: string }).body,
-                    };
-                }),
+            comments: reviewComments.map((comment) => {
+                if (
+                    comment === null ||
+                    typeof comment !== 'object' ||
+                    typeof (comment as { path?: unknown }).path !== 'string' ||
+                    !Number.isSafeInteger((comment as { original_line?: unknown }).original_line) ||
+                    ((comment as { side?: unknown }).side !== 'LEFT' &&
+                        (comment as { side?: unknown }).side !== 'RIGHT') ||
+                    typeof (comment as { body?: unknown }).body !== 'string'
+                ) {
+                    fail('review-publication recovery pull-request comment is unreadable');
+                }
+                return {
+                    path: (comment as { path: string }).path,
+                    line: (comment as { original_line: number }).original_line,
+                    side: (comment as { side: 'LEFT' | 'RIGHT' }).side,
+                    body: (comment as { body: string }).body,
+                };
+            }),
         };
         if ((user as { node_id: string }).node_id === expectedActorNodeId) {
-            reviews.push(candidate);
+            if (!isThreadReplyOnlyReview(record.state, record.body, reviewComments)) {
+                reviews.push(candidate);
+            }
         } else {
             otherActorReviews.push(candidate);
         }
@@ -126,6 +118,34 @@ export function inspectReviewPublicationRemote(
         reviews,
         ...(otherActorReviews.length === 0 ? {} : { otherActorReviews }),
     };
+}
+
+function commentsOfReview(remoteComments: unknown[], reviewId: number): unknown[] {
+    return remoteComments.filter((comment) => {
+        if (
+            comment === null ||
+            typeof comment !== 'object' ||
+            !Number.isSafeInteger((comment as { pull_request_review_id?: unknown }).pull_request_review_id)
+        ) {
+            fail('review-publication recovery pull-request comment is unreadable');
+        }
+        return (comment as { pull_request_review_id: number }).pull_request_review_id === reviewId;
+    });
+}
+
+/**
+ * A review GitHub minted for thread replies alone — review:confirm's included: COMMENTED, an empty
+ * body, and every comment answering an existing thread. review:publish only ever posts APPROVE or
+ * REQUEST_CHANGES with top-level comments, so this shape can never be the publication and is no
+ * candidate for it (#5008).
+ */
+function isThreadReplyOnlyReview(state: string, body: string, comments: unknown[]): boolean {
+    return (
+        state === 'COMMENTED' &&
+        body === '' &&
+        comments.length > 0 &&
+        comments.every((comment) => isRecord(comment) && asSafeInteger(comment.in_reply_to_id) !== undefined)
+    );
 }
 
 function flattenedGhPages(value: unknown, label: string): unknown[] {

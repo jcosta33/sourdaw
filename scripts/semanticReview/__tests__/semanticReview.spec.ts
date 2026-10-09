@@ -9,7 +9,7 @@ import {
     BadRequestError,
     RateLimitError,
 } from '@typesafe-ai/sdk';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
     renderSavedProjectStateMatcherDigest,
@@ -5590,6 +5590,450 @@ describe('interpretation policy', () => {
     });
 });
 
+describe('complete transport admission', () => {
+    const questions = { check: { type: 'noul', instructions: 'Is the supplied state consistent?' } };
+
+    function request(overrides: Partial<Parameters<typeof assessUnit>[0]> = {}) {
+        const profile = { ...SEMANTIC_BUDGET_PROFILES.ci, maxRetriesPerRequest: 1 };
+        return {
+            port: { systemOne: async () => ({ model: TYPESAFE_MODEL, answers: {} }) },
+            cache: new MapCache(),
+            budget: createBudgetController(profile),
+            profile,
+            deadline: Date.now() + 60_000,
+            state: { evidence: 'ordinary text' },
+            questions,
+            requestedModel: TYPESAFE_MODEL,
+            signal: new AbortController().signal,
+            ...overrides,
+        };
+    }
+
+    it('screens unsafe complete state before even a would-hit cache is read', async () => {
+        let reads = 0;
+        let calls = 0;
+        const input = request({
+            state: { claim: ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('') },
+            cache: {
+                read: () => {
+                    reads += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+                write: () => {
+                    throw new Error('unexpected cache write');
+                },
+            },
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+            },
+        });
+        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'sensitive_content_excluded' });
+        expect(reads).toBe(0);
+        expect(calls).toBe(0);
+        expect(input.budget.totals().networkAttempts).toBe(0);
+    });
+
+    it('pre-aborted would-hit cache has no cache read or reservation', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        let reads = 0;
+        const input = request({
+            signal: controller.signal,
+            cache: {
+                read: () => {
+                    reads += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+                write: () => {
+                    throw new Error('unexpected cache write');
+                },
+            },
+        });
+        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'cancelled' });
+        expect(reads).toBe(0);
+        expect(input.budget.totals().networkAttempts).toBe(0);
+    });
+
+    it('refuses cancellation during synchronous JSON inspection before hashing or cache read', async () => {
+        const controller = new AbortController();
+        let reads = 0;
+        let calls = 0;
+        let inspections = 0;
+        const state = { evidence: 'ordinary text' };
+        const input = request({
+            state,
+            signal: controller.signal,
+            cache: {
+                read: () => {
+                    reads += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+                write: () => {
+                    throw new Error('unexpected cache write');
+                },
+            },
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+            },
+        });
+        // Cancel through the inspector seam; Proxy traps must never run during admission.
+        const originalDescriptors = Object.getOwnPropertyDescriptors;
+        const inspection = vi.spyOn(Object, 'getOwnPropertyDescriptors').mockImplementation((value) => {
+            const descriptors = originalDescriptors(value);
+            if (value === state) {
+                inspections += 1;
+                controller.abort();
+            }
+            return descriptors;
+        });
+        try {
+            await expect(assessUnit(input)).rejects.toMatchObject({ code: 'cancelled' });
+        } finally {
+            inspection.mockRestore();
+        }
+        expect(controller.signal.aborted).toBe(true);
+        expect(inspections).toBe(1);
+        expect(reads).toBe(0);
+        expect(calls).toBe(0);
+        expect(input.budget.totals()).toMatchObject({
+            logicalRequests: 0,
+            networkAttempts: 0,
+            retries: 0,
+            cacheHits: 0,
+        });
+    });
+
+    it('refuses an unresolved Promise-shaped cache answer without awaiting it', async () => {
+        const controller = new AbortController();
+        let reads = 0;
+        let calls = 0;
+        let writes = 0;
+        const input = request({
+            signal: controller.signal,
+            cache: {
+                read: () => {
+                    reads += 1;
+                    return new Promise<unknown>(() => undefined);
+                },
+                write: () => {
+                    writes += 1;
+                },
+            },
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+            },
+        });
+        const result = assessUnit(input);
+        controller.abort();
+        await expect(result).rejects.toMatchObject({ code: 'invalid_response' });
+        expect(reads).toBe(1);
+        expect(calls).toBe(0);
+        expect(writes).toBe(0);
+        expect(input.budget.totals()).toMatchObject({
+            logicalRequests: 0,
+            networkAttempts: 0,
+            retries: 0,
+            cacheHits: 0,
+        });
+    });
+
+    it('does not accept a cache answer after its synchronous read cancels the request', async () => {
+        const controller = new AbortController();
+        const input = request({
+            signal: controller.signal,
+            cache: {
+                read: () => {
+                    controller.abort();
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+                write: () => {
+                    throw new Error('unexpected cache write');
+                },
+            },
+        });
+        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'cancelled' });
+        expect(input.budget.totals().cacheHits).toBe(0);
+    });
+
+    it('does not write or accept a provider success returned after cancellation', async () => {
+        const controller = new AbortController();
+        let writes = 0;
+        const input = request({
+            signal: controller.signal,
+            cache: {
+                read: () => undefined,
+                write: () => {
+                    writes += 1;
+                },
+            },
+            port: {
+                systemOne: async () => {
+                    controller.abort();
+                    return { model: TYPESAFE_MODEL, answers: {}, usage: { input_tokens: 1, output_tokens: 0 } };
+                },
+            },
+        });
+        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'cancelled' });
+        expect(writes).toBe(0);
+        expect(input.budget.totals().actualInputTokens).toBe(0);
+    });
+
+    it('accepts schema-valid usage greater than serialized request bytes', async () => {
+        const input = request({
+            port: {
+                systemOne: async () => ({
+                    model: TYPESAFE_MODEL,
+                    answers: {},
+                    usage: { input_tokens: 100_000, output_tokens: 0 },
+                }),
+            },
+        });
+        await expect(assessUnit(input)).resolves.toMatchObject({ fromCache: false });
+        expect(input.budget.totals().actualInputTokens).toBe(100_000);
+    });
+
+    it('refuses cumulative usage overflow atomically before cache write without retry', async () => {
+        let calls = 0;
+        let writes = 0;
+        const input = request({
+            cache: {
+                read: () => undefined,
+                write: () => {
+                    writes += 1;
+                },
+            },
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    return { model: TYPESAFE_MODEL, answers: {}, usage: { input_tokens: 1, output_tokens: 0 } };
+                },
+            },
+        });
+        input.budget.recordUsage({ input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 0 }, 7);
+        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'invalid_response' });
+        expect(calls).toBe(1);
+        expect(writes).toBe(0);
+        expect(input.budget.totals()).toMatchObject({
+            actualInputTokens: Number.MAX_SAFE_INTEGER,
+            estimatedInputTokens: 7,
+            retries: 0,
+        });
+    });
+
+    it.each([
+        { check: { type: 'noul', instructions: ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('') } },
+        { check: { type: 'choice', criteria: { yes: ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('') } } },
+        { check: { type: 'score', criteria: ['one'] } },
+    ])('admits no cache or provider effects for rejected complete questions %#', async (questions) => {
+        let reads = 0;
+        let calls = 0;
+        const input = request({
+            questions,
+            cache: {
+                read: () => {
+                    reads += 1;
+                    return {};
+                },
+                write: () => undefined,
+            },
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+            },
+        });
+        await expect(assessUnit(input)).rejects.toBeInstanceOf(SemanticFailure);
+        expect(reads).toBe(0);
+        expect(calls).toBe(0);
+        expect(input.budget.totals().networkAttempts).toBe(0);
+    });
+
+    it('passes the frozen snapshot through a synchronous cache read and preserves the golden identity', async () => {
+        const state = { evidence: 'ordinary text' };
+        let observedKey = '';
+        const input = request({
+            state,
+            cache: {
+                read: (key) => {
+                    observedKey = key;
+                    state.evidence = 'mutated';
+                    return undefined;
+                },
+                write: () => undefined,
+            },
+            port: {
+                systemOne: async (request) => {
+                    expect(request.state).toEqual({ evidence: 'ordinary text' });
+                    expect(Object.isFrozen(request.state)).toBe(true);
+                    expect(request.state).toBe(request.prepared.payload.state);
+                    expect(request.questions).toBe(request.prepared.payload.questions);
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+            },
+        });
+        await assessUnit(input);
+        expect(observedKey).toBe('d5e5e60cc248724fe82a6ac6a48d001593f6997e5dae78dc2ba97d955263436d');
+    });
+
+    it('keeps a local refusal terminal even when a provider wraps it as a connection error', async () => {
+        let calls = 0;
+        const input = request({
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    throw new APIConnectionError('offline wrapper', {
+                        cause: new SemanticFailure('invalid_response', 'wire mismatch'),
+                    });
+                },
+            },
+        });
+        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'invalid_response' });
+        expect(calls).toBe(1);
+        expect(input.budget.totals()).toMatchObject({ networkAttempts: 1, retries: 0 });
+    });
+
+    it('cancels the caller retry wait without admitting another attempt', async () => {
+        const controller = new AbortController();
+        let calls = 0;
+        const input = request({
+            signal: controller.signal,
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    throw new RateLimitError(429, {}, new Headers({ 'retry-after': '30' }));
+                },
+            },
+        });
+        const recordRetry = input.budget.recordRetry;
+        input.budget = {
+            ...input.budget,
+            recordRetry: () => {
+                recordRetry();
+                queueMicrotask(() => controller.abort());
+            },
+        };
+        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'cancelled' });
+        expect(calls).toBe(1);
+        expect(input.budget.totals()).toMatchObject({ networkAttempts: 1, retries: 1 });
+    });
+
+    it('checks cancellation immediately before handing off to a recording provider', async () => {
+        const controller = new AbortController();
+        let calls = 0;
+        const input = request({
+            signal: controller.signal,
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+            },
+        });
+        const reserve = input.budget.reserve;
+        input.budget = {
+            ...input.budget,
+            reserve: (bytes) => {
+                const result = reserve(bytes);
+                controller.abort();
+                return result;
+            },
+        };
+        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'cancelled' });
+        expect(calls).toBe(0);
+    });
+
+    it('accepts an exact safe aggregate plus zero and caches the response', async () => {
+        let writes = 0;
+        const input = request({
+            cache: {
+                read: () => undefined,
+                write: () => {
+                    writes += 1;
+                },
+            },
+            port: {
+                systemOne: async () => ({
+                    model: TYPESAFE_MODEL,
+                    answers: {},
+                    usage: { input_tokens: 0, output_tokens: 0 },
+                }),
+            },
+        });
+        input.budget.recordUsage({ input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 0 }, 7);
+        await expect(assessUnit(input)).resolves.toMatchObject({ fromCache: false });
+        expect(input.budget.totals().actualInputTokens).toBe(Number.MAX_SAFE_INTEGER);
+        expect(writes).toBe(1);
+    });
+
+    it.each(['claim', 'expectedBehavior', 'reproductionReferences'] as const)(
+        'screens verify caller %s before a would-hit cache or recording provider',
+        async (field) => {
+            const { runVerify } = await import('../verify.ts');
+            const secret = ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('');
+            let reads = 0;
+            let calls = 0;
+            let finding: CandidateFinding = {
+                findingId: 'f1',
+                headSha: HEAD,
+                claim: 'a claim',
+                expectedBehavior: 'expected behavior',
+                evidenceReferences: [{ path: 'src/modules/Project/a.ts', side: 'after', startLine: 1, endLine: 1 }],
+            };
+            if (field === 'reproductionReferences') {
+                finding = {
+                    ...finding,
+                    reproductionReferences: [{ path: 'probe.txt', note: secret, verifiedExecution: false }],
+                };
+            } else {
+                finding = { ...finding, [field]: secret };
+            }
+            const result = await runVerify({
+                ports: {
+                    source: fakeSource({
+                        files: [],
+                        blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n' },
+                    }),
+                    provider: {
+                        systemOne: async () => {
+                            calls += 1;
+                            return { model: TYPESAFE_MODEL, answers: {} };
+                        },
+                    },
+                    cache: {
+                        read: () => {
+                            reads += 1;
+                            return {};
+                        },
+                        write: () => undefined,
+                    },
+                    clock: fixedClock(1_000),
+                    signal: new AbortController().signal,
+                    log: () => undefined,
+                },
+                revision: BASE_REVISION,
+                profile: SEMANTIC_BUDGET_PROFILES.local,
+                findings: [finding],
+                runId: 'complete-verify-screen',
+            });
+            expect(result.report.failureCode).toBe('sensitive_content_excluded');
+            expect(result.report.findingAssessments).toEqual([]);
+            expect(result.report.usage.networkAttempts).toBe(0);
+            expect(reads).toBe(0);
+            expect(calls).toBe(0);
+        }
+    );
+});
+
 describe('provider adapter', () => {
     it('bounds retries, counts them, and never rerolls a successful answer', async () => {
         // AC-09
@@ -5612,7 +6056,7 @@ describe('provider adapter', () => {
             profile: { ...SEMANTIC_BUDGET_PROFILES.ci, maxRetriesPerRequest: 1 },
             deadline: 1_000 + 60_000,
             state: { evidence: {} },
-            questions: {},
+            questions: { check: { type: 'noul' } },
             requestedModel: TYPESAFE_MODEL,
             signal: new AbortController().signal,
             now: clock.now,
@@ -5640,7 +6084,7 @@ describe('provider adapter', () => {
                 profile,
                 deadline: Date.now() + 60_000,
                 state: {},
-                questions: {},
+                questions: { check: { type: 'noul' } },
                 requestedModel: TYPESAFE_MODEL,
                 signal: new AbortController().signal,
             })
@@ -5669,7 +6113,7 @@ describe('provider adapter', () => {
             profile,
             deadline: Date.now() + 60_000,
             state: {},
-            questions: {},
+            questions: { check: { type: 'noul' } },
             requestedModel: TYPESAFE_MODEL,
             signal: new AbortController().signal,
         });
@@ -5695,7 +6139,7 @@ describe('provider adapter', () => {
                 profile: SEMANTIC_BUDGET_PROFILES.local,
                 deadline: Date.now() + 10_000,
                 state: {},
-                questions: {},
+                questions: { check: { type: 'noul' } },
                 requestedModel: TYPESAFE_MODEL,
                 signal: new AbortController().signal,
             })
@@ -5772,7 +6216,7 @@ describe('provider adapter', () => {
                 profile,
                 deadline: Date.now() + 10_000,
                 state: {},
-                questions: {},
+                questions: { check: { type: 'noul' } },
                 requestedModel: TYPESAFE_MODEL,
                 signal: new AbortController().signal,
             })
@@ -8050,14 +8494,11 @@ describe('usage validation', () => {
         expect(() => readUsage({ input_tokens: Number.MAX_SAFE_INTEGER + 2, output_tokens: 0 }, 'usage')).toThrow(
             SemanticFailure
         );
-        // A schema-valid but impossible count: no tokenization yields more tokens than bytes sent.
-        expect(() => readUsage({ input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 0 }, 'usage', 1_000)).toThrow(
-            SemanticFailure
-        );
-        expect(readUsage({ input_tokens: 900, output_tokens: 0 }, 'usage', 1_000)).toEqual({
-            input_tokens: 900,
+        expect(readUsage({ input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 0 }, 'usage')).toEqual({
+            input_tokens: Number.MAX_SAFE_INTEGER,
             output_tokens: 0,
         });
+        expect(() => readUsage({ input_tokens: 1, output_tokens: -1 }, 'usage')).toThrow(SemanticFailure);
         expect(readUsage(undefined, 'usage')).toBeUndefined();
         expect(readUsage({ input_tokens: 5, output_tokens: 0 }, 'usage')).toEqual({
             input_tokens: 5,
@@ -8081,7 +8522,7 @@ describe('usage validation', () => {
                 profile: SEMANTIC_BUDGET_PROFILES.local,
                 deadline: Date.now() + 10_000,
                 state: {},
-                questions: {},
+                questions: { check: { type: 'noul' } },
                 requestedModel: TYPESAFE_MODEL,
                 signal: new AbortController().signal,
             })

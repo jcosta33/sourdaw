@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment node
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     DEFAULT_STANCES_THRESHOLD,
@@ -10,12 +16,113 @@ import {
     readStancesCheckAnswers,
     readStancesCheckRecord,
     renderStancesCheckOutcome,
+    requestStancesVerdicts,
 } from '../checkStancesRecord.ts';
 import { TYPESAFE_MODEL } from '../semanticReview/provider.ts';
 
 import type { StanceAdmission, StancesCheckRecord } from '../checkStancesRecord.ts';
 
 const STANCES_PATH = 'bundles/2999-head/stances.json';
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('stance prepared transport', () => {
+    it('sends the projected body through the SDK unchanged and uses one attempt', async () => {
+        const timeout = vi.spyOn(globalThis, 'setTimeout');
+        const body = buildStancesCheckBody(checkRecord());
+        const expected = JSON.stringify(body);
+        const fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+            expect(init?.body).toBe(expected);
+            expect(init?.signal).toBeInstanceOf(AbortSignal);
+            return new Response(JSON.stringify({ model: TYPESAFE_STANCES_MODEL, answers: {} }));
+        });
+        await expect(
+            requestStancesVerdicts(body, 'unused-offline-key', { signal: new AbortController().signal, fetch })
+        ).resolves.toMatchObject({ model: TYPESAFE_STANCES_MODEL });
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(timeout).toHaveBeenCalledWith(expect.any(Function), 20_000);
+    });
+
+    it('admits the exact stance state/question cap and refuses one extra byte', async () => {
+        const body = buildStancesCheckBody(checkRecord());
+        body.state.stances[0]!.admittedBy = '';
+        const emptyBytes = Buffer.byteLength(JSON.stringify({ state: body.state, questions: body.questions }), 'utf8');
+        body.state.stances[0]!.admittedBy = 'x'.repeat(96 * 1024 - emptyBytes);
+        const fetch = vi.fn(async () => new Response(JSON.stringify({ model: TYPESAFE_STANCES_MODEL, answers: {} })));
+        const options = { signal: new AbortController().signal, fetch };
+        await expect(requestStancesVerdicts(body, 'unused-offline-key', options)).resolves.toMatchObject({
+            model: TYPESAFE_STANCES_MODEL,
+        });
+        body.state.stances[0]!.admittedBy += 'x';
+        await expect(requestStancesVerdicts(body, 'unused-offline-key', options)).rejects.toMatchObject({
+            code: 'request_too_large',
+        });
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a stance request above its new state/question cap before fetch', async () => {
+        const body = buildStancesCheckBody(checkRecord());
+        body.state.stances[0]!.admittedBy = 'x'.repeat(96 * 1024);
+        const fetch = vi.fn(async () => new Response('{}'));
+        await expect(
+            requestStancesVerdicts(body, 'unused-offline-key', { signal: new AbortController().signal, fetch })
+        ).rejects.toMatchObject({ code: 'request_too_large' });
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('pre-abort reaches no SDK fetch', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        const fetch = vi.fn(async () => new Response('{}'));
+        await expect(
+            requestStancesVerdicts(buildStancesCheckBody(checkRecord()), 'unused-offline-key', {
+                signal: controller.signal,
+                fetch,
+            })
+        ).rejects.toMatchObject({ code: 'cancelled' });
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not retry a transient HTTP response', async () => {
+        const fetch = vi.fn(async () => new Response('{}', { status: 503 }));
+        await expect(
+            requestStancesVerdicts(buildStancesCheckBody(checkRecord()), 'unused-offline-key', {
+                signal: new AbortController().signal,
+                fetch,
+            })
+        ).rejects.toMatchObject({ status: 503 });
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
+function runOfflineCheck(raw: unknown, cancel = false) {
+    const bundle = mkdtempSync(join(tmpdir(), 'sourdaw-stances-egress-'));
+    const hookPath = join(bundle, 'offline-fetch.mjs');
+    writeFileSync(join(bundle, 'stances.json'), JSON.stringify(raw));
+    writeFileSync(
+        hookPath,
+        `globalThis.fetch = async (_url, options) => {
+            console.log('OFFLINE_REQUEST ' + options.body);
+            if (${String(cancel)}) {
+                queueMicrotask(() => process.kill(process.pid, 'SIGTERM'));
+                return new Response(new ReadableStream({ start() {} }));
+            }
+            return new Response(JSON.stringify({
+                model: ${JSON.stringify(TYPESAFE_STANCES_MODEL)},
+                answers: { stance_0: { noul: 0.9 }, stance_1: { noul: 0.9 } }
+            }));
+        };`
+    );
+    try {
+        return spawnSync(
+            process.execPath,
+            ['--import', hookPath, join(process.cwd(), 'scripts/checkStancesRecord.ts'), bundle],
+            { encoding: 'utf8', env: { TYPESAFE_API_KEY: 'unused-offline-key' }, timeout: 5000 }
+        );
+    } finally {
+        rmSync(bundle, { recursive: true, force: true });
+    }
+}
 
 const GENUINE_ADMISSIONS: StanceAdmission[] = [
     { stance: 'correctness', admittedBy: 'a reordered queue drops a buffered voice frame' },
@@ -32,19 +139,44 @@ function genuineRecord(): unknown {
     };
 }
 
-function checkRecord(
-    state: unknown = genuineRecord(),
-    admissions: StanceAdmission[] = GENUINE_ADMISSIONS
-): StancesCheckRecord {
-    return { state, admissions };
+function checkRecord(admissions: StanceAdmission[] = GENUINE_ADMISSIONS): StancesCheckRecord {
+    return { admissions };
 }
 
 describe('readStancesCheckRecord', () => {
-    it('parses the record through the production parser and carries the state and each admission', () => {
+    it('keeps only admissions from a record containing private metadata and baseline prose', () => {
+        const privateValue = ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('');
+        const raw = {
+            headSha: 'a'.repeat(40),
+            privateMetadata: privateValue,
+            stances: GENUINE_ADMISSIONS.map((admission) => ({
+                ...admission,
+                baselineProbe: { observedResult: privateValue },
+                privateMetadata: privateValue,
+            })),
+        };
+
+        expect(readStancesCheckRecord(raw, STANCES_PATH)).toEqual({ admissions: GENUINE_ADMISSIONS });
+    });
+
+    it.each(['stance', 'admittedBy'] as const)('refuses sensitive %s text without echoing it', (field) => {
+        const privateValue = ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('');
+        const raw = { stances: [{ ...GENUINE_ADMISSIONS[0], [field]: privateValue }] };
+        let message = '';
+        try {
+            readStancesCheckRecord(raw, STANCES_PATH);
+        } catch (error) {
+            message = error instanceof Error ? error.message : String(error);
+        }
+
+        expect(message).toContain(`refusing to call TypeSafe: stances[0].${field} contains`);
+        expect(message).not.toContain(privateValue);
+    });
+
+    it('parses the record through the production parser and carries each admission', () => {
         const raw = genuineRecord();
         const record = readStancesCheckRecord(raw, STANCES_PATH);
 
-        expect(record.state).toEqual(raw);
         expect(record.admissions).toEqual(GENUINE_ADMISSIONS);
     });
 
@@ -106,13 +238,78 @@ describe('buildStancesCheckQuestions', () => {
 });
 
 describe('buildStancesCheckBody', () => {
-    it('builds one request body carrying the parsed state, the Jev model, and all questions', () => {
+    it('projects only the admission fields even from a manually constructed record', () => {
+        const privateValue = ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('');
+        const record = {
+            state: { privateMetadata: privateValue },
+            admissions: GENUINE_ADMISSIONS.map((admission) => ({
+                ...admission,
+                baselineProbe: { observedResult: privateValue },
+                privateMetadata: privateValue,
+            })),
+        };
+        const body = buildStancesCheckBody(record);
+
+        expect(body.state).toEqual({ stances: GENUINE_ADMISSIONS });
+        expect(JSON.stringify(body)).not.toContain(privateValue);
+        expect(Object.keys(body.questions)).toEqual(['stance_0', 'stance_1']);
+    });
+
+    it.each(['stance', 'admittedBy'] as const)('screens manually constructed %s text at the body boundary', (field) => {
+        const privateValue = ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('');
+        const record = checkRecord([
+            { stance: 'queue-loss', admittedBy: 'a reordered queue drops a frame', [field]: privateValue },
+        ]);
+
+        expect(() => buildStancesCheckBody(record)).toThrow(`refusing to call TypeSafe: stances[0].${field} contains`);
+    });
+
+    it('builds one request body carrying the admission state, the Jev model, and all questions', () => {
         const record = checkRecord();
         const body = buildStancesCheckBody(record);
 
-        expect(body.state).toEqual(record.state);
+        expect(body.state).toEqual({ stances: record.admissions });
         expect(body.model).toBe(TYPESAFE_STANCES_MODEL);
         expect(body.questions).toEqual(buildStancesCheckQuestions(record));
+    });
+});
+
+describe('offline CLI request boundary', () => {
+    it('turns process cancellation during body delivery into a failed check', () => {
+        const result = runOfflineCheck(genuineRecord(), true);
+        expect(result.signal).toBeNull();
+        expect(result.status).toBe(1);
+        expect(result.stdout.match(/OFFLINE_REQUEST/gu)).toHaveLength(1);
+        expect(result.stderr).toMatch(/abort|cancel/iu);
+    });
+    it('sends only admissions while retaining the indexed questions and verdicts', () => {
+        const privateValue = ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('');
+        const result = runOfflineCheck({
+            privateMetadata: privateValue,
+            stances: GENUINE_ADMISSIONS.map((admission) => ({
+                ...admission,
+                baselineProbe: privateValue,
+            })),
+        });
+
+        expect(result.error).toBeUndefined();
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('OFFLINE_REQUEST ');
+        expect(result.stdout).not.toContain(privateValue);
+        expect(result.stdout).toContain('stance_0');
+        expect(result.stdout).toContain('stance_1');
+        expect(result.stdout).toContain('all 2 admission line(s) at or above threshold');
+    });
+
+    it.each(['stance', 'admittedBy'] as const)('refuses unsafe %s before fetch with a safe diagnostic', (field) => {
+        const privateValue = ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('');
+        const result = runOfflineCheck({ stances: [{ ...GENUINE_ADMISSIONS[0], [field]: privateValue }] });
+
+        expect(result.error).toBeUndefined();
+        expect(result.status).toBe(1);
+        expect(result.stdout).not.toContain('OFFLINE_REQUEST');
+        expect(result.stderr).toContain(`refusing to call TypeSafe: stances[0].${field} contains`);
+        expect(result.stdout + result.stderr).not.toContain(privateValue);
     });
 });
 

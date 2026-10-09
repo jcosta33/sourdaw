@@ -1,7 +1,9 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { appendFileSync, lstatSync, readdirSync, writeFileSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
@@ -10,6 +12,7 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
+    'checkStancesRecord',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -18,6 +21,7 @@ const REVIEW_TOOLING = new Set([
     'publishLane',
     'publishReview',
     'reconcileTrackerIssue',
+    'reconstructReviewRounds',
     'recoverDeliveryLock',
     'recoverPublishReviewLock',
     'repairReviewFinding',
@@ -28,10 +32,13 @@ const REVIEW_TOOLING = new Set([
     'reviewerModelDiversity',
     'reviewRoundEscalation',
     'reviewRiskPolicy',
+    'reviewRepair',
     'reviewShadowStatus',
     'savedProjectStatePaths',
     'semanticReview',
     'semanticReviewContext',
+    'semanticReviewEvaluation',
+    'semanticReviewMeasurement',
     'reviewDiffSummary',
     'reviewCommentDiffPreflight',
     'reviewBundleLocator',
@@ -48,21 +55,35 @@ const REVIEW_TOOLING = new Set([
     'supersedePullRequestGh',
     'syncParentLane',
     'trustedGithubWriteBootstrap',
+    'typesafeRequest',
     'trackerIssueReconciliation',
+]);
+
+const RELEASE_TOOLING_METADATA = new Set([
+    'release/open-source-inventory.json',
+    'release/dependency-license-proofs.json',
 ]);
 
 const SEMANTIC_REVIEW_TOOLING = new Set([
     '__tests__/admissionScheduling.spec.ts',
+    '__tests__/candidateFindings.spec.ts',
+    '__tests__/changeFacts.spec.ts',
+    '__tests__/digestProbes.ts',
     '__tests__/egressVendorShapeExtraction.spec.ts',
     '__tests__/multiPassTransport.spec.ts',
     '__tests__/semanticReview.spec.ts',
     'admissionBytes.ts',
     'candidateFindings.ts',
+    'changeFacts.ts',
     'contractCarrying.ts',
     'contracts.ts',
     'egressVendorShapeExtraction.ts',
     'egressVendorShapes.ts',
     'egressVendorToml.ts',
+    'evaluation/__tests__/semanticEvaluation.spec.ts',
+    'evaluation/corpus.ts',
+    'evaluation/runEvaluation.ts',
+    'evaluation/semanticEvaluationCorpus.json',
     'evidence.ts',
     'evidenceOrdering.ts',
     'fit.ts',
@@ -89,6 +110,8 @@ const SEMANTIC_REVIEW_TOOLING = new Set([
     'withheldReasons.ts',
 ]);
 
+const SEMANTIC_MEASUREMENT_TOOLING = new Set(['artifacts.ts', 'contracts.ts', 'gaps.ts', 'record.ts']);
+
 export type BrowserMatrix = { include: { id: number; specs: string[] }[] };
 export type ValidationPlan = {
     version: 1;
@@ -113,8 +136,14 @@ function needsCodeql(path: string): boolean {
 }
 
 function isReviewTooling(path: string): boolean {
+    if (RELEASE_TOOLING_METADATA.has(path)) {
+        return true;
+    }
     if (path.startsWith('scripts/semanticReview/')) {
         return SEMANTIC_REVIEW_TOOLING.has(path.slice('scripts/semanticReview/'.length));
+    }
+    if (path.startsWith('scripts/semanticReviewMeasurement/')) {
+        return SEMANTIC_MEASUREMENT_TOOLING.has(path.slice('scripts/semanticReviewMeasurement/'.length));
     }
     const match = /^scripts\/(?:__tests__\/)?([A-Za-z]+)(?:\.spec)?\.ts$/.exec(path);
     const scriptName = match?.[1];
@@ -122,7 +151,16 @@ function isReviewTooling(path: string): boolean {
 }
 
 function isSpec(path: string): boolean {
-    return path.startsWith('tests/e2e/') && /\.spec\.tsx?$/.test(path) && !path.includes('/__tests__/');
+    const segments = path.split('/');
+    return isPlaywrightCollected(path) && !segments.includes('..') && !segments.includes('node_modules');
+}
+
+function isRegularFile(path: string): boolean {
+    try {
+        return lstatSync(path).isFile();
+    } catch {
+        return false;
+    }
 }
 
 export function parseChangedPaths(diff: string): string[] {
@@ -237,7 +275,7 @@ export function selectedSpecArguments(value: unknown, root: string): string[] {
         throw new Error('Selected E2E specs must be unique');
     }
     return specs.map((path) => {
-        if (!isSpec(path) || path.split('/').includes('..') || !existsSync(resolve(root, path))) {
+        if (!isSpec(path) || !isRegularFile(resolve(root, path))) {
             throw new Error(`Selected E2E spec is invalid or missing: ${path}`);
         }
         // Playwright CLI arguments are regexes against absolute file paths, not literals.
@@ -247,12 +285,9 @@ export function selectedSpecArguments(value: unknown, root: string): string[] {
 
 function listSpecs(root: string): string[] {
     const specs: string[] = [];
-    for (const entry of readdirSync(resolve(root, 'tests/e2e'), { recursive: true })) {
-        if (typeof entry !== 'string') {
-            continue;
-        }
-        const path = `tests/e2e/${entry}`;
-        if (isSpec(path)) {
+    for (const entry of readdirSync(resolve(root, 'tests/e2e'), { recursive: true, withFileTypes: true })) {
+        const path = relative(root, resolve(entry.parentPath, entry.name));
+        if (entry.isFile() && isSpec(path)) {
             specs.push(path);
         }
     }
