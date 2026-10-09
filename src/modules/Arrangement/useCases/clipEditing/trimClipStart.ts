@@ -1,4 +1,5 @@
 import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
+import { loopOriginEntry } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type Clip } from '../../models/Track';
@@ -82,9 +83,12 @@ export function trimClipStart(clipId: string, newStartBeat: number): boolean {
                 // A trim advances the content offset but never the loop anchor:
                 // the loop window and the pass count stay anchored to the source
                 // (#4988). A clip born looped gets its anchor at this first trim;
-                // an already-anchored clip keeps theirs.
-                loopOriginBeat:
-                    context.loopOriginBeat ?? (context.loopEnabled === true ? context.startBeat : undefined),
+                // an already-anchored clip keeps theirs. The key is written only
+                // when an anchor results — an explicit-undefined key is a shape
+                // no clip writer may leave behind (#4988).
+                ...loopOriginEntry(
+                    context.loopOriginBeat ?? (context.loopEnabled === true ? context.startBeat : undefined)
+                ),
             };
             if (context.type === 'midi') {
                 const rawOffsetBeats = (context.midiOffsetBeats ?? 0) + delta;
