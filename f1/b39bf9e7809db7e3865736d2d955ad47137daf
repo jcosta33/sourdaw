@@ -1,0 +1,140 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_1f0dcd815e8946::t_326518d5c325dc 42,579-609
+  s_1f0dcd815e8946::t_cf6a648a139886 610
+.github/workflows/validation.yml
+  s_1f0dcd815e8946::t_131558a4ffee9d 770,773-804,806-807,811-812,839,842-853,855-856,881,884-895
+evidence/agent-campaign/manifest.json
+  s_1f0dcd815e8946::t_7e0db99fd42d44 250,374,527
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_1f0dcd815e8946::t_944b13bbd78bf6 120-133,3816,3827-3831,3880,3892-3896,4412-4414,4428-4431,4442-4443,4448-4451,4458,4513-4517,4524
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_1f0dcd815e8946::t_2087f2d62f348e 2,20,32-33,49-50,55-57,65-72,9494-9877,12399
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_1f0dcd815e8946::t_0faf0b4b279d38 984,987-996,999-1001,1006-1008,1030,1033-1042,1045-1047,1069,1072-1081
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_1f0dcd815e8946::t_84ac4d3b58d71e 21,34,36,588-611,1178,1201-1231
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_1f0dcd815e8946::t_33b3cf06227545 166-174,1176-1262,4204-4251
+scripts/deliverPullRequest.ts
+  s_1f0dcd815e8946::t_94eb0f9ae53ac3 9-11,25,4438,4461-4462,4529,4532-4554
+scripts/githubAppIdentity.ts
+  s_1f0dcd815e8946::t_b4c19b57013456 95-105,474-478,649-661,664
+scripts/healthGateWorkflowContract.ts
+  s_1f0dcd815e8946::t_e5b99eb2ec435d 173,181,188
+scripts/reviewApprovalContext.ts
+  s_1f0dcd815e8946::t_b010d895953906 7,72,78
+src/modules/AiRuntime/AGENTS.md
+  s_1f0dcd815e8946::t_790d363c723011 36,49
+src/modules/AiRuntime/__tests__/toolDescriptionAccuracy.spec.ts
+  s_1f0dcd815e8946::t_6c8c17ec047aad 71
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_1f0dcd815e8946::t_4cd1787c33a8f9 16,30,41
+src/modules/AiRuntime/models/AnswerRespond.ts
+  s_1f0dcd815e8946::t_4c440ee6fc23c3 1-16
+src/modules/AiRuntime/presentations/views/AiChangeToast.tsx
+  s_1f0dcd815e8946::t_539d91c48c5197 3,8,10,26-27,42-45,73,90,96-108
+src/modules/AiRuntime/presentations/views/__tests__/AiChangeToast.spec.tsx
+  s_1f0dcd815e8946::t_c670722572a0b9 18-24,264-320
+src/modules/AiRuntime/transformers/__tests__/describePlanningOutcome.spec.ts
+  s_1f0dcd815e8946::t_a3ee87b5aaa312 16-19
+src/modules/AiRuntime/transformers/__tests__/parseAnswerRespond.spec.ts
+  s_1f0dcd815e8946::t_d5d69004a89553 1-53
+src/modules/AiRuntime/transformers/describePlanningOutcome.ts
+  s_1f0dcd815e8946::t_02c68aec67fdec 25-26
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_1f0dcd815e8946::t_a5103ebbee6d8a 12-13,1148
+src/modules/AiRuntime/transformers/parseAnswerRespond.ts
+  s_1f0dcd815e8946::t_2b497fa0c85fa9 1-43
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_1f0dcd815e8946::t_4b2aa9f67fabbe 246-356
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_1f0dcd815e8946::t_9d5d70b5e41fb8 14,176-197,338
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  s_1f0dcd815e8946::t_4b79bf1a7c2da8 1-266
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_1f0dcd815e8946::t_fdbbd725f01400 414
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  s_1f0dcd815e8946::t_cd8a408454fbbe 554-568,577-579
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_1f0dcd815e8946::t_6af98d48a7773e 11,33,74,349-354,359-406
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/answerOutcome.spec.ts
+  s_1f0dcd815e8946::t_5988743546d44d 6,12,18-20,63-65,110-157,229-309
+src/modules/AiRuntime/useCases/agentRequestOrchestration/appendAnswerChatMessages.ts
+  s_1f0dcd815e8946::t_543c08cdda13bf 1-26
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1f0dcd815e8946::t_6007853892d6a1 26,291-315,328-340
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1f0dcd815e8946::t_66f9e7f1868010 16,30-34,60,452-464
+src/modules/AiRuntime/useCases/aiChangeNotificationState.ts
+  s_1f0dcd815e8946::t_840af7c4c60a3e 1-2,5-8,15-18
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/openAnswerInChat.spec.ts
+  s_1f0dcd815e8946::t_a177f01239d706 1-58
+src/modules/AiRuntime/useCases/aiPanelActions/openAnswerInChat.ts
+  s_1f0dcd815e8946::t_c01f5df5864e2e 1-16
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1f0dcd815e8946::t_88f4e07d70a279 23,48,59,127-128,1509,1524-1565,1568,1584-1585,1591-1594,1621,2078,2159-2160,2185
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  s_1f0dcd815e8946::t_b96b90cfaddbb5 39-41,43
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1f0dcd815e8946::t_aac8f6dcee6fb2 1597,1663
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_1f0dcd815e8946::t_0c5b5fb7d02235 160,171
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_1f0dcd815e8946::t_0402bf2830cf98 76,85-86,88
+src/modules/AiRuntime/useCases/notifyAiAnswer.ts
+  s_1f0dcd815e8946::t_094f1765a7be56 1-25
+src/modules/AiRuntime/useCases/notifyAiChange.ts
+  s_1f0dcd815e8946::t_b382a05231d43f 23
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1f0dcd815e8946::t_d0c1b088b336d7 61,526,794-805
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_1f0dcd815e8946::t_2d3148943792df 26,33-34,252-265,286
+src/modules/Command/AGENTS.md
+  s_1f0dcd815e8946::t_ffc494d1fc7391 31
+src/modules/Command/useCases/__tests__/batchCreatedTargetCollisions.spec.ts
+  s_1f0dcd815e8946::t_19616e72130f60 1-351
+src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts
+  s_1f0dcd815e8946::t_dd0c0b67ff9100 14,19,97-104
+src/modules/Command/useCases/getBatchCreatedTargetIndex.ts
+  s_1f0dcd815e8946::t_b5526a491eaf98 1-40
+src/modules/Command/useCases/getBatchLocalDependentTargetIds.ts
+  s_1f0dcd815e8946::t_3ee101ae904f45 11-17,19,24-32,39
+src/modules/Command/useCases/getVersionedCommandBatchDivergenceTargetIds.ts
+  s_1f0dcd815e8946::t_f2891047d725bb 5,7,10-16,19,22
+src/modules/Command/useCases/isBatchCreatedTargetId.ts
+  s_1f0dcd815e8946::t_ea36eefd5bec59 1-11
+src/modules/Command/useCases/parseVersionedCommandBatchEnvelope.ts
+  s_1f0dcd815e8946::t_87c2878c1e18eb 18,426-438,440-443,445-470,484-487,811
+src/modules/ProjectVersioning/models/ProjectVersion.ts
+  s_1f0dcd815e8946::t_28036fc935f9c7 12-17
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/legacyVersionTimelineSnapshot.integration.spec.ts
+  s_1f0dcd815e8946::t_d1e897455282c5 1-402
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/snapshotHelpers.spec.ts
+  s_1f0dcd815e8946::t_3f02edacf85a96 7-9,12,16-19,31-42,45,53-59,62,90-92,102-103,109-112,116-119,128,132-170,188,192
+src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/__tests__/captureSnapshot.spec.ts
+  s_1f0dcd815e8946::t_8ed388ac72bd5c 13-14,31-35,57-61,81-82,103-104
+src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/captureSnapshot.ts
+  s_1f0dcd815e8946::t_e61495285c26e4 1,4,28-29
+src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/restoreSnapshot.ts
+  s_1f0dcd815e8946::t_143b865961cce6 3-4,7-8,58-70,75-84,88-94
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_1f0dcd815e8946::t_6dd7b0de805765 3-5,26,193-637,707-708
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_1f0dcd815e8946::t_4df8519f6da025 3-11,37-45,167-347,350-351,355,363,372,377-387,392-393,399-400,405,420,425-429
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f1b39bf9e7809db7e3865736d2d955ad47137daf",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
