@@ -139,7 +139,6 @@ export { selectTake } from './comping/selectTake';
 export { setCompRegion } from './comping/setCompRegion';
 export { removeCompRegion } from './comping/removeCompRegion';
 export { resolveClipsWithComping } from './resolveComping';
-export { resolveTakeMedia } from './resolveTakeMedia';
 
 export { createCompGroup } from './groupComping/compGroupOperations/createCompGroup';
 

@@ -18,8 +18,7 @@ function capture(laneId: string, take: Take): TakeSourceDepthSnapshot {
         sourceOffsetBeats: Object.hasOwn(take, 'sourceOffsetBeats') ? (take.sourceOffsetBeats ?? null) : null,
     };
     if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
-        source.passAnchorSeconds = take.passAnchorSeconds;
-        source.passDepthSeconds = take.passDepthSeconds;
+        return { ...source, passAnchorSeconds: take.passAnchorSeconds, passDepthSeconds: take.passDepthSeconds };
     }
     return source;
 }
@@ -87,6 +86,10 @@ function resolveMaterializedTakeSources(
     const after: TakeSourceDepthSnapshot[] = [];
     for (const source of before) {
         if (source.passAnchorSeconds !== undefined && source.passDepthSeconds !== undefined) {
+            after.push(source);
+            continue;
+        }
+        if (source.sourceOffsetSeconds === null && source.sourceOffsetBeats === null) {
             after.push(source);
             continue;
         }

@@ -1,8 +1,8 @@
+import { resolveTakeMedia } from '../stores/resolveTakeMedia';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
 
 import { liveTempoTimeline } from './liveTempoTimeline';
-import { resolveTakeMedia } from './resolveTakeMedia';
 
 export type ResolvedClip = Clip & {
     regionStartBeat: number;

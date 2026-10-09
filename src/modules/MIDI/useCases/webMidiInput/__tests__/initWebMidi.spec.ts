@@ -33,7 +33,8 @@ vi.mock('#/infra/di/Container', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    resolveTakeMedia: (await importOriginal<typeof import('#/modules/Arrangement/stores')>()).resolveTakeMedia,
     readMusicalRangeInputs: vi.fn(() => []),
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),

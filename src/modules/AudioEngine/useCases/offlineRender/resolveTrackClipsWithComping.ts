@@ -1,5 +1,4 @@
-import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
-import { resolveTakeMedia } from '#/modules/Arrangement/useCases';
+import { resolveTakeMedia, takeLaneStore, type Track } from '#/modules/Arrangement/stores';
 
 import { liveTempoTimeline, type ResolutionTempoTimeline } from '../livePlayback/liveTempoTimeline';
 

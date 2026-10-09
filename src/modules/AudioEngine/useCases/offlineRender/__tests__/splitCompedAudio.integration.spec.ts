@@ -332,6 +332,13 @@ describe('split comped audio #5048 typed split of a comped audio clip', () => {
         ]);
         expect(seeks(after.live)).toEqual([5.5, 7]);
         expect(seeks(after.offline)).toEqual([5.5, 7]);
+        expect(after.raw.takeLanes.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 4, takeId: 'take-1' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-1:split-right:right' },
+        ]);
+        expect(after.raw.takeLanes.lanes[0]?.takes.filter((take) => take.selected).map((take) => take.id)).toEqual([
+            'take-1',
+        ]);
         expect(samplesAt(after, [1, 2, 4])).toEqual(samplesAt(before, [1, 2, 4]));
         expect(
             after.raw.takeLanes.lanes[0]?.takes.map((take) => [take.passAnchorSeconds, take.passDepthSeconds])
@@ -347,10 +354,19 @@ describe('split comped audio #5048 typed split of a comped audio clip', () => {
         ]);
         await undo();
         flushAutomergeStorageWrites();
-        expect(snapshot().raw.takeLanes).toEqual(before.raw.takeLanes);
+        const restored = snapshot();
+        expect(restored.raw.takeLanes).toEqual(before.raw.takeLanes);
+        expect(restored.live).toEqual(before.live);
+        expect(restored.offline).toEqual(before.offline);
+        expect(samplesAt(restored, [1, 2, 4])).toEqual(samplesAt(before, [1, 2, 4]));
         await redo();
         flushAutomergeStorageWrites();
-        expect(snapshot().playbacks).toEqual(after.playbacks);
+        const replayed = snapshot();
+        expect(replayed.raw.takeLanes).toEqual(after.raw.takeLanes);
+        expect(replayed.live).toEqual(after.live);
+        expect(replayed.offline).toEqual(after.offline);
+        expect(replayed.playbacks).toEqual(after.playbacks);
+        expect(samplesAt(replayed, [1, 2, 4])).toEqual(samplesAt(before, [1, 2, 4]));
         await executeAppAction(
             { type: 'trimClipStart', payload: { clipId: 'right', newStartBeat: 5 } },
             { source: 'manual' }

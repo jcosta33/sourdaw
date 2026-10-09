@@ -33,6 +33,7 @@ import {
 } from '#/modules/Transport/useCases';
 
 import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
+import { renderTempoTimeline } from '../renderTempoTimeline';
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
 type Project = {
@@ -172,10 +173,12 @@ describe('offline projection of inserted audio source', () => {
             expect(raw?.takeLanes).toEqual(takeLaneStore.value);
             const beatToSeconds = (beat: number): number => readSecondsAtBeat({ beat });
             const tempoAtBeat = (beat: number): number => readTempoAtBeat({ beat });
-            const clip = resolveTrackClipsWithComping('track-1', raw!.tracks.tracks[0]!.clips, raw!.takeLanes, {
-                projectBeatToSeconds: beatToSeconds,
-                resolveTempoAtBeat: tempoAtBeat,
-            })[0];
+            const clip = resolveTrackClipsWithComping(
+                'track-1',
+                raw!.tracks.tracks[0]!.clips,
+                raw!.takeLanes,
+                renderTempoTimeline(beatToSeconds, tempoAtBeat)
+            )[0];
             expect(clip).toBeDefined();
             return projectOfflineAudioClipPlaybacks({
                 clip: clip!,
@@ -240,10 +243,12 @@ describe('offline projection of inserted audio source', () => {
             expect(raw?.takeLanes).toEqual(takeLaneStore.value);
             const beatToSeconds = (beat: number): number => readSecondsAtBeat({ beat });
             const tempoAtBeat = (beat: number): number => readTempoAtBeat({ beat });
-            const clip = resolveTrackClipsWithComping('track-1', raw!.tracks.tracks[0]!.clips, raw!.takeLanes, {
-                projectBeatToSeconds: beatToSeconds,
-                resolveTempoAtBeat: tempoAtBeat,
-            })[0];
+            const clip = resolveTrackClipsWithComping(
+                'track-1',
+                raw!.tracks.tracks[0]!.clips,
+                raw!.takeLanes,
+                renderTempoTimeline(beatToSeconds, tempoAtBeat)
+            )[0];
             expect(clip).toBeDefined();
             return projectOfflineAudioClipPlaybacks({
                 clip: clip!,
@@ -320,10 +325,12 @@ describe('offline projection of inserted audio source', () => {
         ]);
         const beatToSeconds = (beat: number): number => readSecondsAtBeat({ beat });
         const tempoAtBeat = (beat: number): number => readTempoAtBeat({ beat });
-        const right = resolveTrackClipsWithComping('track-1', raw!.tracks.tracks[0]!.clips, raw!.takeLanes, {
-            projectBeatToSeconds: beatToSeconds,
-            resolveTempoAtBeat: tempoAtBeat,
-        }).find((clip) => clip.startBeat === 6);
+        const right = resolveTrackClipsWithComping(
+            'track-1',
+            raw!.tracks.tracks[0]!.clips,
+            raw!.takeLanes,
+            renderTempoTimeline(beatToSeconds, tempoAtBeat)
+        ).find((clip) => clip.startBeat === 6);
         expect(right?.audioOffsetSeconds).toBe(2);
         const playback = projectOfflineAudioClipPlaybacks({
             clip: right!,

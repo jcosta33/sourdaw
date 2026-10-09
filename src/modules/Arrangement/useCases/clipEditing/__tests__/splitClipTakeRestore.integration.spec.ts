@@ -25,6 +25,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { resolveClipsWithComping } from '../../resolveComping';
 import { prepareClipSplit } from '../prepareClipSplit';
 import { restoreClipSplitState } from '../restoreClipSplitState';
 import { splitClipWithUndo } from '../splitClipWithUndo';
@@ -152,6 +153,12 @@ describe('splitClipWithUndo take restore', () => {
 
     it('partitions inactive takes and preserves live names, selection and unrelated comp material across replay', async () => {
         seedCompedAudio();
+        const projectedMedia = () =>
+            resolveClipsWithComping('track-1', trackStore.value!.tracks[0]!.clips).map(
+                ({ startBeat, endBeat, audioOffsetSeconds }) => ({ startBeat, endBeat, audioOffsetSeconds })
+            );
+        const beforeMedia = projectedMedia();
+        expect(beforeMedia).toEqual([{ startBeat: 0, endBeat: 8, audioOffsetSeconds: 1 }]);
         await executeAppAction(
             { type: 'splitClip', payload: { clipId: 'clip-1', beat: 4, rightClipId: 'right' } },
             { source: 'manual' }
@@ -167,9 +174,19 @@ describe('splitClipWithUndo take restore', () => {
             }))
         ).toEqual([
             { id: 'take-1', clipId: 'clip-1', startBeat: 0, endBeat: 4, selected: true },
-            { id: 'take-1:split-right:right', clipId: 'right', startBeat: 4, endBeat: 8, selected: true },
+            { id: 'take-1:split-right:right', clipId: 'right', startBeat: 4, endBeat: 8, selected: false },
             { id: 'inactive', clipId: 'clip-1', startBeat: 1, endBeat: 4, selected: false },
             { id: 'inactive:split-right:right', clipId: 'right', startBeat: 4, endBeat: 7, selected: false },
+        ]);
+        expect(splitLane.takes.filter((take) => take.selected).map((take) => take.id)).toEqual(['take-1']);
+        expect(splitLane.activeCompRegions).toEqual([
+            { takeId: 'take-1', startBeat: 0, endBeat: 4 },
+            { takeId: 'take-1:split-right:right', startBeat: 4, endBeat: 8 },
+        ]);
+        const splitMedia = projectedMedia();
+        expect(splitMedia).toEqual([
+            { startBeat: 0, endBeat: 4, audioOffsetSeconds: 1 },
+            { startBeat: 4, endBeat: 8, audioOffsetSeconds: 3 },
         ]);
         const unrelated = { ...createTake('peer-clip', 'Peer', 10, 12), id: 'peer-take' };
         const peerRegion = { takeId: unrelated.id, startBeat: 10, endBeat: 12 };
@@ -199,9 +216,13 @@ describe('splitClipWithUndo take restore', () => {
             { takeId: 'take-1', startBeat: 0, endBeat: 8 },
             peerRegion,
         ]);
+        expect(projectedMedia()).toEqual(beforeMedia);
+        expect(takeLaneStore.value!.lanes[0]!.takes.filter((take) => take.selected)).toEqual([]);
         await redo();
         expect(takeLaneStore.value!.lanes[0]!.takes).toEqual(splitTakes);
         expect(takeLaneStore.value!.lanes[0]!.activeCompRegions).toEqual([...splitLane.activeCompRegions, peerRegion]);
+        expect(projectedMedia()).toEqual(splitMedia);
+        expect(takeLaneStore.value!.lanes[0]!.takes.filter((take) => take.selected)).toEqual([]);
     });
 
     it.each(['depth', 'geometry', 'comp'] as const)(

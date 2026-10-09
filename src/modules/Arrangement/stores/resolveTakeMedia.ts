@@ -7,7 +7,7 @@ import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { type Take } from '../models/TakeLane';
 import { isTempoConstantBetween, type TempoTimeline } from '../models/TempoTimeline';
-import { type Clip } from '../stores/trackStore';
+import { type Clip } from '../models/Track';
 
 type TakeMedia = {
     earliestBeat: number;
