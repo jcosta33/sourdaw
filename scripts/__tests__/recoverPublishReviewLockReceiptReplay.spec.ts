@@ -164,6 +164,7 @@ function remote(
         unresolvedThreads?: number;
         extraComment?: boolean;
         driftAfterFirst?: boolean;
+        dismissAfterFirst?: boolean;
         laterReviewerState?: string;
         laterReviewerHead?: string;
         reviewerVisibility?: 'missing' | 'null-id';
@@ -253,6 +254,9 @@ function remote(
         if (endpoint.endsWith(`/pulls/${number}/reviews?per_page=100`)) {
             if (input.driftAfterFirst && state.inspections > 1) {
                 return JSON.stringify([[{ ...review, body: 'changed after first inspection' }]]);
+            }
+            if (input.dismissAfterFirst && state.inspections > 1) {
+                return JSON.stringify([[{ ...review, state: 'DISMISSED' }]]);
             }
             return JSON.stringify([[review]]);
         }
@@ -531,6 +535,18 @@ describe('already recovered landed receipt binds its modern dossier', () => {
 
         expect(github.state.inspections).toBe(2);
         expect(readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8')).toBe(before);
+    });
+
+    it('refuses an approval dismissed between the two inspections on a head that moved before both', async () => {
+        const { root, ownerOid } = fixture();
+        const before = readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');
+        const github = remote({ liveHead: 'c'.repeat(40), dismissAfterFirst: true });
+
+        await expect(recover(root, ownerOid, github.gh)).rejects.toThrow(/remote state changed during reconciliation/);
+
+        expect(github.state.inspections).toBe(2);
+        expect(readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8')).toBe(before);
+        expect(github.state.posts).toBe(0);
     });
 
     it('refuses a still-live original owner before inspecting or binding', async () => {
