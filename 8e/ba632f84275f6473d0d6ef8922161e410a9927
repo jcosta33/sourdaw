@@ -1,0 +1,28 @@
+src/modules/AudioEngine/repositories/devices/modulation/createAutoPan.ts
+  s_1f0dcd815e8946::t_badc601e28a84f 1-2,9
+tests/e2e/monoModulationInput.spec.ts
+  s_1f0dcd815e8946::t_518561bc3aec4f 52-54
+  s_1f0dcd815e8946::t_0e393bda44f815 1-3,10-12,20-23,25-27,31-35,39-51,55-56,77-81,85-91
+  s_1f0dcd815e8946::t_9cd901d2cbf2e7 100
+src/modules/AudioEngine/repositories/devices/modulation/createStereoWidener.ts
+  s_1f0dcd815e8946::t_badc601e28a84f 1-2
+  s_1f0dcd815e8946::t_860841f1458175 9
+.agents/skills/review-stances/correctness.md
+  s_1f0dcd815e8946::t_6759ce2215d63d 496-512
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8eba632f84275f6473d0d6ef8922161e410a9927",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
