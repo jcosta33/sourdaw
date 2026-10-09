@@ -4,6 +4,7 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 
 import { reconcileAutoInputMonitoring } from '../reconcileAutoInputMonitoring';
 import { stopInputMonitoring } from '../stopInputMonitoring';
+import { suspendAutoInputMonitoring } from '../suspendAutoInputMonitoring';
 import { syncAutoInputMonitoring } from '../syncAutoInputMonitoring';
 
 import type { Store } from '#/infra/store/types';
@@ -351,6 +352,32 @@ describe('syncAutoInputMonitoring', () => {
 
         expect(harness.stopTrackInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1');
         expect(harness.monitored.has('track-1')).toBe(false);
+    });
+
+    it('opens nothing until every overlapping hold has been released', () => {
+        const releaseFirst = suspendAutoInputMonitoring();
+        const releaseSecond = suspendAutoInputMonitoring();
+
+        setTracks(audioTrack());
+        releaseFirst();
+        expect(harness.startInputMonitoring).not.toHaveBeenCalled();
+
+        releaseSecond();
+        expect(harness.startInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1', 'input-1');
+    });
+
+    it('closes an edge that should close while held, and opens none', () => {
+        setTracks(audioTrack());
+        harness.startInputMonitoring.mockClear();
+        const release = suspendAutoInputMonitoring();
+
+        setTracks(audioTrack({ armed: false }));
+        expect(harness.stopTrackInputMonitoring).toHaveBeenCalledWith('track-1');
+        setTracks(audioTrack({ armed: true }));
+        expect(harness.startInputMonitoring).not.toHaveBeenCalled();
+
+        release();
+        expect(harness.startInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1', 'input-1');
     });
 
     it('re-establishes an edge a graph reset released when reconciled again', () => {

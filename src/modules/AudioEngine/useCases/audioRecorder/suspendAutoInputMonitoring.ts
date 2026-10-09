@@ -3,12 +3,13 @@ import { holdAutoInputMonitoring, releaseAutoInputMonitoringHold } from '../../s
 import { reconcileAutoInputMonitoring } from './reconcileAutoInputMonitoring';
 
 /**
- * Stops the Auto input monitoring owner from acting on any store publication
- * until the returned resume runs, then settles the state the caller left behind
- * in one reconcile. For a rebuild that publishes a transport state it does not
+ * Stops the Auto input monitoring owner from opening any edge until the
+ * returned resume runs, then settles the state the caller left behind in one
+ * reconcile. The owner keeps following transitions and closing edges, so only
+ * the opens wait. For a rebuild that publishes a transport state it does not
  * mean to keep (a repair pauses a rolling transport and restarts it), so the
- * owner never sees "armed and stopped" for a transport that is playing.
- * Resuming twice does nothing.
+ * owner never opens an edge for "armed and stopped" under a transport that is
+ * playing. Resuming twice does nothing.
  */
 export function suspendAutoInputMonitoring(): () => void {
     holdAutoInputMonitoring();

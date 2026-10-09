@@ -83,13 +83,13 @@ function openEdge(trackId: string, inputId: string | null): void {
  * transition that feeds the derivation — arm, mode change, record start/stop,
  * play, stop — reaches this through the track and transport stores, plus the
  * explicit calls where a rebuilt graph or a mode gesture needs the edge settled
- * in the same turn. While a caller holds a suspension it does nothing, so a
- * transport state that caller publishes only in passing is never read as rest.
+ * in the same turn. While a caller holds a suspension it still follows every
+ * transition and closes every edge that should be closed, but opens none: a
+ * transport state that caller publishes only in passing is never read as rest,
+ * and the reconcile that releases the hold opens whatever should be open.
  */
 export function reconcileAutoInputMonitoring(): void {
-    if (isAutoInputMonitoringHeld()) {
-        return;
-    }
+    const opensSuppressed = isAutoInputMonitoringHeld();
     const tracks = trackStore.value?.tracks ?? [];
     const transport = transportStore.value ?? defaultTransportState;
     const presentIds = new Set<string>();
@@ -107,7 +107,9 @@ export function reconcileAutoInputMonitoring(): void {
             isRecording: transport.isRecording,
         });
         if (edge === 'open') {
-            openEdge(track.id, track.inputId);
+            if (!opensSuppressed) {
+                openEdge(track.id, track.inputId);
+            }
         } else if (edge === 'closed') {
             closeEdge(track.id);
         } else if (track.inputMonitoring === 'off' && openRequests.has(track.id)) {
