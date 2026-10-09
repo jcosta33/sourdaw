@@ -221,8 +221,8 @@ describe('renderToClip', () => {
         mocks.addClip.mockReturnValue({ id: 'clip-placed', trackId: 'track-1' });
         redo();
 
-        // Redo should add the clip with the same arguments as the first add.
-        expect(mocks.addClip).toHaveBeenNthCalledWith(1, firstAdd);
+        // Redo re-creates the clip with the first add's arguments, under the id that add returned.
+        expect(mocks.addClip).toHaveBeenNthCalledWith(1, { ...firstAdd, id: 'clip-placed' });
     });
 });
 
