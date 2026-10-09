@@ -4,8 +4,10 @@ import {
     projectPpqEndpoints,
     restoreTimelineMapSnapshot,
     restoreTransportSnapshot,
+    secondsBetweenBeats,
 } from '#/modules/Transport/useCases';
 
+import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
 import { resolveRenderContext } from '../resolveRenderContext';
 
@@ -61,6 +63,48 @@ describe('resolveRenderContext', () => {
         expect(ctx.durationSeconds).toBe(expected.durationSeconds);
     });
 
+    describe('region length follows the tempo map live playback walks', () => {
+        const SAMPLE_RATE = 48_000;
+        const HALF_SAMPLE_SECONDS = 0.5 / SAMPLE_RATE;
+
+        it('integrates a linear ramp: 100 BPM at beat 0 rising to 200 BPM at beat 8', () => {
+            const changes = [
+                { id: 'start', beat: 0, tempo: 100, curve: 'linear' as const },
+                { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+            ];
+            restoreTimelineMapSnapshot({ tempoMap: { changes } });
+
+            const ctx = resolveRenderContext({ durationBeats: 6, sampleRate: SAMPLE_RATE });
+
+            // Tempo(b) = 100 + 12.5 b, so seconds = (60 / 12.5) * ln(tempo(6) / 100).
+            expect(Math.abs(ctx.durationSeconds - 4.8 * Math.log(1.75))).toBeLessThanOrEqual(HALF_SAMPLE_SECONDS);
+            expect(Math.abs(ctx.durationSeconds - secondsBetweenBeats(changes, 0, 6, 120))).toBeLessThanOrEqual(
+                HALF_SAMPLE_SECONDS
+            );
+        });
+
+        it('plays the first change tempo before it: 90 BPM from beat 4 under a 120 BPM project', () => {
+            const changes = [{ id: 'slow', beat: 4, tempo: 90, curve: 'instant' as const }];
+            restoreTimelineMapSnapshot({ tempoMap: { changes } });
+
+            const ctx = resolveRenderContext({ durationBeats: 6, sampleRate: SAMPLE_RATE });
+
+            // The first change governs the whole timeline before it, as it does
+            // live: six beats at 90 BPM last 4 s, not 2 s at the default 120 BPM
+            // plus 4/3 s.
+            expect(ctx.durationSeconds).toBeCloseTo(4, 9);
+            expect(ctx.durationSeconds).toBeCloseTo(secondsBetweenBeats(changes, 0, 6, 120), 9);
+        });
+
+        it('refuses to measure a region when no composition root injected the projector', () => {
+            offlinePpqEndpointProjectorState.project = null;
+
+            expect(() => resolveRenderContext({ durationBeats: 4 })).toThrow(
+                'Offline musical projection is not configured'
+            );
+        });
+    });
+
     it('supports the legacy numeric input form', () => {
         const ctx = resolveRenderContext(4);
         expect(ctx.durationSeconds).toBeCloseTo(2, 6);
@@ -69,8 +113,10 @@ describe('resolveRenderContext', () => {
     });
 
     it('snapshots the PPQ projector for the lifetime of one render context', () => {
-        const firstProjector = vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>();
-        const replacementProjector = vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>();
+        const firstProjector =
+            vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>(projectPpqEndpoints);
+        const replacementProjector =
+            vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>(projectPpqEndpoints);
         configureOfflinePpqEndpointProjection({
             project: firstProjector,
             resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,

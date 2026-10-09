@@ -261,7 +261,7 @@ describe('FaustDeviceStrategy.resolveOfflineAutomation', () => {
             changes: [],
         });
 
-        // 120 bpm → beatToSeconds(beat) === beat / 2. AU-2: device automation is
+        // 120 bpm → the beat projection is beat / 2. AU-2: device automation is
         // slewed offline (matching the live path), so the ramp is not a raw jump
         // — it seeds at 200, glides through intermediate values, and settles
         // exactly on 2000 (never a frozen snapshot).

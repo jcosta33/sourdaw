@@ -14,8 +14,13 @@ import {
     createChordPitchProjector,
     shouldPlayMidiEvent,
 } from '#/modules/MIDI/useCases';
-import { defaultTransportState, type TransportState } from '#/modules/Transport/stores';
-import { projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
+import { defaultTransportState, readSecondsAtBeat, type TransportState } from '#/modules/Transport/stores';
+import {
+    projectPpqEndpoints,
+    resolveTempoAtBeat,
+    restoreTimelineMapSnapshot,
+    restoreTransportSnapshot,
+} from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
@@ -515,6 +520,81 @@ describe('renderOffline — graph construction and lifecycle', () => {
         expect(envelopeValues).toContainEqual(expect.closeTo(10 ** (-6 / 20), 6));
     });
 
+    it('web render lands a clip and a pan step inside a tempo ramp at the seconds live playback reaches them', async () => {
+        mocks.realScheduler = true;
+        const sampleRate = 48_000;
+        const ramp = [
+            { id: 'start', beat: 0, tempo: 100, curve: 'linear' as const },
+            { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+        ];
+        restoreTransportSnapshot({ tempo: 120 });
+        restoreTimelineMapSnapshot({ tempoMap: { changes: ramp } });
+        const liveSecondsAtBeatSix = Math.round(readSecondsAtBeat({ beat: 6 }) * sampleRate) / sampleRate;
+        const track = TrackDummy.create({
+            id: 'ramped',
+            clips: [
+                {
+                    id: 'clip',
+                    trackId: 'ramped',
+                    name: 'Recorded',
+                    type: 'audio',
+                    startBeat: 6,
+                    endBeat: 7,
+                    audioBufferId: 'pcm',
+                    gain: 1,
+                    color: '#fff',
+                    locked: false,
+                    muted: false,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                },
+            ],
+        });
+        mocks.buffers.set('pcm', new AudioBuffer({ length: sampleRate * 2, numberOfChannels: 1, sampleRate }));
+        mocks.automation.value = {
+            lanes: [
+                {
+                    id: 'pan',
+                    trackId: 'ramped',
+                    parameterId: 'pan',
+                    parameterName: 'Pan',
+                    points: [
+                        { beat: 0, value: -0.5, curve: 'step', tension: 0 },
+                        { beat: 6, value: 0.5, curve: 'step', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: -1,
+                    maxValue: 1,
+                },
+            ],
+        };
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({
+                tracks: { tracks: [track] } as TrackStoreState,
+                changes: ramp,
+                durationSeconds: 5,
+                projectPpqEndpoints,
+            })
+        );
+        const strip = makeStrip('ramped');
+        mocks.createOfflineTrackStrip.mockResolvedValue(strip);
+
+        try {
+            await renderOffline({ durationBeats: 8, sampleRate });
+        } finally {
+            restoreTimelineMapSnapshot({ tempoMap: { changes: [] } });
+        }
+
+        // A constant-tempo projection would put beat 6 at 3.6 s, not 2.69 s.
+        expect(liveSecondsAtBeatSix).toBeCloseTo(4.8 * Math.log(1.75), 4);
+        expect(sources).toHaveLength(1);
+        expect(sources[0]!.start.mock.calls[0]![0]).toBeCloseTo(liveSecondsAtBeatSix, 9);
+        expect(strip.panNode.pan.setValueAtTime).toHaveBeenCalledWith(0.5, expect.closeTo(liveSecondsAtBeatSix, 9));
+    });
+
     it('dispatches the captured MIDI pitch and frame after notes change during preparation', async () => {
         mocks.realScheduler = true;
         const started = Promise.withResolvers<void>();
@@ -798,6 +878,120 @@ describe('renderOffline — graph construction and lifecycle', () => {
         );
         expect(mocks.automation.value).toEqual(liveBefore);
         expect(project.tracks!.tracks[0]!.gain).toBe(0.7);
+    });
+
+    it('places a clip and an automation step inside a tempo ramp at the seconds live playback reaches them', async () => {
+        mocks.realContext = true;
+        configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
+        configureOfflineMidiEventProjection({
+            createProjector: createGrooveMidiEventProjector,
+            createChordPitchProjector,
+            selectProbability: shouldPlayMidiEvent,
+            evaluateAutomationValue: () => null,
+            createAutomationValueEvaluator: createOfflineAutomationEvaluator,
+        });
+        const sampleRate = 48_000;
+        const ramp = [
+            { id: 'start', beat: 0, tempo: 100, curve: 'linear' as const },
+            { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+        ];
+        restoreTransportSnapshot({ tempo: 120 });
+        restoreTimelineMapSnapshot({ tempoMap: { changes: ramp } });
+        // Live playback reaches beat 6 here; the render must land on the same sample.
+        const liveSecondsAtBeatSix = Math.round(readSecondsAtBeat({ beat: 6 }) * sampleRate) / sampleRate;
+        const track = TrackDummy.create({
+            id: 'ramped',
+            clips: [
+                {
+                    id: 'clip',
+                    trackId: 'ramped',
+                    name: 'Audio',
+                    type: 'audio',
+                    startBeat: 6,
+                    endBeat: 7,
+                    audioBufferId: 'pcm',
+                    gain: 1,
+                    color: '#fff',
+                    locked: false,
+                    muted: false,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                },
+            ],
+        });
+        const panLane = {
+            id: 'pan',
+            trackId: 'ramped',
+            parameterId: 'pan',
+            parameterName: 'Pan',
+            points: [
+                { beat: 0, value: -0.5, curve: 'step' as const, tension: 0 },
+                { beat: 6, value: 0.5, curve: 'step' as const, tension: 0 },
+            ],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: -1,
+            maxValue: 1,
+        };
+        const project: OfflineRenderProjectSource = {
+            tracks: { tracks: [track], selectedTrackId: null },
+            midi: emptyMidi,
+            transport: { ...defaultTransportState, tempo: 120, masterGain: 80 },
+            tempoMap: { changes: ramp },
+            timeSignatureMap: null,
+            automationLanes: [panLane],
+            takeLanes: null,
+            gainEnvelopes: {},
+            sidechainRoutes: [],
+            vcaGroups: [],
+            grooveTemplates: null,
+            chordTrack: null,
+            yeastProcessorsByDevice: {},
+        };
+        mocks.buffers.set('pcm', new AudioBuffer({ length: sampleRate * 2, numberOfChannels: 1, sampleRate }));
+        const commands: NativeGraphWireCommand[] = [];
+        const unexpected = () => Promise.reject(new Error('Unexpected native operation'));
+        const transport: NativeGraphTransport = {
+            registerTimelineSample: () => Promise.resolve(),
+            beginLevainBank: unexpected,
+            registerLevainSample: unexpected,
+            commitLevainBank: unexpected,
+            releaseLevainBank: unexpected,
+            applyGraphCommands: unexpected,
+            renderGraphOffline: ({ frames }) => Promise.resolve(new Uint8Array(frames * 8)),
+            mapGraphBatch: ({ batch }) => {
+                commands.push(...batch.commands);
+                return Promise.resolve({ acceptance: 'accepted', application: 'applied', reports: [] });
+            },
+        };
+        mocks.selectOfflineRenderEngine.mockResolvedValue({ engine: 'native/offline', transport });
+        try {
+            await renderOfflineInput(captureOfflineRenderInput({ durationBeats: 8, sampleRate }, { project }));
+        } finally {
+            restoreTimelineMapSnapshot({ tempoMap: { changes: [] } });
+        }
+
+        // A constant-tempo projection would put beat 6 at 3.6 s, not 2.69 s.
+        expect(liveSecondsAtBeatSix).toBeCloseTo(4.8 * Math.log(1.75), 4);
+        expect(commands).toContainEqual(
+            expect.objectContaining({
+                kind: 'schedule-clip',
+                playback: expect.objectContaining({ startTime: expect.closeTo(liveSecondsAtBeatSix, 9) }),
+            })
+        );
+        expect(commands).toContainEqual(
+            expect.objectContaining({
+                kind: 'write-parameter',
+                target: { kind: 'track-pan', trackId: 'ramped' },
+                write: expect.objectContaining({
+                    shape: 'step',
+                    value: 25,
+                    time: expect.closeTo(liveSecondsAtBeatSix, 9),
+                }),
+            })
+        );
     });
 
     it('renders an explicit alternate capture through native commands without changing the live project', async () => {

@@ -91,7 +91,6 @@ function clip(overrides: Partial<Clip> & Pick<Clip, 'id' | 'startBeat' | 'endBea
 
 const baseInput: Omit<LiveAutomationWritesInput, 'stripTracks' | 'lanes' | 'regionStartSeconds' | 'regionEndSeconds'> =
     {
-        defaultTempo: 120,
         changes: [],
         projectBeatToSeconds: (beat) => beat,
         sampleRate: 48_000,

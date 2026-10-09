@@ -23,7 +23,6 @@ import {
     type OfflineTempoAtBeatResolver,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
-import { beatToSeconds } from '../../services/beatConversion';
 
 import { captureOfflineMusicalProjections } from './captureOfflineMusicalProjections';
 import { type OfflineRenderProjectSource } from './OfflineRenderSource';
@@ -43,7 +42,7 @@ export type OfflineRenderContext = {
     projectMidiEvents: OfflineMidiEventProjector | null;
     selectMidiEventProbability: OfflineMidiProbabilitySelector | null;
     projectChordPitch: OfflineChordPitchProjector | null;
-    projectPpqEndpoints: OfflinePpqEndpointProjector | null;
+    projectPpqEndpoints: OfflinePpqEndpointProjector;
     /** Flat tempo at a beat — what a buffer-content offset converts through. */
     resolveTempoAtBeat: OfflineTempoAtBeatResolver | null;
     processYeastMidi: OfflineYeastMidiProcessor | null;
@@ -80,19 +79,22 @@ export function resolveRenderContext(
     const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
     const changes = tempoMap?.changes ?? [];
 
+    // The composition root injects Transport's tempo-map integrator, the one
+    // live playback walks (ramps included). A render context with no projector
+    // fails here, loudly, rather than measuring the region with a second
+    // integrator that would drift from live playback.
     const projectPpqEndpoints = offlinePpqEndpointProjectorState.project;
-    const projection = projectPpqEndpoints?.({
+    if (!projectPpqEndpoints) {
+        throw new Error('Offline musical projection is not configured');
+    }
+    const projection = projectPpqEndpoints({
         startPpq: normalized.startBeat,
         endPpq: normalized.startBeat + normalized.durationBeats,
         defaultTempo,
         sampleRate: normalized.sampleRate,
         changes,
     });
-    const legacyDuration =
-        beatToSeconds(normalized.startBeat + normalized.durationBeats, defaultTempo, changes) -
-        beatToSeconds(normalized.startBeat, defaultTempo, changes);
-    const durationSeconds =
-        Math.max(0, projection?.durationSeconds ?? legacyDuration) + Math.max(0, normalized.tailSeconds);
+    const durationSeconds = Math.max(0, projection.durationSeconds) + Math.max(0, normalized.tailSeconds);
 
     return {
         tracks,

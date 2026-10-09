@@ -13,7 +13,6 @@ const offlineRenderMocks = vi.hoisted(() => ({
     audioBufferCache: { get: vi.fn(() => undefined) },
     buildDeviceChain: vi.fn(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
-    beatToSeconds: vi.fn(() => 0),
     resolveDrumKit: vi.fn(() => null),
     scheduleTrackAutomation: vi.fn(),
     scheduleNoteOffline: vi.fn(),
@@ -80,10 +79,6 @@ vi.mock('../../stores/audioBufferCache', () => ({
 
 vi.mock('../buildDeviceChain', () => ({
     buildDeviceChain: offlineRenderMocks.buildDeviceChain,
-}));
-
-vi.mock('#/modules/AudioEngine/services/beatConversion', () => ({
-    beatToSeconds: offlineRenderMocks.beatToSeconds,
 }));
 
 vi.mock('#/modules/AudioEngine/services/deviceResolution', () => ({

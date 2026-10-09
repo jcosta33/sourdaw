@@ -29,7 +29,7 @@ function makeLane(overrides: Partial<AutomationLane>): AutomationLane {
     };
 }
 
-/** 120 bpm, no tempo changes → beatToSeconds(beat) === beat / 2. */
+/** 120 bpm, no tempo changes → the beat projection is beat / 2. */
 function schedule(lane: AutomationLane) {
     const gain = makeParam();
     const pan = makeParam();

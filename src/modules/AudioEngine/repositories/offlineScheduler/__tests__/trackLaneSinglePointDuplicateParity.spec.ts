@@ -18,7 +18,9 @@ import { compileAutomationSegments } from '../compileAutomationSegments';
 import { mergeAutomationEventStreams, type AutomationEventStream } from '../mergeAutomationEventStreams';
 import { mergeAutomationSegmentStreams, type AutomationSegmentStream } from '../mergeAutomationSegmentStreams';
 
-const DEFAULT_TEMPO = 120;
+import { constantTempoProjector } from './constantTempoProjector';
+
+const FLAT_TEMPO_PROJECTOR = constantTempoProjector(120);
 const DURATION_SECONDS = 20;
 const SAMPLE_RATE = 100;
 
@@ -34,14 +36,14 @@ describe('#4928 export control: a later single-point track lane contributes noth
     it('compiles the single-point track lane to a lone zero-length terminator', () => {
         // The compile shape the law names, wherever the point itself sits: the
         // seed holds its value at the region start and no segment follows.
-        expect(compileAutomationSegments(HELD_POINTS, DURATION_SECONDS, DEFAULT_TEMPO, [], SAMPLE_RATE)).toEqual([
-            { startFrame: 0, endFrame: 0, startValue: 0.9, endValue: 0.9 },
-        ]);
+        expect(
+            compileAutomationSegments(HELD_POINTS, DURATION_SECONDS, [], SAMPLE_RATE, 0, FLAT_TEMPO_PROJECTOR)
+        ).toEqual([{ startFrame: 0, endFrame: 0, startValue: 0.9, endValue: 0.9 }]);
     });
 
     it('segments family: the earlier ramp plays whole, in either lane order', () => {
-        const ramp = compileAutomationSegments(RAMP_POINTS, DURATION_SECONDS, DEFAULT_TEMPO, [], SAMPLE_RATE);
-        const held = compileAutomationSegments(HELD_POINTS, DURATION_SECONDS, DEFAULT_TEMPO, [], SAMPLE_RATE);
+        const ramp = compileAutomationSegments(RAMP_POINTS, DURATION_SECONDS, [], SAMPLE_RATE, 0, FLAT_TEMPO_PROJECTOR);
+        const held = compileAutomationSegments(HELD_POINTS, DURATION_SECONDS, [], SAMPLE_RATE, 0, FLAT_TEMPO_PROJECTOR);
         const stream = (laneId: string, segments: readonly OfflineAutomationSegment[]): AutomationSegmentStream => ({
             laneId,
             scope: 'track',
@@ -60,7 +62,7 @@ describe('#4928 export control: a later single-point track lane contributes noth
         const stream = (laneId: string, points: AutomationPoint[]): AutomationEventStream => ({
             laneId,
             scope: 'track',
-            events: compileAutomationEvents(points, DURATION_SECONDS, DEFAULT_TEMPO, []),
+            events: compileAutomationEvents(points, DURATION_SECONDS, [], 0, FLAT_TEMPO_PROJECTOR),
         });
 
         for (const streams of [

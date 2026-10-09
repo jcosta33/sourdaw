@@ -12,17 +12,15 @@ export function scheduleAutomationOnParam(
     param: AudioParam,
     points: AutomationPoint[],
     durationSeconds: number,
-    defaultTempo: number,
     changes: AutomationTempoChange[],
-    regionStartSeconds = 0,
-    projectBeatToSeconds?: (beat: number) => number,
+    regionStartSeconds: number,
+    projectBeatToSeconds: (beat: number) => number,
     compensationDelaySec = 0,
     options?: CompileAutomationEventsOptions
 ): void {
     const events = compileAutomationEvents(
         points,
         durationSeconds,
-        defaultTempo,
         changes,
         regionStartSeconds,
         projectBeatToSeconds,

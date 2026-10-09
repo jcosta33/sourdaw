@@ -7,7 +7,6 @@ import { AUTOMATION_SLEW_ALPHA } from '#/utils/automationSlew';
 import { createExportError } from '../../errors/ExportError';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { type OfflineCurveWriteTargets } from '../../models/OfflineCurveWriteTargets';
-import { beatToSeconds } from '../../services/beatConversion';
 import { clampRenderFrameCount } from '../clampRenderFrameCount';
 import { applyLimiterCeilingWrite } from '../devices/dynamics/applyLimiterCeilingWrite';
 import { type AudioDeviceStrategy, type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStrategy';
@@ -159,7 +158,6 @@ export type ScheduleTrackAutomationInput = {
     sendAutomationParams?: ReadonlyMap<string, AudioParam>;
     deviceEntries: ScheduleTrackAutomationDeviceEntry[];
     durationSeconds: number;
-    defaultTempo: number;
     changes: AutomationTempoChange[];
     /**
      * Seconds between live slew ticks — `scheduleGrainMs / 1000`, read off the
@@ -184,7 +182,13 @@ export type ScheduleTrackAutomationInput = {
      */
     scheduleFrame?: ScheduleCall;
     regionStartSeconds?: number;
-    projectBeatToSeconds?: (beat: number) => number;
+    /**
+     * The beat-to-seconds projection every lane's points ride. Required: the
+     * calling render use case hands over the one tempo-map integrator (ramps
+     * included), because this repository must not carry a tempo integrator of
+     * its own that could drift from live playback.
+     */
+    projectBeatToSeconds: (beat: number) => number;
     sampleRate?: number;
     compensationDelaySec?: number;
     clipBoundsById?: Map<string, { startBeat: number; endBeat: number }>;
@@ -297,7 +301,6 @@ export function scheduleTrackAutomation({
     sendAutomationParams,
     deviceEntries,
     durationSeconds,
-    defaultTempo,
     changes,
     slewTickSeconds,
     deviceParameterLaw,
@@ -311,7 +314,6 @@ export function scheduleTrackAutomation({
     resolveLaneCeiling,
     onWithheldDeviceLanes,
 }: ScheduleTrackAutomationInput): void {
-    const projectBeat = projectBeatToSeconds ?? ((beat) => beatToSeconds(beat, defaultTempo, changes));
     const laneById = new Map<string, AutomationLane>();
     for (const lane of lanes) {
         laneById.set(lane.id, lane);
@@ -372,8 +374,8 @@ export function scheduleTrackAutomation({
                 continue;
             }
             activeWindowSeconds = {
-                startSeconds: projectBeat(bounds.startBeat),
-                endSeconds: projectBeat(bounds.endBeat),
+                startSeconds: projectBeatToSeconds(bounds.startBeat),
+                endSeconds: projectBeatToSeconds(bounds.endBeat),
             };
         }
         // The scope window the merge resolves by (#4736): a compiled stream
@@ -466,7 +468,6 @@ export function scheduleTrackAutomation({
                 events: compileAutomationEvents(
                     points,
                     durationSeconds,
-                    defaultTempo,
                     changes,
                     regionStartSeconds,
                     projectBeatToSeconds,
@@ -511,7 +512,6 @@ export function scheduleTrackAutomation({
                 events: compileAutomationEvents(
                     points,
                     durationSeconds,
-                    defaultTempo,
                     changes,
                     regionStartSeconds,
                     projectBeatToSeconds,
@@ -539,7 +539,6 @@ export function scheduleTrackAutomation({
                 events: compileAutomationEvents(
                     points,
                     durationSeconds,
-                    defaultTempo,
                     changes,
                     regionStartSeconds,
                     projectBeatToSeconds,
@@ -621,7 +620,6 @@ export function scheduleTrackAutomation({
                 const segments = compileAutomationSegments(
                     points,
                     durationSeconds,
-                    defaultTempo,
                     changes,
                     sampleRate,
                     regionStartSeconds,
@@ -702,7 +700,6 @@ export function scheduleTrackAutomation({
                 const events = compileAutomationEvents(
                     points,
                     durationSeconds,
-                    defaultTempo,
                     changes,
                     regionStartSeconds,
                     projectBeatToSeconds,
@@ -783,7 +780,6 @@ export function scheduleTrackAutomation({
                     const events = compileAutomationEvents(
                         points,
                         durationSeconds,
-                        defaultTempo,
                         changes,
                         regionStartSeconds,
                         projectBeatToSeconds,
@@ -847,7 +843,6 @@ export function scheduleTrackAutomation({
                 const events = compileAutomationEvents(
                     points,
                     durationSeconds,
-                    defaultTempo,
                     changes,
                     regionStartSeconds,
                     projectBeatToSeconds,

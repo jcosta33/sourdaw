@@ -115,7 +115,6 @@ export type LiveAutomationWritesInput = Readonly<{
     /** The absolute-time window lane B's writer is about to schedule into. */
     regionStartSeconds: number;
     regionEndSeconds: number;
-    defaultTempo: number;
     changes: readonly { beat: number; tempo: number }[];
     projectBeatToSeconds: (beat: number) => number;
     sampleRate: number;
@@ -175,7 +174,6 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
         lanes,
         regionStartSeconds,
         regionEndSeconds,
-        defaultTempo,
         changes,
         projectBeatToSeconds,
         sampleRate,
@@ -237,7 +235,6 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
             lanes,
             regionStartSeconds,
             durationSeconds,
-            defaultTempo,
             changes,
             projectBeatToSeconds,
             sampleRate,

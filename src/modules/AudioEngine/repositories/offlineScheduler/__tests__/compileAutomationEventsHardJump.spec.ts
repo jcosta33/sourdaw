@@ -38,7 +38,7 @@ function valueAt(events: readonly CompiledAutomationEvent[], time: number): numb
 describe('compileAutomationEvents — ramp into a hard jump', () => {
     // Ramp 0 → 1 over beats 0–4, jump to 0.2 at beat 4, hold to beat 8.
     const lane = [point(0, 0), point(4, 1), point(4, 0.2), point(8, 0.2)];
-    const events = compileAutomationEvents(lane, 8, 120, [], 0, identityProjector);
+    const events = compileAutomationEvents(lane, 8, [], 0, identityProjector);
 
     it('plays the ramp approaching the jump', () => {
         expect(valueAt(events, 2)).toBeCloseTo(0.5, 6);
