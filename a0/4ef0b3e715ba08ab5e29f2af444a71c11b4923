@@ -1,0 +1,63 @@
+scripts/__tests__/recoverPublishReviewLockReceiptReplay.spec.ts
+  s_97ab82e0b4f10c::t_005560b04b39ce 158-159,162-166,254-257,260,274-275
+  s_97ab82e0b4f10c::t_5c8ac530e491d1 261-273,582-593
+  s_97ab82e0b4f10c::t_228090fb9e3466 6,330-333,361-363,392-405,440-446,474,493,495-502,504-509,515-522,572-581
+  s_97ab82e0b4f10c::t_2f880d2e3d354e 406-412,437-439
+  s_97ab82e0b4f10c::t_2c0b9c7b4c1d10 494
+  s_97ab82e0b4f10c::t_636b8042bd71d8 1-5,7-37,39-42,47-63,65-71,76,84,88-90,99,102,106,118,126-130,153-155,174-176,181-185,191-192,247-252,280-281,289-292,299-300,306-307,314-318,321-329,334-335,339-348,350,356-360,503,594-595
+  s_97ab82e0b4f10c::t_a5a563210c0479 64
+  s_97ab82e0b4f10c::t_dd32660d65e6ce 38,301-305
+  s_97ab82e0b4f10c::t_b922c08a66e960 157,170,523-533
+  s_97ab82e0b4f10c::t_5791092d44ae1e 43-46,72-75,77-83,85-87,91-94,100-101,103-105,107-117,119-125,131-152,156,171,177-180,226-232,234-246,253,258-259,276-279,293-298,336-338,351-355,475-492,510-514,541-543,555-565
+  s_97ab82e0b4f10c::t_be80449f148967 308-313,319-320,534-540,544-554,566-571
+  s_97ab82e0b4f10c::t_f1f9f15aabd327 95-98
+scripts/reviewPublicationReceiptAdoption.ts
+  s_97ab82e0b4f10c::t_fbcdebfbdafbcc 7-23,29-76,80-83,85-86,93-110,124,135-159,162-201
+  s_97ab82e0b4f10c::t_a0ff8c21e68ea0 1-6,24-28,77-79,84,87-92,111-123,125-134,160-161
+  s_97ab82e0b4f10c::t_095c7a4921806b 202-207
+scripts/reviewPublicationBinding.ts
+  s_97ab82e0b4f10c::t_7fbe4bc7d7e64f 561,564
+  s_97ab82e0b4f10c::t_5eee5d514061f6 527-535,567
+  s_97ab82e0b4f10c::t_7ed18196844669 568-574,603-611
+scripts/recoverPublishReviewLock.ts
+  s_97ab82e0b4f10c::t_573bb0f968365b 173,181,186
+  s_97ab82e0b4f10c::t_34c26ada98d500 554
+  s_97ab82e0b4f10c::t_5f644d218b893d 2,16
+  s_97ab82e0b4f10c::t_d1d76916a3f3fb 45-50,59,152,189-196,199-205,208,214-221
+  s_97ab82e0b4f10c::t_267594a6ee1387 209-213
+  s_2bfd55a4393d7c::t_36ff8c5e449806 44
+.agents/skills/review-stances/security-and-platform.md
+  s_97ab82e0b4f10c::t_09ab3a4d313b38 70-80
+scripts/trustedGithubWriteBootstrap.ts
+  s_97ab82e0b4f10c::t_d438dbb0d1fe6a 294
+.agents/skills/review-stances/test-validity.md
+  s_97ab82e0b4f10c::t_caa0054d4bb354 301-312
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_97ab82e0b4f10c::t_b3ccd5f349ea28 1091,1162,1370,1374
+scripts/reviewRiskPolicy.ts
+  s_97ab82e0b4f10c::t_4ad0201faed5e9 123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a04ef0b3e715ba08ab5e29f2af444a71c11b4923",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
