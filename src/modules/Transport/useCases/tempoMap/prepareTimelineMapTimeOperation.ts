@@ -8,6 +8,7 @@ import {
     type TimeSignatureChange,
     type TimeSignatureMapStoreState,
 } from '../../stores/timeSignatureMapStore';
+import { defaultTransportState, transportStore } from '../../stores/transportStore';
 
 import { timelineMapTimeStateCodec } from './timelineMapTimeStateCodec';
 
@@ -40,7 +41,7 @@ type CarryAcrossDeletionInput<TChange extends TimelineChange> = {
     endBeat: number;
 };
 
-type CarryAcrossDeletion<TChange extends TimelineChange> = (input: CarryAcrossDeletionInput<TChange>) => TChange | null;
+type CarryAcrossDeletion<TChange extends TimelineChange> = (input: CarryAcrossDeletionInput<TChange>) => TChange[];
 
 type PreparedChanges<TChange extends TimelineChange> =
     | { status: 'invalid' }
@@ -193,7 +194,30 @@ function insertAtBeatOrder<TChange extends TimelineChange>(changes: TChange[], i
 // so the tempo in force at the span's end must be in force from its start.
 // A ramp cut mid-way carries the value reached at the end and keeps its curve,
 // so the rest of the ramp keeps its slope.
-function carryTempoAcrossDeletion({ original, remaining, startBeat, endBeat }: CarryAcrossDeletionInput<TempoChange>) {
+function firstChange<TChange extends TimelineChange>(changes: readonly TChange[]): TChange | undefined {
+    let first: TChange | undefined;
+    for (const change of changes) {
+        if (!first || change.beat < first.beat) {
+            first = change;
+        }
+    }
+    return first;
+}
+
+// A value read at the start only holds where the map is steady there: a linear
+// change with a later change to ramp toward is still moving, so one matching
+// sample says nothing about the beats that follow.
+function isTempoSteadyAt(remaining: readonly TempoChange[], beat: number): boolean {
+    const governing = lastChangeAtOrBefore(remaining, beat);
+    return !governing || governing.curve === 'instant' || !remaining.some((change) => change.beat > beat);
+}
+
+function carryTempoToSpanStart({
+    original,
+    remaining,
+    startBeat,
+    endBeat,
+}: CarryAcrossDeletionInput<TempoChange>): TempoChange | null {
     if (hasChangeAtBeat(remaining, startBeat)) {
         return null;
     }
@@ -208,10 +232,45 @@ function carryTempoAcrossDeletion({ original, remaining, startBeat, endBeat }: C
     // survives as a ramp when the carried change keeps it, even where the value
     // happens to match: without it the remaining map reads flat up to the next change.
     const carriesRamp = rampStartsInsideSpan && rampContinuesPastEnd;
-    if (!carriesRamp && remaining.length > 0 && getTempoAtBeat(remaining, startBeat, tempoAtEnd) === tempoAtEnd) {
+    const holdsAtStart =
+        remaining.length > 0 &&
+        isTempoSteadyAt(remaining, startBeat) &&
+        getTempoAtBeat(remaining, startBeat, tempoAtEnd) === tempoAtEnd;
+    if (!carriesRamp && holdsAtStart) {
         return null;
     }
     return createTempoChange(startBeat, tempoAtEnd, governingAtEnd.curve);
+}
+
+// Before its first change a tempo map reads that change's tempo. When the span
+// removes the first change and nothing remains before the span, the beats ahead
+// of it would fall back to whatever now comes first, so the old first tempo is
+// kept at beat 0.
+function keepLeadInTempo(
+    { original, remaining, startBeat, endBeat }: CarryAcrossDeletionInput<TempoChange>,
+    carried: TempoChange | null
+): TempoChange | null {
+    const oldFirst = firstChange(original);
+    if (
+        startBeat <= 0 ||
+        !oldFirst ||
+        oldFirst.beat < startBeat ||
+        oldFirst.beat >= endBeat ||
+        remaining.some((change) => change.beat < startBeat)
+    ) {
+        return null;
+    }
+    const newFirst = firstChange(carried ? [...remaining, carried] : remaining);
+    if (newFirst?.tempo === oldFirst.tempo) {
+        return null;
+    }
+    return createTempoChange(0, oldFirst.tempo, 'instant');
+}
+
+function carryTempoAcrossDeletion(input: CarryAcrossDeletionInput<TempoChange>): TempoChange[] {
+    const carried = carryTempoToSpanStart(input);
+    const leadIn = keepLeadInTempo(input, carried);
+    return [leadIn, carried].filter((change) => change !== null);
 }
 
 function meterBarBeats(change: TimeSignatureChange): number {
@@ -227,48 +286,57 @@ function isMeterBarStart(change: TimeSignatureChange, beat: number): boolean {
 // keeps its bar positions only if the carried meter opens where an old downbeat
 // of the governing meter lands once the span is gone. Between the span start and
 // that beat the meter before the span continues, as a partial bar. Null when no
-// downbeat of the governing meter falls before the next change.
+// downbeat of the governing meter falls before the next change. A downbeat that
+// lands on the next change has no successor to use: the change that is already
+// there opens its own bar, and a later downbeat of this meter would sit past it.
 function findShiftedDownbeat(
     governing: TimeSignatureChange,
-    { original, remaining, startBeat, endBeat }: CarryAcrossDeletionInput<TimeSignatureChange>
+    { original, startBeat, endBeat }: CarryAcrossDeletionInput<TimeSignatureChange>
 ): number | null {
     const barBeats = meterBarBeats(governing);
     const nextChange = Math.min(
         Infinity,
         ...original.filter((change) => change.beat > endBeat).map(({ beat }) => beat)
     );
-    let downbeat = governing.beat + Math.ceil((endBeat - governing.beat - BEAT_EPSILON) / barBeats) * barBeats;
-    while (downbeat < nextChange - BEAT_EPSILON) {
-        const shifted = downbeat - (endBeat - startBeat);
-        if (shifted >= startBeat - BEAT_EPSILON && !hasChangeAtBeat(remaining, shifted)) {
-            return Math.max(shifted, startBeat);
-        }
-        downbeat += barBeats;
+    const downbeat = governing.beat + Math.ceil((endBeat - governing.beat - BEAT_EPSILON) / barBeats) * barBeats;
+    if (downbeat >= nextChange - BEAT_EPSILON) {
+        return null;
     }
-    return null;
+    return Math.max(downbeat - (endBeat - startBeat), startBeat);
 }
 
-function carryTimeSignatureAcrossDeletion(input: CarryAcrossDeletionInput<TimeSignatureChange>) {
+// With no explicit change at or before the span end the project's own meter
+// governs from beat 0, and it is carried like any other.
+function readImpliedTimeSignature(): TimeSignatureChange {
+    return {
+        id: 'implied-time-signature',
+        beat: 0,
+        numerator: transportStore.value?.timeSignatureNumerator ?? defaultTransportState.timeSignatureNumerator,
+        denominator: transportStore.value?.timeSignatureDenominator ?? defaultTransportState.timeSignatureDenominator,
+    };
+}
+
+function carryTimeSignatureAcrossDeletion(input: CarryAcrossDeletionInput<TimeSignatureChange>): TimeSignatureChange[] {
     const { original, remaining, startBeat, endBeat } = input;
     if (hasChangeAtBeat(remaining, startBeat)) {
-        return null;
+        return [];
     }
-    const governingAtEnd = lastChangeAtOrBefore(original, endBeat);
-    if (!governingAtEnd) {
-        return null;
-    }
+    const explicitAtEnd = lastChangeAtOrBefore(original, endBeat);
+    const implied = readImpliedTimeSignature();
+    const impliedAtStart = explicitAtEnd ? undefined : implied;
+    const governingAtEnd = explicitAtEnd ?? implied;
     const shiftedDownbeat = findShiftedDownbeat(governingAtEnd, input);
     const carriedBeat = shiftedDownbeat ?? startBeat;
-    const governingAtCarriedBeat = lastChangeAtOrBefore(remaining, carriedBeat);
+    const governingAtCarriedBeat = lastChangeAtOrBefore(remaining, carriedBeat) ?? impliedAtStart;
     if (
         governingAtCarriedBeat &&
         governingAtCarriedBeat.numerator === governingAtEnd.numerator &&
         governingAtCarriedBeat.denominator === governingAtEnd.denominator &&
         (shiftedDownbeat === null || isMeterBarStart(governingAtCarriedBeat, carriedBeat))
     ) {
-        return null;
+        return [];
     }
-    return createTimeSignatureChange(carriedBeat, governingAtEnd.numerator, governingAtEnd.denominator);
+    return [createTimeSignatureChange(carriedBeat, governingAtEnd.numerator, governingAtEnd.denominator)];
 }
 
 function prepareDeletedChanges<TChange extends TimelineChange>(
@@ -309,14 +377,14 @@ function prepareDeletedChanges<TChange extends TimelineChange>(
         startBeat: operation.startBeat,
         endBeat: operation.endBeat,
     });
-    if (!carried) {
+    if (carried.length === 0) {
         return { status: 'valid', hasChanges, changes: remainingChanges };
     }
 
     return {
         status: 'valid',
         hasChanges: true,
-        changes: insertAtBeatOrder(remainingChanges, carried),
+        changes: carried.reduce((ordered, change) => insertAtBeatOrder(ordered, change), remainingChanges),
     };
 }
 

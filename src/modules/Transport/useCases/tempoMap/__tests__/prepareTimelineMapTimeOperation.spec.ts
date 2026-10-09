@@ -439,6 +439,101 @@ describe('prepareTimelineMapTimeOperation', () => {
             ]);
         });
 
+        it('carries the held tempo when the remaining map is still ramping at the span start', () => {
+            setStoreStates(
+                tempoState([
+                    { id: 'a', beat: 0, tempo: 100, curve: 'linear' },
+                    tempoChange('b', 5, 150),
+                    tempoChange('c', 10, 200),
+                ]),
+                timeSignatureState([])
+            );
+
+            deleteTime(4, 6);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
+                [0, 100, 'linear'],
+                [4, 150, 'instant'],
+                [8, 200, 'instant'],
+            ]);
+            expect([4, 5, 6, 7].map((beat) => getTempoAtBeat(after, beat, 120))).toEqual([150, 150, 150, 150]);
+        });
+
+        it('keeps the lead-in tempo when the span removes the first change', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 4, 100), tempoChange('b', 5, 80), tempoChange('c', 12, 140)]),
+                timeSignatureState([])
+            );
+
+            deleteTime(2, 6);
+
+            expect(tempoEvents()).toEqual([
+                [0, 100],
+                [2, 80],
+                [8, 140],
+            ]);
+        });
+
+        it('keeps the lead-in tempo when the change at the span end becomes the first change', () => {
+            setStoreStates(tempoState([tempoChange('a', 4, 100), tempoChange('b', 6, 80)]), timeSignatureState([]));
+
+            deleteTime(2, 6);
+
+            expect(tempoEvents()).toEqual([
+                [0, 100],
+                [2, 80],
+            ]);
+        });
+
+        it('carries the implied meter of an empty map, so later bars keep their downbeats', () => {
+            setStoreStates(tempoState([]), timeSignatureState([]));
+
+            deleteTime(1, 2);
+
+            expect(meterEvents()).toEqual([[3, 4]]);
+            const after = timeSignatureMapStore.value?.changes ?? [];
+            expect(positionInBar(after, 3)).toEqual(positionInBar([], 4));
+            expect(positionInBar(after, 7)).toEqual(positionInBar([], 8));
+        });
+
+        it('carries the implied meter in force before the first explicit change', () => {
+            const capturedMeters = [timeSignatureChange('a', 10, 3)];
+            setStoreStates(tempoState([]), timeSignatureState(capturedMeters));
+
+            deleteTime(1, 2);
+
+            expect(meterEvents()).toEqual([
+                [3, 4],
+                [9, 3],
+            ]);
+            const after = timeSignatureMapStore.value?.changes ?? [];
+            expect(positionInBar(after, 3)).toEqual(positionInBar(capturedMeters, 4));
+        });
+
+        it('carries no implied meter when the cut removes whole bars', () => {
+            setStoreStates(tempoState([]), timeSignatureState([]));
+
+            const transaction = expectClosedWithoutWrite({ type: 'delete', startBeat: 1, endBeat: 5 });
+
+            expect(transaction.status).toBe('ready');
+        });
+
+        it('falls back to the span start when the first old downbeat lands on the next change', () => {
+            setStoreStates(
+                tempoState([]),
+                timeSignatureState([timeSignatureChange('a', 0, 4), timeSignatureChange('b', 12, 3)])
+            );
+
+            deleteTime(9, 10);
+
+            // A later downbeat of 4/4 would sit past the 3/4 change that already opens its own bar.
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [11, 3],
+            ]);
+        });
+
         it('restores the exact previous maps on undo and re-creates the carried maps on redo', () => {
             const capturedTempo = tempoState([tempoChange('a', 0, 120), tempoChange('b', 10, 60)]);
             const capturedTimeSignature = timeSignatureState([
@@ -569,7 +664,8 @@ describe('prepareTimelineMapTimeOperation', () => {
         },
         {
             name: 'delete',
-            operation: { type: 'delete' as const, startBeat: 0, endBeat: 1 },
+            // Four beats is one bar of the implied 4/4, so the cut keeps every bar phase and carries no meter.
+            operation: { type: 'delete' as const, startBeat: 0, endBeat: 4 },
         },
     ])('reports no change when finite $name arithmetic rounds to the original beats', ({ operation }) => {
         const tempo = tempoChange('tempo', Number.MAX_VALUE);
