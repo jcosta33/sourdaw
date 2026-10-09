@@ -11,6 +11,27 @@ describe('parseAnswerRespond', () => {
         });
     });
 
+    it('accepts text of exactly the maximum length', () => {
+        const text = 'x'.repeat(ANSWER_RESPOND_MAX_TEXT_LENGTH);
+
+        expect(parseAnswerRespond({ text, evidenceCallIds: [] })).toEqual({
+            status: 'accepted',
+            answer: { text, evidenceCallIds: [] },
+        });
+    });
+
+    it('accepts exactly the maximum number of distinct call ids', () => {
+        const evidenceCallIds = Array.from(
+            { length: ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS },
+            (_, index) => `call-${String(index)}`
+        );
+
+        expect(parseAnswerRespond({ text: 'Loud.', evidenceCallIds })).toEqual({
+            status: 'accepted',
+            answer: { text: 'Loud.', evidenceCallIds },
+        });
+    });
+
     it.each([
         ['an argument outside the contract', { text: 'Loud.', evidenceCallIds: [], commands: [] }],
         ['missing text', { evidenceCallIds: [] }],

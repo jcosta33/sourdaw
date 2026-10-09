@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
 import { type ApplicationToolReceipt } from '../../../models/ApplicationOwnedTool';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
-import { chatStore, clearChatMessages } from '../../../stores/chatStore';
+import { chatStore, clearChatMessages, stopGenerating } from '../../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     pendingActionConfirmationStore,
 } from '../../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
+import { agentRunCancellation } from '../../cancelAgentRun';
 import { orchestratePromptChatRequest } from '../orchestratePromptChatRequest';
 
 const mocks = vi.hoisted(() => ({
@@ -103,6 +104,54 @@ function planAnswer(): void {
             },
         },
         projectRevision: 'revision-1',
+    });
+}
+
+const DECISION_RESUME = {
+    sourceRunId: 'source-run',
+    decisionId: 'decision-1',
+    selectedAlternativeId: 'drum-bus',
+    selectedAlternative: { id: 'drum-bus', label: 'The drum bus', changesAuthority: false },
+    proposalIdentity: 'proposal-1',
+    capabilitySchemaIdentity: 'catalog-v1',
+    revision: 'revision-1',
+    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+    grants: {
+        allowedOperationPrefixes: [],
+        create: false,
+        delete: false,
+        routing: false,
+        tempo: false,
+        master: false,
+        file: false,
+        audioUpload: false,
+        remoteGeneration: false,
+        autoCommit: false,
+    },
+    budgets: { limits: {}, consumed: {} },
+};
+
+const CANCELLED_BEFORE_PLANNING_COMPLETED = 'User cancelled the run before planning completed.';
+
+/**
+ * The user stops the request while the planner is answering. The run's own abort binding is held
+ * inert here so the answer path's own cancel check is the only thing that can settle the run.
+ */
+function planAnswerThenStop(): void {
+    vi.spyOn(agentRunCancellation, 'bindAbortController').mockReturnValue(() => undefined);
+    mocks.planPromptActions.mockImplementation(async () => {
+        stopGenerating();
+        return {
+            context: { tracks: [] },
+            result: {
+                actions: [],
+                rawText: PROMPT,
+                requiresConfirmation: false,
+                applicationToolReceipts: RECEIPTS,
+                planningOutcome: { kind: 'answer', text: ANSWER_TEXT, evidence: [] },
+            },
+            projectRevision: 'revision-1',
+        };
     });
 }
 
@@ -210,32 +259,7 @@ describe('answer outcome in the agent chat', () => {
             requestedRoute: 'auto',
             backend: 'webllm',
             interactionMode: 'apply',
-            options: {
-                resume: {
-                    sourceRunId: 'source-run',
-                    decisionId: 'decision-1',
-                    selectedAlternativeId: 'drum-bus',
-                    selectedAlternative: { id: 'drum-bus', label: 'The drum bus', changesAuthority: false },
-                    proposalIdentity: 'proposal-1',
-                    capabilitySchemaIdentity: 'catalog-v1',
-                    revision: 'revision-1',
-                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
-                    grants: {
-                        allowedOperationPrefixes: [],
-                        create: false,
-                        delete: false,
-                        routing: false,
-                        tempo: false,
-                        master: false,
-                        file: false,
-                        audioUpload: false,
-                        remoteGeneration: false,
-                        autoCommit: false,
-                    },
-                    budgets: { limits: {}, consumed: {} },
-                },
-                onResumedPlanAccepted,
-            },
+            options: { resume: DECISION_RESUME, onResumedPlanAccepted },
         });
 
         expect(onResumedPlanAccepted).toHaveBeenCalledTimes(1);
@@ -245,6 +269,42 @@ describe('answer outcome in the agent chat', () => {
             { role: 'assistant', content: ANSWER_TEXT, error: undefined },
         ]);
         expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('completed');
+    });
+
+    it('cancels an answered run the user stopped during planning, without completing it or showing the answer', async () => {
+        planAnswerThenStop();
+        const cancel = vi.spyOn(agentRunCancellation, 'cancel');
+
+        await submitInChat();
+
+        expect(cancel).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            reason: CANCELLED_BEFORE_PLANNING_COMPLETED,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('cancelled');
+        const messages = chatStore.value?.messages ?? [];
+        expect(messages.some((message) => message.role === 'assistant' && message.content === ANSWER_TEXT)).toBe(false);
+    });
+
+    it('never settles the decision of a resume the user stopped while it was answering', async () => {
+        planAnswerThenStop();
+        const cancel = vi.spyOn(agentRunCancellation, 'cancel');
+        const onResumedPlanAccepted = vi.fn();
+
+        await orchestratePromptChatRequest({
+            userText: PROMPT,
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: { resume: DECISION_RESUME, onResumedPlanAccepted },
+        });
+
+        expect(onResumedPlanAccepted).not.toHaveBeenCalled();
+        expect(cancel).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            reason: CANCELLED_BEFORE_PLANNING_COMPLETED,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('cancelled');
     });
 
     it('still reports a decline as an error, so only an answer is exempt', async () => {
