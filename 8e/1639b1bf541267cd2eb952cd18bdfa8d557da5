@@ -1,0 +1,23 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_2bfd55a4393d7c::t_45f140b5d3504a 19,96-98,2493,3414,4024
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_2bfd55a4393d7c::t_fdeaa4e0f7cbdf 65-67
+scripts/__tests__/recoverPublishReviewLockReceiptReplay.spec.ts
+  s_2bfd55a4393d7c::t_a0a729caf7c829 33-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8e1639b1bf541267cd2eb952cd18bdfa8d557da5",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
