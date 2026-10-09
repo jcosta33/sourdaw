@@ -11315,7 +11315,22 @@ describe('opaque bearer source and caller admission', () => {
         { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
         { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
     ];
+    function explicitHeaderForms(value: string) {
+        const scheme = ['Bearer', value].join(' ');
+        return [
+            { shape: 'assignment', text: `headers.Authorization = '${scheme}';` },
+            { shape: 'setter', text: `headers.set('Authorization', '${scheme}');` },
+            { shape: 'append', text: `headers.append("Authorization", "${scheme}");` },
+            { shape: 'tuple', text: JSON.stringify(['Authorization', scheme]) },
+            { shape: 'escaped-tuple', text: JSON.stringify(JSON.stringify(['Authorization', scheme])) },
+            { shape: 'escaped-setter', text: JSON.stringify(`headers.set("Authorization", "${scheme}");`) },
+            { shape: 'template-assignment', text: `headers.Authorization = \`${scheme}\`;` },
+        ];
+    }
     const unsafeSources = [
+        ...headerValues.flatMap(({ shape, value }) =>
+            explicitHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+        ),
         { shape: 'header', text: unsafe },
         { shape: 'hyphenated-prose', text: unsafeProse },
         ...headerValues.map(({ shape, value }) => ({
@@ -11326,6 +11341,7 @@ describe('opaque bearer source and caller admission', () => {
 
     it('opaque bearer source and JSON values reject all candidates without echoing material', () => {
         const values = [
+            ...unsafeSources.map(({ text }) => text),
             ...headerValues.flatMap(({ value }) => {
                 const scheme = ['Bearer', value].join(' ');
                 return [
@@ -11369,6 +11385,13 @@ describe('opaque bearer source and caller admission', () => {
 
     it('opaque bearer controls remain eligible in decoded and serialized forms', () => {
         for (const value of [
+            ...explicitHeaderForms('<token>').map(({ text }) => text),
+            ...explicitHeaderForms('${runtimeCredentialReference}').map(({ text }) => text),
+            ...explicitHeaderForms('').map(({ text }) => text),
+            ...headerValues.filter(({ value }) => value.length < 16).map(({ value }) => ['Bearer', value].join(' ')),
+            'A reviewer discusses authorization, Bearer Q and ordinary prose.',
+            JSON.stringify(['X-Note', ['Bearer', String.fromCharCode(81)].join(' ')]),
+            JSON.stringify(['Authorization', 'ordinary', ['Bearer', String.fromCharCode(81)].join(' ')]),
             'Bearer',
             'Bearer <token>',
             'Bearer ${apiKey}',
@@ -11512,6 +11535,9 @@ describe('opaque bearer source and caller admission', () => {
         'allegedObservedBehavior',
     ] as const;
     const findingLiterals = [
+        ...headerValues.flatMap(({ shape, value }) =>
+            explicitHeaderForms(value).map((form) => ({ shape: `${form.shape}-${shape}`, value: form.text }))
+        ),
         ...headerValues.map(({ shape, value }) => ({
             shape: `explicit-header-${shape}`,
             value: ['Authorization:', 'Bearer', value].join(' '),

@@ -459,7 +459,22 @@ describe('opaque bearer complete request admission', () => {
         { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
         { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
     ];
+    function explicitHeaderForms(value: string) {
+        const scheme = ['Bearer', value].join(' ');
+        return [
+            { shape: 'assignment', value: `headers.Authorization = '${scheme}';` },
+            { shape: 'setter', value: `headers.set('Authorization', '${scheme}');` },
+            { shape: 'append', value: `headers.append("Authorization", "${scheme}");` },
+            { shape: 'tuple', value: JSON.stringify(['Authorization', scheme]) },
+            { shape: 'escaped-tuple', value: JSON.stringify(JSON.stringify(['Authorization', scheme])) },
+            { shape: 'escaped-setter', value: JSON.stringify(`headers.set("Authorization", "${scheme}");`) },
+            { shape: 'template-assignment', value: `headers.Authorization = \`${scheme}\`;` },
+        ];
+    }
     const literals = [
+        ...headerValues.flatMap(({ shape, value }) =>
+            explicitHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+        ),
         ...headerValues.flatMap(({ shape, value }) => [
             { shape: `explicit-header-${shape}`, value: ['Authorization:', 'Bearer', value].join(' ') },
             { shape: `quoted-header-${shape}`, value: JSON.stringify({ Authorization: ['Bearer', value].join(' ') }) },
@@ -514,32 +529,38 @@ describe('opaque bearer complete request admission', () => {
         };
     }
 
-    it.each(headerValues)('opaque bearer object header $shape requires the serialized screen', ({ value }) => {
-        const state = { Authorization: ['Bearer', value].join(' ') };
-        expect(sensitiveContentReason('Authorization')).toBeUndefined();
-        if (value.length < 16) {
-            // Neither leaf carries header context; the final envelope must pair the key and value.
-            expect(sensitiveContentReason(state.Authorization)).toBeUndefined();
+    const headerStructures = headerValues.flatMap(({ shape, value }) => [
+        { shape: `object-${shape}`, value, state: { Authorization: ['Bearer', value].join(' ') } },
+        { shape: `tuple-${shape}`, value, state: [['Authorization', ['Bearer', value].join(' ')]] },
+    ]);
+    it.each(headerStructures)(
+        'opaque bearer paired header $shape requires the serialized screen',
+        ({ value, state }) => {
+            expect(sensitiveContentReason('Authorization')).toBeUndefined();
+            if (value.length < 16) {
+                // Neither leaf carries header context; the final envelope must pair the key and value.
+                expect(sensitiveContentReason(['Bearer', value].join(' '))).toBeUndefined();
+            }
+            expect(sensitiveContentReason(JSON.stringify(state))).toBeDefined();
+            expect(sensitiveContentReason(JSON.stringify({ source: JSON.stringify(state) }))).toBeDefined();
+            expect(() => prepare(body(state))).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
         }
-        expect(sensitiveContentReason(JSON.stringify(state))).toBeDefined();
-        expect(sensitiveContentReason(JSON.stringify({ source: JSON.stringify(state) }))).toBeDefined();
-        expect(() => prepare(body(state))).toThrow(expect.objectContaining({ code: 'sensitive_content_excluded' }));
-    });
+    );
 
     it.each([
         ...positions.flatMap((position) => literals.map((literal) => ({ position, ...literal, objectHeader: false }))),
-        ...headerValues.map(({ shape, value }) => ({
+        ...headerStructures.map(({ shape, value, state }) => ({
             position: 'state' as const,
-            shape: `object-header-${shape}`,
+            shape: `paired-header-${shape}`,
             value,
-            objectHeader: true,
+            objectHeader: state,
         })),
     ])(
         'opaque bearer $shape $position rejects before a would-hit cache and SDK delegate',
         async ({ position, value, objectHeader }) => {
             const request = payload(position, value);
             if (objectHeader) {
-                request.state = { Authorization: ['Bearer', value].join(' ') };
+                request.state = objectHeader;
             }
             const validCachedResponse = {
                 model: request.model,
@@ -601,6 +622,16 @@ describe('opaque bearer complete request admission', () => {
             { position, control: 'short-prose', value: 'A reviewer mentions Bearer schemes in this note.' },
             { position, control: 'header-placeholder', value: 'Authorization: Bearer <token>' },
             { position, control: 'header-reference', value: 'Authorization: Bearer ${runtimeCredentialReference}' },
+            ...explicitHeaderForms('<token>').map((form) => ({
+                position,
+                control: `${form.shape}-placeholder`,
+                value: form.value,
+            })),
+            ...explicitHeaderForms('${runtimeCredentialReference}').map((form) => ({
+                position,
+                control: `${form.shape}-reference`,
+                value: form.value,
+            })),
             {
                 position,
                 control: 'prose',

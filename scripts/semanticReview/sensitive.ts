@@ -306,10 +306,11 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
 /** Literal scheme values do not inherit assignment-expression exemptions. */
 function hasOpaqueBearerValue(text: string): boolean {
     // Match every candidate with a fresh iterator: a benign first example cannot hide later material.
-    // Explicit headers follow RFC 6750's one-character minimum, including quoted/JSON-escaped key/value pairs.
+    // Explicit headers bind colon/assignment values or quoted comma pairs (setters and tuples),
+    // including their JSON-escaped source strings, at RFC 6750's one-character minimum.
     // Unqualified scheme text retains the generic assignment screen's 16-character opaque-value floor.
     for (const match of text.matchAll(
-        /\bauthorization(?:\\*["'])?\s*:\s*(?:\\*["'])?bearer[ \t]+([A-Za-z0-9+/_~.-]+=*)|\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})/giu
+        /\bauthorization(?:(?:\\*["'\x60])?\s*[:=]\s*(?:\\*["'\x60])?|\\*["'\x60]\s*,\s*\\*["'\x60])bearer[ \t]+([A-Za-z0-9+/_~.-]+=*)|\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})/giu
     )) {
         const value = match[1] ?? match[2]!;
         if (PLACEHOLDER_VALUE.test(value) || /^[A-Z][A-Z0-9_]*_PLACEHOLDER$/u.test(value)) {

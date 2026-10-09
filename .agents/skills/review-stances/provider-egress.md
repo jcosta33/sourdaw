@@ -121,3 +121,18 @@ individual key nor short value triggers the screen: the final serialized envelop
 pairing. Keep these assertions load-bearing by reverting only the explicit-header handling.
 Unqualified short scheme text retains the opaque-value floor; this bounded screen does not claim
 universal credential detection. Header context cannot take the descriptor prose exemption.
+
+PR #5156's review of unlanded head `3f9217af2afaf8c9d55e096ad620ce71a9cc8f81`
+found the explicit-header branch recognized only colon syntax. A short literal in
+`headers.set`/`headers.append`, a source assignment, or a two-element header tuple escaped
+the RFC minimum and reached the generic sixteen-character floor. This is an escape in
+the current PR's explicit-context probe, not an established introducing change on `main`.
+Probe these literal bindings, including quoted keys, literal backtick values, JSON-escaped
+source strings, and actual tuple arrays whose short leaves individually pass. Require the
+complete serialized envelope to reject before a would-hit cache, reservation, SDK or
+offline fetch; exercise both stance fields and scan/verify callers too. Revert only this
+syntax-binding hunk on a committed head and require those same tests to fail. Pair it
+with placeholders, interpolation, concatenation, empty values, unrelated header names,
+unpaired prose and unqualified short Bearer controls. This lexical screen recognizes the
+bounded colon, equals and quoted comma forms; it does not evaluate runtime expressions
+or claim arbitrary encoded credential detection.

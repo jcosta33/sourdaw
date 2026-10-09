@@ -577,16 +577,28 @@ describe('opaque bearer stance admission', () => {
     const opaque = ['A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0'].join('');
     const header = ['Authorization:', 'Bearer', opaque].join(' ');
     const fields = ['stance', 'admittedBy'] as const;
+    function explicitHeaderForms(value: string) {
+        const scheme = ['Bearer', value].join(' ');
+        return [
+            { shape: 'assignment', value: `headers.Authorization = '${scheme}';` },
+            { shape: 'setter', value: `headers.set('Authorization', '${scheme}');` },
+            { shape: 'append', value: `headers.append("Authorization", "${scheme}");` },
+            { shape: 'tuple', value: JSON.stringify(['Authorization', scheme]) },
+            { shape: 'escaped-tuple', value: JSON.stringify(JSON.stringify(['Authorization', scheme])) },
+            { shape: 'escaped-setter', value: JSON.stringify(`headers.set("Authorization", "${scheme}");`) },
+            { shape: 'template-assignment', value: `headers.Authorization = \`${scheme}\`;` },
+        ];
+    }
     const literals = [
         ...[
             { shape: 'one-character', value: String.fromCharCode(81) },
             { shape: 'fifteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7i'].join('') },
             { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
             { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
-        ].map(({ shape, value }) => ({
-            shape: `explicit-header-${shape}`,
-            value: ['Authorization:', 'Bearer', value].join(' '),
-        })),
+        ].flatMap(({ shape, value }) => [
+            { shape: `explicit-header-${shape}`, value: ['Authorization:', 'Bearer', value].join(' ') },
+            ...explicitHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` })),
+        ]),
         {
             shape: 'quoted-header',
             value: JSON.stringify({ Authorization: ['Bearer', String.fromCharCode(81)].join(' ') }),
@@ -661,4 +673,25 @@ describe('opaque bearer stance admission', () => {
         expect(result.stderr).toContain(`stances[0].${field} contains`);
         expect(result.stderr).not.toContain(opaque);
     });
+
+    it.each(fields.flatMap((field) => explicitHeaderForms('<token>').map((form) => ({ field, ...form }))))(
+        'opaque bearer $shape $field placeholder reaches one installed SDK delegate unchanged',
+        async ({ field, value }) => {
+            const admission = { ...GENUINE_ADMISSIONS[0]!, [field]: value };
+            const record = readStancesCheckRecord({ stances: [admission] }, STANCES_PATH);
+            const body = buildStancesCheckBody(record);
+            const expected = JSON.stringify(body);
+            const fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+                expect(init?.body).toBe(expected);
+                return new Response(JSON.stringify({ model: TYPESAFE_STANCES_MODEL, answers: {} }));
+            });
+            await expect(
+                requestStancesVerdicts(body, 'unused-offline-key', {
+                    signal: new AbortController().signal,
+                    fetch,
+                })
+            ).resolves.toMatchObject({ model: TYPESAFE_STANCES_MODEL });
+            expect(fetch).toHaveBeenCalledTimes(1);
+        }
+    );
 });
