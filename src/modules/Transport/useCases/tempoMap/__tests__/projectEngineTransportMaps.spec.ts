@@ -282,6 +282,25 @@ describe('projectEngineTransportMaps', () => {
         expect(tempo[1]?.beatsPerMinute).toBeCloseTo(200, 9);
     });
 
+    it('opens one meter segment where two meter changes sit a float step apart, stating the last', () => {
+        timeSignatureMapStore.set({
+            changes: [
+                { id: 'ts-0', beat: 0, numerator: 4, denominator: 4 },
+                { id: 'ts-first', beat: 1 / 3, numerator: 3, denominator: 4 },
+                { id: 'ts-last', beat: 1 / 3 + 2e-16, numerator: 7, denominator: 8 },
+            ],
+        });
+
+        const { timeSignature } = projectEngineTransportMaps();
+
+        const startFrames = timeSignature.map((segment) => Math.round(segment.startSeconds * 48_000));
+        expect(startFrames.every((frame, index) => index === 0 || frame > startFrames[index - 1]!)).toBe(true);
+        expect(timeSignature.map(({ numerator, denominator }) => [numerator, denominator])).toEqual([
+            [4, 4],
+            [7, 8],
+        ]);
+    });
+
     it('integrates the meter map through the same tempo map as the tempo map itself', () => {
         tempoMapStore.set({ changes: [tempoChange(0, 120), tempoChange(4, 60)] });
         timeSignatureMapStore.set({
