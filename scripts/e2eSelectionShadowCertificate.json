@@ -10,7 +10,7 @@
         "tests/e2e/tuner.spec.ts": "e52deb4d68aadc8ddfb3590476a1d86d3afe52dcd2a3b34afe794ed075858492",
         "tests/e2e/tunerReferenceHomeEnd.spec.ts": "e7ddc64e243b59f75e36e2d8a7f41514dfb6978b73f9b98c457ebf32e3887dfd",
         "playwright.config.ts": "c6de0d96f57fa3d0511d9fd3b63fb21cd559b48c1328b15ae20d984fa1eb4955",
-        "scripts/prValidationScope.ts": "1af1d56e7b735141cd96d815e56db3761a0e65e4119e0860e6c03ee0be94419e",
+        "scripts/prValidationScope.ts": "9953a4232d70d8535c4089cff1fc75e71b4c0f3db2447d2edac8332fcf08c42f",
         "scripts/vitestCollectionPatterns.ts": "6eb69eba3b7a87ffc972f1bc75d0032cdd64310d34993ec0bdf1103b7053abb3",
         ".github/workflows/heavy-gates.yml": "2583adc8eb7bd81f044fa75571cd9650f88a06d57debe4bce9e27c55c5c0df21",
         ".github/workflows/validation.yml": "ea4b160fa4bf6ceb55c88a7f40956923fb34b8ca624d294d25058474d01c8bb2",
