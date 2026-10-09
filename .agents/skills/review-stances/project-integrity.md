@@ -183,6 +183,16 @@ entry before any write; raw document, owner projections, and complete history mu
 Keep the valid two-lane remove/save/hydrate/Undo/Redo control. A nested-shape-only stance cannot
 detect a duplicate identity among individually valid siblings.
 
+The #5064 removal validator at `06ed9f7c42` also admitted individually valid satellite and
+automation rows owned by a different clip. From a genuine saved removal of clip-a, change only the
+satellite's `clipId` and nested envelope `clipId` to clip-b, then separately redirect just one
+captured automation lane's `clipId`. Shape and duplicate-ID checks cannot detect either relationship
+failure. Require fresh production hydration to drop each entry, and real Undo to leave raw CRDT,
+every exercised owner projection, and the complete public history unchanged. Keep a genuine saved
+gain/warp/multiple-lane control with distinct clip-b owners through repeated Undo/Redo. Bind owners
+to the removed clip without rejecting empty captures or imposing track relationships the producer
+does not guarantee.
+
 The #5064 move capture also needs Automation's point contract at saved-history admission. It records
 partial lane snapshots with only id, trackId, and points, so a full-lane validator is the wrong shape.
 Move a clip with two rich automation lanes through real save and hydration, then corrupt the same

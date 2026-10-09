@@ -188,15 +188,20 @@ function isRippleDeleteShift(value: unknown, removedClipId: string): boolean {
 }
 
 function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: string): boolean {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const satellites = clipSatelliteStateCodec.decodeEntries(value.clipSatellites);
     return (
-        isRecord(value) &&
         Array.isArray(value.removedClips) &&
         value.removedClips.length === 1 &&
         valuesEqual(value.removedClips[0], clipSnapshot) &&
         Array.isArray(value.shiftedClips) &&
         value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId)) &&
-        clipSatelliteStateCodec.decodeEntries(value.clipSatellites) !== null &&
-        isExactAutomationLaneSnapshots(value.clipAutomationLanes)
+        satellites !== null &&
+        satellites.every((entry) => entry.clipId === clipId) &&
+        isExactAutomationLaneSnapshots(value.clipAutomationLanes) &&
+        value.clipAutomationLanes.every((lane) => lane.clipId === clipId)
     );
 }
 

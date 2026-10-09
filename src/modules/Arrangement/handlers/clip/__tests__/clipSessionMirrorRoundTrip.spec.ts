@@ -198,6 +198,80 @@ function hydrateProductionContracts(): void {
     ]);
 }
 
+function ownerProjections() {
+    return structuredClone({
+        tracks: trackStore.value,
+        gain: gainEnvelopeStore.value,
+        warp: warpStateStore.value,
+        automation: automationStore.value,
+        midi: midiStore.value,
+        takes: takeLaneStore.value,
+    });
+}
+
+async function persistRemovalWithDistinctOwners() {
+    workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+    for (const [clipId, gainDb, warpedBeat] of [
+        ['clip-a', -6, 0.5],
+        ['clip-b', -18, 1.75],
+    ] as const) {
+        setEnvelope(clipId, {
+            clipId,
+            enabled: true,
+            points: [{ id: `gain-${clipId}`, beatOffset: 0, gainDb }],
+        });
+        setWarpState(clipId, {
+            enabled: true,
+            markers: [{ id: `warp-${clipId}`, originalBeat: 0, warpedBeat }],
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+    }
+    const lanes = [
+        automationLane('removed-lane-a', 'clip-a'),
+        automationLane('removed-lane-b', 'clip-a'),
+        automationLane('retained-lane', 'clip-b'),
+    ];
+    lanes[1]!.points[0]!.value = 0.75;
+    lanes[2]!.points[0]!.value = 0.9;
+    automationStore.set({ lanes });
+    flushAutomergeStorageWrites();
+    stopProjectionBridge = setupProjectionBridge();
+    projectCrdtToStores();
+    const original = ownerProjections();
+
+    await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+    await vi.waitFor(() =>
+        expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+    );
+    const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+    if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) {
+        throw new Error('Expected real persisted removeClip entry');
+    }
+    const inverse = saved.past[0].inverseAction;
+    if (!isRecord(inverse) || !isRecord(inverse.payload) || !isRecord(inverse.payload.ripplePlan)) {
+        throw new Error('Expected real persisted restoreClip ripple plan');
+    }
+    const plan = inverse.payload.ripplePlan;
+    expect(plan).toMatchObject({
+        removedClips: [{ id: 'clip-a' }],
+        clipSatellites: [
+            {
+                clipId: 'clip-a',
+                gainEnvelope: original.gain?.envelopes['clip-a'],
+                warpState: original.warp?.states['clip-a'],
+            },
+        ],
+        clipAutomationLanes: lanes.slice(0, 2),
+    });
+    expect(plan.clipSatellites).toHaveLength(1);
+    expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+    expect(gainEnvelopeStore.value?.envelopes['clip-a']).toBeUndefined();
+    expect(warpStateStore.value?.states['clip-a']).toBeUndefined();
+    expect(automationStore.value?.lanes).toEqual([lanes[2]]);
+    return { saved, plan, original };
+}
+
 /**
  * Round trips for the slice-three clip actions through the session-undo mirror.
  * Each entry is seeded through the REAL dispatch pair — `describe()` then
@@ -250,6 +324,76 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
+    });
+
+    it.each(['satellite', 'automation'] as const)(
+        'rejects a saved removeClip with a foreign %s owner before hydration and Undo',
+        async (owner) => {
+            const { saved, plan } = await persistRemovalWithDistinctOwners();
+            if (owner === 'satellite') {
+                if (
+                    !Array.isArray(plan.clipSatellites) ||
+                    !isRecord(plan.clipSatellites[0]) ||
+                    !isRecord(plan.clipSatellites[0].gainEnvelope)
+                ) {
+                    throw new Error('Expected captured clip-a satellite');
+                }
+                plan.clipSatellites[0].clipId = 'clip-b';
+                plan.clipSatellites[0].gainEnvelope.clipId = 'clip-b';
+            } else {
+                if (!Array.isArray(plan.clipAutomationLanes) || !isRecord(plan.clipAutomationLanes[0])) {
+                    throw new Error('Expected captured clip-a automation lane');
+                }
+                plan.clipAutomationLanes[0].clipId = 'clip-b';
+            }
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+            const beforeRaw = structuredClone(getCrdtDoc('root'));
+            const beforeOwners = ownerProjections();
+
+            hydrateProductionContracts();
+            expect(undoHistoryStore.value?.past).toEqual([]);
+            expect(undoHistoryStore.value?.future).toEqual([]);
+            const hydratedHistory = structuredClone(undoHistoryStore.value);
+            expect(getCrdtDoc('root')).toEqual(beforeRaw);
+            expect(ownerProjections()).toEqual(beforeOwners);
+
+            expect((await undo()).headConsumed).toBe(false);
+            expect(getCrdtDoc('root')).toEqual(beforeRaw);
+            expect(ownerProjections()).toEqual(beforeOwners);
+            expect(undoHistoryStore.value).toEqual(hydratedHistory);
+        }
+    );
+
+    it('restores only the removed owner from a genuine saved gain, warp, and multiple automation capture', async () => {
+        const { original } = await persistRemovalWithDistinctOwners();
+        const removedRaw = structuredClone(getCrdtDoc('root'));
+        const removedOwners = ownerProjections();
+        hydrateProductionContracts();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(undoHistoryStore.value?.future).toEqual([]);
+
+        for (let round = 0; round < 2; round += 1) {
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(original.tracks?.tracks[0]?.clips[0]);
+            expect(clipOnTrack(TRACK_ID, 'clip-b')).toEqual(original.tracks?.tracks[0]?.clips[1]);
+            expect(gainEnvelopeStore.value).toEqual(original.gain);
+            expect(warpStateStore.value).toEqual(original.warp);
+            const restoredLanes = [original.automation!.lanes[2], ...original.automation!.lanes.slice(0, 2)];
+            expect(automationStore.value?.lanes).toEqual(restoredLanes);
+            expect(getCrdtDoc('root')).toMatchObject({
+                gainEnvelopes: original.gain,
+                warpStates: original.warp,
+                automation: { lanes: restoredLanes },
+            });
+            expect(undoHistoryStore.value?.past).toEqual([]);
+            expect(undoHistoryStore.value?.future).toHaveLength(1);
+
+            await redo();
+            expect(getCrdtDoc('root')).toEqual(removedRaw);
+            expect(ownerProjections()).toEqual(removedOwners);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expect(undoHistoryStore.value?.future).toEqual([]);
+        }
     });
 
     it.each([
