@@ -1,0 +1,55 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_1f0dcd815e8946::t_057bb0f0b3cb6f 1,15-22,786,788-793,814-822,843,850-852,877-972
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_1f0dcd815e8946::t_3f005ed9d38356 488-500
+src/modules/Transport/useCases/scheduling/applyAutomation/deviceReadBeatByTrack.ts
+  s_1f0dcd815e8946::t_60dcbbfc76764f 9-12
+src/modules/Transport/useCases/scheduling/listMutedMidiClips.ts
+  s_1f0dcd815e8946::t_44d6bb13017c77 1-21
+src/modules/Transport/useCases/scheduling/releaseStoredControllers.ts
+  s_1f0dcd815e8946::t_a81a1735860474 4,33-34
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_1f0dcd815e8946::t_360516a4cc6410 35-43,48,799-801,901-904,912-952,961,990,993,1002,1590
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_1f0dcd815e8946::t_e45979bdd0bd37 23-27,55-57,444-477
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingAutoMonitoring.integration.spec.ts
+  s_1f0dcd815e8946::t_cabb96c8a1e246 1-154
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRollLoop.integration.spec.ts
+  s_1f0dcd815e8946::t_a28c13c680a6e9 1-548
+src/modules/Transport/useCases/transportControls/stopPlayback.ts
+  s_1f0dcd815e8946::t_7511ea67574f68 2,27,87-98
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_1f0dcd815e8946::t_2d6c090af76840 61-66,79-82,92-95,97,100,106,110,173,225
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_1f0dcd815e8946::t_f953e95bab53de 9,43,326-360
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_1f0dcd815e8946::t_2033983d3d852e 9,39-40,51,67,79-80,128-131
+src/utils/handlerContract.ts
+  s_1f0dcd815e8946::t_783ec561bdddaa 531-532
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_1f0dcd815e8946::t_e7bb55039491ce 60-63,66
+tests/e2e/firstPaintWarmup.ts
+  s_1f0dcd815e8946::t_33714665ceec67 21-28,57-59
+tests/e2e/monoModulationInput.spec.ts
+  s_1f0dcd815e8946::t_e67253613f1ebf 1-100
+tests/e2e/promptBarCancelRecentTestId.spec.ts
+  s_1f0dcd815e8946::t_db4c17050b4c7e 4-9,151,171
+tests/e2e/smoke.spec.ts
+  s_1f0dcd815e8946::t_a3ae5dac653a41 4-10,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eecfe83725d876531719bb1053e98a9936e2c1e1",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
