@@ -1,0 +1,80 @@
+scripts/__tests__/recoverPublishReviewLockReceiptReplay.spec.ts
+  s_2bfd55a4393d7c::t_a39f3b49939403 351-353
+  s_2bfd55a4393d7c::t_584564519c3e2f 363
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_2bfd55a4393d7c::t_bab5c3d1e6de88 3374
+  s_2bfd55a4393d7c::t_23e21aad96db22 1516
+  s_2bfd55a4393d7c::t_12f47a07991253 2654-2655,2658,2665
+  s_2bfd55a4393d7c::t_ad7c7aa883492d 96-98
+  s_2bfd55a4393d7c::t_c2a20248e92144 2530
+  s_2bfd55a4393d7c::t_797b2f0c5ccd1e 3279
+  s_2bfd55a4393d7c::t_903bc991549ae0 3218
+  s_2bfd55a4393d7c::t_9c7f4a506c2a47 19
+  s_2bfd55a4393d7c::t_a5c32401d7354b 2495
+  s_2bfd55a4393d7c::t_c8611ad0f159ee 2630
+  s_2bfd55a4393d7c::t_f76f7724c51731 2652
+  s_2bfd55a4393d7c::t_3b3148629eea61 3128
+  s_2bfd55a4393d7c::t_1cdedcad480cb9 3340
+  s_2bfd55a4393d7c::t_2c04a2c945de4e 3256
+  s_2bfd55a4393d7c::t_c799b9a9540d1d 3341-3373,3376,3421,3454,3541,3574,3604,3639,3669,3696,3725,3745,3774-3802,3804-3807,3809-3811,3830,3969,3996,4018,4036,4171,4196,4217,4243,4274,4309,4371,4568,4573,4578,4642,4670
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_2bfd55a4393d7c::t_e789fab2041432 10950
+  s_2bfd55a4393d7c::t_11bfd2ed338997 9755
+  s_2bfd55a4393d7c::t_20125f1d60a44e 11557
+  s_2bfd55a4393d7c::t_40511b8ed81ad7 12420
+  s_2bfd55a4393d7c::t_8a5b7db4b7442d 11126
+  s_2bfd55a4393d7c::t_01664af8d339f3 7107
+  s_2bfd55a4393d7c::t_c4245535261d5a 6950
+  s_2bfd55a4393d7c::t_f028888ef3e8c4 10810
+  s_2bfd55a4393d7c::t_1a4de859ce3943 11643
+  s_2bfd55a4393d7c::t_0e74eb6ff7885b 9785
+  s_2bfd55a4393d7c::t_2c696282d7d60d 11601
+  s_2bfd55a4393d7c::t_b5797defa1b2c5 11638
+  s_2bfd55a4393d7c::t_d93c51410b8d6c 7075
+  s_2bfd55a4393d7c::t_b4d1b530e2d703 10994
+  s_2bfd55a4393d7c::t_66fb9c5c7d3763 12575
+  s_2bfd55a4393d7c::t_08eeeb2c9c0c6c 1392
+  s_2bfd55a4393d7c::t_36417c1fe0c77c 65-67
+  s_2bfd55a4393d7c::t_cb9d8b3ef6627f 6860
+  s_2bfd55a4393d7c::t_6488663c187efd 6889
+  s_2bfd55a4393d7c::t_d1aeb7f275cb66 11284
+  s_2bfd55a4393d7c::t_c5bde9fdf28b9b 7012
+  s_2bfd55a4393d7c::t_cb4d586373dd32 11526
+  s_2bfd55a4393d7c::t_99e6f836a6df32 9879
+  s_2bfd55a4393d7c::t_bb330bbd108afb 11330
+  s_2bfd55a4393d7c::t_d8346d9fe39a66 12363
+  s_2bfd55a4393d7c::t_65d45dc6fd43db 7041
+  s_2bfd55a4393d7c::t_91fe3312fec8b0 10891
+  s_2bfd55a4393d7c::t_7f69ef4eaa067d 6918
+  s_2bfd55a4393d7c::t_de66c8d9ab4957 11048
+  s_2bfd55a4393d7c::t_5e277663bffce2 11453
+  s_2bfd55a4393d7c::t_49278da274a457 7140
+  s_2bfd55a4393d7c::t_80e0e567e6af35 10580
+  s_2bfd55a4393d7c::t_4dc89af182c497 10705
+  s_2bfd55a4393d7c::t_2cecbf7a9fb4e2 11725
+  s_2bfd55a4393d7c::t_e2d8e80e2ebd44 11388
+  s_2bfd55a4393d7c::t_cc3aad0b7bd44d 11702
+  s_2bfd55a4393d7c::t_0b2bdb5913be9a 13343
+  s_2bfd55a4393d7c::t_9065347b286f1e 1387
+  s_2bfd55a4393d7c::t_25fbf705890ce3 11415
+  s_2bfd55a4393d7c::t_1688ef05410ecd 6979
+  s_2bfd55a4393d7c::t_2f78a66ba45535 10775
+  s_2bfd55a4393d7c::t_07d25924fd7677 10508
+  s_2bfd55a4393d7c::t_3d131e3fc17342 9844
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ff6d40775dbce036e7c669a1e8d2ee3741d1351",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
