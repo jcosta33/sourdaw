@@ -21,6 +21,7 @@ import {
     configureAudioDeviceRuntimeSink,
     getAudioContext,
     getRuntimeGraphRevision,
+    resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 
 import {
@@ -52,6 +53,7 @@ class FakeWorkletNode {
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'toast-1';
 const toasterDevice = { id: DEVICE_ID, type: 'toaster', parameterIds: [] };
+const gainDevice = { id: 'gain-1', type: 'builtin-gain', parameterIds: [] };
 
 /** The app's event bus reduced to the two lifecycle events, emitting synchronously. */
 function createLifecycleBus(): {
@@ -77,19 +79,33 @@ function createLifecycleBus(): {
     };
 }
 
-function applyToasterChain(operation: 'add-device' | 'remove-device'): void {
-    const withToaster = { id: TRACK_ID, kind: 'midi', devices: [toasterDevice] };
-    const withoutToaster = { id: TRACK_ID, kind: 'midi', devices: [] };
+type ChainDevice = typeof toasterDevice;
+type ChainOperation = 'add-device' | 'remove-device' | 'replace-device-chain';
+
+function applyChain(operation: ChainOperation, before: readonly ChainDevice[], after: readonly ChainDevice[]): void {
     const result = applyRuntimeGraphDelta({
         schemaVersion: 1,
         command: 'replace-track-device-chain',
         correlation: { appRevision: getRuntimeGraphRevision(), projectRevision: 'project-revision-1' },
         operation,
-        before: operation === 'add-device' ? withoutToaster : withToaster,
-        after: operation === 'add-device' ? withToaster : withoutToaster,
+        before: { id: TRACK_ID, kind: 'midi', devices: before },
+        after: { id: TRACK_ID, kind: 'midi', devices: after },
         parameters: [],
     });
     expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+}
+
+function applyToasterChain(operation: 'add-device' | 'remove-device'): void {
+    if (operation === 'add-device') {
+        applyChain(operation, [], [toasterDevice]);
+        return;
+    }
+    applyChain(operation, [toasterDevice], []);
+}
+
+/** The load the engine never finishes in this spec, announced as the engine would. */
+function finishToasterLoad(bus: ReturnType<typeof createLifecycleBus>): void {
+    bus.emit('audioDevice.loaded', { deviceId: DEVICE_ID, deviceType: 'toaster' });
 }
 
 describe('Toaster removed while its engine is still loading', () => {
@@ -120,6 +136,7 @@ describe('Toaster removed while its engine is still loading', () => {
     });
 
     afterEach(() => {
+        resetAudioGraph();
         unsubscribe();
         configureAudioDeviceRuntimeSink({});
         vi.unstubAllGlobals();
@@ -133,10 +150,44 @@ describe('Toaster removed while its engine is still loading', () => {
         expect(toasterStore.value?.[DEVICE_ID]).toBeUndefined();
 
         applyToasterChain('remove-device');
-        bus.emit('audioDevice.loaded', { deviceId: DEVICE_ID, deviceType: 'toaster' });
+        finishToasterLoad(bus);
 
         const registered = toasterStore.value?.[DEVICE_ID];
         expect(registered?.kit.swing).toBe(defaultToasterState.kit.swing);
         expect(registered?.selectedPadIndex).toBe(defaultToasterState.selectedPadIndex);
+    });
+
+    // A preset load or a grouped same-track batch replaces the whole chain and
+    // rebuilds every slot, but a Toaster the new chain keeps never left.
+    it('keeps the queued edits when a chain replacement rebuilds the loading device under its id', () => {
+        applyToasterChain('add-device');
+        updateKit(DEVICE_ID, { swing: 0.9 });
+        selectPad(DEVICE_ID, 7);
+
+        applyChain('replace-device-chain', [toasterDevice], [gainDevice, toasterDevice]);
+        updateKit(DEVICE_ID, { masterGain: 1.5 });
+        finishToasterLoad(bus);
+
+        const registered = toasterStore.value?.[DEVICE_ID];
+        expect(registered?.kit.swing).toBe(0.9);
+        expect(registered?.kit.masterGain).toBe(1.5);
+        expect(registered?.selectedPadIndex).toBe(7);
+    });
+
+    // The runtime-graph repair resets the graph and rebuilds the same project.
+    it('keeps the queued edits when a graph repair rebuilds the loading device under its id', () => {
+        applyToasterChain('add-device');
+        updateKit(DEVICE_ID, { swing: 0.9 });
+        selectPad(DEVICE_ID, 7);
+
+        resetAudioGraph();
+        applyToasterChain('add-device');
+        updateKit(DEVICE_ID, { masterGain: 1.5 });
+        finishToasterLoad(bus);
+
+        const registered = toasterStore.value?.[DEVICE_ID];
+        expect(registered?.kit.swing).toBe(0.9);
+        expect(registered?.kit.masterGain).toBe(1.5);
+        expect(registered?.selectedPadIndex).toBe(7);
     });
 });

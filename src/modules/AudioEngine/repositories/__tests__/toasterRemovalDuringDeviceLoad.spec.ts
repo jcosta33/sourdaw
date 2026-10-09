@@ -78,6 +78,39 @@ function isRuntimeFailureReporter(value: unknown): value is (message: string) =>
     return typeof value === 'function';
 }
 
+/** The runtime failure reporter handed to the newest Toaster construction. */
+function newestRuntimeFailureReporter(): (message: string) => void {
+    const reportRuntimeFailure: unknown = toasterFactory.createToasterNode.mock.calls.at(-1)?.[2];
+    if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+        throw new TypeError('expected ToasterNode to receive a runtime failure reporter');
+    }
+    return reportRuntimeFailure;
+}
+
+type ChainDevice = { id: string; type: string; parameterIds: string[] };
+
+function replaceDeviceChain(
+    engine: AudioEngineTopologyTestHarness,
+    before: readonly ChainDevice[],
+    after: readonly ChainDevice[]
+): void {
+    const result = engine.applyRuntimeGraphDelta({
+        schemaVersion: 1,
+        command: 'replace-track-device-chain',
+        correlation: { appRevision: engine.getRuntimeGraphRevision(), projectRevision: 'project-revision-1' },
+        operation: 'replace-device-chain',
+        before: { id: 't1', kind: 'midi', devices: before },
+        after: { id: 't1', kind: 'midi', devices: after },
+        parameters: [],
+    });
+    expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+}
+
+const toasterInChain: ChainDevice = { id: 'toast-1', type: 'toaster', parameterIds: [] };
+const gainInChain: ChainDevice = { id: 'gain-1', type: 'builtin-gain', parameterIds: [] };
+
+type DeviceLifecyclePayload = { deviceId: string; deviceType: string };
+
 /** Drain the descriptor's promise chain (factory → readiness → publish). */
 async function settleDeviceLoad(): Promise<void> {
     await new Promise((resolve) => {
@@ -92,7 +125,13 @@ function toasterDeviceIds(engine: AudioEngineTopologyTestHarness): string[] {
 describe('Toaster removed while its device is still loading', () => {
     let engine: AudioEngineTopologyTestHarness;
     const emitDeviceLoaded = vi.fn();
-    const emitDeviceRemoved = vi.fn();
+    const emitDeviceRemoved = vi.fn<(payload: DeviceLifecyclePayload) => void>();
+
+    function toasterRemovals(): DeviceLifecyclePayload[] {
+        return emitDeviceRemoved.mock.calls
+            .map(([payload]) => payload)
+            .filter(({ deviceType }) => deviceType === 'toaster');
+    }
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -170,5 +209,91 @@ describe('Toaster removed while its device is still loading', () => {
         expect(toasterFactory.createToasterNode).toHaveBeenCalledTimes(2);
         expect(toasterDeviceIds(engine)).toEqual(['toast-1']);
         expect(emitDeviceRemoved).not.toHaveBeenCalled();
+    });
+
+    // Recovery runs once per device, so a second runtime failure leaves the
+    // failed stand-in in the chain for good. Removing it is still a removal.
+    it('notifies the removal once after a second runtime failure left the device unrecovered', async () => {
+        const firstLoad = stubPendingToasterNode();
+        engine.addDeviceToStrip('t1', 'toast-1', 'toaster');
+        firstLoad.finishLoad();
+        await settleDeviceLoad();
+        const reportFirstFailure = newestRuntimeFailureReporter();
+        const secondLoad = stubPendingToasterNode();
+        reportFirstFailure('processor failed');
+        await settleDeviceLoad();
+        secondLoad.finishLoad();
+        await settleDeviceLoad();
+        newestRuntimeFailureReporter()('processor failed again');
+        await settleDeviceLoad();
+        expect(toasterFactory.createToasterNode).toHaveBeenCalledTimes(2);
+        expect(toasterDeviceIds(engine)).toEqual(['toast-1']);
+        expect(emitDeviceRemoved).not.toHaveBeenCalled();
+
+        engine.removeDeviceFromStrip('t1', 'toast-1');
+
+        expect(emitDeviceRemoved).toHaveBeenCalledOnce();
+        expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'toast-1', deviceType: 'toaster' });
+    });
+
+    it('notifies nothing when a chain replacement keeps the loading id, and once when one drops it', () => {
+        stubPendingToasterNode();
+        engine.addDeviceToStrip('t1', 'toast-1', 'toaster');
+
+        replaceDeviceChain(engine, [toasterInChain], [gainInChain, toasterInChain]);
+
+        expect(toasterDeviceIds(engine)).toEqual(['gain-1', 'toast-1']);
+        expect(emitDeviceRemoved).not.toHaveBeenCalled();
+
+        replaceDeviceChain(
+            engine,
+            [gainInChain, toasterInChain],
+            [{ id: 'gain-2', type: 'builtin-gain', parameterIds: [] }]
+        );
+
+        expect(toasterRemovals()).toEqual([{ deviceId: 'toast-1', deviceType: 'toaster' }]);
+    });
+
+    it('notifies nothing when a graph reset tears down a loaded and a loading device', async () => {
+        const loaded = stubPendingToasterNode();
+        engine.addDeviceToStrip('t1', 'toast-1', 'toaster');
+        loaded.finishLoad();
+        await settleDeviceLoad();
+        stubPendingToasterNode();
+        engine.addDeviceToStrip('t1', 'toast-2', 'toaster');
+
+        engine.resetGraph();
+
+        expect(loaded.result.destroy).toHaveBeenCalledOnce();
+        expect(emitDeviceRemoved).not.toHaveBeenCalled();
+
+        stubPendingToasterNode();
+        engine.addDeviceToStrip('t1', 'toast-2', 'toaster');
+        engine.removeTrackStrip('t1');
+
+        expect(emitDeviceRemoved).toHaveBeenCalledOnce();
+        expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'toast-2', deviceType: 'toaster' });
+    });
+
+    // A promotion whose graph rebuild fails puts the placeholder back. The
+    // device never left the project, so only its later removal is announced.
+    it('notifies nothing when a promotion rolls back, and once on the later removal', async () => {
+        const toaster = stubPendingToasterNode();
+        vi.spyOn(toaster.result.outputNode, 'connect').mockImplementation(() => {
+            throw new Error('graph refused the promoted node');
+        });
+        engine.addDeviceToStrip('t1', 'toast-1', 'toaster');
+
+        toaster.finishLoad();
+        await settleDeviceLoad();
+
+        expect(toaster.result.destroy).toHaveBeenCalledOnce();
+        expect(toasterDeviceIds(engine)).toEqual(['toast-1']);
+        expect(emitDeviceRemoved).not.toHaveBeenCalled();
+
+        engine.removeDeviceFromStrip('t1', 'toast-1');
+
+        expect(emitDeviceRemoved).toHaveBeenCalledOnce();
+        expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'toast-1', deviceType: 'toaster' });
     });
 });

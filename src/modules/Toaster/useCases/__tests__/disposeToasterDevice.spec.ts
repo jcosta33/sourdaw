@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
+import { disposeEveryToasterDevice } from '../disposeEveryToasterDevice';
 import { disposeToasterDevice } from '../disposeToasterDevice';
 import { enter16Levels } from '../enter16Levels';
 import { is16LevelsActive } from '../is16LevelsActive';
@@ -178,5 +179,38 @@ describe('disposeToasterDevice', () => {
         // flushPadParam would push to the worklet's setPadParam here.
         vi.runAllTimers();
         expect(setPadParam).not.toHaveBeenCalled();
+    });
+});
+
+// A graph reset announces no device removal, so a project switch ends the
+// outgoing project's devices here instead, including sessions of a device the
+// store holds no record for.
+describe('disposeEveryToasterDevice', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.clearAllMocks();
+        toasterStore.set({});
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        toasterStore.set({});
+    });
+
+    it('ends every device the outgoing project left a record or a session for', () => {
+        seedDevice(DEVICE, activeStep());
+        startSequencer(DEVICE, 120);
+        startNoteRepeat('repeat-device', 0, 100, 120, '1/16');
+        enter16Levels('levels-device', 0, 'velocity');
+
+        disposeEveryToasterDevice();
+
+        expect(toasterStore.value).toEqual({});
+        expect(isNoteRepeating('repeat-device')).toBe(false);
+        expect(is16LevelsActive('levels-device')).toBe(false);
+        seedDevice(DEVICE, activeStep());
+        scheduleHit.mockClear();
+        vi.advanceTimersByTime(5000);
+        expect(scheduleHit).not.toHaveBeenCalled();
     });
 });

@@ -140,6 +140,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),
+    getToasterDeviceControls: vi.fn(),
     getTrackStrip: vi.fn(),
     initializeTrackStripFromSnapshot: vi.fn(),
     matchesRuntimeDeviceChainTopology: vi.fn(),

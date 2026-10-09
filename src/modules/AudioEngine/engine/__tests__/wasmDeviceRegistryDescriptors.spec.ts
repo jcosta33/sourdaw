@@ -301,7 +301,9 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(emitDeviceLoaded).not.toHaveBeenCalled();
         });
 
-        it('emits device-removed (not a bare store delete) when the loaded controller is destroyed', async () => {
+        // The engine destroys a loaded node for recovery and rollback too, while
+        // the device stays in the project; only the track announces a removal.
+        it('announces no removal when the loaded controller is destroyed', async () => {
             const result = makeToasterResult();
             factoryMocks.createToasterNode.mockResolvedValue(result);
             const emitDeviceRemoved = vi.fn();
@@ -315,7 +317,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             loaded.controller?.destroy?.();
 
             expect(result.destroy).toHaveBeenCalledTimes(1);
-            expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'toast-2', deviceType: 'toaster' });
+            expect(emitDeviceRemoved).not.toHaveBeenCalled();
         });
 
         it('demotes and retires a loaded Toaster before requesting one fresh generation', async () => {
