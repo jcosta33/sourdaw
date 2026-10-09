@@ -214,6 +214,22 @@ function ruleLimitations(rule: JsonValue): string[] {
     return [];
 }
 
+function effectivePolicyLimitations(effectiveBranches: CapabilityObservation['effectiveBranches']): string[] {
+    const limitations: string[] = [];
+    if (!jsonArray(effectiveBranches.main)) {
+        limitations.push('effective main rules unavailable');
+    }
+    for (const rules of Object.values(effectiveBranches)) {
+        if (!jsonArray(rules)) {
+            throw new Error('effective policy rules are malformed');
+        }
+        for (const rule of rules) {
+            limitations.push(...ruleLimitations(rule));
+        }
+    }
+    return limitations;
+}
+
 function policyLimitations(observation: CapabilityObservation, mainApplicabilityUnresolved: boolean): string[] {
     const limitations = [
         ...observation.limitations,
@@ -265,7 +281,41 @@ function policyLimitations(observation: CapabilityObservation, mainApplicability
             limitations.push(...ruleLimitations(rule));
         }
     }
+    limitations.push(...effectivePolicyLimitations(observation.effectiveBranches));
     return [...new Set(limitations)].sort();
+}
+
+function observationFromBaseline(value: JsonValue | undefined): CapabilityObservation {
+    const baseline = record(value ?? null, 'plan baseline');
+    const rulesets = baseline.rulesets;
+    const classic = baseline.classic;
+    const effective = record(baseline.effectiveBranches ?? null, 'effective branches');
+    const limitations = baseline.limitations;
+    const exactMainProtection = baseline.exactMainProtection;
+    if (
+        !jsonArray(rulesets) ||
+        !jsonArray(classic) ||
+        !stringSelectors(limitations) ||
+        exactMainProtection === undefined
+    ) {
+        throw new Error('plan baseline is malformed');
+    }
+    const effectiveBranches: Record<string, JsonValue[]> = {};
+    for (const [branch, rules] of Object.entries(effective)) {
+        if (!jsonArray(rules)) {
+            throw new Error('plan effective branches are malformed');
+        }
+        effectiveBranches[branch] = rules;
+    }
+    return {
+        user: record(baseline.user ?? null, 'plan user'),
+        repository: record(baseline.repository ?? null, 'plan repository'),
+        rulesets: rulesets.map((rule) => record(rule, 'plan ruleset')),
+        classic: classic.map((rule) => record(rule, 'plan classic rule')),
+        effectiveBranches,
+        exactMainProtection,
+        limitations,
+    };
 }
 
 function assertIdentity(observation: CapabilityObservation): void {
@@ -440,5 +490,20 @@ export function renderCapabilityPlan(plan: RulesetDocument): string {
         throw new Error('inactive proposal contract changed');
     }
     safe(plan);
+    const interval = record(plan.observedAt ?? null, 'plan observation interval');
+    if (
+        typeof plan.sourceSha !== 'string' ||
+        typeof interval.startedAt !== 'string' ||
+        typeof interval.endedAt !== 'string'
+    ) {
+        throw new TypeError('plan evidence changed after capture');
+    }
+    const expected = buildCapabilityPlan(observationFromBaseline(plan.baseline), plan.sourceSha, {
+        startedAt: interval.startedAt,
+        endedAt: interval.endedAt,
+    });
+    if (canonicalJson(plan) !== canonicalJson(expected)) {
+        throw new Error('plan evidence changed after capture');
+    }
     return canonicalJson(plan);
 }

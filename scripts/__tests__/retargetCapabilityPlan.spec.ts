@@ -58,6 +58,20 @@ function requiredRuleset(observation: CapabilityObservation): CapabilityObservat
     return ruleset;
 }
 
+function requiredRecord(value: JsonValue | undefined): Record<string, JsonValue> {
+    if (value === undefined || value === null || Array.isArray(value) || typeof value !== 'object') {
+        throw new Error('test fixture requires a record');
+    }
+    return value;
+}
+
+function firstRecord(value: JsonValue | undefined): Record<string, JsonValue> {
+    if (!Array.isArray(value) || value[0] === undefined) {
+        throw new Error('test fixture requires a nonempty array');
+    }
+    return requiredRecord(value[0]);
+}
+
 describe('inactive retarget capability plan', () => {
     it('prints the exact disabled branch proposal and unchanged main rollback in canonical form', () => {
         const input = observed();
@@ -123,6 +137,79 @@ describe('inactive retarget capability plan', () => {
         expect(plan.originalMainSemanticDigest).toBe(mainDigest);
         expect(plan.originalMainRollback).toEqual(rollback);
         expect(plan.activationEligible).toBe(false);
+    });
+
+    it('refuses a returned baseline whose review requirement changed after derivation', () => {
+        const plan = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
+        const rule = firstRecord(requiredRecord(plan.baseline).rulesets);
+        const pullRequest = firstRecord(rule.rules);
+        requiredRecord(pullRequest.parameters).required_approving_review_count = 0;
+        expect(() => renderCapabilityPlan(plan)).toThrow(/evidence.*changed/u);
+    });
+
+    it('refuses a returned rollback changed independently from its baseline', () => {
+        const plan = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
+        plan.originalMainRollback = [];
+        expect(() => renderCapabilityPlan(plan)).toThrow(/evidence.*changed/u);
+    });
+
+    it.each(['baselineDigest', 'originalMainSemanticDigest'] as const)(
+        'refuses a returned %s changed independently from evidence',
+        (field) => {
+            const plan = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
+            plan[field] = '0'.repeat(64);
+            expect(() => renderCapabilityPlan(plan)).toThrow(/evidence.*changed/u);
+        }
+    );
+
+    it('refuses returned completeness or limitations changed independently from the baseline', () => {
+        const incomplete = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
+        incomplete.completeObservedInventory = false;
+        expect(() => renderCapabilityPlan(incomplete)).toThrow(/evidence.*changed/u);
+        const alteredLimitations = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
+        alteredLimitations.limitations = ['fabricated limitation'];
+        expect(() => renderCapabilityPlan(alteredLimitations)).toThrow(/evidence.*changed/u);
+    });
+
+    const unreadableEffectiveMain: JsonValue[][] = [
+        [
+            {
+                type: 'required_status_checks',
+                parameters: { strict_required_status_checks_policy: false, required_status_checks: null },
+            },
+        ],
+        [false],
+        [{}],
+        [{ type: 'unrecognized_policy_rule' }],
+    ];
+    it.each(unreadableEffectiveMain.map((rules) => ({ rules })))(
+        'never certifies an unreadable effective-main rule',
+        ({ rules }) => {
+            const input = observed();
+            input.effectiveBranches.main = rules;
+            let plan;
+            try {
+                plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+            } catch (error) {
+                expect(error).toBeInstanceOf(Error);
+                return;
+            }
+            expect(plan.completeObservedInventory).toBe(false);
+            expect(plan.limitations).toEqual(expect.arrayContaining([expect.any(String)]));
+        }
+    );
+
+    it('retains completeness for valid effective-main required checks', () => {
+        const input = observed();
+        input.effectiveBranches.main = [
+            {
+                type: 'required_status_checks',
+                parameters: { strict_required_status_checks_policy: false, required_status_checks: [] },
+            },
+        ];
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(true);
+        expect(plan.limitations).toEqual([]);
     });
 
     const unreadableProtection: JsonValue[] = [

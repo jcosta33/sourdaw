@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { TRUSTED_GH_PATH_ENV } from '../prContract.ts';
 import {
     captureCapabilitySnapshot,
     parseRestPageOutput,
@@ -148,6 +149,58 @@ function fakePort() {
 }
 
 describe('bounded capability capture', () => {
+    it('routes all eight read methods and four allowance variants through the supplied capture', () => {
+        const calls: Array<{ command: string; args: string[] }> = [];
+        const capture = (command: string, args: string[]) => {
+            calls.push({ command, args });
+            if (args.includes('graphql')) {
+                return '{"data":{}}';
+            }
+            return args.includes('-i') ? 'HTTP/2 200\n\n[]' : '{}';
+        };
+        const session: GhSession = {
+            configDir: '/unused',
+            env: { [TRUSTED_GH_PATH_ENV]: '/retarget-test/nonexistent-gh' },
+            dispose: vi.fn(),
+        };
+        const port = shellCapabilityReadPort(session, '/primary', capture);
+        port.user();
+        port.repository();
+        port.rulesetPage(2);
+        port.ruleset(55);
+        port.effectiveBranch('Case.Mixed', 3);
+        port.exactMainProtection();
+        port.classicPage('@cursor');
+        for (const kind of KINDS) {
+            port.allowancePage(kind, '@rule', '42');
+        }
+        expect(calls).toHaveLength(11);
+        expect(calls.every(({ command }) => command === 'gh')).toBe(true);
+        const restCalls = calls.filter(({ args }) => !args.includes('graphql'));
+        expect(restCalls.map(({ args }) => args.slice(0, 3))).toEqual(
+            Array.from({ length: 6 }, () => ['api', '--hostname', 'github.com'])
+        );
+        expect(restCalls.map(({ args }) => args.at(-1))).toEqual([
+            'user',
+            'repos/jcosta33/sourdaw',
+            'repos/jcosta33/sourdaw/rulesets?includes_parents=true&per_page=100&page=2',
+            'repos/jcosta33/sourdaw/rulesets/55?includes_parents=true',
+            'repos/jcosta33/sourdaw/rules/branches/Case.Mixed?per_page=100&page=3',
+            'repos/jcosta33/sourdaw/branches/main/protection',
+        ]);
+        expect(restCalls.filter(({ args }) => args.includes('-i'))).toHaveLength(2);
+        expect(restCalls.every(({ args }) => !args.includes('-X') && !args.includes('-f'))).toBe(true);
+        const graphCalls = calls.filter(({ args }) => args.includes('graphql'));
+        expect(graphCalls).toHaveLength(5);
+        expect(graphCalls.every(({ args }) => args.some((value) => value.startsWith('query=query Retarget')))).toBe(
+            true
+        );
+        expect(graphCalls[0]?.args).toContain('cursor=@cursor');
+        for (const { args } of graphCalls.slice(1)) {
+            expect(args).toEqual(expect.arrayContaining(['ruleId=@rule', 'cursor=42']));
+        }
+    });
+
     it('passes opaque GraphQL cursors and node IDs as literal string fields', () => {
         const calls: string[][] = [];
         const spawn = (_command: string, args: string[]) => {
@@ -385,6 +438,66 @@ describe('bounded capability capture', () => {
         });
         expect(disposed).toHaveBeenCalledOnce();
     });
+
+    const unreadableEffectiveMain: JsonValue[][] = [
+        [
+            {
+                type: 'required_status_checks',
+                parameters: { strict_required_status_checks_policy: false, required_status_checks: null },
+            },
+        ],
+        [false],
+        [{}],
+        [{ type: 'unrecognized_policy_rule' }],
+    ];
+    it.each(unreadableEffectiveMain.map((rules) => ({ rules })))(
+        'does not certify two equal captures with unreadable effective-main rules',
+        ({ rules }) => {
+            const { port } = fakePort();
+            const disposed = vi.fn();
+            const printed: string[] = [];
+            let mainReads = 0;
+            let result: number;
+            try {
+                result = runRetargetCapabilityPlanCli([], {
+                    sourceCheck: () => SOURCE,
+                    primaryRoot: () => '/primary',
+                    authenticate: () => ({
+                        minted: { actorNodeId: USER.node_id },
+                        session: { configDir: '/unused', env: {}, dispose: disposed },
+                    }),
+                    readPort: () => ({
+                        ...port,
+                        effectiveBranch: (branch, page) => {
+                            if (branch === 'main') {
+                                mainReads += 1;
+                                return rest(rules);
+                            }
+                            return port.effectiveBranch(branch, page);
+                        },
+                    }),
+                    now: () => '2026-10-08T00:00:00.000Z',
+                    print: (value) => printed.push(value),
+                });
+            } catch (error) {
+                expect(error).toBeInstanceOf(Error);
+                expect(mainReads).toBe(2);
+                expect(printed).toEqual([]);
+                expect(disposed).toHaveBeenCalledOnce();
+                return;
+            }
+            expect(result).toBe(0);
+            expect(mainReads).toBe(2);
+            expect(printed).toHaveLength(1);
+            const output = printed[0];
+            if (output === undefined) {
+                throw new Error('expected one emitted capability plan');
+            }
+            const emitted: unknown = JSON.parse(output);
+            expect(emitted).toMatchObject({ completeObservedInventory: false, activationEligible: false });
+            expect(disposed).toHaveBeenCalledOnce();
+        }
+    );
 
     const unreadableProtection: JsonValue[] = [null, false, [], {}, { unrelated: true }];
     it.each(unreadableProtection)('emits incomplete inventory for stable unreadable exact-main protection', (value) => {

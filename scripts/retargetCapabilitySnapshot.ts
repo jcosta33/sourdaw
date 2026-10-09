@@ -323,8 +323,14 @@ export function captureCapabilitySnapshot(port: CapabilityReadPort): CapabilityO
     return { user, repository, rulesets, classic: decorated, effectiveBranches, exactMainProtection, limitations };
 }
 
-function restPage(session: GhSession, primaryRoot: string, path: string, page: number): ListPage {
-    const output = spawnCapture(
+function restPage(
+    session: GhSession,
+    primaryRoot: string,
+    path: string,
+    page: number,
+    capture: typeof spawnCapture
+): ListPage {
+    const output = capture(
         'gh',
         ['api', '--hostname', 'github.com', '-i', `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`],
         { env: session.env, cwd: primaryRoot, trim: false }
@@ -402,14 +408,15 @@ export function shellCapabilityReadPort(
     capture: typeof spawnCapture = spawnCapture
 ): CapabilityReadPort {
     const rest = (path: string): JsonValue =>
-        json(spawnCapture('gh', ['api', '--hostname', 'github.com', path], { env: session.env, cwd: primaryRoot }));
+        json(capture('gh', ['api', '--hostname', 'github.com', path], { env: session.env, cwd: primaryRoot }));
     return {
         user: () => rest('user'),
         repository: () => rest(REPOSITORY),
-        rulesetPage: (page) => restPage(session, primaryRoot, `${REPOSITORY}/rulesets?includes_parents=true`, page),
+        rulesetPage: (page) =>
+            restPage(session, primaryRoot, `${REPOSITORY}/rulesets?includes_parents=true`, page, capture),
         ruleset: (ruleId) => rest(`${REPOSITORY}/rulesets/${ruleId}?includes_parents=true`),
         effectiveBranch: (branch, page) =>
-            restPage(session, primaryRoot, `${REPOSITORY}/rules/branches/${encodeURIComponent(branch)}`, page),
+            restPage(session, primaryRoot, `${REPOSITORY}/rules/branches/${encodeURIComponent(branch)}`, page, capture),
         exactMainProtection: () => rest(`${REPOSITORY}/branches/main/protection`),
         classicPage: (cursor) =>
             graphql(session, primaryRoot, CLASSIC_QUERY, cursor === null ? [] : ['-f', `cursor=${cursor}`], capture),
