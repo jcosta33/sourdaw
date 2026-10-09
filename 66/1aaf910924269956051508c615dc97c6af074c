@@ -1,0 +1,41 @@
+src/modules/Arrangement/useCases/comping/__tests__/restoreTakesForClip.spec.ts
+  s_1f0dcd815e8946::t_3d299375ce2937 189-212
+  s_1f0dcd815e8946::t_5087550adfd442 363-384
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1f0dcd815e8946::t_ed6a7460d4b018 1119-1152,1156-1179,1191-1193,1200-1203
+  s_1f0dcd815e8946::t_f5661f6a3aa51f 1,33,56,215-243
+  s_1f0dcd815e8946::t_5e00c71fdc7c93 1153-1155,1180-1190,1194-1199
+  s_1f0dcd815e8946::t_1adef2141f7525 244-245
+src/modules/Arrangement/useCases/timeOperations/timeOperationStateCodec.ts
+  s_1f0dcd815e8946::t_9e02ea89878033 823-832,887
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_1f0dcd815e8946::t_9e02ea89878033 284-285,288,317
+src/modules/Arrangement/useCases/comping/reconcileLane.ts
+  s_1f0dcd815e8946::t_9e02ea89878033 35-37,45,53-56
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_4872b78aa0168e 203,212-213
+  s_1f0dcd815e8946::t_c436f85ed302ba 204-211,214-224
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  s_1f0dcd815e8946::t_3d299375ce2937 441-471
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_1f0dcd815e8946::t_3cdead39205ea2 56,72,202-225
+  s_1f0dcd815e8946::t_40911df6811478 83-95,321,323-333,339-344,352-356,358-360,362-374,376-379,382-386,388-403,405-437
+  s_1f0dcd815e8946::t_5087550adfd442 387,404
+  s_1f0dcd815e8946::t_ce6c874ba39255 226,438-450
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "661aaf910924269956051508c615dc97c6af074c",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
