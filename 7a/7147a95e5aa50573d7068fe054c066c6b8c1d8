@@ -1,0 +1,25 @@
+crates/daw-engine/src/scheduler.rs
+  s_1c08b47ac3792f::t_d04b7dea43f454 18196-18256
+crates/daw-engine/src/timeline.rs
+  s_1c08b47ac3792f::t_5275f67a78859c 4712-4716
+  s_1c08b47ac3792f::t_dd5a8e2a1e9e6e 4789-4790,4794,4798,4801-4802
+  s_1c08b47ac3792f::t_d83fe57af66e2b 4688-4711,4717-4788,4791-4793,4795-4797,4799-4800,4803-4805
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_5d40f0c51f1b77 623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a7147a95e5aa50573d7068fe054c066c6b8c1d8",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
