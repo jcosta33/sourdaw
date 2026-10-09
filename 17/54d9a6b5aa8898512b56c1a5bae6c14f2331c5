@@ -1,0 +1,26 @@
+.github/workflows/cargo-dependency-seed.yml
+  s_1f0dcd815e8946::t_119f654b28bf49 85-87,93,95
+.github/workflows/validation.yml
+  s_1f0dcd815e8946::t_7302b5acef9b9e 792-793,808,810
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_1f0dcd815e8946::t_709e42eaf474ef 4404-4430
+  s_1f0dcd815e8946::t_30d90d61d8fb24 178-179
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_1f0dcd815e8946::t_127cb450449df4 1004-1005,2707-2708
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1754d9a6b5aa8898512b56c1a5bae6c14f2331c5",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
