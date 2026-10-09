@@ -1,14 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { initInputMonitoringProjectAccess } from '#/app/initInputMonitoringProjectAccess';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { startInputMonitoring, stopInputMonitoring } from '#/modules/AudioEngine/useCases';
+import {
+    configureInputMonitoringProjectAccess,
+    startInputMonitoring,
+    stopInputMonitoring,
+    syncAutoInputMonitoring,
+} from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
+import { createCrdtDoc, getCrdtDoc, mutateCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { inputMonitoringSession } from '../inputMonitoringSession';
 
@@ -51,11 +59,16 @@ describe('track deletion releases the input monitor at Command commit', () => {
         ['b', { id: 'gain-b' }],
     ]);
     const commitRefusal = new Error('Refused track transaction');
-    let doc: Record<string, unknown>;
     let refuseCommit: boolean;
     let docTrackIdsAtStop: string[];
+    let docTrackIdsAtDisconnect: string[][];
+    let unsubscribe: (() => void) | undefined;
 
     function docTrackIds(): string[] {
+        const doc = getCrdtDoc('root');
+        if (!doc) {
+            throw new Error('Expected a registered committed root');
+        }
         const slot = doc.tracks;
         if (!slot || typeof slot !== 'object' || !('tracks' in slot) || !Array.isArray(slot.tracks)) {
             throw new Error('Expected committed tracks in the document');
@@ -75,29 +88,36 @@ describe('track deletion releases the input monitor at Command commit', () => {
         configureAutomergeStoragePort(null);
         stopInputMonitoring();
         vi.clearAllMocks();
-        doc = {};
+        createCrdtDoc('root');
         refuseCommit = false;
         docTrackIdsAtStop = [];
+        docTrackIdsAtDisconnect = [];
         clearHandlerRegistry();
         const handlers = getArrangementHandlers();
         registerHandlerMap({ removeTrack: handlers.removeTrack, removeAllTracks: handlers.removeAllTracks });
         clearUndoHistory();
         setArrangementEventBus({ emit: async () => undefined });
         configureAutomergeStoragePort({
-            getDoc: () => doc,
+            getDoc: (id) => getCrdtDoc(id),
             getSemanticMessage: () => undefined,
-            hasDoc: () => true,
-            mutateDoc: ({ changeFn }) => {
+            hasDoc: (id) => getCrdtDoc(id) !== undefined,
+            mutateDoc: ({ docId, changeFn, message, snapshotTransaction, changedKeys }) => {
                 if (refuseCommit) {
                     throw commitRefusal;
                 }
-                changeFn(doc);
+                mutateCrdtDoc({ id: docId, changeFn, message, snapshotTransaction, localSlots: changedKeys });
             },
         });
         trackStore.set({
             tracks: [
-                createTrack({ id: 'a', name: 'Audio A', kind: 'audio', withoutDefaultDevice: true }),
-                createTrack({ id: 'b', name: 'Audio B', kind: 'audio', withoutDefaultDevice: true }),
+                {
+                    ...createTrack({ id: 'a', name: 'Audio A', kind: 'audio', withoutDefaultDevice: true }),
+                    inputMonitoring: 'on',
+                },
+                {
+                    ...createTrack({ id: 'b', name: 'Audio B', kind: 'audio', withoutDefaultDevice: true }),
+                    inputMonitoring: 'on',
+                },
             ],
             selectedTrackId: null,
             ghostClips: [],
@@ -109,20 +129,29 @@ describe('track deletion releases the input monitor at Command commit', () => {
         inputTrack.stop.mockImplementation(() => {
             docTrackIdsAtStop = docTrackIds();
         });
+        source.disconnect.mockImplementation(() => {
+            docTrackIdsAtDisconnect.push(docTrackIds());
+        });
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: { getUserMedia },
             configurable: true,
         });
+        initInputMonitoringProjectAccess();
+        unsubscribe = syncAutoInputMonitoring();
     });
 
     afterEach(() => {
         refuseCommit = false;
+        unsubscribe?.();
+        unsubscribe = undefined;
+        configureInputMonitoringProjectAccess(null);
         stopInputMonitoring();
         clearUndoHistory();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: originalMediaDevices,
             configurable: true,
@@ -141,6 +170,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(liveTrackIds()).toEqual(['a', 'b']);
         expect(monitorOwners()).toEqual(['a', 'b']);
         expect(source.disconnect).not.toHaveBeenCalled();
+        expect(docTrackIdsAtDisconnect).toEqual([]);
         expect(inputTrack.stop).not.toHaveBeenCalled();
 
         await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
@@ -149,6 +179,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(monitorOwners()).toEqual(['b']);
         expect(source.disconnect).toHaveBeenCalledWith(gains.get('a'));
         expect(source.disconnect).not.toHaveBeenCalledWith(gains.get('b'));
+        expect(docTrackIdsAtDisconnect).toEqual([['b']]);
         expect(inputTrack.stop).not.toHaveBeenCalled();
 
         await executeAppAction({ type: 'removeTrack', payload: { trackId: 'b' } });
@@ -157,6 +188,8 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(source.disconnect).toHaveBeenCalledWith(gains.get('b'));
         expect(inputTrack.stop).toHaveBeenCalledOnce();
         expect(docTrackIdsAtStop).toEqual([]);
+        expect(docTrackIdsAtDisconnect.every((ids) => !ids.includes('a'))).toBe(true);
+        expect(docTrackIdsAtDisconnect.slice(1).every((ids) => !ids.includes('b'))).toBe(true);
     });
 
     it('retains both owners after a refused bulk delete and releases both after commit', async () => {
@@ -171,6 +204,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(liveTrackIds()).toEqual(['a', 'b']);
         expect(monitorOwners()).toEqual(['a', 'b']);
         expect(source.disconnect).not.toHaveBeenCalled();
+        expect(docTrackIdsAtDisconnect).toEqual([]);
         expect(inputTrack.stop).not.toHaveBeenCalled();
 
         await executeAppAction({ type: 'removeAllTracks', payload: undefined });
@@ -181,6 +215,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(source.disconnect).toHaveBeenCalledWith(gains.get('b'));
         expect(inputTrack.stop).toHaveBeenCalledOnce();
         expect(docTrackIdsAtStop).toEqual([]);
+        expect(docTrackIdsAtDisconnect).toEqual([[], [], []]);
     });
 
     it('does not reconnect or recreate a deleted strip when permission arrives after commit', async () => {
@@ -198,4 +233,121 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(engine.createMediaStreamSource).not.toHaveBeenCalled();
         expect(inputTrack.stop).toHaveBeenCalledOnce();
     });
+
+    it.each(['removeTrack', 'removeAllTracks'] as const)(
+        'keeps the subscribed Auto capture after a refused %s',
+        async (type) => {
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected tracks before Auto admission');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => ({ ...track, armed: true, inputMonitoring: 'auto' })),
+            });
+            flushAutomergeStorageWrites();
+            await startInputMonitoring('a', null);
+            await startInputMonitoring('b', null);
+            expect(getUserMedia).toHaveBeenCalledTimes(1);
+            source.disconnect.mockClear();
+            docTrackIdsAtDisconnect = [];
+
+            refuseCommit = true;
+            const action = type === 'removeTrack' ? { type, payload: { trackId: 'a' } } : { type, payload: undefined };
+            await expect(executeAppAction(action)).rejects.toBe(commitRefusal);
+            refuseCommit = false;
+
+            expect(docTrackIds()).toEqual(['a', 'b']);
+            expect(liveTrackIds()).toEqual(['a', 'b']);
+            expect(monitorOwners()).toEqual(['a', 'b']);
+            expect(source.disconnect).not.toHaveBeenCalled();
+            expect(docTrackIdsAtDisconnect).toEqual([]);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            expect(getUserMedia).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it('preserves an unflushed direct On through an unrelated owned track publication', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({ ...state, tracks: state.tracks.map((track) => ({ ...track, inputMonitoring: 'off' })) });
+        flushAutomergeStorageWrites();
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            trackStore.set({ ...state, tracks: state.tracks.map((track) => ({ ...track, inputMonitoring: 'on' })) });
+            const starting = startInputMonitoring('a', null);
+            trackStore.update(
+                (current) =>
+                    current && {
+                        ...current,
+                        tracks: current.tracks.map((track) =>
+                            track.id === 'b' ? { ...track, name: 'Renamed B' } : track
+                        ),
+                    }
+            );
+            return starting;
+        });
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        expect(
+            getCrdtDoc<{ tracks: { tracks: Array<{ id: string; inputMonitoring: string }> } }>(
+                'root'
+            )?.tracks.tracks.find((track) => track.id === 'a')?.inputMonitoring
+        ).toBe('off');
+
+        expect(await transaction.value).toBe(true);
+        expect(source.disconnect).not.toHaveBeenCalled();
+        expect(inputTrack.stop).not.toHaveBeenCalled();
+        transaction.commit();
+
+        expect(monitorOwners()).toEqual(['a']);
+        expect(source.disconnect).not.toHaveBeenCalled();
+        expect(inputTrack.stop).not.toHaveBeenCalled();
+        expect(getUserMedia).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([false, true])(
+        'settles committed absence independently of projection notification, disposed=%s',
+        async (disposed) => {
+            await startInputMonitoring('a', null);
+            await startInputMonitoring('b', null);
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected track state');
+            }
+            // The visible removal arrives first; its committed owner still vetoes teardown.
+            trackStore.set({ ...state, tracks: state.tracks.filter((track) => track.id !== 'a') });
+            expect(source.disconnect).not.toHaveBeenCalled();
+            expect(docTrackIds()).toEqual(['a', 'b']);
+            if (disposed) {
+                unsubscribe?.();
+                unsubscribe = undefined;
+            }
+            // No store hydration or notification accompanies this actual committed-root event.
+            mutateCrdtDoc<{ tracks: { tracks: Array<{ id: string }> } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    const index = document.tracks.tracks.findIndex((track) => track.id === 'a');
+                    if (index < 0) {
+                        throw new Error('Expected committed owner A before removal');
+                    }
+                    document.tracks.tracks.splice(index, 1);
+                },
+            });
+
+            expect(docTrackIds()).toEqual(['b']);
+            if (disposed) {
+                expect(source.disconnect).not.toHaveBeenCalled();
+                expect(monitorOwners()).toEqual(['a', 'b']);
+            } else {
+                expect(source.disconnect).toHaveBeenCalledExactlyOnceWith(gains.get('a'));
+                expect(docTrackIdsAtDisconnect).toEqual([['b']]);
+                expect(monitorOwners()).toEqual(['b']);
+            }
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            expect(getUserMedia).toHaveBeenCalledTimes(1);
+        }
+    );
 });

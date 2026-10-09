@@ -2,8 +2,10 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { isTrackInputMonitored } from '../../repositories/audioRecorder/isTrackInputMonitored';
+import { readInputMonitoringTrackIds } from '../../repositories/audioRecorder/readInputMonitoringTrackIds';
 import { readMonitorTeardownEpoch } from '../../repositories/audioRecorder/readMonitorTeardownEpoch';
 import { isAutoInputMonitoringHeld } from '../../services/autoInputMonitoringSuspension';
+import { hasCommittedInputMonitoringTrack } from '../../stores/inputMonitoringProjectAccess';
 
 import { deriveAutoMonitorEdge } from './deriveAutoInputMonitoring';
 import { startInputMonitoring } from './startInputMonitoring';
@@ -76,10 +78,10 @@ function openEdge(trackId: string, inputId: string | null): void {
 /**
  * The single owner of Auto input monitoring. Derives each Auto track's desired
  * edge from its arm state and the transport, and opens or closes it so that
- * repeating the call changes nothing. Only audio tracks open an edge: the
+ * repeating the call changes nothing. Only audio tracks open an Auto edge: the
  * microphone belongs to the kinds recording admission captures audio for. On
- * and Off tracks belong to the user's own gesture and are never touched, except
- * that an edge this owner held is released when its track turns Off. Every
+ * is admitted only by a gesture, recording or rearm; existing On interests
+ * still follow store-only Off, eligibility and removal cleanup. Every
  * transition that feeds the derivation — arm, mode change, record start/stop,
  * play, stop — reaches this through the track and transport stores, plus the
  * explicit calls where a rebuilt graph or a mode gesture needs the edge settled
@@ -93,11 +95,15 @@ export function reconcileAutoInputMonitoring(): void {
     const tracks = trackStore.value?.tracks ?? [];
     const transport = transportStore.value ?? defaultTransportState;
     const presentIds = new Set<string>();
+    const interestedIds = new Set([...openRequests.keys(), ...readInputMonitoringTrackIds()]);
     forgiveRefusalsAtRecordStartOrStop(transport);
 
     for (const track of tracks) {
         presentIds.add(track.id);
         if (track.kind !== 'audio') {
+            if ((track.kind !== 'midi' || track.inputMonitoring !== 'on') && interestedIds.has(track.id)) {
+                closeEdge(track.id);
+            }
             continue;
         }
         const edge = deriveAutoMonitorEdge({
@@ -112,10 +118,9 @@ export function reconcileAutoInputMonitoring(): void {
             }
         } else if (edge === 'closed') {
             closeEdge(track.id);
-        } else if (track.inputMonitoring === 'off' && openRequests.has(track.id)) {
+        } else if (track.inputMonitoring === 'off' && interestedIds.has(track.id)) {
             // A store-only write (a restored version, a collaborator) can turn
-            // an Auto track Off without a gesture that stops its edge, also
-            // after passing through On.
+            // a track Off without the gesture that admitted its capture.
             closeEdge(track.id);
         } else if (track.inputMonitoring === 'on' && openRequests.get(track.id)?.refused) {
             // On keeps whatever edge this owner holds, so a later Off can still
@@ -124,8 +129,10 @@ export function reconcileAutoInputMonitoring(): void {
         }
     }
 
-    for (const trackId of [...openRequests.keys()]) {
-        if (!presentIds.has(trackId)) {
+    for (const trackId of interestedIds) {
+        // The visible store can publish optimistic removal before Command
+        // commits. A refused deletion must retain its committed capture owner.
+        if (!presentIds.has(trackId) && !hasCommittedInputMonitoringTrack(trackId)) {
             closeEdge(trackId);
         }
     }

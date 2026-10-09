@@ -1,22 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import {
+    createTrack,
+    rearmInputMonitoring,
+    restoreTrackSnapshot,
+    toggleInputMonitoring,
+} from '#/modules/Arrangement/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+
 import { reconcileAutoInputMonitoring } from '../reconcileAutoInputMonitoring';
+import { startInputMonitoring } from '../startInputMonitoring';
 import { stopInputMonitoring } from '../stopInputMonitoring';
+import { suspendAutoInputMonitoring } from '../suspendAutoInputMonitoring';
 import { syncAutoInputMonitoring } from '../syncAutoInputMonitoring';
 
-import type { Store } from '#/infra/store/types';
-
 type InputMonitoring = 'auto' | 'on' | 'off';
-
-type TestTrack = {
-    id: string;
-    kind: 'audio';
-    armed: boolean;
-    inputMonitoring: InputMonitoring;
-    inputId: string | null;
-};
-
-type TestTransport = { isPlaying: boolean; isRecording: boolean };
 
 type TestSource = { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
 
@@ -48,40 +47,27 @@ vi.mock('../../../repositories/createWebAudioEngine', () => ({
     },
 }));
 
-const stores = vi.hoisted(() => ({
-    trackStore: null as unknown as Store<{ tracks: TestTrack[] }>,
-    transportStore: null as unknown as Store<TestTransport>,
-}));
-
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const { createStore: create } = await import('#/infra/store/createStore');
-    stores.trackStore = create<{ tracks: TestTrack[] }>();
-    return {
-        ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-        trackStore: stores.trackStore,
-    };
-});
-
-vi.mock('#/modules/Transport/stores', async (importOriginal) => {
-    const { createStore: create } = await import('#/infra/store/createStore');
-    stores.transportStore = create<TestTransport>();
-    return {
-        ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
-        transportStore: stores.transportStore,
-        defaultTransportState: { isPlaying: false, isRecording: false },
-    };
-});
-
 const originalMediaDevices = globalThis.navigator.mediaDevices;
 const GAIN_NODE = { name: 'strip-gain' };
+const SECOND_GAIN_NODE = { name: 'second-strip-gain' };
 
-function track(inputMonitoring: InputMonitoring): TestTrack {
-    return { id: 'track-1', kind: 'audio', armed: true, inputMonitoring, inputId: 'input-1' };
+function track(inputMonitoring: InputMonitoring, overrides: Partial<Track> = {}): Track {
+    return {
+        ...createTrack({ id: 'track-1', name: 'Audio 1', kind: 'audio', withoutDefaultDevice: true }),
+        armed: true,
+        inputMonitoring,
+        inputId: 'input-1',
+        ...overrides,
+    };
 }
 
-/** A write that reaches the track store without any monitoring gesture or graph reset. */
+/** The real version-restore track producer, without a monitoring gesture or graph reset. */
 function writeStoreOnly(inputMonitoring: InputMonitoring): void {
-    stores.trackStore.set({ tracks: [track(inputMonitoring)] });
+    restoreTrackSnapshot({ tracks: [track(inputMonitoring)], selectedTrackId: null });
+}
+
+function publishTracks(tracks: Track[]): void {
+    restoreTrackSnapshot({ tracks, selectedTrackId: null });
 }
 
 function liveStream(): TestStream {
@@ -103,6 +89,7 @@ function deferGrant(): (granted: TestStream) => void {
 describe('reconcileAutoInputMonitoring when a track leaves Auto without a gesture', () => {
     let source: TestSource;
     let unsubscribe: (() => void) | null = null;
+    let releaseHold: (() => void) | null = null;
 
     beforeEach(() => {
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
@@ -114,19 +101,23 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
         harness.getUserMedia.mockReset();
         harness.createMediaStreamSource.mockReset();
         harness.ensureTrackStrip.mockReset();
-        harness.ensureTrackStrip.mockReturnValue({ gainNode: GAIN_NODE });
+        harness.ensureTrackStrip.mockImplementation((trackId) => ({
+            gainNode: trackId === 'track-2' ? SECOND_GAIN_NODE : GAIN_NODE,
+        }));
         source = { connect: vi.fn(), disconnect: vi.fn() };
         harness.createMediaStreamSource.mockReturnValue(source);
-        stores.transportStore.set({ isPlaying: false, isRecording: false });
-        stores.trackStore.set({ tracks: [track('auto')] });
+        transportStore.set(defaultTransportState);
+        publishTracks([track('auto')]);
     });
 
     afterEach(() => {
         unsubscribe?.();
         unsubscribe = null;
         stopInputMonitoring();
-        stores.trackStore.set({ tracks: [] });
+        publishTracks([]);
         reconcileAutoInputMonitoring();
+        releaseHold?.();
+        releaseHold = null;
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: originalMediaDevices,
             configurable: true,
@@ -218,5 +209,148 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
 
         expect(source.disconnect).not.toHaveBeenCalled();
         expect(granted.stopTrack).not.toHaveBeenCalled();
+    });
+
+    it('releases a direct On edge immediately when restore turns it Off during a hold', async () => {
+        writeStoreOnly('on');
+        unsubscribe = syncAutoInputMonitoring();
+        const granted = liveStream();
+        harness.getUserMedia.mockResolvedValueOnce(granted.stream);
+        expect(await startInputMonitoring('track-1', 'input-1')).toBe(true);
+        expect(source.connect).toHaveBeenCalledWith(GAIN_NODE);
+        releaseHold = suspendAutoInputMonitoring();
+
+        writeStoreOnly('off');
+
+        expect(source.disconnect).toHaveBeenCalledWith(GAIN_NODE);
+        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+        releaseHold();
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels direct On interest before a held Off publication receives its late grant', async () => {
+        writeStoreOnly('on');
+        unsubscribe = syncAutoInputMonitoring();
+        const grant = deferGrant();
+        const opening = startInputMonitoring('track-1', 'input-1');
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+        releaseHold = suspendAutoInputMonitoring();
+
+        writeStoreOnly('off');
+        const granted = liveStream();
+        grant(granted);
+
+        expect(await opening).toBe(false);
+        expect(harness.createMediaStreamSource).not.toHaveBeenCalled();
+        expect(source.connect).not.toHaveBeenCalled();
+        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+        releaseHold();
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps direct On MIDI eligible, then closes it when the same identity becomes Auto', async () => {
+        publishTracks([track('on', { kind: 'midi' })]);
+        unsubscribe = syncAutoInputMonitoring();
+        const granted = liveStream();
+        harness.getUserMedia.mockResolvedValueOnce(granted.stream);
+        expect(await startInputMonitoring('track-1', 'input-1')).toBe(true);
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        expect(source.disconnect).not.toHaveBeenCalled();
+
+        publishTracks([track('auto', { kind: 'midi' })]);
+
+        expect(source.disconnect).toHaveBeenCalledWith(GAIN_NODE);
+        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['bus', 'folder', 'master'] as const)(
+        'closes a direct On interest when its same-id kind becomes %s',
+        async (kind) => {
+            writeStoreOnly('on');
+            unsubscribe = syncAutoInputMonitoring();
+            const granted = liveStream();
+            harness.getUserMedia.mockResolvedValueOnce(granted.stream);
+            expect(await startInputMonitoring('track-1', 'input-1')).toBe(true);
+
+            publishTracks([track('on', { kind })]);
+
+            expect(source.disconnect).toHaveBeenCalledWith(GAIN_NODE);
+            expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+            expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it.each(['off', 'removed'] as const)(
+        'releases only the direct On owner that becomes %s on a shared input',
+        async (mode) => {
+            const second = track('on', { id: 'track-2' });
+            publishTracks([track('on'), second]);
+            unsubscribe = syncAutoInputMonitoring();
+            const granted = liveStream();
+            harness.getUserMedia.mockResolvedValueOnce(granted.stream);
+            expect(await startInputMonitoring('track-1', 'input-1')).toBe(true);
+            expect(await startInputMonitoring('track-2', 'input-1')).toBe(true);
+            expect(source.connect).toHaveBeenCalledWith(SECOND_GAIN_NODE);
+
+            // A controlled collaborator projection uses the same real store publication as CRDT hydration.
+            trackStore.set({ tracks: mode === 'off' ? [track('off'), second] : [second], selectedTrackId: null });
+
+            expect(source.disconnect).toHaveBeenCalledExactlyOnceWith(GAIN_NODE);
+            expect(granted.stopTrack).not.toHaveBeenCalled();
+            expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+            publishTracks([track('off', { id: 'track-2' })]);
+            expect(source.disconnect).toHaveBeenCalledWith(SECOND_GAIN_NODE);
+            expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it('does not acquire from store-only On, but observes a gesture and a later Off', async () => {
+        writeStoreOnly('off');
+        unsubscribe = syncAutoInputMonitoring();
+        releaseHold = suspendAutoInputMonitoring();
+        writeStoreOnly('on');
+        expect(harness.getUserMedia).not.toHaveBeenCalled();
+        const granted = liveStream();
+        harness.getUserMedia.mockResolvedValueOnce(granted.stream);
+
+        writeStoreOnly('auto');
+        toggleInputMonitoring('track-1');
+        await harness.opens[0];
+        expect(source.connect).toHaveBeenCalledWith(GAIN_NODE);
+        writeStoreOnly('off');
+
+        expect(source.disconnect).toHaveBeenCalledWith(GAIN_NODE);
+        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+        releaseHold();
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+    });
+
+    it('suppresses transient Auto opens while a held rebuild re-arms On, then cleans the rearm on Off', async () => {
+        const onTrack = track('on');
+        const autoTrack = track('auto', { id: 'track-2', inputId: 'input-2' });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        publishTracks([onTrack, autoTrack]);
+        unsubscribe = syncAutoInputMonitoring();
+        releaseHold = suspendAutoInputMonitoring();
+        stopInputMonitoring();
+        transportStore.set(defaultTransportState);
+        const granted = liveStream();
+        harness.getUserMedia.mockResolvedValueOnce(granted.stream);
+
+        await rearmInputMonitoring([onTrack, autoTrack]);
+
+        expect(source.connect).toHaveBeenCalledWith(GAIN_NODE);
+        expect(source.connect).not.toHaveBeenCalledWith(SECOND_GAIN_NODE);
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        releaseHold();
+        expect(granted.stopTrack).not.toHaveBeenCalled();
+        publishTracks([track('off'), autoTrack]);
+        expect(source.disconnect).toHaveBeenCalledWith(GAIN_NODE);
+        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
     });
 });

@@ -170,3 +170,25 @@ check that the MediaStreamTrack stops exactly once. Hold a permission grant thro
 resolve it and check that no deleted strip or edge is recreated. Abort and commit the single and
 bulk commands separately: the abort must retain every edge and stream, while the commit releases
 only owners whose IDs are absent from committed project truth.
+
+### 2026-10-09 — admitted interests and optimistic deletion cross the monitor owner (PR #5011)
+
+PR #5011 added the subscribed Auto owner. Its removal sweep read the visible track store, so an
+optimistic single or bulk Command deletion disconnected Auto edges before a refused transaction
+restored the tracks. It also swept only its Auto-open records, leaving direct On interests outside
+store-only Off, kind-change and absence cleanup, including permission still pending during a hold.
+
+The final reviewed-head bundle's strongest draw attacked newly merged main changes; its economy
+draws attacked the merged contract and existing probes. Their recorded admissions and baseline
+probes did not demand direct On admission or refused optimistic deletion. Those records establish
+the prompt gap on that head; they do not establish what unrecorded reviewer work covered or that a
+higher tier alone would have caught it.
+
+Probe: start through the real direct On repository and real subscribed owner, then publish Off
+while held, change a MIDI track to Auto, and remove one shared owner. Observe the actual source
+edges and stream tracks, including a late permission grant; never count only Auto-open records.
+Separately refuse and commit both deletion commands with Auto and On captures, require zero
+disconnects, stops or reacquisitions on refusal, and read the raw committed document at the first
+edge disconnect and last-owner stop. Preserve a direct On admitted before its mode flush while an
+unrelated owned publication occurs. Reverting the admitted-interest sweep or committed-absence
+fence must fail the corresponding real capture probe.
