@@ -1,0 +1,30 @@
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.autoMonitoring.spec.ts
+  s_4c8cd08893b364::t_53a4d38c43bb38 18-19,22-24,59,61,72-94,108-111,127,138,147-209
+  s_4c8cd08893b364::t_b52ecadf3ef505 210
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/syncAutoInputMonitoring.spec.ts
+  s_4c8cd08893b364::t_1f26d0dd7c13f4 7
+  s_4c8cd08893b364::t_18660166c95bd1 357-382
+src/modules/AudioEngine/useCases/audioRecorder/reconcileAutoInputMonitoring.ts
+  s_4c8cd08893b364::t_2a110da0f3e54c 110-112
+  s_4c8cd08893b364::t_5aa74795c75f4d 86-89,92
+src/modules/AudioEngine/AGENTS.md
+  s_4c8cd08893b364::t_ee439cc15ba22f 44
+src/modules/AudioEngine/useCases/audioRecorder/suspendAutoInputMonitoring.ts
+  s_4c8cd08893b364::t_94b9412d2e70f5 6-9,11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ad5ae5ba93c2cf2ed87bea8323359fa2b65c0e3",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
