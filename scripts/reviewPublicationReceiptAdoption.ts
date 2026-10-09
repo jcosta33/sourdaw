@@ -209,6 +209,7 @@ export function assertReconciliationStable(
         second.head !== first.head ||
         second.reviews.length !== first.reviews.length ||
         (second.reviews.length === 1 && second.reviews[0]!.id !== first.reviews[0]!.id) ||
+        (second.reviews.length === 1 && second.reviews[0]!.state !== first.reviews[0]!.state) ||
         (second.reviews.length === 1 &&
             !landedPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId, second.head))
     ) {

@@ -1233,6 +1233,40 @@ describe('review-publication recovery of a landed review among thread-reply revi
             expect(lockOid(fixture.root)).not.toBeUndefined();
         });
 
+        it('refuses when the approval is dismissed between the two inspections on a head that moved before both', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const live = fakeGitHub({ posted: true, landing: 'approve', liveHead: movedHead });
+            const dismissed = dismissedApprovalRemote();
+            const before = dossierText(fixture.root);
+
+            await expect(
+                recoverWith(fixture.root, fixture.ownerOid, live.gh, (inspection) =>
+                    inspection === 1 ? live.gh : dismissed.gh
+                )
+            ).rejects.toThrow(/remote state changed during reconciliation/);
+            expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+            expect(dossierText(fixture.root)).toBe(before);
+            expect(lockOid(fixture.root)).not.toBeUndefined();
+        });
+
+        it('releases a dismissed approval beside another actor dismissed review whose body differs from the document', async () => {
+            const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+            const remote = dismissedApprovalRemote({
+                reviews: [
+                    ...dismissedApprovalReviews(),
+                    restReview(5433790200, 'DISMISSED', `${approvalBody} edited`, AUTHOR_BOT_NODE_ID),
+                ],
+            });
+
+            await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+
+            expect(publishedReviewId(readDossier(fixture.root))).toBe(landedReviewId);
+            expect(lockOid(fixture.root)).toBeUndefined();
+            expect(readPullRequestMutationLockReceipt(fixture.root, number, fixture.ownerOid)).toMatchObject({
+                outcome: 'landed',
+            });
+        });
+
         it('keeps a dismissed approval from standing as the live publication of a normal publish replay', async () => {
             const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
             const live = fakeGitHub({ posted: true, landing: 'approve' });
