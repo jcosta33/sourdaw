@@ -1,0 +1,27 @@
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_99a96c8ccb75a8 9-21
+tests/e2e/firstPaintWarmup.ts
+  s_1f0dcd815e8946::t_4ac27b1aa30fc0 21-28,57-59
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  s_1f0dcd815e8946::t_bebca20b24f805 5-25
+  s_1f0dcd815e8946::t_05a05128bc0917 179-214,221-278
+  s_1f0dcd815e8946::t_8aad2c2285c999 279-280
+  s_1f0dcd815e8946::t_b4b46e2d3eacc6 215-217,219-220
+  s_1f0dcd815e8946::t_3f295df9820bb5 218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a6c1d6c494fc80b089a50103cf584de01994941",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
