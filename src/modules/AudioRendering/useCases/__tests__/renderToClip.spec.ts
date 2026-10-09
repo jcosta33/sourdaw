@@ -208,7 +208,9 @@ describe('renderToClip', () => {
         renderToClip({ ...input, targetTrackId: 'track-1', name: 'Rendered' });
 
         // First add should have the input startBeat and endBeat values.
-        expect(mocks.addClip).toHaveBeenNthCalledWith(1, expect.objectContaining({ startBeat: 8, endBeat: 16 }));
+        const firstAdd = mocks.addClip.mock.calls[0]?.[0];
+        expect(firstAdd).toBeDefined();
+        expect(firstAdd).toMatchObject({ startBeat: 8, endBeat: 16 });
 
         const recordedUndo = mocks.pushUndoEntry.mock.calls[0];
         if (!recordedUndo) {
@@ -219,8 +221,8 @@ describe('renderToClip', () => {
         mocks.addClip.mockReturnValue({ id: 'clip-placed', trackId: 'track-1' });
         redo();
 
-        // Redo should add the clip with the same start beat and end beat as the first add.
-        expect(mocks.addClip).toHaveBeenNthCalledWith(1, expect.objectContaining({ startBeat: 8, endBeat: 16 }));
+        // Redo should add the clip with the same arguments as the first add.
+        expect(mocks.addClip).toHaveBeenNthCalledWith(1, firstAdd);
     });
 });
 

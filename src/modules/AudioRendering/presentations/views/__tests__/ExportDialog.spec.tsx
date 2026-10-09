@@ -912,38 +912,38 @@ describe('ExportDialog', () => {
     });
 
     it('expects no render started and no notification when browser save-picker rejects with AbortError', async () => {
-        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
-        const abortError = new Error('The user aborted the save dialog.');
-        abortError.name = 'AbortError';
-        const picker = vi.fn().mockRejectedValue(abortError);
-        vi.stubGlobal('showSaveFilePicker', picker);
-
+        vi.useFakeTimers();
         try {
-            render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+            const abortError = new Error('The user aborted the save dialog.');
+            abortError.name = 'AbortError';
+            const picker = vi.fn().mockRejectedValue(abortError);
+            vi.stubGlobal('showSaveFilePicker', picker);
 
-            // Wait for the picker to be called.
-            await waitFor(() => {
+            try {
+                render(<ExportDialog open={true} onClose={vi.fn()} />);
+                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+                // Wait for the picker to be called and drain all timers to completion.
+                await act(async () => {
+                    await vi.runAllTimersAsync();
+                });
+
+                // Verify the picker was called once.
                 expect(picker).toHaveBeenCalledTimes(1);
-            });
 
-            // Wait for the picker rejection to settle through the error handler.
-            // The AbortError return should prevent export, so no render starts and button
-            // stays available (or becomes available again without entering exporting state).
-            await act(async () => {
-                // Allow async rejection to settle through the catch block.
-                await Promise.resolve();
-            });
-
-            // No render started, so renderOffline should not have been called.
-            expect(mocks.renderOffline).not.toHaveBeenCalled();
-            // No notification should be sent.
-            expect(mocks.notifyUser).not.toHaveBeenCalled();
-            // Dialog should remain ready for a new export.
-            expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+                // No render started, so renderOffline should not have been called.
+                expect(mocks.renderOffline).not.toHaveBeenCalled();
+                // No notification should be sent.
+                expect(mocks.notifyUser).not.toHaveBeenCalled();
+                // Dialog should remain ready for a new export.
+                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+            } finally {
+                vi.unstubAllGlobals();
+                vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+            }
         } finally {
-            vi.unstubAllGlobals();
-            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+            vi.useRealTimers();
         }
     });
 
