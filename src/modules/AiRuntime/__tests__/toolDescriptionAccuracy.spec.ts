@@ -68,7 +68,7 @@ const TRANSFORM_EXAMPLE_MARKER = 'Valid complete document JSON text: ';
  * tools that cite it, so a rename on either side fails, and to the AiRuntime source that emits it.
  */
 const RECEIPT_TERM_CITERS: Readonly<Record<string, readonly string[]>> = {
-    callId: ['transform.compile', 'recipe.expand', 'analysis.measure'],
+    callId: ['transform.compile', 'recipe.expand', 'analysis.measure', 'answer.respond'],
     nextCursor: ['device.factory-manifest.read'],
     'tool-receipt-too-large': ['device.factory-manifest.read'],
     'no-reference-loaded': ['analysis.compareReference'],

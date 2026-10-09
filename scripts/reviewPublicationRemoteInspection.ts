@@ -346,3 +346,20 @@ export function landedPublishedReview(
     }
     return actorNodeId === REVIEWER_BOT_NODE_ID && dismissedApprovalCopy(review, document, head, actorNodeId, liveHead);
 }
+
+/**
+ * The match a recorded publication's replay applies: `exactPublishedReview`, or
+ * `landedPublishedReview` when recovery supplies the pull request's live head (#5046).
+ */
+export function recordedReviewStands(
+    remote: RemotePublishedReview,
+    document: ReviewDocument,
+    head: string,
+    actorNodeId: string,
+    recoveryLiveHead: string | undefined
+): boolean {
+    if (recoveryLiveHead === undefined) {
+        return exactPublishedReview(remote, document, head, actorNodeId);
+    }
+    return landedPublishedReview(remote, document, head, actorNodeId, recoveryLiveHead);
+}

@@ -157,7 +157,7 @@ describe('mandatory planning tools', () => {
         agentReferenceStore.set({ reference: null, loadEpoch: 0 });
     });
 
-    it('names exactly the eight planning tools AC-002 makes mandatory', () => {
+    it('names exactly the nine planning tools every backend must advertise', () => {
         expect([...MANDATORY_PLANNING_TOOL_NAMES].sort()).toEqual(
             [
                 'project.query',
@@ -168,6 +168,7 @@ describe('mandatory planning tools', () => {
                 'transform.compile',
                 'command.batch.propose',
                 'command.batch.decline',
+                'answer.respond',
             ].sort()
         );
     });

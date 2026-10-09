@@ -163,6 +163,24 @@ const NATIVE_ADDON_ARTIFACT = 'crates/sourdaw-native/sourdaw-native.node';
 // such spec added without this leg would otherwise skip on every hosted run
 // forever, and a written list is exactly what nobody updates.
 const NATIVE_ADDON_IMPORT = 'NATIVE_ADDON_FILE';
+// The cargo registry index cache layer keys its archive per job: the two
+// native macOS jobs consult different index entries, so a key shared across
+// jobs lets whichever job's post-save ran first fix the archived index for
+// both (#5094, #5136). The recorded snapshot re-records in lockstep with the
+// workflow it pins, so this scoping is asserted against the parsed workflow
+// itself, never against the fixture alone.
+const CARGO_INDEX_KEY_PREFIX = 'cargo-index-';
+const CACHE_ACTION_USES_PREFIX = 'actions/cache@';
+const JOB_SCOPE_EXPRESSION = '${{ github.job }}';
+const CARGO_DEPENDENCY_KEY =
+    "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+const CARGO_INDEX_KEY =
+    "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+const CARGO_INDEX_RESTORE = 'cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n';
+const CARGO_DEPENDENCY_PATH = '~/.cargo/registry\n~/.cargo/git\n';
+const CARGO_OFFLINE_EXACT = "${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}";
+const NATIVE_OFFLINE_EXACT =
+    "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}";
 const PNPM_SETUP_STEP = 'Set up pnpm';
 const NODE_SETUP_STEP = 'Set up Node';
 const PULL_REQUEST_EXCLUDED_JOBS = [
@@ -423,6 +441,7 @@ const isolationScriptSource = readFileSync(join(repositoryRoot, DEPLOY_WEB_ISOLA
 
 const { document: workflowDocument, parsed: workflow } = loadWorkflow('health-gates.yml');
 const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
+const { parsed: cargoDependencySeed } = loadWorkflow('cargo-dependency-seed.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
 const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
@@ -1164,9 +1183,189 @@ function assertNativeParityJob(candidate: UnknownRecord): void {
     }
 }
 
+type CargoIndexCacheStep = { job: string; key: string; restorePrefixes: string[] };
+
+// Substitutes the per-job expression with the value each job evaluates it to,
+// so two templates that differ only by embedding `${{ github.job }}` compare
+// as the distinct runtime keys they are, while two jobs sharing the unscoped
+// form compare equal — the collision.
+function runtimeKeyShape(key: string, job: string): string {
+    return key.split(JOB_SCOPE_EXPRESSION).join(job);
+}
+
+function cargoIndexCacheSteps(candidate: UnknownRecord): CargoIndexCacheStep[] {
+    const found: CargoIndexCacheStep[] = [];
+    for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+        const job = asRecord(jobValue, `${jobId} job`);
+        const steps = job.steps === undefined ? [] : arrayAt(job, 'steps');
+        for (const step of steps) {
+            const stepRecord = asRecord(step, 'step');
+            if (typeof stepRecord.uses !== 'string' || !stepRecord.uses.startsWith(CACHE_ACTION_USES_PREFIX)) {
+                continue;
+            }
+            if (stepRecord.with === null || typeof stepRecord.with !== 'object' || Array.isArray(stepRecord.with)) {
+                continue;
+            }
+            const stepWith = asRecord(stepRecord.with, 'with');
+            const key = stepWith.key;
+            if (typeof key !== 'string' || !key.startsWith(CARGO_INDEX_KEY_PREFIX)) {
+                continue;
+            }
+            const restoreKeys = stepWith['restore-keys'];
+            found.push({
+                job: jobId,
+                key,
+                restorePrefixes:
+                    typeof restoreKeys === 'string'
+                        ? restoreKeys.split('\n').filter((line) => line.trim().length > 0)
+                        : [],
+            });
+        }
+    }
+    return found;
+}
+
+/**
+ * The recorded snapshot re-records in lockstep with the workflow it pins, so a
+ * cargo-index key reverted from the per-job form would re-bless itself green.
+ * This reads the parsed workflow directly: no two jobs may share a runtime key
+ * or restore prefix — the poisoning race the per-job scoping exists to end —
+ * and every key and restore line must carry the per-job expression that keeps
+ * them distinct at runtime. The equality clauses run before the expression
+ * checks so each can be observed failing on its own mutation.
+ */
+function assertCargoIndexCacheKeysJobScoped(candidate: UnknownRecord): void {
+    const cargoIndexSteps = cargoIndexCacheSteps(candidate);
+    if (cargoIndexSteps.length === 0) {
+        throw new Error('the cargo registry index cache layer must keep a keyed actions/cache step');
+    }
+    for (const [index, entry] of cargoIndexSteps.entries()) {
+        const entryShape = runtimeKeyShape(entry.key, entry.job);
+        const entryPrefixes = entry.restorePrefixes.map((prefix) => runtimeKeyShape(prefix, entry.job));
+        for (const other of cargoIndexSteps.slice(index + 1)) {
+            if (other.job === entry.job) {
+                continue;
+            }
+            const otherShape = runtimeKeyShape(other.key, other.job);
+            const otherPrefixes = other.restorePrefixes.map((prefix) => runtimeKeyShape(prefix, other.job));
+            if (otherShape === entryShape) {
+                throw new Error(`the ${entry.job} and ${other.job} cargo-index cache keys must differ per job`);
+            }
+            for (const prefix of entryPrefixes) {
+                if (otherPrefixes.includes(prefix)) {
+                    throw new Error(`the ${entry.job} and ${other.job} cargo-index restore keys must differ per job`);
+                }
+            }
+        }
+    }
+    for (const entry of cargoIndexSteps) {
+        if (!entry.key.includes(JOB_SCOPE_EXPRESSION)) {
+            throw new Error(`the ${entry.job} cargo-index cache key must embed ${JOB_SCOPE_EXPRESSION}`);
+        }
+        for (const prefix of entry.restorePrefixes) {
+            if (!prefix.includes(JOB_SCOPE_EXPRESSION)) {
+                throw new Error(`the ${entry.job} cargo-index restore keys must embed ${JOB_SCOPE_EXPRESSION}`);
+            }
+        }
+    }
+}
+
+function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord): void {
+    expect(Object.keys(recordAt(seed, 'on'))).toEqual(['push']);
+    const push = recordAt(recordAt(seed, 'on'), 'push');
+    expect(push.branches).toEqual(['main']);
+    expect(push.paths).toEqual([
+        '.github/workflows/cargo-dependency-seed.yml',
+        'Cargo.lock',
+        '**/Cargo.toml',
+        '.cargo/config.toml',
+        'rust-toolchain.toml',
+    ]);
+    expect(seed.permissions).toEqual({ contents: 'read' });
+    expect(Object.keys(recordAt(seed, 'jobs'))).toEqual(['rust', 'native-macos']);
+    expect(JSON.stringify(seed)).not.toMatch(/secrets\.|"environment"|pnpm deliver|vercel/iu);
+
+    const linuxSeed = jobAt(seed, 'rust');
+    const linuxConsumer = jobAt(consumer, 'rust');
+    const nativeSeed = jobAt(seed, 'native-macos');
+    const nativeConsumer = jobAt(consumer, 'native-macos');
+    for (const [job, runner] of [
+        [linuxSeed, 'ubuntu-latest'],
+        [nativeSeed, 'macos-latest'],
+    ] as const) {
+        expect(job['runs-on']).toBe(runner);
+        expect(job.if).toBe("github.ref == 'refs/heads/main'");
+        expect(job['timeout-minutes']).toBe(60);
+        expect(stepNamed(job, 'Checkout').uses).toBe('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1');
+        expect(stepNamed(job, 'Cache cargo build').uses).toBe(
+            'Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6'
+        );
+    }
+    const linuxSeedNames = arrayAt(linuxSeed, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(linuxSeedNames).toEqual([
+        'Checkout',
+        'Install ALSA development headers',
+        'Install the pinned Rust toolchain',
+        'Cache cargo build',
+        'Cache Cargo dependencies',
+        'Rust workspace health gates',
+    ]);
+    const nativeSeedNames = arrayAt(nativeSeed, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(nativeSeedNames).toEqual([
+        'Checkout',
+        'Install the pinned Rust toolchain',
+        'Cache cargo build',
+        'Cache the cargo registry index',
+        'Test the audio crates',
+        'Test the native crate',
+    ]);
+    expect(stepNamed(linuxSeed, 'Rust workspace health gates').run).toBe('sh scripts/health-gates-rust.sh');
+    expect(stepNamed(nativeSeed, 'Test the audio crates').run).toBe(
+        'cargo test --package daw-core --package daw-dsp --package daw-engine --all-features'
+    );
+    expect(stepNamed(nativeSeed, 'Test the native crate').run).toBe('cargo test --package sourdaw-native');
+
+    for (const job of [linuxSeed, linuxConsumer]) {
+        const cache = stepNamed(job, 'Cache Cargo dependencies');
+        expect(cache.uses).toBe('actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830');
+        const options = recordAt(cache, 'with');
+        expect(options.path).toBe(CARGO_DEPENDENCY_PATH);
+        expect(options.key).toBe(CARGO_DEPENDENCY_KEY);
+    }
+    expect(stepNamed(linuxConsumer, 'Cache Cargo dependencies').id).toBe('cargo-deps');
+    const linuxConsumerNames = arrayAt(linuxConsumer, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(linuxConsumerNames.indexOf('Cache cargo build')).toBeLessThan(
+        linuxConsumerNames.indexOf('Cache Cargo dependencies')
+    );
+    expect(linuxConsumerNames.indexOf('Cache Cargo dependencies')).toBeLessThan(
+        linuxConsumerNames.indexOf('Server and Rust workspace health gates')
+    );
+    const linuxHealth = stepNamed(linuxConsumer, 'Server and Rust workspace health gates');
+    expect(linuxHealth.run).toBe('pnpm health:server:full');
+    expect(recordAt(linuxHealth, 'env')).toEqual({
+        CARGO_HTTP_MULTIPLEXING: 'false',
+        CARGO_NET_OFFLINE: CARGO_OFFLINE_EXACT,
+    });
+
+    for (const job of [nativeSeed, nativeConsumer]) {
+        const cache = stepNamed(job, 'Cache the cargo registry index');
+        expect(cache.id).toBe('cargo-index');
+        expect(cache.uses).toBe('actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830');
+        expect(recordAt(cache, 'with')).toEqual({
+            path: '~/.cargo/registry/index',
+            key: CARGO_INDEX_KEY,
+            'restore-keys': CARGO_INDEX_RESTORE,
+        });
+    }
+    for (const name of ['Test the audio crates', 'Test the native crate']) {
+        expect(recordAt(stepNamed(nativeConsumer, name), 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
+    }
+}
+
 type WorkflowSet = {
     health: UnknownRecord;
     validation: UnknownRecord;
+    cargoDependencySeed: UnknownRecord;
     heavy: UnknownRecord;
     nightly: UnknownRecord;
     hostedQuantumMeasurement: UnknownRecord;
@@ -1178,6 +1377,7 @@ function workflowSet(): WorkflowSet {
     return {
         health: workflow,
         validation: validationWorkflow,
+        cargoDependencySeed,
         heavy: heavyWorkflow,
         nightly,
         hostedQuantumMeasurement,
@@ -1191,6 +1391,7 @@ function cloneWorkflows(label: string): WorkflowSet {
     return {
         health: asRecord(clone.health, `${label} health`),
         validation: asRecord(clone.validation, `${label} validation`),
+        cargoDependencySeed: asRecord(clone.cargoDependencySeed, `${label} cargo dependency seed`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
         nightly: asRecord(clone.nightly, `${label} nightly`),
         hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
@@ -1220,6 +1421,7 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
     return [
         ['health-gates.yml', set.health],
         ['validation.yml', set.validation],
+        ['cargo-dependency-seed.yml', set.cargoDependencySeed],
         ['heavy-gates.yml', set.heavy],
         ['nightly.yml', set.nightly],
         ['quantum-measurements.yml', set.hostedQuantumMeasurement],
@@ -4103,6 +4305,127 @@ describe('health gates workflow contract', () => {
         expect(() => assertNativeParityJob(misdirectedGuard)).toThrow(
             'native parity must accept the addon its own builder produces'
         );
+    });
+
+    it('scopes every cargo registry index cache key and restore key to its own job', () => {
+        expect(() => assertCargoIndexCacheKeysJobScoped(validationWorkflow)).not.toThrow();
+
+        // The pre-#5136 shared forms. The recorded escape: revert a native job
+        // to these and re-record the snapshot — the snapshot leg greens in
+        // lockstep, while this named pin reads the workflow and stays red.
+        const sharedKey = "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}";
+        const sharedRestoreKeys = 'cargo-index-${{ runner.os }}-${{ runner.arch }}-\n';
+
+        const sharedKeyJob = asRecord(structuredClone(validationWorkflow), 'shared cargo-index key');
+        const sharedKeyStep = stepNamed(jobAt(sharedKeyJob, 'native-macos'), 'Cache the cargo registry index');
+        recordAt(sharedKeyStep, 'with').key = sharedKey;
+        recordAt(sharedKeyStep, 'with')['restore-keys'] = sharedRestoreKeys;
+        expect(() => assertCargoIndexCacheKeysJobScoped(sharedKeyJob)).toThrow(
+            'the native-macos cargo-index cache key must embed ${{ github.job }}'
+        );
+
+        // A key that keeps its job scope but restores on the shared prefix
+        // still hands the other macOS job's index over on a partial match.
+        const sharedRestoreJob = asRecord(structuredClone(validationWorkflow), 'shared cargo-index restore keys');
+        const sharedRestoreStep = stepNamed(jobAt(sharedRestoreJob, 'native-macos'), 'Cache the cargo registry index');
+        recordAt(sharedRestoreStep, 'with')['restore-keys'] = sharedRestoreKeys;
+        expect(() => assertCargoIndexCacheKeysJobScoped(sharedRestoreJob)).toThrow(
+            'the native-macos cargo-index restore keys must embed ${{ github.job }}'
+        );
+
+        // Both macOS jobs on the shared key is the poisoning race itself: the
+        // cross-job equality clauses refuse it before the expression checks run.
+        const collidingJobs = asRecord(structuredClone(validationWorkflow), 'colliding cargo-index keys');
+        for (const jobId of ['native-macos', 'native-parity'] as const) {
+            const collidingStep = stepNamed(jobAt(collidingJobs, jobId), 'Cache the cargo registry index');
+            recordAt(collidingStep, 'with').key = sharedKey;
+            recordAt(collidingStep, 'with')['restore-keys'] = sharedRestoreKeys;
+        }
+        expect(() => assertCargoIndexCacheKeysJobScoped(collidingJobs)).toThrow(
+            'the native-macos and native-parity cargo-index cache keys must differ per job'
+        );
+
+        // A removed layer must vacate this pin loudly rather than guard nothing.
+        const emptiedJobs = asRecord(structuredClone(validationWorkflow), 'emptied cargo-index layer');
+        for (const jobId of ['native-macos', 'native-windows', 'native-parity'] as const) {
+            removeStepNamed(jobAt(emptiedJobs, jobId), 'Cache the cargo registry index');
+        }
+        expect(() => assertCargoIndexCacheKeysJobScoped(emptiedJobs)).toThrow(
+            'the cargo registry index cache layer must keep a keyed actions/cache step'
+        );
+    });
+
+    it('seeds complete Cargo dependencies on main and consumes only exact Linux and macOS hits offline', () => {
+        const seed = loadWorkflow('cargo-dependency-seed.yml').parsed;
+        expect(() => assertCargoDependencySeed(seed, validationWorkflow)).not.toThrow();
+
+        const missingRegistry = asRecord(structuredClone(seed), 'seed missing registry');
+        recordAt(stepNamed(jobAt(missingRegistry, 'rust'), 'Cache Cargo dependencies'), 'with').path =
+            '~/.cargo/registry';
+        expect(() => assertCargoDependencySeed(missingRegistry, validationWorkflow)).toThrow();
+
+        const mismatchedKey = asRecord(structuredClone(validationWorkflow), 'mismatched key');
+        recordAt(stepNamed(jobAt(mismatchedKey, 'rust'), 'Cache Cargo dependencies'), 'with').key =
+            CARGO_DEPENDENCY_KEY.replace(", 'rust-toolchain.toml'", '');
+        expect(() => assertCargoDependencySeed(seed, mismatchedKey)).toThrow();
+
+        const targetCoupled = asRecord(structuredClone(validationWorkflow), 'target coupled');
+        recordAt(
+            stepNamed(jobAt(targetCoupled, 'rust'), 'Server and Rust workspace health gates'),
+            'env'
+        ).CARGO_NET_OFFLINE =
+            "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}";
+        expect(() => assertCargoDependencySeed(seed, targetCoupled)).toThrow();
+
+        const prefixAdmitted = asRecord(structuredClone(validationWorkflow), 'prefix admitted');
+        recordAt(
+            stepNamed(jobAt(prefixAdmitted, 'rust'), 'Server and Rust workspace health gates'),
+            'env'
+        ).CARGO_NET_OFFLINE = "${{ steps.cargo-deps.outputs.cache-matched-key && 'true' || 'false' }}";
+        expect(() => assertCargoDependencySeed(seed, prefixAdmitted)).toThrow();
+
+        const missingNativeTest = asRecord(structuredClone(seed), 'missing native test');
+        removeStepNamed(jobAt(missingNativeTest, 'native-macos'), 'Test the native crate');
+        expect(() => assertCargoDependencySeed(missingNativeTest, validationWorkflow)).toThrow();
+
+        const unsafeTrigger = asRecord(structuredClone(seed), 'unsafe trigger');
+        recordAt(unsafeTrigger, 'on').workflow_dispatch = {};
+        expect(() => assertCargoDependencySeed(unsafeTrigger, validationWorkflow)).toThrow();
+
+        const unsafePermissions = asRecord(structuredClone(seed), 'unsafe permissions');
+        recordAt(unsafePermissions, 'permissions').contents = 'write';
+        expect(() => assertCargoDependencySeed(unsafePermissions, validationWorkflow)).toThrow();
+
+        const reorderedCache = asRecord(structuredClone(seed), 'reordered cache');
+        arrayAt(jobAt(reorderedCache, 'rust'), 'steps').reverse();
+        expect(() => assertCargoDependencySeed(reorderedCache, validationWorkflow)).toThrow();
+    });
+
+    it('invalidates both macOS index identities for every Cargo graph input', () => {
+        const seed = loadWorkflow('cargo-dependency-seed.yml').parsed;
+        const graphInputs = ['Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml'];
+        const expectedKey =
+            "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+        const expectedRestore = 'cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n';
+        const assertGraphIdentity = (producer: UnknownRecord, consumer: UnknownRecord): void => {
+            for (const job of [jobAt(producer, 'native-macos'), jobAt(consumer, 'native-macos')]) {
+                const options = recordAt(stepNamed(job, 'Cache the cargo registry index'), 'with');
+                expect(options.key).toBe(expectedKey);
+                expect(options['restore-keys']).toBe(expectedRestore);
+            }
+        };
+
+        expect(() => assertGraphIdentity(seed, validationWorkflow)).not.toThrow();
+        for (const input of graphInputs.slice(1)) {
+            for (const side of ['producer', 'consumer'] as const) {
+                const producer = asRecord(structuredClone(seed), `${side} producer`);
+                const consumer = asRecord(structuredClone(validationWorkflow), `${side} consumer`);
+                const job = side === 'producer' ? jobAt(producer, 'native-macos') : jobAt(consumer, 'native-macos');
+                const options = recordAt(stepNamed(job, 'Cache the cargo registry index'), 'with');
+                options.key = expectedKey.replace(`, '${input}'`, '');
+                expect(() => assertGraphIdentity(producer, consumer)).toThrow();
+            }
+        }
     });
 
     it('fetches immutable measurement provenance history only in the unit matrix', () => {

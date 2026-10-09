@@ -92,6 +92,17 @@ export const PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS = {
     workflows: 'write',
 } as const;
 
+/**
+ * Delivery merges through the author App, and GitHub refuses an API merge whose committed diff
+ * touches `.github/workflows/` unless the merging token carries workflows write (first proven on
+ * #5136). Delivery keeps its own set so only a merge whose diff classifies as workflow-scoped
+ * mints it, and no publish-scoped issues write rides along.
+ */
+export const DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS = {
+    ...AUTHOR_MINT_PERMISSIONS,
+    workflows: 'write',
+} as const;
+
 export const TRACKER_AUTHOR_MINT_PERMISSIONS = {
     issues: 'write',
 } as const;
@@ -460,9 +471,11 @@ export function resolvePublishingAuthorAuthorization(
 }
 
 /**
- * Publishing is the only author operation allowed to acquire workflow authority. The caller can
- * identify the locked lane, but cannot supply permissions: this function derives the fixed scope
- * directly from that lane's committed Git diff before credentials are loaded or a token is minted.
+ * Publishing and delivery are the only author operations allowed to acquire workflow authority,
+ * and neither caller can supply permissions: publishing derives the fixed scope directly from its
+ * locked lane's committed Git diff before credentials are loaded or a token is minted, and
+ * delivery derives it from the pull request's committed merge diff through the same
+ * `authorWorkflowWriteRequired` predicate before any remote mutation.
  */
 export async function authenticatePublishingAuthor(input: {
     primaryRoot: string;
@@ -633,9 +646,22 @@ export function gitCredentialHelperPath(helperDir: string): string {
     return resolve(helperDir, 'git-credential-github');
 }
 
+export function posixSingleQuote(text: string): string {
+    return `'${text.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * Git runs a helper that starts with an absolute path verbatim through the shell, so a directory
+ * holding a space splits the command. A leading `!` makes the quoted text the shell command instead
+ * (`git help credentials`); quoting without it would send the value to the `git credential-` rule.
+ */
+export function gitCredentialHelperValue(helperPath: string): string {
+    return `!${posixSingleQuote(helperPath)}`;
+}
+
 export function gitAuthenticatedArgs(token: string, helperDir: string, args: string[]): string[] {
     const helperPath = installGitCredentialHelper(helperDir, token);
-    return ['-c', 'credential.helper=', '-c', `credential.helper=${helperPath}`, ...args];
+    return ['-c', 'credential.helper=', '-c', `credential.helper=${gitCredentialHelperValue(helperPath)}`, ...args];
 }
 
 export function spawnCapture(
