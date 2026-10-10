@@ -242,3 +242,29 @@ Through real Command removal, fault targeted and whole-source disconnect indepen
 together. Inspect retained captures, actual modeled source edges and MediaStreamTrack.stop,
 not only owner keys. Last-owner release must attempt every terminal step while reporting errors;
 a failed removed edge must preserve the shared survivor until its own eventual release.
+
+The follow-up head in PR #5091 (`2511d0c172`) checked settled captures through refused deletion,
+but omitted permission settlement inside the optimistic-removal window. Open a real removal
+storage transaction, settle both direct On and committed-rearm grants while the row is absent,
+then abort. The committed owner must retain capture without recreating a stripped edge before
+rollback, and reconnect when the row returns without reacquiring permission. Committed deletion,
+Off, selector replacement and teardown must still reject the old grant. Await the grant's actual
+settlement and inspect owner, edge and stream state; a snapshot after abort misses lost authority.
+
+The same head's hold probes walked Auto opens and immediate On cleanup, but omitted an admitted
+On selector change. Hold the subscribed owner, change the selected input repeatedly, and require
+no new acquisition until resume chooses the current input. Repeat for every eligible track kind
+and while the original permission is pending: settle the stale grant during the hold, require its
+stream to close and its edge to stay absent, then retain the original admission authority until
+resume. Off, removal and ineligibility still retire that authority immediately. Explicit restore
+rearm during a held graph repair remains a separate authorized opening.
+
+Handler-only deletion probes missed the real palette entry and other direct removal callers.
+Invoke palette Delete Track through its registered action, refuse storage, and require committed
+and visible membership, selection, history and shared capture to survive; committing afterward
+releases only the removed owner. Enumerate direct import cleanup, render Undo and stem replacement
+callers from source. Their runtime cleanup must follow committed absence without changing their
+history route. For an unscoped refused write, assert that committed owners survive while the write
+remains pending, then that a successful retry finalizes only its removed owner. Abort and replace
+the project root with a reused track ID: observe observer retirement and publish a later removal
+to prove the outgoing finalizer cannot tear down the recreated strip.

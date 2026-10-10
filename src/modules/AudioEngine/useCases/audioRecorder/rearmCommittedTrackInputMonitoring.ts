@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { readCommittedInputMonitoringTrack } from '../../stores/inputMonitoringProjectAccess';
 
@@ -12,9 +13,15 @@ export async function rearmCommittedTrackInputMonitoring(trackId: string): Promi
         return;
     }
     reconcileAutoInputMonitoring();
-    const readIntent = (): { inputId: string | null } | null => {
+    const readIntent = (): { inputId: string | null; canAttach: boolean } | null => {
         const current = readCommittedInputMonitoringTrack(trackId);
-        return current?.inputMonitoring === 'on' ? { inputId: current.inputId } : null;
+        if (current?.inputMonitoring !== 'on') {
+            return null;
+        }
+        return {
+            inputId: current.inputId,
+            canAttach: trackStore.value?.tracks.some((track) => track.id === trackId) === true,
+        };
     };
     // Permission belongs to the runtime owner; committed history must remain available while it waits.
     void admitInputMonitoring(trackId, undefined, readIntent).catch((error: unknown) => {

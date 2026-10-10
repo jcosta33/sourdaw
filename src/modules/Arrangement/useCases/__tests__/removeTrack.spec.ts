@@ -401,8 +401,8 @@ describe('removeTrack', () => {
         removeTrack('t1');
 
         // Only the two routes referencing t1 are torn down; the unrelated one survives.
-        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r1');
-        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r2');
+        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r1', { deferRuntimeEffect: true });
+        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r2', { deferRuntimeEffect: true });
         expect(ownerUseCases.removeSidechainRoute).not.toHaveBeenCalledWith('r3');
     });
     // FX-6: deleting a bus used to leave every dependent's `outputId` and every

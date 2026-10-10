@@ -29,7 +29,7 @@ import { stopTrackInputMonitoring } from './stopTrackInputMonitoring';
 export async function startInputMonitoring(
     trackId: string,
     inputId: string | null = null,
-    isCurrent?: () => boolean
+    isCurrent?: () => boolean | 'retain'
 ): Promise<boolean> {
     if (isCurrent && !isCurrent()) {
         return false;
@@ -43,19 +43,22 @@ export async function startInputMonitoring(
     const previousKey = inputMonitoringSession.trackKeys.get(trackId);
     try {
         if (previousKey !== undefined && previousKey !== key) {
+            inputMonitoringSession.trackKeys.delete(trackId);
             releaseTrackMonitorEdge(trackId, previousKey);
         }
         inputMonitoringSession.trackKeys.set(trackId, key);
         const capture = inputMonitoringSession.captures.get(key);
         if (capture) {
             // Also re-ensures an existing owner's edge against HMR strip replacement.
-            connectMonitorEdge(trackId, capture);
+            if (isCurrent?.() !== 'retain') {
+                connectMonitorEdge(trackId, capture);
+            }
             return true;
         }
         const request = beginCaptureAcquisition(key);
         await request.catch(() => null);
         // The capture settlement connected every owner still interested in this key.
-        return inputMonitoringSession.captures.get(key)?.monitorEdges.has(trackId) === true;
+        return inputMonitoringSession.trackKeys.get(trackId) === key && inputMonitoringSession.captures.has(key);
     } catch (error) {
         try {
             stopTrackInputMonitoring(trackId);
@@ -145,6 +148,9 @@ function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
     };
     inputMonitoringSession.captures.set(key, capture);
     for (const trackId of interested) {
+        if (inputMonitoringAdmissionChecks.get(trackId)?.() === 'retain') {
+            continue;
+        }
         try {
             connectMonitorEdge(trackId, capture);
         } catch (error) {
@@ -153,7 +159,7 @@ function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
             logger.error(new Error(`Failed to attach granted input monitoring on track ${trackId}`, { cause: error }));
         }
     }
-    if (capture.monitorEdges.size === 0) {
+    if (monitorOwnersFor(key).size === 0) {
         try {
             releaseMonitorCapture(key);
         } catch (error) {

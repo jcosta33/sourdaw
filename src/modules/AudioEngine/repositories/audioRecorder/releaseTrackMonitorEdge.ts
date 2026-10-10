@@ -1,6 +1,6 @@
 import { runAllEffects } from '#/utils/runEffects';
 
-import { inputMonitoringSession, type MonitorCaptureKey } from './inputMonitoringSession';
+import { inputMonitoringSession, monitorOwnersFor, type MonitorCaptureKey } from './inputMonitoringSession';
 import { releaseMonitorCapture } from './releaseMonitorCapture';
 
 /**
@@ -28,7 +28,7 @@ export function releaseTrackMonitorEdge(trackId: string, key: MonitorCaptureKey)
             }
         },
         () => {
-            if (capture.monitorEdges.size === 0) {
+            if (monitorOwnersFor(key).size === 0) {
                 releaseMonitorCapture(key);
             }
         },

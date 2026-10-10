@@ -12,12 +12,23 @@ export function admitInputMonitoring(
         return Promise.resolve(false);
     }
     const requestedInputId = captureInputId === undefined ? intent.inputId : captureInputId;
-    const admission: Admission = { selectorInputId: intent.inputId, readIntent };
+    const admission: Admission = { selectorInputId: intent.inputId, captureInputId: requestedInputId, readIntent };
     inputMonitoringAdmissions.set(trackId, admission);
-    const isCurrent = (): boolean => readIntent()?.inputId === admission.selectorInputId;
+    const isCurrent = (): boolean | 'retain' => {
+        const current = readIntent();
+        if (!current || current.inputId !== admission.selectorInputId) {
+            return false;
+        }
+        return current.canAttach === false ? 'retain' : true;
+    };
     return startInputMonitoringRepo(trackId, requestedInputId, isCurrent).then((opened) => {
         if (!opened && inputMonitoringAdmissions.get(trackId) === admission) {
-            inputMonitoringAdmissions.delete(trackId);
+            const current = readIntent();
+            // A held retarget can outlive its cancelled old grant. Keep its
+            // existing permission authority for resume, never for a refusal.
+            if (!current || current.inputId === admission.selectorInputId) {
+                inputMonitoringAdmissions.delete(trackId);
+            }
         }
         return opened;
     });

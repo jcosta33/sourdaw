@@ -1,6 +1,7 @@
 import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
+import { hasDeferredInputMonitoringEdge } from '../../repositories/audioRecorder/hasDeferredInputMonitoringEdge';
 import { isTrackInputMonitored } from '../../repositories/audioRecorder/isTrackInputMonitored';
 import { readInputMonitoringTrackIds } from '../../repositories/audioRecorder/readInputMonitoringTrackIds';
 import { readMonitorTeardownEpoch } from '../../repositories/audioRecorder/readMonitorTeardownEpoch';
@@ -9,6 +10,7 @@ import { hasCommittedInputMonitoringTrack } from '../../stores/inputMonitoringPr
 
 import { admitInputMonitoring } from './admitInputMonitoring';
 import { deriveAutoMonitorEdge } from './deriveAutoInputMonitoring';
+import { inputMonitoringAdmissions } from './inputMonitoringAdmission';
 import { readChangedInputMonitoringAdmission } from './readChangedInputMonitoringAdmission';
 import { startInputMonitoring } from './startInputMonitoring';
 import { stopTrackInputMonitoring } from './stopTrackInputMonitoring';
@@ -46,8 +48,8 @@ function closeEdge(trackId: string): void {
     stopTrackInputMonitoring(trackId);
 }
 
-function followAdmittedOnInput(trackId: string, interestedIds: Set<string>): void {
-    if (!interestedIds.has(trackId)) {
+function followAdmittedOnInput(trackId: string, interestedIds: Set<string>, opensSuppressed: boolean): void {
+    if (opensSuppressed || !interestedIds.has(trackId)) {
         return;
     }
     const changed = readChangedInputMonitoringAdmission(trackId);
@@ -58,7 +60,8 @@ function followAdmittedOnInput(trackId: string, interestedIds: Set<string>): voi
 
 function reconcileNonAudioTrack(
     track: NonNullable<typeof trackStore.value>['tracks'][number],
-    interestedIds: Set<string>
+    interestedIds: Set<string>,
+    opensSuppressed: boolean
 ): void {
     if (
         (!getTrackEligibility(track.kind).acceptsMonitoring || track.inputMonitoring !== 'on') &&
@@ -66,7 +69,7 @@ function reconcileNonAudioTrack(
     ) {
         closeEdge(track.id);
     } else if (track.inputMonitoring === 'on') {
-        followAdmittedOnInput(track.id, interestedIds);
+        followAdmittedOnInput(track.id, interestedIds, opensSuppressed);
     }
 }
 
@@ -79,7 +82,7 @@ function openEdge(
     if (previous?.inputId === inputId && previous.refused) {
         return;
     }
-    if (isTrackInputMonitored(trackId, inputId)) {
+    if (isTrackInputMonitored(trackId, inputId) && !hasDeferredInputMonitoringEdge(trackId)) {
         // An edge the track already holds — one On opened, or this owner's own
         // open still in flight — is recorded so removing the track closes it.
         if (previous?.inputId !== inputId) {
@@ -131,13 +134,17 @@ export function reconcileAutoInputMonitoring(): void {
     const tracks = trackStore.value?.tracks ?? [];
     const transport = transportStore.value ?? defaultTransportState;
     const presentIds = new Set<string>();
-    const interestedIds = new Set([...openRequests.keys(), ...readInputMonitoringTrackIds()]);
+    const interestedIds = new Set([
+        ...openRequests.keys(),
+        ...readInputMonitoringTrackIds(),
+        ...inputMonitoringAdmissions.keys(),
+    ]);
     forgiveRefusalsAtRecordStartOrStop(transport);
 
     for (const track of tracks) {
         presentIds.add(track.id);
         if (track.kind !== 'audio') {
-            reconcileNonAudioTrack(track, interestedIds);
+            reconcileNonAudioTrack(track, interestedIds, opensSuppressed);
             continue;
         }
         const edge = deriveAutoMonitorEdge({
@@ -157,7 +164,7 @@ export function reconcileAutoInputMonitoring(): void {
             // a track Off without the gesture that admitted its capture.
             closeEdge(track.id);
         } else if (track.inputMonitoring === 'on') {
-            followAdmittedOnInput(track.id, interestedIds);
+            followAdmittedOnInput(track.id, interestedIds, opensSuppressed);
             if (!openRequests.get(track.id)?.refused) {
                 continue;
             }

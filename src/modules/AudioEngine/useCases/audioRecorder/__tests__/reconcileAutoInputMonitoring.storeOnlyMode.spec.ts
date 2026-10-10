@@ -10,6 +10,7 @@ import {
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { isTrackInputMonitored } from '../../../repositories/audioRecorder/isTrackInputMonitored';
+import { inputMonitoringAdmissions } from '../inputMonitoringAdmission';
 import { reconcileAutoInputMonitoring } from '../reconcileAutoInputMonitoring';
 import { startInputMonitoring } from '../startInputMonitoring';
 import { stopInputMonitoring } from '../stopInputMonitoring';
@@ -383,6 +384,70 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
             expect(harness.getUserMedia).not.toHaveBeenCalled();
             expect(harness.createMediaStreamSource).not.toHaveBeenCalled();
             expect(source.connect).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['audio', 'midi', 'bus', 'folder', 'master'] as const)(
+        'defers admitted %s On input retargeting until the owner hold resumes',
+        async (kind) => {
+            publishTracks([track('on', { kind })]);
+            unsubscribe = syncAutoInputMonitoring();
+            const original = liveStream();
+            harness.getUserMedia.mockResolvedValueOnce(original.stream);
+            expect(await startInputMonitoring('track-1', 'input-1')).toBe(true);
+            releaseHold = suspendAutoInputMonitoring();
+            const grant = deferGrant();
+            publishTracks([track('on', { kind, inputId: 'input-2' })]);
+            expect(harness.getUserMedia).toHaveBeenCalledOnce();
+            publishTracks([track('on', { kind, inputId: 'input-3' })]);
+            expect(harness.getUserMedia).toHaveBeenCalledOnce();
+            expect(inputMonitoringAdmissions.has('track-1')).toBe(true);
+            releaseHold();
+            releaseHold = null;
+            expect(harness.getUserMedia).toHaveBeenCalledTimes(2);
+            expect(harness.getUserMedia).toHaveBeenLastCalledWith({
+                audio: expect.objectContaining({ deviceId: { exact: 'input-3' } }),
+            });
+            const selected = liveStream();
+            grant(selected);
+            await vi.waitFor(() => expect(source.connect).toHaveBeenCalledTimes(2));
+            expect(isTrackInputMonitored('track-1', 'input-3')).toBe(true);
+            expect(original.stopTrack).toHaveBeenCalledOnce();
+            expect(selected.stopTrack).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['audio', 'midi'] as const)(
+        'retargets admitted pending %s On after a stale grant settles during the hold',
+        async (kind) => {
+            publishTracks([track('on', { kind })]);
+            unsubscribe = syncAutoInputMonitoring();
+            const originalGrant = deferGrant();
+            const opening = startInputMonitoring('track-1', 'input-1');
+            releaseHold = suspendAutoInputMonitoring();
+            const selectedGrant = deferGrant();
+            publishTracks([track('on', { kind, inputId: 'input-2' })]);
+            const original = liveStream();
+            originalGrant(original);
+            expect(await opening).toBe(false);
+            expect(original.stopTrack).toHaveBeenCalledOnce();
+            expect(source.connect).not.toHaveBeenCalled();
+            expect(harness.getUserMedia).toHaveBeenCalledOnce();
+            expect(inputMonitoringAdmissions.has('track-1')).toBe(true);
+            releaseHold();
+            releaseHold = null;
+            expect(harness.getUserMedia).toHaveBeenCalledTimes(2);
+            expect(harness.getUserMedia).toHaveBeenLastCalledWith({
+                audio: expect.objectContaining({ deviceId: { exact: 'input-2' } }),
+            });
+            const selected = liveStream();
+            selectedGrant(selected);
+            await vi.waitFor(() => expect(source.connect).toHaveBeenCalledExactlyOnceWith(GAIN_NODE));
+            expect(isTrackInputMonitored('track-1', 'input-2')).toBe(true);
+            writeStoreOnly('off');
+            expect(selected.stopTrack).toHaveBeenCalledOnce();
+            expect(isTrackInputMonitored('track-1', 'input-2')).toBe(false);
+            expect(inputMonitoringAdmissions.has('track-1')).toBe(false);
         }
     );
 

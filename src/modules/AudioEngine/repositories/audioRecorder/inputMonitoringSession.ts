@@ -41,7 +41,7 @@ export const inputMonitoringSession = createHmrPersistentState<InputMonitoringSe
 );
 
 /** Keep pending admission fences through HMR without replacing an existing capture session. */
-export const inputMonitoringAdmissionChecks = createHmrPersistentState<Map<string, () => boolean>>(
+export const inputMonitoringAdmissionChecks = createHmrPersistentState<Map<string, () => boolean | 'retain'>>(
     'audioEngine.inputMonitoringAdmission.v1',
     () => new Map()
 );

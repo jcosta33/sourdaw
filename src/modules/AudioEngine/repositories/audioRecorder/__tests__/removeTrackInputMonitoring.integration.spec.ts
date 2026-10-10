@@ -8,7 +8,12 @@ import {
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { createTrack, getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    createTrack,
+    getArrangementHandlers,
+    removeTrack,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
 import {
     configureInputMonitoringProjectAccess,
     startInputMonitoring,
@@ -97,6 +102,19 @@ describe('track deletion releases the input monitor at Command commit', () => {
 
     function monitorOwners(): string[] {
         return [...inputMonitoringSession.trackKeys.keys()].sort();
+    }
+
+    function watchRuntimeRemovalUnsubscribe() {
+        const subscribe = trackStore.subscribe.bind(trackStore);
+        const stopped = vi.fn();
+        const spy = vi.spyOn(trackStore, 'subscribe').mockImplementation((listener) => {
+            const unsubscribe = subscribe(listener);
+            return () => {
+                stopped();
+                unsubscribe();
+            };
+        });
+        return { stopped, restore: () => spy.mockRestore() };
     }
 
     beforeEach(() => {
@@ -230,6 +248,130 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(docTrackIdsAtStop).toEqual([]);
         expect(docTrackIdsAtDisconnect.every((ids) => !ids.includes('a'))).toBe(true);
         expect(docTrackIdsAtDisconnect.slice(1).every((ids) => !ids.includes('b'))).toBe(true);
+    });
+
+    it.each(['abort', 'commit'] as const)(
+        'settles direct removal runtime only after committed absence, terminal=%s',
+        async (terminal) => {
+            await startInputMonitoring('a', null);
+            await startInputMonitoring('b', null);
+            source.disconnect.mockClear();
+            const subscription = watchRuntimeRemovalUnsubscribe();
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => removeTrack('a'));
+            if (transaction.status === 'threw') {
+                throw transaction.error;
+            }
+            try {
+                expect(docTrackIds()).toEqual(['a', 'b']);
+                expect(liveTrackIds()).toEqual(['b']);
+                expect(monitorOwners()).toEqual(['a', 'b']);
+                expect(source.disconnect).not.toHaveBeenCalled();
+                expect(engine.removeTrackStrip).not.toHaveBeenCalled();
+                if (terminal === 'commit') {
+                    transaction.commit();
+                }
+            } finally {
+                transaction.abort();
+                subscription.restore();
+            }
+            expect(subscription.stopped).toHaveBeenCalledOnce();
+            expect(docTrackIds()).toEqual(terminal === 'commit' ? ['b'] : ['a', 'b']);
+            expect(liveTrackIds()).toEqual(terminal === 'commit' ? ['b'] : ['a', 'b']);
+            expect(monitorOwners()).toEqual(terminal === 'commit' ? ['b'] : ['a', 'b']);
+            expect(engine.removeTrackStrip).toHaveBeenCalledTimes(terminal === 'commit' ? 1 : 0);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            if (terminal === 'abort') {
+                // An aborted finalizer must not fire on a later removal's publication.
+                await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+                expect(engine.removeTrackStrip).toHaveBeenCalledExactlyOnceWith('a');
+                expect(source.disconnect).toHaveBeenCalledExactlyOnceWith(gains.get('a'));
+            }
+        }
+    );
+
+    it('preserves committed runtime while a refused direct write remains pending', async () => {
+        await startInputMonitoring('a', null);
+        await startInputMonitoring('b', null);
+        removeTrack('a');
+        refuseCommit = true;
+        expect(() => flushAutomergeStorageWrites()).toThrow();
+        refuseCommit = false;
+        expect(docTrackIds()).toEqual(['a', 'b']);
+        expect(liveTrackIds()).toEqual(['b']);
+        expect(monitorOwners()).toEqual(['a', 'b']);
+        expect(source.disconnect).not.toHaveBeenCalled();
+        expect(engine.removeTrackStrip).not.toHaveBeenCalled();
+        // Unscoped storage retains a refused write for retry; it has no Command abort.
+        flushAutomergeStorageWrites();
+        expect(docTrackIds()).toEqual(['b']);
+        expect(engine.removeTrackStrip).toHaveBeenCalledExactlyOnceWith('a');
+        expect(monitorOwners()).toEqual(['b']);
+    });
+
+    it('retires an outgoing direct runtime finalizer when a new root reuses the track identity', async () => {
+        await startInputMonitoring('a', null);
+        const subscription = watchRuntimeRemovalUnsubscribe();
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => removeTrack('a'));
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected visible state before replacing the root');
+            }
+            stopInputMonitoring();
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            trackStore.set({
+                ...state,
+                tracks: [
+                    {
+                        ...createTrack({ id: 'a', name: 'New owner', kind: 'audio', withoutDefaultDevice: true }),
+                        inputMonitoring: 'on',
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            expect(subscription.stopped).toHaveBeenCalledOnce();
+            const incomingGain = { id: 'incoming-gain-a' };
+            const incomingSource = { connect: vi.fn(), disconnect: vi.fn() };
+            const incomingTrack = { stop: vi.fn() };
+            getUserMedia.mockResolvedValueOnce({ getTracks: () => [incomingTrack] });
+            engine.createMediaStreamSource.mockReturnValueOnce(incomingSource);
+            engine.ensureTrackStrip.mockReturnValueOnce({ gainNode: incomingGain });
+            expect(await startInputMonitoring('a', null)).toBe(true);
+            expect(monitorOwners()).toEqual(['a']);
+            expect(incomingSource.connect).toHaveBeenCalledExactlyOnceWith(incomingGain);
+            expect(inputMonitoringSession.captures.get(null)?.monitorEdges.get('a')).toBe(incomingGain);
+            mutateCrdtDoc<{ tracks: { tracks: Array<{ id: string; name: string }> } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks.tracks[0].name = 'Incoming owner after publication';
+                },
+            });
+            expect(engine.removeTrackStrip).not.toHaveBeenCalled();
+            expect(incomingSource.disconnect).not.toHaveBeenCalled();
+            expect(incomingTrack.stop).not.toHaveBeenCalled();
+            mutateCrdtDoc<{ tracks: { tracks: Array<{ id: string }> } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks.tracks.splice(0, 1);
+                },
+            });
+            expect(engine.removeTrackStrip).not.toHaveBeenCalled();
+            const incomingState = trackStore.value;
+            if (!incomingState) {
+                throw new Error('Expected incoming projection before publishing its removal');
+            }
+            // The controlled storage port does not project arbitrary raw mutations.
+            trackStore.set({ ...incomingState, tracks: [] });
+            expect(engine.removeTrackStrip).not.toHaveBeenCalled();
+            expect(incomingTrack.stop).toHaveBeenCalledOnce();
+        } finally {
+            transaction.abort();
+            subscription.restore();
+        }
     });
 
     it('retains both owners after a refused bulk delete and releases both after commit', async () => {
@@ -830,6 +972,51 @@ describe('track deletion releases the input monitor at Command commit', () => {
             successor.grant(selectedStream);
             await vi.waitFor(() => expect(selectedSource.connect).toHaveBeenCalledWith(gains.get('a')));
             expect(selectedStop).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['direct', 'restored'] as const)(
+        'retains a granted %s On owner through optimistic deletion and reconnects after abort',
+        async (route) => {
+            const pending = deferredGrant();
+            getUserMedia.mockReturnValue(pending.request);
+            let opening: Promise<boolean> | undefined;
+            if (route === 'restored') {
+                await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+                await undo();
+            } else {
+                opening = startInputMonitoring('a', null);
+            }
+            expect(monitorOwners()).toEqual(['a']);
+            const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+                getArrangementHandlers().removeTrack.execute({ type: 'removeTrack', payload: { trackId: 'a' } })
+            );
+            if (transaction.status === 'threw') {
+                throw transaction.error;
+            }
+            try {
+                expect(liveTrackIds()).toEqual(['b']);
+                expect(docTrackIds()).toEqual(['a', 'b']);
+                engine.ensureTrackStrip.mockClear();
+                source.connect.mockClear();
+                pending.grant(stream);
+                await vi.waitFor(() => expect(inputMonitoringSession.pendingRequests.size).toBe(0));
+                if (opening) {
+                    expect(await opening).toBe(true);
+                }
+                expect(monitorOwners()).toEqual(['a']);
+                expect(inputTrack.stop).not.toHaveBeenCalled();
+                expect(source.connect).not.toHaveBeenCalled();
+                expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
+            } finally {
+                transaction.abort();
+            }
+            await vi.waitFor(() => expect(source.connect).toHaveBeenCalledWith(gains.get('a')));
+            expect(docTrackIds()).toEqual(['a', 'b']);
+            expect(liveTrackIds()).toEqual(['a', 'b']);
+            expect(monitorOwners()).toEqual(['a']);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            expect(getUserMedia).toHaveBeenCalledOnce();
         }
     );
 

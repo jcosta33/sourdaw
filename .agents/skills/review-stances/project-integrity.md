@@ -217,3 +217,12 @@ finish before either grant. Permission work belongs to an admitted runtime conti
 fresh committed mode/input and owner checks at settlement. Cover denial and late grant after
 committed deletion, Off and input change through both normal and published-but-throwing restore;
 none may roll back committed truth or leave an unhandled continuation.
+
+The follow-up head in PR #5091 (`2511d0c172`) omitted permission settlement while a restored On
+owner was optimistically absent in a second removal transaction. Settle that real grant before
+aborting the removal, then require the restored committed owner to reconnect without another
+permission request or a premature strip recreation. Also drive the real palette Delete Track
+entry through registered removal and Undo: a refused write preserves raw and visible membership,
+selection, history and capture, while committed removal retires only its owner and the inverse
+rearms the restored one. A direct helper invocation or a snapshot-only inverse misses the caller
+and independent runtime authority; see the paired lifecycle probes in `session-lifecycle.md`.

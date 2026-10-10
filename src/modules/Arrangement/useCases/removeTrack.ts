@@ -20,6 +20,7 @@ import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 
 import { ArrangementEventBus } from './arrangementEventBus';
 import { removeClipSatelliteData } from './clip/removeClipSatelliteData';
+import { finalizeCommittedTrackRuntimeRemoval } from './finalizeCommittedTrackRuntimeRemoval';
 import { refreshToasterPadBindings } from './refreshToasterPadBindings';
 
 type RemoveTrackOptions = {
@@ -91,12 +92,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             const deferredSidechainRuntimeEffects: Array<() => void> = [];
             for (const route of routes) {
                 if (route.sourceTrackId === trackId || route.targetTrackId === trackId) {
-                    let deferredRuntimeEffect: (() => void) | null;
-                    if (options.deferRuntimeEffects) {
-                        deferredRuntimeEffect = removeSidechainRoute(route.id, { deferRuntimeEffect: true });
-                    } else {
-                        deferredRuntimeEffect = removeSidechainRoute(route.id);
-                    }
+                    const deferredRuntimeEffect = removeSidechainRoute(route.id, { deferRuntimeEffect: true });
                     if (deferredRuntimeEffect) {
                         deferredSidechainRuntimeEffects.push(deferredRuntimeEffect);
                     }
@@ -138,7 +134,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 runtimeRemovalFinalized = true;
             }
             if (!options.deferRuntimeEffects) {
-                finalizeRuntimeRemoval();
+                finalizeCommittedTrackRuntimeRemoval(trackId, finalizeRuntimeRemoval);
             }
             if (!options.suppressRemovedEvent) {
                 void eventBus.emit('track.removed', { trackId });
