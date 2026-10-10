@@ -1,0 +1,29 @@
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_1f0dcd815e8946::t_f9ba169dcc97dc 5,8-9,41-52,57-80,90
+  s_1f0dcd815e8946::t_2ecf2fb111dced 27-40,53-56,104
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1f0dcd815e8946::t_77a33e40ed7107 695-697,740-741,828,882-884
+  s_1f0dcd815e8946::t_7f0622beae7d10 768
+  s_1f0dcd815e8946::t_481f6eaee45c44 788
+  s_1f0dcd815e8946::t_6a84c94e4739d5 847
+  s_1f0dcd815e8946::t_e1042bb381b829 709-719,742-748,763-765,776-786,794-796,822-824,833-835,840-842,848-870,876-878,888-891,897-900,906-908
+  s_1f0dcd815e8946::t_3d04c3653c8221 687-694,698-708,720-739,749-762,766-767,769-775,787,789-793,797-821,825-827,829-832,836-839,843-846,871-875,879-881,885-887,892-896,901-905,909-917
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_1f0dcd815e8946::t_f9ba169dcc97dc 29-33,81-88,144,193-203,206-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01637cb7097203182f4b7808e511234f75da5669",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
