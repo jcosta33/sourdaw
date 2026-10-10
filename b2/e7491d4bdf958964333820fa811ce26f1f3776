@@ -1,0 +1,41 @@
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startInputMonitoring.spec.ts
+  s_1f0dcd815e8946::t_2eb824e9c90e5b 98-140
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts
+  s_1f0dcd815e8946::t_b75f048a732901 309-381,389-394,405-412,414-421,423-435,440-471,473-486
+  s_1f0dcd815e8946::t_4878ed6279cf76 23,41,306,557-565,569-585
+  s_1f0dcd815e8946::t_80ef954b89c97f 18
+  s_1f0dcd815e8946::t_92ffaa42256bf1 307,487,494-501,505-513,531-549,553-556,586-587
+  s_1f0dcd815e8946::t_fd8535a9a6f8db 1359,1363,1424-1425
+  s_1f0dcd815e8946::t_0e14e0cb74de94 388,395-396,403-404,422,438-439
+  s_1f0dcd815e8946::t_ad3a785b9d39a7 287-294,297-304,382-387,397-402,413,436-437,472,488-493,502-504,514-530,550-552,566-568
+  s_1f0dcd815e8946::t_2e94c0adb19b2b 17,122-133,253-286,295-296,305
+  s_1f0dcd815e8946::t_50844f7aa2beff 308
+src/modules/AudioEngine/useCases/audioRecorder/startInputMonitoring.ts
+  s_1f0dcd815e8946::t_d9d635f5fb23cd 20-27
+  s_1f0dcd815e8946::t_a86d6a4d0713b0 10,15,40,55-59
+  s_1f0dcd815e8946::t_f8cfcd66cb5e9f 14,17-19,28-30
+src/modules/AudioEngine/useCases/audioRecorder/rearmCommittedTrackInputMonitoring.ts
+  s_1f0dcd815e8946::t_0dd084f67a27a7 2,19
+  s_1f0dcd815e8946::t_a86d6a4d0713b0 7,17,24
+src/modules/AudioEngine/useCases/audioRecorder/inputMonitoringAdmission.ts
+  s_1f0dcd815e8946::t_a86d6a4d0713b0 3-7
+src/modules/AudioEngine/useCases/audioRecorder/reconcileAutoInputMonitoring.ts
+  s_1f0dcd815e8946::t_a86d6a4d0713b0 150-151,155-164
+  s_1f0dcd815e8946::t_f8cfcd66cb5e9f 146-149,152-154,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b2e7491d4bdf958964333820fa811ce26f1f3776",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
