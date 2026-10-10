@@ -45,7 +45,6 @@ type TransportHold = {
     captureStartSongSeconds: number | null;
     firstPassContextSeconds: number | null;
     endedAtContextSeconds: number | null;
-    songSecondsAtBeat: ((beat: number) => number) | null;
 };
 
 type CaptureClock = ReturnType<ReturnType<typeof createRecordingCaptureClocks>['create']>;
@@ -53,7 +52,6 @@ type CaptureClock = ReturnType<ReturnType<typeof createRecordingCaptureClocks>['
 function capturePlayingAdmissionClock(hold: TransportHold, changes: readonly TempoChange[], tempo: number): void {
     hold.rolledAtContextSeconds = playheadClockRef.audioTimeSeconds;
     hold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, playheadClockRef.beat, tempo);
-    hold.songSecondsAtBeat = (beat) => secondsBetweenBeats(changes, 0, beat, tempo);
 }
 
 /**
@@ -284,7 +282,12 @@ async function beginActualRecording(
     const captureClocks = createRecordingCaptureClocks(
         ctx,
         (beat) =>
-            transportHold.songSecondsAtBeat?.(beat) ?? secondsBetweenBeats(admissionChanges, 0, beat, admissionTempo),
+            secondsBetweenBeats(
+                tempoMapStore.value?.changes ?? [],
+                0,
+                beat,
+                getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM
+            ),
         () => {
             transportHold.endedAtContextSeconds ??= ctx.currentTime;
         }
@@ -382,7 +385,6 @@ function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
         captureStartSongSeconds: null,
         firstPassContextSeconds: null,
         endedAtContextSeconds: null,
-        songSecondsAtBeat: null,
     };
     void beginActualRecording(startToken, anchorBeat, transportHold).then(async (started) => {
         const current = getTransportState();
@@ -403,7 +405,6 @@ function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
                 const tempo = rolled?.tempo ?? DEFAULT_TEMPO_BPM;
                 transportHold.rolledAtContextSeconds = contextSeconds;
                 transportHold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, beat, tempo);
-                transportHold.songSecondsAtBeat = (atBeat) => secondsBetweenBeats(changes, 0, atBeat, tempo);
                 const firstPassBeat = Math.max(recordPointBeat, rolled?.loopStart ?? recordPointBeat);
                 transportHold.firstPassContextSeconds =
                     contextSeconds + secondsBetweenBeats(changes, beat, firstPassBeat, tempo);

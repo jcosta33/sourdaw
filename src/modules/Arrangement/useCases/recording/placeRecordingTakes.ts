@@ -65,6 +65,22 @@ export function placeRecordingTakes(input: PlaceRecordingTakesInput): void {
                     passDepthSeconds = 0;
                 }
                 let endBeat = placed.endBeat;
+                const passSourceEndSeconds = Math.min(
+                    recordingPassTiming.sourceEndSeconds(
+                        take,
+                        input.sourceContextOriginSeconds,
+                        input.mediaOriginSeconds
+                    ),
+                    input.sourceDurationSeconds ?? Infinity
+                );
+                // Invert the exact source interval the comp readers seek.
+                endBeat = Math.min(
+                    endBeat,
+                    liveTempoTimeline.beatAtSeconds(
+                        liveTempoTimeline.secondsAtBeat(startBeat) +
+                            Math.max(0, passSourceEndSeconds - passDepthSeconds)
+                    )
+                );
                 if (captureEnd && captureEnd.takeId === take.id) {
                     endBeat = Math.min(endBeat, captureEnd.endBeat);
                 }
@@ -77,6 +93,7 @@ export function placeRecordingTakes(input: PlaceRecordingTakesInput): void {
                     endBeat,
                     passAnchorSeconds: liveTempoTimeline.secondsAtBeat(startBeat) - input.clipMediaOriginSeconds,
                     passDepthSeconds,
+                    passSourceEndSeconds,
                 };
             }),
         })),

@@ -62,6 +62,31 @@ describe('recording capture occurrence clocks', () => {
         expect(clock.relocation).toBeNull();
     });
 
+    it.each(['captured', 'retry', 'unadmitted'] as const)(
+        'keeps a %s first frame before a tempo epoch in its previous occurrence',
+        (publication) => {
+            const clock = clocks.create('track');
+            recordingLifecycle.observeCaptureClock(8, 49, true);
+            if (publication === 'captured') {
+                clock.setReader(() => ({ status: 'captured', contextSeconds: 50.05 }));
+            } else if (publication === 'retry') {
+                clock.setReader(() => ({ status: 'retry' }));
+            }
+            recordingLifecycle.observeCaptureClock(10, 50, true, 50.1);
+            clock.freeze(50.05);
+            expect(clock.relocation).toEqual({ songSeconds: 4, contextSeconds: 49 });
+        }
+    );
+
+    it('uses the placement anchor for a torn first frame after the tempo epoch becomes effective', () => {
+        const clock = clocks.create('track');
+        recordingLifecycle.observeCaptureClock(8, 49, true);
+        clock.setReader(() => ({ status: 'retry' }));
+        recordingLifecycle.observeCaptureClock(10, 50, true, 50.1);
+        clock.freeze(50.15);
+        expect(clock.relocation).toMatchObject({ songSeconds: 5, contextSeconds: 50 });
+    });
+
     it('uses a stable pending publication to retain the next sounded occurrence', () => {
         const clock = clocks.create('track');
         clock.setReader(() => ({ status: 'pending' }));

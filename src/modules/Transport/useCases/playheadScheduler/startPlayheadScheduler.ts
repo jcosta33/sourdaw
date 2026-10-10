@@ -409,7 +409,18 @@ export function startPlayheadScheduler(): void {
         // re-emits it opens where playback stands (or at the loop start), and
         // like a jump's it must restore the stored controllers in force there.
         let reemitAfterEdit = false;
-        if (tempoMapChanged || loopChanged) {
+        const baseTempoChanged = current.tempo !== priorTempo && changes.length === 0;
+        if (tempoMapChanged || baseTempoChanged || loopChanged) {
+            if ((tempoMapChanged || baseTempoChanged) && (!soundedSeam || now < soundedSeam.seamAudioTime)) {
+                // Pending input follows the effective beat/time epoch. Owners
+                // whose first frame already sounded keep their frozen epoch.
+                recordingLifecycle.observeCaptureClock(
+                    playheadClockRef.beat,
+                    playheadClockRef.audioTimeSeconds,
+                    true,
+                    now
+                );
+            }
             schedulerSession.lastLoopSignature = loopSignature;
             // A wrap tail the fence was sparing is gone with the teardown, and
             // the region the seam pivoted on may be the one this edit replaced:
@@ -899,9 +910,13 @@ export function startPlayheadScheduler(): void {
             const clips = startRecording(punchAnchorBeat);
             updateTransportState({ isRecording: true });
 
-            const admissionChanges = structuredClone(changes);
             const captureClocks = createRecordingCaptureClocks(ctx, (beat) =>
-                secondsBetweenBeats(admissionChanges, 0, beat, current.tempo)
+                secondsBetweenBeats(
+                    tempoMapStore.value?.changes ?? [],
+                    0,
+                    beat,
+                    transportStore.value?.tempo ?? current.tempo
+                )
             );
             captureClocks.register();
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];

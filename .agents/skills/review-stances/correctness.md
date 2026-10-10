@@ -510,3 +510,13 @@ Probe: render a mono buffer through each real factory in Chromium OfflineAudioCo
 must produce a right-channel peak; Widener at non-unity width must emit equal left and right
 samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
 Removing the explicit speakers upmix at either input must turn its mono assertion red.
+
+## Genuine base-tempo edits beside equal map projections
+
+PR #5165 commit `c40642a9b82666865f4ae00016e086547f7ee62a` filtered
+value-equal tempo-map projections but checked only map entries and loop
+geometry. A genuine base-tempo edit on an empty map therefore kept the stale
+pending seam. Pair the unchanged projection control with a real base-tempo
+Command while a seam remains future: a 120-to-60 BPM edit must postpone its
+sounding time, even when the map is a fresh equal-valued empty array. A
+sounded seam still survives semantically unchanged deferred projection.

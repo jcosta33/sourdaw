@@ -7,6 +7,7 @@ import { clipMediaOffsetAt } from './clipMediaOffsetAt';
 type TakeMedia = {
     /** The first beat the take can sound. */
     earliestBeat: number;
+    latestBeat?: number;
     /** Carries the loop-occurrence count for probability rolls. */
     sourceStartBeat: number;
     /** The media offset a fragment of the take starting at `beat` carries. */
@@ -69,11 +70,17 @@ function beatAtClipMediaSeconds(clip: Clip, anchorSeconds: number, timeline: Tem
  * `passAnchorSeconds`, and a fragment at a later beat seeks `passDepthSeconds`
  * plus the song time since, converted at that beat's tempo.
  */
-function placedPassMedia(clip: Clip, anchorSeconds: number, depthSeconds: number, timeline: TempoTimeline): TakeMedia {
+function placedPassMedia(
+    clip: Clip,
+    anchorSeconds: number,
+    depthSeconds: number,
+    sourceEndSeconds: number | undefined,
+    timeline: TempoTimeline
+): TakeMedia {
     const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline);
     const passStartTempo = timeline.tempoAtBeat(passStartBeat);
     const depthBeats = (depthSeconds * passStartTempo) / 60;
-    return {
+    const media: TakeMedia = {
         earliestBeat: Math.max(clip.startBeat, passStartBeat),
         sourceStartBeat: passStartBeat - depthBeats,
         offsetAt: (beat) => {
@@ -84,6 +91,12 @@ function placedPassMedia(clip: Clip, anchorSeconds: number, depthSeconds: number
             return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
         },
     };
+    if (sourceEndSeconds !== undefined) {
+        media.latestBeat = timeline.beatAtSeconds(
+            timeline.secondsAtBeat(passStartBeat) + sourceEndSeconds - depthSeconds
+        );
+    }
+    return media;
 }
 
 /**
@@ -101,7 +114,7 @@ function placedPassMedia(clip: Clip, anchorSeconds: number, depthSeconds: number
  * the tempo of the fragment's own first beat.
  */
 export function resolveTakeMedia(
-    take: Pick<Take, 'sourceOffsetBeats' | 'passAnchorSeconds' | 'passDepthSeconds'>,
+    take: Pick<Take, 'sourceOffsetBeats' | 'passAnchorSeconds' | 'passDepthSeconds' | 'passSourceEndSeconds'>,
     clip: Clip,
     timeline: TempoTimeline
 ): TakeMedia {
@@ -115,5 +128,5 @@ export function resolveTakeMedia(
     if (clip.type !== 'audio' || take.passAnchorSeconds === undefined || take.passDepthSeconds === undefined) {
         return legacyPassMedia(clip, take.sourceOffsetBeats, timeline);
     }
-    return placedPassMedia(clip, take.passAnchorSeconds, take.passDepthSeconds, timeline);
+    return placedPassMedia(clip, take.passAnchorSeconds, take.passDepthSeconds, take.passSourceEndSeconds, timeline);
 }

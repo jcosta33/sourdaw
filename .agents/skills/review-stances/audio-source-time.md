@@ -188,3 +188,37 @@ assert there is no final take beyond the measured PCM, while the dying pass
 remains selectable through source scheduling and Command/CRDT Undo/Redo.
 Changing an entry's id, beat, tempo, or curve, and changing the loop region,
 must still invalidate and re-anchor the pending seam.
+
+## Effective tempo before first input and completed-pass source extent
+
+PR #5165's admission reader retained the original tempo integration even while
+a pending first input crossed a seam sounded under a new tempo. Its original
+#4987 capture placement and later #5050 repair controls froze post-frame timing,
+but omitted effective pre-frame edits on both manual and automatic admission.
+Change tempo through Command while input is pending, then assert the sounded
+traversal's media origin and selected source frame; repeat before any seam and
+with an unresolved producer publication. Frozen first frames remain immutable.
+An effective tempo epoch's placement anchor can precede the edit itself. Probe
+a first frame between those instants before its first observer runs; captured,
+torn and not-yet-admitted readers must reject the later epoch, while a pending
+frame after the edit adopts it. A loop seam uses its actual sounding instant.
+
+A seam completing a pass is not proof that its whole musical extent has PCM.
+Begin Record at beat 10/context 51 at 120 BPM, deliver sample zero at 51.6
+with 100 ms admission latency, retain 0.4 seconds, sound the seam at 52, and
+Stop during an empty incoming lap. The retained pass ends at beat 11.8;
+beat 11.9 must not select source second 0.45 from a 0.4-second buffer. Trace
+each retained extent through the same conversion the comp reader uses.
+
+PR #5165 introduced the missing per-pass source end in its physical placement
+repair (`4322a209206`), while its admission reader freeze (`c40c02ac255`) left
+pre-PCM effective tempo edits on the old coordinate system. The source-time
+stance escaped both by observing starts and current tails without selecting a
+completed tail after empty incoming PCM. A retained audio pass needs an exclusive end in its own recorded source, as well as
+its media-relative anchor and depth. Intersect the sounded pass ending, frozen
+intended terminal and real producer extent before commit. Check that selecting a
+completed pass after an empty final lap never seeks a successor or unavailable
+frame. Move, slip, trim, tempo projection, hydration and replay must carry this
+source interval; static take geometry alone cannot bound those readers. A later
+tempo conversion must not grow the original recording carrier past its intended
+ending, and excess producer drain is not permission to extend a take.

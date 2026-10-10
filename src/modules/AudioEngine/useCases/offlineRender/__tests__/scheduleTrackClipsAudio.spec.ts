@@ -745,6 +745,37 @@ describe('scheduleTrackClips — comping (take-lane) resolution edges', () => {
         mocks.takeLaneValue.value = { lanes: [lane] };
     }
 
+    it('schedules only the selected captured pass interval and leaves its unavailable tail silent', async () => {
+        setLane({
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [
+                {
+                    id: 'bounded',
+                    clipId: 'clip-1',
+                    name: 'Captured',
+                    startBeat: 0,
+                    endBeat: 0.8,
+                    selected: true,
+                    sourceOffsetBeats: 0,
+                    passAnchorSeconds: 0,
+                    passDepthSeconds: 0.1,
+                    passSourceEndSeconds: 0.5,
+                },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'bounded' }],
+        });
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({ clips: [makeAudioClip({ startBeat: 0, endBeat: 4 })] });
+        await run({ track, ctx, defaultTempo: 120 });
+        expect(sources).toHaveLength(1);
+        const [when, offset, duration] = sources[0]!.start.mock.calls[0]!;
+        expect(when).toBe(0);
+        expect(offset).toBeCloseTo(0.1, 10);
+        expect(duration).toBeCloseTo(0.4, 10);
+        expect(offset + duration).toBeCloseTo(0.5, 10);
+    });
+
     it('falls back to the plain clip when the lane exists but has no comp regions', async () => {
         // lane.activeCompRegions is empty → the `length === 0` guard returns the
         // original clip unchanged (one source, at the original beat range).

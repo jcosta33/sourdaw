@@ -817,3 +817,24 @@ projection, comp selection, and Undo/Redo retain only sounded PCM. Reverting
 the semantic comparison must restore the extra positive-depth take. Keep
 separate changed-id, beat, tempo, curve, and loop controls so filtering
 projection churn cannot disable genuine edit re-anchoring.
+
+## Pending tempo and completed source-tail probes
+
+The PR #5165 timing round omitted a tempo Command before the first captured
+frame and checked only the unfinished final pass against the producer extent.
+Require both manual and automatic capture routes to assert media origin after
+a pre-frame tempo edit, and select a completed pass when the producer ends
+before its sounded seam. A correct depth or an empty incoming take alone
+does not establish the completed pass's last readable sample. Keep a genuine
+base-tempo edit beside equal-valued deferred projection, so filtering array
+identity cannot disable actual tempo changes. Retain one real Command/CRDT
+recording history entry and exact clip/take identities through Undo and Redo.
+
+PR #5165 retained a delayed-flush60 oracle that asserted the old intended beat
+without observing playback at that tempo. The test-validity stance escaped the
+coordinate mismatch because its source-position assertion ran only at120.
+A recording endpoint asserted only in beats can bless unavailable PCM when the
+reader's tempo differs. Assert the actual selected source offset plus duration
+against both the producer buffer and the frozen terminal, and retain the same
+source ending through the single recording Undo/Redo. Await a sounded seam clock;
+a wrap counter may report planned look-ahead rather than sounded playback.

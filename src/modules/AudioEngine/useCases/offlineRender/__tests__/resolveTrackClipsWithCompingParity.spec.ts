@@ -4,6 +4,7 @@ import { type Clip, takeLaneStore, type TakeLaneStoreState } from '#/modules/Arr
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import { tempoMapStore } from '#/modules/Transport/stores';
 
+import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
 type Take = TakeLaneStoreState['lanes'][number]['takes'][number];
@@ -314,5 +315,47 @@ describe('live and offline comp resolution across a tempo change', () => {
                 [16, 8],
             ]);
         });
+    });
+});
+
+describe('captured pass source endings', () => {
+    afterEach(() => {
+        takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+    });
+
+    it.each([
+        { name: 'original', clip: recording(8, 16), start: 8, end: 8.8, tempo: 120 },
+        { name: 'moved', clip: recording(12, 20), start: 12, end: 12.8, tempo: 120 },
+        { name: 'slipped', clip: recording(8, 16, 0.2), start: 8, end: 8.6, tempo: 120 },
+        { name: 'trimmed', clip: recording(8.2, 16, 0.2), start: 8.2, end: 8.8, tempo: 120 },
+        { name: 'tempo edited', clip: recording(8, 16), start: 8, end: 8.4, tempo: 60 },
+    ])('retains original captured frames when $name', ({ clip, start, end, tempo }) => {
+        tempoMapStore.set({ changes: [{ id: 'tempo', beat: 0, tempo, curve: 'instant' }] });
+        const take = { ...placedPass('bounded', [8, 8.8], 0, 0.1), passSourceEndSeconds: 0.5 };
+        const state = lane([take], take.id, start, start + 2);
+        takeLaneStore.set(state);
+        expect(takeLaneStore.value).toEqual(state);
+        const live = resolveClipsWithComping('t1', [clip]);
+        const offline = resolveTrackClipsWithComping('t1', [clip], state);
+        expect(offline).toEqual(live);
+        const selected = live.find((fragment) => fragment.regionStartBeat === start)!;
+        expect(selected.regionEndBeat).toBeCloseTo(end, 10);
+        expect(live.some((fragment) => fragment.regionStartBeat >= end && fragment.regionStartBeat < start + 2)).toBe(
+            false
+        );
+        const [playback] = projectOfflineAudioClipPlaybacks({
+            clip: selected,
+            bufferDurationSeconds: 2,
+            regionStartBeat: start,
+            regionStartSec: (start * 60) / tempo,
+            durationSeconds: 8,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => (beat * 60) / tempo,
+            resolveTempoAtBeat: () => tempo,
+        });
+        expect(playback).toBeDefined();
+        expect(playback!.bufferOffsetSec + playback!.playDuration).toBeCloseTo(0.5, 10);
+        expect(Math.round((playback!.bufferOffsetSec + playback!.playDuration) * 48000) - 1).toBe(23999);
     });
 });

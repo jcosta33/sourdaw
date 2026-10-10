@@ -5,7 +5,8 @@ import { liveTempoTimeline } from '../liveTempoTimeline';
 
 type RecordingEnd = { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number };
 
-type PassStart = { contextSeconds: number } | { songSeconds: number };
+type PassStart =
+    { contextSeconds: number; endContextSeconds: number } | { songSeconds: number; endSongSeconds: number };
 type RecordingPassTiming = {
     recordPointBeat: number;
     firstPassClock: (() => number | null) | undefined;
@@ -13,7 +14,7 @@ type RecordingPassTiming = {
     openPassBeat: number;
     previousSeamContextSeconds: number | null;
     pendingSeam: { takeId: string; contextSeconds: number; nextStartBeat: number; cancelled: boolean } | null;
-    ending: { takeId: string | undefined; receipt: RecordingEnd; endBeat: number } | null;
+    ending: { takeId: string | undefined; receipt: RecordingEnd; endBeat: number; endContextSeconds: number } | null;
     nextPassStartBeat: number | null;
     starts: Map<string, PassStart>;
 };
@@ -60,9 +61,11 @@ function stageRecordingPassTiming(take: Take, passEndContextSeconds?: number, pl
             throw new Error('Recording pass has no rolling capture clock');
         }
         // A cancelled planned ending reuses the captured entry of that take.
-        if (!timing.starts.has(take.id)) {
-            timing.starts.set(take.id, { contextSeconds: firstStart });
-        }
+        const priorStart = timing.starts.get(take.id);
+        timing.starts.set(take.id, {
+            contextSeconds: priorStart && 'contextSeconds' in priorStart ? priorStart.contextSeconds : firstStart,
+            endContextSeconds: passEndContextSeconds,
+        });
         timing.nextPassStartBeat = null;
         if (planned) {
             timing.pendingSeam = {
@@ -85,7 +88,13 @@ function stageRecordingPassTiming(take: Take, passEndContextSeconds?: number, pl
         timeline: liveTempoTimeline,
     });
     if (placed.passDepthSeconds !== undefined) {
-        timing.starts.set(take.id, { songSeconds: placed.passDepthSeconds });
+        timing.starts.set(take.id, {
+            songSeconds: placed.passDepthSeconds,
+            endSongSeconds:
+                placed.passDepthSeconds +
+                liveTempoTimeline.secondsAtBeat(placed.endBeat) -
+                liveTempoTimeline.secondsAtBeat(placed.startBeat),
+        });
     }
 }
 
@@ -104,6 +113,25 @@ function recordingPassDepthSeconds(take: Take, sourceContextOriginSeconds: numbe
         return start.contextSeconds - sourceContextOriginSeconds;
     }
     return start.songSeconds - mediaOriginSeconds;
+}
+
+function recordingPassSourceEndSeconds(
+    take: Take,
+    sourceContextOriginSeconds: number,
+    mediaOriginSeconds: number
+): number {
+    const timing = recordingPassTimings.get(take.clipId);
+    const start = timing?.starts.get(take.id);
+    if (!start) {
+        throw new Error('Recording pass has no captured source ending');
+    }
+    if ('contextSeconds' in start) {
+        return (
+            Math.min(start.endContextSeconds, timing?.ending?.endContextSeconds ?? Infinity) -
+            sourceContextOriginSeconds
+        );
+    }
+    return start.endSongSeconds - mediaOriginSeconds;
 }
 
 function observeRecordingPassEntry(
@@ -191,9 +219,12 @@ function finishRecordingPass(clipId: string, receipt: RecordingEnd, intendedEndB
         return undefined;
     }
     const pending = timing.pendingSeam;
-    const endBeat = Math.min(intendedEndBeat, receipt.beatAtContextSeconds(receipt.contextSeconds));
+    const stoppedBeat = receipt.beatAtContextSeconds(receipt.contextSeconds);
+    const endBeat = Math.min(intendedEndBeat, stoppedBeat);
+    const endContextSeconds =
+        receipt.contextSeconds - readSecondsAtBeat({ beat: stoppedBeat }) + readSecondsAtBeat({ beat: endBeat });
     const unsounded = pending && (pending.cancelled || receipt.contextSeconds < pending.contextSeconds);
-    timing.ending = { takeId: unsounded ? pending.takeId : undefined, receipt, endBeat };
+    timing.ending = { takeId: unsounded ? pending.takeId : undefined, receipt, endBeat, endContextSeconds };
     if (!pending) {
         return undefined;
     }
@@ -250,6 +281,7 @@ export const recordingPassTiming = {
     begin: beginRecordingPassTiming,
     stage: stageRecordingPassTiming,
     depthSeconds: recordingPassDepthSeconds,
+    sourceEndSeconds: recordingPassSourceEndSeconds,
     retire: retireRecordingPassTiming,
     finish: finishRecordingPass,
     captureEnd: recordingPassCaptureEnd,

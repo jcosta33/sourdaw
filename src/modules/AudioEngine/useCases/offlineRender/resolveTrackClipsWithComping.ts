@@ -11,7 +11,12 @@ export type ResolvedClip = Track['clips'][number] & {
     sourceStartBeat: number;
 };
 
-type TakeMedia = { earliestBeat: number; sourceStartBeat: number; offsetAt: (beat: number) => number };
+type TakeMedia = {
+    earliestBeat: number;
+    latestBeat?: number;
+    sourceStartBeat: number;
+    offsetAt: (beat: number) => number;
+};
 
 /*
  * Everything below mirrors `Arrangement/useCases/resolveComping.ts` and the
@@ -104,11 +109,12 @@ function placedPassMedia(
     clip: TrackClip,
     anchorSeconds: number,
     depthSeconds: number,
+    sourceEndSeconds: number | undefined,
     timeline: ResolutionTempoTimeline
 ): TakeMedia {
     const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline);
     const depthBeats = (depthSeconds * timeline.tempoAtBeat(passStartBeat)) / 60;
-    return {
+    const media: TakeMedia = {
         earliestBeat: Math.max(clip.startBeat, passStartBeat),
         sourceStartBeat: passStartBeat - depthBeats,
         offsetAt: (beat) => {
@@ -119,6 +125,12 @@ function placedPassMedia(
             return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
         },
     };
+    if (sourceEndSeconds !== undefined) {
+        media.latestBeat = timeline.beatAtSeconds(
+            timeline.secondsAtBeat(passStartBeat) + sourceEndSeconds - depthSeconds
+        );
+    }
+    return media;
 }
 
 function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempoTimeline): TakeMedia {
@@ -132,7 +144,7 @@ function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempo
     if (clip.type !== 'audio' || take.passAnchorSeconds === undefined || take.passDepthSeconds === undefined) {
         return legacyPassMedia(clip, take.sourceOffsetBeats, timeline);
     }
-    return placedPassMedia(clip, take.passAnchorSeconds, take.passDepthSeconds, timeline);
+    return placedPassMedia(clip, take.passAnchorSeconds, take.passDepthSeconds, take.passSourceEndSeconds, timeline);
 }
 
 /**
@@ -205,7 +217,7 @@ export function resolveTrackClipsWithComping(
 
         const media = resolveTakeMedia(take, sourceClip, timeline);
         const overlapStart = Math.max(region.startBeat, media.earliestBeat);
-        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat);
+        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeat ?? Infinity);
         if (overlapStart >= overlapEnd) {
             continue;
         }

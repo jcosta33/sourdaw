@@ -486,6 +486,7 @@ describe('sanitize_take_lane_store_state', () => {
                     sourceOffsetBeats: 4,
                     passAnchorSeconds: -2,
                     passDepthSeconds: 2,
+                    passSourceEndSeconds: 6,
                 },
             ],
             activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: 'pass-2' }],
@@ -506,7 +507,12 @@ describe('sanitize_take_lane_store_state', () => {
             selected: false,
             ...fields,
         });
-        const placed = take('ahead-of-media', { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 });
+        const placed = take('ahead-of-media', {
+            sourceOffsetBeats: 4,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+            passSourceEndSeconds: 6,
+        });
 
         expect(
             sanitize_take_lane_store_state({
@@ -516,6 +522,19 @@ describe('sanitize_take_lane_store_state', () => {
                         trackId: 'track-1',
                         takes: [
                             placed,
+                            take('end-before-start', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: -2,
+                                passDepthSeconds: 2,
+                                passSourceEndSeconds: 1,
+                            }),
+                            take('end-alone', { passSourceEndSeconds: 6 }),
+                            take('infinite-end', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: -2,
+                                passDepthSeconds: 2,
+                                passSourceEndSeconds: Infinity,
+                            }),
                             take('non-numeric-anchor', {
                                 sourceOffsetBeats: 4,
                                 passAnchorSeconds: '-2',
@@ -575,7 +594,20 @@ describe('takeLaneStore', () => {
                 {
                     id: 'lane-1',
                     trackId: 'track-1',
-                    takes: [],
+                    takes: [
+                        {
+                            id: 'captured',
+                            clipId: 'clip',
+                            name: 'Captured',
+                            startBeat: 8,
+                            endBeat: 8.8,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                            passAnchorSeconds: 0,
+                            passDepthSeconds: 0.1,
+                            passSourceEndSeconds: 0.5,
+                        },
+                    ],
                     activeCompRegions: [],
                 },
             ],
