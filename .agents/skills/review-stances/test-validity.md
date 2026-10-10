@@ -785,3 +785,9 @@ Probe that would have caught it: keep `rust-std-<host>` in the complete exact-hi
 then remove only that component while leaving rustc, cargo, and every TOML extra installed.
 Require the exact cache hit to fail before any toolchain-install request; the preserved full
 fixture must still pass without installation.
+
+The component registry alone is insufficient: a partial restore can retain its
+`rust-std-<host>` entry while losing the host library payload. Keep the registry
+entry in the broken fixture, make a one-input `std`-using metadata compile fail,
+and require setup to fail before Cargo admission with no install or success output.
+The complete exact-hit fixture must pass the same compile without installation.

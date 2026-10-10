@@ -74,6 +74,13 @@ while IFS= read -r component; do
   }
 done <<< "$components"
 
+# Rustup's component registry can survive a partial restore without usable host libraries.
+std_probe_output=$(mktemp)
+trap 'rm -f -- "$std_probe_output"' EXIT
+rustup run "$active" rustc --crate-name pinned_rust_std_probe --crate-type lib --emit=metadata -o "$std_probe_output" - <<'RS'
+pub fn probe() { let _ = std::mem::size_of::<usize>(); }
+RS
+
 rustup run "$active" cargo --version
 rustup run "$active" rustfmt --version
 rustup run "$active" cargo-clippy --version
