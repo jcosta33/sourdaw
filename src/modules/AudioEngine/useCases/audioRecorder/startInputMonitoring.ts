@@ -7,12 +7,27 @@ import { getSelectedInputId } from '../audioDeviceSelection/getSelectedInputId';
 
 import { admitInputMonitoring } from './admitInputMonitoring';
 import { deriveAutoMonitorEdge } from './deriveAutoInputMonitoring';
+import { type ReadIntent } from './inputMonitoringAdmission';
 
 export function startInputMonitoring(trackId: string, inputId?: string | null): Promise<boolean> {
     const selectedInputId = inputId === undefined ? getSelectedInputId() : inputId;
-    const readIntent = (): { inputId: string | null; canAttach?: boolean } | null => {
+    let followsCommittedTrack = false;
+    const readIntent: ReadIntent = () => {
         const projected = trackStore.value?.tracks.find((track) => track.id === trackId);
-        const track = projected ?? readCommittedInputMonitoringTrack(trackId);
+        const committed = readCommittedInputMonitoringTrack(trackId);
+        // A gesture can admit On before its write commits. Once committed truth
+        // owns that admission, optimistic restore publications cannot revoke it.
+        if (
+            committed &&
+            (!projected ||
+                (committed.inputMonitoring === projected.inputMonitoring &&
+                    committed.inputId === projected.inputId &&
+                    committed.kind === projected.kind &&
+                    committed.armed === projected.armed))
+        ) {
+            followsCommittedTrack = true;
+        }
+        const track = followsCommittedTrack ? committed : (projected ?? committed);
         if (!track) {
             return null;
         }
@@ -22,7 +37,7 @@ export function startInputMonitoring(trackId: string, inputId?: string | null): 
             return null;
         }
         if (track.inputMonitoring === 'on') {
-            return { inputId: track.inputId, canAttach };
+            return { inputId: track.inputId, inputMonitoring: 'on', canAttach };
         }
         if (track.kind !== 'audio') {
             return null;
@@ -37,7 +52,11 @@ export function startInputMonitoring(trackId: string, inputId?: string | null): 
         if (edge !== 'open') {
             return null;
         }
-        return { inputId: track.inputId, canAttach: canAttach && !isAutoInputMonitoringHeld() };
+        return {
+            inputId: track.inputId,
+            inputMonitoring: 'auto',
+            canAttach: canAttach && !isAutoInputMonitoringHeld(),
+        };
     };
     return admitInputMonitoring(trackId, selectedInputId, readIntent);
 }

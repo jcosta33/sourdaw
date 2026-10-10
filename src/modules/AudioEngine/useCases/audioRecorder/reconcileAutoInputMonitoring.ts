@@ -143,6 +143,26 @@ export function reconcileAutoInputMonitoring(): void {
     forgiveRefusalsAtRecordStartOrStop(transport);
 
     const reconcileTrack = (track: (typeof tracks)[number]): void => {
+        const admission = inputMonitoringAdmissions.get(track.id);
+        if (admission) {
+            // The admission reader follows committed eligibility once the
+            // project owns it; a pending projection must not destroy capture.
+            const intent = admission.readIntent();
+            if (!intent) {
+                closeEdge(track.id);
+                return;
+            }
+            if (intent.inputMonitoring === 'auto') {
+                if (!opensSuppressed) {
+                    const inputId =
+                        intent.inputId === admission.selectorInputId ? admission.captureInputId : intent.inputId;
+                    openEdge(track.id, inputId, admission.readIntent);
+                }
+            } else {
+                followAdmittedOnInput(track.id, interestedIds, opensSuppressed);
+            }
+            return;
+        }
         if (track.kind !== 'audio') {
             reconcileNonAudioTrack(track, interestedIds, opensSuppressed);
             return;

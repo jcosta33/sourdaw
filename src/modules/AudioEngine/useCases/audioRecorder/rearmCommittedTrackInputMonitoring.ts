@@ -1,9 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 
 import { readCommittedInputMonitoringTrack } from '../../stores/inputMonitoringProjectAccess';
 
 import { admitInputMonitoring } from './admitInputMonitoring';
+import { type ReadIntent } from './inputMonitoringAdmission';
 import { reconcileAutoInputMonitoring } from './reconcileAutoInputMonitoring';
 
 /** Restore admission and its pending grant must both observe current committed intent. */
@@ -13,13 +14,14 @@ export async function rearmCommittedTrackInputMonitoring(trackId: string): Promi
         return;
     }
     reconcileAutoInputMonitoring();
-    const readIntent = (): { inputId: string | null; canAttach: boolean } | null => {
+    const readIntent: ReadIntent = () => {
         const current = readCommittedInputMonitoringTrack(trackId);
-        if (current?.inputMonitoring !== 'on') {
+        if (current?.inputMonitoring !== 'on' || !getTrackEligibility(current.kind).acceptsMonitoring) {
             return null;
         }
         return {
             inputId: current.inputId,
+            inputMonitoring: 'on',
             canAttach: trackStore.value?.tracks.some((track) => track.id === trackId) === true,
         };
     };

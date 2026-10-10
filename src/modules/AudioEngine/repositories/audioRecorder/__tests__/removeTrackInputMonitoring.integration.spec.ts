@@ -14,10 +14,13 @@ import {
     createTrack,
     getArrangementHandlers,
     removeTrack,
+    restoreTrackSnapshot,
+    toggleInputMonitoring,
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import {
     configureInputMonitoringProjectAccess,
+    reconcileAutoInputMonitoring,
     startInputMonitoring,
     stopInputMonitoring,
     syncAutoInputMonitoring,
@@ -35,6 +38,7 @@ import {
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { inputMonitoringSession } from '../inputMonitoringSession';
+import { stopInputMonitoring as stopRuntimeInputMonitoring } from '../stopInputMonitoring';
 
 const engine = vi.hoisted(() => ({
     createMediaStreamSource: vi.fn(),
@@ -113,6 +117,18 @@ describe('track deletion releases the input monitor at Command commit', () => {
 
     function monitorOwners(): string[] {
         return [...inputMonitoringSession.trackKeys.keys()].sort();
+    }
+
+    function committedInputMonitoring(trackId: string): unknown {
+        const doc = getCrdtDoc('root');
+        if (!doc) {
+            throw new Error('Expected a registered committed root');
+        }
+        const slot = doc.tracks;
+        if (!slot || typeof slot !== 'object' || !('tracks' in slot) || !Array.isArray(slot.tracks)) {
+            throw new Error('Expected committed tracks in the document');
+        }
+        return slot.tracks.find((track: { id: string }) => track.id === trackId)?.inputMonitoring;
     }
 
     function watchRuntimeRemovalUnsubscribe() {
@@ -232,6 +248,341 @@ describe('track deletion releases the input monitor at Command commit', () => {
             value: originalMediaDevices,
             configurable: true,
         });
+    });
+
+    it('retains a committed On owner after an aborted restored Off projection', async () => {
+        await startInputMonitoring('a', null);
+        source.disconnect.mockClear();
+        inputTrack.stop.mockClear();
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected visible tracks before version restore');
+        }
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            restoreTrackSnapshot({
+                tracks: state.tracks.map((track) =>
+                    track.id === 'a' ? { ...track, inputMonitoring: 'off' as const } : track
+                ),
+                selectedTrackId: state.selectedTrackId,
+            });
+        });
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        const observe = () => ({
+            committedMode: committedInputMonitoring('a'),
+            projectedMode: trackStore.value?.tracks.find((track) => track.id === 'a')?.inputMonitoring,
+            owners: monitorOwners(),
+            trackKey: inputMonitoringSession.trackKeys.has('a'),
+            capture: inputMonitoringSession.captures.has(null),
+            stopCount: inputTrack.stop.mock.calls.length,
+            disconnectedOwner: source.disconnect.mock.calls.some(([destination]) => destination === gains.get('a')),
+            connectedOwner: connectedGains.has(gains.get('a')),
+        });
+        const beforeAbort = observe();
+        transaction.abort();
+        const afterAbort = observe();
+        expect({ beforeAbort, afterAbort }).toEqual({
+            beforeAbort: {
+                committedMode: 'on',
+                projectedMode: 'off',
+                owners: ['a'],
+                trackKey: true,
+                capture: true,
+                stopCount: 0,
+                disconnectedOwner: false,
+                connectedOwner: true,
+            },
+            afterAbort: {
+                committedMode: 'on',
+                projectedMode: 'on',
+                owners: ['a'],
+                trackKey: true,
+                capture: true,
+                stopCount: 0,
+                disconnectedOwner: false,
+                connectedOwner: true,
+            },
+        });
+    });
+
+    it.each(['abort', 'refused', 'commit'] as const)(
+        'settles a restored Off owner only at transaction outcome while preserving a shared survivor, terminal=%s',
+        async (terminal) => {
+            await startInputMonitoring('a', null);
+            await startInputMonitoring('b', null);
+            const originalCapture = inputMonitoringSession.captures.get(null);
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected tracks before restore');
+            }
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+                restoreTrackSnapshot({
+                    ...state,
+                    tracks: state.tracks.map((track) =>
+                        track.id === 'a' ? { ...track, inputMonitoring: 'off' } : track
+                    ),
+                });
+            });
+            if (transaction.status === 'threw') {
+                throw transaction.error;
+            }
+            try {
+                expect(committedInputMonitoring('a')).toBe('on');
+                expect(trackStore.value?.tracks[0]?.inputMonitoring).toBe('off');
+                expect(monitorOwners()).toEqual(['a', 'b']);
+                expect(connectedGains.has(gains.get('a'))).toBe(true);
+                expect(source.disconnect).not.toHaveBeenCalled();
+                if (terminal === 'commit') {
+                    transaction.commit();
+                } else if (terminal === 'refused') {
+                    refuseCommit = true;
+                    expect(() => transaction.commit()).toThrow(commitRefusal);
+                }
+            } finally {
+                refuseCommit = false;
+                transaction.abort();
+            }
+            const expectedMode = terminal === 'commit' ? 'off' : 'on';
+            expect(committedInputMonitoring('a')).toBe(expectedMode);
+            expect(trackStore.value?.tracks[0]?.inputMonitoring).toBe(expectedMode);
+            expect(monitorOwners()).toEqual(terminal === 'commit' ? ['b'] : ['a', 'b']);
+            expect(connectedGains.has(gains.get('a'))).toBe(terminal !== 'commit');
+            expect(connectedGains.has(gains.get('b'))).toBe(true);
+            expect(inputMonitoringSession.captures.get(null)).toBe(originalCapture);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            expect(getUserMedia).toHaveBeenCalledOnce();
+            if (terminal === 'commit') {
+                expect(source.disconnect).toHaveBeenCalledExactlyOnceWith(gains.get('a'));
+                const remaining = trackStore.value;
+                if (!remaining) {
+                    throw new Error('Expected survivor before final Off');
+                }
+                const lastOff = runWithAutomergeStorageTransaction(undefined, () =>
+                    restoreTrackSnapshot({
+                        ...remaining,
+                        tracks: remaining.tracks.map((track) => ({ ...track, inputMonitoring: 'off' })),
+                    })
+                );
+                if (lastOff.status === 'threw') {
+                    throw lastOff.error;
+                }
+                lastOff.commit();
+                expect(monitorOwners()).toEqual([]);
+                expect(connectedGains.size).toBe(0);
+                expect(inputMonitoringSession.captures.has(null)).toBe(false);
+                expect(inputTrack.stop).toHaveBeenCalledOnce();
+            } else {
+                expect(source.disconnect).not.toHaveBeenCalled();
+            }
+        }
+    );
+
+    it.each([
+        ['audio', 'abort'],
+        ['audio', 'commit'],
+        ['midi', 'abort'],
+        ['midi', 'commit'],
+        ['auto', 'abort'],
+        ['auto', 'commit'],
+    ] as const)('settles a pending %s grant during optimistic Off before %s', async (kind, terminal) => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before pending restore');
+        }
+        const pending = deferredGrant();
+        getUserMedia.mockReturnValueOnce(pending.request);
+        restoreTrackSnapshot({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (kind === 'auto') {
+                    return { ...track, armed: track.id === 'a', inputMonitoring: track.id === 'a' ? 'auto' : 'off' };
+                }
+                return { ...track, kind };
+            }),
+        });
+        flushAutomergeStorageWrites();
+        const opening = startInputMonitoring('a', null);
+        const before = trackStore.value;
+        if (!before) {
+            throw new Error('Expected tracks before Off snapshot');
+        }
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            restoreTrackSnapshot({
+                ...before,
+                tracks: before.tracks.map((track) => (track.id === 'a' ? { ...track, inputMonitoring: 'off' } : track)),
+            })
+        );
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            pending.grant(stream);
+            expect(await opening).toBe(true);
+            expect(committedInputMonitoring('a')).toBe(kind === 'auto' ? 'auto' : 'on');
+            expect(trackStore.value?.tracks[0]?.inputMonitoring).toBe('off');
+            expect(monitorOwners()).toEqual(['a']);
+            expect(inputMonitoringSession.trackKeys.has('a')).toBe(true);
+            expect(inputMonitoringSession.captures.has(null)).toBe(true);
+            expect(connectedGains.has(gains.get('a'))).toBe(true);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            if (terminal === 'commit') {
+                transaction.commit();
+            }
+        } finally {
+            transaction.abort();
+        }
+        const committed = terminal === 'commit';
+        const priorMode = kind === 'auto' ? 'auto' : 'on';
+        const expectedMode = committed ? 'off' : priorMode;
+        expect(committedInputMonitoring('a')).toBe(expectedMode);
+        expect(trackStore.value?.tracks[0]?.inputMonitoring).toBe(expectedMode);
+        expect(monitorOwners()).toEqual(committed ? [] : ['a']);
+        expect(inputMonitoringSession.trackKeys.has('a')).toBe(!committed);
+        expect(inputMonitoringSession.captures.has(null)).toBe(!committed);
+        expect(connectedGains.has(gains.get('a'))).toBe(!committed);
+        expect(inputTrack.stop).toHaveBeenCalledTimes(committed ? 1 : 0);
+        expect(getUserMedia).toHaveBeenCalledOnce();
+    });
+
+    it('admits an explicit On gesture before disarmed Auto commits and retains its owner through unrelated publication', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before gesture');
+        }
+        restoreTrackSnapshot({
+            ...state,
+            tracks: state.tracks.map((track) => ({ ...track, armed: false, inputMonitoring: 'auto' })),
+        });
+        flushAutomergeStorageWrites();
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => toggleInputMonitoring('a'));
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            await vi.waitFor(() => expect(connectedGains.has(gains.get('a'))).toBe(true));
+            expect(committedInputMonitoring('a')).toBe('auto');
+            const projected = trackStore.value;
+            if (!projected) {
+                throw new Error('Expected optimistic On track');
+            }
+            transaction.scope(() =>
+                restoreTrackSnapshot({
+                    ...projected,
+                    tracks: projected.tracks.map((track) => (track.id === 'b' ? { ...track, name: 'Renamed' } : track)),
+                })
+            );
+            expect(monitorOwners()).toEqual(['a']);
+            expect(source.disconnect).not.toHaveBeenCalled();
+            transaction.commit();
+            expect(committedInputMonitoring('a')).toBe('on');
+            expect(trackStore.value?.tracks[0]?.inputMonitoring).toBe('on');
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            expect(getUserMedia).toHaveBeenCalledOnce();
+        } finally {
+            transaction.abort();
+        }
+    });
+
+    it.each([
+        ['off', 'abort'],
+        ['off', 'commit'],
+        ['disarm', 'abort'],
+        ['disarm', 'commit'],
+        ['kind', 'abort'],
+        ['kind', 'commit'],
+    ] as const)('preserves committed Auto capture during optimistic %s until %s', async (changeKind, terminal) => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before Auto admission');
+        }
+        restoreTrackSnapshot({
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                armed: track.id === 'a',
+                inputMonitoring: track.id === 'a' ? 'auto' : 'off',
+            })),
+        });
+        flushAutomergeStorageWrites();
+        expect(await startInputMonitoring('a', null)).toBe(true);
+        const originalCapture = inputMonitoringSession.captures.get(null);
+        const before = trackStore.value;
+        if (!before) {
+            throw new Error('Expected tracks before optimistic Auto restore');
+        }
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            restoreTrackSnapshot({
+                ...before,
+                tracks: before.tracks.map((track) => {
+                    if (track.id !== 'a') {
+                        return track;
+                    }
+                    if (changeKind === 'off') {
+                        return { ...track, inputMonitoring: 'off' };
+                    }
+                    if (changeKind === 'disarm') {
+                        return { ...track, armed: false };
+                    }
+                    return { ...track, kind: 'midi' };
+                }),
+            })
+        );
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            expect(monitorOwners()).toEqual(['a']);
+            expect(inputMonitoringSession.captures.get(null)).toBe(originalCapture);
+            expect(connectedGains.has(gains.get('a'))).toBe(true);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            if (terminal === 'commit') {
+                transaction.commit();
+            }
+        } finally {
+            transaction.abort();
+        }
+        expect(monitorOwners()).toEqual(terminal === 'commit' ? [] : ['a']);
+        expect(connectedGains.has(gains.get('a'))).toBe(terminal !== 'commit');
+        expect(inputMonitoringSession.captures.has(null)).toBe(terminal !== 'commit');
+        expect(inputTrack.stop).toHaveBeenCalledTimes(terminal === 'commit' ? 1 : 0);
+        expect(getUserMedia).toHaveBeenCalledOnce();
+        const raw = getCrdtDoc<{
+            tracks: { tracks: Array<{ id: string; inputMonitoring: string; armed: boolean; kind: string }> };
+        }>('root')?.tracks.tracks[0];
+        const projected = trackStore.value?.tracks[0];
+        expect(raw?.inputMonitoring).toBe(projected?.inputMonitoring);
+        expect(raw?.armed).toBe(projected?.armed);
+        expect(raw?.kind).toBe(projected?.kind);
+    });
+
+    it('rearms committed Auto after engine teardown retains its admission while leaving On to explicit rearm', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before Auto admission');
+        }
+        restoreTrackSnapshot({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'a' ? { ...track, armed: true, inputMonitoring: 'auto' } : track
+            ),
+        });
+        flushAutomergeStorageWrites();
+        expect(await startInputMonitoring('a', null)).toBe(true);
+        expect(await startInputMonitoring('b', null)).toBe(true);
+        const nextStop = vi.fn();
+        const nextStream = { getTracks: () => [{ stop: nextStop }] };
+        getUserMedia.mockResolvedValueOnce(nextStream);
+        stopRuntimeInputMonitoring();
+        expect(monitorOwners()).toEqual([]);
+        expect(inputTrack.stop).toHaveBeenCalledOnce();
+        reconcileAutoInputMonitoring();
+        await vi.waitFor(() => expect(inputMonitoringSession.captures.get(null)?.monitorStream).toBe(nextStream));
+        expect(monitorOwners()).toEqual(['a']);
+        expect(connectedGains.has(gains.get('a'))).toBe(true);
+        expect(connectedGains.has(gains.get('b'))).toBe(false);
+        expect(nextStop).not.toHaveBeenCalled();
+        expect(getUserMedia).toHaveBeenCalledTimes(2);
     });
 
     it('retains both owners after a refused single delete, then releases only committed owners', async () => {
@@ -1005,9 +1356,11 @@ describe('track deletion releases the input monitor at Command commit', () => {
         ['off', false],
         ['input', false],
         ['delete', false],
+        ['kind', false],
         ['off', true],
         ['input', true],
         ['delete', true],
+        ['kind', true],
     ] as const)(
         'fences a pending restored grant after committed %s changes, ambiguous=%s',
         async (change, ambiguous) => {
@@ -1068,6 +1421,8 @@ describe('track deletion releases the input monitor at Command commit', () => {
                     for (const track of slot.tracks) {
                         if (change === 'off') {
                             track.inputMonitoring = 'off';
+                        } else if (change === 'kind') {
+                            track.kind = 'vca';
                         } else {
                             track.inputId = 'new-input';
                         }
