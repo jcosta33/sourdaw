@@ -62,7 +62,8 @@ export type PendingExpressionWorkletEvent = PendingWorkletEventAddress & {
 export type PendingControlWorkletEvent = {
     /** Seconds into the render at which the move applies. */
     time: number;
-    type: 'control';
+    /** `closing-control` for a move on a clip's closing line, which applies first among the controllers of its frame. */
+    type: 'control' | 'closing-control';
     controller: number;
     /** The 7-bit wire value the recording carries. */
     value: number;

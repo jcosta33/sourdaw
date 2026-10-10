@@ -507,7 +507,7 @@ export async function scheduleTrackClips({
     // Read off the strategy, not `instrumentControls`, like expression: only an
     // instrument whose engine honours a stored controller carries one.
     const dispatchControl = instrumentEntry?.strategy.controlChange;
-    const workletControlEvents: { time: number; controller: number; value: number }[] = [];
+    const workletControlEvents: { time: number; controller: number; value: number; closesClip: boolean }[] = [];
     let noteCount = 0;
 
     function getScheduledArticulationId(articulation: string | undefined): number | undefined {
@@ -818,7 +818,12 @@ export async function scheduleTrackClips({
                     if (time >= durationSeconds) {
                         continue;
                     }
-                    workletControlEvents.push({ time, controller: controller.controller, value: controller.value });
+                    workletControlEvents.push({
+                        time,
+                        controller: controller.controller,
+                        value: controller.value,
+                        closesClip: controller.closesClip,
+                    });
                 }
             }
 
@@ -927,8 +932,12 @@ export async function scheduleTrackClips({
     }
 
     if (dispatchControl && pendingWorkletEvents) {
-        for (const event of workletControlEvents) {
-            pendingWorkletEvents.push({ type: 'control', dispatch: dispatchControl, ...event });
+        for (const { closesClip, ...event } of workletControlEvents) {
+            pendingWorkletEvents.push({
+                type: closesClip ? 'closing-control' : 'control',
+                dispatch: dispatchControl,
+                ...event,
+            });
         }
     }
 

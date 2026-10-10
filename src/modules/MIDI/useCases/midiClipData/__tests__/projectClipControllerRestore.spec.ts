@@ -30,17 +30,22 @@ function restoreAt(lane: readonly MidiCC[], clip: Clip, atBeat: number) {
     return restoreTrackAt([{ clip, controlChanges: lane }], atBeat);
 }
 
-/** Everything the instrument is told at the destination frame, in the order it is posted: the window's own events there (clip by clip), then the restore's moves. */
+/** Where a move sits among the controllers of its frame: a closing-line move first, as the same-frame queue posts it. */
+const sameFrameRank = (move: { closesClip: boolean }) => (move.closesClip ? 0 : 1);
+
+/** Everything the instrument is told at the destination frame, in the order it is posted: the window's own events there (closing-line moves first, then clip by clip), then the restore's moves. */
 function sentTrackAtDestination(clips: readonly TrackClip[], atBeat: number): MidiCC[] {
     const restore = restoreTrackAt(clips, atBeat);
-    const window = clips.flatMap(({ clip, controlChanges }) =>
-        projectClipControllerEvents({
-            controlChanges,
-            clip,
-            fromBeat: atBeat,
-            toBeat: atBeat + 1,
-        }).filter((event) => frameOf(event.beat) === frameOf(atBeat))
-    );
+    const window = clips
+        .flatMap(({ clip, controlChanges }) =>
+            projectClipControllerEvents({
+                controlChanges,
+                clip,
+                fromBeat: atBeat,
+                toBeat: atBeat + 1,
+            }).filter((event) => frameOf(event.beat) === frameOf(atBeat))
+        )
+        .sort((left, right) => sameFrameRank(left) - sameFrameRank(right));
     return [...window, ...restore.moves];
 }
 
@@ -57,13 +62,14 @@ function laneOf(row: MidiCC): string {
  * The value each controller holds at the destination frame had playback run through the track
  * to get there: each clip's real projection stepped in abutting windows from a beat before the
  * track's first clip, every event up to the destination frame posted as the window's same-frame
- * queue posts a window's controllers (by sample frame, then the order they were added: clip
- * sequence, then each clip's row order) and applied in that order. The whole history is one
+ * queue posts a window's controllers (by sample frame, then a closing-line move ahead of the
+ * others, then the order they were added: clip sequence, then each clip's row order) and applied
+ * in that order. The whole history is one
  * window, because two moves a rounding step apart in beat share a frame and the window that
  * posts them decides nothing the clip order does not.
  */
 function valuesHeldByContinuousPlayback(clips: readonly TrackClip[], atBeat: number): Map<string, number> {
-    const posts: { frame: number; sequence: number; event: MidiCC }[] = [];
+    const posts: { frame: number; rank: number; sequence: number; event: MidiCC }[] = [];
     const step = 0.75;
     const origin = Math.min(...clips.map(({ clip }) => clip.startBeat)) - 1;
     for (const { clip, controlChanges } of clips) {
@@ -77,13 +83,20 @@ function valuesHeldByContinuousPlayback(clips: readonly TrackClip[], atBeat: num
             });
             for (const event of window) {
                 if (frameOf(event.beat) <= frameOf(atBeat)) {
-                    posts.push({ frame: frameOf(event.beat), sequence: posts.length, event });
+                    posts.push({
+                        frame: frameOf(event.beat),
+                        rank: sameFrameRank(event),
+                        sequence: posts.length,
+                        event,
+                    });
                 }
             }
         }
     }
     const held = new Map<string, number>();
-    for (const post of posts.sort((left, right) => left.frame - right.frame || left.sequence - right.sequence)) {
+    for (const post of posts.sort(
+        (left, right) => left.frame - right.frame || left.rank - right.rank || left.sequence - right.sequence
+    )) {
         held.set(laneOf(post.event), post.event.value);
     }
     return held;
@@ -260,6 +273,40 @@ describe('projectClipControllerRestore', () => {
 
             expect(sent.map((move) => move.value)).toEqual([0, 127]);
             expect(restoreTrackAt(clips, 3).held).toEqual(new Set([64]));
+        });
+
+        describe('with a pedal lift stored on the closing line of the clip before', () => {
+            const liftedA = { clip: clipA, controlChanges: [controller('down', 0, 127), controller('lift', 4, 0)] };
+
+            it('sends the pedal up inside a following clip that has no pedal row', () => {
+                const clips = [liftedA, { clip: clipB, controlChanges: [controller('other', 0.5, 90, 11)] }];
+
+                expect(placed(restoreTrackAt(clips, 6).moves)).toEqual(
+                    expect.arrayContaining([{ controller: 64, beat: 6, value: 0 }])
+                );
+            });
+
+            it('sends the lift on a destination exactly on the clip end, which the window opening there does not schedule', () => {
+                const clips = [liftedA, { clip: clipB, controlChanges: [controller('other', 0.5, 90, 11)] }];
+
+                const restore = restoreTrackAt(clips, 4);
+
+                expect(placed(restore.moves)).toEqual([{ controller: 64, beat: 4, value: 0 }]);
+                expect(sentTrackAtDestination(clips, 4).map((move) => move.value)).toEqual([0]);
+            });
+
+            it.each([
+                ['the ending clip listed first', [0, 1]],
+                ['the starting clip listed first', [1, 0]],
+            ])('lets the head of the clip that starts on the clip end have the last word (%s)', (_order, order) => {
+                const pair = [liftedA, { clip: clipB, controlChanges: [controller('press', 0, 127)] }];
+                const clips = order.map((index) => pair[index]!);
+
+                expect(placed(restoreTrackAt(clips, 6).moves)).toEqual([{ controller: 64, beat: 6, value: 127 }]);
+                // A relocation onto the clip end gives the pedal the value in force there, the head's press,
+                // and never lifts it first.
+                expect(sentTrackAtDestination(clips, 4).map((move) => move.value)).toEqual([127]);
+            });
         });
 
         it('leaves a controller a later clip emits on the destination frame to the window', () => {
@@ -458,21 +505,26 @@ describe('projectClipControllerRestore', () => {
         // The second clip's start against the first's: a start behind it, and starts 28 units off, where the
         // rows of the two clips are placed on the same beat by different float arithmetic; then overlapping,
         // abutting it and leaving a gap after it, for the lengths below.
-        const secondClipDeltas = [-28, 28, 56, 98, 126];
+        const secondClipDeltas = [-28, 28, 56, 98, 112, 126];
         const lengths = [112, 168];
         const offsets = [0, 14];
         const loops = [null, 56];
-        // No row sits on a pass's end (offset + loop length, or offset + length): whether the projection
-        // admits a row exactly there is rounding, and the window's own answer is what plays.
-        const firstClipRows = [
+        // Each clip also stores a row on its closing line (offset + loop length, or offset + length),
+        // which plays on the clip end only, and the second clip a sustain row on its head, so the
+        // abutting pair (a delta of one length) puts a closing-line move and a head move on one frame.
+        const firstClipRows = (closingUnits: number) => [
             controller('a-down', toBeat(21), 127),
             controller('a-up', toBeat(77), 0),
             controller('a-dynamics', toBeat(35), 33, 11, 2),
+            controller('a-closing', toBeat(closingUnits), 3),
+            controller('a-closing-dynamics', toBeat(closingUnits), 66, 11, 2),
         ];
-        const secondClipRows = [
+        const secondClipRows = (headUnits: number, closingUnits: number) => [
+            controller('b-head', toBeat(headUnits), 44, 64, 1),
             controller('b-sustain', toBeat(49), 5, 64, 1),
             controller('b-up', toBeat(91), 9, 64, 1),
             controller('b-dynamics', toBeat(63), 77, 11, 3),
+            controller('b-closing', toBeat(closingUnits), 11, 64, 1),
         ];
 
         it('sends exactly the value continuous playback holds at every destination: inside, between and after the clips', () => {
@@ -490,9 +542,13 @@ describe('projectClipControllerRestore', () => {
                                     loopEnabled: loop !== null,
                                     loopLength: loop === null ? undefined : toBeat(loop),
                                 });
+                                const closingUnits = offset + (loop ?? length);
                                 const clips = [
-                                    { clip: shape(firstStart), controlChanges: firstClipRows },
-                                    { clip: shape(secondStart), controlChanges: secondClipRows },
+                                    { clip: shape(firstStart), controlChanges: firstClipRows(closingUnits) },
+                                    {
+                                        clip: shape(secondStart),
+                                        controlChanges: secondClipRows(offset, closingUnits),
+                                    },
                                 ];
                                 for (
                                     let destination = Math.min(firstStart, secondStart);

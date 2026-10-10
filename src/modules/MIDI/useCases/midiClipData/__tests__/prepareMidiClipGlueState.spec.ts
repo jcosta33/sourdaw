@@ -268,6 +268,35 @@ describe('prepareMidiClipGlueState', () => {
         expect(target?.data.controlChanges.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([carried]);
     });
 
+    it('keeps each source closing-line controller row, ahead of the next source head on the seam', () => {
+        mocks.state.value = {
+            notesByClipId: {},
+            ccByClipId: {
+                'source-a': [
+                    { id: 'a-down', controller: 64, value: 127, beat: 0, channel: 0 },
+                    { id: 'a-lift', controller: 64, value: 0, beat: 4, channel: 0 },
+                ],
+                'source-b': [
+                    { id: 'b-press', controller: 64, value: 127, beat: 0, channel: 0 },
+                    { id: 'b-lift', controller: 64, value: 0, beat: 4, channel: 0 },
+                ],
+            },
+            pitchBendByClipId: {},
+        };
+
+        const plan = prepareMidiClipGlueState({ sources, targetClipId: 'target' });
+        const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+        // The glued clip plays what the two did: source A lifts on its end, source B presses on its
+        // head on the same beat and has the last word, and B's own closing lift is the glued clip's.
+        expect(target?.data.controlChanges.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([
+            ['a-down', 0, 127],
+            ['a-lift', 4, 0],
+            ['b-press', 4, 127],
+            ['b-lift', 8, 0],
+        ]);
+    });
+
     it('does not carry a controller value over a row the lane already has at the visible start', () => {
         mocks.state.value = {
             notesByClipId: {},

@@ -23,6 +23,17 @@ type ProjectClipControllerEventsInput = {
 
 type IterationRange = { startIndex: number; endIndex: number };
 
+/** A controller move a clip plays, at its absolute beat. */
+export type ProjectedClipControllerMove = MidiCC & {
+    /**
+     * Whether the move sits on the clip's closing line, at exactly `clip.endBeat`. Such a move is
+     * owned by the window `[fromBeat, toBeat)` with `fromBeat < endBeat <= toBeat` (the last window
+     * the clip plays in), and at its sample frame it applies before the moves of a clip that starts
+     * there, so the clip that follows has the last word.
+     */
+    closesClip: boolean;
+};
+
 /**
  * The loop passes the clip plays. A pass whose head sits within float noise of the
  * clip end is the rounding overshoot of `ceil(duration / length)`, not a pass: its
@@ -66,6 +77,13 @@ function resolveIterationRange(
     return { startIndex: Math.min(startIndex, endIndex), endIndex };
 }
 
+function ownsMove(move: ProjectedClipControllerMove, fromBeat: number, toBeat: number): boolean {
+    if (move.closesClip) {
+        return move.beat > fromBeat && move.beat <= toBeat;
+    }
+    return move.beat >= fromBeat && move.beat < toBeat;
+}
+
 /**
  * The controller moves a clip plays inside the timeline window `[fromBeat, toBeat)`,
  * at their absolute beats, in beat order.
@@ -85,13 +103,22 @@ function resolveIterationRange(
  * which the window cannot restore on its own: `projectClipControllerRestore`
  * names what a relocation must send, and the window that opens at the
  * destination still emits the rows sitting on it.
+ *
+ * A row on the clip's closing line plays at the clip end, as the last thing the clip
+ * does, so a pedal lift drawn on the final bar line ends the sustain there before the
+ * next clip starts (Cubase's own reset events after a recording sit on a part's end).
+ * Only the last pass has that line: an inner loop seam stays half-open, so a row on the
+ * loop end is not replayed at every wrap, and notes keep the half-open end everywhere.
+ * The move is placed at exactly `clip.endBeat` and owned by the window that closes at
+ * or past it: the clip plays in that window and in no later one, so a window that
+ * opens on the clip end, where the clip is not scheduled, owes it nothing.
  */
 export function projectClipControllerEvents({
     controlChanges,
     clip,
     fromBeat,
     toBeat,
-}: ProjectClipControllerEventsInput): MidiCC[] {
+}: ProjectClipControllerEventsInput): ProjectedClipControllerMove[] {
     if (controlChanges.length === 0) {
         return [];
     }
@@ -102,7 +129,8 @@ export function projectClipControllerEvents({
     });
     const { startIndex, endIndex } = resolveIterationRange(clip, expansion, { fromBeat, toBeat });
     const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-    const events: MidiCC[] = [];
+    const lastPassIndex = countPasses(clip, expansion) - 1;
+    const events: ProjectedClipControllerMove[] = [];
 
     for (let iteration = startIndex; iteration < endIndex; iteration++) {
         const iterationStartBeat = clip.startBeat + iteration * expansion.loopLengthBeats;
@@ -115,11 +143,16 @@ export function projectClipControllerEvents({
                 beatOffset: iterationStartBeat - midiOffsetBeats,
                 visibleStartBeat: midiOffsetBeats,
                 visibleEndBeat: midiOffsetBeats + (iterationEndBeat - iterationStartBeat),
+                closingLineBeat: iteration === lastPassIndex ? clip.endBeat : undefined,
             },
         });
-        for (const event of projected.controlChanges) {
-            if (event.beat >= fromBeat && event.beat < toBeat) {
-                events.push(event);
+        const moves = [
+            ...projected.controlChanges.map((event) => ({ ...event, closesClip: false })),
+            ...projected.closingControlChanges.map((event) => ({ ...event, closesClip: true })),
+        ];
+        for (const move of moves) {
+            if (ownsMove(move, fromBeat, toBeat)) {
+                events.push(move);
             }
         }
     }

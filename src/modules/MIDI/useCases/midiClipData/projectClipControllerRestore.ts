@@ -1,6 +1,6 @@
 import { type MidiCC } from '../../models/MidiNote';
 
-import { projectClipControllerEvents } from './projectClipControllerEvents';
+import { projectClipControllerEvents, type ProjectedClipControllerMove } from './projectClipControllerEvents';
 
 type ControllerRestoreClip = Parameters<typeof projectClipControllerEvents>[0]['clip'];
 
@@ -26,8 +26,10 @@ type ClipControllerRestore = {
 };
 
 type PostedController = {
-    event: MidiCC;
+    event: ProjectedClipControllerMove;
     sampleFrame: number;
+    /** A move on a clip's closing line applies at its frame before every other move there. */
+    sameFrameRank: number;
     clipIndex: number;
     /** Where the clip's own projection put it: beat order, ties in source order. */
     rowIndex: number;
@@ -38,6 +40,7 @@ type PostedController = {
 function postedAfter(candidate: PostedController, held: PostedController): boolean {
     return (
         (candidate.sampleFrame - held.sampleFrame ||
+            candidate.sameFrameRank - held.sameFrameRank ||
             candidate.clipIndex - held.clipIndex ||
             candidate.rowIndex - held.rowIndex) > 0
     );
@@ -58,10 +61,13 @@ function postedAfter(candidate: PostedController, held: PostedController): boole
  * that starts after a clip left a controller set, without a row of its own for it,
  * leaves it set.
  *
- * "Last" is the order the window posts in: by sample frame, then clip sequence, then the
+ * "Last" is the order the window posts in: by sample frame, then a move on a clip's
+ * closing line ahead of every other move of that frame, then clip sequence, then the
  * clip's own row order, never by float beat. Two moves a rounding step apart in beat
  * share a frame, and which one the instrument ends on is the clip order, so a restore
- * that ordered them by beat would end on the other one.
+ * that ordered them by beat would end on the other one. A clip's closing-line move and
+ * the head of the clip that starts there share a frame too, and the starting clip has
+ * the last word whatever the clip order.
  *
  * A controller is one value per instrument: the instruments take the controller number
  * and drop the channel, so a controller is keyed by number alone. A row on any channel
@@ -74,7 +80,8 @@ function postedAfter(candidate: PostedController, held: PostedController): boole
  *
  * - A controller whose last move is one the window opening at the destination posts
  *   (on the destination's frame, from any clip on any channel) is left to the window, so
- *   each value is sent once, and counts as in force.
+ *   each value is sent once, and counts as in force. A closing-line move exactly on the
+ *   destination is not one: the window opening there does not schedule the clip it ends.
  * - Every other controller with a move before the destination is in `moves`, placed at
  *   `atBeat`: the restore posts after the window does, so on the destination's frame it is
  *   the last word. An event later in the window does not touch the value in force now.
@@ -101,7 +108,14 @@ export function projectClipControllerRestore({
             if (sampleFrame > destinationFrame) {
                 continue;
             }
-            const candidate = { event, sampleFrame, clipIndex, rowIndex, fromWindow: event.beat >= atBeat };
+            const candidate = {
+                event,
+                sampleFrame,
+                sameFrameRank: event.closesClip ? 0 : 1,
+                clipIndex,
+                rowIndex,
+                fromWindow: event.closesClip ? event.beat > atBeat : event.beat >= atBeat,
+            };
             const held = last.get(event.controller);
             if (!held || postedAfter(candidate, held)) {
                 last.set(event.controller, candidate);
@@ -114,7 +128,8 @@ export function projectClipControllerRestore({
     for (const [controller, posted] of last) {
         held.add(controller);
         if (!posted.fromWindow) {
-            moves.push({ ...posted.event, beat: atBeat });
+            const { id, value, channel } = posted.event;
+            moves.push({ id, controller, value, channel, beat: atBeat });
         }
     }
     return { moves, held };

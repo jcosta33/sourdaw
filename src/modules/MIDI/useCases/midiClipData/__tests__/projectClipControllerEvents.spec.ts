@@ -98,6 +98,54 @@ describe('projectClipControllerEvents', () => {
         expect(events).toEqual([]);
     });
 
+    it('marks every move that is not on the closing line as an ordinary move', () => {
+        const events = projectClipControllerEvents({
+            controlChanges: [controller('down', 0, 127), controller('mid', 2, 0)],
+            clip: { startBeat: 4, endBeat: 8 },
+            fromBeat: 4,
+            toBeat: 8,
+        });
+
+        expect(events.map((event) => event.closesClip)).toEqual([false, false]);
+    });
+
+    describe('with a move stored on the closing line of a clip that does not loop', () => {
+        // The reported case: a sustained phrase from beat 1 to beat 5 whose pedal is lifted on the final bar line.
+        const lane = [controller('down', 0, 127), controller('lift', 4, 0)];
+        const clip = { startBeat: 1, endBeat: 5 };
+
+        it('lifts the pedal on the clip end', () => {
+            const events = projectClipControllerEvents({ controlChanges: lane, clip, fromBeat: 0, toBeat: 8 });
+
+            expect(events.map(({ beat, value, closesClip }) => ({ beat, value, closesClip }))).toEqual([
+                { beat: 1, value: 127, closesClip: false },
+                { beat: 5, value: 0, closesClip: true },
+            ]);
+        });
+
+        it('owns the lift in the window that closes on the clip end, not in the one that opens there', () => {
+            const closing = projectClipControllerEvents({ controlChanges: lane, clip, fromBeat: 3, toBeat: 5 });
+            const opening = projectClipControllerEvents({ controlChanges: lane, clip, fromBeat: 5, toBeat: 7 });
+            const spanning = projectClipControllerEvents({ controlChanges: lane, clip, fromBeat: 4.5, toBeat: 5.5 });
+
+            expect(closing.map((event) => event.id)).toEqual(['lift']);
+            expect(opening).toEqual([]);
+            expect(spanning.map((event) => event.id)).toEqual(['lift']);
+        });
+
+        it('places the lift on exactly the clip end however its beat rounds against a non-dyadic start', () => {
+            const thirdsClip = { startBeat: 2 / 3, endBeat: 2 / 3 + 4 / 3, midiOffsetBeats: 1 / 3 };
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('down', 1 / 3, 127), controller('lift', 1 / 3 + 4 / 3, 0)],
+                clip: thirdsClip,
+                fromBeat: 0,
+                toBeat: 4,
+            });
+
+            expect(events.at(-1)).toMatchObject({ id: 'lift', beat: thirdsClip.endBeat, closesClip: true });
+        });
+    });
+
     it('carries each controller lane on each channel independently', () => {
         const events = projectClipControllerEvents({
             controlChanges: [
@@ -126,15 +174,15 @@ describe('projectClipControllerEvents', () => {
         ]);
     });
 
-    it('drops moves at or past the clip end and returns nothing for an empty lane', () => {
+    it('plays a move on the clip closing line at the clip end, drops moves past it, and returns nothing for an empty lane', () => {
         expect(
             projectClipControllerEvents({
-                controlChanges: [controller('past-end', 4, 127)],
+                controlChanges: [controller('past-end', 4.5, 127), controller('closing', 4, 0)],
                 clip: { startBeat: 0, endBeat: 4 },
                 fromBeat: 0,
                 toBeat: 8,
             })
-        ).toEqual([]);
+        ).toEqual([{ ...controller('closing', 4, 0), closesClip: true }]);
         expect(
             projectClipControllerEvents({
                 controlChanges: [],
@@ -168,16 +216,20 @@ describe('projectClipControllerEvents', () => {
             { start: 1 / 6, length: 1 },
             { start: 2 / 3, length: 4 },
             { start: 0, length: 4 / 3 },
-        ])('holds the pedal down at every pass head of a loop of $length from $start', (loop) => {
-            const { events } = pedalEvents(loop);
+        ])(
+            'holds the pedal down at every pass head of a loop of $length from $start and lifts it on the clip end',
+            (loop) => {
+                const { events } = pedalEvents(loop);
 
-            expect(events.map((event) => event.value)).toEqual([127, 127, 127, 127]);
-            for (const [pass, event] of events.entries()) {
-                expect(event.beat).toBeCloseTo(loop.start + pass * loop.length, 9);
+                expect(events.map((event) => event.value)).toEqual([127, 127, 127, 127, 0]);
+                for (const [pass, event] of events.slice(0, PASSES).entries()) {
+                    expect(event.beat).toBeCloseTo(loop.start + pass * loop.length, 9);
+                }
+                expect(events.at(-1)!.beat).toBe(loop.start + PASSES * loop.length);
             }
-        });
+        );
 
-        it('leaves the closing-line move out of every pass across non-dyadic starts, lengths and offsets', () => {
+        it('plays the closing-line move on the clip end only, never on an inner seam, across non-dyadic starts, lengths and offsets', () => {
             const starts = [0, 1 / 3, 1 / 6, 2 / 3, 0.1, 7 / 3, 1000 / 3, 12345.1];
             const lengths = [1, 2, 4, 4 / 3, 0.7, 1 / 3, 5 / 6];
             const offsets = [0, 1 / 3, 0.1];
@@ -186,10 +238,18 @@ describe('projectClipControllerEvents', () => {
                 for (const length of lengths) {
                     for (const offset of offsets) {
                         const { events } = pedalEvents({ start, length, offset });
+                        const label = `start ${start}, loop ${length}, offset ${offset}`;
                         expect(
-                            events.map((event) => event.value),
-                            `start ${start}, loop ${length}, offset ${offset}`
-                        ).toEqual([127, 127, 127, 127]);
+                            events.map(({ value, closesClip }) => [value, closesClip]),
+                            label
+                        ).toEqual([
+                            [127, false],
+                            [127, false],
+                            [127, false],
+                            [127, false],
+                            [0, true],
+                        ]);
+                        expect(events.at(-1)!.beat, label).toBe(start + PASSES * length);
                         swept++;
                     }
                 }
@@ -197,7 +257,7 @@ describe('projectClipControllerEvents', () => {
             expect(swept).toBe(starts.length * lengths.length * offsets.length);
         });
 
-        it('leaves the closing-line move out of a clip that does not loop', () => {
+        it('plays the closing-line move of a clip that does not loop on its end', () => {
             const events = projectClipControllerEvents({
                 controlChanges: [controller('down', 0, 127), controller('lift', 4 / 3, 0)],
                 clip: { startBeat: 2 / 3, endBeat: 2 / 3 + 4 / 3, loopEnabled: false },
@@ -205,7 +265,29 @@ describe('projectClipControllerEvents', () => {
                 toBeat: 4,
             });
 
-            expect(events.map((event) => event.value)).toEqual([127]);
+            expect(events.map((event) => event.value)).toEqual([127, 0]);
+            expect(events.at(-1)!.beat).toBe(2 / 3 + 4 / 3);
+        });
+
+        it('plays a move on the closing line of a trimmed final pass on the clip end', () => {
+            // Two and a half passes of a two-beat loop: the clip ends one beat into the third pass,
+            // so the content beat one past the offset is that pass's closing line, and an inner pass
+            // plays the same row mid-pass.
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('down', 0, 127), controller('mid', 1, 0)],
+                clip: { startBeat: 0, endBeat: 5, loopEnabled: true, loopLength: 2 },
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ beat, value, closesClip }) => [beat, value, closesClip])).toEqual([
+                [0, 127, false],
+                [1, 0, false],
+                [2, 127, false],
+                [3, 0, false],
+                [4, 127, false],
+                [5, 0, true],
+            ]);
         });
 
         it('still plays a move that sits just inside the loop end on every pass', () => {
@@ -238,7 +320,7 @@ describe('projectClipControllerEvents', () => {
 
         /** What a scheduler stepping `[a, a + step)` from `origin` hands the controller projection, window by window. */
         function steppedEvents(controlChanges: readonly MidiCC[], clip: Clip, step: number, origin: number) {
-            const events: MidiCC[] = [];
+            const events: ReturnType<typeof projectClipControllerEvents> = [];
             let from = origin;
             while (from < clip.endBeat + 2 * step) {
                 const to = from + step;
@@ -285,6 +367,31 @@ describe('projectClipControllerEvents', () => {
                                     emitted.sort((left, right) => left - right),
                                     `start ${start}, offset ${offset}, loop ${loop}, step ${step}, origin ${origin}`
                                 ).toEqual(expected);
+                                swept++;
+                            }
+                        }
+                    }
+                }
+            }
+            expect(swept).toBe(STARTS.length * OFFSETS.length * LOOPS.length * STEPS.length * 3);
+        });
+
+        it('emits the closing-line move exactly once, on the clip end, in any chain of windows', () => {
+            let swept = 0;
+            for (const start of STARTS) {
+                for (const offset of OFFSETS) {
+                    for (const loop of LOOPS) {
+                        const controlChanges = [controller('down', offset, 127), controller('lift', offset + loop, 0)];
+                        const clip = clipOf(start, offset, loop);
+                        for (const step of STEPS) {
+                            for (const origin of [0, start - step, start - 2 * step]) {
+                                const closing = steppedEvents(controlChanges, clip, step, origin).filter(
+                                    (event) => event.closesClip
+                                );
+                                expect(
+                                    closing.map(({ id, beat }) => [id, beat]),
+                                    `start ${start}, offset ${offset}, loop ${loop}, step ${step}, origin ${origin}`
+                                ).toEqual([['lift', clip.endBeat]]);
                                 swept++;
                             }
                         }

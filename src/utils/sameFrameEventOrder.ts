@@ -4,7 +4,10 @@
  *
  * A release comes first: a pedal pressed on the frame a note ends must not catch
  * that note, so the note is already released when the pedal goes down. A stored
- * controller follows, so a note struck on the same frame sounds under the pedal
+ * controller on a clip's closing line follows: it is the last thing the ending clip
+ * does, so it applies before anything a clip starting on that frame sets, and the
+ * starting clip has the last word whichever clip was scheduled first. Every other
+ * stored controller follows, so a note struck on the same frame sounds under the pedal
  * or controller it was recorded with (a pedal pressed with the chord catches the
  * chord; sostenuto, una corda and Levain dynamics apply to the note struck there).
  * A note-on follows the controllers. Expression comes last because the engines
@@ -16,11 +19,12 @@
  * arrive and must keep doing so: live MIDI input stamps several performer events
  * on one frame, and their performer order survives only if no queue reorders it.
  */
-export type SameFrameEventKind = 'off' | 'control' | 'on' | 'expression';
+export type SameFrameEventKind = 'off' | 'closing-control' | 'control' | 'on' | 'expression';
 
 export const SAME_FRAME_EVENT_ORDER: Readonly<Record<SameFrameEventKind, number>> = {
     off: 0,
-    control: 1,
-    on: 2,
-    expression: 3,
+    'closing-control': 1,
+    control: 2,
+    on: 3,
+    expression: 4,
 };

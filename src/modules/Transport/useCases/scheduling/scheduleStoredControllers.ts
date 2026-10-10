@@ -46,7 +46,7 @@ export function scheduleStoredControllers({
     const moves = projectClipControllerEvents({ controlChanges, clip, fromBeat, toBeat });
     for (const move of moves) {
         const sampleFrame = sampleFrameAtBeat(move.beat);
-        queue.add('control', sampleFrame, () =>
+        queue.add(move.closesClip ? 'closing-control' : 'control', sampleFrame, () =>
             postStoredControllerMove({
                 trackId,
                 device,

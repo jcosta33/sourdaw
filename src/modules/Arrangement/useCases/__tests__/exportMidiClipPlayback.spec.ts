@@ -501,7 +501,7 @@ describe('exportMidiClip writes what the clip plays', () => {
         });
     });
 
-    it('writes no pedal lift on a pass head for a lift stored on the closing line of the loop', () => {
+    it('writes a lift stored on the closing line of the loop once, on the clip end, and none on a pass head', () => {
         const events = exportClip(
             { startBeat: 1 / 3, endBeat: 1 / 3 + 8, loopEnabled: true, loopLength: 2 },
             [note('n', 0, 1.5)],
@@ -509,9 +509,25 @@ describe('exportMidiClip writes what the clip plays', () => {
         );
 
         const pedals = events.filter((event) => event.kind === 'cc');
-        expect(pedals.map((event) => [event.tick, event.data2])).toEqual(
-            [0, 1, 2, 3].map((pass) => [Math.round((1 / 3 + 2 * pass) * TICKS_PER_BEAT), 127])
+        expect(pedals.map((event) => [event.tick, event.data2])).toEqual([
+            ...[0, 1, 2, 3].map((pass) => [Math.round((1 / 3 + 2 * pass) * TICKS_PER_BEAT), 127]),
+            [Math.round((1 / 3 + 8) * TICKS_PER_BEAT), 0],
+        ]);
+    });
+
+    it('writes the pedal lift drawn on the closing line of a clip, after the release of the note ending there', () => {
+        const events = exportClip(
+            { startBeat: 1, endBeat: 5 },
+            [note('held', 0, 4), note('on-the-line', 4, 1, 62)],
+            [sustain('down', 0, 127), sustain('lift', 4, 0)]
         );
+
+        expect(events.map(({ tick, kind, data1, data2 }) => [tick / TICKS_PER_BEAT, kind, data1, data2])).toEqual([
+            [1, 'cc', SUSTAIN_PEDAL, 127],
+            [1, 'on', 60, 100],
+            [5, 'off', 60, 0],
+            [5, 'cc', SUSTAIN_PEDAL, 0],
+        ]);
     });
 
     it('writes a controller ahead of a note struck at the same content beat when the slip projects them a float apart', () => {

@@ -226,7 +226,11 @@ describe('scheduleMidiNotes', () => {
         // inside the window this tick owns.
         vi.mocked(projectClipControllerEvents).mockImplementation(({ controlChanges, clip, fromBeat, toBeat }) =>
             controlChanges
-                .map((row) => ({ ...row, beat: clip.startBeat + row.beat - (clip.midiOffsetBeats ?? 0) }))
+                .map((row) => ({
+                    ...row,
+                    beat: clip.startBeat + row.beat - (clip.midiOffsetBeats ?? 0),
+                    closesClip: false,
+                }))
                 .filter((row) => row.beat >= fromBeat && row.beat < toBeat)
         );
         vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
@@ -2966,6 +2970,89 @@ describe('scheduleMidiNotes', () => {
                     `off 60 @${2 * BEAT_FRAMES}`,
                     `sustain 1 @${2 * BEAT_FRAMES}`,
                 ]);
+            });
+
+            describe('with a sustain lift stored on the closing line of a clip', () => {
+                // Clip A sounds a note under the pedal and lifts it on its own end; clip B follows it.
+                function loadAbuttingClips(trackClips: ReturnType<typeof midiClip>[], clipBRows: unknown[]) {
+                    const track = midiTrack({ clips: trackClips, devices: [{ id: 'gb-1', type: 'grand-boule' }] });
+                    (trackStore as { value: unknown }).value = { tracks: [track] };
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: { 'clip-a': [note('a', 1, 1)], 'clip-b': [note('b', 0, 1)] },
+                        ccByClipId: {
+                            'clip-a': [storedController('down', 64, 127, 0), storedController('lift', 64, 0, 2)],
+                            'clip-b': clipBRows,
+                        },
+                    };
+                }
+                const clipA = () => midiClip({ id: 'clip-a', endBeat: 2 });
+                const clipB = () => midiClip({ id: 'clip-b', startBeat: 2, endBeat: 4 });
+
+                it('lifts the pedal on the clip end, after the release there and before the next clip strikes', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips([clipA(), clipB()], []);
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                        `off 60 @${2 * BEAT_FRAMES}`,
+                        `sustain 0 @${2 * BEAT_FRAMES}`,
+                        `on 60 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it('posts the lift once, from the window that closes on the clip end', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips([clipA(), clipB()], []);
+
+                    vi.mocked(getCurrentTime).mockReturnValue(0);
+                    await scheduleMidiNotes(0, 2, 0, new Set<string>(), [], defaultTransportState, 120);
+                    const fromClosingWindow = posted.filter((entry) => entry.startsWith('sustain 0'));
+                    vi.mocked(getCurrentTime).mockReturnValue(1);
+                    await scheduleMidiNotes(2, 4, 2, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(fromClosingWindow).toEqual([`sustain 0 @${2 * BEAT_FRAMES}`]);
+                    expect(posted.filter((entry) => entry.startsWith('sustain 0'))).toEqual([
+                        `sustain 0 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it.each([
+                    ['the ending clip listed first', true],
+                    ['the starting clip listed first', false],
+                ])('lets the next clip pedal press on that frame have the last word (%s)', async (_order, aFirst) => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips(aFirst ? [clipA(), clipB()] : [clipB(), clipA()], [
+                        storedController('press', 64, 127, 0),
+                    ]);
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                        `off 60 @${2 * BEAT_FRAMES}`,
+                        `sustain 0 @${2 * BEAT_FRAMES}`,
+                        `sustain 1 @${2 * BEAT_FRAMES}`,
+                        `on 60 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
             });
 
             it('lands a release and a controller on one beat on one frame at a fractional samples-per-beat tempo', async () => {
