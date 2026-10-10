@@ -35,6 +35,9 @@ pub struct DiodeCompressor {
     limiter_threshold: f32,
     last_output_l: f32,
     last_output_r: f32,
+    /// Gain reduction (dB) each side applied on the last sample.
+    applied_gr_db_l: f32,
+    applied_gr_db_r: f32,
     /// Configurable oversamplers for diode bridge nonlinearity (L/R)
     os_l: ConfigurableOversample,
     os_r: ConfigurableOversample,
@@ -57,6 +60,8 @@ impl DiodeCompressor {
             limiter_threshold: -3.0,
             last_output_l: 0.0,
             last_output_r: 0.0,
+            applied_gr_db_l: 0.0,
+            applied_gr_db_r: 0.0,
             os_l: ConfigurableOversample::new(2),
             os_r: ConfigurableOversample::new(2),
         };
@@ -122,6 +127,15 @@ impl DiodeCompressor {
 
     pub(crate) fn detector_source(&self, left: f32, right: f32) -> (f32, f32) {
         (left, right)
+    }
+
+    /// `left`/`right` through the gain and bridge colour applied last.
+    pub(crate) fn ahead_output(&self, left: f32, right: f32) -> (f32, f32) {
+        let (gr_l, gr_r) = (self.applied_gr_db_l, self.applied_gr_db_r);
+        (
+            diode_bridge_color(left * db_to_linear(gr_l), gr_l),
+            diode_bridge_color(right * db_to_linear(gr_r), gr_r),
+        )
     }
 
     #[inline]
@@ -207,6 +221,8 @@ impl DiodeCompressor {
 
         self.last_output_l = wet_l;
         self.last_output_r = wet_r;
+        self.applied_gr_db_l = gr_l;
+        self.applied_gr_db_r = gr_r;
 
         (wet_l, wet_r, gr_l.min(gr_r))
     }
@@ -217,6 +233,8 @@ impl DiodeCompressor {
         self.detector.reset();
         self.last_output_l = 0.0;
         self.last_output_r = 0.0;
+        self.applied_gr_db_l = 0.0;
+        self.applied_gr_db_r = 0.0;
         self.os_l.reset();
         self.os_r.reset();
     }

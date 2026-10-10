@@ -437,14 +437,15 @@ impl GlutenEngine {
             let delayed_l = self.lookahead_l.process(proc_l, lookahead_samples);
             let delayed_r = self.lookahead_r.process(proc_r, lookahead_samples);
 
-            // The diode is feed-forward, so its internal detector must stay on
-            // the undelayed program while the audio path receives lookahead.
-            // Stage two historically shared this same detector source.
+            // The undelayed programme. The diode always detects from it, in
+            // both stages; under lookahead every other topology detects from
+            // it too, so the detector runs ahead of the delayed audio.
             let program_detector = match self.stereo_mode {
                 StereoMode::Mid => (proc_l, 0.0),
                 StereoMode::Side => (0.0, proc_r),
                 _ => (proc_l, proc_r),
             };
+            let stage_one_ahead = (lookahead_samples > 0).then_some(program_detector);
 
             let external_detector = if self.ext_sidechain && i < self.ext_sc_left.len() {
                 let raw = (
@@ -475,6 +476,7 @@ impl GlutenEngine {
                 self.active_topology,
                 topo_l,
                 topo_r,
+                stage_one_ahead,
                 program_detector,
                 external_detector,
             );
@@ -482,10 +484,15 @@ impl GlutenEngine {
             // Dual-stage serial routing (Shadow Hills style)
             // Second topology processes the output of the first
             if self.blend_amount > 0.001 && self.blend_topology != self.active_topology {
+                // Stage one's output, ahead of the delay: the undelayed
+                // programme through stage one as it stands now.
+                let stage_two_ahead =
+                    stage_one_ahead.map(|(l, r)| self.ahead_output(self.active_topology, l, r));
                 let (s2_l, s2_r, gr2) = self.process_topology(
                     self.blend_topology,
                     wet_l,
                     wet_r,
+                    stage_two_ahead,
                     program_detector,
                     external_detector,
                 );
@@ -596,22 +603,33 @@ impl GlutenEngine {
         };
     }
 
+    /// Run one stage. `ahead` is the undelayed counterpart of `l`/`r`, present
+    /// only while lookahead delays the audio; an external key overrides both.
     #[inline]
     fn process_topology(
         &mut self,
         topo: Topology,
         l: f32,
         r: f32,
+        ahead: Option<(f32, f32)>,
         program_detector: (f32, f32),
         external_detector: Option<(f32, f32)>,
     ) -> (f32, f32, f32) {
-        let detector_source = external_detector.unwrap_or_else(|| match topo {
-            Topology::Vca => self.vca.detector_source(l, r),
-            Topology::Opto => self.opto.detector_source(),
-            Topology::Fet => self.fet.detector_source(),
-            Topology::Diode => self
+        let detector_source = external_detector.unwrap_or_else(|| match (topo, ahead) {
+            (Topology::Diode, _) => self
                 .diode
                 .detector_source(program_detector.0, program_detector.1),
+            (Topology::Vca, None) => self.vca.detector_source(l, r),
+            (Topology::Opto, None) => self.opto.detector_source(),
+            (Topology::Fet, None) => self.fet.detector_source(),
+            (Topology::Vca, Some((ahead_l, ahead_r))) => {
+                self.vca.lookahead_detector_source(ahead_l, ahead_r)
+            }
+            // Opto and FET are feedback designs: they keep sensing their
+            // output level, taken from the undelayed programme at the gain
+            // they apply now, which settles where their delayed output does.
+            (Topology::Opto, Some((ahead_l, ahead_r))) => self.opto.ahead_output(ahead_l, ahead_r),
+            (Topology::Fet, Some((ahead_l, ahead_r))) => self.fet.ahead_output(ahead_l, ahead_r),
         });
         let (detector_l, detector_r) =
             self.sidechains[topo.index()].process(detector_source.0, detector_source.1);
@@ -629,6 +647,15 @@ impl GlutenEngine {
             Topology::Diode => self
                 .diode
                 .process_sample_with_detector(l, r, detector_l, detector_r),
+        }
+    }
+
+    fn ahead_output(&self, topo: Topology, l: f32, r: f32) -> (f32, f32) {
+        match topo {
+            Topology::Vca => self.vca.ahead_output(l, r),
+            Topology::Opto => self.opto.ahead_output(l, r),
+            Topology::Fet => self.fet.ahead_output(l, r),
+            Topology::Diode => self.diode.ahead_output(l, r),
         }
     }
 

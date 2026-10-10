@@ -41,6 +41,9 @@ pub struct FetCompressor {
     all_buttons: bool,
     last_output_l: f32,
     last_output_r: f32,
+    /// Gain reduction (dB) each side applied on the last sample.
+    applied_gr_db_l: f32,
+    applied_gr_db_r: f32,
     /// Configurable oversamplers for nonlinear distortion (L/R)
     os_l: ConfigurableOversample,
     os_r: ConfigurableOversample,
@@ -67,6 +70,8 @@ impl FetCompressor {
             all_buttons: false,
             last_output_l: 0.0,
             last_output_r: 0.0,
+            applied_gr_db_l: 0.0,
+            applied_gr_db_r: 0.0,
             os_l: ConfigurableOversample::new(2),
             os_r: ConfigurableOversample::new(2),
         };
@@ -174,6 +179,22 @@ impl FetCompressor {
         (self.last_output_l, self.last_output_r)
     }
 
+    /// `left`/`right` through the drive, gain and colour this FET applied
+    /// last. This is also the detector source under lookahead: the 1176 senses
+    /// its own output, which can never run ahead of the delayed audio.
+    pub(crate) fn ahead_output(&self, left: f32, right: f32) -> (f32, f32) {
+        let input_linear = db_to_linear(self.input_gain);
+        let output_linear = db_to_linear(self.output_gain);
+        let colour = |x: f32, gr_db: f32| {
+            let wet = x * input_linear * db_to_linear(gr_db);
+            fet_color(wet, self.jfet_k3, self.xfmr_drive, self.xfmr_k2) * output_linear
+        };
+        (
+            colour(left, self.applied_gr_db_l),
+            colour(right, self.applied_gr_db_r),
+        )
+    }
+
     #[inline]
     pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
         let detector = self.detector_source();
@@ -210,11 +231,7 @@ impl FetCompressor {
         let xfmr = self.xfmr_drive;
         let k3 = self.jfet_k3;
         let k2 = self.xfmr_k2;
-        let distortion = |x: f32| -> f32 {
-            let jfet = x - k3 * x * x * x;
-            let xfmr_out = transformer_saturate(jfet, xfmr);
-            xfmr_out + k2 * xfmr_out * xfmr_out
-        };
+        let distortion = |x: f32| -> f32 { fet_color(x, k3, xfmr, k2) };
         let dist_l = self.os_l.process(wet_l, &distortion);
         let dist_r = self.os_r.process(wet_r, &distortion);
 
@@ -224,6 +241,8 @@ impl FetCompressor {
 
         self.last_output_l = out_l;
         self.last_output_r = out_r;
+        self.applied_gr_db_l = gr_l;
+        self.applied_gr_db_r = gr_r;
 
         (out_l, out_r, gr_l.min(gr_r))
     }
@@ -234,9 +253,19 @@ impl FetCompressor {
         self.detector.reset();
         self.last_output_l = 0.0;
         self.last_output_r = 0.0;
+        self.applied_gr_db_l = 0.0;
+        self.applied_gr_db_r = 0.0;
         self.os_l.reset();
         self.os_r.reset();
     }
+}
+
+/// JFET odd harmonics into transformer saturation, then transformer asymmetry.
+#[inline]
+fn fet_color(x: f32, k3: f32, xfmr_drive: f32, k2: f32) -> f32 {
+    let jfet = x - k3 * x * x * x;
+    let xfmr_out = transformer_saturate(jfet, xfmr_drive);
+    xfmr_out + k2 * xfmr_out * xfmr_out
 }
 
 /// Transformer saturation — even harmonics via tanh waveshaper.
