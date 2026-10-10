@@ -23,6 +23,32 @@ function receiptByteLength(receipt: unknown): number {
 const WORST_CASE_CALL_ID_LENGTH = 256;
 const WORST_CASE_CALL_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
 
+const OFFSETS_PER_WALK_CASE = 16;
+
+type OffsetWalk = { type: string; firstOffset: number; endOffset: number };
+
+/**
+ * Every starting offset of every released builtin type, in windows of `OFFSETS_PER_WALK_CASE`, so
+ * a large descriptor never walks its whole parameter list inside one case.
+ */
+function listOffsetWalks(): OffsetWalk[] {
+    return getAgentBuiltinDeviceFactoryManifest().flatMap((descriptor) => {
+        const walks: OffsetWalk[] = [];
+        for (let firstOffset = 0; firstOffset < descriptor.parameters.length; firstOffset += OFFSETS_PER_WALK_CASE) {
+            walks.push({
+                type: descriptor.type,
+                firstOffset,
+                endOffset: Math.min(firstOffset + OFFSETS_PER_WALK_CASE, descriptor.parameters.length),
+            });
+        }
+        return walks;
+    });
+}
+
+const OFFSET_WALKS = listOffsetWalks();
+
+const RELEASED_BUILTIN_TYPES = getAgentBuiltinDeviceFactoryManifest().map((descriptor) => descriptor.type);
+
 // `schemaVersion` stays a plain `number`, not the production cursor's literal `1`, so a forged
 // cursor can carry a schema version the decoder does not recognize.
 type ForgedManifestCursor = { schemaVersion: number; type: string; version: string; offset: number };
@@ -129,45 +155,59 @@ describe('device.factory-manifest.read paging', () => {
         }
     });
 
-    it('fits a full-limit page from every parameter offset of every released builtin type within budget using a worst-case call id', async () => {
-        // A caller may walk with any `limit` from 1 to the page limit, so a later full-limit page
-        // can start at any offset, not only at multiples of the page limit.
-        const worstCaseCallId = 'w'.repeat(WORST_CASE_CALL_ID_LENGTH);
-        const descriptors = getAgentBuiltinDeviceFactoryManifest();
-        expect(descriptors.length).toBeGreaterThan(0);
+    it('has released builtin parameter offsets whose full-limit pages the walk cases cover', () => {
+        expect(OFFSET_WALKS.length).toBeGreaterThan(0);
+    });
 
-        const overBudget: string[] = [];
-        for (const descriptor of descriptors) {
+    // Types without parameters have no offset window, so this case is the only walk case that
+    // reads their first page with the worst-case call id.
+    it.each(RELEASED_BUILTIN_TYPES)(
+        'reads the first page of released builtin type %s within budget using a worst-case call id',
+        async (type) => {
+            const receipt = await callDeviceManifest({
+                callId: 'w'.repeat(WORST_CASE_CALL_ID_LENGTH),
+                arguments: { types: [type], page: { limit: 1 } },
+            });
+            expect(receipt.status).toBe('success');
+            expect(receiptByteLength(receipt)).toBeLessThanOrEqual(MAX_RECEIPT_BYTES_PER_CALL);
+        }
+    );
+
+    // Windowed cases keep each walk far under the test timeout while every released type, every
+    // starting offset and the worst-case call id stay covered.
+    it.each(OFFSET_WALKS)(
+        'fits a full-limit page from offsets $firstOffset to $endOffset of released builtin type $type within budget using a worst-case call id',
+        async ({ type, firstOffset, endOffset }) => {
+            // A caller may walk with any `limit` from 1 to the page limit, so a later full-limit page
+            // can start at any offset, not only at multiples of the page limit.
+            const worstCaseCallId = 'w'.repeat(WORST_CASE_CALL_ID_LENGTH);
             const first = await callDeviceManifest({
                 callId: worstCaseCallId,
-                arguments: { types: [descriptor.type], page: { limit: 1 } },
+                arguments: { types: [type], page: { limit: 1 } },
             });
             expect(first.status).toBe('success');
             const entry = (first.data as ManifestPageData).devices[0];
             if (!entry) {
-                throw new Error(`Missing paged manifest entry for device type: ${descriptor.type}`);
+                throw new Error(`Missing paged manifest entry for device type: ${type}`);
             }
-            for (let offset = 0; offset < descriptor.parameters.length; offset += 1) {
-                const cursor = encodeManifestCursor({
-                    schemaVersion: 1,
-                    type: descriptor.type,
-                    version: entry.version,
-                    offset,
-                });
+
+            const overBudget: string[] = [];
+            for (let offset = firstOffset; offset < endOffset; offset += 1) {
+                const cursor = encodeManifestCursor({ schemaVersion: 1, type, version: entry.version, offset });
                 const receipt = await callDeviceManifest({
                     callId: worstCaseCallId,
                     arguments: {
-                        types: [descriptor.type],
+                        types: [type],
                         page: { cursor, limit: DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT },
                     },
                 });
                 if (receipt.status !== 'success' || receiptByteLength(receipt) > MAX_RECEIPT_BYTES_PER_CALL) {
-                    overBudget.push(`${descriptor.type}@${String(offset)}`);
+                    overBudget.push(`${type}@${String(offset)}`);
                 }
             }
+            expect(overBudget).toEqual([]);
         }
-        expect(overBudget).toEqual([]);
-    });
+    );
 
     it("returns Crust's oversampling legal set through a second parameters page", async () => {
         const first = await callDeviceManifest({

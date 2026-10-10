@@ -182,6 +182,57 @@ function registerStartedYeastVoice(
     pendingReleases.add(owner);
 }
 
+/**
+ * Keep a voice a release session started with no note instance of its own on
+ * that session's pending release: the key it belongs to is already up, so the
+ * session's source-pitch note-off, a route release, and a reset reach it only
+ * here.
+ */
+function addPendingYeastSourceVoice(pending: PendingRelease, pitch: number, channel: number, release: Release): void {
+    addVoice(pending, undefined, pitch, channel, release);
+    pendingReleases.add(pending);
+}
+
+/**
+ * Release every voice still registered on a route, whichever session started
+ * it: the route's Yeast is gone and no key that went through it is held, so no
+ * rack is left to send those voices their note-offs.
+ */
+function releaseYeastRoute(routeId: string, sampleFrame: number, releaseVelocity: number): void {
+    for (const pending of [...pendingReleases]) {
+        if (pending.routeId !== routeId) {
+            continue;
+        }
+        for (const voice of [...pending.voices]) {
+            releaseVoice(voice, sampleFrame, releaseVelocity);
+        }
+    }
+}
+
+/**
+ * Release every voice registered for an instrument track at one channel and
+ * pitch, whichever of the track's routes and sessions holds it, through the
+ * release its note-on captured.
+ */
+function releaseYeastTrackPitch(
+    trackId: string,
+    channel: number,
+    pitch: number,
+    sampleFrame?: number,
+    releaseVelocity?: number
+): void {
+    for (const pending of [...pendingReleases]) {
+        if (pending.trackId !== trackId) {
+            continue;
+        }
+        for (const voice of [...pending.voices]) {
+            if (voice.channel === channel && voice.pitch === pitch) {
+                releaseVoice(voice, sampleFrame, releaseVelocity);
+            }
+        }
+    }
+}
+
 function releasePendingYeastEvent(event: PendingYeastEvent): boolean {
     if (event.noteInstanceId === undefined) {
         return false;
@@ -219,6 +270,9 @@ function releaseAllPendingYeastReleases(): void {
 export const pendingYeastRelease = {
     begin: beginPendingYeastRelease,
     registerVoice: registerStartedYeastVoice,
+    addSourceVoice: addPendingYeastSourceVoice,
+    releaseRoute: releaseYeastRoute,
+    releaseTrackPitch: releaseYeastTrackPitch,
     retire: retirePendingYeastVoice,
     wasRetired: wasPendingYeastVoiceRetired,
     release: releasePendingYeastVoice,
