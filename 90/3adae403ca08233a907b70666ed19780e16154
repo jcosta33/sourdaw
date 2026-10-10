@@ -1,0 +1,61 @@
+.agents/skills/review-stances/audio-source-time.md
+  s_1f0dcd815e8946::t_54d463fe70474d 169-171
+  s_1f0dcd815e8946::t_5906ab05d07ae1 168
+  s_1f0dcd815e8946::t_9975a1fc21e08d 158-167,172-174
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_1f0dcd815e8946::t_d4e9c1bc6f1b1a 705-706,771-776
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_1f0dcd815e8946::t_7f0d07c9642302 27
+  s_1f0dcd815e8946::t_314188d45fa78d 13,26,28-37,39-43,48-51,54,56-58,130
+  s_1f0dcd815e8946::t_7aaced2dd07ddd 38,45
+  s_1f0dcd815e8946::t_ed055cac6b923e 4,44,46-47,52-53,55
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_7f0d07c9642302 240,454
+  s_1f0dcd815e8946::t_de02cb8aaf1198 9-13,30-36,191-195,357-363,381-383,432-436,471-472,476-477,483-487,506-518,535-537,546,548-555,557-563
+  s_1f0dcd815e8946::t_8fd6c5a5315a3d 41,67,81-85,107-116,238,353,364,437,519-534,538-539,542-545,547,556,564-573
+  s_1f0dcd815e8946::t_bba77884276449 181-190,196-200,540-541
+  s_1f0dcd815e8946::t_835bcb92f85f7f 400
+  s_1f0dcd815e8946::t_10d590cb7d70eb 438-441,450-451,459,461,468
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_1f0dcd815e8946::t_280d642dfcd348 1235-1238,1252,1257,1261
+  s_1f0dcd815e8946::t_20b5594b254521 3-4,26,72-79,1209-1218,1241-1246,1248-1251,1253-1256,1258-1260,1262-1263
+src/modules/Arrangement/useCases/recording/recordingPassTiming.ts
+  s_1f0dcd815e8946::t_ccb58f97949b67 220,232-240
+  s_1f0dcd815e8946::t_314188d45fa78d 221-231,241-244,256
+src/modules/Arrangement/useCases/recording/__tests__/stageRecordingTake.spec.ts
+  s_1f0dcd815e8946::t_c8379b53d97015 1-77
+  s_2bfd55a4393d7c::t_d529c3f0ce4258 78-106
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_9975a1fc21e08d 788-798
+  s_1f0dcd815e8946::t_0d7859d425de66 799-802
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_1f0dcd815e8946::t_ed055cac6b923e 13-14,36-38,45-60,62-70
+  s_2bfd55a4393d7c::t_da08d04759c6e5 71-76
+src/modules/Arrangement/useCases/recording/__tests__/recordingPassTiming.spec.ts
+  s_1f0dcd815e8946::t_34ae91d62bc8e3 186-189,198,202-203,207-209,220,222-230
+  s_1f0dcd815e8946::t_ccb58f97949b67 190-197,199-201,204-206,210-219,221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "903adae403ca08233a907b70666ed19780e16154",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
