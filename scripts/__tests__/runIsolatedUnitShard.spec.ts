@@ -13,6 +13,7 @@ import {
     type UnitIsolationPorts,
 } from '../runIsolatedUnitShard';
 import { ownCheckoutDirectories, type DirectoryPorts } from '../unitShardCheckoutOwnership';
+import { appendUnitShardExclusions } from '../vitestUnitShardExclusions';
 
 const root = '/checkout';
 const nonce = '01234567-0123-4123-8123-012345678901';
@@ -343,6 +344,140 @@ describe('required unit account isolation', () => {
         expect(setup.run.mock.calls.some(([, args]) => args.includes('install'))).toBe(false);
     });
 
+    it.each(['1/4', '2/4', '3/4', '4/4'])(
+        'proves whole storage before parallel shard %s under the same admitted account and store',
+        (shard) => {
+            const { ports, run } = runtimePorts();
+            run.mockReturnValueOnce({ status: 0, stdout: '', stderr: '' });
+            run.mockReturnValueOnce({ status: 9, stdout: '', stderr: '' });
+            const receipt = vi.spyOn(console, 'info').mockImplementation(() => {});
+            try {
+                expect(runUnitPhase(context, 'shard', shard, ports)).toBe(9);
+                expect(run.mock.calls).toEqual([
+                    [
+                        context.pnpm,
+                        ['run', 'test:run', 'scripts/__tests__/resourceGuardStorage.spec.ts'],
+                        {
+                            cwd: context.workspace,
+                            env: { ...ports.env, VITEST_MAX_WORKERS: '1' },
+                            inheritOutput: true,
+                        },
+                    ],
+                    [
+                        context.pnpm,
+                        [
+                            'run',
+                            'test:run',
+                            `--shard=${shard}`,
+                            '--exclude=scripts/__tests__/resourceGuardStorage.spec.ts',
+                        ],
+                        {
+                            cwd: context.workspace,
+                            env: ports.env,
+                            inheritOutput: true,
+                        },
+                    ],
+                ]);
+                expect(receipt.mock.calls.map(([message]) => message)).toEqual([
+                    'unit isolation admitted: uid=20000 gid=20000 groups=empty caps=empty no-new-privs=1 phase=storage',
+                    `unit isolation admitted: uid=20000 gid=20000 groups=empty caps=empty no-new-privs=1 phase=shard shard=${shard}`,
+                ]);
+            } finally {
+                receipt.mockRestore();
+            }
+        }
+    );
+
+    it.each([7, null])('stops before a parallel shard when whole storage returns %s', (storageStatus) => {
+        const { ports, run } = runtimePorts();
+        run.mockReturnValue({ status: storageStatus, stdout: '', stderr: '' });
+        const receipt = vi.spyOn(console, 'info').mockImplementation(() => {});
+        try {
+            expect(runUnitPhase(context, 'shard', '1/4', ports)).toBe(storageStatus ?? 1);
+            expect(run.mock.calls.map(([file, args]) => [file, args])).toEqual([
+                [context.pnpm, ['run', 'test:run', 'scripts/__tests__/resourceGuardStorage.spec.ts']],
+            ]);
+            expect(receipt).not.toHaveBeenCalledWith(expect.stringContaining('phase=shard'));
+        } finally {
+            receipt.mockRestore();
+        }
+    });
+
+    it('fails an unavailable parallel shard after successful whole storage', () => {
+        const { ports, run } = runtimePorts();
+        run.mockReturnValueOnce({ status: 0, stdout: '', stderr: '' });
+        run.mockReturnValueOnce({ status: null, stdout: '', stderr: '' });
+        expect(runUnitPhase(context, 'shard', '2/4', ports)).toBe(1);
+        expect(run).toHaveBeenCalledTimes(2);
+        expect(run.mock.calls[1]?.[1]).toEqual([
+            'run',
+            'test:run',
+            '--shard=2/4',
+            '--exclude=scripts/__tests__/resourceGuardStorage.spec.ts',
+        ]);
+    });
+
+    it('collects storage once before the four shards without omitting any other selected file', () => {
+        const storageSpec = 'scripts/__tests__/resourceGuardStorage.spec.ts';
+        const targets = [storageSpec, 'scripts/__tests__/runIsolatedUnitShard.spec.ts'];
+        const repository = process.cwd();
+        const collect = (args: string[]) => {
+            // Vitest's filesOnly CLI lists pre-shard candidates; native dispatch applies its sequencer afterwards.
+            const result = spawnSync(
+                process.execPath,
+                [
+                    '--input-type=module',
+                    '-e',
+                    `
+                const {createVitest,parseCLI}=await import('vitest/node');
+                const {filter,options}=parseCLI(['vitest','run',...JSON.parse(process.argv[1])]);
+                const context=await createVitest({...options,watch:false,run:true});
+                try {
+                    let files=await context.getRelevantTestSpecifications(filter);
+                    if(context.config.shard) {
+                        const sequencer=new context.config.sequence.sequencer(context);
+                        files=await sequencer.shard(files);
+                    }
+                    process.stdout.write(JSON.stringify(files.map(file=>file.moduleId)));
+                } finally { await context.close(); }
+            `,
+                    JSON.stringify(appendUnitShardExclusions(args)),
+                ],
+                {
+                    cwd: repository,
+                    encoding: 'utf8',
+                    timeout: 20_000,
+                }
+            );
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stderr).toBe(0);
+            const paths: string[] = JSON.parse(result.stdout);
+            return paths.map((path) => path.replace(`${repository}/`, ''));
+        };
+        const control = collect(targets).sort();
+        expect(control).toEqual([...targets].sort());
+        const sharded: string[] = [];
+        let isolated: string[] = [];
+        for (const shard of ['1/4', '2/4', '3/4', '4/4']) {
+            const { ports, run } = runtimePorts();
+            expect(runUnitPhase(context, 'shard', shard, ports)).toBe(0);
+            const [storageArgs, shardArgs] = run.mock.calls.map(([, args]) => args.slice(2));
+            expect(run).toHaveBeenCalledTimes(2);
+            if (storageArgs === undefined || shardArgs === undefined) {
+                throw new Error('both storage and shard producers are required');
+            }
+            if (isolated.length === 0) {
+                isolated = collect(storageArgs);
+                expect(isolated).toEqual([storageSpec]);
+            }
+            const selected = collect([...shardArgs, ...targets]);
+            expect(selected).not.toContain(storageSpec);
+            sharded.push(...selected);
+        }
+        expect(sharded.sort()).toEqual(control.filter((path) => path !== storageSpec));
+        expect([...isolated, ...sharded].sort()).toEqual(control);
+    }, 60_000);
+
     it('runs frozen install and the unconditional zero-assertion wrapper only after real identity admission, propagating failure', () => {
         const { ports, run } = runtimePorts();
         run.mockReturnValue({ status: 9, stdout: '', stderr: '' });
@@ -354,10 +489,11 @@ describe('required unit account isolation', () => {
                 ['install', '--frozen-lockfile', '--store-dir', context.store],
             ]);
             expect(runUnitPhase(context, 'shard', '4/4', ports)).toBe(9);
-            expect(run.mock.calls[1]?.slice(0, 2)).toEqual([context.pnpm, ['run', 'test:run', '--shard=4/4']]);
-            expect(receipt).toHaveBeenCalledWith(
-                'unit isolation admitted: uid=20000 gid=20000 groups=empty caps=empty no-new-privs=1 phase=shard shard=4/4'
-            );
+            expect(run.mock.calls[1]?.slice(0, 2)).toEqual([
+                context.pnpm,
+                ['run', 'test:run', 'scripts/__tests__/resourceGuardStorage.spec.ts'],
+            ]);
+            expect(receipt).not.toHaveBeenCalledWith(expect.stringContaining('phase=shard'));
             expect(ports.executable).toHaveBeenCalledWith(context.node);
             expect(ports.executable).toHaveBeenCalledWith(context.pnpm);
         } finally {
@@ -430,7 +566,7 @@ describe('required unit account isolation', () => {
             expect(runUnitPhase(actualContext, 'verify', undefined, ports)).toBe(0);
             expect(runUnitPhase(actualContext, 'shard', '3/4', ports)).toBe(0);
             expect(observations).toEqual(
-                Array.from({ length: 3 }, () => ({ version: pinnedVersion, store: actualContext.store }))
+                Array.from({ length: 4 }, () => ({ version: pinnedVersion, store: actualContext.store }))
             );
         } finally {
             receipt.mockRestore();

@@ -974,18 +974,42 @@ const shardStatus = [
 ].join('\n');
 for (const shard of ['1/4', '2/4', '3/4', '4/4']) {
     const commands = [];
+    const environments = [];
     const result = runUnitPhase(shardContext, 'shard', shard, {
         env: shardEnvironment, platform: 'linux', uid: 20000,
         read: () => shardStatus, canonical: (path) => path,
         metadata: () => ({ directory: true, uid: 20000, gid: 20000, mode: 0o700 }),
         executable: () => {},
-        run: (file, args) => { commands.push([file, args]); return { status: 7 }; },
+        run: (file, args, options) => {
+            commands.push([file, args]); environments.push(options.env);
+            return { status: commands.length === 1 ? 0 : 7 };
+        },
     });
     expect(
-        JSON.stringify(commands) === JSON.stringify([[shardContext.pnpm, ['run', 'test:run', `--shard=${shard}`]]]),
-        `isolated unit shard ${shard} must pass only its Vitest shard argument through explicit pnpm run`
+        JSON.stringify(commands) === JSON.stringify([
+            [shardContext.pnpm, ['run', 'test:run', 'scripts/__tests__/resourceGuardStorage.spec.ts']],
+            [shardContext.pnpm, ['run', 'test:run', `--shard=${shard}`, '--exclude=scripts/__tests__/resourceGuardStorage.spec.ts']],
+        ]),
+        `isolated unit shard ${shard} must run whole storage before the precise excluded shard through explicit pnpm run`
     );
+    expect(JSON.stringify(environments) === JSON.stringify([
+        { ...shardEnvironment, VITEST_MAX_WORKERS: '1' }, shardEnvironment,
+    ]), `isolated unit shard ${shard} must preserve its private store and account with one then four workers`);
     expect(result === 7, `isolated unit shard ${shard} must propagate pnpm failure`);
+    for (const storageStatus of [7, null]) {
+        const aborted = [];
+        const failure = runUnitPhase(shardContext, 'shard', shard, {
+            env: shardEnvironment, platform: 'linux', uid: 20000,
+            read: () => shardStatus, canonical: (path) => path,
+            metadata: () => ({ directory: true, uid: 20000, gid: 20000, mode: 0o700 }),
+            executable: () => {},
+            run: (file, args) => { aborted.push([file, args]); return { status: storageStatus }; },
+        });
+        expect(JSON.stringify(aborted) === JSON.stringify([
+            [shardContext.pnpm, ['run', 'test:run', 'scripts/__tests__/resourceGuardStorage.spec.ts']],
+        ]), `isolated unit shard ${shard} must not start after failed or unavailable storage proof`);
+        expect(failure === (storageStatus ?? 1), `isolated unit shard ${shard} must propagate storage failure`);
+    }
 }
 expect(
     e2eRunStep?.run === 'node scripts/prValidationScope.ts run' &&

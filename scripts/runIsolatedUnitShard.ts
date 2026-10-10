@@ -508,10 +508,24 @@ export function runUnitPhase(
     if (phase === 'shard' && !/^[1-4]\/4$/.test(shard ?? '')) {
         throw new Error('unit shard must remain one of four');
     }
+    if (phase === 'shard') {
+        console.info(
+            `unit isolation admitted: uid=${context.uid} gid=${context.gid} groups=empty caps=empty no-new-privs=1 phase=storage`
+        );
+        const storageStatus =
+            ports.run(context.pnpm, ['run', 'test:run', 'scripts/__tests__/resourceGuardStorage.spec.ts'], {
+                cwd: context.workspace,
+                env: { ...safeEnvironment(context), VITEST_MAX_WORKERS: '1' },
+                inheritOutput: true,
+            }).status ?? 1;
+        if (storageStatus !== 0) {
+            return storageStatus;
+        }
+    }
     console.info(
         `unit isolation admitted: uid=${context.uid} gid=${context.gid} groups=empty caps=empty no-new-privs=1 phase=${phase}${shard === undefined ? '' : ` shard=${shard}`}`
     );
-    let args = ['run', 'test:run', `--shard=${shard}`];
+    let args = ['run', 'test:run', `--shard=${shard}`, '--exclude=scripts/__tests__/resourceGuardStorage.spec.ts'];
     if (phase === 'install') {
         args = ['install', '--frozen-lockfile', '--store-dir', context.store];
     }

@@ -762,12 +762,20 @@ in a fresh physical `0700` execution root under `/var/tmp`; shared objects and a
 Setup changes ownership only of opened physical directories inside this fresh root, preserving
 source files and external store inodes. The unit pnpm action installs its complete tool closure into
 an independent job directory under `/var/tmp`, without granting access to runner HOME or caches.
-Install and the unchanged shard wrapper run through `setpriv` with cleared groups and capabilities,
+Install and unit verification run through `setpriv` with cleared groups and capabilities,
 `no_new_privs`, an explicit environment, and private `0700` HOME, store and temporary directories.
 Before importing checkout source, stdlib admission validates all four UID/GID fields, source search/read
 access, and read/execute access to Node and the complete bounded pnpm closure. Escaping tool symlinks
 and unavailable access fail. Runtime admission repeats identity and private storage checks before pnpm; unavailable
 tools or authority fail the job. The account uses its own frozen-install store.
+
+Before each required unit shard starts parallel workers, the admitted helper runs the whole
+`scripts/__tests__/resourceGuardStorage.spec.ts` through the zero-assertion wrapper with one worker.
+Its conservative complete same-UID file-use proof needs a sequential boundary: unrelated concurrent
+process transitions can make a later cleanup sample unavailable. Failed or unavailable storage
+verification blocks the parallel shard. After success, the shard excludes exactly that already-run
+file and keeps its normal worker setting. This sequencing applies to the required fresh-account
+helper route; the global shard exclusions and nightly/tooling collection routes stay unchanged.
 
 Before install or Vitest concurrency, mandatory native verification starts a nondumpable same-UID
 Python consumer with cwd and an open file in owned storage. It requires denied cwd inspection and
