@@ -286,25 +286,68 @@ function releaseRetiredBank(nodePort: MessagePort, loads: PortLoads, loadToken: 
 type ChunkPacer = {
     /** Resolve when a chunk may be posted; reject if the load was aborted, the worklet refused it or the processor ended. */
     reserve: () => Promise<void>;
+    /** End the load's part in the budget: its unacknowledged chunks are given back so no other load is starved. */
     dispose: () => void;
 };
 
+type BudgetWaiter = { resolve: (granted: boolean) => void; granted: boolean };
+
 /**
- * Limit a load to `LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT` chunks the worklet has not
- * yet acknowledged with `sampleChunkWritten`. The wait ends on an
- * acknowledgement, and just as promptly on the abort signal, a
+ * The credits that bound every Levain chunk upload on this main-thread realm.
+ * All Levain processors of one `AudioContext` share one worklet render thread,
+ * and devices load in parallel, so a per-load limit would let N loads queue N
+ * times the limit on that thread. The loader cannot derive a context from the
+ * `MessagePort` it is handed, so this one budget covers every context in the
+ * realm: the app has exactly one live context, and an offline render's loads
+ * only share it conservatively (they queue behind each other, they never get
+ * more than the limit).
+ *
+ * A credit is held from posting a chunk until the worklet acknowledges it, or
+ * until the load that holds it ends. Waiters are served first come, first
+ * served: a returned credit goes straight to the oldest waiter, and a new
+ * reservation never takes a free credit past a queue.
+ */
+const chunkBudget = { credits: LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT, waiters: [] as BudgetWaiter[] };
+
+function giveBackChunkCredit(): void {
+    const next = chunkBudget.waiters.shift();
+    if (next) {
+        next.granted = true;
+        next.resolve(true);
+        return;
+    }
+    chunkBudget.credits += 1;
+}
+
+/** Take `waiter` out of the queue; false when it was already served. */
+function withdrawFromChunkBudget(waiter: BudgetWaiter): boolean {
+    const index = chunkBudget.waiters.indexOf(waiter);
+    if (index === -1) {
+        return false;
+    }
+    chunkBudget.waiters.splice(index, 1);
+    return true;
+}
+
+/**
+ * Hold a load to the shared `chunkBudget` of `LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT`
+ * chunks the worklets have not yet acknowledged with `sampleChunkWritten`.
+ * A wait ends on a credit, and just as promptly on the abort signal, a
  * `sampleBankError` for this load, or the processor's `error`/`disposed`: a
  * processor that stops answering must not leave the load waiting for an
- * acknowledgement that will never come.
+ * acknowledgement that will never come. Messages carrying another load's
+ * token are not this load's to act on.
  */
 function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: AbortSignal): ChunkPacer {
-    let outstanding = 0;
+    let held = 0;
     let failure: Error | null = null;
-    let wake: (() => void) | null = null;
+    let queued: BudgetWaiter | null = null;
 
-    function wakeWaiter(): void {
-        wake?.();
-        wake = null;
+    function fail(error: Error): void {
+        failure ??= error;
+        if (queued && withdrawFromChunkBudget(queued)) {
+            queued.resolve(false);
+        }
     }
     function onMessage(event: MessageEvent<unknown>): void {
         const message = event.data;
@@ -312,38 +355,55 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
             return;
         }
         if (isProcessorEnd(message)) {
-            failure ??= processorEndedError(message);
-            wakeWaiter();
+            fail(processorEndedError(message));
             return;
         }
         if (message.loadToken !== loadToken) {
             return;
         }
         if (message.type === 'sampleChunkWritten') {
-            outstanding = Math.max(0, outstanding - 1);
-            wakeWaiter();
+            if (held > 0) {
+                held -= 1;
+                giveBackChunkCredit();
+            }
             return;
         }
         if (message.type === 'sampleBankError') {
             const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
-            failure ??= new Error(`Levain sample-bank load failed${detail}`);
-            wakeWaiter();
+            fail(new Error(`Levain sample-bank load failed${detail}`));
         }
     }
     async function reserve(): Promise<void> {
-        for (;;) {
-            if (failure) {
-                throw failure;
-            }
-            signal?.throwIfAborted();
-            if (outstanding < LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT) {
-                outstanding += 1;
-                return;
-            }
-            const answered = Promise.withResolvers<void>();
-            wake = answered.resolve;
-            await raceAbortSignal(answered.promise, signal);
+        if (failure) {
+            throw failure;
         }
+        signal?.throwIfAborted();
+        if (chunkBudget.credits > 0 && chunkBudget.waiters.length === 0) {
+            chunkBudget.credits -= 1;
+            held += 1;
+            return;
+        }
+        const answered = Promise.withResolvers<boolean>();
+        const waiter: BudgetWaiter = { resolve: answered.resolve, granted: false };
+        queued = waiter;
+        chunkBudget.waiters.push(waiter);
+        let granted: boolean;
+        try {
+            granted = await raceAbortSignal(answered.promise, signal);
+        } catch (error) {
+            // Aborted. A credit already handed over was not used: pass it on.
+            // A waiter a failure removed was handed none, so it has nothing to pass on.
+            if (!withdrawFromChunkBudget(waiter) && waiter.granted) {
+                giveBackChunkCredit();
+            }
+            throw error;
+        } finally {
+            queued = null;
+        }
+        if (!granted) {
+            throw failure ?? new Error('Levain sample upload stopped waiting for a chunk credit');
+        }
+        held += 1;
     }
 
     nodePort.addEventListener('message', onMessage);
@@ -351,7 +411,10 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
         reserve,
         dispose: () => {
             nodePort.removeEventListener('message', onMessage);
-            wakeWaiter();
+            fail(new Error('Levain sample upload ended'));
+            for (; held > 0; held -= 1) {
+                giveBackChunkCredit();
+            }
         },
     };
 }

@@ -122,7 +122,11 @@ type MakePortOptions = {
      * up), or 'never' (a processor that stopped answering mid-sample).
      */
     chunkAnswers?: 'now' | 'later' | 'never';
+    /** Share the count of unanswered chunks between ports, to bound them across concurrent loads. */
+    chunkTally?: ChunkTally;
 };
+
+type ChunkTally = { unanswered: number; peak: number };
 
 /**
  * A fake worklet port modelled on `levainProcessor.ts`'s own token bookkeeping
@@ -136,8 +140,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     let pendingToken: number | null = null;
     let releaseRequests = 0;
-    let unacknowledgedChunks = 0;
-    let peakUnacknowledgedChunks = 0;
+    const tally: ChunkTally = options.chunkTally ?? { unanswered: 0, peak: 0 };
     function emit(message: unknown): void {
         const event = { data: message } as MessageEvent<unknown>;
         for (const listener of listeners) {
@@ -158,10 +161,10 @@ function makePort(options: MakePortOptions = {}): FakePort {
             return;
         }
         if (message.type === 'sampleChunk') {
-            unacknowledgedChunks++;
-            peakUnacknowledgedChunks = Math.max(peakUnacknowledgedChunks, unacknowledgedChunks);
+            tally.unanswered++;
+            tally.peak = Math.max(tally.peak, tally.unanswered);
             const answer = (): void => {
-                unacknowledgedChunks--;
+                tally.unanswered--;
                 emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId });
             };
             const answers = options.chunkAnswers ?? 'now';
@@ -195,13 +198,20 @@ function makePort(options: MakePortOptions = {}): FakePort {
             if (options.deferCommit) {
                 return;
             }
-            queueMicrotask(() => {
+            // The worklet handles messages in order, so its commit reply never
+            // overtakes the acknowledgement of a chunk posted before it.
+            const replyToCommit = (): void => {
                 if (options.commitError) {
                     emit({ type: 'sampleBankError', loadToken: message.loadToken, message: options.commitError });
                     return;
                 }
                 emit({ type: 'sampleBankLoaded', loadToken: message.loadToken });
-            });
+            };
+            if (options.chunkAnswers === 'later') {
+                setTimeout(replyToCommit, 0);
+            } else {
+                queueMicrotask(replyToCommit);
+            }
             return;
         }
         if (message.type === 'releaseRetiredBank') {
@@ -237,7 +247,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
     return {
         postMessage,
         emit,
-        peakUnacknowledgedChunks: () => peakUnacknowledgedChunks,
+        peakUnacknowledgedChunks: () => tally.peak,
         addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
             if (typeof listener === 'function') {
                 listeners.add(listener);
@@ -249,6 +259,10 @@ function makePort(options: MakePortOptions = {}): FakePort {
             }
         },
     } as unknown as FakePort;
+}
+
+function pause(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function postedTypes(port: { postMessage: ReturnType<typeof vi.fn> }): string[] {
@@ -528,6 +542,185 @@ describe('loadInstrumentFromManifest', () => {
                 expect(port.peakUnacknowledgedChunks()).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
                 expect(postedTypes(port)).toContain('sealSample');
             });
+
+            /** A load of its own bank (its own `basePath`, so the decoded bank is not shared). */
+            function loadOwnBank(port: FakePort, name: string, signal?: AbortSignal): Promise<unknown> {
+                return loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    basePath: `/${name}`,
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                    signal,
+                });
+            }
+
+            it('bounds the unacknowledged chunks of concurrent loads on different ports together', async () => {
+                const tally: ChunkTally = { unanswered: 0, peak: 0 };
+                const ports = [1, 2, 3].map(() => makePort({ chunkAnswers: 'later', chunkTally: tally }));
+                for (const _port of ports) {
+                    stubManyChunks();
+                }
+
+                await Promise.all(ports.map((port, index) => loadOwnBank(port, `bank-${index}`)));
+
+                expect(ports.map(chunkCount)).toEqual([8, 8, 8]);
+                expect(tally.peak).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+            });
+
+            it('frees the credits of a load that is aborted, so the loads queued behind it finish', async () => {
+                const tally: ChunkTally = { unanswered: 0, peak: 0 };
+                const holder = makePort({ chunkAnswers: 'never', chunkTally: tally });
+                const second = makePort({ chunkAnswers: 'now', chunkTally: tally });
+                const third = makePort({ chunkAnswers: 'now', chunkTally: tally });
+                for (let loads = 0; loads < 3; loads++) {
+                    stubManyChunks();
+                }
+                const controller = new AbortController();
+                const holding = loadOwnBank(holder, 'holder', controller.signal);
+                void holding.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const secondLoad = loadOwnBank(second, 'second');
+                await vi.waitFor(() => {
+                    expect(postedTypes(second)).toContain('beginSample');
+                });
+                const thirdLoad = loadOwnBank(third, 'third');
+                await vi.waitFor(() => {
+                    expect(postedTypes(third)).toContain('beginSample');
+                });
+                expect([chunkCount(second), chunkCount(third)]).toEqual([0, 0]);
+
+                controller.abort();
+
+                await expect(holding).rejects.toMatchObject({ name: 'AbortError' });
+                await Promise.all([secondLoad, thirdLoad]);
+                expect([chunkCount(second), chunkCount(third)]).toEqual([8, 8]);
+            }, 5000);
+
+            it('returns exactly the credits it held, however the loads ended, so the budget never grows', async () => {
+                const holder = makePort({ chunkAnswers: 'never' });
+                const waiting = makePort({ chunkAnswers: 'never' });
+                const next = makePort({ chunkAnswers: 'never' });
+                for (let loads = 0; loads < 3; loads++) {
+                    stubManyChunks();
+                }
+                const holderController = new AbortController();
+                const waitingController = new AbortController();
+                const holding = loadOwnBank(holder, 'budget-holder', holderController.signal);
+                await vi.waitFor(() => {
+                    expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                // The fake worklet answers this abort with a sampleBankError, so
+                // the load's wait is both aborted and failed.
+                const queued = loadOwnBank(waiting, 'budget-waiting', waitingController.signal);
+                await vi.waitFor(() => {
+                    expect(postedTypes(waiting)).toContain('beginSample');
+                });
+                waitingController.abort();
+                holderController.abort();
+                await Promise.allSettled([holding, queued]);
+                const controller = new AbortController();
+
+                const fresh = loadOwnBank(next, 'budget-next', controller.signal);
+                void fresh.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                await pause(20);
+
+                expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                controller.abort();
+                await Promise.allSettled([fresh]);
+            }, 5000);
+
+            it('serves loads waiting for a credit in the order they asked', async () => {
+                const holder = makePort({ chunkAnswers: 'never' });
+                const early = makePort({ chunkAnswers: 'never' });
+                const late = makePort({ chunkAnswers: 'never' });
+                for (let loads = 0; loads < 3; loads++) {
+                    stubManyChunks();
+                }
+                const controller = new AbortController();
+                const earlyController = new AbortController();
+                const lateController = new AbortController();
+                const settled = [loadOwnBank(holder, 'fifo-holder', controller.signal)];
+                await vi.waitFor(() => {
+                    expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                settled.push(loadOwnBank(early, 'fifo-early', earlyController.signal));
+                await vi.waitFor(() => {
+                    expect(postedTypes(early)).toContain('beginSample');
+                });
+                settled.push(loadOwnBank(late, 'fifo-late', lateController.signal));
+                await vi.waitFor(() => {
+                    expect(postedTypes(late)).toContain('beginSample');
+                });
+                for (const load of settled) {
+                    void load.catch(() => {});
+                }
+                expect([chunkCount(early), chunkCount(late)]).toEqual([0, 0]);
+
+                // The holder asked first (its fifth chunk waits), then early, then late:
+                // each credit it gives back goes to the oldest asker, in turn.
+                const holderToken = (postedMessages(holder)[0] as { loadToken: number }).loadToken;
+                holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+                await vi.waitFor(() => {
+                    expect(chunkCount(holder)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT + 1);
+                });
+                expect([chunkCount(early), chunkCount(late)]).toEqual([0, 0]);
+
+                holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+                await vi.waitFor(() => {
+                    expect(chunkCount(early)).toBe(1);
+                });
+                expect(chunkCount(late)).toBe(0);
+
+                holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+                await vi.waitFor(() => {
+                    expect(chunkCount(late)).toBe(1);
+                });
+                expect(chunkCount(early)).toBe(1);
+                controller.abort();
+                earlyController.abort();
+                lateController.abort();
+                await Promise.allSettled(settled);
+            }, 5000);
+
+            it("ignores an acknowledgement and an error that carry another load's token", async () => {
+                stubManyChunks();
+                const port = makePort({ chunkAnswers: 'never' });
+                let outcome: 'pending' | 'resolved' | 'rejected' = 'pending';
+                const pending = load(port).then(
+                    () => {
+                        outcome = 'resolved';
+                    },
+                    () => {
+                        outcome = 'rejected';
+                    }
+                );
+                await vi.waitFor(() => {
+                    expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const loadToken = (postedMessages(port)[0] as { loadToken: number }).loadToken;
+                const foreignToken = loadToken + 1000;
+
+                port.emit({ type: 'sampleChunkWritten', loadToken: foreignToken, sampleId: 0 });
+                port.emit({ type: 'sampleBankError', loadToken: foreignToken, message: 'someone else failed' });
+                await pause(20);
+
+                expect(chunkCount(port)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                expect(outcome).toBe('pending');
+
+                while (outcome === 'pending') {
+                    port.emit({ type: 'sampleChunkWritten', loadToken, sampleId: 0 });
+                    await pause(0);
+                }
+                await pending;
+
+                expect(outcome).toBe('resolved');
+                expect(chunkCount(port)).toBe(8);
+            }, 5000);
 
             it.each(['disposed', 'error'] as const)(
                 'settles the load when the processor ends (%s) while it waits for an acknowledgement',

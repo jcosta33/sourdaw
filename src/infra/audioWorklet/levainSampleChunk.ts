@@ -12,7 +12,12 @@
 export const LEVAIN_SAMPLE_CHUNK_FLOATS = 16_384;
 
 /**
- * Chunks the loader leaves unacknowledged at once. The worklet answers each
+ * Chunks the loader leaves unacknowledged at once across ALL concurrent Levain
+ * loads, not per load: every Levain processor of one `AudioContext` shares one
+ * worklet render thread, and devices load in parallel. The loader keeps one
+ * budget per main-thread realm (it cannot derive a context from the port it is
+ * given), so the one live context is bounded exactly and an offline render's
+ * loads share it conservatively. The worklet answers each
  * written chunk with `sampleChunkWritten`, and the loader posts the next one
  * only while fewer than this many are outstanding, so the worklet's queue
  * holds at most this many chunks and it cannot drain a long run of them between
