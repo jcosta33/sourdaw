@@ -24,8 +24,8 @@ const FRAME_SECONDS = 1 / SAMPLE_RATE;
 const RAMP_SAMPLE_BEATS = 0.25;
 const TIMELINE_BEATS = 12;
 const GRID_DENOMINATORS = [3, 5, 6, 7, 10, 12, 1, 2, 4, 8, 16] as const;
-// Near-equal pairs sit within tolerance of each other.
-const PAIR_OFFSETS = [2e-15, 1e-9, 3e-7, 7e-7, 9.9e-7] as const;
+// Near-equal pairs sit within tolerance of each other, or just past it and within twice it.
+const PAIR_OFFSETS = [2e-15, 1e-9, 3e-7, 7e-7, 9.9e-7, 1.5e-6, 1.99e-6] as const;
 // Insert points sit on a grid point or a change, or inside or just outside tolerance of one.
 const POINT_OFFSETS = [1e-9, 5e-7, 9.9e-7, 1.01e-6, 1.5e-6, 2.5e-6] as const;
 const IMPLIED_METER = {
@@ -52,6 +52,10 @@ type Meter = {
 };
 
 const frameCoverage = { inserts: 0, tempoChecked: 0, meterChecked: 0 };
+// The shapes the law is most easily broken on, counted so the seeds cannot quietly stop
+// reaching them: a linear change followed within 2ε by its target, an insert point with a
+// change within ε on each side of it, and an insert inside such a narrow ramp.
+const shapeCoverage = { narrowRampCases: 0, straddledInserts: 0, narrowRampInserts: 0 };
 
 function createRandom(seed: number): Random {
     let state = seed >>> 0;
@@ -99,14 +103,14 @@ function randomCurve(random: Random): TempoChange['curve'] {
     return random() < 0.5 ? 'linear' : 'instant';
 }
 
-// The first change of a near-equal pair is instant: a ramp narrower than the tolerance has
-// both ends on one beat, so it has no slope the law could keep.
+// The first change of a near-equal pair may ramp, so a linear change is often followed
+// within 2ε by its target: a ramp narrower than the tolerance.
 function generateTempo(random: Random): TempoChange[] {
     const changes: TempoChange[] = [];
     for (const [index, beat] of gridBeats(random, integer(random, 1, 6)).entries()) {
         const id = `t${index}`;
         if (random() < 0.3) {
-            changes.push({ id, beat, tempo: randomTempo(random), curve: 'instant' });
+            changes.push({ id, beat, tempo: randomTempo(random), curve: randomCurve(random) });
             changes.push({
                 id: `${id}-pair`,
                 beat: beat + pick(random, PAIR_OFFSETS),
@@ -153,11 +157,51 @@ function choosePoint(random: Random, anchors: readonly number[]): number {
     return random() < 0.5 ? base - offset : base + offset;
 }
 
+// Two changes up to 2ε apart, so an insert point between them has a change within ε on
+// each side.
+function nearEqualGaps(beats: readonly number[]): Array<[number, number]> {
+    const sorted = uniqueSorted(beats);
+    const gaps: Array<[number, number]> = [];
+    for (const [index, beat] of sorted.entries()) {
+        const next = sorted[index + 1];
+        if (next !== undefined && next - beat <= 2 * BEAT_EPSILON) {
+            gaps.push([beat, next]);
+        }
+    }
+    return gaps;
+}
+
 function chooseInsert(random: Random, maps: Maps): Insert {
     const anchors = [...maps.tempo, ...maps.meter].map(({ beat }) => beat);
-    const atBeat = Math.max(0, choosePoint(random, anchors));
+    const gaps = nearEqualGaps(anchors);
+    let atBeat = Math.max(0, choosePoint(random, anchors));
+    if (gaps.length > 0 && random() < 0.35) {
+        const [low, high] = pick(random, gaps);
+        atBeat = low + (high - low) / 2;
+    }
     const denominator = pick(random, GRID_DENOMINATORS);
     return { atBeat, durationBeats: integer(random, 1, 4 * denominator) / denominator };
+}
+
+function countShapes(before: Maps, insert: Insert): void {
+    const beats = [...before.tempo, ...before.meter].map(({ beat }) => beat);
+    const below = beats.some((beat) => beat < insert.atBeat && beat >= insert.atBeat - BEAT_EPSILON);
+    const above = beats.some((beat) => beat >= insert.atBeat && beat <= insert.atBeat + BEAT_EPSILON);
+    if (below && above) {
+        shapeCoverage.straddledInserts += 1;
+    }
+    const ramp = rampAtPoint(before.tempo, insert);
+    if (ramp && ramp.target.beat - ramp.governing.beat <= 2 * BEAT_EPSILON) {
+        shapeCoverage.narrowRampInserts += 1;
+    }
+}
+
+function hasNarrowRamp(changes: readonly TempoChange[]): boolean {
+    const sorted = byBeat(changes);
+    return sorted.some((change) => {
+        const target = sorted.find(({ beat }) => beat > change.beat);
+        return change.curve === 'linear' && target !== undefined && target.beat - change.beat <= 2 * BEAT_EPSILON;
+    });
 }
 
 function readMaps(): Maps {
@@ -169,21 +213,24 @@ function readMaps(): Maps {
 
 // --- An oracle of its own: the reading the law is stated in, independent of the map readers.
 
+// Exact, as the arrangement classifies clips and markers: before the point stays, and
+// everything from it on moves by exactly the inserted span.
 function isKept(beat: number, { atBeat }: Insert): boolean {
-    return beat < atBeat - BEAT_EPSILON;
-}
-
-function isOnInsertPoint(beat: number, { atBeat }: Insert): boolean {
-    return Math.abs(beat - atBeat) <= BEAT_EPSILON;
+    return beat < atBeat;
 }
 
 function shiftedByInsert(beat: number, insert: Insert): number {
-    return isOnInsertPoint(beat, insert) ? insert.atBeat + insert.durationBeats : beat + insert.durationBeats;
+    return beat + insert.durationBeats;
 }
 
 type TempoSegment = {
     governing: TempoChange;
     target: TempoChange | undefined;
+};
+
+type Ramp = {
+    governing: TempoChange;
+    target: TempoChange;
 };
 
 // The last change at or before the beat governs, and a linear one ramps toward the first
@@ -203,9 +250,13 @@ function tempoSegmentAt(sorted: readonly TempoChange[], beat: number): TempoSegm
     return { governing, target };
 }
 
+// A ramp holds its own tempo before it starts and its target's once it arrives.
 function lineTempo({ governing, target }: TempoSegment, beat: number): number {
-    if (!target) {
+    if (!target || beat <= governing.beat) {
         return governing.tempo;
+    }
+    if (beat >= target.beat) {
+        return target.tempo;
     }
     const share = (beat - governing.beat) / (target.beat - governing.beat);
     return governing.tempo + share * (target.tempo - governing.tempo);
@@ -249,6 +300,18 @@ function oracleSeconds(changes: readonly TempoChange[], toBeat: number): number 
     return seconds;
 }
 
+// The change kept last before the point and the change it ramps toward, when it ramps.
+function rampAtPoint(changes: readonly TempoChange[], insert: Insert): Ramp | undefined {
+    const sorted = byBeat(changes);
+    const kept = sorted.filter(({ beat }) => isKept(beat, insert));
+    const governing = kept[kept.length - 1];
+    const target = governing && sorted.find(({ beat }) => beat > governing.beat);
+    if (!governing || governing.curve !== 'linear' || !target) {
+        return undefined;
+    }
+    return { governing, target };
+}
+
 // The tempo arriving at the insert point from before it: what the change kept last before
 // the point reads there, along its ramp when it ramps; the lead-in tempo when none is kept.
 function tempoArrivingAt(changes: readonly TempoChange[], insert: Insert): number {
@@ -258,18 +321,19 @@ function tempoArrivingAt(changes: readonly TempoChange[], insert: Insert): numbe
     if (!governing) {
         return sorted[0]?.tempo ?? DEFAULT_TEMPO;
     }
-    const target = governing.curve === 'linear' ? sorted.find(({ beat }) => beat > governing.beat) : undefined;
-    return lineTempo({ governing, target }, insert.atBeat);
+    const ramp = rampAtPoint(changes, insert);
+    return ramp ? lineTempo(ramp, insert.atBeat) : governing.tempo;
 }
 
-function withinTempoTolerance(actual: number, expected: number, slope: number): number {
-    return Math.abs(actual - expected) - (1e-9 * Math.max(1, expected) + 2 * BEAT_EPSILON * slope);
+// Two float readings of one line differ by its slope times a few rounding steps of the
+// beat they are read at.
+function withinTempoTolerance(actual: number, expected: number, slope: number, beat: number): number {
+    return Math.abs(actual - expected) - (1e-9 * Math.max(1, expected) + slope * 1e-14 * Math.max(1, beat));
 }
 
 // --- The law.
 
-// Kept before the point less ε, and shifted by exactly the inserted span from there,
-// landing exactly on the span end when within ε of the point.
+// Kept before the point, and shifted by exactly the inserted span from it on.
 function expectClassified<TChange extends { id: string; beat: number }>(
     before: readonly TChange[],
     after: readonly TChange[],
@@ -326,19 +390,19 @@ function horizonOf(before: Maps, { atBeat }: Insert): number {
 }
 
 function expectTempoBeforePointKept(before: Maps, after: Maps, { atBeat }: Insert, context: string): void {
-    const limit = atBeat - 2 * BEAT_EPSILON;
-    const anchors = uniqueSorted([0, ...before.tempo.map(({ beat }) => beat)]).filter((beat) => beat < limit);
+    const anchors = uniqueSorted([0, ...before.tempo.map(({ beat }) => beat)]).filter((beat) => beat < atBeat);
     for (const [index, beat] of anchors.entries()) {
-        const next = anchors[index + 1] ?? limit;
+        const next = anchors[index + 1] ?? atBeat;
         for (const probe of [beat, beat + (next - beat) / 2, beat + (next - beat) * 0.9]) {
-            if (probe >= limit) {
+            if (probe >= atBeat) {
                 continue;
             }
             const expectedTempo = oracleTempo(before.tempo, probe);
+            const tempo = oracleTempo(after.tempo, probe);
             expect(
-                Math.abs(oracleTempo(after.tempo, probe) - expectedTempo),
-                `${context}: tempo before the point at ${probe}`
-            ).toBeLessThanOrEqual(1e-9 * Math.max(1, expectedTempo));
+                withinTempoTolerance(tempo, expectedTempo, oracleSlope(before.tempo, probe), atBeat),
+                `${context}: tempo before the point at ${probe} reads ${tempo}, was ${expectedTempo}`
+            ).toBeLessThanOrEqual(0);
             expect(
                 Math.abs(oracleSeconds(after.tempo, probe) - oracleSeconds(before.tempo, probe)),
                 `${context}: seconds before the point at ${probe}`
@@ -347,33 +411,38 @@ function expectTempoBeforePointKept(before: Maps, after: Maps, { atBeat }: Inser
     }
 }
 
+function rampSlope(ramp: Ramp | undefined): number {
+    if (!ramp) {
+        return 0;
+    }
+    return Math.abs((ramp.target.tempo - ramp.governing.tempo) / (ramp.target.beat - ramp.governing.beat));
+}
+
 function expectSpanHoldsArrivingTempo(before: Maps, after: Maps, insert: Insert, context: string): void {
     const expectedTempo = tempoArrivingAt(before.tempo, insert);
     const spanEnd = insert.atBeat + insert.durationBeats;
-    for (const probe of [insert.atBeat, insert.atBeat + insert.durationBeats / 2, spanEnd - 3 * BEAT_EPSILON]) {
+    const slope = rampSlope(rampAtPoint(before.tempo, insert));
+    for (const probe of [insert.atBeat, insert.atBeat + insert.durationBeats / 2, spanEnd * (1 - 1e-12)]) {
         const tempo = oracleTempo(after.tempo, probe);
         expect(
-            withinTempoTolerance(tempo, expectedTempo, oracleSlope(before.tempo, insert.atBeat)),
+            withinTempoTolerance(tempo, expectedTempo, slope, spanEnd),
             `${context}: tempo inside the span at ${probe} reads ${tempo}, arriving ${expectedTempo}`
         ).toBeLessThanOrEqual(0);
     }
 }
 
-// Two changes within ε are one beat, and which of them reads between them is a rounding
-// accident, so no probe sits there. A change on the point lands exactly on the span end,
-// so two changes up to 2ε apart that are both on it become one beat.
+// Two changes within a float step of a probe read on either side of it once a shift has
+// rounded them, so no probe sits between near-equal changes.
 function isBetweenNearEqualChanges(changes: readonly { beat: number }[], beat: number): boolean {
     return changes.some((change) => change.beat !== beat && Math.abs(change.beat - beat) <= 2 * BEAT_EPSILON);
 }
 
-// Material from the point on sits at its old beat plus the span. A change within ε of the
-// point lands on the span end, up to ε from where content puts it, so a ramp it opens reads
-// within its slope times that distance; nothing within 2ε of the point is compared.
+// Material from the point on sits at its old beat plus exactly the span, with its tempo.
 function expectTempoAfterPointShifted(before: Maps, after: Maps, insert: Insert, context: string): void {
     const { atBeat, durationBeats } = insert;
     const anchors = uniqueSorted([
-        atBeat + 3 * BEAT_EPSILON,
-        ...before.tempo.map(({ beat }) => beat).filter((beat) => beat > atBeat + 2 * BEAT_EPSILON),
+        atBeat,
+        ...before.tempo.map(({ beat }) => beat).filter((beat) => beat >= atBeat),
         horizonOf(before, insert),
     ]);
     for (const [index, beat] of anchors.entries()) {
@@ -388,7 +457,7 @@ function expectTempoAfterPointShifted(before: Maps, after: Maps, insert: Insert,
             const tempo = oracleTempo(after.tempo, newBeat);
             const slope = Math.max(oracleSlope(before.tempo, oldBeat), oracleSlope(after.tempo, newBeat));
             expect(
-                withinTempoTolerance(tempo, expectedTempo, slope),
+                withinTempoTolerance(tempo, expectedTempo, slope, newBeat),
                 `${context}: tempo at old beat ${oldBeat} reads ${tempo}, was ${expectedTempo}`
             ).toBeLessThanOrEqual(0);
         }
@@ -431,9 +500,6 @@ function governingMeterAt(changes: readonly TimeSignatureChange[], beat: number)
 
 function expectMeterDownbeatsShifted(before: Maps, after: Maps, insert: Insert, context: string): void {
     for (const downbeat of movedMeterDownbeats(before.meter, insert, horizonOf(before, insert))) {
-        if (isBetweenNearEqualChanges(before.meter, downbeat.beat)) {
-            continue;
-        }
         const newBeat = shiftedByInsert(downbeat.beat, insert);
         // A rounding step past the position, so a change computed onto it by another
         // float expression still governs it.
@@ -447,7 +513,7 @@ function expectMeterDownbeatsShifted(before: Maps, after: Maps, insert: Insert, 
         expect(
             Math.min(phase, barBeats - phase),
             `${context}: bar phase at old downbeat ${downbeat.beat}`
-        ).toBeLessThanOrEqual(2 * BEAT_EPSILON + 1e-9);
+        ).toBeLessThanOrEqual(1e-9);
     }
 }
 
@@ -515,6 +581,9 @@ function runCase(index: number): void {
     const random = createRandom(SEED * 7919 + index);
     tempoMapStore.set({ changes: generateTempo(random) });
     timeSignatureMapStore.set({ changes: generateMeter(random) });
+    if (hasNarrowRamp(readMaps().tempo)) {
+        shapeCoverage.narrowRampCases += 1;
+    }
 
     const applied: AppliedInsert[] = [];
     const insertCount = integer(random, 1, 3);
@@ -522,6 +591,7 @@ function runCase(index: number): void {
         const before = readMaps();
         const insert = chooseInsert(random, before);
         const context = `case ${index}, insert ${step} of ${insert.durationBeats} at ${insert.atBeat}`;
+        countShapes(before, insert);
         const transaction = prepareTimelineMapTimeOperation({ operation: { type: 'insert', ...insert } });
         expect(transaction.status, context).toBe('ready');
         if (transaction.hasChanges) {
@@ -560,10 +630,17 @@ describe('Insert Time keeps the maps before the point, holds the arriving tempo 
     });
 
     // Runs after every case above: the frame law must have been checked on most inserts, so
-    // the precondition cannot quietly exclude the cases it exists to cover.
+    // the precondition cannot quietly exclude the cases it exists to cover. A pair just past
+    // ε is under a frame apart by construction, so those maps are the ones it leaves out.
     it('checked projected frames on most inserts', () => {
         expect(frameCoverage.inserts).toBeGreaterThan(CASE_COUNT);
-        expect(frameCoverage.tempoChecked / frameCoverage.inserts).toBeGreaterThan(0.8);
+        expect(frameCoverage.tempoChecked / frameCoverage.inserts).toBeGreaterThan(0.75);
         expect(frameCoverage.meterChecked / frameCoverage.inserts).toBeGreaterThan(0.8);
+    });
+
+    it('reached narrow ramps and insert points with a change within tolerance on each side', () => {
+        expect(shapeCoverage.narrowRampCases).toBeGreaterThanOrEqual(400);
+        expect(shapeCoverage.straddledInserts).toBeGreaterThanOrEqual(500);
+        expect(shapeCoverage.narrowRampInserts).toBeGreaterThanOrEqual(200);
     });
 });

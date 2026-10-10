@@ -179,17 +179,12 @@ function shiftPastCut(beat: number, startBeat: number, endBeat: number): number 
     return shiftedBeat - startBeat <= BEAT_EPSILON ? startBeat : shiftedBeat;
 }
 
-// Inserting time classifies against the insert point as Delete Time does against
-// its bounds: a change before it less BEAT_EPSILON is kept, and every other one
-// moves by exactly the inserted span, as content does. A change within
-// BEAT_EPSILON of the point is on it and goes exactly to the span end, so every
-// change on the point shares that beat and none sits a float step off it.
-function isOnInsertPoint(beat: number, atBeat: number): boolean {
-    return Math.abs(beat - atBeat) <= BEAT_EPSILON;
-}
-
-function shiftPastInsert(beat: number, { atBeat, durationBeats }: InsertTimelineMapTimeOperation): number {
-    return isOnInsertPoint(beat, atBeat) ? atBeat + durationBeats : beat + durationBeats;
+// Inserting time classifies against the exact insert point, as the arrangement
+// classifies clips and markers: a change before it is kept and every other one
+// moves by exactly the inserted span. A tolerance here would move a change a
+// whole span away from material sitting on its own beat.
+function isBeforeInsertPoint(beat: number, atBeat: number): boolean {
+    return beat < atBeat;
 }
 
 // Exact: once classified, a remaining change is on the cut only by sitting
@@ -316,16 +311,16 @@ function keepLeadInTempo(
 // so the ramp is read along its line up to the start rather than held at the
 // target's tempo, which would re-aim the ramp before the cut.
 function readRampReachedAtSpanStart(original: readonly TempoChange[], startBeat: number): number | null {
-    const ramp = findRampInto(original, startBeat);
+    const ramp = findRampInto(original, (beat) => isBeforeCut(beat, startBeat));
     return ramp ? readRampValueAt(ramp, startBeat) : null;
 }
 
 // The last change kept before a bound, when it is linear, and the first change
 // after it, which it ramps toward ("arrive at the first, govern from the last").
-function findRampInto(original: readonly TempoChange[], bound: number): Ramp | null {
+function findRampInto(original: readonly TempoChange[], isKept: (beat: number) => boolean): Ramp | null {
     let ramping: TempoChange | undefined;
     for (const change of original) {
-        if (isBeforeCut(change.beat, bound) && (!ramping || change.beat >= ramping.beat)) {
+        if (isKept(change.beat) && (!ramping || change.beat >= ramping.beat)) {
             ramping = change;
         }
     }
@@ -341,8 +336,10 @@ function findRampInto(original: readonly TempoChange[], bound: number): Ramp | n
     return target ? { ramping, target } : null;
 }
 
+// A ramp never reads past its own ends: a target within tolerance before the
+// bound is on it, and its tempo is where the ramp has arrived by then.
 function readRampValueAt({ ramping, target }: Ramp, beat: number): number {
-    const progress = (beat - ramping.beat) / (target.beat - ramping.beat);
+    const progress = Math.min(1, Math.max(0, (beat - ramping.beat) / (target.beat - ramping.beat)));
     return ramping.tempo + (target.tempo - ramping.tempo) * progress;
 }
 
@@ -359,13 +356,15 @@ function carryTempoAcrossInsertion({
     durationBeats,
 }: CarryAcrossInsertionInput<TempoChange>): CarriedChanges<TempoChange> {
     const endBeat = atBeat + durationBeats;
-    const ramp = findRampInto(original, atBeat);
+    const ramp = findRampInto(original, (beat) => isBeforeInsertPoint(beat, atBeat));
     if (endBeat === atBeat || !ramp || ramp.ramping.tempo === ramp.target.tempo) {
         return { arrivals: [], carried: [] };
     }
     const reached = readRampValueAt(ramp, atBeat);
     const arrival = createTempoChange(atBeat, reached, 'instant');
-    if (isOnInsertPoint(ramp.target.beat, atBeat)) {
+    // A target the shift puts on the span end (it was on the point, or a rounding step
+    // past it) arrives there itself, and a continuation on its beat would govern after it.
+    if (ramp.target.beat + durationBeats <= endBeat) {
         return { arrivals: [arrival], carried: [] };
     }
     return { arrivals: [arrival], carried: [createTempoChange(endBeat, reached, 'linear')] };
@@ -541,12 +540,12 @@ function prepareInsertedChanges<TChange extends TimelineChange>(
     const nextChanges: TChange[] = [];
 
     for (const change of changes) {
-        if (isBeforeCut(change.beat, operation.atBeat)) {
+        if (isBeforeInsertPoint(change.beat, operation.atBeat)) {
             nextChanges.push(change);
             continue;
         }
 
-        const shiftedBeat = shiftPastInsert(change.beat, operation);
+        const shiftedBeat = change.beat + operation.durationBeats;
         if (!isFiniteNonNegative(shiftedBeat)) {
             return { status: 'invalid' };
         }
