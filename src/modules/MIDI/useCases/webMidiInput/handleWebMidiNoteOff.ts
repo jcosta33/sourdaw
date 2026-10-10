@@ -19,6 +19,7 @@ import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActi
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { releaseKeyInRemovedYeastRack } from './releaseKeyInRemovedYeastRack';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
@@ -193,6 +194,18 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             // here: a batch it still hands back voices nothing (#5222).
             noteData.yeastSessionEnded = true;
             releaseVoicesWithoutYeast(noteData, yeastDeviceId, dispatchFrame, releaseVelocity);
+            // The rack the Yeast owns outlives it and still counts the key as
+            // held; an undone removal would replay it (#5257).
+            await releaseKeyInRemovedYeastRack({
+                process: deps.processRealtimeMidiInput,
+                context: audioEngine.context,
+                yeastDeviceId,
+                instrumentTrackId,
+                note,
+                channel,
+                sampleFrame: dispatchFrame,
+                noteInstanceId: noteData.noteInstanceId,
+            });
         }
         if (instrumentTrack && yeastDevice) {
             const context = audioEngine.context;
