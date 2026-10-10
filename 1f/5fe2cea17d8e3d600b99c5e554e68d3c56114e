@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/agentReference/findCoordinatedTrackLists.ts
+  s_1c08b47ac3792f::t_7c57070252b426 63,68,77,79
+  s_1c08b47ac3792f::t_37df6cceae1c78 1-62,64-67,69-76,78,80-104,139-148,151-152,154-163,166-167,170-171,173-177,180-197,200-202,206-209
+  s_1c08b47ac3792f::t_a71f0924da69ed 105-138,149-150,153,164-165,168-169,172,178-179
+  s_1c08b47ac3792f::t_63b8be71504b17 198-199,203-205
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_1c08b47ac3792f::t_68a1d626e1f467 207-217
+  s_1c08b47ac3792f::t_e2b6b4d2f6d801 252-254,257
+  s_1c08b47ac3792f::t_03318a5b8d041e 94-100,104
+  s_1c08b47ac3792f::t_4c4c61fe00dfb1 5,16-19,31,36,50,52,60,80,92-93,101-103,129-159,162,165-167,169,174-176,180-206,218-233,236,244,248,250-251,255-256,258-263,289,293-296,301-309,327,332,334,336,339,341-342,344-347,349-359,362,364-369,372,375,377-378,382
+  s_1c08b47ac3792f::t_b6f963ba4ca49d 1-4,6-15,20-30,32-35,37-49,51,53-59,61-79,81-91,105-128,160-161,163-164,168,170-173,177-179,234-235,237-243,245-247,249,264-288,290-292,297-300,310-326,328-331,333,335,337-338,340,343,348,360-361,363,370-371,373-374,376,379-381,383-412
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/promptScope.ts
+  s_1c08b47ac3792f::t_635cf6d5534cc0 22-27
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_9d24795cf19b0b 1250-1381
+  s_1c08b47ac3792f::t_6d3ebff4f949c3 1536-1546,1549,1552-1560
+  s_1c08b47ac3792f::t_9201aaee9a1f31 136
+  s_1c08b47ac3792f::t_e29d9d0d66381f 71
+  s_1c08b47ac3792f::t_4a64425883751c 1646-1665
+  s_1c08b47ac3792f::t_de3d7fadb2c2df 4718-4721,4728-4732
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1f5fe2cea17d8e3d600b99c5e554e68d3c56114e",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
