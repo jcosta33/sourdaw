@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { type Clip, type Track, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { setClipLoop } from '#/modules/Arrangement/useCases/clipLoop/setClipLoop';
 import { prepareAutomationTimeOperation, prepareAutomationTimeStateRestore } from '#/modules/Automation/useCases';
-import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores/midiStore';
-import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
-import { projectMidiClipPlayback } from '#/modules/MIDI/useCases/midiClipData/projectMidiClipPlayback';
-import { prepareMidiGlobalTimeTransaction } from '#/modules/MIDI/useCases/midiNoteCrud/prepareMidiGlobalTimeTransaction';
+import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import {
+    getNotesForClip,
+    prepareMidiGlobalTimeTransaction,
+    projectMidiClipPlayback,
+    setNotesForClip,
+} from '#/modules/MIDI/useCases';
 import { prepareTimelineMapTimeOperation, prepareTimelineMapStateRestore } from '#/modules/Transport/useCases';
 
 import { executeGlobalTimeOperation } from '../executeGlobalTimeOperation';

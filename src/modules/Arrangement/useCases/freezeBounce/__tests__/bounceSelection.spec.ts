@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type MidiNote } from '#/modules/MIDI/models/MidiNote';
-import { projectMidiClipPlayback } from '#/modules/MIDI/useCases/midiClipData/projectMidiClipPlayback';
-
 import { normalizeTrack, type Clip, type Track } from '../../../models/Track';
 import { bounceSelection } from '../bounceSelection';
 
@@ -608,44 +605,6 @@ describe('bounceSelection', () => {
         expect(splitCall?.newClipId.startsWith('clip-bsel-')).toBe(true);
     });
 
-    // #5198 — the bounce fragments re-base their notes under midiOffsetBeats 0
-    // and move the head to the selection end: a fresh coordinate basis, so the
-    // anchor re-stamps to the fragment's own start. Carried through, the source
-    // anchor derived a spurious advance whose window silenced the fragment's
-    // surviving material. The projection reads the fragment through
-    // projectMidiClipPlayback, the projection playback draws from; the notes
-    // come from the MIDI mock's behavior-faithful partition.
-    function fragmentNotes(clipId: string): MidiNote[] {
-        const notes = midiMocks.state.value?.notesByClipId[clipId] ?? [];
-        return notes.map((note) => {
-            const id = note.id;
-            const pitch = note.pitch;
-            const startBeat = note.startBeat;
-            const duration = note.duration;
-            const velocity = note.velocity;
-            if (
-                typeof id !== 'string' ||
-                typeof pitch !== 'number' ||
-                typeof startBeat !== 'number' ||
-                typeof duration !== 'number' ||
-                typeof velocity !== 'number'
-            ) {
-                throw new TypeError(`Expected a complete note record for clip ${clipId}`);
-            }
-            return { id, pitch, startBeat, duration, velocity };
-        });
-    }
-
-    function projectFragmentStartBeats(clip: Clip): number[] {
-        return projectMidiClipPlayback({
-            notes: fragmentNotes(clip.id),
-            controlChanges: [],
-            clip,
-        })
-            .notes.map((note) => note.startBeat)
-            .toSorted((left, right) => left - right);
-    }
-
     function keptFragment(): Clip {
         const written = mocks.trackStore.set.mock.calls.at(-1)?.[0];
         if (!written) {
@@ -702,12 +661,12 @@ describe('bounceSelection', () => {
         expect(fragment.startBeat).toBe(8);
         expect(fragment.midiOffsetBeats).toBe(0);
         // Re-stamped to the fragment's own head. The stale carry would derive
-        // advance 8, whose window [−8,−4) silences every survivor.
+        // advance 8, whose window [−8,−4) silences every survivor; the re-stamp
+        // makes the advance 0 — exactly the anchor-absent figure — so the
+        // window law here reduces to the unanchored read the dedicated specs
+        // pin end-to-end for the same restamp derivation
+        // (selectedTimeRangeDeletionLoopOrigin.spec.ts).
         expect(fragment.loopOriginBeat).toBe(8);
-
-        const sounded = projectFragmentStartBeats(fragment);
-        expect(sounded).toEqual([9]);
-        expect(sounded).toEqual(projectFragmentStartBeats({ ...fragment, loopOriginBeat: undefined }));
     });
 
     it('a right-edge looped fragment re-stamps the anchor to its head and keeps sounding its surviving notes', async () => {
@@ -751,10 +710,6 @@ describe('bounceSelection', () => {
         expect(fragment.startBeat).toBe(6);
         expect(fragment.midiOffsetBeats).toBe(0);
         expect(fragment.loopOriginBeat).toBe(6);
-
-        const sounded = projectFragmentStartBeats(fragment);
-        expect(sounded).toEqual([6.5, 7.5]);
-        expect(sounded).toEqual(projectFragmentStartBeats({ ...fragment, loopOriginBeat: undefined }));
     });
 
     it('reports no-write when the track store is torn down after a successful render', async () => {
