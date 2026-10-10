@@ -23,7 +23,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { playheadClockRef, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { playheadClockRef, playheadPositionRef, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import {
     defaultTransportState,
     getTransportHandlers,
@@ -271,68 +271,93 @@ describe('real recorder first-frame capture placement', () => {
         vi.unstubAllGlobals();
     });
 
-    it('places PCM from the first nonempty processor frame after native roll, with one undoable commit', async () => {
-        let roll!: () => void;
-        hardware.rollGate = new Promise<void>((resolve) => {
-            roll = resolve;
-        });
-        toggleRecording();
-        await vi.waitFor(() => expect(hardware.rollStarts).toBe(1), { interval: 1 });
-        // Existing successful admission allows a roll request before worker
-        // readiness or first input. This test repairs placement, not admission.
-        expect(activeRecordingRef.current).toHaveLength(1);
-        expect(activeSessions.get(TRACK_ID)?.status).toBe('starting');
-        expect(worker.messages).toEqual(['init']);
-        expect(publication()).toMatchObject({ sampleCount: 0, sampleZeroContextFrame: null });
-        expect(audioRecordingStore.value?.isRecording).toBe(false);
-        hardware.now = 50.2;
-        roll();
-        await vi.waitFor(() => expect(playheadClockRef.audioTimeSeconds).toBe(50.2), { interval: 1 });
-        expect(playheadClockRef.beat).toBe(10);
-        processor.process([[new Float32Array(128)]]);
-        expect(publication().sampleCount).toBe(0);
-        worker.onmessage?.({ data: { type: 'ready' } });
-        expect(worker.messages).toEqual(['init', 'start']);
-        expect(audioRecordingStore.value?.isRecording).toBe(true);
-        processor.process([[]]);
-        expect(publication().sampleZeroContextFrame).toBeNull();
-        // The actual processor, not readiness/callback time, publishes sample zero.
-        hardware.now = 50.4;
-        const firstFrame = Math.round(hardware.now * context.sampleRate);
-        for (let block = 0; block < 75; block++) {
-            vi.stubGlobal('currentFrame', firstFrame + block * 128);
-            processor.process([[Float32Array.from({ length: 128 }, (_value, index) => block * 128 + index)]]);
+    it.each([
+        { route: 'starts playback', tempo: 120, startBeat: 10.2, endBeat: 11.2, pcmEndBeat: 10.6 },
+        { route: 'joins playback', tempo: 120, startBeat: 10.2, endBeat: 11.2, pcmEndBeat: 10.6 },
+        { route: 'joins playback through a tempo edit', tempo: 60, startBeat: 5.1, endBeat: 6.1, pcmEndBeat: 5.3 },
+    ])(
+        'places PCM from the first nonempty processor frame when Record $route, with one undoable commit',
+        async ({ route, tempo, startBeat, endBeat, pcmEndBeat }) => {
+            let roll!: () => void;
+            hardware.rollGate = new Promise<void>((resolve) => {
+                roll = resolve;
+            });
+            if (route !== 'starts playback') {
+                hardware.now = 50.2;
+                transportStore.set({ ...transportStore.value!, isPlaying: true });
+                playheadPositionRef.current = 10;
+                playheadClockRef.beat = 10;
+                playheadClockRef.audioTimeSeconds = 50.2;
+            }
+            toggleRecording();
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1), { interval: 1 });
+            // Existing successful admission allows a roll request before worker
+            // readiness or first input. This test repairs placement, not admission.
+            expect(activeRecordingRef.current).toHaveLength(1);
+            expect(activeSessions.get(TRACK_ID)?.status).toBe('starting');
+            expect(worker.messages).toEqual(['init']);
+            expect(publication()).toMatchObject({ sampleCount: 0, sampleZeroContextFrame: null });
+            expect(audioRecordingStore.value?.isRecording).toBe(false);
+            if (route === 'starts playback') {
+                await vi.waitFor(() => expect(hardware.rollStarts).toBe(1), { interval: 1 });
+                hardware.now = 50.2;
+                roll();
+            } else {
+                expect(hardware.rollStarts).toBe(0);
+            }
+            await vi.waitFor(() => expect(playheadClockRef.audioTimeSeconds).toBe(50.2), { interval: 1 });
+            expect(playheadClockRef.beat).toBe(10);
+            processor.process([[new Float32Array(128)]]);
+            expect(publication().sampleCount).toBe(0);
+            worker.onmessage?.({ data: { type: 'ready' } });
+            expect(worker.messages).toEqual(['init', 'start']);
+            expect(audioRecordingStore.value?.isRecording).toBe(true);
+            if (tempo === 60) {
+                // The capture keeps its admitted song/context pair while the
+                // current map changes before the first nonempty input block.
+                await executeAppAction({ type: 'setTempo', payload: { bpm: tempo } }, { skipUndo: true });
+            }
+            processor.process([[]]);
+            expect(publication().sampleZeroContextFrame).toBeNull();
+            // The actual processor, not readiness/callback time, publishes sample zero.
+            hardware.now = 50.4;
+            const firstFrame = Math.round(hardware.now * context.sampleRate);
+            for (let block = 0; block < 75; block++) {
+                vi.stubGlobal('currentFrame', firstFrame + block * 128);
+                processor.process([[Float32Array.from({ length: 128 }, (_value, index) => block * 128 + index)]]);
+            }
+            expect(publication()).toMatchObject({ sampleCount: 9600, sampleZeroContextFrame: firstFrame });
+            hardware.now = 50.6;
+            await stopPlayback();
+            const clips = trackStore.value!.tracks[0]!.clips;
+            expect(clips).toHaveLength(1);
+            expect(clips[0]!.startBeat).toBeCloseTo(startBeat, 10);
+            // The existing #4994 carrier minimum survives; no PCM is fabricated
+            // beyond the measured 0.2-second recording.
+            expect(clips[0]!.endBeat).toBeCloseTo(endBeat, 10);
+            const media = audioBufferCache.get(clips[0]!.audioBufferId!);
+            expect(media?.duration).toBe(0.2);
+            expect(media?.length).toBe(9600);
+            expect(clips[0]!.startBeat + (media!.duration * tempo) / 60).toBeCloseTo(pcmEndBeat, 10);
+            expect(media?.getChannelData(0)[9599]).toBe(9599);
+            expect(media?.getChannelData(0)[9600]).toBeUndefined();
+            expect(media?.getChannelData(0)[0]).toBe(0);
+            const clickBeat = startBeat + (0.1 * tempo) / 60;
+            const clickFrame = Math.round(((clickBeat - clips[0]!.startBeat) * 60 * context.sampleRate) / tempo);
+            expect(clickFrame).toBe(4800);
+            expect(media?.getChannelData(0)[clickFrame]).toBe(4800);
+            expectProjection();
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            const committedClips = structuredClone(clips);
+            const committedLanes = structuredClone(takeLaneStore.value!.lanes);
+            await undo();
+            expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
+            expect(takeLaneStore.value!.lanes).toEqual([]);
+            expectProjection();
+            await redo();
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(committedClips);
+            expect(takeLaneStore.value!.lanes).toEqual(committedLanes);
+            expectProjection();
         }
-        expect(publication()).toMatchObject({ sampleCount: 9600, sampleZeroContextFrame: firstFrame });
-        hardware.now = 50.6;
-        await stopPlayback();
-        const clips = trackStore.value!.tracks[0]!.clips;
-        expect(clips).toHaveLength(1);
-        expect(clips[0]!.startBeat).toBeCloseTo(10.2, 10);
-        // The existing #4994 carrier minimum survives; no PCM is fabricated
-        // beyond the measured 0.2-second recording, which ends at beat 10.6.
-        expect(clips[0]!.endBeat).toBeCloseTo(11.2, 10);
-        const media = audioBufferCache.get(clips[0]!.audioBufferId!);
-        expect(media?.duration).toBe(0.2);
-        expect(media?.length).toBe(9600);
-        expect(clips[0]!.startBeat + media!.duration * 2).toBeCloseTo(10.6, 10);
-        expect(media?.getChannelData(0)[9599]).toBe(9599);
-        expect(media?.getChannelData(0)[9600]).toBeUndefined();
-        expect(media?.getChannelData(0)[0]).toBe(0);
-        const clickFrame = Math.round(((10.4 - clips[0]!.startBeat) * 60 * context.sampleRate) / 120);
-        expect(clickFrame).toBe(4800);
-        expect(media?.getChannelData(0)[clickFrame]).toBe(4800);
-        expectProjection();
-        expect(undoHistoryStore.value?.past).toHaveLength(1);
-        const committedClips = structuredClone(clips);
-        const committedLanes = structuredClone(takeLaneStore.value!.lanes);
-        await undo();
-        expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
-        expect(takeLaneStore.value!.lanes).toEqual([]);
-        expectProjection();
-        await redo();
-        expect(trackStore.value!.tracks[0]!.clips).toEqual(committedClips);
-        expect(takeLaneStore.value!.lanes).toEqual(committedLanes);
-        expectProjection();
-    });
+    );
 });

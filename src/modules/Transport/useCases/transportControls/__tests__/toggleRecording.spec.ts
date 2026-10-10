@@ -6,6 +6,7 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { executePlayheadSeek } from '../executePlayheadSeek';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { resolveRollStartBeat } from '../resolveRollStartBeat';
@@ -147,6 +148,12 @@ describe('toggleRecording', () => {
     const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
     let sampleZeroFrame = 0;
 
+    function publishPlaybackClock(beat: number): void {
+        playheadClockRef.beat = beat;
+        playheadClockRef.audioTimeSeconds = audioClock.currentTime;
+        playheadPositionRef.current = beat;
+    }
+
     function elapse(ms: number): void {
         audioClock.currentTime += ms / 1000;
         vi.advanceTimersByTime(ms);
@@ -182,6 +189,7 @@ describe('toggleRecording', () => {
         audioClock.currentTime = 0;
         audioClock.baseLatency = 0;
         audioClock.outputLatency = 0;
+        publishPlaybackClock(0);
         mocks.getAudioContext.mockReturnValue(audioClock);
         // clearAllMocks keeps return values, so a track snapshot an earlier test
         // installed would otherwise leak into every later one through the
@@ -366,6 +374,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recording_clip]);
+        publishPlaybackClock(recording_clip.startBeat);
 
         toggleRecording();
 
@@ -491,6 +500,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recordingClip]);
+        publishPlaybackClock(recordingClip.startBeat);
 
         toggleRecording();
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
@@ -594,6 +604,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recordingClip]);
+        publishPlaybackClock(recordingClip.startBeat);
 
         toggleRecording();
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
@@ -696,6 +707,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recordingClip]);
+        publishPlaybackClock(recordingClip.startBeat);
 
         toggleRecording();
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
@@ -1063,6 +1075,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recordingClip]);
+        publishPlaybackClock(recordingClip.startBeat);
 
         toggleRecording();
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());

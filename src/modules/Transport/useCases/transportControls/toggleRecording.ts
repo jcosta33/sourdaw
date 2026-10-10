@@ -16,6 +16,7 @@ import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats, type TempoChange } 
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
@@ -32,9 +33,9 @@ import { stopActiveRecording } from './stopActiveRecording';
  * runs on, and how far ahead of the record point that roll starts. Instants
  * rather than a duration because the finaliser can run before the roll answers
  * — Record pressed again inside the hold stops the take from within it — and a
- * duration written after the roll would still read zero there. All stay null
- * while nothing has been asked to roll; the lead is written with the request,
- * before the finaliser can run.
+ * duration written after the roll would still read zero there. A capture joining
+ * playback retains the scheduler's committed context/song pair instead. The
+ * lead is written with a new roll's request, before the finaliser can run.
  */
 type TransportHold = {
     requestedAtContextSeconds: number | null;
@@ -50,7 +51,7 @@ type TransportHold = {
  * may begin on either side of that clock; a late first frame moves media ahead.
  */
 function captureToRollSeconds(hold: TransportHold, sourceContextSeconds: number, nowContextSeconds: number): number {
-    if (hold.requestedAtContextSeconds === null) {
+    if (hold.requestedAtContextSeconds === null && hold.rolledAtContextSeconds === null) {
         return 0;
     }
     return (hold.rolledAtContextSeconds ?? hold.endedAtContextSeconds ?? nowContextSeconds) - sourceContextSeconds;
@@ -304,6 +305,16 @@ async function beginActualRecording(
     admissionChanges = tempoMapStore.value?.changes ?? [];
     const rolling = admittedTransport?.isPlaying === true;
     if (rolling) {
+        // Worker readiness and its first input block can arrive after this
+        // admission. Keep the committed playback correlation for sample zero;
+        // a later tick, tempo edit or stop must not replace this pair.
+        transportHold.rolledAtContextSeconds = playheadClockRef.audioTimeSeconds;
+        transportHold.captureStartSongSeconds = secondsBetweenBeats(
+            admissionChanges,
+            0,
+            playheadClockRef.beat,
+            admissionTempo
+        );
         clips = startRecording(playheadPositionRef.current);
     } else {
         clips = startRecording(anchorBeat, () => transportHold.firstPassContextSeconds);

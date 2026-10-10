@@ -100,3 +100,10 @@ Check the selected PCM, raw document/store agreement, and one Undo/Redo.
 The PR #5165 review initially covered edits before the old entry and capture
 before roll; it missed both late first input and an edit after the old entry
 but before the first completed seam.
+
+The PR #5165 new-roll first-frame probe also missed Record joining playback:
+that route has no `onRoll` callback. Probe both start routes through the real
+first nonempty processor block, retaining the immutable playing beat/context
+correlation across worker readiness and a tempo edit. Distinguish the short
+clip's carrier from its actual sample count, and prove the same placement and
+PCM survive real Command/CRDT Undo/Redo.
