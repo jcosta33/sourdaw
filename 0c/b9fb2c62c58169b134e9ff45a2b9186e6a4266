@@ -1,0 +1,23 @@
+.dependency-cruiser-known-violations-contract-reexports.json
+  s_97ab82e0b4f10c::t_0d61c92166c441 2-28,56-64,83-100,110-145,173-181,209-217,227-307,317-325
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_97ab82e0b4f10c::t_7abf929b7958d8 1461-1530
+scripts/check-dependency-boundaries.mjs
+  s_97ab82e0b4f10c::t_76946db52901de 1606-1640,1648-1691
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0cb9fb2c62c58169b134e9ff45a2b9186e6a4266",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
