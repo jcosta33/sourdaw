@@ -1,15 +1,73 @@
 import { getAutomationLanes, isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
-import { type AppAction, type ClipAutomationLaneSnapshot, type ClipSnapshot } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type AudioSourceStateSnapshot,
+    type ClipAutomationLaneSnapshot,
+    type ClipSnapshot,
+} from '#/utils/handlerContract';
 
+import { type Clip } from '../../models/Track';
 import { getTrackStoreState } from '../getTrackStoreState';
 
-type LocatedClip = { owningTrackId: string; clip: ClipSnapshot };
+import { audioSourceAfterSlip } from './audioSourceAfterSlip';
+import { audioSourceAtBeat } from './audioSourceAtBeat';
+
+type ReplayClip = ClipSnapshot & Partial<Clip>;
+type LocatedClip = { owningTrackId: string; clip: ReplayClip };
 type ShiftedOwnerState = {
     clips: readonly LocatedClip[];
     lanes: readonly ClipAutomationLaneSnapshot[];
 };
 
-/** Exactly the geometry and automation `undoRippleDelete` writes, in group order.
+function withAudioSource(clip: ReplayClip, source: AudioSourceStateSnapshot): ReplayClip {
+    const { audioOffsetSeconds: _sourceSeconds, audioOffsetBeats: _sourceBeats, ...restored } = clip;
+    if (source.audioOffsetSeconds !== null) {
+        restored.audioOffsetSeconds = source.audioOffsetSeconds;
+    }
+    if (source.audioOffsetBeats !== null) {
+        restored.audioOffsetBeats = source.audioOffsetBeats;
+    }
+    return restored;
+}
+
+function projectClipEdit(clip: ReplayClip, action: AppAction): ReplayClip {
+    if (action.type === 'trimClipStart' && action.payload.clipId === clip.id && clip.type === 'audio') {
+        const startBeat = Math.max(0, action.payload.newStartBeat);
+        return withAudioSource(
+            { ...clip, startBeat },
+            action.payload.restoreAudioSource ?? audioSourceAtBeat(clip, startBeat)
+        );
+    }
+    if (action.type === 'slipClipContent' && action.payload.clipId === clip.id) {
+        if (action.payload.clipType === 'audio') {
+            return withAudioSource(
+                clip,
+                action.payload.restoreAudioSource ??
+                    audioSourceAfterSlip(clip, action.payload.offset, action.payload.offsetSeconds)
+            );
+        }
+        if (action.payload.clipType === 'midi') {
+            return { ...clip, midiOffsetBeats: action.payload.offset };
+        }
+    }
+    if (action.type === 'setTempo' && action.payload.sourceTransition) {
+        const transition = action.payload.sourceTransition;
+        const source = transition.clips.find(
+            (candidate) =>
+                candidate.alternativeId === null && candidate.trackId === clip.trackId && candidate.clipId === clip.id
+        );
+        if (source) {
+            if (transition.direction === 'apply') {
+                return { ...clip, audioOffsetSeconds: source.audioOffsetSeconds };
+            }
+            const { audioOffsetSeconds: _removed, ...restored } = clip;
+            return restored;
+        }
+    }
+    return clip;
+}
+
+/** The clip geometry/source and automation prior replay members write, in group order.
  * Restored lanes matter even when that earlier removal did not ripple: a later
  * inverse may shift the clip the earlier inverse just brought back. */
 export function projectClipReplayPrefix(priorActions: readonly AppAction[] = []): ShiftedOwnerState | null {
@@ -19,6 +77,10 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
         lanes: getAutomationLanes(),
     };
     for (const action of priorActions) {
+        state = {
+            ...state,
+            clips: state.clips.map((owner) => ({ ...owner, clip: projectClipEdit(owner.clip, action) })),
+        };
         if (action.type === 'restoreClipSplitState') {
             const { clipId, rightClipId, replacement } = action.payload;
             const trackClips = state.clips

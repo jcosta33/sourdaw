@@ -1,5 +1,10 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerExecutionResult, type TempoAudioSourceTransition } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type HandlerExecutionResult,
+    type HandlerValidationContext,
+    type TempoAudioSourceTransition,
+} from '#/utils/handlerContract';
 
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { tempoMapStore } from '../../stores/tempoMapStore';
@@ -59,7 +64,7 @@ function nextTempoAtBeat(action: SetTempoAction, tempoChangeId: string | null): 
     return (beat) => getTempoAtBeat(nextChanges, beat, baseTempo);
 }
 
-function prepareSourceChange(action: SetTempoAction, tempoChangeId: string | null) {
+function prepareSourceChange(action: SetTempoAction, tempoChangeId: string | null, context?: HandlerValidationContext) {
     if (!tempoSourceDependencies.available()) {
         return null;
     }
@@ -70,6 +75,7 @@ function prepareSourceChange(action: SetTempoAction, tempoChangeId: string | nul
     return tempoSourceDependencies.prepare({
         nextTempoAtBeat: nextTempoAtBeat(action, tempoChangeId),
         replay: action.payload.sourceTransition,
+        context,
     });
 }
 
@@ -138,7 +144,7 @@ export const handleSetTempo = createHandler<'setTempo'>({
         );
     },
     canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
-    validate: (action) => {
+    validate: (action, context) => {
         const target = getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId });
         const targetMatches =
             (action.payload.sourceTransition === undefined || action.payload.expectedBpm !== undefined) &&
@@ -150,7 +156,7 @@ export const handleSetTempo = createHandler<'setTempo'>({
         return (
             !tempoSourceDependencies.available() ||
             (action.payload.expectedBpm !== undefined && action.payload.sourceTransition === undefined) ||
-            prepareSourceChange(action, target.tempoChangeId) !== null
+            prepareSourceChange(action, target.tempoChangeId, context) !== null
         );
     },
     execute: (alpha): HandlerExecutionResult | void => {

@@ -3,7 +3,7 @@ import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { type Clip } from '../../models/Track';
 
 export function audioSourceAfterSlip(
-    clip: Clip,
+    clip: Pick<Clip, 'startBeat'>,
     offsetBeats: number,
     offsetSeconds?: number
 ): { audioOffsetSeconds: number; audioOffsetBeats: number } {

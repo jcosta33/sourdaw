@@ -1,4 +1,4 @@
-import { type TempoAudioSourceTransition } from '#/utils/handlerContract';
+import { type HandlerValidationContext, type TempoAudioSourceTransition } from '#/utils/handlerContract';
 
 export type PreparedTempoAudioSources = {
     transition: TempoAudioSourceTransition;
@@ -9,6 +9,7 @@ export type PreparedTempoAudioSources = {
 type PrepareAudioSourcesForTempoChange = (input: {
     nextTempoAtBeat: (beat: number) => number;
     replay?: TempoAudioSourceTransition;
+    context?: HandlerValidationContext;
 }) => PreparedTempoAudioSources | null;
 
 type TempoSourceDependencies = {

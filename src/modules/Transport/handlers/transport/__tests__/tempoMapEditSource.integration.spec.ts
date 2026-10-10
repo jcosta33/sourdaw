@@ -19,6 +19,7 @@ import {
     compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
     executeAppAction,
+    executeAppActionBatch,
     redo,
     registerProductionCommandHandlers,
     serializeVersionedCommandEnvelope,
@@ -161,6 +162,160 @@ describe('tempo map edit preserves canonical audio source', () => {
         expect(tempoMapStore.value?.changes[0]?.id).toBeTruthy();
         expect(trackStore.value?.tracks[0]?.clips[0]?.audioOffsetSeconds).toBe(1);
     });
+
+    it('replays a saved tempo then trim group from its committed prefix with exact legacy absence', async () => {
+        clearHandlerRegistry();
+        registerProductionHandlers();
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [
+                {
+                    ...trackStore.value!.tracks[0]!,
+                    alternatives: [
+                        {
+                            id: 'inactive-alt',
+                            name: 'Inactive',
+                            clips: [{ ...legacyClip, id: 'inactive', audioOffsetBeats: 4 }],
+                        },
+                    ],
+                },
+            ],
+        });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-1',
+                            name: 'Take',
+                            startBeat: 8,
+                            endBeat: 12,
+                            selected: true,
+                            sourceOffsetBeats: 2,
+                        },
+                    ],
+                    activeCompRegions: [],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value);
+        const beforeTakes = structuredClone(takeLaneStore.value);
+        const result = await executeAppActionBatch(
+            [
+                { type: 'setTempo', payload: { bpm: 60 } },
+                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 9 } },
+            ],
+            { source: 'manual', groupId: 'tempo-trim-prefix' }
+        );
+        expect(result.status).toBe('committed');
+        expect(transportStore.value?.tempo).toBe(60);
+        expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({ startBeat: 9, audioOffsetSeconds: 2 });
+        const after = structuredClone(trackStore.value);
+        const afterTakes = structuredClone(takeLaneStore.value);
+        expect(after?.tracks[0]?.alternatives[0]?.clips[0]?.audioOffsetSeconds).toBe(2);
+        expect(afterTakes?.lanes[0]?.takes[0]?.sourceOffsetSeconds).toBe(1);
+        const assertRaw = () => {
+            const raw = getCrdtDoc<{
+                tracks: NonNullable<typeof trackStore.value>;
+                transport: NonNullable<typeof transportStore.value>;
+                takeLanes: NonNullable<typeof takeLaneStore.value>;
+            }>('root');
+            expect(raw?.tracks.tracks[0]?.clips).toEqual(trackStore.value?.tracks[0]?.clips);
+            expect(raw?.transport.tempo).toBe(transportStore.value?.tempo);
+            expect(raw?.tracks.tracks[0]?.alternatives[0]?.clips).toEqual(
+                trackStore.value?.tracks[0]?.alternatives[0]?.clips
+            );
+            expect(raw?.takeLanes).toEqual(takeLaneStore.value);
+        };
+        assertRaw();
+        await vi.waitFor(() => {
+            const saved: unknown = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}');
+            expect(saved).toMatchObject({ past: [expect.anything(), expect.anything()] });
+        });
+        clearHandlerRegistry();
+        registerProductionHandlers();
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        for (const cycle of [1, 2]) {
+            expect((await undo()).headConsumed, `Undo cycle ${cycle}`).toBe(true);
+            expect(transportStore.value?.tempo).toBe(120);
+            expect(trackStore.value).toEqual(before);
+            expect(takeLaneStore.value).toEqual(beforeTakes);
+            expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('audioOffsetSeconds');
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(undoHistoryStore.value?.future).toHaveLength(2);
+            assertRaw();
+            await redo();
+            expect(transportStore.value?.tempo).toBe(60);
+            expect(trackStore.value).toEqual(after);
+            expect(takeLaneStore.value).toEqual(afterTakes);
+            expect(undoHistoryStore.value?.past).toHaveLength(2);
+            expect(undoHistoryStore.value?.future).toHaveLength(0);
+            assertRaw();
+        }
+    });
+
+    it.each(['undo', 'redo'] as const)(
+        'refuses the tempo then trim group atomically after a peer source edit before %s',
+        async (leg) => {
+            registerHandlerMap(getArrangementHandlers());
+            const result = await executeAppActionBatch(
+                [
+                    { type: 'setTempo', payload: { bpm: 60 } },
+                    { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 9 } },
+                ],
+                { source: 'manual', groupId: 'tempo-trim-conflict' }
+            );
+            expect(result.status).toBe('committed');
+            if (leg === 'redo') {
+                expect((await undo()).headConsumed).toBe(true);
+            }
+            mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+                id: 'root',
+                changeFn: (project) => {
+                    project.tracks.tracks[0]!.clips[0]!.audioOffsetSeconds = 99;
+                },
+            });
+            projectCrdtToStores();
+            const raw = structuredClone(getCrdtDoc('root'));
+            const owners = structuredClone({
+                tracks: trackStore.value,
+                transport: transportStore.value,
+                takes: takeLaneStore.value,
+            });
+            const history = undoHistoryStore.value;
+            const writes = [
+                vi.spyOn(trackStore, 'set'),
+                vi.spyOn(transportStore, 'set'),
+                vi.spyOn(takeLaneStore, 'set'),
+                vi.spyOn(undoHistoryStore, 'set'),
+            ];
+            try {
+                if (leg === 'undo') {
+                    expect((await undo()).headConsumed).toBe(false);
+                } else {
+                    await redo();
+                }
+                expect(getCrdtDoc('root')).toEqual(raw);
+                expect({
+                    tracks: trackStore.value,
+                    transport: transportStore.value,
+                    takes: takeLaneStore.value,
+                }).toEqual(owners);
+                expect(undoHistoryStore.value).toBe(history);
+                for (const write of writes) {
+                    expect(write).not.toHaveBeenCalled();
+                }
+            } finally {
+                for (const write of writes) {
+                    write.mockRestore();
+                }
+            }
+        }
+    );
 
     it('hydrates the saved add replay and retains its materialized event identity', async () => {
         clearHandlerRegistry();

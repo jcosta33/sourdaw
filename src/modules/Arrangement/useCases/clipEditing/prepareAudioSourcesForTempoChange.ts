@@ -1,6 +1,6 @@
 import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
-import { type TempoAudioSourceTransition } from '#/utils/handlerContract';
+import { type HandlerValidationContext, type TempoAudioSourceTransition } from '#/utils/handlerContract';
 
 import { type Take, type TakeLane } from '../../models/TakeLane';
 import { type Clip, type Track } from '../../models/Track';
@@ -8,6 +8,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';
 
 import { isTempoAudioSourceTransition } from './isTempoAudioSourceTransition';
+import { projectClipReplayPrefix } from './projectClipReplayPrefix';
 
 type ClipSource = TempoAudioSourceTransition['clips'][number];
 type TakeSource = TempoAudioSourceTransition['takes'][number];
@@ -220,6 +221,7 @@ function withTakeSource(take: Take, source: TakeSource, direction: TempoAudioSou
 type TempoSourceInput = {
     nextTempoAtBeat: (beat: number) => number;
     replay?: TempoAudioSourceTransition;
+    context?: HandlerValidationContext;
 };
 
 function captureTransition(
@@ -361,9 +363,11 @@ function takeSourceStateMatches(
     );
 }
 
-function sourceStateMatches(transition: TempoAudioSourceTransition): boolean {
-    const currentTracks = trackStore.value;
-    const currentLanes = takeLaneStore.value;
+function sourceStateMatches(
+    transition: TempoAudioSourceTransition,
+    currentTracks = trackStore.value,
+    currentLanes = takeLaneStore.value
+): boolean {
     if (!currentTracks || !currentLanes) {
         return false;
     }
@@ -435,10 +439,41 @@ function applyTransition(transition: TempoAudioSourceTransition): void {
 }
 
 export function prepareAudioSourcesForTempoChange(input: TempoSourceInput): PreparedTempoAudioSources | null {
-    const tracks = trackStore.value;
+    let tracks = trackStore.value;
     const lanes = takeLaneStore.value;
     if (!tracks || !lanes) {
         return null;
+    }
+    const priorActions = input.context?.actions.slice(0, input.context.actionIndex) ?? [];
+    if (priorActions.length > 0) {
+        const projected = projectClipReplayPrefix(priorActions);
+        if (!projected) {
+            return null;
+        }
+        // The projection changes only active clip facets. Hidden alternatives
+        // and take ownership still participate in their original peer guards.
+        tracks = {
+            ...tracks,
+            tracks: tracks.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => {
+                    const owner = projected.clips.find(
+                        (candidate) => candidate.owningTrackId === track.id && candidate.clip.id === clip.id
+                    );
+                    if (!owner) {
+                        return clip;
+                    }
+                    const projectedClip = { ...clip, ...owner.clip };
+                    if (!Object.hasOwn(owner.clip, 'audioOffsetSeconds')) {
+                        delete projectedClip.audioOffsetSeconds;
+                    }
+                    if (!Object.hasOwn(owner.clip, 'audioOffsetBeats')) {
+                        delete projectedClip.audioOffsetBeats;
+                    }
+                    return projectedClip;
+                }),
+            })),
+        };
     }
     const locations = allClipLocations(tracks.tracks);
     if (!locations) {
@@ -456,7 +491,7 @@ export function prepareAudioSourcesForTempoChange(input: TempoSourceInput): Prep
         !transition.takes.every((source) =>
             takeTempoReferenceMatches(source, locations, lanes.lanes, transition, input.nextTempoAtBeat)
         ) ||
-        !sourceStateMatches(transition)
+        !sourceStateMatches(transition, tracks, lanes)
     ) {
         return null;
     }
