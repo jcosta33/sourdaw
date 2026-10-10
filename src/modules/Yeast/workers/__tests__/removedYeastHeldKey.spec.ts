@@ -528,6 +528,57 @@ describe('a key released after its Yeast left the chain, through the real Yeast 
         expect(levainPitchesOff()).not.toContain(64);
     });
 
+    async function expectKeyUpWithheldFromReplacement(
+        removedRack: YeastProcessorInfo[],
+        replacementRack: YeastProcessorInfo[]
+    ): Promise<void> {
+        setChain([YEAST_DEVICE, device(REPLACEMENT_YEAST_ID, 'yeast'), LEVAIN_DEVICE]);
+        hydrateYeastState({
+            racks: {
+                [YEAST_ID]: { processors: removedRack },
+                [REPLACEMENT_YEAST_ID]: { processors: replacementRack },
+            },
+        });
+        setChain([YEAST_DEVICE, LEVAIN_DEVICE]);
+
+        await triggerLiveNoteOn(0, 60, 100);
+        setChain([device(REPLACEMENT_YEAST_ID, 'yeast'), LEVAIN_DEVICE]);
+        await triggerLiveNoteOn(0, 64, 100);
+        expect(levainPitchesOn()).toContain(64);
+        const projectionsBeforeKeyUp = worker.installedProjections.length;
+
+        await triggerLiveNoteOff(0, 60);
+
+        expect(worker.installedProjections.slice(projectionsBeforeKeyUp)).toEqual([]);
+        expect(levainPitchesOff()).not.toContain(64);
+    }
+
+    it('withholds the removed Yeast’s key-up from a replacement rack whose shared processor differs only in bypass', async () => {
+        await expectKeyUpWithheldFromReplacement(
+            [{ id: 'tr-shared', type: 'transposer', name: 'Transposer', bypassed: false, params: {} }],
+            [{ id: 'tr-shared', type: 'transposer', name: 'Transposer', bypassed: true, params: {} }]
+        );
+    });
+
+    it('withholds the removed Yeast’s key-up from a replacement rack holding the same processors in another order', async () => {
+        const velocity: YeastProcessorInfo = {
+            id: 'vel-shared',
+            type: 'velocity',
+            name: 'Velocity',
+            bypassed: false,
+            params: {},
+        };
+        const transposer: YeastProcessorInfo = {
+            id: 'tr-shared',
+            type: 'transposer',
+            name: 'Transposer',
+            bypassed: false,
+            params: {},
+        };
+
+        await expectKeyUpWithheldFromReplacement([velocity, transposer], [transposer, velocity]);
+    });
+
     it('withholds the removed Yeast’s key-up from a replacement rack with the same processor id but another type', async () => {
         setChain([YEAST_DEVICE, device(REPLACEMENT_YEAST_ID, 'yeast'), LEVAIN_DEVICE]);
         hydrateYeastState({

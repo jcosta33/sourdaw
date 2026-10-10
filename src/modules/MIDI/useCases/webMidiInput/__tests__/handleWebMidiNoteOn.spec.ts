@@ -1967,6 +1967,35 @@ describe('handleWebMidiNoteOn', () => {
             expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
         });
 
+        it('gives the removed Yeast’s key-up no drain callback, so notes the rack drains for it sound nowhere', async () => {
+            const nodes = keyboard_strip();
+            const live = live_chain(
+                [
+                    { id: 'y', type: 'yeast' },
+                    { id: 'lev-1', type: 'levain' },
+                ],
+                async () => []
+            );
+            live.processNoteOff.mockImplementation(async (input) => {
+                input.onDrainedEvents?.([
+                    {
+                        timeSamples: 96_300,
+                        noteInstanceId: 'arp:generated:9',
+                        kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+                    },
+                ]);
+                return [];
+            });
+
+            await live.noteOn(0, 60, 100);
+            live.chain.devices = [{ id: 'lev-1', type: 'levain' }];
+            await live.noteOff(0, 60);
+
+            expect(live.processNoteOff).toHaveBeenCalledTimes(1);
+            expect(live.processNoteOff.mock.calls[0]![0].onDrainedEvents).toBeUndefined();
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
         it('still ends the key’s release when the removed Yeast’s rack rejects the key-up', async () => {
             const nodes = keyboard_strip();
             const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});

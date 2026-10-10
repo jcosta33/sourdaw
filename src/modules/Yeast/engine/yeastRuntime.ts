@@ -1,6 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
+import { sameYeastProcessorTopology } from '../models/YeastProcessorProjection';
+
 import { yeastPreviewTap, type YeastPreviewBinding } from './yeastPreviewTap';
 import { createYeastWorker, type YeastWorkerResult } from './YeastWorkerClient';
 
@@ -29,10 +31,10 @@ type ProcessYeastRuntimeTransactionInput = ProcessYeastRuntimeBlockInput & {
     projection: readonly YeastProcessorProjectionItem[];
     /**
      * Skip the transaction, returning `null`, unless the worker already holds
-     * the processors of `projection` (same ids and types, in order): the worker
-     * runs one rack, so installing another settles the rack it runs and loses
-     * that rack's processor state. A change of parameters alone keeps the
-     * processors, so it still delivers.
+     * the rack topology of `projection` (same processor ids, types and bypass
+     * states, in order): the worker runs one rack, so installing another
+     * settles the rack it runs and loses that rack's processor state. A change
+     * of parameters alone keeps the topology, so it still delivers.
      */
     onlyWhileProjectionCurrent?: boolean;
 };
@@ -225,20 +227,14 @@ function clearAppliedProjection(): void {
 }
 
 /**
- * Whether the worker runs the processors `projection` names. This is the
- * worker rack's own notion of topology (`MidiRack.replaceProjection` keeps its
- * processors and their held input unless ids or types change), so a delivery
- * that passes it can at most change parameters, never settle another rack.
+ * Whether the worker already runs the rack topology `projection` names, by the
+ * worker rack's own rule (`MidiRack.topologyMatches`: ids, types, bypass states
+ * and order), so a delivery that passes it can at most change parameters and
+ * never settles another rack.
  */
 function workerHoldsProcessorsOf(projection: readonly YeastProcessorProjectionItem[]): boolean {
     const held = session.appliedProjection;
-    if (!held || held.length !== projection.length) {
-        return false;
-    }
-    return held.every((processor, index) => {
-        const desired = projection[index]!;
-        return processor.id === desired.id && processor.type === desired.type;
-    });
+    return held !== null && sameYeastProcessorTopology(held, projection);
 }
 
 function isLiveRuntime(node: YeastWorkerResult, generation: number): boolean {
