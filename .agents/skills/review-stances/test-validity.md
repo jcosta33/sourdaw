@@ -6,6 +6,20 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
+
+The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
+failed on a Rust distribution metadata TCP timeout before rustfmt or any health gate ran. Cargo
+dependency caches after setup could not affect that failure. The missed CI runtime stance treated a
+later green Rust job as evidence of recovery without proving its compiler setup path had changed.
+
+Probe that would have caught it: trace the first compiler invocation and place an exact host-and-
+TOML-keyed installed-toolchain restore before it. With the distribution endpoint unavailable,
+require a complete exact hit to run rustc, rustfmt, and clippy with automatic installation disabled;
+require a mismatched or incomplete hit to fail closed, and a cold install error to fail before Cargo
+caches and health gates. A local fake endpoint proves the wiring only; hosted proof needs the
+actual seeded main cache and a new-head required Rust run.
+
 ### 2026-10-09 — authority tests fixed PR state for the whole run (introduced by PR #4586)
 
 PR #4586 introduced the authority append with a publication fixture whose PR reader always
