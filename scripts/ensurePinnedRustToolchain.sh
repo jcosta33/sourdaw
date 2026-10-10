@@ -63,6 +63,23 @@ if [ -z "$host" ] || [ "$active" != "$pin-$host" ]; then
   exit 1
 fi
 
+sysroot=$(rustup run "$active" rustc --print sysroot)
+python3 - "$sysroot/lib/rustlib/multirust-channel-manifest.toml" "${pin#nightly-}" <<'PY'
+import sys
+import tomllib
+
+manifest_path, expected_date = sys.argv[1:]
+try:
+    with open(manifest_path, 'rb') as file:
+        actual_date = tomllib.load(file).get('date')
+except (OSError, tomllib.TOMLDecodeError) as error:
+    raise SystemExit(f'cannot read restored Rust channel manifest: {error}')
+if actual_date != expected_date:
+    raise SystemExit(
+        f'restored Rust toolchain channel manifest does not match pinned nightly {expected_date}: {actual_date!r}'
+    )
+PY
+
 installed=$(rustup component list --installed --toolchain "$active")
 printf '%s\n' "$installed" | grep -Fx "rustc-$host" >/dev/null
 printf '%s\n' "$installed" | grep -Fx "cargo-$host" >/dev/null
@@ -77,8 +94,8 @@ done <<< "$components"
 # Rustup's component registry can survive a partial restore without usable host libraries.
 std_probe_output=$(mktemp)
 trap 'rm -f -- "$std_probe_output"' EXIT
-rustup run "$active" rustc --crate-name pinned_rust_std_probe --crate-type lib --emit=metadata -o "$std_probe_output" - <<'RS'
-pub fn probe() { let _ = std::mem::size_of::<usize>(); }
+rustup run "$active" rustc --crate-name pinned_rust_std_probe --crate-type bin -o "$std_probe_output" - <<'RS'
+fn main() { let _ = std::mem::size_of::<usize>(); }
 RS
 
 rustup run "$active" cargo --version

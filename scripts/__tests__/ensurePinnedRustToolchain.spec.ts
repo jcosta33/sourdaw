@@ -19,7 +19,8 @@ function runSetup(
     incomplete = false,
     wrongPin = false,
     missingHostStd = false,
-    unusableHostStd = false
+    unusableHostStd = false,
+    fixture: { wrongManifest?: boolean; linkIncomplete?: boolean } = {}
 ) {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-pinned-rust-'));
     roots.push(root);
@@ -29,6 +30,12 @@ function runSetup(
     const source = join(root, 'std-probe.rs');
     const githubEnv = join(root, 'github-env');
     const toolchain = join(root, 'rust-toolchain.toml');
+    const sysroot = join(root, 'toolchains', 'nightly-2026-04-14-x86_64-unknown-linux-gnu');
+    mkdirSync(join(sysroot, 'lib', 'rustlib'), { recursive: true });
+    writeFileSync(
+        join(sysroot, 'lib', 'rustlib', 'multirust-channel-manifest.toml'),
+        `manifest-version = "2"\ndate = "${fixture.wrongManifest ? '2026-04-15' : '2026-04-14'}"\n`
+    );
     writeFileSync(
         toolchain,
         '[toolchain]\nchannel = "nightly-2026-04-14"\nprofile = "minimal"\ncomponents = ["rustfmt", "clippy"]\n'
@@ -56,9 +63,11 @@ case "$*" in
     [ "$RUSTUP_TEST_MISSING_HOST_STD" = 1 ] || printf '%s\\n' 'rust-std-x86_64-unknown-linux-gnu'
     [ "$RUSTUP_TEST_INCOMPLETE" = 1 ] || printf '%s\\n' 'rustfmt-x86_64-unknown-linux-gnu' 'clippy-x86_64-unknown-linux-gnu' ;;
   'run nightly-2026-04-14-x86_64-unknown-linux-gnu rustc -vV') printf '%s\\n' 'rustc 1.89.0-nightly' 'host: x86_64-unknown-linux-gnu' ;;
-  'run nightly-2026-04-14-x86_64-unknown-linux-gnu rustc --crate-name pinned_rust_std_probe --crate-type lib --emit=metadata -o '*)
+  'run nightly-2026-04-14-x86_64-unknown-linux-gnu rustc --print sysroot') printf '%s\\n' "$RUSTUP_TEST_SYSROOT" ;;
+  'run nightly-2026-04-14-x86_64-unknown-linux-gnu rustc --crate-name pinned_rust_std_probe --crate-type bin -o '*)
     cat > "$RUSTUP_TEST_SOURCE"
     [ "$RUSTUP_TEST_UNUSABLE_HOST_STD" = 1 ] && { printf '%s\\n' 'error[E0463]: cannot find crate for std' >&2; exit 78; }
+    [ "$RUSTUP_TEST_LINK_INCOMPLETE" = 1 ] && { printf '%s\\n' 'crate std required to be available in rlib format' >&2; exit 79; }
     exit 0 ;;
   'run nightly-2026-04-14-x86_64-unknown-linux-gnu cargo --version') printf '%s\\n' 'cargo 1.89.0-nightly' ;;
   'run nightly-2026-04-14-x86_64-unknown-linux-gnu rustfmt --version') printf '%s\\n' 'rustfmt 1.8.0-nightly' ;;
@@ -81,12 +90,14 @@ esac
             GITHUB_ENV: githubEnv,
             RUSTUP_TEST_LOG: log,
             RUSTUP_TEST_SOURCE: source,
+            RUSTUP_TEST_SYSROOT: sysroot,
             RUSTUP_TEST_INSTALLED: installed ? '1' : '0',
             RUSTUP_TEST_EXACT_HIT: cacheHit === 'true' ? '1' : '0',
             RUSTUP_TEST_INCOMPLETE: incomplete ? '1' : '0',
             RUSTUP_TEST_WRONG_PIN: wrongPin ? '1' : '0',
             RUSTUP_TEST_MISSING_HOST_STD: missingHostStd ? '1' : '0',
             RUSTUP_TEST_UNUSABLE_HOST_STD: unusableHostStd ? '1' : '0',
+            RUSTUP_TEST_LINK_INCOMPLETE: fixture.linkIncomplete ? '1' : '0',
             RUSTUP_DIST_SERVER: 'http://127.0.0.1:9',
         },
     });
@@ -101,9 +112,7 @@ describe('pinned Rust setup', () => {
         expect(calls).not.toMatch(/^show$/m);
         expect(calls).not.toMatch(/^toolchain install(?: |$)/m);
         expect(calls).toContain('run nightly-2026-04-14-x86_64-unknown-linux-gnu rustc -vV');
-        expect(calls).toMatch(
-            /^run .* rustc --crate-name pinned_rust_std_probe --crate-type lib --emit=metadata -o .* -$/m
-        );
+        expect(calls).toMatch(/^run .* rustc --crate-name pinned_rust_std_probe --crate-type bin -o .* -$/m);
         expect(readFileSync(source, 'utf8')).toContain('std::mem::size_of::<usize>()');
         expect(readFileSync(githubEnv, 'utf8')).toContain('RUSTUP_AUTO_INSTALL=0');
     });
@@ -122,10 +131,34 @@ describe('pinned Rust setup', () => {
         expect(result.stdout).toBe('');
         expect(result.stderr).toContain('error[E0463]');
         expect(calls).toContain('component list --installed --toolchain nightly-2026-04-14-x86_64-unknown-linux-gnu');
-        expect(calls).toMatch(
-            /^run .* rustc --crate-name pinned_rust_std_probe --crate-type lib --emit=metadata -o .* -$/m
-        );
+        expect(calls).toMatch(/^run .* rustc --crate-name pinned_rust_std_probe --crate-type bin -o .* -$/m);
         expect(readFileSync(source, 'utf8')).toContain('std::mem::size_of::<usize>()');
+        expect(calls).not.toMatch(/^run .* (?:cargo|rustfmt|cargo-clippy) --version$/m);
+        expect(calls).not.toMatch(/^toolchain install(?: |$)/m);
+        expect(existsSync(githubEnv)).toBe(false);
+    });
+
+    it('rejects a registry-intact metadata-only host before Cargo admission', () => {
+        const { result, calls, githubEnv, source } = runSetup('true', true, false, false, false, false, {
+            linkIncomplete: true,
+        });
+        expect(result.status).toBe(79);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('crate std required to be available in rlib format');
+        expect(calls).toMatch(/^run .* rustc --crate-name pinned_rust_std_probe --crate-type bin -o .* -$/m);
+        expect(readFileSync(source, 'utf8')).toContain('std::mem::size_of::<usize>()');
+        expect(calls).not.toMatch(/^run .* (?:cargo|rustfmt|cargo-clippy) --version$/m);
+        expect(calls).not.toMatch(/^toolchain install(?: |$)/m);
+        expect(existsSync(githubEnv)).toBe(false);
+    });
+
+    it('rejects an expected-name restore whose channel manifest declares another nightly', () => {
+        const { result, calls, githubEnv } = runSetup('true', true, false, false, false, false, {
+            wrongManifest: true,
+        });
+        expect(result.status).not.toBe(0);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('channel manifest does not match pinned nightly');
         expect(calls).not.toMatch(/^run .* (?:cargo|rustfmt|cargo-clippy) --version$/m);
         expect(calls).not.toMatch(/^toolchain install(?: |$)/m);
         expect(existsSync(githubEnv)).toBe(false);

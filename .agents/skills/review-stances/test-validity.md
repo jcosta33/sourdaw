@@ -788,6 +788,9 @@ fixture must still pass without installation.
 
 The component registry alone is insufficient: a partial restore can retain its
 `rust-std-<host>` entry while losing the host library payload. Keep the registry
-entry in the broken fixture, make a one-input `std`-using metadata compile fail,
-and require setup to fail before Cargo admission with no install or success output.
-The complete exact-hit fixture must pass the same compile without installation.
+entry in the broken fixture, make a one-input `std`-using executable compile fail
+at the link step, and require setup to fail before Cargo admission with no install
+or success output. The complete exact-hit fixture must pass the same compile
+without installation. Also copy a different nightly under the expected directory
+name and require its channel manifest date to reject setup before Cargo; a compiler
+commit date need not equal the requested channel date.
