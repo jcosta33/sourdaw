@@ -223,8 +223,24 @@ export function resolveTrackClipsWithComping(
             continue;
         }
 
+        // A comped take fragment's media basis is the take's own: `offsetAt`
+        // names what sounds at the region head in take coordinates, so the
+        // offset carried below enters that basis at relative 0 and the source
+        // clip's loop anchor has no meaning in it — the take's offset never
+        // accumulated the anchor's trim advance. Carried through, the
+        // loop-window readers derive advance = fragmentStart − anchor from the
+        // fragment and pull the read off the comped material onto an earlier
+        // pass's (#5198: a region one loop past the anchor read pass 1 at
+        // buffer 0 instead of pass 3 at buffer 4). The anchor is therefore
+        // stripped and the fragment reads the pre-anchor law — window opening
+        // at its own offset, exactly the placed media it read before anchoring
+        // existed. Gap fragments below keep the anchor: their offset advances
+        // with the same beat as the window, so the source's region law holds
+        // there unchanged.
+        const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
+        const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
         resolvedClips.push({
-            ...withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart)),
+            ...takeFragmentBasis,
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,

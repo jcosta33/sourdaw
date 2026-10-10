@@ -358,8 +358,16 @@ export function scheduleAudioClips(
                         segmentEndBeat,
                         transport.tempo
                     );
+                    // Every segment's start walks beats from the pass head's
+                    // one clock read (`iterStartTime`) — never from a fresh
+                    // `getCurrentTime()` taken after the previous segment's
+                    // source was built, connected and started. Chromium
+                    // advances `AudioContext.currentTime` once per 128-sample
+                    // render quantum, so a second read could land a quantum
+                    // late and open a ~2.67 ms live-only gap at the wrap seam
+                    // that the tail's read-anchored end does not have.
                     const segmentStartTime =
-                        segment.startOffsetBeats === 0 ? iterStartTime : beatToAudioTime(segmentStartBeat);
+                        iterStartTime + secondsBetweenBeats(changes, iterStartBeat, segmentStartBeat, transport.tempo);
                     const segmentSourceStartSeconds = segment.sourceStartBeats / clipBeatsPerSecond;
                     // A negative source start — reachable and unfloored from
                     // both write paths, `slipClipContent` and a leftward
