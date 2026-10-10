@@ -1,0 +1,69 @@
+crates/daw-dsp/src/gluten/opto.rs
+  s_2bfd55a4393d7c::t_023c0b19c353bb 224-225
+  s_2bfd55a4393d7c::t_c28d5c4be5821e 58-59
+  s_2bfd55a4393d7c::t_20d1f13043050d 236-237
+  s_2bfd55a4393d7c::t_44ba7779a7a4b2 31-33
+  s_2bfd55a4393d7c::t_e9e5bfc58b02de 187-196
+crates/daw-dsp/tests/gluten_lookahead_every_topology.rs
+  s_2bfd55a4393d7c::t_d35dd755e9ecf5 259-265
+  s_2bfd55a4393d7c::t_fad22a0d0f283c 21-22,29-34,115-116,141-142,144,150-153,159-174,176-188,192-258,266,268-279
+  s_2bfd55a4393d7c::t_d718800d43c4be 112-114,117-140,145-149,154-158
+  s_2bfd55a4393d7c::t_99799c4141b062 267
+  s_2bfd55a4393d7c::t_616b3f7c049418 1-20,23-28,35-111,143,175,189-191
+crates/daw-dsp/src/gluten/engine.rs
+  s_2bfd55a4393d7c::t_459e2589cc9d97 440-442
+  s_2bfd55a4393d7c::t_f50894fae17ee6 479,487-490,495
+  s_2bfd55a4393d7c::t_34953e64193c36 654-661
+  s_2bfd55a4393d7c::t_d5226fc0b04937 606-607,614,618-619,622-632
+  s_2bfd55a4393d7c::t_d1df3b75c25d11 448
+  s_2bfd55a4393d7c::t_247f919f325b67 653
+crates/daw-dsp/src/gluten/vca.rs
+  s_2bfd55a4393d7c::t_d23dafd16b3998 130-131
+  s_2bfd55a4393d7c::t_56a035a2d60260 289-290
+  s_2bfd55a4393d7c::t_9f9c9aab6dbd57 103-105
+  s_2bfd55a4393d7c::t_b622a2a5de1fae 238-258
+  s_2bfd55a4393d7c::t_f2c2c5e19c10f6 303-304
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_2bfd55a4393d7c::t_8722629dc1f046 81-83
+src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptorGuidanceCompression.ts
+  s_2bfd55a4393d7c::t_dc28a2b81789d2 97
+  s_2bfd55a4393d7c::t_e43a368f5bab6f 200
+crates/daw-dsp/tests/device_process_rt.rs
+  s_2bfd55a4393d7c::t_01a0f7ffc7ea34 1145-1202
+crates/daw-dsp/src/gluten/diode.rs
+  s_2bfd55a4393d7c::t_f9985820aa7568 224-225
+  s_2bfd55a4393d7c::t_2da86f968654f9 63-64
+  s_2bfd55a4393d7c::t_0770b8c7ae4d81 132-140
+  s_2bfd55a4393d7c::t_284a1687082c0d 236-237
+  s_2bfd55a4393d7c::t_77f140ddb99c6c 38-40
+crates/daw-dsp/src/gluten/fet.rs
+  s_2bfd55a4393d7c::t_34aa50f998b35f 44-46,73-74,182-197,234,244-245,256-257,263-270
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_1a2945a4828190 10
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_01a64d1c6bba72 1,990-1003,1175-1190
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_d6e0dd1ffdd631 1,5-18,190-205
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_0773af088864be 12,16-18,21
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_a26a1c596d8fc4 1344,1350,1770
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_79bc452848051f 1,990-1003,1175-1190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6867de9bb7d843d637241218fee069e534c1da78",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
