@@ -1,0 +1,27 @@
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveAllTracks.modulation.integration.spec.ts
+  s_1f0dcd815e8946::t_eb44b9b6329c03 1-2,10,26,44-45,63,76-79,186-191,262-415
+src/modules/Arrangement/handlers/track/handleRemoveAllTracks.ts
+  s_1f0dcd815e8946::t_55728b2cd85bd3 55,57-58
+src/modules/Arrangement/handlers/track/handleRemoveTrack.ts
+  s_1f0dcd815e8946::t_66b8ae81025d93 102,104-107
+src/modules/Arrangement/useCases/__tests__/removeTrackModulationReferences.spec.ts
+  s_1f0dcd815e8946::t_14f81c1aa621d3 3,5,92,137-218
+src/modules/Arrangement/useCases/removeTrackModulationReferences.ts
+  s_1f0dcd815e8946::t_8c7f274603095e 74-87,89-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f662221c6c66b0d8d9452532b01c04bf36d06257",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
