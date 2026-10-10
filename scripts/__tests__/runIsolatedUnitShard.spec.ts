@@ -315,6 +315,15 @@ describe('required unit account isolation', () => {
         }
     });
 
+    it.each(['1/4 --context=/private', '--shard=1/4'])(
+        'rejects helper arguments embedded in the Vitest shard %s before launching pnpm',
+        (shard) => {
+            const { ports, run } = runtimePorts();
+            expect(() => runUnitPhase(context, 'shard', shard, ports)).toThrow('unit shard must remain one of four');
+            expect(run).not.toHaveBeenCalled();
+        }
+    );
+
     it.each([
         'UID',
         'GID',
