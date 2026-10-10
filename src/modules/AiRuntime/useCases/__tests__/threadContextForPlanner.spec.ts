@@ -139,6 +139,8 @@ function confirmation(input: {
     projectId?: string;
     actions?: ThreadContextSources['confirmations'][number]['approvalSnapshot']['actions'];
     actionLabels?: readonly string[];
+    /** What its executed actions changed; a batch that has not executed has none. */
+    executionKind?: 'project' | 'runtime';
 }): ThreadContextSources['confirmations'][number] & { groupId: string } {
     const approvalSnapshot: ThreadContextSources['confirmations'][number]['approvalSnapshot'] = {
         actions: input.actions ?? [GAIN_ACTION],
@@ -156,6 +158,7 @@ function confirmation(input: {
         supersededBy: input.supersededBy ?? null,
         batchId,
         groupId: input.groupId ?? batchId,
+        executedActions: input.executionKind === undefined ? [] : [{ executionKind: input.executionKind }],
         approvalSnapshot,
     };
 }
@@ -557,6 +560,63 @@ describe('thread context for the planner', () => {
             expect(thread?.lastCommit).toMatchObject({
                 runId: 'run-failed',
                 receiptIds: ['command:run-failed:batch-1'],
+            });
+        });
+
+        describe('a confirmed batch that only drove the transport', () => {
+            const DRUMS_BATCH = 'run-drums:batch-1';
+
+            function threadAfterTransport(transport: { executionKind: 'project' | 'runtime' }) {
+                return buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'turn the drums down 3 dB'),
+                            commandMessage('assistant-1', 'run-drums'),
+                            message('user-2', 'user', 'play from bar 1'),
+                            message('assistant-2', 'assistant', 'Executed.'),
+                        ],
+                        confirmations: [
+                            confirmation({
+                                runId: 'run-play',
+                                assistantMessageId: 'assistant-2',
+                                status: 'executed',
+                                executionKind: transport.executionKind,
+                                actions: [{ type: 'seekPlayhead', payload: { beat: 0 } }],
+                                actionLabels: ['Seek to beat 0'],
+                            }),
+                        ],
+                        runs: [
+                            { runId: 'run-drums', receipts: [receipt('run-drums')] },
+                            { runId: 'run-play', receipts: [{ ...receipt('run-play'), revertGroupId: null }] },
+                        ],
+                        actionGroups: [
+                            {
+                                groupId: DRUMS_BATCH,
+                                reverted: false,
+                                actions: [{ actionType: 'setTrackGain', label: 'Set Drums gain to -3 dB' }],
+                            },
+                        ],
+                        pastGroupIds: new Set([DRUMS_BATCH]),
+                    })
+                )?.lastCommit;
+            }
+
+            it('is never the last commit, and the project commit before it still is', () => {
+                expect(threadAfterTransport({ executionKind: 'runtime' })).toEqual({
+                    runId: 'run-drums',
+                    receiptIds: [`command:${DRUMS_BATCH}`],
+                    standing: 'standing',
+                    commands: [{ name: 'setTrackGain', label: 'Set Drums gain to -3 dB' }],
+                    measuredDeltas: [],
+                });
+            });
+
+            it('stays a commit, read as unknown, when it changed the project but its entries carry no group', () => {
+                expect(threadAfterTransport({ executionKind: 'project' })).toMatchObject({
+                    runId: 'run-play',
+                    receiptIds: ['command:run-play:batch-1'],
+                    standing: 'unknown',
+                });
             });
         });
 
