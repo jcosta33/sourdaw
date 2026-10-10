@@ -79,7 +79,9 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     // Gluten, Bacteria and Grinder carry owner-authored parameter guidance
     // (#4370 AC-001), which is part of the descriptor fingerprint.
     gluten: 'descriptor-v1:7883bbc4',
-    bacteria: 'descriptor-v1:2bd0e175',
+    // Bacteria records that a band with no stored body plays none, which is
+    // what undoing a band's first body restores.
+    bacteria: 'descriptor-v1:39845906',
     grinder: 'descriptor-v1:8aec6249',
     proof: 'descriptor-v1:0f484ceb',
     // Yeast undeclares its four arpeggiator parameters (#4650): the rack's

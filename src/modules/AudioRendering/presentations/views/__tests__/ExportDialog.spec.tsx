@@ -912,6 +912,42 @@ describe('ExportDialog', () => {
         }
     });
 
+    it('expects no render started and no notification when browser save-picker rejects with AbortError', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+            const abortError = new Error('The user aborted the save dialog.');
+            abortError.name = 'AbortError';
+            const picker = vi.fn().mockRejectedValue(abortError);
+            vi.stubGlobal('showSaveFilePicker', picker);
+
+            try {
+                render(<ExportDialog open={true} onClose={vi.fn()} />);
+                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+                // Wait for the picker to be called and drain all timers to completion.
+                await act(async () => {
+                    await vi.runAllTimersAsync();
+                });
+
+                // Verify the picker was called once.
+                expect(picker).toHaveBeenCalledTimes(1);
+
+                // No render started, so renderOffline should not have been called.
+                expect(mocks.renderOffline).not.toHaveBeenCalled();
+                // No notification should be sent.
+                expect(mocks.notifyUser).not.toHaveBeenCalled();
+                // Dialog should remain ready for a new export.
+                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+            } finally {
+                vi.unstubAllGlobals();
+                vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+            }
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     // A native write cannot be recalled: the file lands at the chosen path, so the export succeeded.
     it('ends succeeded when Cancel is pressed while the last native format is being written', async () => {
         encodeWavReportingDone();

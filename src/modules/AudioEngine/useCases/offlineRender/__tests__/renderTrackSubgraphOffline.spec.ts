@@ -1501,6 +1501,10 @@ describe('renderTrackSubgraphOffline', () => {
             const target = TrackDummy.create({
                 id: 'lead-synth',
                 kind: 'midi',
+                // The instrument the mocked chain build hands back for it.
+                devices: [
+                    { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+                ],
                 clips: [midiClip()],
                 sends: [{ busId: 'return-bus', level: 0.5, preFader: false }],
             });

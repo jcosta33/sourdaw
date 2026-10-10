@@ -190,6 +190,11 @@ const PASSTHROUGH_DSP = 'process = _,_;';
 const FAUST_INSTRUMENT_TYPE = registerFaustDSP('Synth', PASSTHROUGH_DSP, [], true).id;
 const FAUST_EFFECT_TYPE = registerFaustDSP('Parity Fixture Reverb', PASSTHROUGH_DSP, [], false).id;
 
+/** The production 808 definition, so a drum device on a chain has a real kit to voice. */
+const { getDrumKitDefByIndex: productionDrumKitDefByIndex } =
+    await vi.importActual<typeof import('#/modules/Synth/useCases')>('#/modules/Synth/useCases');
+const KIT_808_DEF = productionDrumKitDefByIndex(0);
+
 describe('scheduleMidiNotes', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -221,7 +226,11 @@ describe('scheduleMidiNotes', () => {
         // inside the window this tick owns.
         vi.mocked(projectClipControllerEvents).mockImplementation(({ controlChanges, clip, fromBeat, toBeat }) =>
             controlChanges
-                .map((row) => ({ ...row, beat: clip.startBeat + row.beat - (clip.midiOffsetBeats ?? 0) }))
+                .map((row) => ({
+                    ...row,
+                    beat: clip.startBeat + row.beat - (clip.midiOffsetBeats ?? 0),
+                    closesClip: false,
+                }))
                 .filter((row) => row.beat >= fromBeat && row.beat < toBeat)
         );
         vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
@@ -1602,6 +1611,193 @@ describe('scheduleMidiNotes', () => {
             expect(scheduleNote).not.toHaveBeenCalled();
         });
 
+        // The first instrument in chain order receives the notes, as the export,
+        // live input and audition voice them: a kit behind Levain is not the
+        // receiver, however the kit resolves.
+        it('sends a levain ahead of an 808 to the levain, never the kit', async () => {
+            expect(KIT_808_DEF).not.toBeNull();
+            vi.mocked(getDrumKitDefByIndex).mockReturnValue(KIT_808_DEF);
+            const noteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                {
+                    type: 'levain',
+                    deviceId: 'levain-1',
+                    levainControls: { noteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'levain-1', type: 'levain', parameterValues: {} },
+                    { id: 'drum-1', type: 'builtin-drum-machine-808', parameterValues: { kit: 0 } },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 36, startBeat: 0, duration: 0.5, velocity: 110 }] },
+                ccByClipId: {},
+            };
+
+            try {
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+            } finally {
+                vi.mocked(getDrumKitDefByIndex).mockReturnValue(null);
+            }
+
+            expect(noteOn).toHaveBeenCalledOnce();
+            expect(noteOn.mock.calls[0]?.[0]).toBe(36);
+            expect(scheduleDrumKitNote).not.toHaveBeenCalled();
+            expect(scheduleKitNote).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('sends a faust instrument ahead of a levain to the faust instrument, never the levain', async () => {
+            const levainNoteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                {
+                    type: 'levain',
+                    deviceId: 'levain-1',
+                    levainControls: { noteOn: levainNoteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'f1', type: FAUST_INSTRUMENT_TYPE, parameterValues: {} },
+                    { id: 'levain-1', type: 'levain', parameterValues: {} },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 80 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleFaustNote).toHaveBeenCalledOnce();
+            expect(vi.mocked(scheduleFaustNote).mock.calls[0]?.slice(0, 3)).toEqual(['track-1', 'f1', 60]);
+            expect(levainNoteOn).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('sends a levain ahead of a toaster to the levain, never the toaster', async () => {
+            const levainNoteOn = vi.fn();
+            const toasterNoteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                {
+                    type: 'levain',
+                    deviceId: 'levain-1',
+                    levainControls: { noteOn: levainNoteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+                { type: 'toaster', deviceId: 'toaster-1', toasterControls: { noteOn: toasterNoteOn } },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'levain-1', type: 'levain', parameterValues: {} },
+                    { id: 'toaster-1', type: 'toaster', parameterValues: {} },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 36, startBeat: 0, duration: 0.5, velocity: 100 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(levainNoteOn).toHaveBeenCalledOnce();
+            expect(levainNoteOn.mock.calls[0]?.[0]).toBe(36);
+            expect(toasterNoteOn).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        // A bypassed instrument keeps the notes and plays none, as a deactivated
+        // instrument does in a DAW and as the export renders it: neither the
+        // instrument behind it nor the default synth takes them.
+        it('plays nothing for a bypassed receiving instrument', async () => {
+            const levainNoteOn = vi.fn();
+            const fermenterNoteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                {
+                    type: 'levain',
+                    deviceId: 'levain-1',
+                    levainControls: { noteOn: levainNoteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+                {
+                    type: 'fermenter',
+                    deviceId: 'fermenter-1',
+                    fermenterControls: { noteOn: fermenterNoteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'levain-1', type: 'levain', bypassed: true, parameterValues: {} },
+                    { id: 'fermenter-1', type: 'fermenter', bypassed: false, parameterValues: {} },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 90 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(levainNoteOn).not.toHaveBeenCalled();
+            expect(fermenterNoteOn).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        // A bypassed Toaster with live pads plays none of the notes routed to it,
+        // whether the notes are its own track's or a child pad track's.
+        it("plays no pad for a track's own bypassed Toaster", async () => {
+            const toasterNoteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                { type: 'toaster', deviceId: 'toaster-1', toasterControls: { noteOn: toasterNoteOn } },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'toaster-1', type: 'toaster', bypassed: true, parameterValues: {} }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 36, startBeat: 0, duration: 0.5, velocity: 100 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(toasterNoteOn).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('plays no pad for a child track under a bypassed parent Toaster', async () => {
+            const toasterNoteOn = vi.fn();
+            engineStub.nodesFor = (trackId) =>
+                trackId === 'toaster-parent'
+                    ? [{ type: 'toaster', deviceId: 'toaster-1', toasterControls: { noteOn: toasterNoteOn } }]
+                    : [];
+            const parent = midiTrack({
+                id: 'toaster-parent',
+                kind: 'folder',
+                devices: [{ id: 'toaster-1', type: 'toaster', bypassed: true, parameterValues: {} }],
+            });
+            const child = midiTrack({ id: 'pad-child', parentId: 'toaster-parent', clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 100 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(toasterNoteOn).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
         it('routes a faust-device track through scheduleFaustNote', async () => {
             const track = midiTrack({
                 clips: [midiClip()],
@@ -2774,6 +2970,172 @@ describe('scheduleMidiNotes', () => {
                     `off 60 @${2 * BEAT_FRAMES}`,
                     `sustain 1 @${2 * BEAT_FRAMES}`,
                 ]);
+            });
+
+            describe('with a sustain lift stored on the closing line of a clip', () => {
+                // Clip A sounds a note under the pedal and lifts it on its own end; clip B follows it.
+                function loadAbuttingClips(
+                    trackClips: ReturnType<typeof midiClip>[],
+                    clipBRows: unknown[],
+                    clipARows: unknown[] = [storedController('down', 64, 127, 0), storedController('lift', 64, 0, 2)]
+                ) {
+                    const track = midiTrack({ clips: trackClips, devices: [{ id: 'gb-1', type: 'grand-boule' }] });
+                    (trackStore as { value: unknown }).value = { tracks: [track] };
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: { 'clip-a': [note('a', 1, 1)], 'clip-b': [note('b', 0, 1)] },
+                        ccByClipId: { 'clip-a': clipARows, 'clip-b': clipBRows },
+                    };
+                }
+                const clipA = () => midiClip({ id: 'clip-a', endBeat: 2 });
+                const clipB = () => midiClip({ id: 'clip-b', startBeat: 2, endBeat: 4 });
+
+                it('lifts the pedal on the clip end, after the release there and before the next clip strikes', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips([clipA(), clipB()], []);
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                        `off 60 @${2 * BEAT_FRAMES}`,
+                        `sustain 0 @${2 * BEAT_FRAMES}`,
+                        `on 60 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it('posts the lift once, from the window that closes on the clip end', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips([clipA(), clipB()], []);
+
+                    vi.mocked(getCurrentTime).mockReturnValue(0);
+                    await scheduleMidiNotes(0, 2, 0, new Set<string>(), [], defaultTransportState, 120);
+                    const fromClosingWindow = posted.filter((entry) => entry.startsWith('sustain 0'));
+                    vi.mocked(getCurrentTime).mockReturnValue(1);
+                    await scheduleMidiNotes(2, 4, 2, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(fromClosingWindow).toEqual([`sustain 0 @${2 * BEAT_FRAMES}`]);
+                    expect(posted.filter((entry) => entry.startsWith('sustain 0'))).toEqual([
+                        `sustain 0 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it.each([
+                    ['the ending clip listed first', true],
+                    ['the starting clip listed first', false],
+                ])('lets the next clip pedal press on that frame have the last word (%s)', async (_order, aFirst) => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips(aFirst ? [clipA(), clipB()] : [clipB(), clipA()], [
+                        storedController('press', 64, 127, 0),
+                    ]);
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                        `off 60 @${2 * BEAT_FRAMES}`,
+                        `sustain 0 @${2 * BEAT_FRAMES}`,
+                        `sustain 1 @${2 * BEAT_FRAMES}`,
+                        `on 60 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                // Clip A presses a rounding step before its end and lifts on its closing line: both
+                // land on one frame, and the export writes them in beat order, so the pedal ends up.
+                const pressThenClosingLift = [
+                    storedController('press', 64, 127, 2 - 1e-6),
+                    storedController('lift', 64, 0, 2),
+                ];
+
+                it('keeps the clip own press a step before its closing-line lift ahead of it, so the pedal ends up', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips([clipA(), clipB()], [], pressThenClosingLift);
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(postedAt(posted, 2 * BEAT_FRAMES).filter((entry) => entry.startsWith('sustain'))).toEqual([
+                        `sustain 1 @${2 * BEAT_FRAMES}`,
+                        `sustain 0 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it.each([
+                    ['the ending clip listed first', true],
+                    ['the starting clip listed first', false],
+                ])(
+                    'still lets the next clip press on that frame have the last word over both (%s)',
+                    async (_order, aFirst) => {
+                        const posted: string[] = [];
+                        useRealProjections();
+                        stripWith({
+                            type: 'grand-boule',
+                            deviceId: 'gb-1',
+                            grandBouleControls: recordingGrandBoule(posted),
+                        });
+                        loadAbuttingClips(
+                            aFirst ? [clipA(), clipB()] : [clipB(), clipA()],
+                            [storedController('head-press', 64, 127, 0)],
+                            pressThenClosingLift
+                        );
+
+                        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                        expect(
+                            postedAt(posted, 2 * BEAT_FRAMES).filter((entry) => entry.startsWith('sustain'))
+                        ).toEqual([
+                            `sustain 1 @${2 * BEAT_FRAMES}`,
+                            `sustain 0 @${2 * BEAT_FRAMES}`,
+                            `sustain 1 @${2 * BEAT_FRAMES}`,
+                        ]);
+                    }
+                );
+
+                it('plays no press stored on the closing line of a comp-cut take with no pedal rows after it', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips(
+                        [clipA(), clipB()],
+                        [],
+                        [
+                            storedController('down', 64, 127, 0),
+                            storedController('lift', 64, 0, 1.5),
+                            storedController('re-press', 64, 127, 2),
+                        ]
+                    );
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(posted.filter((entry) => entry.startsWith('sustain'))).toEqual([
+                        'sustain 1 @0',
+                        `sustain 0 @${1.5 * BEAT_FRAMES}`,
+                    ]);
+                });
             });
 
             it('lands a release and a controller on one beat on one frame at a fractional samples-per-beat tempo', async () => {

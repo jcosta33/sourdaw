@@ -153,6 +153,26 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Lessons from escapes
 
+### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
+
+PR #4057 added the streamed-artifact positive case and ZIP-based strict-parser fixtures without
+explicit `mtime` values. In fflate 0.8.3, streamed `Zip.add` and `Zip.end` each call `wzh` for the
+local and central header; `zipSync` calls that same writer twice for every file. Each call reads a
+fresh `Date.now()`. If a pair crosses a DOS two-second timestamp boundary, the timestamp words
+differ and the unchanged parser rejects the archive before the intended descriptor, bounds, or
+decompressed-data oracle. The CI failure established parser rejection, not how often or how quickly
+the reads crossed the boundary.
+
+Blind spot: fixture validity depended on separate live clock reads, so the archive's metadata could
+fail before its intended positive or negative assertion ran.
+
+Probe that would have caught it: force actual streamed and `zipSync` writers across a DOS two-second
+boundary, capture local and central timestamp bytes, and require the strict parser to reject the
+archive. Apply one fixed fixture `mtime` through the supported `zipSync` options and streamed-entry
+property; run the owning spec with its payload, bounds, CRC, file-set, encryption, and descriptor
+oracles intact. On the fixed head, reverting `mtime` must make the forced-clock case red. Keep the
+strict parser unchanged; this probe does not establish the hosted failure's clock interval or rate.
+
 ### 2026-10-09 — a newly declared "every spec owes the first-paint bound" left literal 15 s and 30 s waits in place (escaped via commit `04c28be0f8`)
 
 Commit `04c28be0f8` declared in `tests/e2e/e2eUtils.ts` that every spec waiting on the launch overlay itself owes `LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS`, but did not sweep the specs that already waited with a literal bound; the 15 s in `promptBarCancelRecentTestId.spec.ts` came from commit `d78dac728a`. It surfaced only when two Playwright workers per runner added CPU contention and a cold boot was still on its loading overlay at 15 s.
