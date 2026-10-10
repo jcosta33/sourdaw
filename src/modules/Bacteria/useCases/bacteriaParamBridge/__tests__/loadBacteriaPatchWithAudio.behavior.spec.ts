@@ -226,6 +226,26 @@ describe('loadBacteriaPatchWithAudio — engine sync', () => {
         expect(bodyPushes).toEqual([[BODY_PARAMETER, -1]]);
     });
 
+    // Bands that keep no body across a load have nothing to switch off: the
+    // load neither sends a body to the engine nor writes one into the
+    // document, which still holds no body value afterwards.
+    it('pushes and persists no body when neither the band nor the loaded patch has one', () => {
+        const previous: BacteriaPatch = { ...DEFAULT_PATCH, bandCount: 3 };
+        getBacteriaStateMock.mockReturnValue({ ...getBacteriaState(DEVICE_ID), patch: previous });
+        const deps = makeDeps({ band0_convolutionEnabled: 1 });
+        const patch: BacteriaPatch = {
+            ...previous,
+            bands: [{ ...DEFAULT_BAND, drive: 10 }, ...previous.bands.slice(1)],
+        };
+
+        loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, patch);
+
+        const isBody = (param: unknown) => typeof param === 'string' && /^band\d+_convolutionIr$/.test(param);
+        expect(pushedParams(deps)).toContainEqual(['band0_drive', 10]);
+        expect(pushedParams(deps).filter(([param]) => isBody(param))).toEqual([]);
+        expect(deps.persistDeviceParam.mock.calls.filter((call) => isBody(call[1]))).toEqual([]);
+    });
+
     it('pushes the assignment table through the patch door as a wholesale replacement', () => {
         const deps = makeDeps();
         const patch: BacteriaPatch = {
