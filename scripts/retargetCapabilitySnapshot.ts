@@ -544,9 +544,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         print: (value) => console.log(value),
     };
     try {
-        process.exit(runRetargetCapabilityPlanCli(process.argv.slice(2), dependencies));
+        process.exitCode = runRetargetCapabilityPlanCli(process.argv.slice(2), dependencies);
     } catch {
         console.error('retarget capability baseline refused: incomplete or invalid read');
-        process.exit(1);
+        process.exitCode = 1;
     }
 }

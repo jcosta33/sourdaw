@@ -1,5 +1,10 @@
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { once } from 'node:events';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -239,6 +244,231 @@ function runStableClassicCli(port: CapabilityReadPort) {
         });
     return { run, order, printed, disposed, classicReads: () => classicReads };
 }
+
+const CLI_DATE = '2026-10-08T00:00:00.000Z';
+
+function largeStablePolicy() {
+    return Array.from({ length: 50 }, (_, index) => ({
+        id: index + 1,
+        name: `main-policy-${index + 1}`,
+        source: REPOSITORY.full_name,
+        source_type: 'Repository',
+        target: 'branch',
+        enforcement: 'active',
+        conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+        rules: [
+            {
+                type: 'required_status_checks',
+                parameters: {
+                    strict_required_status_checks_policy: false,
+                    required_status_checks: Array.from({ length: 10 }, (_, check) => ({
+                        context: `policy-${index + 1}-check-${check + 1}-${'a'.repeat(70)}`,
+                        integration_id: 1234,
+                    })),
+                },
+            },
+        ],
+        bypass_actors: [],
+    }));
+}
+
+async function runNativePlanWithPipe(failRead: boolean) {
+    const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+    const fixtureRoot = mkdtempSync(join(realpathSync(tmpdir()), 'retarget-plan-pipe-'));
+    const rulesets = largeStablePolicy();
+    const disposePath = join(fixtureRoot, 'disposed');
+    const backpressurePath = join(fixtureRoot, 'backpressure');
+    const fixturePath = join(fixtureRoot, 'fixture.mjs');
+    const preloadPath = join(fixtureRoot, 'preload.mjs');
+    const fixture = `
+import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const root = ${JSON.stringify(root)};
+const sha = ${JSON.stringify(SOURCE)};
+const user = ${JSON.stringify(USER)};
+const repository = ${JSON.stringify(REPOSITORY)};
+const rulesets = ${JSON.stringify(rulesets)};
+const exact = ${JSON.stringify(EXACT_MAIN_PROTECTION)};
+const disposePath = ${JSON.stringify(disposePath)};
+export function capture(command, args, options = {}) {
+    if (command === 'git') {
+        if (args.join(' ') === 'rev-parse --verify origin/main^{commit}') return sha;
+        if (args[0] === 'cat-file' && args[1] === '-e' && args[2]?.startsWith(sha + ':')) {
+            readFileSync(join(root, args[2].slice(sha.length + 1)), 'utf8');
+            return '';
+        }
+        if (args[0] === 'show' && args[1]?.startsWith(sha + ':')) {
+            const source = readFileSync(join(root, args[1].slice(sha.length + 1)), 'utf8');
+            return options.trim === false ? source : source.trim();
+        }
+        if (args.join(' ') !== 'rev-parse --git-common-dir') throw Error('unexpected Git fixture command');
+        const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', env: { PATH: process.env.PATH } });
+        if (result.status !== 0) throw Error('Git fixture failed');
+        return result.stdout.trim();
+    }
+    if (command !== 'gh' || args[0] !== 'api') throw Error('external command refused');
+    if (process.env.RETARGET_TEST_FAIL_READ === '1') throw Error('synthetic read failure');
+    const header = 'HTTP/2 200 OK\\n\\n';
+    const endpoint = args.find((arg) => arg.startsWith('repos/'));
+    if (endpoint) {
+        const route = endpoint.split('?')[0];
+        if (route === 'repos/jcosta33/sourdaw') return JSON.stringify(repository);
+        if (route === 'repos/jcosta33/sourdaw/rulesets') return header + JSON.stringify(rulesets);
+        if (route.startsWith('repos/jcosta33/sourdaw/rulesets/')) return JSON.stringify(rulesets[Number(route.split('/').at(-1)) - 1]);
+        if (route.startsWith('repos/jcosta33/sourdaw/rules/branches/')) {
+            const effective = route.endsWith('/main') ? rulesets.map((ruleset) => ({
+                ...ruleset.rules[0], ruleset_id: ruleset.id, ruleset_source_type: 'Repository',
+                ruleset_source: ruleset.source,
+            })) : [];
+            return header + JSON.stringify(effective);
+        }
+        if (route === 'repos/jcosta33/sourdaw/branches/main/protection') return JSON.stringify(exact);
+    }
+    if (args.at(-1) === 'user') return JSON.stringify(user);
+    if (args.includes('graphql')) return JSON.stringify({ data: { repository: {
+        id: repository.node_id, databaseId: repository.id, nameWithOwner: repository.full_name,
+        defaultBranchRef: { name: 'main' }, viewerPermission: 'ADMIN',
+        branchProtectionRules: { nodes: [], totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null } },
+    } } });
+    throw Error('unexpected API fixture request');
+}
+export function authenticate() { return { minted: { actorNodeId: user.node_id }, session: {
+    configDir: '/synthetic-unused', env: {}, dispose() { writeFileSync(disposePath, 'disposed'); },
+} }; }
+`;
+    const preload = `
+import { registerHooks } from 'node:module';
+import { writeFileSync } from 'node:fs';
+const fixture = ${JSON.stringify(pathToFileURL(fixturePath).href)};
+const originalWrite = process.stdout.write.bind(process.stdout);
+process.stdout.write = function (...args) {
+    const accepted = originalWrite(...args);
+    if (!accepted) writeFileSync(${JSON.stringify(backpressurePath)}, 'backpressured');
+    return accepted;
+};
+registerHooks({ load(url, context, next) {
+    const result = next(url, context);
+    if (url.endsWith('/scripts/githubAppIdentity.ts')) return { ...result, source: String(result.source) +
+        '\\nimport { capture, authenticate } from ' + JSON.stringify(fixture) +
+        ';\\nspawnCapture = capture;\\nauthenticateOrchestratorSession = authenticate;\\n' };
+    return result;
+} });
+Date.prototype.toISOString = function () { return ${JSON.stringify(CLI_DATE)}; };
+`;
+    writeFileSync(fixturePath, fixture);
+    writeFileSync(preloadPath, preload);
+    try {
+        const child = spawn(
+            process.execPath,
+            ['--import', preloadPath, join(root, 'scripts/retargetCapabilitySnapshot.ts')],
+            {
+                cwd: root,
+                env: { PATH: process.env.PATH, RETARGET_TEST_FAIL_READ: failRead ? '1' : '0' },
+                stdio: ['ignore', 'pipe', 'pipe'],
+                signal: AbortSignal.timeout(20_000),
+            }
+        );
+        const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+            child.once('error', reject);
+            child.once('close', (code, signal) => resolve({ code, signal }));
+        });
+        const stdout: Buffer[] = [];
+        const stderr: Buffer[] = [];
+        let bufferedBeforeDrain = 0;
+        if (!failRead) {
+            child.stdout.pause();
+            await Promise.race([
+                once(child.stdout, 'readable'),
+                closed.then(() => {
+                    throw new Error('native planner closed before any stdout became readable');
+                }),
+            ]);
+            bufferedBeforeDrain = child.stdout.readableLength;
+        }
+        // Read concurrently with exit. Yield between chunks so the producer encounters a real pipe consumer.
+        const output = (async () => {
+            for await (const chunk of child.stdout) {
+                stdout.push(chunk as Buffer);
+                await new Promise<void>((resolve) => setImmediate(resolve));
+            }
+        })();
+        const diagnostic = (async () => {
+            for await (const chunk of child.stderr) {
+                stderr.push(chunk as Buffer);
+            }
+        })();
+        const result = await closed;
+        await Promise.all([output, diagnostic]);
+        return {
+            ...result,
+            stdout: Buffer.concat(stdout).toString('utf8'),
+            stderr: Buffer.concat(stderr).toString('utf8'),
+            bufferedBeforeDrain,
+            backpressured: existsSync(backpressurePath),
+            disposed: readFileSync(disposePath, 'utf8'),
+        };
+    } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+}
+
+describe('native planner pipe delivery', () => {
+    it('writes a complete large canonical plan through a backpressured pipe before successful exit', async () => {
+        const rulesets = largeStablePolicy();
+        const port: CapabilityReadPort = {
+            user: () => USER,
+            repository: () => REPOSITORY,
+            rulesetPage: (page) => rest(page === 1 ? rulesets : []),
+            ruleset: (id) => rulesets[id - 1] ?? null,
+            effectiveBranch: (branch) => {
+                if (branch !== 'main') {
+                    return rest([]);
+                }
+                return rest(
+                    rulesets.map((ruleset) => ({
+                        ...ruleset.rules[0],
+                        ruleset_id: ruleset.id,
+                        ruleset_source_type: 'Repository',
+                        ruleset_source: ruleset.source,
+                    }))
+                );
+            },
+            exactMainProtection: () => EXACT_MAIN_PROTECTION,
+            classicPage: () => ({
+                repository: { ...CLASSIC_REPOSITORY, branchProtectionRules: connection([], 0) },
+            }),
+            allowancePage: () => {
+                throw new Error('fixture has no classic allowance rule');
+            },
+        };
+        const expected = runStableClassicCli(port);
+        expect(expected.run()).toBe(0);
+        expect(expected.printed).toHaveLength(1);
+        const canonical = `${expected.printed[0]}\n`;
+        expect(Buffer.byteLength(canonical)).toBeGreaterThan(128 * 1024);
+
+        const actual = await runNativePlanWithPipe(false);
+        expect(actual.bufferedBeforeDrain).toBeGreaterThan(0);
+        expect(actual.backpressured).toBe(true);
+        expect(actual.signal).toBeNull();
+        expect(actual.code).toBe(0);
+        expect(actual.stderr).toBe('');
+        expect(Buffer.byteLength(actual.stdout)).toBe(Buffer.byteLength(canonical));
+        expect(actual.stdout === canonical).toBe(true);
+        expect(JSON.parse(actual.stdout)).toMatchObject({ activationEligible: false });
+        expect(actual.disposed).toBe('disposed');
+    }, 30_000);
+
+    it('exits with a diagnostic and disposes after a synthetic native read failure', async () => {
+        const actual = await runNativePlanWithPipe(true);
+        expect(actual.signal).toBeNull();
+        expect(actual.code).toBe(1);
+        expect(actual.stdout).toBe('');
+        expect(actual.stderr).toBe('retarget capability baseline refused: incomplete or invalid read\n');
+        expect(actual.disposed).toBe('disposed');
+    }, 30_000);
+});
 
 function emittedClassicBaseline(output: string): {
     emitted: Record<string, JsonValue>;
