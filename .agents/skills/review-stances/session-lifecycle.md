@@ -11,6 +11,13 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Standing probes
 
+- PR #5091's head `71221839` fenced grant settlement but retained an unfenced reusable
+  admission reader. A root-ownership stance must replace the root while On permission is
+  pending, then change the same-ID owner's input through the real action. Require no second
+  request or successor edge from the old reader; pair `replaceCrdtDocInLineage` input changes
+  with a successful retarget. Capture authority before publication and retain that fence in
+  every reusable reader, rather than recapturing the current root on reconciliation.
+
 - Enumerate the gestures that can reach the lifecycle from the module's own control surface — the
   directory of use cases that owns them — and never from the diff. The diff shows which gestures the
   author thought about; the directory shows which ones the user can press.
@@ -305,4 +312,4 @@ mode, input, kind and arm; repeat after real Command Undo restores On and has al
 capture in the successor. A fresh successor On admission must then connect both same-input owners
 without the stale settlement deleting their authority or stopping their shared stream. Removal
 continuation probes do not exercise this incoming grant boundary; deleting the root-identity
-comparison in the shared admission check must redden both replacement cases.
+fencing in shared admission, including its retained reader, must redden both replacement cases.

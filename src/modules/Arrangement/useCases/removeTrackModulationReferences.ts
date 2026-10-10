@@ -73,12 +73,14 @@ export function removeTrackModulationReferences({
 
     return {
         afterCommit: () =>
-            runAllEffects(deferredRuntimeEffects.map(({ finalize }) => runtimeAuthority.guard(finalize))),
+            runAllEffects(
+                deferredRuntimeEffects.map(({ finalize }) => runtimeAuthority.guardAbsent(trackId, finalize))
+            ),
         afterAmbiguousCommit: () =>
             runAllEffects(
                 deferredRuntimeEffects
                     .filter(({ remainsRemoved }) => remainsRemoved())
-                    .map(({ finalize }) => runtimeAuthority.guard(finalize))
+                    .map(({ finalize }) => runtimeAuthority.guardAbsent(trackId, finalize))
             ),
     };
 }

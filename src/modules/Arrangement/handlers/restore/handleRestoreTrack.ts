@@ -9,6 +9,7 @@ import { runAllAsyncEffects } from '#/utils/runEffects';
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Track } from '../../stores/trackStore';
+import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { insertTakeLane } from '../../useCases/comping/insertTakeLane';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
@@ -81,6 +82,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                 !state.tracks.some((track) => track.id === candidate.trackId)
         ).length;
         const insertionIndex = Math.min(Math.max(trackIndex - missingEarlierSiblingCount, 0), tracks.length);
+        const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         tracks.splice(insertionIndex, 0, trackSnapshot as never);
         let selectedTrackId = state.selectedTrackId;
         if (wasSelected && selectedTrackId === null) {
@@ -162,13 +164,16 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                             kind: trackKind,
                         })
                 );
-                return runAllAsyncEffects(effects);
+                return runAllAsyncEffects(effects.map(runtimeAuthority.guard));
             },
             afterAmbiguousCommit: async () => {
+                if (!runtimeAuthority.isCurrent()) {
+                    return;
+                }
                 const committedState = getTrackStoreState();
                 const committedTrack = committedState?.tracks.find((track) => track.id === alpha.payload.trackId);
                 if (!committedState || !committedTrack) {
-                    wireSidechainRoutes();
+                    runtimeAuthority.guard(() => wireSidechainRoutes())();
                     return;
                 }
                 const effects: Array<() => void | Promise<void>> = [];
@@ -206,7 +211,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                             kind: committedTrack.kind,
                         })
                 );
-                await runAllAsyncEffects(effects);
+                await runAllAsyncEffects(effects.map(runtimeAuthority.guard));
             },
         };
     },

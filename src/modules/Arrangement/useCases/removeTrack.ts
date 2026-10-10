@@ -132,14 +132,16 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                     effects.push(() => setTrackOutput(repointed.trackId, repointed.outputId));
                 }
                 effects.push(() => refreshToasterPadBindings(tracks, removedTrack.parentId));
-                runAllEffects(effects.map(runtimeAuthority.guard));
+                if (!options.suppressRemovedEvent) {
+                    effects.push(() => {
+                        void eventBus.emit('track.removed', { trackId });
+                    });
+                }
+                runAllEffects(effects.map((effect) => runtimeAuthority.guardAbsent(trackId, effect)));
                 runtimeRemovalFinalized = true;
             }
             if (!options.deferRuntimeEffects) {
                 finalizeCommittedTrackRuntimeRemoval(trackId, finalizeRuntimeRemoval, runtimeAuthority.isCurrent);
-            }
-            if (!options.suppressRemovedEvent && runtimeAuthority.isCurrent()) {
-                void eventBus.emit('track.removed', { trackId });
             }
             return { removed: true, finalizeRuntimeRemoval };
         }

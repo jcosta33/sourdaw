@@ -102,7 +102,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                         result.finalizeRuntimeRemoval,
                         finalizeModulationRemoval.afterCommit,
                         () => publishTrackRemoved({ trackId: action.payload.trackId }),
-                    ].map(runtimeAuthority.guard)
+                    ].map((effect) => runtimeAuthority.guardAbsent(action.payload.trackId, effect))
                 ),
             afterAmbiguousCommit: async () => {
                 if (!runtimeAuthority.isCurrent()) {
@@ -123,8 +123,11 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                         });
                     });
                 } else {
-                    effects.unshift(result.finalizeRuntimeRemoval, () =>
-                        publishTrackRemoved({ trackId: action.payload.trackId })
+                    effects.unshift(
+                        runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            publishTrackRemoved({ trackId: action.payload.trackId })
+                        )
                     );
                 }
                 try {

@@ -63,6 +63,15 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Standing probes
 
+- PR #5091's head `71221839` replaced the registered event bus after earlier deletion
+  cases had cached the injected emitter. Its async-boundary case stayed green when the
+  root guard was disabled. Observe the emitter actually retained by `inject`, using a stable
+  registration across cases and a positive real removal emission. Replace with a root that
+  lacks the outgoing ID so committed-absence checks cannot mask the root-guard mutation.
+  The same named case must fail with `isCurrent = () => true` both alone and after its
+  preceding deletion family. Run that qualification on a committed head in an isolated,
+  owned probe; retain commands, patch, raw output and exit status.
+
 - An aggregation test claiming a stored report route must use the production reader's filename and
   assert that both input records were admitted. An ignored artifact can make a boundary control pass
   while never reaching the claimed addition. For TypeSafe usage, prove stored scan plus verification
@@ -805,5 +814,5 @@ Drive both the optimistic On transaction and real Undo rearm through initialized
 replace the root with an identical clone, and settle permission only after proving the runtime root
 token changed. Assert `headConsumed` before the Undo grant, zero stale strip/edge/capture ownership,
 one orphan-stream stop, then a fresh two-owner successor capture that remains live. Reverting only
-the shared admission's root comparison must fail both named cases; a root-cleanup case and a
+the shared admission's original-root fencing, including its retained reader, must fail both named cases; a root-cleanup case and a
 same-root intent mutation cannot carry that oracle.

@@ -9,18 +9,25 @@ export function admitInputMonitoring(
     readIntent: ReadIntent
 ): Promise<boolean> {
     const requestingRootIdentity = captureInputMonitoringProjectRootIdentity();
-    const intent = readIntent();
+    // Reconciliation reuses this reader when input changes; it must retain the original root authority.
+    const readAuthorizedIntent: ReadIntent = () =>
+        captureInputMonitoringProjectRootIdentity() === requestingRootIdentity ? readIntent() : null;
+    const intent = readAuthorizedIntent();
     if (!intent) {
         return Promise.resolve(false);
     }
     const requestedInputId = captureInputId === undefined ? intent.inputId : captureInputId;
-    const admission: Admission = { selectorInputId: intent.inputId, captureInputId: requestedInputId, readIntent };
+    const admission: Admission = {
+        selectorInputId: intent.inputId,
+        captureInputId: requestedInputId,
+        readIntent: readAuthorizedIntent,
+    };
     inputMonitoringAdmissions.set(trackId, admission);
     const isCurrent = (): boolean | 'retain' => {
         if (captureInputMonitoringProjectRootIdentity() !== requestingRootIdentity) {
             return false;
         }
-        const current = readIntent();
+        const current = readAuthorizedIntent();
         if (!current || current.inputId !== admission.selectorInputId) {
             return false;
         }
@@ -28,7 +35,7 @@ export function admitInputMonitoring(
     };
     return startInputMonitoringRepo(trackId, requestedInputId, isCurrent).then((opened) => {
         if (!opened && inputMonitoringAdmissions.get(trackId) === admission) {
-            const current = readIntent();
+            const current = readAuthorizedIntent();
             // A held retarget can outlive its cancelled old grant. Keep its
             // existing permission authority for resume, never for a refusal.
             if (!current || current.inputId === admission.selectorInputId) {

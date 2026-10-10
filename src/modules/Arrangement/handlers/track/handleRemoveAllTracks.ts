@@ -38,12 +38,11 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
             status: 'written',
             afterCommit: () =>
                 runAllAsyncEffects(
-                    removals
-                        .flatMap(({ trackId, finalizeRuntimeRemoval }) => [
-                            finalizeRuntimeRemoval,
-                            () => publishTrackRemoved({ trackId }),
-                        ])
-                        .map(runtimeAuthority.guard)
+                    removals.flatMap(({ trackId, finalizeRuntimeRemoval }) =>
+                        [finalizeRuntimeRemoval, () => publishTrackRemoved({ trackId })].map((effect) =>
+                            runtimeAuthority.guardAbsent(trackId, effect)
+                        )
+                    )
                 ),
             afterAmbiguousCommit: () => {
                 if (!runtimeAuthority.isCurrent()) {
@@ -61,7 +60,10 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
                             projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
                         });
                     } else {
-                        effects.push(finalizeRuntimeRemoval, () => publishTrackRemoved({ trackId }));
+                        effects.push(
+                            runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval),
+                            runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId }))
+                        );
                     }
                 }
                 effects.push(() => wireSidechainRoutes());

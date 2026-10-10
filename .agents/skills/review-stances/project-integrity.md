@@ -192,6 +192,17 @@ matching clip in that track.
 
 ## Committed deletion inverses must restore saved monitoring intent (caught in PR #5091)
 
+PR #5091's head `71221839` captured restore admission after the strip-effect yield and
+guarded deletion only by root identity. The root-ownership stance missed both a replacement
+between strip restoration and rearm and a collaborator restoring a deleted identity within
+the original lineage. Queue replacement from the actual strip sink during single and bulk
+Undo, including published-but-throwing commits; no later outgoing effect or capture request
+may reach it. Pair same-lineage input edits with successful, nonblocking rearm. Restore a
+deleted owner before cleanup and between awaited effects through committed CRDT truth, then
+assert its current gain, strip, source edge and absence of stale removal events. Each removal
+effect must recheck committed absence independently; still-absent owners and cleanup faults
+remain positive controls.
+
 A real track-deletion Undo restored raw document and projected tracks with monitoring On while
 the independent recorder owner stayed absent. Project round trips that assert snapshots alone
 miss this disagreement. Exercise single and bulk removal through Command and its actual inverse,
