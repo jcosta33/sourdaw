@@ -4,7 +4,12 @@ import { getAutomationDeviceDescriptor } from '#/modules/Arrangement/useCases';
 
 import { syncGrinderPatchToAudio } from '../../useCases/grinderParamBridge/syncGrinderPatchToAudio';
 import { grinderNeuralProfileParams } from '../GrinderNeuralProfileParams';
-import { DEFAULT_PATCH, type GrinderImportedNeuralModel, type GrinderNeuralProfile } from '../GrinderPatch';
+import {
+    DEFAULT_PATCH,
+    type GrinderImportedNeuralModel,
+    type GrinderNeuralModel,
+    type GrinderNeuralProfile,
+} from '../GrinderPatch';
 import { applyGrinderProjectParameters, GRINDER_PROJECT_PARAM_KEYS } from '../GrinderProjectParameterMap';
 
 const IMPORTED_PROFILE: GrinderNeuralProfile = {
@@ -22,6 +27,8 @@ const IMPORTED_PROFILE: GrinderNeuralProfile = {
         [0.1, 0.2, 0.3],
         [0.4, 0.5, 0.6],
     ],
+    model: null,
+    modelDigest: null,
 };
 
 function importedLibraryEntry(): GrinderImportedNeuralModel {
@@ -130,6 +137,72 @@ describe('Grinder project parameter projection', () => {
         expect(reloaded.neuralModelFamily).toBe(entry.family);
         // The match adopts the entry's full profile, provenance included.
         expect(reloaded.neuralModelProfile).toEqual(entry.profile);
+    });
+
+    it('restores the full model from the library entry when the record proves the digest (#3774)', () => {
+        // A real capture: the profile carries the complete model, the record
+        // carries the scalar door plus the digest words. The model itself is
+        // too large for the numeric record — it lives in the library entry.
+        const model: GrinderNeuralModel = {
+            architecture: 'WaveNet',
+            version: '0.5.4',
+            sampleRate: 48_000,
+            config: { head_scale: 0.02, head: null, layers: [{ input_size: 1, condition_size: 1 }] },
+            weights: [0.5, -0.25, 0.125],
+        };
+        const profile_with_model: GrinderNeuralProfile = {
+            ...IMPORTED_PROFILE,
+            model,
+            modelDigest: '0a1b-2c3d-4e5f-6071',
+        };
+        const entry: GrinderImportedNeuralModel = {
+            ...importedLibraryEntry(),
+            profile: profile_with_model,
+        };
+        const persist_device_param = vi.fn();
+        syncGrinderPatchToAudio({
+            patch: {
+                ...DEFAULT_PATCH,
+                neuralModelSource: 'imported',
+                neuralModelId: entry.id,
+                neuralModelName: entry.name,
+                neuralModelProfile: profile_with_model,
+            },
+            ref: { trackId: 'track-1', deviceId: 'device-1' },
+            persist_device_param,
+            update_device_param: vi.fn(),
+            update_device_patch: vi.fn(),
+            resolve_eligible_device_write_target: () => ({
+                status: 'eligible',
+                trackId: 'track-1',
+                deviceId: 'device-1',
+            }),
+        });
+        const record = recordFromPersistCalls(persist_device_param.mock.calls as Array<[string, string, number]>);
+
+        // The digest words ride the numeric record; the weights do not.
+        for (const [name, value] of [
+            ['neuralCustomModelDigest0', 0x0a1b],
+            ['neuralCustomModelDigest1', 0x2c3d],
+            ['neuralCustomModelDigest2', 0x4e5f],
+            ['neuralCustomModelDigest3', 0x6071],
+        ] as const) {
+            expect(record[name]).toBe(value);
+        }
+        expect(record.neuralCustomConvWeight0_0).toBeTypeOf('number');
+
+        // Reload with the library present: the digest re-matches the entry and
+        // the patch restores the FULL model — not the derived substitute.
+        const reloaded = applyGrinderProjectParameters(DEFAULT_PATCH, record, [entry]);
+        expect(reloaded.neuralModelSource).toBe('imported');
+        expect(reloaded.neuralModelProfile?.model).toEqual(model);
+        expect(reloaded.neuralModelId).toBe(entry.id);
+
+        // Without the library entry the patch degrades to the scalar profile
+        // under the derived id (the model asset itself is gone).
+        const orphaned = applyGrinderProjectParameters(DEFAULT_PATCH, record, []);
+        expect(orphaned.neuralModelProfile?.model).toBeNull();
+        expect(orphaned.neuralModelProfile?.modelDigest).toBe(profile_with_model.modelDigest);
     });
 
     it('falls back to a stable derived id and the panel fallback name without a library match', () => {

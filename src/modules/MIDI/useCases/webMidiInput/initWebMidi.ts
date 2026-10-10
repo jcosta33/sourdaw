@@ -1,13 +1,17 @@
 import { Container } from '#/infra/di/Container';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { initWebMidi as initializeWebMidi } from '../../repositories/webMidi/lifecycle/initWebMidi';
-import { releaseCapturedYeastVoices } from '../../repositories/webMidi/releaseCapturedYeastVoices';
+import { releaseHeldYeastVoices } from '../../repositories/webMidi/releaseHeldYeastVoices';
+import { releaseCapturedYeastLifecycleVoices } from '../../repositories/webMidi/routeYeastLifecycleNoteOff';
+import { routeYeastNoteOffsForTargetTrack } from '../../repositories/webMidi/routeYeastNoteOff';
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
 
 import { disposeWebMidiSubscriptions } from './disposeWebMidiSubscriptions';
 import { getMidiInputTrackOwnerId } from './getMidiInputTrackOwnerId';
 import { handleWebMidiMessage } from './handleWebMidiMessage';
+import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { setMidiInputTrack } from './setMidiInputTrack';
 import { webMidiSubscriptionState } from './webMidiSubscriptionState';
 
@@ -63,9 +67,36 @@ function subscribeToYeastNotesOff(): void {
     webMidiSubscriptionState.disposeYeastNotesOffSubscription = eventBus.on(
         'yeast.notesOff',
         ({ trackId, noteOffs }) => {
+            // Lifecycle offs name the voice that started them (#4873): release
+            // the captured owner first so the ORIGINAL instrument control
+            // settles its voice even after the track's instrument changed, and
+            // a same-pitch successor on the replacement stays untouched.
+            // Only what no captured owner claims falls through to the
+            // current-node route.
+            const unroutedNoteOffs = releaseCapturedYeastLifecycleVoices(trackId, noteOffs);
+            // A held key's own transformed voices live on its active note, not
+            // the route registry, so the lifecycle release never sees them;
+            // end them at each off's pitch.
             for (const { channel, note } of noteOffs) {
-                releaseCapturedYeastVoices(trackId, channel, note);
+                releaseHeldYeastVoices(trackId, channel, note);
             }
+            if (unroutedNoteOffs.length === 0) {
+                return;
+            }
+            const resolvedInstrument = resolveInstrumentTrack(trackStore.value, trackId);
+            const instrumentTrack = resolvedInstrument?.instrumentTrack;
+            const instrumentSnapshot = instrumentTrack
+                ? {
+                      id: instrumentTrack.id,
+                      devices: instrumentTrack.devices.map(({ id, type }) => ({ id, type })),
+                  }
+                : null;
+            routeYeastNoteOffsForTargetTrack(instrumentSnapshot, unroutedNoteOffs, {
+                emitGrandBouleEvent: (deviceId, midiNote) => {
+                    void eventBus.emit('midi.noteOff', { deviceId, midiNote });
+                },
+                getTrackStrip: (trackId) => audioEngine.getTrackStrip(trackId),
+            });
         }
     );
 }

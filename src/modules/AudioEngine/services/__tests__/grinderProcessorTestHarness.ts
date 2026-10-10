@@ -54,12 +54,14 @@ const MAX_GRINDER_BLOCK_SIZE = 2_048;
 const AUTOMATABLE_PARAM_COUNT = grinderAudioParamContract.length;
 
 export const grinderSetParamCalls: Array<{ name: string; value: number }> = [];
+export const grinderLoadModelCalls: string[] = [];
 export const grinderProcessSizes: number[] = [];
 export const grinderAutomatedProcessSizes: number[] = [];
 export let grinderResetCalls = 0;
 export let grinderRightPtrCalls = 0;
 let grinderLatencySamples = 0;
 let grinderLatencySamplesAfterSetParam: number | null = null;
+let grinderModelRejection: string | null = null;
 
 class GrinderInstanceMock {
     get_input_left_ptr(): number {
@@ -85,6 +87,13 @@ class GrinderInstanceMock {
 
     reset(): void {
         grinderResetCalls++;
+    }
+
+    load_neural_model(json: string): void {
+        grinderLoadModelCalls.push(json);
+        if (grinderModelRejection !== null) {
+            throw new Error(grinderModelRejection);
+        }
     }
 
     set_param(name: string, value: number): void {
@@ -178,16 +187,22 @@ export async function createReadyGrinderProcessor(): Promise<GrinderProcessorLik
 
 export function resetGrinderProcessorCalls(): void {
     grinderSetParamCalls.length = 0;
+    grinderLoadModelCalls.length = 0;
     grinderProcessSizes.length = 0;
     grinderAutomatedProcessSizes.length = 0;
     grinderResetCalls = 0;
     grinderRightPtrCalls = 0;
     grinderLatencySamples = 0;
     grinderLatencySamplesAfterSetParam = null;
+    grinderModelRejection = null;
 }
 
 export function setGrinderLatencySamplesAfterSetParam(latency: number): void {
     grinderLatencySamplesAfterSetParam = latency;
+}
+
+export function setGrinderModelRejection(message: string | null): void {
+    grinderModelRejection = message;
 }
 
 export function getGrinderAutomationHeader(paramIndex: number): number {

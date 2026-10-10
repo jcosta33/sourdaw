@@ -79,6 +79,32 @@ export type OfflineRenderEngineSelection =
 /** A sidechain route as the Routing store spells it — only the keyed device matters here. */
 export type OfflineRenderSidechainRoute = Readonly<{ targetDeviceId: string }>;
 
+/**
+ * The modulator-rack facts the gates read, as the stores spell them. The
+ * native engine carries lane automation on device parameters but has no
+ * vocabulary for a modulator curve, so any enabled mapping gates to Web Audio
+ * — the same conservatism as every gate below.
+ */
+export type OfflineRenderGateModulator = Readonly<{
+    name: string;
+    enabled: boolean;
+    mappings: readonly unknown[];
+}>;
+
+/**
+ * The adjustment-layer facts the gates read. Every layer that reaches a
+ * renderable track gates to Web Audio: the native render seeds raw track gain
+ * and implements no layer handling at all, steady or moving.
+ */
+export type OfflineRenderGateAdjustmentLayer = Readonly<{
+    name: string;
+    enabled: boolean;
+    effectType: string;
+    regions: readonly { startBeat: number; endBeat: number }[];
+    affectedTrackIds: readonly string[];
+    insertionIndex: number;
+}>;
+
 export type SelectOfflineRenderEngineInput = Readonly<{
     gainEnvelopes?: GainEnvelopeStoreState['envelopes'];
     /** Every sidechain route the render reads, wired or not. */
@@ -87,6 +113,17 @@ export type SelectOfflineRenderEngineInput = Readonly<{
     renderableTracks: readonly Track[];
     /** The tracks whose programme reaches the mix. */
     scheduledTracks: readonly Track[];
+    modulators?: readonly OfflineRenderGateModulator[];
+    adjustmentLayers?: readonly OfflineRenderGateAdjustmentLayer[];
+    /**
+     * Every track of the project, in project order — the list live's
+     * `resolveAffectedTrackIds` slices for a layer with no explicit targets.
+     * An implicit layer position must resolve against it, not against the
+     * renderable subset: a folder or disabled track ahead of the stack
+     * shifts every index. Absent, the renderable tracks stand in (they were
+     * the old, wrong list; callers that know the project pass the real one).
+     */
+    projectTrackIds?: readonly string[];
 }>;
 
 /** Why this track's chain cannot render natively, or `null` when every device on it can. */
@@ -95,12 +132,69 @@ function deviceChainGateReason(track: Track, keyedDeviceIds: ReadonlySet<string>
         if (nativeBuiltinBody(device.type) === null) {
             return `track "${track.name}" carries device "${device.type}", which the native render has no body for`;
         }
+        // A Grinder whose record carries model digest words is running a real
+        // imported .nam capture (#3774). The native body is built from the
+        // numeric record alone and has no vocabulary for a loaded network, so
+        // a native render would sound the derived substitute — the exact
+        // silent substitution #3774 forbids. The Web Audio render loads the
+        // model, so the project degrades to it with this reason.
+        if (device.type === 'grinder' && device.parameterValues.neuralCustomModelDigest0 !== undefined) {
+            return `track "${track.name}" carries device "${device.type}" running an imported neural model, which the native render cannot load`;
+        }
         if (isOfflineInstrumentDevice(device.type)) {
             return `track "${track.name}" carries instrument "${device.type}", which renders through Web Audio`;
         }
         if (keyedDeviceIds.has(device.id)) {
             return `track "${track.name}" carries device "${device.type}" keyed by a sidechain, which the native render does not wire`;
         }
+    }
+    return null;
+}
+
+/**
+ * Why the modulator rack or the adjustment-layer stack keeps this render off
+ * the native engine, or `null` when neither applies. Mirrors what the Web
+ * Audio render carries: a modulator's block-sampled schedule, a DSP layer's
+ * bus chain, and every volume/pan layer's mix adjustment — steady or moving —
+ * are all web-only.
+ */
+/** Live `resolveAffectedTrackIds`: the explicit list, or every track below the stack position. */
+function layerAffectsRenderableTracks(
+    layer: OfflineRenderGateAdjustmentLayer,
+    trackIds: ReadonlySet<string>,
+    allTrackIds: readonly string[]
+): boolean {
+    if (layer.affectedTrackIds.length > 0) {
+        return layer.affectedTrackIds.some((trackId) => trackIds.has(trackId));
+    }
+    return allTrackIds.slice(layer.insertionIndex).some((trackId) => trackIds.has(trackId));
+}
+
+function modulationAndLayerGateReason(input: SelectOfflineRenderEngineInput): string | null {
+    for (const modulator of input.modulators ?? []) {
+        if (modulator.enabled && modulator.mappings.length > 0) {
+            return `modulator "${modulator.name}" drives device parameters, which the native render does not carry`;
+        }
+    }
+    const trackIds = new Set(input.renderableTracks.map((track) => track.id));
+    const allTrackIds = input.projectTrackIds ?? input.renderableTracks.map((track) => track.id);
+    for (const layer of input.adjustmentLayers ?? []) {
+        if (!layer.enabled) {
+            continue;
+        }
+        if (!layerAffectsRenderableTracks(layer, trackIds, allTrackIds)) {
+            continue;
+        }
+        // The native render seeds raw track gain and has no layer vocabulary
+        // at all — a steady layer would print as if it did not exist, exactly
+        // the substitution the gates exist to refuse.
+        if (layer.effectType === 'volume' || layer.effectType === 'pan') {
+            if (layer.regions.length > 0) {
+                return `adjustment layer "${layer.name}" moves across the export, which only the Web Audio render schedules`;
+            }
+            return `adjustment layer "${layer.name}" adjusts the mix, which the native render does not apply`;
+        }
+        return `adjustment layer "${layer.name}" routes DSP the native engine has no bus for`;
     }
     return null;
 }
@@ -152,7 +246,7 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
             return `bus "${track.name}" routes into a track, which the native engine refuses`;
         }
     }
-    return null;
+    return modulationAndLayerGateReason(input);
 }
 
 /**
