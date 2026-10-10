@@ -37,18 +37,12 @@ vi.mock('#/modules/Automation/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
-    const { buildOfflineModulatorPlans } = await importOriginal<
-        typeof import('#/modules/Automation/useCases') & { buildOfflineModulatorPlans: unknown }
-    >();
-
-    return {
-        buildOfflineModulatorPlans,
-        getAutomationLaneCeiling: vi.fn(),
-        removeMapping: mocks.removeMapping,
-        removeModulator: mocks.removeModulator,
-    };
-});
+vi.mock('#/modules/Automation/useCases', () => ({
+    buildOfflineModulatorPlans: vi.fn(),
+    getAutomationLaneCeiling: vi.fn(),
+    removeMapping: mocks.removeMapping,
+    removeModulator: mocks.removeModulator,
+}));
 
 describe('removeTrackModulationReferences', () => {
     beforeEach(() => {
