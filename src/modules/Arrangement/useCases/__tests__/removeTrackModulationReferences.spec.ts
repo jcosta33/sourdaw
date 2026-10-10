@@ -25,6 +25,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
+    automationStore: {
+        value: { lanes: [] },
+        hydrate: vi.fn(),
+    },
     modulationStore: {
         get value() {
             return mocks.modulationStoreValue.value;
@@ -33,6 +37,7 @@ vi.mock('#/modules/Automation/stores', () => ({
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
+    getAutomationLaneCeiling: vi.fn(),
     removeMapping: mocks.removeMapping,
     removeModulator: mocks.removeModulator,
 }));
