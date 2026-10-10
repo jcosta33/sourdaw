@@ -99,10 +99,12 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
             afterCommit: () =>
                 runAllAsyncEffects(
                     [
-                        result.finalizeRuntimeRemoval,
+                        runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
                         finalizeModulationRemoval.afterCommit,
-                        () => publishTrackRemoved({ trackId: action.payload.trackId }),
-                    ].map((effect) => runtimeAuthority.guardAbsent(action.payload.trackId, effect))
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            publishTrackRemoved({ trackId: action.payload.trackId })
+                        ),
+                    ].map(runtimeAuthority.guard)
                 ),
             afterAmbiguousCommit: async () => {
                 if (!runtimeAuthority.isCurrent()) {

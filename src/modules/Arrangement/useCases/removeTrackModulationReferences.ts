@@ -71,16 +71,22 @@ export function removeTrackModulationReferences({
         }
     }
 
+    // Track restoration does not restore modulation ownership. Check each exact
+    // owner at execution, including changes made by an earlier finalizer.
+    function finalizeRuntimeEffects(): void {
+        runAllEffects(
+            deferredRuntimeEffects.map(({ finalize, remainsRemoved }) =>
+                runtimeAuthority.guard(() => {
+                    if (remainsRemoved()) {
+                        finalize();
+                    }
+                })
+            )
+        );
+    }
+
     return {
-        afterCommit: () =>
-            runAllEffects(
-                deferredRuntimeEffects.map(({ finalize }) => runtimeAuthority.guardAbsent(trackId, finalize))
-            ),
-        afterAmbiguousCommit: () =>
-            runAllEffects(
-                deferredRuntimeEffects
-                    .filter(({ remainsRemoved }) => remainsRemoved())
-                    .map(({ finalize }) => runtimeAuthority.guardAbsent(trackId, finalize))
-            ),
+        afterCommit: finalizeRuntimeEffects,
+        afterAmbiguousCommit: finalizeRuntimeEffects,
     };
 }

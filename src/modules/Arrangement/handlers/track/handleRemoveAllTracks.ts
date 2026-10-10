@@ -52,10 +52,10 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
                 runAllAsyncEffects(
                     removals.flatMap(({ trackId, finalizeRuntimeRemoval, modulationRemoval }) =>
                         [
-                            finalizeRuntimeRemoval,
+                            runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval),
                             modulationRemoval.afterCommit,
-                            () => publishTrackRemoved({ trackId }),
-                        ].map((effect) => runtimeAuthority.guardAbsent(trackId, effect))
+                            runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId })),
+                        ].map(runtimeAuthority.guard)
                     )
                 ),
             afterAmbiguousCommit: () => {
