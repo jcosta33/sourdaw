@@ -1,0 +1,43 @@
+crates/daw-dsp/src/toaster/engines/mod.rs
+  s_1f0dcd815e8946::t_13f85cfb2649bc 298
+crates/daw-dsp/src/toaster/engines/modal.rs
+  s_893120061bb856::t_d5aaf0ef1d769d 286-292
+crates/daw-dsp/tests/levain_mic_mix_is_audible.rs
+  s_1f0dcd815e8946::t_a148eb5e0aa928 375-397
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_1f0dcd815e8946::t_03cb9c373be5b9 325-352
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_1f0dcd815e8946::t_7f58d005c8998e 1,1120,1180-1221
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_1f0dcd815e8946::t_d0d03e8f3186a2 1,123,183-224
+public/wasm/manifest.json
+  s_1f0dcd815e8946::t_169b2b7a3f2b58 12,16-18,21
+release/open-source-inventory.json
+  s_1f0dcd815e8946::t_77d9392b50198c 1345,1351,1771
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_1f0dcd815e8946::t_e950ddf4d93148 1,1120,1180-1221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d61490b67bbc49a0e6e50c1bfc59c4fab83de900",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_893120061bb856": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1256e-9c67-7563-9585-8e8c8ddee529",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
