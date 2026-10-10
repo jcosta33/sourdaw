@@ -28,9 +28,11 @@ type ProcessYeastRuntimeBlockInput = {
 type ProcessYeastRuntimeTransactionInput = ProcessYeastRuntimeBlockInput & {
     projection: readonly YeastProcessorProjectionItem[];
     /**
-     * Skip the transaction, returning `null`, unless `projection` is already
-     * the runtime's latest: the worker holds one rack, so installing another
-     * settles the rack it runs and loses that rack's processor state.
+     * Skip the transaction, returning `null`, unless the worker already holds
+     * the processors of `projection` (same ids and types, in order): the worker
+     * runs one rack, so installing another settles the rack it runs and loses
+     * that rack's processor state. A change of parameters alone keeps the
+     * processors, so it still delivers.
      */
     onlyWhileProjectionCurrent?: boolean;
 };
@@ -41,6 +43,8 @@ type YeastRuntimeSession = {
     node: YeastWorkerResult | null;
     nodePromise: Promise<YeastWorkerResult | null> | null;
     projection: YeastProcessorProjection;
+    /** The projection the worker last accepted, or `null` while it holds none. */
+    appliedProjection: YeastProcessorProjection | null;
     processTail: Promise<void>;
     generation: number;
     /** Semantic preview identity, independent of async request cancellation. */
@@ -84,6 +88,7 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     node: null,
     nodePromise: null,
     projection: [],
+    appliedProjection: null,
     processTail: Promise.resolve(),
     generation: 0,
     discontinuityEpoch: 0,
@@ -133,7 +138,7 @@ if (session.version !== YEAST_RUNTIME_SESSION_VERSION || retainedRuntimeNeedsReb
     session.nodePromise = null;
     session.processTail = Promise.resolve();
     session.projectionRevision = 0;
-    session.appliedProjectionRevision = 0;
+    clearAppliedProjection();
     session.status = 'uninitialized';
     session.error = undefined;
     session.onNotesOff = null;
@@ -207,6 +212,33 @@ function recordProjection(projection: readonly YeastProcessorProjectionItem[]): 
     session.projection = nextProjection;
     session.projectionRevision += 1;
     return { projection: nextProjection, revision: session.projectionRevision };
+}
+
+function markProjectionApplied(record: ProjectionRecord): void {
+    session.appliedProjectionRevision = record.revision;
+    session.appliedProjection = record.projection;
+}
+
+function clearAppliedProjection(): void {
+    session.appliedProjectionRevision = 0;
+    session.appliedProjection = null;
+}
+
+/**
+ * Whether the worker runs the processors `projection` names. This is the
+ * worker rack's own notion of topology (`MidiRack.replaceProjection` keeps its
+ * processors and their held input unless ids or types change), so a delivery
+ * that passes it can at most change parameters, never settle another rack.
+ */
+function workerHoldsProcessorsOf(projection: readonly YeastProcessorProjectionItem[]): boolean {
+    const held = session.appliedProjection;
+    if (!held || held.length !== projection.length) {
+        return false;
+    }
+    return held.every((processor, index) => {
+        const desired = projection[index]!;
+        return processor.id === desired.id && processor.type === desired.type;
+    });
 }
 
 function isLiveRuntime(node: YeastWorkerResult, generation: number): boolean {
@@ -455,7 +487,7 @@ function prepareRuntimeContext(context: BaseAudioContext): void {
             advanceRuntimeDiscontinuityEpoch();
             session.generation += 1;
             session.processTail = Promise.resolve();
-            session.appliedProjectionRevision = 0;
+            clearAppliedProjection();
         }
         session.pendingAllNotesOff = null;
         destroyCurrentNode();
@@ -504,7 +536,7 @@ function invalidateCurrentRuntime(node: YeastWorkerResult): boolean {
     destroyCurrentNode();
     session.nodePromise = null;
     session.processTail = Promise.resolve();
-    session.appliedProjectionRevision = 0;
+    clearAppliedProjection();
     session.pendingAllNotesOff = null;
     return true;
 }
@@ -568,7 +600,7 @@ export async function applyYeastRuntimeProjection(projection: readonly YeastProc
         if (!isLiveRuntime(node, initialGeneration)) {
             throw new Error('Yeast Worker projection generation changed');
         }
-        session.appliedProjectionRevision = record.revision;
+        markProjectionApplied(record);
     });
 }
 
@@ -677,7 +709,7 @@ async function ensureYeastRuntimeInternal(
                     revision: session.projectionRevision,
                 };
                 await node.setProjection(projectionToApply.projection);
-                session.appliedProjectionRevision = projectionToApply.revision;
+                markProjectionApplied(projectionToApply);
             } catch (error: unknown) {
                 if (session.node === node && session.generation === generation) {
                     failCurrentRuntime(node, error);
@@ -791,10 +823,10 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
 export async function processYeastRuntimeTransaction(
     input: ProcessYeastRuntimeTransactionInput
 ): Promise<MidiEvent[] | null> {
-    if (input.onlyWhileProjectionCurrent && !projectionsEqual(session.projection, input.projection)) {
-        return null;
-    }
-    const record = recordProjection(input.projection);
+    // A guarded delivery is judged where earlier queued installs have landed,
+    // and records its projection only once it passes.
+    const onlyWhileWorkerHolds = input.onlyWhileProjectionCurrent === true;
+    const callTimeRecord = onlyWhileWorkerHolds ? null : recordProjection(input.projection);
     const rackId = input.rackId ?? input.trackId;
     const routeId = input.routeId ?? input.trackId;
     prepareRuntimeContext(input.context);
@@ -804,6 +836,10 @@ export async function processYeastRuntimeTransaction(
         if (session.generation !== transactionGeneration || session.context !== input.context) {
             return null;
         }
+        if (onlyWhileWorkerHolds && !workerHoldsProcessorsOf(input.projection)) {
+            return null;
+        }
+        const record = callTimeRecord ?? recordProjection(input.projection);
         const node = await ensureYeastRuntimeInternal(
             { context: input.context, projection: record.projection },
             record
@@ -823,7 +859,7 @@ export async function processYeastRuntimeTransaction(
                 if (!isLiveRuntime(node, generation)) {
                     throw new Error('Yeast Worker projection generation changed');
                 }
-                session.appliedProjectionRevision = record.revision;
+                markProjectionApplied(record);
             }
 
             const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId, trackId: input.trackId });
@@ -924,7 +960,7 @@ export function destroyYeastRuntime(): void {
         session.generation += 1;
         session.nodePromise = null;
         session.processTail = Promise.resolve();
-        session.appliedProjectionRevision = 0;
+        clearAppliedProjection();
         session.pendingAllNotesOff = null;
     }
     session.context = null;

@@ -19,7 +19,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
-import { destroyYeastRuntime } from '../../engine/yeastRuntime';
+import { applyYeastRuntimeProjection, destroyYeastRuntime } from '../../engine/yeastRuntime';
 import { type YeastNotesOffPayload } from '../../events';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { type YeastProcessorProjectionItem } from '../../models/YeastProcessorProjection';
@@ -260,6 +260,7 @@ function createRackBackedWorker(context: BaseAudioContext) {
     const installedProjections: string[][] = [];
     const blockEnds: number[] = [];
     const createdProcessorIds: string[] = [];
+    const settledNotesOff: YeastNotesOffPayload[] = [];
     const notesOffHandlers = new Set<(notesOff: YeastNotesOffPayload[]) => void>();
     const node = {
         context,
@@ -308,6 +309,7 @@ function createRackBackedWorker(context: BaseAudioContext) {
             }
             const payloads = Array.from(noteOffsByTrack, ([trackId, noteOffs]) => ({ trackId, noteOffs }));
             if (payloads.length > 0) {
+                settledNotesOff.push(...payloads);
                 for (const handler of notesOffHandlers) {
                     handler(payloads);
                 }
@@ -325,7 +327,7 @@ function createRackBackedWorker(context: BaseAudioContext) {
         onTerminalError: () => () => {},
         destroy: () => {},
     };
-    return { node, installedProjections, createdProcessorIds, blockEnds };
+    return { node, installedProjections, createdProcessorIds, settledNotesOff, blockEnds };
 }
 
 function createSynchronousEventBus() {
@@ -460,5 +462,38 @@ describe('a key released after its Yeast left the chain, through the real Yeast 
         setChain([YEAST_DEVICE, LEVAIN_DEVICE]);
 
         expect(await generatedPitches(YEAST_ID, 1)).toEqual([]);
+    });
+
+    it('still releases the key when only the removed rack’s parameters changed, without settling any rack', async () => {
+        await triggerLiveNoteOn(0, 60, 100);
+        expect(new Set(await generatedPitches(YEAST_ID, 1))).toEqual(new Set([60]));
+
+        setChain([LEVAIN_DEVICE]);
+        hydrateYeastState({
+            racks: {
+                [YEAST_ID]: { processors: [{ ...ARPEGGIATOR_RACK[0]!, params: { gate: 1.2 } }] },
+                [REPLACEMENT_YEAST_ID]: { processors: TRANSPOSER_RACK },
+            },
+        });
+        await triggerLiveNoteOff(0, 60);
+        setChain([YEAST_DEVICE, LEVAIN_DEVICE]);
+
+        expect(await generatedPitches(YEAST_ID, 1)).toEqual([]);
+        expect(worker.installedProjections.every((ids) => ids.join() === 'arp-1')).toBe(true);
+        expect(worker.createdProcessorIds).toEqual(['arp-1']);
+        expect(worker.settledNotesOff).toEqual([]);
+    });
+
+    it('withholds the removed Yeast’s key-up once a projection applied outside any transaction moved the worker to another rack', async () => {
+        await triggerLiveNoteOn(0, 60, 100);
+        expect(new Set(await generatedPitches(YEAST_ID, 1))).toEqual(new Set([60]));
+
+        setChain([LEVAIN_DEVICE]);
+        await applyYeastRuntimeProjection([{ id: 'tr-c', type: 'transposer', bypassed: false, params: {} }]);
+        const projectionsBeforeKeyUp = worker.installedProjections.length;
+        await triggerLiveNoteOff(0, 60);
+
+        expect(worker.installedProjections.slice(projectionsBeforeKeyUp)).toEqual([]);
+        expect(worker.createdProcessorIds).toEqual(['arp-1', 'tr-c']);
     });
 });
