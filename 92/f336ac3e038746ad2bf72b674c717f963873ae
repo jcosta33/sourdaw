@@ -1,0 +1,25 @@
+scripts/__tests__/ensurePinnedRustToolchain.spec.ts
+  s_1f0dcd815e8946::t_e8d0bbc729caa9 22-23,33-38,66-67,70,93,100,135-148,155-165
+  s_1f0dcd815e8946::t_4370d85dac1597 115,134
+  s_1f0dcd815e8946::t_301a37abf46d70 166
+scripts/ensurePinnedRustToolchain.sh
+  s_1f0dcd815e8946::t_551dfcbbaa8b1f 66-82,97-98
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_a80d74fd59f567 791-796
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "92f336ac3e038746ad2bf72b674c717f963873ae",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
