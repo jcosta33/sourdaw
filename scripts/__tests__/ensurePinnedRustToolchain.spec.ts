@@ -17,7 +17,8 @@ function runSetup(
     cacheHit: 'true' | 'false' | '' | 'unexpected' | undefined,
     installed: boolean,
     incomplete = false,
-    wrongPin = false
+    wrongPin = false,
+    missingHostStd = false
 ) {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-pinned-rust-'));
     roots.push(root);
@@ -50,6 +51,7 @@ case "$*" in
     fi ;;
   'component list --installed --toolchain nightly-2026-04-14-x86_64-unknown-linux-gnu')
     printf '%s\\n' 'rustc-x86_64-unknown-linux-gnu' 'cargo-x86_64-unknown-linux-gnu'
+    [ "$RUSTUP_TEST_MISSING_HOST_STD" = 1 ] || printf '%s\\n' 'rust-std-x86_64-unknown-linux-gnu'
     [ "$RUSTUP_TEST_INCOMPLETE" = 1 ] || printf '%s\\n' 'rustfmt-x86_64-unknown-linux-gnu' 'clippy-x86_64-unknown-linux-gnu' ;;
   'run nightly-2026-04-14-x86_64-unknown-linux-gnu rustc -vV') printf '%s\\n' 'rustc 1.89.0-nightly' 'host: x86_64-unknown-linux-gnu' ;;
   'run nightly-2026-04-14-x86_64-unknown-linux-gnu cargo --version') printf '%s\\n' 'cargo 1.89.0-nightly' ;;
@@ -76,6 +78,7 @@ esac
             RUSTUP_TEST_EXACT_HIT: cacheHit === 'true' ? '1' : '0',
             RUSTUP_TEST_INCOMPLETE: incomplete ? '1' : '0',
             RUSTUP_TEST_WRONG_PIN: wrongPin ? '1' : '0',
+            RUSTUP_TEST_MISSING_HOST_STD: missingHostStd ? '1' : '0',
             RUSTUP_DIST_SERVER: 'http://127.0.0.1:9',
         },
     });
@@ -91,6 +94,14 @@ describe('pinned Rust setup', () => {
         expect(calls).not.toMatch(/^toolchain install(?: |$)/m);
         expect(calls).toContain('run nightly-2026-04-14-x86_64-unknown-linux-gnu rustc -vV');
         expect(readFileSync(githubEnv, 'utf8')).toContain('RUSTUP_AUTO_INSTALL=0');
+    });
+
+    it('rejects an exact hit missing only the host standard library without installing', () => {
+        const { result, calls } = runSetup('true', true, false, false, true);
+        expect(result.status).not.toBe(0);
+        expect(calls).toContain('component list --installed --toolchain nightly-2026-04-14-x86_64-unknown-linux-gnu');
+        expect(calls).not.toMatch(/^run .* (?:cargo|rustfmt|cargo-clippy) --version$/m);
+        expect(calls).not.toMatch(/^toolchain install(?: |$)/m);
     });
 
     it('fails a missing or incomplete exact hit without falling back to distribution', () => {

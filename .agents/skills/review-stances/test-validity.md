@@ -774,3 +774,14 @@ Derive the fixture's admitted range from the complete multiline binding; preserv
 independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
 only the committed recognizer is reverted. A full-source screen assertion does not prove
 which region the real scan caller admitted.
+
+### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
+
+PR #5269's successful exact-hit fixture reported rustc, cargo, rustfmt, and clippy, so it
+could not expose that the cache admission omitted the host `rust-std` required by rustup's
+minimal profile.
+
+Probe that would have caught it: keep `rust-std-<host>` in the complete exact-hit fixture,
+then remove only that component while leaving rustc, cargo, and every TOML extra installed.
+Require the exact cache hit to fail before any toolchain-install request; the preserved full
+fixture must still pass without installation.

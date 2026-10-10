@@ -66,6 +66,7 @@ fi
 installed=$(rustup component list --installed --toolchain "$active")
 printf '%s\n' "$installed" | grep -Fx "rustc-$host" >/dev/null
 printf '%s\n' "$installed" | grep -Fx "cargo-$host" >/dev/null
+printf '%s\n' "$installed" | grep -Fx "rust-std-$host" >/dev/null
 while IFS= read -r component; do
   printf '%s\n' "$installed" | grep -Fx "$component-$host" >/dev/null || {
     printf 'pinned Rust toolchain missing component: %s\n' "$component" >&2
