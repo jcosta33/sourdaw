@@ -1,0 +1,19 @@
+release/open-source-inventory.json
+  s_893120061bb856::t_8b3374a149626e 1212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "561b9d0a547f161e247836467b7d41276caf56f0",
+  "prompts": {},
+  "sessions": {
+    "s_893120061bb856": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1256e-9c67-7563-9585-8e8c8ddee529",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
