@@ -59,6 +59,9 @@ type Processor = {
     port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: (message: unknown) => void };
     process(inputs: Float32Array[][]): boolean;
 };
+type MockMediaStream = { getTracks: () => { stop: () => void }[] };
+type MockGetUserMedia = (constraints: MediaStreamConstraints) => Promise<MockMediaStream>;
+
 const hardware = vi.hoisted(() => ({
     now: 50,
     rollStarts: 0,
@@ -368,9 +371,14 @@ describe('real recorder first-frame capture placement', () => {
                     { skipUndo: true }
                 );
             }
-            let admitSecond!: (stream: MediaStream) => void;
-            const stream = { getTracks: () => [{ stop: vi.fn() }] } as MediaStream;
-            vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementation(async (constraints) => {
+            let admitSecond!: (stream: MockMediaStream) => void;
+            const stream: MockMediaStream = { getTracks: () => [{ stop: vi.fn() }] };
+            const getUserMedia = vi.fn<MockGetUserMedia>();
+            Object.defineProperty(navigator, 'mediaDevices', {
+                configurable: true,
+                value: { getUserMedia },
+            });
+            getUserMedia.mockImplementation(async (constraints) => {
                 const audio = constraints?.audio;
                 if (
                     typeof audio === 'object' &&
@@ -378,7 +386,7 @@ describe('real recorder first-frame capture placement', () => {
                     'exact' in audio.deviceId &&
                     audio.deviceId.exact === 'input-b'
                 ) {
-                    return new Promise<MediaStream>((resolve) => {
+                    return new Promise<MockMediaStream>((resolve) => {
                         admitSecond = resolve;
                     });
                 }

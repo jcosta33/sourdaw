@@ -361,7 +361,13 @@ describe('captured pass source endings', () => {
         expect(resolveTrackClipsWithComping('t1', [clip], unavailable)).toEqual(resolveClipsWithComping('t1', [clip]));
     });
 
-    it.each([
+    const retainedFrameCases: readonly {
+        name: string;
+        clip: Clip;
+        start: number;
+        end: number;
+        tempo: number;
+    }[] = [
         { name: 'original', clip: recording(8, 16), start: 8, end: 8.8, tempo: 120 },
         { name: 'moved', clip: recording(12, 20), start: 12, end: 12.8, tempo: 120 },
         {
@@ -395,7 +401,9 @@ describe('captured pass source endings', () => {
         { name: 'slipped', clip: recording(8, 16, 0.2), start: 8, end: 8.6, tempo: 120 },
         { name: 'trimmed', clip: recording(8.2, 16, 0.2), start: 8.2, end: 8.8, tempo: 120 },
         { name: 'tempo edited', clip: recording(8, 16), start: 8, end: 8.4, tempo: 60 },
-    ])('retains original captured frames when $name', ({ clip, start, end, tempo }) => {
+    ];
+
+    it.each(retainedFrameCases)('retains original captured frames when $name', ({ clip, start, end, tempo }) => {
         tempoMapStore.set({ changes: [{ id: 'tempo', beat: 0, tempo, curve: 'instant' }] });
         const take = { ...placedPass('bounded', [8, 8.8], 0, 0.1), passSourceEndSeconds: 0.5 };
         const state = lane([take], take.id, start, start + 2);
