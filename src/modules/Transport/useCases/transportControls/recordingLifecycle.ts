@@ -2,7 +2,8 @@ type CaptureClockObserver = (
     beat: number,
     contextSeconds: number,
     relocated: boolean,
-    effectiveFromContextSeconds?: number
+    effectiveFromContextSeconds?: number,
+    songSeconds?: number
 ) => void;
 
 type RecordingLifecycle = {
@@ -98,9 +99,9 @@ export const recordingLifecycle: RecordingLifecycle = {
             recordingClocks.delete(observe);
         };
     },
-    observeCaptureClock: (beat, contextSeconds, relocated, effectiveFromContextSeconds) => {
+    observeCaptureClock: (beat, contextSeconds, relocated, effectiveFromContextSeconds, songSeconds) => {
         for (const observe of recordingClocks) {
-            observe(beat, contextSeconds, relocated, effectiveFromContextSeconds);
+            observe(beat, contextSeconds, relocated, effectiveFromContextSeconds, songSeconds);
         }
     },
     trackCommit,

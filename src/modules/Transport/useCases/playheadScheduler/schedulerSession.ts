@@ -123,6 +123,8 @@ export const schedulerSession = {
     pendingSeam: null as {
         seamAudioTime: number;
         destinationBeat: number;
+        /** Song time from the map that emitted this seam, retained until it sounds. */
+        destinationSongSeconds?: number;
         anchorAudioTime: number;
         anchorPosition: number;
     } | null,

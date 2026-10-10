@@ -189,10 +189,12 @@ function stageLoopWrapTakes(
     passEndContextSeconds: number,
     boundary: { planned?: boolean; endBeat?: number; nextPassStartBeat?: number } = {}
 ): void {
-    if (!current.isRecording) {
+    // A punch can open or close inside this tick; its entry snapshot is stale.
+    // The owner ref records exactly which clips still cross this boundary.
+    const recordingClipIds = new Set(activeRecordingRef.current);
+    if (recordingClipIds.size === 0) {
         return;
     }
-    const recordingClipIds = new Set(activeRecordingRef.current);
     const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
     for (const track of armedTracks) {
         // The take must reference the clip that is actually recording
@@ -360,7 +362,13 @@ export function startPlayheadScheduler(): void {
         const now = ctx.currentTime;
         const soundedSeam = schedulerSession.pendingSeam;
         if (soundedSeam && now >= soundedSeam.seamAudioTime) {
-            recordingLifecycle.observeCaptureClock(soundedSeam.destinationBeat, soundedSeam.seamAudioTime, true);
+            recordingLifecycle.observeCaptureClock(
+                soundedSeam.destinationBeat,
+                soundedSeam.seamAudioTime,
+                true,
+                undefined,
+                soundedSeam.destinationSongSeconds
+            );
         }
         const priorTempo = previousTempo;
         previousTempo = current.tempo;
@@ -418,7 +426,8 @@ export function startPlayheadScheduler(): void {
                     playheadClockRef.beat,
                     playheadClockRef.audioTimeSeconds,
                     true,
-                    now
+                    now,
+                    secondsBetweenBeats(changes, 0, playheadClockRef.beat, current.tempo)
                 );
             }
             schedulerSession.lastLoopSignature = loopSignature;
@@ -679,6 +688,7 @@ export function startPlayheadScheduler(): void {
             schedulerSession.pendingSeam = {
                 seamAudioTime,
                 destinationBeat: current.loopStart,
+                destinationSongSeconds: secondsBetweenBeats(changes, 0, current.loopStart, current.tempo),
                 anchorAudioTime: now,
                 anchorPosition: newPosition,
             };
@@ -812,12 +822,25 @@ export function startPlayheadScheduler(): void {
         playheadClockRef.beat = publishedBeat;
         playheadClockRef.audioTimeSeconds = now;
         if (jumpToPosition !== null) {
-            recordingLifecycle.observeCaptureClock(publishedBeat, now, true);
+            recordingLifecycle.observeCaptureClock(
+                publishedBeat,
+                now,
+                true,
+                undefined,
+                secondsBetweenBeats(changes, 0, publishedBeat, current.tempo)
+            );
         } else if (lateWrap && lateWrapSeamAudioTime !== null) {
             recordingLifecycle.observeCaptureClock(
                 editPassEndBeat === undefined ? current.loopStart : publishedBeat,
                 lateWrapSeamAudioTime,
-                true
+                true,
+                undefined,
+                secondsBetweenBeats(
+                    changes,
+                    0,
+                    editPassEndBeat === undefined ? current.loopStart : publishedBeat,
+                    current.tempo
+                )
             );
         }
         recordingLifecycle.observeCaptureClock(publishedBeat, now, false);

@@ -325,8 +325,73 @@ describe('captured pass source endings', () => {
     });
 
     it.each([
+        { ratio: 2, anchorBeat: 12.2, endpointBeat: 12.6 },
+        { ratio: 0.5, anchorBeat: 12.8, endpointBeat: 14.4 },
+    ])('maps source anchors and later comp entry at playback rate $ratio', ({ ratio, anchorBeat, endpointBeat }) => {
+        tempoMapStore.set({ changes: [{ id: 'tempo', beat: 0, tempo: 120, curve: 'instant' }] });
+        const clip = { ...recording(12, 20, 0.2), stretchMode: 'timestretch' as const, stretchRatio: ratio };
+        const take = { ...placedPass('bounded', [12, 16], 0.3, 0.1), passSourceEndSeconds: 0.5 };
+        const compStart = anchorBeat + 0.1;
+        const state = lane([take], take.id, compStart, 16);
+        takeLaneStore.set(state);
+        const live = resolveClipsWithComping('t1', [clip]);
+        expect(resolveTrackClipsWithComping('t1', [clip], state)).toEqual(live);
+        const selected = live.find((fragment) => fragment.regionStartBeat === compStart)!;
+        expect(selected.regionEndBeat).toBeCloseTo(endpointBeat, 10);
+        const [playback] = projectOfflineAudioClipPlaybacks({
+            clip: selected,
+            bufferDurationSeconds: 2,
+            regionStartBeat: 12,
+            regionStartSec: 6,
+            durationSeconds: 8,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => beat / 2,
+            resolveTempoAtBeat: () => 120,
+        });
+        expect(playback!.startSec).toBeCloseTo((compStart - 12) / 2, 10);
+        expect(playback!.bufferOffsetSec).toBeCloseTo(0.1 + 0.05 * ratio, 10);
+        expect(playback!.bufferOffsetSec + playback!.playDuration * playback!.playbackRate).toBeCloseTo(0.5, 10);
+        const unavailable = lane([take], take.id, endpointBeat, 16);
+        takeLaneStore.set(unavailable);
+        expect(
+            resolveClipsWithComping('t1', [clip]).some(
+                (fragment) => fragment.regionStartBeat >= endpointBeat && fragment.regionStartBeat < 16
+            )
+        ).toBe(false);
+        expect(resolveTrackClipsWithComping('t1', [clip], unavailable)).toEqual(resolveClipsWithComping('t1', [clip]));
+    });
+
+    it.each([
         { name: 'original', clip: recording(8, 16), start: 8, end: 8.8, tempo: 120 },
         { name: 'moved', clip: recording(12, 20), start: 12, end: 12.8, tempo: 120 },
+        {
+            name: 'faster source',
+            clip: { ...recording(12, 20), stretchMode: 'timestretch', stretchRatio: 2 },
+            start: 12,
+            end: 12.4,
+            tempo: 120,
+        },
+        {
+            name: 'slower source',
+            clip: { ...recording(12, 20), stretchMode: 'timestretch', stretchRatio: 0.5 },
+            start: 12,
+            end: 13.6,
+            tempo: 120,
+        },
+        {
+            name: 'faster slipped source',
+            clip: { ...recording(12, 20, 0.2), stretchMode: 'timestretch', stretchRatio: 2 },
+            start: 12,
+            end: 12.3,
+            tempo: 120,
+        },
+        {
+            name: 'off with stored ratio',
+            clip: { ...recording(12, 20), stretchMode: 'off', stretchRatio: 2 },
+            start: 12,
+            end: 12.8,
+            tempo: 120,
+        },
         { name: 'slipped', clip: recording(8, 16, 0.2), start: 8, end: 8.6, tempo: 120 },
         { name: 'trimmed', clip: recording(8.2, 16, 0.2), start: 8.2, end: 8.8, tempo: 120 },
         { name: 'tempo edited', clip: recording(8, 16), start: 8, end: 8.4, tempo: 60 },
@@ -355,7 +420,26 @@ describe('captured pass source endings', () => {
             resolveTempoAtBeat: () => tempo,
         });
         expect(playback).toBeDefined();
-        expect(playback!.bufferOffsetSec + playback!.playDuration).toBeCloseTo(0.5, 10);
-        expect(Math.round((playback!.bufferOffsetSec + playback!.playDuration) * 48000) - 1).toBe(23999);
+        const expectedSourceRate = clip.stretchMode === 'timestretch' ? clip.stretchRatio! : 1;
+        expect(playback!.playbackRate).toBe(expectedSourceRate);
+        const expectedEntry = 0.1 + ((clip.audioOffsetBeats ?? 0) * 60) / tempo;
+        expect(playback!.bufferOffsetSec).toBeCloseTo(expectedEntry, 10);
+        expect(playback!.bufferOffsetSec + playback!.playDuration * playback!.playbackRate).toBeCloseTo(0.5, 10);
+        expect(
+            Math.round((playback!.bufferOffsetSec + playback!.playDuration * playback!.playbackRate) * 48000) - 1
+        ).toBe(23999);
+        const trimSeconds = Math.min(0.1, playback!.playDuration / 2);
+        const [trimmed] = projectOfflineAudioClipPlaybacks({
+            clip: selected,
+            bufferDurationSeconds: 2,
+            regionStartBeat: start + (trimSeconds * tempo) / 60,
+            regionStartSec: (start * 60) / tempo + trimSeconds,
+            durationSeconds: 8,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => (beat * 60) / tempo,
+            resolveTempoAtBeat: () => tempo,
+        });
+        expect(trimmed!.bufferOffsetSec).toBeCloseTo(expectedEntry + trimSeconds * expectedSourceRate, 10);
+        expect(trimmed!.bufferOffsetSec + trimmed!.playDuration * trimmed!.playbackRate).toBeCloseTo(0.5, 10);
     });
 });

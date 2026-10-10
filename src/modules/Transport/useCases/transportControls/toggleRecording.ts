@@ -54,6 +54,55 @@ function capturePlayingAdmissionClock(hold: TransportHold, changes: readonly Tem
     hold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, playheadClockRef.beat, tempo);
 }
 
+function createCaptureOwnerClock(
+    trackId: string,
+    captureClocks: ReturnType<typeof createRecordingCaptureClocks>,
+    hold: TransportHold
+): CaptureClock {
+    const clock = captureClocks.create(trackId);
+    if (hold.rolledAtContextSeconds !== null && hold.captureStartSongSeconds !== null) {
+        clock.relocation = {
+            contextSeconds: hold.rolledAtContextSeconds,
+            songSeconds: hold.captureStartSongSeconds,
+        };
+    }
+    return clock;
+}
+
+function createManualCaptureClocks(ctx: AudioContext, hold: TransportHold) {
+    return createRecordingCaptureClocks(
+        ctx,
+        (beat) =>
+            secondsBetweenBeats(
+                tempoMapStore.value?.changes ?? [],
+                0,
+                beat,
+                getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM
+            ),
+        () => {
+            hold.endedAtContextSeconds ??= ctx.currentTime;
+        }
+    );
+}
+
+function openManualRecordingClips(
+    rolling: boolean,
+    anchorBeat: number | undefined,
+    hold: TransportHold,
+    changes: readonly TempoChange[],
+    tempo: number
+): ReturnType<typeof startRecording> {
+    if (!rolling) {
+        return startRecording(anchorBeat, () => hold.firstPassContextSeconds);
+    }
+    // Worker readiness and its first input block can arrive after admission.
+    // Preserve the playback correlation that was retained before producer start.
+    if (hold.rolledAtContextSeconds === null) {
+        capturePlayingAdmissionClock(hold, changes, tempo);
+    }
+    return startRecording(playheadPositionRef.current);
+}
+
 /**
  * Signed distance from sample zero to the roll (or stop while held). Capture
  * may begin on either side of that clock; a late first frame moves media ahead.
@@ -273,41 +322,31 @@ async function beginActualRecording(
     const ctx = getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     let admissionTempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
-    let admissionChanges = tempoMapStore.value?.changes ?? [];
+    let admissionChanges = structuredClone(tempoMapStore.value?.changes ?? []);
     const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
     const audioTracks = armedTracks.filter((track) => track.kind === 'audio');
     let clips: ReturnType<typeof startRecording> = [];
 
-    let unregisterEnding = (): void => {};
-    const captureClocks = createRecordingCaptureClocks(
-        ctx,
-        (beat) =>
-            secondsBetweenBeats(
-                tempoMapStore.value?.changes ?? [],
-                0,
-                beat,
-                getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM
-            ),
-        () => {
-            transportHold.endedAtContextSeconds ??= ctx.currentTime;
-        }
-    );
+    const captureClocks = createManualCaptureClocks(ctx, transportHold);
     const detachReaders = captureClocks.dispose;
-    // Stop can cancel admission while another track still awaits permission.
-    unregisterEnding = recordingLifecycle.registerEnding(detachReaders);
-    const recordingStarts = audioTracks.map((track) => {
+    // Every producer may publish while another input still awaits permission.
+    // Retain the rolling correlation and observe seams before starting any of them.
+    if (getTransportState()?.isPlaying) {
+        capturePlayingAdmissionClock(transportHold, admissionChanges, admissionTempo);
+    }
+    const captureOwners = audioTracks.map((track) => ({
+        track,
+        captureClock: createCaptureOwnerClock(track.id, captureClocks, transportHold),
+    }));
+    captureClocks.register();
+    const recordingStarts = captureOwners.map(({ track, captureClock }) => {
         const trackLatencySec = getCompensationDelay(track.id);
         const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
-        const captureClock = captureClocks.create(track.id);
-
         return startAudioRecording(
             track.id,
             (result) => {
                 captureClock.readStart = null;
                 captureClocks.remove(track.id);
-                if (captureClocks.size === 0) {
-                    unregisterEnding();
-                }
                 completeManualRecording({
                     result,
                     recClip: clips.find((clip) => clip.trackId === track.id),
@@ -332,12 +371,10 @@ async function beginActualRecording(
         const started = await Promise.all(recordingStarts);
         if (!recordingLifecycle.ownsPendingRecordingStart(startToken)) {
             detachReaders();
-            unregisterEnding();
             return false;
         }
         if (started.some((didStart) => !didStart)) {
             detachReaders();
-            unregisterEnding();
             recordingLifecycle.completePendingRecordingStart(startToken);
             await stopAudioRecording();
             notifyUser('Unable to start recording. Check the selected audio input.', 'error');
@@ -347,7 +384,6 @@ async function beginActualRecording(
 
     if (!recordingLifecycle.completePendingRecordingStart(startToken)) {
         detachReaders();
-        unregisterEnding();
         await stopAudioRecording();
         return false;
     }
@@ -361,17 +397,7 @@ async function beginActualRecording(
     admissionTempo = admittedTransport?.tempo ?? DEFAULT_TEMPO_BPM;
     admissionChanges = structuredClone(tempoMapStore.value?.changes ?? []);
     const rolling = admittedTransport?.isPlaying === true;
-    if (rolling) {
-        // Worker readiness and its first input block can arrive after this
-        // admission. Keep the committed playback correlation for sample zero;
-        // a later tick, tempo edit or stop must not replace this pair.
-        capturePlayingAdmissionClock(transportHold, admissionChanges, admissionTempo);
-        clips = startRecording(playheadPositionRef.current);
-    } else {
-        clips = startRecording(anchorBeat, () => transportHold.firstPassContextSeconds);
-    }
-    unregisterEnding();
-    captureClocks.register();
+    clips = openManualRecordingClips(rolling, anchorBeat, transportHold, admissionChanges, admissionTempo);
     updateTransportState({ isRecording: true });
     return true;
 }

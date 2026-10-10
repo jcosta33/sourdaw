@@ -31,7 +31,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
-import { defaultTransportState, tempoMapStore, transportStore } from '../../../stores';
+import { defaultTransportState, setGestureClockSource, tempoMapStore, transportStore } from '../../../stores';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
@@ -324,6 +324,7 @@ describe('punch audio capture loop placement', () => {
         flushAutomergeStorageWrites();
         hardware.latencySeconds = 0.1;
         hardware.now = 50;
+        setGestureClockSource({ getAudioTimeSeconds: () => hardware.now, readNativeCursorBeats: () => null });
         hardware.terminal = null;
         hardware.buffer = null;
         hardware.drainSeconds = 0;
@@ -431,6 +432,61 @@ describe('punch audio capture loop placement', () => {
         expect(lane().takes).toEqual(committedTakes);
         expectProjectProjection();
     });
+
+    it.each([
+        { route: 'manual', observation: 'scheduler' },
+        { route: 'punch', observation: 'scheduler' },
+        { route: 'manual', observation: 'terminal' },
+        { route: 'punch', observation: 'terminal' },
+    ] as const)(
+        '$route retains a sounded seam through a tempo edit before its $observation observation',
+        async ({ route, observation }) => {
+            hardware.now = 51;
+            hardware.deferFirstFrame = true;
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.8 });
+            if (route === 'punch') {
+                transportStore.set({ ...transportStore.value!, isPlaying: false });
+                await executeAppAction({ type: 'setPunchIn', payload: { beat: 11.8 } }, { skipUndo: true });
+                await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+                await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+                transportStore.set({ ...transportStore.value!, isPlaying: true });
+            }
+            startPlayheadScheduler();
+            if (route === 'manual') {
+                toggleRecording();
+            }
+            await tick(0.01);
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1), { interval: 1 });
+            expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(51.1, 10);
+            // Chronological producer publication: the seam sounds, then PCM starts,
+            // then the real Command edits tempo, all before the next scheduler tick.
+            hardware.now = 51.125;
+            hardware.zeroFrame = Math.round(hardware.now * hardware.sampleRate);
+            hardware.now = 51.15;
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+            if (observation === 'scheduler') {
+                await tick(0.01);
+            }
+            hardware.now = 51.4;
+            await stopPlayback();
+            const clips = structuredClone(recordedClips());
+            const takes = structuredClone(lane().takes);
+            const clip = clips[0]!;
+            const origin =
+                secondsBetweenBeats(tempoMapStore.value!.changes, 0, clip.startBeat, 60) - (clip.audioOffsetBeats ?? 0);
+            expect(origin).toBeCloseTo(3.925, 10);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expectProjectProjection();
+            await undo();
+            expect(recordedClips()).toEqual([]);
+            expect(takeLaneStore.value?.lanes).toEqual([]);
+            expectProjectProjection();
+            await redo();
+            expect(recordedClips()).toEqual(clips);
+            expect(lane().takes).toEqual(takes);
+            expectProjectProjection();
+        }
+    );
 
     it.each([1, 3])('places manual PCM whose first frame arrives after %s rolling loop wraps', async (wraps) => {
         hardware.now = 51;

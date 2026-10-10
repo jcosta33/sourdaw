@@ -14,6 +14,17 @@ type CaptureClock = {
     freeze: (sampleZeroContextSeconds: number) => void;
     setReader: (readStart: NonNullable<CaptureClock['readStart']>) => void;
 };
+type CaptureClockObserver = Parameters<typeof recordingLifecycle.registerCaptureClock>[0];
+
+function observeSoundedTerminalSeam(context: Pick<AudioContext, 'currentTime'>, observe: CaptureClockObserver): void {
+    // A planned seam sounding after the last tick is an occurrence;
+    // a cancelled or still-future seam never is.
+    const pending = schedulerSession.pendingSeam;
+    if (pending && context.currentTime >= pending.seamAudioTime) {
+        observe(pending.destinationBeat, pending.seamAudioTime, true, undefined, pending.destinationSongSeconds);
+    }
+    observe(playheadClockRef.beat, context.currentTime, false);
+}
 
 function freezeCaptureClock(clock: CaptureClock, sampleZeroContextSeconds: number): void {
     const pending = clock.pendingRelocation;
@@ -105,14 +116,15 @@ export function createRecordingCaptureClocks(
         beat: number,
         contextSeconds: number,
         relocated: boolean,
-        effectiveFromContextSeconds?: number
+        effectiveFromContextSeconds?: number,
+        songSeconds?: number
     ): void {
         if (ended) {
             return;
         }
         let relocation: CaptureRelocation | null = null;
         if (relocated) {
-            relocation = { contextSeconds, songSeconds: songSecondsAtBeat(beat) };
+            relocation = { contextSeconds, songSeconds: songSeconds ?? songSecondsAtBeat(beat) };
             if (effectiveFromContextSeconds !== undefined) {
                 relocation.effectiveFromContextSeconds = effectiveFromContextSeconds;
             }
@@ -152,13 +164,7 @@ export function createRecordingCaptureClocks(
             }
             unregisterClock = recordingLifecycle.registerCaptureClock(retainClock);
             unregisterEnding = recordingLifecycle.registerEnding(() => {
-                // A planned seam sounding after the last tick is an occurrence;
-                // a cancelled or still-future seam never is.
-                const pending = schedulerSession.pendingSeam;
-                if (pending && context.currentTime >= pending.seamAudioTime) {
-                    retainClock(pending.destinationBeat, pending.seamAudioTime, true);
-                }
-                retainClock(playheadClockRef.beat, context.currentTime, false);
+                observeSoundedTerminalSeam(context, retainClock);
                 onEnding?.();
                 dispose();
             });

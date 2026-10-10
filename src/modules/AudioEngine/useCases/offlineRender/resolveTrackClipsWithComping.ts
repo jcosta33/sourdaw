@@ -1,4 +1,5 @@
 import { takeLaneStore, type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { liveTempoTimeline, type ResolutionTempoTimeline } from '../livePlayback/liveTempoTimeline';
 
@@ -94,14 +95,19 @@ function legacyPassMedia(clip: TrackClip, sourceOffsetBeats: number, timeline: R
 }
 
 /** The beat a clip's media reaches `anchorSeconds` on. */
-function beatAtClipMediaSeconds(clip: TrackClip, anchorSeconds: number, timeline: ResolutionTempoTimeline): number {
+function beatAtClipMediaSeconds(
+    clip: TrackClip,
+    anchorSeconds: number,
+    timeline: ResolutionTempoTimeline,
+    sourceRate: number
+): number {
     const entrySeconds = clipEntrySeconds(timeline, clip.startBeat, clip.audioOffsetBeats ?? 0);
     const constantTempoBeat =
-        clip.startBeat + ((anchorSeconds - entrySeconds) * timeline.tempoAtBeat(clip.startBeat)) / 60;
+        clip.startBeat + ((anchorSeconds - entrySeconds) * timeline.tempoAtBeat(clip.startBeat)) / (60 * sourceRate);
     if (isTempoConstantBetween(timeline, clip.startBeat, constantTempoBeat)) {
         return constantTempoBeat;
     }
-    return timeline.beatAtSeconds(timeline.secondsAtBeat(clip.startBeat) - entrySeconds + anchorSeconds);
+    return timeline.beatAtSeconds(timeline.secondsAtBeat(clip.startBeat) + (anchorSeconds - entrySeconds) / sourceRate);
 }
 
 /** A placed audio pass, held in media seconds. */
@@ -112,22 +118,24 @@ function placedPassMedia(
     sourceEndSeconds: number | undefined,
     timeline: ResolutionTempoTimeline
 ): TakeMedia {
-    const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline);
+    const sourceRate = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
+    const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline, sourceRate);
     const depthBeats = (depthSeconds * timeline.tempoAtBeat(passStartBeat)) / 60;
     const media: TakeMedia = {
         earliestBeat: Math.max(clip.startBeat, passStartBeat),
-        sourceStartBeat: passStartBeat - depthBeats,
+        sourceStartBeat: passStartBeat - depthBeats / sourceRate,
         offsetAt: (beat) => {
             if (isTempoConstantBetween(timeline, passStartBeat, beat)) {
-                return depthBeats + (beat - passStartBeat);
+                return depthBeats + (beat - passStartBeat) * sourceRate;
             }
-            const mediaSeconds = depthSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat);
+            const mediaSeconds =
+                depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
             return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
         },
     };
     if (sourceEndSeconds !== undefined) {
         media.latestBeat = timeline.beatAtSeconds(
-            timeline.secondsAtBeat(passStartBeat) + sourceEndSeconds - depthSeconds
+            timeline.secondsAtBeat(passStartBeat) + (sourceEndSeconds - depthSeconds) / sourceRate
         );
     }
     return media;

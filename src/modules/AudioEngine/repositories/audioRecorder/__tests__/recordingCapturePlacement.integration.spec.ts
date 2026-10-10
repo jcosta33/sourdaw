@@ -164,11 +164,11 @@ let worker: {
 const pendingAnimationFrames = new Map<number, FrameRequestCallback>();
 let nextAnimationFrame = 0;
 type Project = { tracks: NonNullable<typeof trackStore.value>; takeLanes: NonNullable<typeof takeLaneStore.value> };
-function publication() {
-    if (!worker.sab) {
+function publication(sab = worker.sab) {
+    if (!sab) {
         throw new Error('Recorder did not initialize its worker ring');
     }
-    const result = readRecordingPublication(new Int32Array(worker.sab, 0, RECORDING_RING_CONTROL_INTS));
+    const result = readRecordingPublication(new Int32Array(sab, 0, RECORDING_RING_CONTROL_INTS));
     if (result.status !== 'stable') {
         throw new Error('Processor did not publish a stable capture');
     }
@@ -270,14 +270,16 @@ describe('real recorder first-frame capture placement', () => {
         vi.stubGlobal(
             'AudioWorkletNode',
             class {
+                private readonly ownedProcessor = new processorConstructor!();
                 port = {
                     onmessage: null as ((event: { data: unknown }) => void) | null,
-                    postMessage: (data: unknown) => processor.port.onmessage?.({ data }),
+                    postMessage: (data: unknown) => this.ownedProcessor.port.onmessage?.({ data }),
                 };
                 connect = vi.fn();
                 disconnect = vi.fn();
                 constructor() {
-                    processor.port.postMessage = (data) => this.port.onmessage?.({ data });
+                    processor = this.ownedProcessor;
+                    this.ownedProcessor.port.postMessage = (data) => this.port.onmessage?.({ data });
                 }
             }
         );
@@ -303,7 +305,7 @@ describe('real recorder first-frame capture placement', () => {
                         worker = { onmessage: this.onmessage, sab: this.sab, messages: this.messages };
                     }
                     if (data.type === 'stop' && this.sab) {
-                        const captured = publication();
+                        const captured = publication(this.sab);
                         const pcm = new Float32Array(
                             this.sab,
                             RECORDING_RING_CONTROL_BYTES,
@@ -344,6 +346,93 @@ describe('real recorder first-frame capture placement', () => {
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
     });
+
+    it.each([120, 60])(
+        'retains first PCM while another independently keyed input waits across the loop seam and finishes at %s BPM',
+        async (tempo) => {
+            const secondId = 'waiting-input';
+            await executeAppAction(
+                { type: 'addTrack', payload: { id: secondId, kind: 'audio', name: 'Waiting input' } },
+                { skipUndo: true }
+            );
+            for (const [trackId, inputId] of [
+                [TRACK_ID, 'input-a'],
+                [secondId, 'input-b'],
+            ]) {
+                await executeAppAction(
+                    { type: 'armTrack', payload: { trackId: trackId!, armed: true } },
+                    { skipUndo: true }
+                );
+                await executeAppAction(
+                    { type: 'setTrackInput', payload: { trackId: trackId!, inputId: inputId! } },
+                    { skipUndo: true }
+                );
+            }
+            let admitSecond!: (stream: MediaStream) => void;
+            const stream = { getTracks: () => [{ stop: vi.fn() }] } as MediaStream;
+            vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementation(async (constraints) => {
+                const audio = constraints?.audio;
+                if (
+                    typeof audio === 'object' &&
+                    typeof audio.deviceId === 'object' &&
+                    'exact' in audio.deviceId &&
+                    audio.deviceId.exact === 'input-b'
+                ) {
+                    return new Promise<MediaStream>((resolve) => {
+                        admitSecond = resolve;
+                    });
+                }
+                return stream;
+            });
+            hardware.rollGate = Promise.resolve();
+            hardware.now = 50.2;
+            transportStore.set({ ...transportStore.value!, playheadPosition: 11.8, isLooping: true });
+            setPlayback(true);
+            await vi.waitFor(() => expect(playheadClockRef.beat).toBe(11.8), { interval: 1 });
+            toggleRecording();
+            await vi.waitFor(() => expect(activeSessions.has(TRACK_ID)).toBe(true), { interval: 1 });
+            expect(activeRecordingRef.current).toEqual([]);
+            worker.onmessage?.({ data: { type: 'ready' } });
+            hardware.now = 50.25;
+            const zeroFrame = Math.round(hardware.now * context.sampleRate);
+            for (let offset = 0; offset < 9600; offset += 128) {
+                hardware.now = (zeroFrame + offset) / context.sampleRate;
+                vi.stubGlobal('currentFrame', zeroFrame + offset);
+                processor.process([[Float32Array.from({ length: 128 }, (_value, index) => offset + index)]]);
+                if (offset % 1024 === 0) {
+                    await schedulerTick(hardware.now);
+                }
+            }
+            expect(publication().sampleZeroContextFrame).toBe(2412000);
+            for (const seconds of [50.45, 50.6, 50.8, 51, 51.2]) {
+                await schedulerTick(seconds);
+            }
+            if (tempo !== 120) {
+                hardware.now = 51.21;
+                await executeAppAction({ type: 'setTempo', payload: { bpm: tempo } }, { skipUndo: true });
+                await schedulerTick(51.22);
+            }
+            admitSecond(stream);
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(2), { interval: 1 });
+            hardware.now = 51.4;
+            await stopPlayback();
+            const clips = structuredClone(trackStore.value!.tracks[0]!.clips);
+            const lanes = structuredClone(takeLaneStore.value!.lanes);
+            expect(clips).toHaveLength(1);
+            expect(((clips[0]!.startBeat - (clips[0]!.audioOffsetBeats ?? 0)) * 60) / tempo).toBeCloseTo(5.85, 10);
+            expect(trackStore.value!.tracks[1]!.clips).toEqual([]);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expectProjection();
+            await undo();
+            expect(trackStore.value!.tracks.every((track) => track.clips.length === 0)).toBe(true);
+            expect(takeLaneStore.value!.lanes).toEqual([]);
+            expectProjection();
+            await redo();
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(clips);
+            expect(takeLaneStore.value!.lanes).toEqual(lanes);
+            expectProjection();
+        }
+    );
 
     it.each([
         { route: 'starts playback', tempo: 120, startBeat: 10.2, endBeat: 11.2, originBeat: 10.2, pcmEndBeat: 10.6 },

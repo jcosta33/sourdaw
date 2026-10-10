@@ -222,3 +222,34 @@ frame. Move, slip, trim, tempo projection, hydration and replay must carry this
 source interval; static take geometry alone cannot bound those readers. A later
 tempo conversion must not grow the original recording carrier past its intended
 ending, and excess producer drain is not permission to extend a take.
+
+## Producer admission and emitted seam coordinates
+
+PR #5165 registered manual capture observers after all armed inputs admitted.
+Give two tracks different input keys, hold one permission/start promise, and
+publish actual first-frame PCM on the other before a scheduled seam. Sound the
+seam and edit tempo before releasing the second input. The first source keeps
+its original context/song correlation; no provisional clip exists before admission,
+and Stop, failed input and settlement retire only their captured owners.
+Read raw document/store placement and complete one real Undo/Redo.
+
+The same review missed a seam emitted at 120 BPM but first observed after a
+60 BPM edit. Publish sample zero after that seam and before the edit, then
+observe through both the next scheduler tick and terminal-only Stop, on manual
+Record and automatic punch. Destination song seconds belong to the map that
+emitted the seam. Arming punch in the same tick as seam emission must register
+that pass against the current recording owner, not the tick's pre-punch snapshot.
+An unsounded seam still replans on a real edit; an equal-valued projection does not.
+
+## Selected source intervals consume at the actual rate
+
+PR #5165 bounded placed passes in source seconds but mapped their anchors,
+fragment offsets and exclusive ends as though playback consumed at unity.
+Select source interval [0.1, 0.5) in a clip moved to beat 12 at 120 BPM and
+exercise source rates 2 and 0.5, content slip, nonzero anchors and later comp
+entry. Live/offline fragment equality alone can preserve the same bug twice.
+Require the actual shared playback projection's offset plus destination duration
+times playbackRate to end at exactly 0.5, and region trimming to advance source
+entry at that rate. Selection after the exclusive endpoint is silent. Keep the
+absolute saved source end, ignored ratios in Off mode, legacy passes, MIDI and
+the deliberate musical carrier minimum. Reverting the consumer's rate must fail.
