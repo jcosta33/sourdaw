@@ -601,7 +601,7 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
         expect(granted.stopTrack).toHaveBeenCalledTimes(1);
         expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
     });
-    it.each(['off', 'auto-disarm', 'ineligible-kind'] as const)(
+    it.each(['off', 'auto-disarm', 'non-audio-auto-kind'] as const)(
         'closes every affected owner after one disconnect fails during %s',
         async (transition) => {
             const granted = liveStream();
@@ -616,8 +616,8 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
                 }
             });
             const changed = ['track-1', 'track-2'].map((id) => {
-                if (transition === 'ineligible-kind') {
-                    return track('on', { id, kind: 'vca' });
+                if (transition === 'non-audio-auto-kind') {
+                    return track('auto', { id, kind: 'midi', armed: true });
                 }
                 return track(transition === 'off' ? 'off' : 'auto', { id, armed: false });
             });

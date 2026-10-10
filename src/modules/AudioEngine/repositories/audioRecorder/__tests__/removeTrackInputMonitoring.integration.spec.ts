@@ -1326,6 +1326,9 @@ describe('track deletion releases the input monitor at Command commit', () => {
                         id: 'root',
                         changeFn: (document) => {
                             const track = document.tracks.tracks[0];
+                            if (!track) {
+                                throw new Error('Expected committed track before authority change');
+                            }
                             if (changeKind === 'delete') {
                                 document.tracks.tracks.splice(0, 1);
                             } else if (changeKind === 'off') {
