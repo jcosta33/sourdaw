@@ -11,7 +11,7 @@ export function readChangedInputMonitoringAdmission(
         return null;
     }
     if (intent.inputId === admission.selectorInputId) {
-        if (!hasDeferredInputMonitoringEdge(trackId)) {
+        if (!admission.captureRetired && !hasDeferredInputMonitoringEdge(trackId)) {
             return null;
         }
         return { inputId: admission.captureInputId, readIntent: admission.readIntent };

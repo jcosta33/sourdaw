@@ -21,6 +21,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import {
     configureInputMonitoringProjectAccess,
+    rearmCommittedTrackInputMonitoring,
     reconcileAutoInputMonitoring,
     startInputMonitoring,
     stopInputMonitoring,
@@ -133,6 +134,19 @@ describe('track deletion releases the input monitor at Command commit', () => {
             throw new Error('Expected committed tracks in the document');
         }
         return slot.tracks.find((track: { id: string }) => track.id === trackId)?.inputMonitoring;
+    }
+
+    function changeCommittedInput(inputId: string | null): void {
+        mutateCrdtDoc<{ tracks: { tracks: Array<{ id: string; inputId: string | null }> } }>({
+            id: 'root',
+            changeFn: (document) => {
+                const track = document.tracks.tracks.find((track) => track.id === 'a');
+                if (!track) {
+                    throw new Error('Expected committed hidden owner');
+                }
+                track.inputId = inputId;
+            },
+        });
     }
 
     function watchRuntimeRemovalUnsubscribe() {
@@ -2179,6 +2193,274 @@ describe('track deletion releases the input monitor at Command commit', () => {
             }
             successor.grant(selectedStream);
             await vi.waitFor(() => expect(selectedSource.connect).toHaveBeenCalledWith(gains.get('a')));
+            expect(selectedStop).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([
+        ['on', false],
+        ['on', true],
+        ['auto', false],
+        ['auto', true],
+    ] as const)(
+        'retires obsolete committed input while the %s owner is optimistically absent, shared=%s',
+        async (mode, shared) => {
+            if (mode === 'auto') {
+                const state = trackStore.value;
+                if (!state) {
+                    throw new Error('Expected tracks before Auto admission');
+                }
+                restoreTrackSnapshot({
+                    ...state,
+                    tracks: state.tracks.map((track) =>
+                        track.id === 'a' ? { ...track, armed: true, inputMonitoring: 'auto' } : track
+                    ),
+                });
+                flushAutomergeStorageWrites();
+            }
+            await startInputMonitoring('a', null);
+            if (shared) {
+                await startInputMonitoring('b', null);
+            }
+            const oldCapture = inputMonitoringSession.captures.get(null);
+            const selected = deferredGrant();
+            const selectedStop = vi.fn();
+            const selectedStream = { getTracks: () => [{ stop: selectedStop }] };
+            const selectedSource = { connect: vi.fn(), disconnect: vi.fn() };
+            getUserMedia.mockReturnValueOnce(selected.request);
+            engine.createMediaStreamSource.mockReturnValueOnce(selectedSource);
+            const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+                getArrangementHandlers().removeTrack.execute({ type: 'removeTrack', payload: { trackId: 'a' } })
+            );
+            if (transaction.status === 'threw') {
+                throw transaction.error;
+            }
+            try {
+                expect(liveTrackIds()).toEqual(['b']);
+                expect(docTrackIds()).toEqual(['a', 'b']);
+                expect(monitorOwners()).toEqual(shared ? ['a', 'b'] : ['a']);
+                engine.ensureTrackStrip.mockClear();
+                source.connect.mockClear();
+                source.disconnect.mockClear();
+                changeCommittedInput('new-input');
+                expect(liveTrackIds()).toEqual(['b']);
+                expect(inputMonitoringSession.trackKeys.has('a')).toBe(false);
+                expect(source.disconnect).toHaveBeenCalledWith(gains.get('a'));
+                expect(connectedGains.has(gains.get('a'))).toBe(false);
+                expect(connectedGains.has(gains.get('b'))).toBe(shared);
+                expect(inputTrack.stop).toHaveBeenCalledTimes(shared ? 0 : 1);
+                expect(inputMonitoringSession.captures.get(null)).toBe(shared ? oldCapture : undefined);
+                expect(monitorOwners()).toEqual(shared ? ['b'] : []);
+                expect(getUserMedia).toHaveBeenCalledOnce();
+                expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
+                expect(source.connect).not.toHaveBeenCalled();
+            } finally {
+                transaction.abort();
+            }
+            await vi.waitFor(() => expect(inputMonitoringSession.trackKeys.get('a')).toBe('new-input'));
+            expect(liveTrackIds()).toEqual(['a', 'b']);
+            expect(getUserMedia).toHaveBeenLastCalledWith({
+                audio: expect.objectContaining({ deviceId: { exact: 'new-input' } }),
+            });
+            expect(engine.ensureTrackStrip).not.toHaveBeenCalledWith('a');
+            expect(selectedSource.connect).not.toHaveBeenCalled();
+            selected.grant(selectedStream);
+            await vi.waitFor(() => expect(selectedSource.connect).toHaveBeenCalledExactlyOnceWith(gains.get('a')));
+            expect(inputMonitoringSession.trackKeys.get('a')).toBe('new-input');
+            expect(source.connect).not.toHaveBeenCalledWith(gains.get('a'));
+            expect(selectedStop).not.toHaveBeenCalled();
+            expect(inputTrack.stop).toHaveBeenCalledTimes(shared ? 0 : 1);
+            expect(connectedGains.has(gains.get('b'))).toBe(shared);
+        }
+    );
+
+    it.each([
+        ['on', 'eligible'],
+        ['on', 'off'],
+        ['on', 'kind'],
+        ['on', 'root'],
+        ['auto', 'eligible'],
+        ['auto', 'disarm'],
+    ] as const)(
+        'settles an obsolete hidden %s grant only for current %s authority and keeps history available',
+        async (mode, authority) => {
+            const old = deferredGrant();
+            const selected = deferredGrant();
+            const selectedStop = vi.fn();
+            const selectedStream = { getTracks: () => [{ stop: selectedStop }] };
+            const selectedSource = { connect: vi.fn(), disconnect: vi.fn() };
+            getUserMedia.mockReturnValueOnce(old.request).mockReturnValueOnce(selected.request);
+            if (mode === 'auto') {
+                const state = trackStore.value;
+                if (!state) {
+                    throw new Error('Expected tracks before Auto admission');
+                }
+                restoreTrackSnapshot({
+                    ...state,
+                    tracks: state.tracks.map((track) =>
+                        track.id === 'a' ? { ...track, armed: true, inputMonitoring: 'auto' } : track
+                    ),
+                });
+                flushAutomergeStorageWrites();
+            }
+            const opening = startInputMonitoring('a', null);
+            const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+                getArrangementHandlers().removeTrack.execute({ type: 'removeTrack', payload: { trackId: 'a' } })
+            );
+            if (transaction.status === 'threw') {
+                throw transaction.error;
+            }
+            try {
+                expect(liveTrackIds()).toEqual(['b']);
+                expect(docTrackIds()).toEqual(['a', 'b']);
+                changeCommittedInput('new-input');
+                expect(monitorOwners()).toEqual([]);
+                expect(getUserMedia).toHaveBeenCalledOnce();
+                if (authority === 'root') {
+                    const outgoing = getCrdtDoc('root');
+                    if (!outgoing) {
+                        throw new Error('Expected the requesting root');
+                    }
+                    const rootIdentity = captureProjectRootIdentity();
+                    replaceCrdtDoc({ id: 'root', doc: clone(outgoing) });
+                    expect(captureProjectRootIdentity()).not.toBe(rootIdentity);
+                } else if (authority !== 'eligible') {
+                    mutateCrdtDoc<{
+                        tracks: {
+                            tracks: Array<{ id: string; inputMonitoring: string; kind: string; armed: boolean }>;
+                        };
+                    }>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            const track = document.tracks.tracks.find((track) => track.id === 'a');
+                            if (!track) {
+                                throw new Error('Expected committed hidden owner');
+                            }
+                            if (authority === 'off') {
+                                track.inputMonitoring = 'off';
+                            } else if (authority === 'kind') {
+                                track.kind = 'vca';
+                            } else {
+                                track.armed = false;
+                            }
+                        },
+                    });
+                }
+                old.grant(stream);
+                expect(await opening).toBe(false);
+                expect(inputMonitoringSession.pendingRequests.size).toBe(0);
+                expect(inputMonitoringSession.captures.size).toBe(0);
+                expect(monitorOwners()).toEqual([]);
+                expect(inputTrack.stop).toHaveBeenCalledOnce();
+                expect(engine.createMediaStreamSource).not.toHaveBeenCalled();
+                expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
+                expect(source.connect).not.toHaveBeenCalled();
+            } finally {
+                transaction.abort();
+            }
+            expect(liveTrackIds()).toEqual(['a', 'b']);
+            if (authority !== 'eligible') {
+                transportStore.set({ ...defaultTransportState, isPlaying: true });
+                transportStore.set(defaultTransportState);
+                expect(getUserMedia).toHaveBeenCalledOnce();
+                expect(monitorOwners()).toEqual([]);
+                expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
+                if (authority === 'root') {
+                    return;
+                }
+                mutateCrdtDoc<{
+                    tracks: { tracks: Array<{ id: string; inputMonitoring: string; kind: string; armed: boolean }> };
+                }>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        const track = document.tracks.tracks.find((track) => track.id === 'a');
+                        if (!track) {
+                            throw new Error('Expected committed owner before eligible restoration');
+                        }
+                        track.inputMonitoring = mode;
+                        track.kind = 'audio';
+                        track.armed = true;
+                    },
+                });
+                if (authority === 'kind') {
+                    await rearmCommittedTrackInputMonitoring('a');
+                }
+            }
+            expect(inputMonitoringSession.trackKeys.get('a')).toBe('new-input');
+            expect(getUserMedia).toHaveBeenCalledTimes(2);
+            expect(getUserMedia).toHaveBeenLastCalledWith({
+                audio: expect.objectContaining({ deviceId: { exact: 'new-input' } }),
+            });
+            expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
+            await executeAppAction({ type: 'setTrackInput', payload: { trackId: 'b', inputId: 'history-input' } });
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(undoHistoryStore.value?.past).toEqual([]);
+            expect(inputMonitoringSession.pendingRequests.has('new-input')).toBe(true);
+            expect(inputMonitoringSession.trackKeys.get('a')).toBe('new-input');
+            expect(engine.ensureTrackStrip).not.toHaveBeenCalledWith('a');
+            engine.createMediaStreamSource.mockReturnValueOnce(selectedSource);
+            selected.grant(selectedStream);
+            await vi.waitFor(() => expect(selectedSource.connect).toHaveBeenCalledExactlyOnceWith(gains.get('a')));
+            expect(source.connect).not.toHaveBeenCalled();
+            expect(selectedStop).not.toHaveBeenCalled();
+            expect(inputTrack.stop).toHaveBeenCalledOnce();
+        }
+    );
+
+    it.each([null, 'direct-input'])(
+        'rearms the original explicit capture key %s when the hidden selector changes back before its old grant settles',
+        async (captureInputId) => {
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected tracks before explicit input admission');
+            }
+            restoreTrackSnapshot({
+                ...state,
+                tracks: state.tracks.map((track) =>
+                    track.id === 'a' ? { ...track, inputId: 'selector-input' } : track
+                ),
+            });
+            flushAutomergeStorageWrites();
+            const old = deferredGrant();
+            const selected = deferredGrant();
+            getUserMedia.mockReturnValueOnce(old.request).mockReturnValueOnce(selected.request);
+            const opening = startInputMonitoring('a', captureInputId);
+            const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+                getArrangementHandlers().removeTrack.execute({ type: 'removeTrack', payload: { trackId: 'a' } })
+            );
+            if (transaction.status === 'threw') {
+                throw transaction.error;
+            }
+            try {
+                changeCommittedInput('other-input');
+                expect(monitorOwners()).toEqual([]);
+                changeCommittedInput('selector-input');
+                expect(monitorOwners()).toEqual([]);
+                expect(getUserMedia).toHaveBeenCalledOnce();
+                old.grant(stream);
+                expect(await opening).toBe(false);
+                expect(inputTrack.stop).toHaveBeenCalledOnce();
+                expect(engine.createMediaStreamSource).not.toHaveBeenCalled();
+                expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
+            } finally {
+                transaction.abort();
+            }
+            expect(inputMonitoringSession.trackKeys.get('a')).toBe(captureInputId);
+            expect(getUserMedia).toHaveBeenCalledTimes(2);
+            const expectedAudio: MediaTrackConstraints = {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+            };
+            if (captureInputId !== null) {
+                expectedAudio.deviceId = { exact: captureInputId };
+            }
+            expect(getUserMedia).toHaveBeenLastCalledWith({ audio: expectedAudio });
+            const selectedStop = vi.fn();
+            selected.grant({ getTracks: () => [{ stop: selectedStop }] });
+            await vi.waitFor(() => expect(source.connect).toHaveBeenCalledExactlyOnceWith(gains.get('a')));
+            expect(inputMonitoringSession.trackKeys.get('a')).toBe(captureInputId);
             expect(selectedStop).not.toHaveBeenCalled();
         }
     );

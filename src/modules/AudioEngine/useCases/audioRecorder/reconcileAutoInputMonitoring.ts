@@ -6,12 +6,13 @@ import { hasDeferredInputMonitoringEdge } from '../../repositories/audioRecorder
 import { isTrackInputMonitored } from '../../repositories/audioRecorder/isTrackInputMonitored';
 import { readInputMonitoringTrackIds } from '../../repositories/audioRecorder/readInputMonitoringTrackIds';
 import { readMonitorTeardownEpoch } from '../../repositories/audioRecorder/readMonitorTeardownEpoch';
+import { stopTrackInputMonitoring as stopTrackInputMonitoringRepo } from '../../repositories/audioRecorder/stopTrackInputMonitoring';
 import { isAutoInputMonitoringHeld } from '../../services/autoInputMonitoringSuspension';
 import { readCommittedInputMonitoringTrack } from '../../stores/inputMonitoringProjectAccess';
 
 import { admitInputMonitoring } from './admitInputMonitoring';
 import { deriveAutoMonitorEdge } from './deriveAutoInputMonitoring';
-import { inputMonitoringAdmissions } from './inputMonitoringAdmission';
+import { type Admission, inputMonitoringAdmissions } from './inputMonitoringAdmission';
 import { readChangedInputMonitoringAdmission } from './readChangedInputMonitoringAdmission';
 import { startInputMonitoring } from './startInputMonitoring';
 import { stopTrackInputMonitoring } from './stopTrackInputMonitoring';
@@ -47,6 +48,35 @@ function forgiveRefusalsAtRecordStartOrStop(transport: TransportFlags): void {
 function closeEdge(trackId: string): void {
     openRequests.delete(trackId);
     stopTrackInputMonitoring(trackId);
+}
+
+function retireCapture(trackId: string, admission: Admission): void {
+    // Keep the original authority for row return, independently of the
+    // obsolete grant's settlement, without holding capture or opening a strip.
+    inputMonitoringAdmissions.set(trackId, { ...admission, captureRetired: true });
+    openRequests.delete(trackId);
+    stopTrackInputMonitoringRepo(trackId);
+}
+
+function closeInvalidAdmission(
+    track: NonNullable<typeof trackStore.value>['tracks'][number],
+    admission: Admission
+): void {
+    const committed = readCommittedInputMonitoringTrack(track.id);
+    if (
+        admission.captureRetired &&
+        committed &&
+        (committed.inputMonitoring !== track.inputMonitoring ||
+            committed.inputId !== track.inputId ||
+            committed.kind !== track.kind ||
+            committed.armed !== track.armed)
+    ) {
+        // Abort may restore a stale Auto row. Its cancelled
+        // authority still fences the projection-only fallback.
+        retireCapture(track.id, admission);
+        return;
+    }
+    closeEdge(track.id);
 }
 
 function followAdmittedOnInput(trackId: string, interestedIds: Set<string>, opensSuppressed: boolean): void {
@@ -149,7 +179,7 @@ export function reconcileAutoInputMonitoring(): void {
             // project owns it; a pending projection must not destroy capture.
             const intent = admission.readIntent();
             if (!intent) {
-                closeEdge(track.id);
+                closeInvalidAdmission(track, admission);
                 return;
             }
             if (intent.inputMonitoring === 'auto') {
@@ -199,6 +229,20 @@ export function reconcileAutoInputMonitoring(): void {
         ...tracks.map((track) => () => reconcileTrack(track)),
         ...Array.from(interestedIds, (trackId) => () => {
             if (presentIds.has(trackId)) {
+                return;
+            }
+            const admission = inputMonitoringAdmissions.get(trackId);
+            if (admission) {
+                const intent = admission.readIntent();
+                if (!intent) {
+                    if (readCommittedInputMonitoringTrack(trackId)) {
+                        retireCapture(trackId, admission);
+                    } else {
+                        closeEdge(trackId);
+                    }
+                } else if (intent.inputId !== admission.selectorInputId) {
+                    retireCapture(trackId, admission);
+                }
                 return;
             }
             const committed = readCommittedInputMonitoringTrack(trackId);
