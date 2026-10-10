@@ -1,3 +1,5 @@
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
 
@@ -36,6 +38,10 @@ export function undoRippleInsertClip({ trackId, plan }: UndoRippleInsertClipInpu
                         ...clip,
                         startBeat: orig.origStartBeat,
                         endBeat: orig.origEndBeat,
+                        // The undo reverses the forward insert's relocation:
+                        // the anchor rides the same delta back or the restored
+                        // placement would read a spurious advance (#4988).
+                        ...shiftLoopOriginEntry(clip, orig.origStartBeat - clip.startBeat),
                     };
                 }),
             };

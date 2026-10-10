@@ -14,6 +14,8 @@ type OfflineClipMidiEventProjectionInput<Event extends OfflineMidiProjectableEve
     loopLengthBeats: number;
     midiOffsetBeats: number;
     loopEnabled?: boolean;
+    /** The clip's loop anchor; playback callers carry it (#4988). */
+    loopOriginBeat?: number;
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
     phase?: 'clip-groove' | 'complete';

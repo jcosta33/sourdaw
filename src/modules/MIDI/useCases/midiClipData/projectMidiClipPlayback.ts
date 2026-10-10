@@ -12,6 +12,7 @@ type PlaybackProjectionClip = {
     midiOffsetBeats?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    loopOriginBeat?: number;
 };
 
 type ProjectMidiClipPlaybackInput = {
@@ -64,6 +65,7 @@ export function projectMidiClipPlayback({ notes, controlChanges, clip }: Project
                 loopLengthBeats: expansion.loopLengthBeats,
                 midiOffsetBeats,
                 loopEnabled,
+                loopOriginBeat: clip.loopOriginBeat,
             })
         );
     }

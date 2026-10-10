@@ -1,4 +1,5 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
@@ -646,6 +647,20 @@ function planTrack(
                 endBeat: operation.startBeat,
                 name: `${clip.name} (L)`,
             };
+            // The fragment anchor follows the basis it creates (#4988). The
+            // MIDI fragment re-bases its notes by −splitBeat under
+            // midiOffsetBeats 0 — a fresh coordinate basis the source anchor
+            // has no meaning in, whose carried advance would open the window
+            // behind the head and silence the survivors — so it re-stamps to
+            // its own start, key absent for an unanchored source. The audio
+            // fragment keeps source-coordinate offsets advanced by the cut,
+            // so it carries the source anchor: the offset advance and the
+            // anchor-advance growth cancel, the region
+            // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the
+            // source's own, and the entry lands at the cut phase. Carrying is
+            // writing nothing — the inverse plan's snapshot is compared
+            // structurally against the normalized live state.
+            const rightLoopOriginEntry = clip.type === 'midi' ? restampLoopOriginEntry(clip, operation.endBeat) : {};
             const rightClip: Clip = {
                 ...clip,
                 id: identity.targetClipId,
@@ -657,6 +672,7 @@ function planTrack(
                 audioOffsetBeats:
                     (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
                 midiOffsetBeats: 0,
+                ...rightLoopOriginEntry,
             };
             finalClips.push(leftClip, rightClip);
             if (clip.type === 'midi') {
@@ -689,6 +705,18 @@ function planTrack(
             continue;
         }
         if (clip.startBeat < operation.endBeat && clip.endBeat > operation.endBeat) {
+            // The anchor treatment follows the basis the trim creates
+            // (#4988). The MIDI side keeps its notes and content offset —
+            // a whole-clip relocation by (endBeat − startBeat) — so the
+            // anchor rides that delta. The audio side's offset advances by
+            // the excised span, so it carries the source anchor instead:
+            // the offset advance and the anchor-advance growth cancel, the
+            // region `audioOffsetBeats - (startBeat - loopOriginBeat)`
+            // stays the source's own, and the entry lands at the cut phase
+            // — shifting here slid the region right by the span (#5198).
+            // Unanchored clips keep the key absent.
+            const trimLoopOriginEntry =
+                clip.type === 'midi' ? shiftLoopOriginEntry(clip, operation.endBeat - clip.startBeat) : {};
             finalClips.push({
                 ...clip,
                 startBeat: operation.endBeat,
@@ -697,6 +725,7 @@ function planTrack(
                 // plays.
                 audioOffsetBeats:
                     (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
+                ...trimLoopOriginEntry,
             });
             changed = true;
             continue;

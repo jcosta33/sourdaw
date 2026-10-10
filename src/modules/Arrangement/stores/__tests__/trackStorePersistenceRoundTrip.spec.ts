@@ -73,6 +73,40 @@ describe('sanitizeTrackSnapshot — clip optional field round-trip', () => {
         expect(restored).toMatchObject(expected);
     });
 
+    /**
+     * `loopOriginBeat` anchors a looped clip's region and per-pass count to the
+     * placement the loop was established at (#4988). Readers fall back to the
+     * clip's current `startBeat` when it is absent, so dropping the field in
+     * this projection makes every reloaded or collab-hydrated loop slide with
+     * later trims instead of staying anchored to its source.
+     */
+    it('preserves a loopOriginBeat anchor through the round-trip', () => {
+        const clip = { ...validClipBase, loopEnabled: true, loopLength: 4, loopOriginBeat: 2.5 };
+        const result = sanitizeTrackSnapshot(snapshotWithTrack({ ...validTrackBase, clips: [clip] }));
+
+        expect(result.tracks[0]?.clips[0]?.loopOriginBeat).toBe(2.5);
+    });
+
+    it('keeps a zero loopOriginBeat, which anchors the loop at beat 0 and is not absent', () => {
+        const clip = { ...validClipBase, loopEnabled: true, loopLength: 4, loopOriginBeat: 0 };
+        const result = sanitizeTrackSnapshot(snapshotWithTrack({ ...validTrackBase, clips: [clip] }));
+
+        expect(result.tracks[0]?.clips[0]?.loopOriginBeat).toBe(0);
+    });
+
+    it('leaves loopOriginBeat absent for a clip never looped rather than minting an anchor', () => {
+        const result = sanitizeTrackSnapshot(snapshotWithTrack({ ...validTrackBase, clips: [{ ...validClipBase }] }));
+
+        expect(result.tracks[0]?.clips[0]?.loopOriginBeat).toBeUndefined();
+    });
+
+    it('drops a non-finite loopOriginBeat rather than persisting garbage', () => {
+        const clip = { ...validClipBase, loopOriginBeat: Number.NaN };
+        const result = sanitizeTrackSnapshot(snapshotWithTrack({ ...validTrackBase, clips: [clip] }));
+
+        expect(result.tracks[0]?.clips[0]?.loopOriginBeat).toBeUndefined();
+    });
+
     it.each([
         ['stop', 'stop'],
         ['play_next', 'play_next'],

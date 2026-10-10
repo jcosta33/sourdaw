@@ -264,6 +264,144 @@ describe('reverseClip', () => {
         expect(publishedClip?.fadeOutBeats).toBe(0.5);
     });
 
+    it('restamps the loop anchor at the clip own start because the reversed buffer is a fresh media basis', () => {
+        // An 8-beat buffer at 60 BPM (sampleRate 8), looped clip L=4 trimmed by
+        // one beat: start 1, offset 1, anchor 0. Carrying the anchor would mix
+        // the old basis's advance into the new one (region [2,6) over the
+        // mirrored window [3,7)).
+        const sampleRate = 8;
+        const sourceSamples = 64;
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 1,
+            endBeat: 5,
+            audioOffsetBeats: 1,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => new Float32Array(sourceSamples)),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => new Float32Array(sourceSamples)),
+        });
+
+        reverseClip('c1');
+
+        expect(publishedClip?.audioOffsetBeats).toBe(3);
+        // The anchor reads the fresh basis: the clip's own start, advance zero,
+        // so the loop window opens at the mirrored window head.
+        expect(publishedClip?.loopOriginBeat).toBe(1);
+    });
+
+    it('restamps an untrimmed anchored clip to its unchanged start, advance zero before and after', () => {
+        // Untrimmed, the anchor derives advance zero before and after — the
+        // pre/post agreement the anchor law promises. The clip spans [0,5)
+        // with L=4: the mirrored window head is S − 0 − 5 = 3, and the
+        // restamped anchor is the clip's own start, 0.
+        const sampleRate = 8;
+        const sourceSamples = 64;
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 0,
+            endBeat: 5,
+            audioOffsetBeats: 0,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => new Float32Array(sourceSamples)),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => new Float32Array(sourceSamples)),
+        });
+
+        reverseClip('c1');
+
+        expect(publishedClip?.audioOffsetBeats).toBe(3);
+        expect(publishedClip?.loopOriginBeat).toBe(0);
+    });
+
+    it('keeps the loop anchor key absent when reversing an unanchored source', () => {
+        const sampleRate = 8;
+        const sourceSamples = 64;
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 1,
+            endBeat: 5,
+            audioOffsetBeats: 1,
+            loopEnabled: true,
+            loopLength: 4,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => new Float32Array(sourceSamples)),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => new Float32Array(sourceSamples)),
+        });
+
+        reverseClip('c1');
+
+        expect(publishedClip).toBeDefined();
+        expect('loopOriginBeat' in publishedClip!).toBe(false);
+    });
+
     it('remaps audioOffsetBeats so the reversed playback window is the original clip window backwards', () => {
         // 60 BPM → 1 s/beat. sampleRate 8 → 8 samples/beat. 32-sample buffer = 4 beats.
         const sampleRate = 8;

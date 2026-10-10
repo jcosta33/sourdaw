@@ -78,6 +78,21 @@ describe('handleRestoreClipMoves', () => {
         });
     });
 
+    it('restores a shifted neighbor loop anchor by the same delta as the rectangle (#4988)', () => {
+        // The forward ripple relocated this anchored looped clip from start 4
+        // (anchor 1, a trim-earned advance of 3) to start 7 (anchor 4). The
+        // undo must reverse both numbers: an anchor left at 4 under the
+        // restored start 4 would read advance 0 and re-roll the loop passes.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c9', startBeat: 7, endBeat: 11, loopOriginBeat: 4 }] }],
+        });
+        void handleRestoreClipMoves.execute(restoreAction([], [{ clipId: 'c9', origStartBeat: 4, origEndBeat: 8 }]));
+
+        expect(mocks.setTrackState).toHaveBeenCalledWith({
+            tracks: [{ id: 't1', clips: [{ id: 'c9', startBeat: 4, endBeat: 8, loopOriginBeat: 1 }] }],
+        });
+    });
+
     it('restores positions from the live store, not the recorded state', () => {
         // The moved clips are already back (moveClip above), so the neighbor
         // restore must read the CURRENT store — a stale snapshot would clobber

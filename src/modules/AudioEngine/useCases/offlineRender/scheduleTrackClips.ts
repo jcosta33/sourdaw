@@ -872,6 +872,7 @@ export async function scheduleTrackClips({
                     loopLengthBeats: loopLen,
                     midiOffsetBeats,
                     loopEnabled: clip.loopEnabled ?? false,
+                    loopOriginBeat: clip.loopOriginBeat,
                     phase: 'complete',
                 });
                 const scheduledNotes = notes.map((note) => {

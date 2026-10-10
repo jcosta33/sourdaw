@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { migrateTrimmedClipPassTakes } from '#/modules/Arrangement/useCases';
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { executeAppAction, reconcileSessionUndoForProject } from '#/modules/Command/useCases';
 import {
@@ -88,6 +89,7 @@ export async function loadProject(): Promise<boolean> {
             resetModuleStoresToDefault({ resetGrooveTemplates: false, resetMidiState: false, resetYeastState: false });
             projectCrdtToStores({ resetProjections: true });
             migrateAbsoluteMidiNotes();
+            migrateTrimmedClipPassTakes();
 
             // Buffers that failed to resolve out of IndexedDB are simply absent from
             // the cache — nothing above throws for them. Scan the hydrated track

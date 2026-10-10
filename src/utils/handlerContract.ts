@@ -146,6 +146,7 @@ export type ClipStateSnapshot = {
     readonly stretchRatio?: number;
     readonly loopEnabled?: boolean;
     readonly loopLength?: number;
+    readonly loopOriginBeat?: number;
     readonly followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
     readonly generating?: boolean;
     readonly isGhost?: boolean;
@@ -2088,6 +2089,8 @@ export type AppAction =
               fadeOutBeats?: number;
               /** Offset the restore puts back; optional so older undo entries still decode. */
               audioOffsetBeats?: number;
+              /** Loop anchor the restore puts back; optional so older undo entries still decode. */
+              loopOriginBeat?: number;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };
