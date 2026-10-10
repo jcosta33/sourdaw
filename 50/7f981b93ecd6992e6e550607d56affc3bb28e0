@@ -1,0 +1,38 @@
+src/modules/Transport/useCases/transportControls/createRecordingCaptureClocks.ts
+  s_1f0dcd815e8946::t_a2479950912a19 1-14,16-17,32-61,65,69-140
+  s_1f0dcd815e8946::t_640055db25ac51 15,18-31,62-64,66-68
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_43d30ba967b648 72,87-105,257-279,335,371-381,383-389,396-431,1068-1092,1109,1116-1119
+  s_1f0dcd815e8946::t_9560025007528d 382,390-395
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_1f0dcd815e8946::t_f65ee65e67c1a6 45
+  s_1f0dcd815e8946::t_43d30ba967b648 43,46-55,106
+.agents/skills/review-stances/audio-source-time.md
+  s_1f0dcd815e8946::t_0b420ef58d09ef 111,132-157
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_1f591a005fa572 769-787
+src/modules/Arrangement/useCases/recording/__tests__/recordingPassTiming.spec.ts
+  s_1f0dcd815e8946::t_c4b4c67afea291 162-185
+src/modules/Arrangement/useCases/recording/recordingPassTiming.ts
+  s_1f0dcd815e8946::t_0f38c4ce1ad4b3 16,181,184,187-190,193,195-199,201-204
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_1f0dcd815e8946::t_3d83d65858dd26 43,880-884,912,924,952-956,963-965,991-992,994-1003
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_1f0dcd815e8946::t_6fb9eb2c3e002a 26,51,196,284-292,298,304,322,371
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "507f981b93ecd6992e6e550607d56affc3bb28e0",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
