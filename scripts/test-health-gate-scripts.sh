@@ -964,6 +964,7 @@ const shardContext = {
 };
 const shardEnvironment = {
     HOME: shardContext.home, PATH: '/tools:/tools:/usr/local/bin:/usr/bin:/bin',
+    PNPM_CONFIG_STORE_DIR: shardContext.store,
     CI: 'true', GITHUB_ACTIONS: 'true', GITHUB_WORKSPACE: shardContext.workspace,
     VITEST_MAX_WORKERS: '4', TMPDIR: shardContext.temp, TMP: shardContext.temp, TEMP: shardContext.temp,
 };
