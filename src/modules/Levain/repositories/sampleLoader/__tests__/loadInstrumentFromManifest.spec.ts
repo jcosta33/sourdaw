@@ -74,6 +74,8 @@ type FakePort = MessagePort & {
     emit: (message: unknown) => void;
     /** The most chunks that were ever posted and not yet answered at once. */
     peakUnacknowledgedChunks: () => number;
+    /** Run the answers a 'queued' worklet holds, in arrival order. */
+    drainWorklet: () => void;
 };
 
 type MakePortOptions = {
@@ -119,9 +121,17 @@ type MakePortOptions = {
     /**
      * How the fake worklet answers a `sampleChunk`: 'now' with a microtask,
      * 'later' with a macrotask (so a loader that does not wait piles chunks
-     * up), or 'never' (a processor that stopped answering mid-sample).
+     * up), 'never' (a processor that stopped answering mid-sample), or
+     * 'queued' (a worklet reading its port in order: each answer, and the
+     * reply to a later abort, wait in a queue until `drainWorklet` runs them
+     * in the order the messages arrived).
      */
-    chunkAnswers?: 'now' | 'later' | 'never';
+    chunkAnswers?: 'now' | 'later' | 'never' | 'queued';
+    /**
+     * Model a port that is closed by the time the loader aborts: posting
+     * `abortSampleBank` throws.
+     */
+    abortPostThrows?: boolean;
     /** Share the count of unanswered chunks between ports, to bound them across concurrent loads. */
     chunkTally?: ChunkTally;
 };
@@ -140,6 +150,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     let pendingToken: number | null = null;
     let releaseRequests = 0;
+    const workletQueue: Array<() => void> = [];
     const tally: ChunkTally = options.chunkTally ?? { unanswered: 0, peak: 0 };
     function emit(message: unknown): void {
         const event = { data: message } as MessageEvent<unknown>;
@@ -172,6 +183,8 @@ function makePort(options: MakePortOptions = {}): FakePort {
                 queueMicrotask(answer);
             } else if (answers === 'later') {
                 setTimeout(answer, 0);
+            } else if (answers === 'queued') {
+                workletQueue.push(answer);
             }
             return;
         }
@@ -220,12 +233,20 @@ function makePort(options: MakePortOptions = {}): FakePort {
             }
             releaseRequests++;
             const done = releaseRequests >= (options.releaseSteps ?? 1);
-            queueMicrotask(() => {
+            const replyToRelease = (): void => {
                 emit({ type: 'retiredBankReleased', loadToken: message.loadToken, done });
-            });
+            };
+            if (options.chunkAnswers === 'queued') {
+                workletQueue.push(replyToRelease);
+            } else {
+                queueMicrotask(replyToRelease);
+            }
             return;
         }
         if (message.type === 'abortSampleBank') {
+            if (options.abortPostThrows) {
+                throw new Error('port is closed');
+            }
             if (message.loadToken !== pendingToken) {
                 // Matches `msg.loadToken === this._bankLoadToken` failing on
                 // the real processor: already committed, or a stale token.
@@ -235,19 +256,29 @@ function makePort(options: MakePortOptions = {}): FakePort {
             if (options.silenceAbortReply) {
                 return;
             }
-            queueMicrotask(() => {
+            const replyToAbort = (): void => {
                 emit({
                     type: 'sampleBankError',
                     loadToken: message.loadToken,
                     message: 'Levain sample bank load was aborted',
                 });
-            });
+            };
+            if (options.chunkAnswers === 'queued') {
+                workletQueue.push(replyToAbort);
+            } else {
+                queueMicrotask(replyToAbort);
+            }
         }
     });
     return {
         postMessage,
         emit,
         peakUnacknowledgedChunks: () => tally.peak,
+        drainWorklet: () => {
+            for (const run of workletQueue.splice(0)) {
+                run();
+            }
+        },
         addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
             if (typeof listener === 'function') {
                 listeners.add(listener);
@@ -630,6 +661,110 @@ describe('loadInstrumentFromManifest', () => {
                 await pause(20);
 
                 expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                controller.abort();
+                await Promise.allSettled([fresh]);
+            }, 5000);
+
+            it('keeps the credits of an aborted load until the worklet has passed its queued chunks', async () => {
+                const tally: ChunkTally = { unanswered: 0, peak: 0 };
+                const aborted = makePort({ chunkAnswers: 'queued', chunkTally: tally });
+                const waiting = makePort({ chunkAnswers: 'now', chunkTally: tally });
+                stubManyChunks();
+                stubManyChunks();
+                const controller = new AbortController();
+                const first = loadOwnBank(aborted, 'passed-a', controller.signal);
+                void first.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(aborted)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const second = loadOwnBank(waiting, 'passed-b');
+                await vi.waitFor(() => {
+                    expect(postedTypes(waiting)).toContain('beginSample');
+                });
+
+                controller.abort();
+
+                await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+                await pause(20);
+                // The worklet still holds the four chunks ahead of the abort.
+                expect(chunkCount(waiting)).toBe(0);
+
+                aborted.drainWorklet();
+
+                await second;
+                expect(chunkCount(waiting)).toBe(8);
+                expect(tally.peak).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+            }, 5000);
+
+            it("hands back an aborted load's credits at once when its port is closed", async () => {
+                const closed = makePort({ chunkAnswers: 'never', abortPostThrows: true });
+                const waiting = makePort({ chunkAnswers: 'now' });
+                stubManyChunks();
+                stubManyChunks();
+                const controller = new AbortController();
+                const first = loadOwnBank(closed, 'closed-a', controller.signal);
+                void first.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(closed)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
+                const second = loadOwnBank(waiting, 'closed-b');
+                await vi.waitFor(() => {
+                    expect(postedTypes(waiting)).toContain('beginSample');
+                });
+
+                controller.abort();
+
+                await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+                await second;
+                expect(chunkCount(waiting)).toBe(8);
+            }, 5000);
+
+            it('passes on a credit granted to a waiter in the turn the waiter is aborted', async () => {
+                // A holder that posted exactly the limit and then waits on its
+                // commit, a waiter queued behind it, and a credit freed in the
+                // same turn the waiter is aborted.
+                const holderData = new Float32Array(
+                    new SharedArrayBuffer(
+                        LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT * LEVAIN_SAMPLE_CHUNK_FLOATS * Float32Array.BYTES_PER_ELEMENT
+                    )
+                );
+                vi.mocked(fetchAndDecode).mockResolvedValueOnce({
+                    data: holderData,
+                    frameCount: holderData.length,
+                    channels: 1,
+                    sampleRate: 44100,
+                });
+                stubManyChunks();
+                stubManyChunks();
+                const holder = makePort({ chunkAnswers: 'never', autoComplete: false });
+                const waiter = makePort({ chunkAnswers: 'never' });
+                const holderController = new AbortController();
+                const waiterController = new AbortController();
+                const holding = loadOwnBank(holder, 'handoff-holder', holderController.signal);
+                void holding.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(postedTypes(holder)).toContain('buildZoneMap');
+                });
+                const waiting = loadOwnBank(waiter, 'handoff-waiter', waiterController.signal);
+                void waiting.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(postedTypes(waiter)).toContain('beginSample');
+                });
+                const holderToken = (postedMessages(holder)[0] as { loadToken: number }).loadToken;
+
+                waiterController.abort();
+                holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+
+                await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+                holderController.abort();
+                await expect(holding).rejects.toBeDefined();
+                const next = makePort({ chunkAnswers: 'never' });
+                const controller = new AbortController();
+                const fresh = loadOwnBank(next, 'handoff-next', controller.signal);
+                void fresh.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                });
                 controller.abort();
                 await Promise.allSettled([fresh]);
             }, 5000);

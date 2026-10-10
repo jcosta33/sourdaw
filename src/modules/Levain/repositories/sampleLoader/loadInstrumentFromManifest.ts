@@ -18,7 +18,8 @@ let bankLoadSequence = 0;
 type SampleBankHandshake = {
     uploadRequired: Promise<boolean>;
     completed: Promise<void>;
-    cancel: () => void;
+    /** Cancel the load on the worklet; false when the abort could not be posted because the port is closed. */
+    cancel: () => boolean;
     /**
      * Tell the handshake that `buildZoneMap` has been posted for this load —
      * the point from which the worklet may commit the bank before it ever
@@ -150,6 +151,8 @@ function createSampleBankHandshake(
             reject(new Error(`Levain sample-bank load failed${detail}`));
         }
     }
+    // False once an `abortSampleBank` post found the port closed.
+    let abortDelivered = true;
     function onAbort(): void {
         if (uploadSettled && completedSettled) {
             return;
@@ -162,6 +165,7 @@ function createSampleBankHandshake(
             // arrive, so local cancellation must settle here regardless of
             // whether `buildZoneMap` was posted.
             delivered = false;
+            abortDelivered = false;
         }
         if (zoneMapPosted && delivered) {
             // Once `buildZoneMap` is posted the worklet may already be
@@ -190,7 +194,10 @@ function createSampleBankHandshake(
     return {
         uploadRequired,
         completed,
-        cancel: onAbort,
+        cancel: () => {
+            onAbort();
+            return abortDelivered;
+        },
         markZoneMapPosted: () => {
             zoneMapPosted = true;
         },
@@ -286,8 +293,13 @@ function releaseRetiredBank(nodePort: MessagePort, loads: PortLoads, loadToken: 
 type ChunkPacer = {
     /** Resolve when a chunk may be posted; reject if the load was aborted, the worklet refused it or the processor ended. */
     reserve: () => Promise<void>;
-    /** End the load's part in the budget: its unacknowledged chunks are given back so no other load is starved. */
-    dispose: () => void;
+    /**
+     * The load is over. Its unacknowledged chunks are still queued on the
+     * worklet's port, ahead of any abort, so it keeps their credits until the
+     * worklet has passed them (see `createChunkPacer`); `abortDelivered` false
+     * means the port is closed and nothing more will be answered.
+     */
+    dispose: (abortDelivered: boolean) => void;
 };
 
 type BudgetWaiter = { resolve: (granted: boolean) => void; granted: boolean };
@@ -302,10 +314,14 @@ type BudgetWaiter = { resolve: (granted: boolean) => void; granted: boolean };
  * only share it conservatively (they queue behind each other, they never get
  * more than the limit).
  *
- * A credit is held from posting a chunk until the worklet acknowledges it, or
- * until the load that holds it ends. Waiters are served first come, first
- * served: a returned credit goes straight to the oldest waiter, and a new
- * reservation never takes a free credit past a queue.
+ * A credit is held from posting a chunk until the worklet acknowledges it. A
+ * load that ends with chunks unacknowledged (aborted, failed) keeps those
+ * credits: its chunks are still queued ahead of its abort on the port, and the
+ * worklet still copies them. They return one per acknowledgement, and all at
+ * once at the first answer that must follow those chunks, or when the port is
+ * closed or the processor ends. Waiters are served first come, first served: a
+ * returned credit goes straight to the oldest waiter, and a new reservation
+ * never takes a free credit past a queue.
  */
 const chunkBudget = { credits: LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT, waiters: [] as BudgetWaiter[] };
 
@@ -337,17 +353,35 @@ function withdrawFromChunkBudget(waiter: BudgetWaiter): boolean {
  * processor that stops answering must not leave the load waiting for an
  * acknowledgement that will never come. Messages carrying another load's
  * token are not this load's to act on.
+ *
+ * The pacer outlives its load while it still holds credits. The worklet reads
+ * its port in order, so once the load's chunks are passed it answers the
+ * token's `sampleBankError` (the abort's reply), or the `retiredBankReleased`
+ * the loader asks for next; the first of those, or the processor ending, hands
+ * back whatever is still held, and the listener is removed.
  */
 function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: AbortSignal): ChunkPacer {
     let held = 0;
     let failure: Error | null = null;
     let queued: BudgetWaiter | null = null;
+    let ended = false;
 
+    function stopListeningWhenDone(): void {
+        if (ended && held === 0) {
+            nodePort.removeEventListener('message', onMessage);
+        }
+    }
     function fail(error: Error): void {
         failure ??= error;
         if (queued && withdrawFromChunkBudget(queued)) {
             queued.resolve(false);
         }
+    }
+    function passedAllChunks(): void {
+        for (; held > 0; held -= 1) {
+            giveBackChunkCredit();
+        }
+        stopListeningWhenDone();
     }
     function onMessage(event: MessageEvent<unknown>): void {
         const message = event.data;
@@ -356,6 +390,7 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
         }
         if (isProcessorEnd(message)) {
             fail(processorEndedError(message));
+            passedAllChunks();
             return;
         }
         if (message.loadToken !== loadToken) {
@@ -366,11 +401,17 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
                 held -= 1;
                 giveBackChunkCredit();
             }
+            stopListeningWhenDone();
             return;
         }
         if (message.type === 'sampleBankError') {
             const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
             fail(new Error(`Levain sample-bank load failed${detail}`));
+            passedAllChunks();
+            return;
+        }
+        if (message.type === 'retiredBankReleased') {
+            passedAllChunks();
         }
     }
     async function reserve(): Promise<void> {
@@ -409,12 +450,13 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
     nodePort.addEventListener('message', onMessage);
     return {
         reserve,
-        dispose: () => {
-            nodePort.removeEventListener('message', onMessage);
+        dispose: (abortDelivered) => {
+            ended = true;
             fail(new Error('Levain sample upload ended'));
-            for (; held > 0; held -= 1) {
-                giveBackChunkCredit();
+            if (!abortDelivered) {
+                passedAllChunks();
             }
+            stopListeningWhenDone();
         },
     };
 }
@@ -676,10 +718,10 @@ export async function loadInstrumentFromManifest({
         releaseRetiredBank(nodePort, loads, loadToken, over.resolve);
         return bank;
     } finally {
-        chunkPacer?.dispose();
-        if (handshake && !completed) {
-            handshake.cancel();
-        }
+        // The abort goes out before the pacer is told the load is over: it
+        // learns from it whether the worklet will still answer.
+        const abortDelivered = handshake && !completed ? handshake.cancel() : true;
+        chunkPacer?.dispose(abortDelivered);
         if (!releaseStarted) {
             if (postedLoadToken === null) {
                 // It never posted a begin: it is over once the loads before it are.

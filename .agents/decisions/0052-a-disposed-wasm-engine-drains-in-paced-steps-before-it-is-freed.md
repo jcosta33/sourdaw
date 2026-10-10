@@ -100,7 +100,10 @@ Where the posts come from, beyond the table:
   first `releaseRetiredBank` step frees it. The loader paces itself on `sampleChunkWritten`: it leaves at
   most `LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT` chunks unacknowledged across all concurrent loads (every
   Levain processor of a context shares one render thread; the budget is one per main-thread realm,
-  first come first served, and a load that ends returns its unacknowledged credits), so the worklet's queue never holds a long
+  first come first served, and a load that ends keeps its still-queued chunks' credits until the
+  worklet has passed them: one per `sampleChunkWritten`, the rest at the first answer after them on
+  the port (`sampleBankError`, `retiredBankReleased`, or the processor ending), or at once when the
+  port is closed), so the worklet's queue never holds a long
   run of them to drain between two quanta, and it stops waiting at once on an abort, on a
   `sampleBankError` for its load, or when the processor ends (`error`, `disposed`).
 - **A processor that faulted before `init` completed** answers like the faulted column: it re-posts
