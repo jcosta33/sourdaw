@@ -1,3 +1,6 @@
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -116,6 +119,7 @@ function runtimePorts() {
     ports.env = {
         HOME: context.home,
         PATH: `${dirname(context.node)}:${dirname(context.pnpm)}:/usr/local/bin:/usr/bin:/bin`,
+        PNPM_CONFIG_STORE_DIR: context.store,
         CI: 'true',
         GITHUB_ACTIONS: 'true',
         GITHUB_WORKSPACE: context.workspace,
@@ -361,6 +365,79 @@ describe('required unit account isolation', () => {
         }
     });
 
+    it('forwards the explicit install store to real pinned pnpm descendants in every phase', () => {
+        const invokingPnpm = process.env.npm_execpath;
+        expect(invokingPnpm).toBeDefined();
+        if (invokingPnpm === undefined) {
+            throw new Error('the invoking pinned pnpm executable is required');
+        }
+        const fixture = mkdtempSync(join(tmpdir(), 'sourdaw-unit-store-'));
+        const pinnedVersion = JSON.parse(
+            readFileSync(join(process.cwd(), 'package.json'), 'utf8')
+        ).packageManager.replace('pnpm@', '');
+        const actualContext = {
+            ...context,
+            workspace: fixture,
+            home: join(fixture, 'home'),
+            store: join(fixture, 'store'),
+            temp: join(fixture, 'tmp'),
+            node: process.execPath,
+            pnpm: realpathSync(invokingPnpm),
+        };
+        const { ports, run } = runtimePorts();
+        ports.env = {
+            ...ports.env,
+            HOME: actualContext.home,
+            PATH: `${dirname(actualContext.node)}:${dirname(actualContext.pnpm)}:/usr/local/bin:/usr/bin:/bin`,
+            PNPM_CONFIG_STORE_DIR: actualContext.store,
+            GITHUB_WORKSPACE: fixture,
+            TMPDIR: actualContext.temp,
+            TMP: actualContext.temp,
+            TEMP: actualContext.temp,
+        };
+        const observations: Array<{ version: string; store: string }> = [];
+        const receipt = vi.spyOn(console, 'info').mockImplementation(() => {});
+        try {
+            for (const path of [actualContext.home, actualContext.store, actualContext.temp]) {
+                mkdirSync(path, { mode: 0o700 });
+            }
+            run.mockImplementation((_file, _args, options) => {
+                const result = spawnSync(
+                    process.execPath,
+                    [
+                        '-e',
+                        `const {execFileSync}=require('node:child_process');
+                         const cli=process.argv[1];
+                         const version=execFileSync(cli,['--version'],{encoding:'utf8'}).trim();
+                         const store=execFileSync(cli,['config','get','storeDir'],{encoding:'utf8'}).trim();
+                         process.stdout.write(JSON.stringify({version,store}));`,
+                        actualContext.pnpm,
+                    ],
+                    { cwd: options?.cwd, env: options?.env, encoding: 'utf8', timeout: 10_000 }
+                );
+                expect(result.error).toBeUndefined();
+                expect(result.status, result.stderr).toBe(0);
+                observations.push(JSON.parse(result.stdout));
+                return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+            });
+            expect(runUnitPhase(actualContext, 'install', undefined, ports)).toBe(0);
+            expect(run.mock.calls[0]?.[1]).toEqual([
+                'install',
+                '--frozen-lockfile',
+                '--store-dir',
+                actualContext.store,
+            ]);
+            expect(runUnitPhase(actualContext, 'verify', undefined, ports)).toBe(0);
+            expect(runUnitPhase(actualContext, 'shard', '3/4', ports)).toBe(0);
+            expect(observations).toEqual(
+                Array.from({ length: 3 }, () => ({ version: pinnedVersion, store: actualContext.store }))
+            );
+        } finally {
+            receipt.mockRestore();
+            rmSync(fixture, { recursive: true });
+        }
+    }, 20_000);
+
     it.each(['1/4 --context=/private', '--shard=1/4'])(
         'rejects helper arguments embedded in the Vitest shard %s before launching pnpm',
         (shard) => {
@@ -381,6 +458,8 @@ describe('required unit account isolation', () => {
         'storage',
         'executable',
         'loader',
+        'credential',
+        'store configuration',
     ])('refuses %s without running pnpm or relaxing permissions', (failure) => {
         const { ports, run } = runtimePorts();
         let sample = status;
@@ -415,6 +494,12 @@ describe('required unit account isolation', () => {
         }
         if (failure === 'loader') {
             ports.env.NODE_OPTIONS = '--unexpected-loader';
+        }
+        if (failure === 'credential') {
+            ports.env.EXTRA_CREDENTIAL = 'private-fixture';
+        }
+        if (failure === 'store configuration') {
+            ports.env.PNPM_CONFIG_STORE_DIR = '/outside/store';
         }
         ports.read = () => sample;
         expect(() => runUnitPhase(context, 'install', undefined, ports)).toThrow();

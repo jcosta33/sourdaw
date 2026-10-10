@@ -152,6 +152,7 @@ function safeEnvironment(context: UnitIsolationContext): NodeJS.ProcessEnv {
     return {
         HOME: context.home,
         PATH: `${dirname(context.node)}:${dirname(context.pnpm)}:${systemPath}`,
+        PNPM_CONFIG_STORE_DIR: context.store,
         CI: 'true',
         GITHUB_ACTIONS: 'true',
         GITHUB_WORKSPACE: context.workspace,
