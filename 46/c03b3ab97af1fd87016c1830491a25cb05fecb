@@ -1,0 +1,79 @@
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_9cabd8c6bc6c1f 220-228
+src/modules/AudioEngine/useCases/audioRecorder/inputMonitoringAdmission.ts
+  s_1f0dcd815e8946::t_9432ffd016077e 3-4
+src/modules/AudioEngine/repositories/audioRecorder/hasDeferredInputMonitoringEdge.ts
+  s_1f0dcd815e8946::t_9432ffd016077e 1-11
+src/modules/AudioEngine/useCases/audioRecorder/startInputMonitoring.ts
+  s_1f0dcd815e8946::t_9432ffd016077e 4,12,14-20
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDelete.integration.spec.ts
+  s_1f0dcd815e8946::t_9ce008ccea95bd 1-3,8-9,17-22,41-46,49-53,58-59,61-64,72-73,97,99-118,123-126,128,151-153,158-169,175-189,191-212
+  s_1f0dcd815e8946::t_099675a514d586 47-48,127,129-132,170-174
+  s_1f0dcd815e8946::t_07967e777c99a4 74-96,137-145,150
+  s_1f0dcd815e8946::t_aa4d4233f3df19 4-7,10-16,23-40,54-57,60,65-71,98,119-122,133-136,146-149,154-157,190
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  s_1f0dcd815e8946::t_9432ffd016077e 2
+  s_1f0dcd815e8946::t_aa4d4233f3df19 64
+src/modules/Arrangement/useCases/finalizeCommittedTrackRuntimeRemoval.ts
+  s_1f0dcd815e8946::t_db949b8e4f69a2 1-13,16-46
+  s_1f0dcd815e8946::t_099675a514d586 14-15
+  s_1f0dcd815e8946::t_fedb9ef8f71ea0 47-51
+src/modules/AudioEngine/useCases/audioRecorder/admitInputMonitoring.ts
+  s_1f0dcd815e8946::t_c20326c7b6a88f 26-31
+  s_1f0dcd815e8946::t_9432ffd016077e 15,17-23
+src/modules/AudioEngine/repositories/audioRecorder/inputMonitoringSession.ts
+  s_1f0dcd815e8946::t_9432ffd016077e 44
+src/modules/AudioEngine/useCases/audioRecorder/rearmCommittedTrackInputMonitoring.ts
+  s_1f0dcd815e8946::t_aa4d4233f3df19 18-24
+  s_1f0dcd815e8946::t_9432ffd016077e 2,16
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts
+  s_1f0dcd815e8946::t_5cb298d588b6ce 64,66-67
+.agents/skills/review-stances/session-lifecycle.md
+  s_1f0dcd815e8946::t_9cabd8c6bc6c1f 245-270
+src/modules/AudioEngine/repositories/audioRecorder/releaseTrackMonitorEdge.ts
+  s_1f0dcd815e8946::t_9432ffd016077e 3,31
+src/modules/AudioEngine/useCases/audioRecorder/reconcileAutoInputMonitoring.ts
+  s_1f0dcd815e8946::t_9432ffd016077e 4,51-52,63-64,72,85,147,167
+  s_1f0dcd815e8946::t_c20326c7b6a88f 13,137-141
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/reconcileAutoInputMonitoring.storeOnlyMode.spec.ts
+  s_1f0dcd815e8946::t_5cb298d588b6ce 390-403,405-419
+  s_1f0dcd815e8946::t_a53cb512cc0fa7 13,404,450
+  s_1f0dcd815e8946::t_21a9c10fbafefd 420-435,437-449,451-452
+  s_1f0dcd815e8946::t_36c41bba9d4f0f 436
+  s_1f0dcd815e8946::t_5bc30b48b32dc0 389
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts
+  s_1f0dcd815e8946::t_a53cb512cc0fa7 107-119,259,275,277,292,300,304-306,313,336,373
+  s_1f0dcd815e8946::t_5cb298d588b6ce 978-1022
+  s_1f0dcd815e8946::t_9cd6654d2a0a3a 363-369
+  s_1f0dcd815e8946::t_bee331eba940a6 12-16,328-333,337-352,354-355,357-360,370
+  s_1f0dcd815e8946::t_e6ec9e47190f52 253-258,260-274,276,278-290
+  s_1f0dcd815e8946::t_21a9c10fbafefd 293-299,301-303,307-312,314-327,334-335,353,356,361-362,371-372,374-376
+  s_1f0dcd815e8946::t_842c8d665cf96f 11
+  s_1f0dcd815e8946::t_150d38c56ac2ab 291
+src/modules/AudioEngine/useCases/audioRecorder/readChangedInputMonitoringAdmission.ts
+  s_1f0dcd815e8946::t_9432ffd016077e 1-2,10,13
+  s_1f0dcd815e8946::t_aa4d4233f3df19 14-17
+  s_1f0dcd815e8946::t_25a7438ee0105c 18
+src/modules/Arrangement/useCases/removeTrack.ts
+  s_1f0dcd815e8946::t_db949b8e4f69a2 23,95,137
+src/modules/AudioEngine/repositories/audioRecorder/inputMonitoring.ts
+  s_1f0dcd815e8946::t_9432ffd016077e 32,46,53-55,61,151-153,162
+src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts
+  s_1f0dcd815e8946::t_099675a514d586 404-405
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46c03b3ab97af1fd87016c1830491a25cb05fecb",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
