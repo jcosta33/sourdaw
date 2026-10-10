@@ -322,6 +322,34 @@ fn fm_tone_remains_audible_without_an_explicit_mod_amount() {
     );
 }
 
+/// One full hit (~427 ms at 48 kHz) rendered through a bare voice.
+fn voice_hit(voice: &mut DrumVoice, pad: &Pad) -> Vec<f32> {
+    voice.trigger(0, pad, 1.0, 60, 48_000.0);
+    (0..160 * FRAMES).map(|_| voice.tick(48_000.0)).collect()
+}
+
+/// Modal's DECAY arm scales the mode decay coefficients multiplicatively, so
+/// a recycled voice must restore the preset's base coefficients per hit or
+/// every hit decays differently than the pad states (#4856): with the reset
+/// missing, hit two's modes carry hit one's scaling on top and the render
+/// diverges from a fresh voice's from the first sample.
+#[test]
+fn recycled_modal_voice_does_not_compound_decay_across_hits() {
+    let resources = DrumEngineResources::new();
+    let mut modal_pad = Pad::new(DrumEngineType::Modal);
+    modal_pad.set_param("decay", 0.5);
+
+    let mut reused = DrumVoice::new(48_000.0, &resources);
+    let first = voice_hit(&mut reused, &modal_pad);
+    assert!(energy(&first) > 0.0, "the first hit under test must sound");
+    let second = voice_hit(&mut reused, &modal_pad);
+
+    let mut fresh = DrumVoice::new(48_000.0, &resources);
+    let control = voice_hit(&mut fresh, &modal_pad);
+
+    assert_bit_identical(&second, &control);
+}
+
 #[test]
 fn engine_type_rehydration_resets_fm_voicing_before_overrides() {
     let expected = fm_first_block(|_| {});

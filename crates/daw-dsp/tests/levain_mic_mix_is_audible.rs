@@ -373,6 +373,29 @@ fn disabling_mic_0_leaves_only_mic_1s_layer() {
 }
 
 #[test]
+fn the_fallback_tone_follows_the_first_enabled_mic() {
+    // While a load is in flight the fallback stands in for the sample
+    // content, so it must ride an enabled position: with mic 0 switched off
+    // on a two-mic bank, mic 1 is the only path left to the output.
+    let mut instance = two_mic_instance();
+    instance.set_param("mic_0_enabled", 0.0);
+    instance.clear_zones();
+    instance.note_on(60, 100);
+
+    let out = render(&mut instance, 4_096);
+
+    let fallback_hz = transposed(MIC_0_HZ, 60);
+    assert!(
+        amplitude_at(&out.left, fallback_hz) > 0.01,
+        "the fallback tone is silent through the enabled mic 1",
+    );
+    assert!(
+        peak(&out.right) > 0.01,
+        "the fallback tone is silent on the right channel",
+    );
+}
+
+#[test]
 fn disabling_every_layer_silences_the_note() {
     // The voice still exists — its positions have zones — so the assertion
     // has to be on the rendered signal, not the voice count.
