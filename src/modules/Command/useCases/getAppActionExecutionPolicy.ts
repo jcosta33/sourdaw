@@ -72,7 +72,6 @@ const executionPolicies = {
     analyzeMix: readOnlyPolicy,
     copyClip: readOnlyPolicy,
     detectKey: readOnlyPolicy,
-    detectTempo: readOnlyPolicy,
     getLatencyReport: readOnlyPolicy,
 
     addAutomationLane: boundedPolicy,
@@ -153,6 +152,7 @@ const executionPolicies = {
     stripSilence: destructivePolicy,
 
     armTrack: authoritySensitivePolicy,
+    detectTempo: authoritySensitivePolicy,
     setMasterGain: authoritySensitivePolicy,
     toggleRecording: authoritySensitivePolicy,
 

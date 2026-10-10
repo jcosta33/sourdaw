@@ -304,18 +304,26 @@ describe('global time operations retire take-lane state (#4520)', () => {
         });
     });
 
-    it('inserts and duplicates leave take lanes untouched', () => {
+    it('moves existing audio takes on insert and copies the comp for a contained duplicate', () => {
         const { compedTake } = setCompedArrangement();
         registerIdleDependencies();
 
         const inserted = executeGlobalTimeOperation({ operation: { type: 'insert', atBeat: 0, durationBeats: 2 } });
         expect(inserted.status).toBe('applied');
-        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id)).toHaveLength(2);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => [take.id, take.startBeat, take.endBeat])).toEqual([
+            [compedTake.id, 4, 8],
+            [expect.any(String), 8, 12],
+        ]);
 
-        const duplicated = executeGlobalTimeOperation({ operation: { type: 'duplicate', startBeat: 6, endBeat: 10 } });
+        const duplicated = executeGlobalTimeOperation({ operation: { type: 'duplicate', startBeat: 4, endBeat: 8 } });
         expect(duplicated.status).toBe('applied');
         const lanes = takeLaneStore.value?.lanes ?? [];
         expect(lanes[0]?.takes.map((take) => take.id)).toContain(compedTake.id);
-        expect(lanes[0]?.activeCompRegions).toEqual([{ startBeat: 2, endBeat: 6, takeId: compedTake.id }]);
+        const copiedTake = lanes[0]?.takes.find((take) => take.clipId !== 'comped' && take.name === compedTake.name);
+        expect(copiedTake).toMatchObject({ startBeat: 8, endBeat: 12 });
+        expect(lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 4, endBeat: 8, takeId: compedTake.id },
+            { startBeat: 8, endBeat: 12, takeId: copiedTake?.id },
+        ]);
     });
 });

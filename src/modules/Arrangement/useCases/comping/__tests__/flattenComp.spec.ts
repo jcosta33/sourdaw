@@ -5,6 +5,7 @@ import { type AutomationLane, automationStore } from '#/modules/Automation/store
 import { undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -99,7 +100,10 @@ function warnings(): string[] {
 }
 
 describe('flattenComp', () => {
+    let originalTempoMap: typeof tempoMapStore.value;
+
     beforeEach(() => {
+        originalTempoMap = tempoMapStore.value;
         vi.clearAllMocks();
         clearUndoHistory();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
@@ -110,6 +114,7 @@ describe('flattenComp', () => {
     });
 
     afterEach(() => {
+        tempoMapStore.set(originalTempoMap);
         clearUndoHistory();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
@@ -177,6 +182,7 @@ describe('flattenComp', () => {
             audioBufferId: 'buf-a',
             audioOffsetBeats: 0.5,
         });
+        tempoMapStore.set({ changes: [{ id: 'tempo-120', beat: 0, tempo: 120, curve: 'instant' }] });
         seedTrack([sourceClip]);
         seedLane(
             [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
@@ -201,9 +207,11 @@ describe('flattenComp', () => {
             expect(liveClips().filter((clip) => Object.hasOwn(clip, key))).toEqual([]);
         }
         const sourceKeys = new Set(Object.keys(sourceClip));
-        for (const fragment of liveClips()) {
-            expect(new Set(Object.keys(fragment))).toEqual(sourceKeys);
+        expect(new Set(Object.keys(liveClips()[0]!))).toEqual(sourceKeys);
+        for (const fragment of liveClips().slice(1)) {
+            expect(new Set(Object.keys(fragment))).toEqual(new Set([...sourceKeys, 'audioOffsetSeconds']));
         }
+        expect(liveClips().map((fragment) => fragment.audioOffsetSeconds)).toEqual([undefined, 1.25, 2.25]);
     });
 
     it('copies each MIDI fragment’s notes under its own id and folds its offset', () => {

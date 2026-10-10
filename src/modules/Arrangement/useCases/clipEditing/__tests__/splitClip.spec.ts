@@ -21,6 +21,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
         getScopedGrooveAssignment: actual.getScopedGrooveAssignment,
         getScopedGrooveConsumerId: actual.getScopedGrooveConsumerId,
         getStraightGrooveTemplateId: actual.getStraightGrooveTemplateId,
+        midiClipSplitStateMatches: actual.midiClipSplitStateMatches,
         prepareMidiClipSplit: mocks.prepareMidiClipSplit,
         projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
         restoreGrooveAssignment: actual.restoreGrooveAssignment,
@@ -33,6 +34,7 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
 }));
 
 import { getAutomationLanes, getAutomationValueAtBeat, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
+import { tempoMapStore, transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -68,6 +70,8 @@ describe('splitClip', () => {
         vi.clearAllMocks();
         warpStates.clear();
         __resetGainEnvelopesForTest();
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         mocks.getNextClipId.mockReturnValue('new-clip-right');
         mocks.snapToZeroCrossing.mockImplementation((_clip, beat) => beat);
         mocks.prepareMidiClipSplit.mockImplementation(() => {
@@ -241,6 +245,41 @@ describe('splitClip', () => {
             fadeInBeats: 0,
             audioOffsetBeats: 2,
         });
+    });
+
+    it.each([
+        { stretchMode: 'off' as const, stretchRatio: 1, expectedSourceSeconds: 3.5 },
+        { stretchMode: 'timestretch' as const, stretchRatio: 1.5, expectedSourceSeconds: 5.25 },
+    ])('keeps the source seam at beat 5.5 across a tempo change with $stretchRatio x stretch', (input) => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({
+                    id: 'c1',
+                    startBeat: 0,
+                    endBeat: 8,
+                    type: 'audio',
+                    audioOffsetBeats: 9,
+                    audioOffsetSeconds: 0,
+                    stretchMode: input.stretchMode,
+                    stretchRatio: input.stretchRatio,
+                }),
+            ])
+        );
+
+        expect(splitClip('c1', 5.5)).toBe('new-clip-right');
+
+        const clips = newTrackState().tracks[0]?.clips ?? [];
+        expect(clips.find((clip) => clip.id === 'c1')?.audioOffsetSeconds).toBe(0);
+        expect(clips.find((clip) => clip.id === 'new-clip-right')?.audioOffsetSeconds).toBeCloseTo(
+            input.expectedSourceSeconds,
+            12
+        );
     });
 
     it('uses snapToZeroCrossing to adjust the split point of audio clips', () => {

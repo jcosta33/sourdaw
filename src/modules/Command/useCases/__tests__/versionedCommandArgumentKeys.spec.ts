@@ -110,6 +110,101 @@ describe('versionedCommandArgumentKeys — restoreClipSplitState (#4521)', () =>
     });
 });
 
+describe('versionedCommandArgumentKeys — audio source inverse captures', () => {
+    it('admits exact reverse source snapshots while retaining historical beat-only entries', () => {
+        const payload = {
+            clipId: 'c1',
+            expectedAudioBufferId: 'reversed-1',
+            audioBufferId: 'source-1',
+            name: 'Verse',
+            audioOffsetBeats: 7,
+        };
+        expect(validateVersionedCommandArguments('restoreReversedClip', payload)).toBe(true);
+        expect(
+            validateVersionedCommandArguments('restoreReversedClip', {
+                ...payload,
+                audioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 7 },
+            })
+        ).toBe(true);
+        expect(
+            validateVersionedCommandArguments('restoreReversedClip', {
+                ...payload,
+                audioSource: { audioOffsetSeconds: -2, audioOffsetBeats: -4 },
+            })
+        ).toBe(true);
+        expect(
+            validateVersionedCommandArguments('restoreReversedClip', {
+                ...payload,
+                audioSource: { audioOffsetSeconds: null, audioOffsetBeats: null },
+            })
+        ).toBe(true);
+    });
+
+    it('rejects malformed reverse source snapshots before replay', () => {
+        const payload = {
+            clipId: 'c1',
+            expectedAudioBufferId: 'reversed-1',
+            audioBufferId: 'source-1',
+            name: 'Verse',
+        };
+        for (const audioSource of [
+            { audioOffsetSeconds: Number.NaN, audioOffsetBeats: 0 },
+            { audioOffsetSeconds: 0, audioOffsetBeats: Number.POSITIVE_INFINITY },
+            { audioOffsetSeconds: 0 },
+            { audioOffsetSeconds: 0, audioOffsetBeats: 0, extra: 1 },
+            { audioOffsetSeconds: '0', audioOffsetBeats: 0 },
+        ]) {
+            expect(validateVersionedCommandArguments('restoreReversedClip', { ...payload, audioSource })).toBe(false);
+        }
+    });
+
+    it('admits legacy trim/slip actions and exact signed or zero source captures', () => {
+        const oldSource = { audioOffsetSeconds: null, audioOffsetBeats: -2 };
+        const writtenSource = { audioOffsetSeconds: 0, audioOffsetBeats: 0 };
+        expect(validateVersionedCommandArguments('trimClipStart', { clipId: 'c1', newStartBeat: 3 })).toBe(true);
+        expect(
+            validateVersionedCommandArguments('slipClipContent', { clipId: 'c1', clipType: 'audio', offset: 0 })
+        ).toBe(true);
+        expect(
+            validateVersionedCommandArguments('trimClipStart', {
+                clipId: 'c1',
+                newStartBeat: 0,
+                restoreAudioSource: oldSource,
+                expectedAudioSource: writtenSource,
+            })
+        ).toBe(true);
+        expect(
+            validateVersionedCommandArguments('slipClipContent', {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: -2,
+                restoreAudioSource: oldSource,
+                expectedAudioSource: writtenSource,
+            })
+        ).toBe(true);
+    });
+
+    it('rejects malformed saved source captures before replay', () => {
+        expect(
+            validateVersionedCommandArguments('trimClipStart', {
+                clipId: 'c1',
+                newStartBeat: 0,
+                restoreAudioSource: { audioOffsetSeconds: Number.NaN, audioOffsetBeats: 0 },
+                expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 0 },
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('slipClipContent', {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: 0,
+                restoreAudioSource: { audioOffsetSeconds: 0 },
+                expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 0 },
+            })
+        ).toBe(false);
+    });
+});
+
 describe('versionedCommandArgumentKeys — dense array admission (#4938)', () => {
     // Assigning past the end leaves the skipped indices as holes; Array.prototype.every
     // would visit only the populated slots and admit the array.

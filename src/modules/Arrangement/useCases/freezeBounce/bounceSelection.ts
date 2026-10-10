@@ -11,6 +11,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type Clip } from '../../models/Track';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
+import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
 import { collectTracksClipBufferIds } from '../timeOperations/collectTracksClipBufferIds';
 
 import { detectSilentBake } from './detectSilentBake';
@@ -22,6 +23,20 @@ type MidiClipDataSnapshot = {
     controlChanges: readonly unknown[] | null;
     pitchBends: readonly unknown[] | null;
 };
+
+const LOOP_RIGHT_FRAGMENT_MESSAGE =
+    'Bounce selection cannot preserve audio after the selection in a looped clip. Select the whole clip for the bounce.';
+
+function hasKeptRightAudioLoop(clips: readonly Clip[], startBeat: number, endBeat: number): boolean {
+    return clips.some(
+        (clip) =>
+            clip.type === 'audio' &&
+            clip.loopEnabled === true &&
+            clip.startBeat < endBeat &&
+            clip.endBeat > endBeat &&
+            clip.endBeat > startBeat
+    );
+}
 
 function captureMidiClipData(clipId: string): MidiClipDataSnapshot {
     const state = getMidiStoreState();
@@ -67,6 +82,10 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
 
     const clipsInRange = track.clips.filter((context) => context.endBeat > startBeat && context.startBeat < endBeat);
     if (clipsInRange.length === 0) {
+        return false;
+    }
+    if (hasKeptRightAudioLoop(clipsInRange, startBeat, endBeat)) {
+        notifyUser(LOOP_RIGHT_FRAGMENT_MESSAGE, 'error');
         return false;
     }
 
@@ -127,6 +146,10 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
     }
 
     const targetTrack = freshState.tracks[targetTrackIndex]!;
+    if (hasKeptRightAudioLoop(targetTrack.clips, startBeat, endBeat)) {
+        notifyUser(LOOP_RIGHT_FRAGMENT_MESSAGE, 'error');
+        return false;
+    }
 
     // Partial overlaps are split at the selection edges so out-of-range
     // material survives (ledger M-031) — same split convention as
@@ -160,17 +183,20 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         if (clip.startBeat < startBeat && clip.endBeat > endBeat) {
             // Spans the selection: keep both outside parts.
             const rightClipId = `clip-bsel-${crypto.randomUUID().slice(0, 8)}`;
-            keptClips.push(
-                { ...clip, endBeat: startBeat, name: `${clip.name} (L)` },
-                {
-                    ...clip,
-                    id: rightClipId,
-                    startBeat: endBeat,
-                    name: `${clip.name} (R)`,
-                    audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
-                    midiOffsetBeats: 0,
-                }
-            );
+            const rightClip: Clip = {
+                ...clip,
+                id: rightClipId,
+                startBeat: endBeat,
+                name: `${clip.name} (R)`,
+                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
+                midiOffsetBeats: 0,
+            };
+            if (clip.type === 'audio') {
+                const rightAudioSource = audioSourceAtBeat(clip, endBeat);
+                rightClip.audioOffsetSeconds = rightAudioSource.audioOffsetSeconds;
+                rightClip.audioOffsetBeats = rightAudioSource.audioOffsetBeats;
+            }
+            keptClips.push({ ...clip, endBeat: startBeat, name: `${clip.name} (L)` }, rightClip);
             if (clip.type === 'midi') {
                 generatedMidiClipIds.push(rightClipId);
                 splitOps.push({
@@ -203,13 +229,19 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         // Crosses the right edge: keep the right part, re-based to endBeat on
         // a fresh id (its MIDI media starts at the split point).
         const rightClipId = `clip-bsel-${crypto.randomUUID().slice(0, 8)}`;
-        keptClips.push({
+        const rightClip: Clip = {
             ...clip,
             id: rightClipId,
             startBeat: endBeat,
             audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
             midiOffsetBeats: 0,
-        });
+        };
+        if (clip.type === 'audio') {
+            const rightAudioSource = audioSourceAtBeat(clip, endBeat);
+            rightClip.audioOffsetSeconds = rightAudioSource.audioOffsetSeconds;
+            rightClip.audioOffsetBeats = rightAudioSource.audioOffsetBeats;
+        }
+        keptClips.push(rightClip);
         if (clip.type === 'midi') {
             generatedMidiClipIds.push(rightClipId);
             const mediaSplit = endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);

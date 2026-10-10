@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
+import { isExecutableAppActionType } from '../executableAppActionRegistry';
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { requiresAppActionConfirmation } from '../requiresAppActionConfirmation';
 
 describe('app action execution policy', () => {
+    it('classifies project tempo detection as authority-sensitive without exposing a new action', () => {
+        expect(getAppActionExecutionPolicy('detectTempo')).toMatchObject({
+            classification: 'explicit',
+            risk: 'authority-sensitive',
+            requiresConfirmation: true,
+        });
+        expect(isExecutableAppActionType('detectTempo')).toBe(false);
+    });
+
     it.each([
         'armTrack',
         'toggleRecording',

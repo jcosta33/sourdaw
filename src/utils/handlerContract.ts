@@ -135,6 +135,7 @@ export type ClipStateSnapshot = {
     readonly fileId?: string;
     readonly assetHash?: string;
     readonly audioOffsetBeats?: number;
+    readonly audioOffsetSeconds?: number;
     readonly midiOffsetBeats?: number;
     readonly fadeInBeats: number;
     readonly fadeOutBeats: number;
@@ -180,6 +181,63 @@ export type ClipMoveActionSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
     readonly automationLanes: readonly ClipAutomationLaneActionSnapshot[];
+    readonly audioSource?: AudioSourceStateSnapshot;
+    readonly takeSources?: readonly TakeSourceDepthSnapshot[];
+};
+/** Optional clip-source field presence in an inverse action; null means absent. */
+export type AudioSourceStateSnapshot = {
+    audioOffsetSeconds: number | null;
+    audioOffsetBeats: number | null;
+};
+export type TakeSourceDepthSnapshot = {
+    readonly laneId: string;
+    readonly takeId: string;
+    readonly sourceOffsetSeconds: number | null;
+    readonly sourceOffsetBeats: number | null;
+    readonly passAnchorSeconds?: number;
+    readonly passDepthSeconds?: number;
+};
+/** An absent canonical field resolved under the pre-edit tempo, for targeted setTempo replay. */
+export type TempoAudioSourceTransition = {
+    readonly version: 1;
+    readonly direction: 'apply' | 'restore';
+    readonly clips: readonly {
+        readonly trackId: string;
+        readonly alternativeId: string | null;
+        readonly clipId: string;
+        readonly startBeat: number;
+        readonly endBeat: number;
+        readonly audioBufferId: string | null;
+        readonly fileId: string | null;
+        readonly assetHash: string | null;
+        readonly originalTempo: number;
+        readonly audioOffsetBeats: number;
+        readonly audioOffsetSeconds: number;
+    }[];
+    readonly takes: readonly {
+        readonly laneId: string;
+        readonly trackId: string;
+        readonly takeId: string;
+        readonly clipId: string;
+        readonly alternativeId: string | null;
+        readonly clipStartBeat: number;
+        readonly clipEndBeat: number;
+        readonly audioBufferId: string | null;
+        readonly fileId: string | null;
+        readonly assetHash: string | null;
+        readonly startBeat: number;
+        readonly endBeat: number;
+        readonly originalTempo: number;
+        readonly sourceOffsetBeats: number;
+        readonly sourceOffsetSeconds: number;
+    }[];
+};
+/** One tempo-map event, captured by identity for a guarded map edit replay. */
+export type TempoMapEventSnapshot = {
+    readonly id: string;
+    readonly beat: number;
+    readonly tempo: number;
+    readonly curve: 'instant' | 'linear';
 };
 /** One clip's target placement in a multi-clip move — the `moveClips` payload unit
  *  and the moved-clip half of its `restoreClipMoves` inverse. */
@@ -485,7 +543,13 @@ export type StripSilenceActionSnapshot = {
     readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
     readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
 };
+export type ClipSplitTakeLaneSnapshot = {
+    readonly version: 1;
+    readonly lanes: readonly CompTakeLaneSnapshot[];
+};
 export type ClipSplitActionSnapshot = {
+    /** Only this split's take/region facets; absent on historical captures. */
+    readonly takeLanes?: ClipSplitTakeLaneSnapshot;
     readonly trackId: string;
     readonly leftClip: ClipStateSnapshot;
     readonly rightClip: ClipStateSnapshot | null;
@@ -532,6 +596,7 @@ export type TakeSnapshot = {
     endBeat: number;
     selected: boolean;
     sourceOffsetBeats?: number;
+    sourceOffsetSeconds?: number;
     passAnchorSeconds?: number;
     passDepthSeconds?: number;
 };
@@ -1259,6 +1324,23 @@ export type AppAction =
               tempoChangeId?: string | null;
               /** Application-owned replay guard. AiRuntime payload validation rejects this field. */
               expectedBpm?: number;
+              /** Arrangement-owned canonical source capture for targeted tempo Undo/Redo. */
+              sourceTransition?: TempoAudioSourceTransition;
+          };
+      }
+    | {
+          type: 'addTempoMapChange';
+          payload: { beat: number; tempo: number; curve: 'instant' | 'linear'; changeId?: string };
+      }
+    | { type: 'updateTempoMapChange'; payload: { changeId: string; tempo: number } }
+    | { type: 'removeTempoMapChange'; payload: { changeId: string } }
+    | {
+          /** Internal identity-scoped inverse/redo for the three map edit actions. */
+          type: 'restoreTempoMapChange';
+          payload: {
+              expected: TempoMapEventSnapshot | null;
+              replacement: TempoMapEventSnapshot | null;
+              sourceTransition: TempoAudioSourceTransition;
           };
       }
     | {
@@ -1390,9 +1472,32 @@ export type AppAction =
               retiredTakeLanes?: RetiredTakeLaneSnapshot[];
           };
       }
-    | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
+    | {
+          type: 'trimClipStart';
+          payload: {
+              clipId: string;
+              newStartBeat: number;
+              /** Internal inverse capture; null records an absent source field. */
+              restoreAudioSource?: AudioSourceStateSnapshot;
+              /** Source state written by the original edit; undo refuses divergence. */
+              expectedAudioSource?: AudioSourceStateSnapshot;
+          };
+      }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
-    | { type: 'slipClipContent'; payload: { clipId: string; clipType: 'audio' | 'midi'; offset: number } }
+    | {
+          type: 'slipClipContent';
+          payload: {
+              clipId: string;
+              clipType: 'audio' | 'midi';
+              offset: number;
+              /** Exact source point captured by an audio gesture across a tempo map. */
+              offsetSeconds?: number;
+              /** Internal inverse capture; null records an absent source field. */
+              restoreAudioSource?: AudioSourceStateSnapshot;
+              /** Source state written by the original edit; undo refuses divergence. */
+              expectedAudioSource?: AudioSourceStateSnapshot;
+          };
+      }
     | {
           /** Draw-tool clip creation; `ripple` shifts later clips on the track by the
            *  drawn length, exactly as the gesture's ripple insert did. */
@@ -2073,6 +2178,9 @@ export type AppAction =
               fadeOutBeats?: number;
               /** Offset the restore puts back; optional so older undo entries still decode. */
               audioOffsetBeats?: number;
+              /** Exact canonical and legacy field presence for current undo/redo entries.
+               *  Historical entries omit this and retain their beat-only restore. */
+              audioSource?: AudioSourceStateSnapshot;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };

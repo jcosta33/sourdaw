@@ -2,13 +2,16 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
+import { applyPreparedClipSplit } from '../../useCases/clipEditing/applyPreparedClipSplit';
 import { prepareClipSplit } from '../../useCases/clipEditing/prepareClipSplit';
-import { splitClip } from '../../useCases/clipEditing/splitClip';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { isSplitClipSessionEntry } from './validateClipEditSessionEntries';
 
 type SplitClipAction = Extract<AppAction, { type: 'splitClip' }>;
+type RestoreSplitAction = Extract<AppAction, { type: 'restoreClipSplitState' }>;
+type Description = { label: string; inverseAction: RestoreSplitAction | null; redoAction?: RestoreSplitAction };
+const pendingDescriptions = new WeakMap<SplitClipAction, Description>();
 
 function prepareAction(action: SplitClipAction, context?: HandlerValidationContext) {
     const rightClipId = action.payload.rightClipId ?? getNextAppActionClipId();
@@ -59,55 +62,78 @@ export const handleSplitClip = createHandler<'splitClip'>({
         prepareAction(action, context);
     },
     execute: (action) => {
-        return toHandlerExecutionResult(
-            splitClip(
-                action.payload.clipId,
-                action.payload.beat,
-                action.payload.rightClipId,
-                action.payload.targetNoteIds,
-                action.payload.resolvedBeat
-            ) !== null
-        );
+        const pending = pendingDescriptions.get(action);
+        try {
+            const plan = prepareAction(action);
+            if (!plan || !applyPreparedClipSplit(plan)) {
+                if (pending) {
+                    pending.inverseAction = null;
+                    pending.redoAction = undefined;
+                }
+                return toHandlerExecutionResult(false);
+            }
+            if (pending) {
+                const actual = describePlan(action, plan);
+                if (pending.inverseAction && actual.inverseAction) {
+                    Object.assign(pending.inverseAction.payload, actual.inverseAction.payload);
+                }
+                if (pending.redoAction && actual.redoAction) {
+                    Object.assign(pending.redoAction.payload, actual.redoAction.payload);
+                }
+            }
+            return toHandlerExecutionResult(true);
+        } catch (error) {
+            if (pending) {
+                pending.inverseAction = null;
+                pending.redoAction = undefined;
+            }
+            throw error;
+        } finally {
+            pendingDescriptions.delete(action);
+        }
     },
     describe: (action, context) => {
         const plan = prepareAction(action, context);
-        if (!plan) {
-            return { label: 'Split clip', inverseAction: null };
-        }
-        const actualBeat = plan.next.leftClip.endBeat;
-        const label =
-            actualBeat === action.payload.beat
-                ? `Split clip "${plan.previous.leftClip.name}" (${action.payload.clipId}) at beat ${String(actualBeat)}`
-                : `Split clip "${plan.previous.leftClip.name}" (${action.payload.clipId}) near requested beat ${String(action.payload.beat)} at beat ${String(actualBeat)}`;
-        // Filled in place by the undo leg's `execute()` and read by the redo:
-        // a take naming the right half can land after the split, so only the
-        // undo can capture what filtering the right clip out retires.
-        const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
-        return {
-            label,
-            inverseAction: {
-                type: 'restoreClipSplitState',
-                payload: {
-                    clipId: action.payload.clipId,
-                    rightClipId: plan.rightClipId,
-                    expected: plan.next,
-                    replacement: plan.previous,
-                    retiredTakeLanes,
-                },
-            },
-            redoAction: {
-                type: 'restoreClipSplitState',
-                payload: {
-                    clipId: action.payload.clipId,
-                    rightClipId: plan.rightClipId,
-                    expected: plan.previous,
-                    replacement: plan.next,
-                    retiredTakeLanes,
-                },
-            },
-        };
+        const description = plan ? describePlan(action, plan) : { label: 'Split clip', inverseAction: null };
+        pendingDescriptions.set(action, description);
+        return description;
     },
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });
+
+function describePlan(action: SplitClipAction, plan: NonNullable<ReturnType<typeof prepareClipSplit>>): Description {
+    const actualBeat = plan.next.leftClip.endBeat;
+    const label =
+        actualBeat === action.payload.beat
+            ? `Split clip "${plan.previous.leftClip.name}" (${action.payload.clipId}) at beat ${String(actualBeat)}`
+            : `Split clip "${plan.previous.leftClip.name}" (${action.payload.clipId}) near requested beat ${String(action.payload.beat)} at beat ${String(actualBeat)}`;
+    // Filled in place by the undo leg's `execute()` and read by the redo:
+    // a take naming the right half can land after the split, so only the
+    // undo can capture what filtering the right clip out retires.
+    const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
+    return {
+        label,
+        inverseAction: {
+            type: 'restoreClipSplitState',
+            payload: {
+                clipId: action.payload.clipId,
+                rightClipId: plan.rightClipId,
+                expected: plan.next,
+                replacement: plan.previous,
+                retiredTakeLanes,
+            },
+        },
+        redoAction: {
+            type: 'restoreClipSplitState',
+            payload: {
+                clipId: action.payload.clipId,
+                rightClipId: plan.rightClipId,
+                expected: plan.previous,
+                replacement: plan.next,
+                retiredTakeLanes,
+            },
+        },
+    };
+}

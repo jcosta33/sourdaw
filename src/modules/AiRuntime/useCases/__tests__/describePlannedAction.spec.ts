@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    resolveTakeMedia: (await importOriginal<typeof import('#/modules/Arrangement/stores')>()).resolveTakeMedia,
     readMusicalRangeInputs: vi.fn(() => []),
     getGainEnvelopeSeries: vi.fn(),
     clipHasActiveGainEnvelope: vi.fn(),

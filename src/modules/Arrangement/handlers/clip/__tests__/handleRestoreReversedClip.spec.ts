@@ -103,8 +103,72 @@ describe('handleRestoreReversedClip', () => {
         expect(publishedUpdate(reversedClip)).toMatchObject({ audioOffsetBeats: 0.5 });
     });
 
+    it('restores canonical zero from an undo source snapshot alongside its beat alias', () => {
+        const reversedClip = makeClip({ audioOffsetSeconds: 2, audioOffsetBeats: 2 });
+        setClip(reversedClip);
+        const action = {
+            type: 'restoreReversedClip' as const,
+            payload: {
+                clipId: 'c1',
+                expectedAudioBufferId: 'reversed-1',
+                audioBufferId: 'buffer-1',
+                name: 'Verse',
+                audioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 7 },
+            },
+        };
+
+        expect(handleRestoreReversedClip.execute(action)).toEqual({ status: 'written' });
+        expect(publishedUpdate(reversedClip)).toMatchObject({
+            audioBufferId: 'buffer-1',
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 7,
+        });
+    });
+
+    it('deletes absent canonical and beat fields when undo restores an old clip', () => {
+        const reversedClip = makeClip({ audioOffsetSeconds: -2, audioOffsetBeats: -2 });
+        setClip(reversedClip);
+        const action = {
+            type: 'restoreReversedClip' as const,
+            payload: {
+                clipId: 'c1',
+                expectedAudioBufferId: 'reversed-1',
+                audioBufferId: 'buffer-1',
+                name: 'Verse',
+                audioSource: { audioOffsetSeconds: null, audioOffsetBeats: null },
+            },
+        };
+
+        expect(handleRestoreReversedClip.execute(action)).toEqual({ status: 'written' });
+        const restored = publishedUpdate(reversedClip);
+        expect(restored).not.toHaveProperty('audioOffsetSeconds');
+        expect(restored).not.toHaveProperty('audioOffsetBeats');
+    });
+
+    it('restores a signed redo source position without clamping it to the buffer', () => {
+        const originalClip = makeClip({ audioBufferId: 'buffer-1', audioOffsetSeconds: 7, audioOffsetBeats: 7 });
+        setClip(originalClip);
+        const action = {
+            type: 'restoreReversedClip' as const,
+            payload: {
+                clipId: 'c1',
+                expectedAudioBufferId: 'buffer-1',
+                audioBufferId: 'reversed-1',
+                name: 'Verse (reversed)',
+                audioSource: { audioOffsetSeconds: -2, audioOffsetBeats: -2 },
+            },
+        };
+
+        expect(handleRestoreReversedClip.execute(action)).toEqual({ status: 'written' });
+        expect(publishedUpdate(originalClip)).toMatchObject({
+            audioBufferId: 'reversed-1',
+            audioOffsetSeconds: -2,
+            audioOffsetBeats: -2,
+        });
+    });
+
     it('leaves audioOffsetBeats untouched on a legacy payload that predates the offset field', () => {
-        const reversedClip = makeClip({ audioOffsetBeats: 2 });
+        const reversedClip = makeClip({ audioOffsetSeconds: 3, audioOffsetBeats: 2 });
         setClip(reversedClip);
 
         const result = handleRestoreReversedClip.execute({
@@ -120,7 +184,7 @@ describe('handleRestoreReversedClip', () => {
         });
 
         expect(result).toEqual({ status: 'written' });
-        expect(publishedUpdate(reversedClip)).toMatchObject({ audioOffsetBeats: 2 });
+        expect(publishedUpdate(reversedClip)).toMatchObject({ audioOffsetSeconds: 3, audioOffsetBeats: 2 });
     });
 
     it('leaves fades untouched on a legacy payload that predates the fade fields', () => {

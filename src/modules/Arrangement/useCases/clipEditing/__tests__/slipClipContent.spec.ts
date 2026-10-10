@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type Clip } from '#/modules/Arrangement/models/Track';
 import { slipClipContent } from '#/modules/Arrangement/useCases/clipEditing/slipClipContent';
 import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
-
-import type { Clip } from '#/modules/Arrangement/models/Track';
+import { tempoMapStore, transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
 vi.mock('#/modules/Arrangement/useCases/updateClip', () => ({
     updateClip: vi.fn(),
@@ -29,6 +29,8 @@ function makeClip(overrides: Partial<Clip> & Pick<Clip, 'id'>): Clip {
 describe('slipClipContent', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
     });
 
     it('should update audioOffsetBeats for audio clips', () => {
@@ -38,6 +40,16 @@ describe('slipClipContent', () => {
         const updater = vi.mocked(updateClip).mock.calls[0]![1];
         const result = updater(makeClip({ id: 'c1', audioOffsetBeats: 0 }));
         expect(result.audioOffsetBeats).toBe(2.5);
+    });
+
+    it('writes the requested audio source seconds at the clip-start tempo, overriding stale canonical zero', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 60 });
+        slipClipContent('c1', 'audio', 2);
+        const updater = vi.mocked(updateClip).mock.calls[0]![1];
+        const result = updater(makeClip({ id: 'c1', type: 'audio', audioOffsetSeconds: 0, audioOffsetBeats: 9 }));
+
+        expect(result.audioOffsetSeconds).toBe(2);
+        expect(result.audioOffsetBeats).toBe(2);
     });
 
     it('should update midiOffsetBeats for midi clips', () => {

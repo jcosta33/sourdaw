@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
@@ -15,13 +18,14 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
-import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { getTransportHandlers, tempoSourceDependencies } from '#/modules/Transport/useCases';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -33,9 +37,13 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { readClipSatelliteEntry, serializeClipSatelliteEntries } from '../../../stores/clipSatelliteState';
 import { removeEnvelope, setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStates } from '../../../stores/warpStates';
+import { isTempoAudioSourceTransition } from '../../../useCases/clipEditing/isTempoAudioSourceTransition';
+import { prepareAudioSourcesForTempoChange } from '../../../useCases/clipEditing/prepareAudioSourcesForTempoChange';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { resolveClipsWithComping } from '../../../useCases/resolveComping';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -67,6 +75,17 @@ function makeAudioBuffer(channelData: Float32Array, sampleRate: number): AudioBu
         copyFromChannel: () => undefined,
         copyToChannel: () => undefined,
     } as unknown as AudioBuffer;
+}
+
+function rawOwners() {
+    const raw = getCrdtDoc<{
+        tracks: { tracks: NonNullable<typeof trackStore.value>['tracks'] };
+        takeLanes: NonNullable<typeof takeLaneStore.value>;
+    }>('root');
+    if (!raw?.tracks || !raw.takeLanes) {
+        throw new Error('Expected raw track and take owners');
+    }
+    return { tracks: raw.tracks, takes: raw.takeLanes };
 }
 
 describe('handleSplitClip atomic integration', () => {
@@ -115,6 +134,7 @@ describe('handleSplitClip atomic integration', () => {
         transportStore.set({ ...defaultTransportState, tempo: 120 });
         warpStates.clear();
         setAllEnvelopes({});
+        takeLaneStore.set({ lanes: [] });
     });
 
     afterEach(() => {
@@ -122,8 +142,10 @@ describe('handleSplitClip atomic integration', () => {
         resetActionReplayAuthority();
         clearHandlerRegistry();
         unsubscribeFromNotifications();
+        tempoSourceDependencies.set(null);
         Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         warpStates.clear();
         setAllEnvelopes({});
@@ -414,6 +436,150 @@ describe('handleSplitClip atomic integration', () => {
             { id: 'p6', beatOffset: 1, gainDb: -12 },
         ]);
     });
+
+    it('partitions selected comp material at the actual zero-crossing seam and replays that seam', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            type: 'audio',
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'audio-buffer-1',
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 'take',
+                            clipId: 'clip-1',
+                            name: 'Comp',
+                            startBeat: 0,
+                            endBeat: 8,
+                            selected: true,
+                            sourceOffsetSeconds: 1,
+                        },
+                    ],
+                    activeCompRegions: [{ takeId: 'take', startBeat: 0, endBeat: 8 }],
+                },
+            ],
+        });
+        const channelData = new Float32Array(700).fill(1);
+        channelData.fill(-1, 251);
+        vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 100));
+        const result = await executeAppActionBatch(
+            [{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 4, rightClipId: 'right' } }],
+            { source: 'manual', requireCompensation: true }
+        );
+        expect(result).toMatchObject({ status: 'committed' });
+        expect(takeLaneStore.value!.lanes[0]!.takes).toMatchObject([
+            { id: 'take', endBeat: 5 },
+            { id: 'take:split-right:right', clipId: 'right', startBeat: 5, endBeat: 8, sourceOffsetSeconds: 1 },
+        ]);
+        expect(takeLaneStore.value!.lanes[0]!.activeCompRegions).toEqual([
+            { takeId: 'take', startBeat: 0, endBeat: 5 },
+            { takeId: 'take:split-right:right', startBeat: 5, endBeat: 8 },
+        ]);
+        const split = structuredClone(takeLaneStore.value);
+        await undo();
+        expect(takeLaneStore.value!.lanes[0]!.takes).toHaveLength(1);
+        expect(takeLaneStore.value!.lanes[0]!.activeCompRegions).toEqual([
+            { takeId: 'take', startBeat: 0, endBeat: 8 },
+        ]);
+        await redo();
+        expect(takeLaneStore.value).toEqual(split);
+    });
+
+    it.each(['tempo-first', 'split-first'] as const)(
+        'round-trips exact comp owners with configured tempo source preparation (%s)',
+        async (order) => {
+            tempoSourceDependencies.set({
+                prepare: prepareAudioSourcesForTempoChange,
+                isTransition: isTempoAudioSourceTransition,
+            });
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                trackId: 'track-1',
+                type: 'audio',
+                startBeat: 2,
+                endBeat: 8,
+                audioOffsetBeats: 1,
+            });
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 'track-1',
+                        takes: [
+                            {
+                                id: 'take',
+                                clipId: 'clip-1',
+                                name: 'Legacy comp',
+                                startBeat: 2,
+                                endBeat: 8,
+                                selected: true,
+                                sourceOffsetBeats: 2,
+                            },
+                        ],
+                        activeCompRegions: [{ takeId: 'take', startBeat: 2, endBeat: 8 }],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            const before = structuredClone({ tracks: trackStore.value, takes: takeLaneStore.value });
+            const rawBefore = structuredClone(rawOwners());
+            const split = {
+                type: 'splitClip',
+                payload: { clipId: 'clip-1', beat: 4, rightClipId: 'right', resolvedBeat: 4 },
+            } as const;
+            const tempo = { type: 'setTempo', payload: { bpm: 60 } } as const;
+            const result = await executeAppActionBatch(order === 'tempo-first' ? [tempo, split] : [split, tempo], {
+                source: 'manual',
+                requireCompensation: true,
+            });
+            flushAutomergeStorageWrites();
+            expect(result.status).toBe('committed');
+            const after = structuredClone({ tracks: trackStore.value, takes: takeLaneStore.value });
+            expect(rawOwners()).toEqual({ tracks: { tracks: after.tracks!.tracks }, takes: after.takes });
+            expect(
+                resolveClipsWithComping('track-1', trackStore.value!.tracks[0]!.clips).map((clip) => [
+                    clip.startBeat,
+                    clip.endBeat,
+                    clip.audioOffsetSeconds,
+                ])
+            ).toEqual([
+                [2, 4, 1.5],
+                [4, 8, order === 'tempo-first' ? 3.5 : 2.5],
+            ]);
+            expect(undoStore.value!.past).toHaveLength(2);
+            await undo();
+            await undo();
+            flushAutomergeStorageWrites();
+            expect({ tracks: trackStore.value, takes: takeLaneStore.value }).toEqual(before);
+            expect(rawOwners()).toEqual(rawBefore);
+            expect(transportStore.value!.tempo).toBe(120);
+            expect(undoStore.value!.past).toEqual([]);
+            await redo();
+            await redo();
+            flushAutomergeStorageWrites();
+            expect({ tracks: trackStore.value, takes: takeLaneStore.value }).toEqual(after);
+            expect(rawOwners()).toEqual({ tracks: { tracks: after.tracks!.tracks }, takes: after.takes });
+            expect(transportStore.value!.tempo).toBe(60);
+            expect(undoStore.value!.past).toHaveLength(2);
+        }
+    );
 
     it('refuses to undo a bare split once the right half carries an envelope of its own', async () => {
         const clip = ClipDummy.create({

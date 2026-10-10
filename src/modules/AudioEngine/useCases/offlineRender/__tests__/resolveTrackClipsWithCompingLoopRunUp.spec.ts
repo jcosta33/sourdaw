@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
     takeLaneStoreValue: { value: null as { lanes: unknown[] } | null },
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    resolveTakeMedia: (await importOriginal<typeof import('#/modules/Arrangement/stores')>()).resolveTakeMedia,
     takeLaneStore: {
         get value() {
             return mocks.takeLaneStoreValue.value;

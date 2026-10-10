@@ -102,6 +102,31 @@ describe('handleRestoreClipPlacement', () => {
         expect(mocks.moveClip).not.toHaveBeenCalled();
     });
 
+    it('refuses an inverse after a peer changes only the canonical source entry', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'track-2',
+                    clips: [{ id: 'clip-1', type: 'audio', startBeat: 16, endBeat: 24, audioOffsetSeconds: 4 }],
+                },
+            ],
+        });
+        const sourceAction = {
+            ...action,
+            payload: {
+                ...action.payload,
+                expected: { ...action.payload.expected, audioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 0 } },
+                replacement: {
+                    ...action.payload.replacement,
+                    audioSource: { audioOffsetSeconds: null, audioOffsetBeats: 2 },
+                },
+            },
+        };
+
+        expect(handleRestoreClipPlacement.execute(sourceAction)).toEqual({ status: 'conflict' });
+        expect(mocks.moveClip).not.toHaveBeenCalled();
+    });
+
     it('reports a conflict when the replacement track is unavailable or the clip became locked', () => {
         mocks.moveClip.mockReturnValue(false);
 

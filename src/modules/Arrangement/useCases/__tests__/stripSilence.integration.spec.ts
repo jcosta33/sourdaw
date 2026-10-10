@@ -193,7 +193,7 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         // beat 10. Each segment must sit at that timeline position AND read
         // from that same buffer beat.
         expect(clips[0]).toMatchObject({ startBeat: 17, endBeat: 19, audioOffsetBeats: 4 });
-        expect(clips[1]).toMatchObject({ startBeat: 23, endBeat: 26, audioOffsetBeats: 10 });
+        expect(clips[1]).toMatchObject({ startBeat: expect.closeTo(23, 10), endBeat: 26, audioOffsetBeats: 10 });
         expect(clips.map((clip) => clip.id)).not.toContain('clip-1');
     });
 
@@ -290,8 +290,8 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
             clipId: second!.id,
             enabled: true,
             points: [
-                { id: 'p-early', beatOffset: -6, gainDb: -6 },
-                { id: 'p-late', beatOffset: 1, gainDb: -3 },
+                { id: 'p-early', beatOffset: expect.closeTo(-6, 10), gainDb: -6 },
+                { id: 'p-late', beatOffset: expect.closeTo(1, 10), gainDb: -3 },
             ],
         });
     });
@@ -538,7 +538,7 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         expect(clips.map((clip) => clip.id)).not.toEqual(recordedSegmentIds);
         expect(clips).toMatchObject([
             { startBeat: 17, endBeat: 19, gain: 0.5 },
-            { startBeat: 23, endBeat: 26, gain: 0.5 },
+            { startBeat: expect.closeTo(23, 10), endBeat: 26, gain: 0.5 },
         ]);
     });
 

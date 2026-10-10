@@ -174,6 +174,26 @@ describe('writeTakeReKeyTransitions', () => {
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
 
+    it('applies a canonical source-depth change even when the beat alias is unchanged', () => {
+        const take = { ...createTake('clip-1', 'Take', 0, 4, 2), sourceOffsetSeconds: 1 };
+        const next = { ...take, sourceOffsetSeconds: 2 };
+        const lane: TakeLane = { ...createTakeLane('track-1'), takes: [take] };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+
+        applyTakeReKeyTransitions([
+            {
+                laneId: lane.id,
+                trackId: lane.trackId,
+                takesBefore: [take],
+                takesAfter: [next],
+                regionsBefore: [],
+                regionsAfter: [],
+            },
+        ]);
+
+        expect(liveLane().takes[0]?.sourceOffsetSeconds).toBe(2);
+    });
+
     it.each([
         { field: 'anchor', moved: { passAnchorSeconds: -2 } },
         { field: 'depth', moved: { passDepthSeconds: 3 } },

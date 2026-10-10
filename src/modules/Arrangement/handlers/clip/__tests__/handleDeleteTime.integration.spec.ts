@@ -255,7 +255,7 @@ async function peerComp(take: Take, startBeat: number, endBeat: number): Promise
     expect(undoStore.value).toEqual(history);
 }
 
-describe('Delete Time take ownership through Command and CRDT', () => {
+describe('Time operation take ownership through Command and CRDT', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('delete time comp integration');
@@ -378,6 +378,381 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         expect(trackStore.value).toMatchObject({ selectedTrackId: 'midi-track', ghostClips: [ghost] });
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it.each(['global', 'selected'] as const)(
+        '%s preserves a legacy take media depth through a tempo seam, settled Undo and Redo',
+        async (route) => {
+            tempoMapStore.set({
+                changes: [
+                    { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            if (route === 'global') {
+                clearHandlerRegistry();
+                registerProductionCommandHandlers([
+                    getArrangementHandlers(),
+                    getAudioRenderingHandlers(),
+                    getAutomationHandlers(),
+                    getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                    getMidiNoteTransformHandlers(),
+                    getTransportHandlers(),
+                    getYeastHandlers(),
+                ]);
+            }
+            const original = arrangeComp(0, 10);
+            const legacy = { ...original, sourceOffsetBeats: 2 };
+            takeLaneStore.set({ lanes: [{ ...lane(), takes: [legacy] }] });
+            flushAutomergeStorageWrites();
+
+            await removeTime(route, 2, 6);
+            const right = clips().find((clip) => clip.id !== 'source');
+            const rightTake = lane().takes.find((take) => take.clipId === right?.id);
+            expect(rightTake).toMatchObject({ sourceOffsetSeconds: 1, sourceOffsetBeats: 2 });
+            expect(
+                resolveClipsWithComping('track-1', clips()).find((clip) => clip.id === right?.id)?.audioOffsetSeconds
+            ).toBe(5);
+            expectAuthority();
+
+            if (route === 'global') {
+                await vi.waitFor(() => {
+                    expect(JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}').past).toHaveLength(1);
+                });
+                clearHandlerRegistry();
+                registerProductionCommandHandlers([
+                    getArrangementHandlers(),
+                    getAudioRenderingHandlers(),
+                    getAutomationHandlers(),
+                    getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                    getMidiNoteTransformHandlers(),
+                    getTransportHandlers(),
+                    getYeastHandlers(),
+                ]);
+            }
+            await undo();
+            expect(lane().takes).toEqual([legacy]);
+            expect(lane().takes[0]).not.toHaveProperty('sourceOffsetSeconds');
+            expectAuthority();
+            await redo();
+            expect(lane().takes.find((take) => take.clipId === right?.id)).toEqual(rightTake);
+            expectAuthority();
+        }
+    );
+
+    it.each(['global', 'selected'] as const)(
+        '%s Undo preserves a peer source-depth edit on a surviving take',
+        async (route) => {
+            if (route === 'global') {
+                clearHandlerRegistry();
+                registerProductionCommandHandlers([
+                    getArrangementHandlers(),
+                    getAudioRenderingHandlers(),
+                    getAutomationHandlers(),
+                    getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                    getMidiNoteTransformHandlers(),
+                    getTransportHandlers(),
+                    getYeastHandlers(),
+                ]);
+            }
+            const original = arrangeComp(0, 10);
+            takeLaneStore.set({ lanes: [{ ...lane(), takes: [{ ...original, sourceOffsetBeats: 2 }] }] });
+            flushAutomergeStorageWrites();
+            await removeTime(route, 2, 6);
+            expect(lane().takes.find((take) => take.id === original.id)?.sourceOffsetSeconds).toBe(1);
+
+            mutateCrdtDoc<Project>({
+                id: 'root',
+                changeFn: (project) => {
+                    project.takeLanes.lanes[0]!.takes.find((take) => take.id === original.id)!.sourceOffsetSeconds = 7;
+                },
+            });
+            expect(lane().takes.find((take) => take.id === original.id)?.sourceOffsetSeconds).toBe(7);
+            expect(
+                getCrdtDoc<Project>('root')?.takeLanes.lanes[0]?.takes.find((take) => take.id === original.id)
+                    ?.sourceOffsetSeconds
+            ).toBe(7);
+            await undo();
+            expect(lane().takes.find((take) => take.id === original.id)).toMatchObject({ sourceOffsetSeconds: 7 });
+            expect(
+                getCrdtDoc<Project>('root')?.takeLanes.lanes[0]?.takes.find((take) => take.id === original.id)
+                    ?.sourceOffsetSeconds
+            ).toBe(7);
+            expectAuthority();
+            await redo();
+            expect(lane().takes.find((take) => take.id === original.id)).toMatchObject({ sourceOffsetSeconds: 7 });
+            expect(
+                getCrdtDoc<Project>('root')?.takeLanes.lanes[0]?.takes.find((take) => take.id === original.id)
+                    ?.sourceOffsetSeconds
+            ).toBe(7);
+            expectAuthority();
+        }
+    );
+
+    it.each([
+        {
+            name: 'insert',
+            action: { type: 'insertTime' as const, payload: { atBeat: 1, durationBeats: 4 } },
+            targetBeat: 6,
+        },
+        {
+            name: 'duplicate',
+            action: { type: 'duplicateTimeRange' as const, payload: { startBeat: 2, endBeat: 4 } },
+            targetBeat: 4,
+        },
+    ])(
+        '$name saves a moved comp with its original media depth and replays it after hydration',
+        async ({ action, targetBeat }) => {
+            tempoMapStore.set({
+                changes: [
+                    { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            clearHandlerRegistry();
+            registerProductionCommandHandlers([
+                getArrangementHandlers(),
+                getAudioRenderingHandlers(),
+                getAutomationHandlers(),
+                getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                getMidiNoteTransformHandlers(),
+                getTransportHandlers(),
+                getYeastHandlers(),
+            ]);
+            const original = arrangeComp(2, 4);
+            const legacy = { ...original, sourceOffsetBeats: 2 };
+            takeLaneStore.set({ lanes: [{ ...lane(), takes: [legacy] }] });
+            flushAutomergeStorageWrites();
+
+            await executeAppAction(action);
+            const target = clips().find((clip) => clip.startBeat === targetBeat);
+            const targetTake = lane().takes.find((take) => take.clipId === target?.id && take.startBeat === targetBeat);
+            expect(targetTake).toMatchObject({ sourceOffsetSeconds: 1, sourceOffsetBeats: 2 });
+            expect(lane().activeCompRegions).toContainEqual({
+                startBeat: targetBeat,
+                endBeat: targetBeat + 2,
+                takeId: targetTake?.id,
+            });
+            expect(
+                resolveClipsWithComping('track-1', clips()).find((clip) => clip.startBeat === targetBeat)
+                    ?.audioOffsetSeconds
+            ).toBe(1);
+            expectAuthority();
+            expect(undoStore.value?.past).toHaveLength(1);
+            const liveEntry = undoStore.value?.past[0] as HandlerSessionActionEntry;
+            expect(isRestoreTimeOperationSessionPayload(liveEntry.inverseAction?.payload)).toBe(true);
+            expect(isRestoreTimeOperationSessionPayload(liveEntry.redoAction?.payload)).toBe(true);
+            await vi.waitFor(() => {
+                expect(JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}').past).toHaveLength(1);
+            });
+            clearHandlerRegistry();
+            registerProductionCommandHandlers([
+                getArrangementHandlers(),
+                getAudioRenderingHandlers(),
+                getAutomationHandlers(),
+                getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                getMidiNoteTransformHandlers(),
+                getTransportHandlers(),
+                getYeastHandlers(),
+            ]);
+            await undo();
+            expect(lane().takes).toEqual([legacy]);
+            expect(lane().takes[0]).not.toHaveProperty('sourceOffsetSeconds');
+            expectAuthority();
+            await redo();
+            expect(lane().takes.find((take) => take.clipId === target?.id && take.startBeat === targetBeat)).toEqual(
+                targetTake
+            );
+            expectAuthority();
+
+            mutateCrdtDoc<Project>({
+                id: 'root',
+                changeFn: (project) => {
+                    project.tracks.tracks[0]!.clips.find((clip) => clip.id === target?.id)!.endBeat -= 0.25;
+                },
+            });
+            const peerRaw = structuredClone(getCrdtDoc<Project>('root'));
+            const peerTracks = structuredClone(trackStore.value);
+            const peerLanes = structuredClone(takeLaneStore.value);
+            const history = undoStore.value;
+            expect((await undo()).headConsumed).toBe(false);
+            expect(getCrdtDoc<Project>('root')).toEqual(peerRaw);
+            expect(trackStore.value).toEqual(peerTracks);
+            expect(takeLaneStore.value).toEqual(peerLanes);
+            expect(undoStore.value).toBe(history);
+        }
+    );
+
+    it.each([
+        { name: 'insert', action: { type: 'insertTime' as const, payload: { atBeat: 4, durationBeats: 2 } } },
+        { name: 'duplicate', action: { type: 'duplicateTimeRange' as const, payload: { startBeat: 2, endBeat: 4 } } },
+    ])('$name splits a crossing audio comp around a silent gap with stable saved replay', async ({ action }) => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        const originalTake = arrangeComp(2, 8);
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => ({ ...clip, audioOffsetSeconds: 0, audioOffsetBeats: 99 })),
+            })),
+        });
+        const legacyTake = { ...originalTake, sourceOffsetBeats: 2 };
+        takeLaneStore.set({ lanes: [{ ...lane(), takes: [legacyTake] }] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction(action);
+        expect(clips().map((clip) => [clip.startBeat, clip.endBeat])).toEqual([
+            [2, 4],
+            [6, 10],
+        ]);
+        const right = clips()[1]!;
+        expect(right.id).not.toBe('source');
+        expect(right.audioOffsetSeconds).toBe(1);
+        const rightTake = lane().takes.find((take) => take.clipId === right.id);
+        expect(rightTake).toMatchObject({ startBeat: 6, endBeat: 10, sourceOffsetSeconds: 1 });
+        expect(lane().activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 4, takeId: originalTake.id },
+            { startBeat: 6, endBeat: 10, takeId: rightTake?.id },
+        ]);
+        expect(
+            resolveClipsWithComping('track-1', clips()).find((clip) => clip.startBeat === 6)?.audioOffsetSeconds
+        ).toBe(2);
+        expectAuthority();
+        const appliedClips = structuredClone(clips());
+        const appliedLane = structuredClone(lane());
+        await vi.waitFor(() => {
+            expect(JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}').past).toHaveLength(1);
+        });
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        await undo();
+        expect(clips()).toHaveLength(1);
+        expect(clips()[0]).toMatchObject({ id: 'source', startBeat: 2, endBeat: 8, audioOffsetSeconds: 0 });
+        expect(lane().takes).toEqual([legacyTake]);
+        expect(lane().takes[0]).not.toHaveProperty('sourceOffsetSeconds');
+        expectAuthority();
+        await redo();
+        expect(clips()).toEqual(appliedClips);
+        expect(lane()).toEqual(appliedLane);
+        expectAuthority();
+    });
+
+    it.each([
+        { name: 'insert', action: { type: 'insertTime' as const, payload: { atBeat: 1, durationBeats: 4 } } },
+        { name: 'duplicate', action: { type: 'duplicateTimeRange' as const, payload: { startBeat: 2, endBeat: 4 } } },
+    ])('$name drops malformed saved global-time captures without project writes', async ({ action }) => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        const original = arrangeComp(2, 4);
+        takeLaneStore.set({ lanes: [{ ...lane(), takes: [{ ...original, sourceOffsetBeats: 2 }] }] });
+        flushAutomergeStorageWrites();
+        await executeAppAction(action);
+        expectAuthority();
+        await vi.waitFor(() => {
+            expect(JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}').past).toHaveLength(1);
+        });
+        const saved = sessionStorage.getItem('sourdaw-undo-session');
+        if (!saved) {
+            throw new Error('Expected a saved producer entry');
+        }
+        for (const corruption of ['scope', 'reverse', 'nested-source', 'forward'] as const) {
+            const stored = JSON.parse(saved) as {
+                past: {
+                    action: { payload: { atBeat?: number; startBeat?: number; endBeat?: number } };
+                    inverseAction: {
+                        payload: {
+                            plan: {
+                                scope: string;
+                                local: { expected: { trackState: unknown } };
+                                takeLanes: { reKeyedLanes: { takesAfter: Take[] }[] };
+                            };
+                        };
+                    };
+                    redoAction: { payload: { plan: { local: { expected: { trackState: unknown } } } } };
+                }[];
+            };
+            const entry = stored.past[0]!;
+            if (corruption === 'scope') {
+                entry.inverseAction.payload.plan.scope = 'selected-range';
+            } else if (corruption === 'reverse') {
+                entry.redoAction.payload.plan.local.expected.trackState = structuredClone(
+                    entry.inverseAction.payload.plan.local.expected.trackState
+                );
+            } else if (corruption === 'nested-source') {
+                const source = entry.inverseAction.payload.plan.takeLanes.reKeyedLanes[0]!.takesAfter.find((take) =>
+                    Object.hasOwn(take, 'sourceOffsetSeconds')
+                );
+                if (!source) {
+                    throw new Error('Expected the captured canonical take source');
+                }
+                Object.assign(source, { sourceOffsetSeconds: 'malformed' });
+            } else if (action.type === 'insertTime') {
+                entry.action.payload.atBeat = -1;
+            } else {
+                entry.action.payload.endBeat = entry.action.payload.startBeat;
+            }
+            sessionStorage.setItem('sourdaw-undo-session', JSON.stringify(stored));
+            const beforeRaw = structuredClone(getCrdtDoc<Project>('root'));
+            const beforeTracks = structuredClone(trackStore.value);
+            const beforeLanes = structuredClone(takeLaneStore.value);
+            clearHandlerRegistry();
+            registerProductionCommandHandlers([
+                getArrangementHandlers(),
+                getAudioRenderingHandlers(),
+                getAutomationHandlers(),
+                getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                getMidiNoteTransformHandlers(),
+                getTransportHandlers(),
+                getYeastHandlers(),
+            ]);
+            expect(undoStore.value?.past, corruption).toEqual([]);
+            expect(undoStore.value?.future, corruption).toEqual([]);
+            expect(getCrdtDoc<Project>('root'), corruption).toEqual(beforeRaw);
+            expect(trackStore.value, corruption).toEqual(beforeTracks);
+            expect(takeLaneStore.value, corruption).toEqual(beforeLanes);
+            expectAuthority();
+        }
     });
 
     it.each(['geometry', 'midi', 'automation', 'gain', 'warp'] as const)(

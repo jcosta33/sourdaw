@@ -80,9 +80,6 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 const mockExecuteAppAction = vi.fn();
-const mockAddTempoChange = vi.fn();
-const mockRemoveTempoChange = vi.fn();
-const mockUpdateTempoChange = vi.fn();
 
 type TempoFieldState = {
     tempo: number;
@@ -122,15 +119,6 @@ const mockResolveTempoFieldState = vi.fn((input: ResolveTempoFieldStateInput): T
     mockResolveImplementation(input)
 );
 vi.mock('#/modules/Transport/useCases', () => ({
-    addTempoChange: (...args: unknown[]): void => {
-        mockAddTempoChange(...args);
-    },
-    removeTempoChange: (...args: unknown[]): void => {
-        mockRemoveTempoChange(...args);
-    },
-    updateTempoChange: (...args: unknown[]): void => {
-        mockUpdateTempoChange(...args);
-    },
     resolveTempoFieldState: (input: ResolveTempoFieldStateInput): TempoFieldState => {
         return mockResolveTempoFieldState(input);
     },
@@ -444,7 +432,7 @@ describe('useTempoEditorState', () => {
             ['non-numeric beat', 'nope', '120'],
             ['tempo below the 20bpm floor', '4', '19'],
             ['tempo above the 999bpm ceiling', '4', '1000'],
-        ])('rejects %s without calling addTempoChange', (_label, beat, tempo) => {
+        ])('rejects %s without dispatching an action', (_label, beat, tempo) => {
             const { result } = renderHook(() => useTempoEditorState());
 
             act(() => {
@@ -455,7 +443,7 @@ describe('useTempoEditorState', () => {
                 result.current.handleAddTempoChange();
             });
 
-            expect(mockAddTempoChange).not.toHaveBeenCalled();
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
             expect(result.current.newBeat).toBe(beat);
         });
 
@@ -471,7 +459,10 @@ describe('useTempoEditorState', () => {
                 result.current.handleAddTempoChange();
             });
 
-            expect(mockAddTempoChange).toHaveBeenCalledWith(8, 20, 'linear');
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'addTempoMapChange',
+                payload: { beat: 8, tempo: 20, curve: 'linear' },
+            });
             expect(result.current.newBeat).toBe('12');
         });
     });
@@ -503,7 +494,10 @@ describe('useTempoEditorState', () => {
                 result.current.commitEditChange();
             });
 
-            expect(mockUpdateTempoChange).toHaveBeenCalledWith('tc-1', 200);
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'updateTempoMapChange',
+                payload: { changeId: 'tc-1', tempo: 200 },
+            });
             expect(result.current.editingChangeId).toBeNull();
         });
 
@@ -520,7 +514,7 @@ describe('useTempoEditorState', () => {
                 result.current.commitEditChange();
             });
 
-            expect(mockUpdateTempoChange).not.toHaveBeenCalled();
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
             expect(result.current.editingChangeId).toBeNull();
         });
 
@@ -531,7 +525,7 @@ describe('useTempoEditorState', () => {
                 result.current.commitEditChange();
             });
 
-            expect(mockUpdateTempoChange).not.toHaveBeenCalled();
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
         });
 
         it('cancels without committing', () => {
@@ -544,18 +538,21 @@ describe('useTempoEditorState', () => {
                 result.current.cancelEditChange();
             });
 
-            expect(mockUpdateTempoChange).not.toHaveBeenCalled();
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
             expect(result.current.editingChangeId).toBeNull();
         });
 
-        it('forwards removeChange straight to the transport use case', () => {
+        it('dispatches removal through Command', () => {
             const { result } = renderHook(() => useTempoEditorState());
 
             act(() => {
                 result.current.removeChange('tc-1');
             });
 
-            expect(mockRemoveTempoChange).toHaveBeenCalledWith('tc-1');
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'removeTempoMapChange',
+                payload: { changeId: 'tc-1' },
+            });
         });
     });
 
@@ -729,14 +726,13 @@ describe('useTempoEditorState', () => {
 
             edit(result);
 
-            // A tap inside the 4s window after the edit: with the train cleared
-            // it is a first tap again and derives nothing. Pre-fix it averaged
-            // with the pre-edit taps and wrote a second bpm.
+            // The edit dispatches the second action. A tap inside the 4s window
+            // then starts a new train and must not dispatch a third action.
             currentNow = 1000;
             act(() => {
                 result.current.handleTapTempo();
             });
-            expect(mockExecuteAppAction).toHaveBeenCalledTimes(1);
+            expect(mockExecuteAppAction).toHaveBeenCalledTimes(2);
         });
     });
 

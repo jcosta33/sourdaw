@@ -17,7 +17,7 @@ type OptionalStringValue = { readonly present: false } | { readonly present: tru
 
 type OptionalNumberValue = { readonly present: false } | { readonly present: true; readonly value: number };
 
-type OptionalTakeNumberField = 'sourceOffsetBeats' | 'passAnchorSeconds' | 'passDepthSeconds';
+type OptionalTakeNumberField = 'sourceOffsetBeats' | 'sourceOffsetSeconds' | 'passAnchorSeconds' | 'passDepthSeconds';
 
 type TakeFieldOperation =
     | {
@@ -186,7 +186,12 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
             replacement: next.selected,
         });
     }
-    for (const field of ['sourceOffsetBeats', 'passAnchorSeconds', 'passDepthSeconds'] as const) {
+    for (const field of [
+        'sourceOffsetBeats',
+        'sourceOffsetSeconds',
+        'passAnchorSeconds',
+        'passDepthSeconds',
+    ] as const) {
         const beforeValue = optionalNumber(before, field);
         const nextValue = optionalNumber(next, field);
         if (!valuesEqual(beforeValue, nextValue)) {

@@ -51,6 +51,7 @@ describe('sanitizeTrackSnapshot — clip optional field round-trip', () => {
             audioBufferId: 'buf-1',
             assetHash: 'sha-abc',
             audioOffsetBeats: 1.5,
+            audioOffsetSeconds: -2,
             midiOffsetBeats: 0.25,
         };
         const result = sanitizeTrackSnapshot(snapshotWithTrack({ ...validTrackBase, clips: [clip] }));
@@ -59,6 +60,7 @@ describe('sanitizeTrackSnapshot — clip optional field round-trip', () => {
         expect(restored?.audioBufferId).toBe('buf-1');
         expect(restored?.assetHash).toBe('sha-abc');
         expect(restored?.audioOffsetBeats).toBe(1.5);
+        expect(restored?.audioOffsetSeconds).toBe(-2);
         expect(restored?.midiOffsetBeats).toBe(0.25);
     });
 

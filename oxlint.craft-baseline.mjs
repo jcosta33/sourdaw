@@ -638,7 +638,6 @@ export const craftBaselineFiles = {
         'src/modules/Transport/useCases/__tests__/setMasterGain.spec.ts',
         'src/modules/Transport/useCases/__tests__/setTimeSignature.spec.ts',
         'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts',
-        'src/modules/Transport/useCases/tempoMapping/operations/__tests__/applyTempoMap.spec.ts',
         'src/modules/Transport/useCases/transportControls/__tests__/punchRegionStateMachine.spec.ts',
         'src/modules/Transport/useCases/transportControls/__tests__/restoreLoopRegion.spec.ts',
         'src/modules/Transport/useCases/transportControls/__tests__/setCountInBars.spec.ts',

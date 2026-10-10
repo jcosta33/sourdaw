@@ -42,6 +42,7 @@ export type ProjectClip = {
     fileId?: string;
     assetHash?: string;
     audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
     midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;

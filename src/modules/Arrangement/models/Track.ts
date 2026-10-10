@@ -113,6 +113,8 @@ export type Clip = {
      *  Set on import; used to request the file from peers in a collab session. */
     assetHash?: string;
     audioOffsetBeats?: number;
+    /** Signed source position at the clip head. Authoritative when present, including zero. */
+    audioOffsetSeconds?: number;
     midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;

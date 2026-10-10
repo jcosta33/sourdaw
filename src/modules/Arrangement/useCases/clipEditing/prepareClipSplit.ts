@@ -1,10 +1,13 @@
 import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { type AppAction, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { type Clip } from '../../stores/trackStore';
+import { captureClipSplitTakeLanes } from '../comping/captureClipSplitTakeLanes';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
@@ -78,7 +81,22 @@ export function prepareClipSplit({
     // the bounded ratio when it is — the shared law, not the raw stored ratio
     // (a mode-off clip ignores its dormant ratio; an out-of-range one clamps).
     const contentSplitDelta = timelineSplitDelta * consumedStretchFactor(clip);
-    const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
+    const clipStartTempo = readTempoAtBeat({ beat: clip.startBeat });
+    const sourceEntrySeconds = resolveAudioSourceOffsetSeconds(clip, clipStartTempo);
+    const splitSourceSeconds = getAudioSourcePositionSeconds(
+        sourceEntrySeconds,
+        readSecondsAtBeat({ beat: adjustedSplitBeat }) - readSecondsAtBeat({ beat: clip.startBeat }),
+        consumedStretchFactor(clip)
+    );
+    // Warp markers still use source beats. Convert their partition point at
+    // the original clip-start tempo; this is a source coordinate, not elapsed
+    // timeline beats across the map.
+    let contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
+    let rightAudioOffsetBeats = contentSplitBeats;
+    if (clip.type === 'audio') {
+        contentSplitBeats = (splitSourceSeconds * clipStartTempo) / 60;
+        rightAudioOffsetBeats = (splitSourceSeconds * readTempoAtBeat({ beat: adjustedSplitBeat })) / 60;
+    }
 
     let reservedIdentityIds: ReadonlySet<string> | undefined;
     let rightClipIndex = track.clips.length;
@@ -115,10 +133,19 @@ export function prepareClipSplit({
         name: `${clip.name} (R)`,
         startBeat: adjustedSplitBeat,
         fadeInBeats: 0,
-        audioOffsetBeats: contentSplitBeats,
+        audioOffsetBeats: rightAudioOffsetBeats,
         midiOffsetBeats: 0,
     };
+    if (clip.type === 'audio') {
+        leftClip.audioOffsetSeconds = sourceEntrySeconds;
+        rightClip.audioOffsetSeconds = splitSourceSeconds;
+    }
+    const takes = captureClipSplitTakeLanes(clip, effectiveRightClipId, adjustedSplitBeat);
+    if (!takes) {
+        return null;
+    }
     const previous: ClipSplitActionSnapshot = {
+        takeLanes: takes.previous,
         trackId: track.id,
         leftClip: structuredClone(clip),
         rightClip: null,
@@ -131,6 +158,7 @@ export function prepareClipSplit({
         clipAutomationLanes: [],
     };
     const next: ClipSplitActionSnapshot = {
+        takeLanes: takes.next,
         trackId: track.id,
         leftClip: structuredClone(leftClip),
         rightClip: structuredClone(rightClip),

@@ -737,6 +737,10 @@ cannot carry the family-wide claim. For replay, duplicate the clip ID on the sam
 track after commit for undo, then again after undo for redo; assert the live notes remain exact and the
 blocked history entry stays on its original stack.
 
+## Lesson from PR #826's real-storage numeric oracle escape
+
+The composite writer introduced by PR #826 (`ec6a9c18f260536996af1c28f92be30636d33a62`) reaches Automerge 3.5's implicit importer, whose numeric inference changes the exact predecessor of 1 into zero. That upstream predicate was not introduced by #826. A plain-object mock and approximate offset assertions cannot observe the stored operation. The ten real-storage cases accompanying `6e626aa2ecfbdbd062ee7d4a1d2b0c1471c24582` in `createAutomergeStorage.numericFidelity.spec.ts` compare exact raw and projected values, binary reload, unrelated peer merges and retained identities. The baseline probe must restore bulk composite import at both `writeChild` and row materialization, then require exact-value failures. Do not launder corruption with rounding or epsilon Undo equality. Ordinary reconciler proof does not cover custom raw callbacks or conflict repair (#5120).
+
 ## Escape: opaque Bearer fixtures missed complete caller admission
 
 [PR #4491](https://github.com/jcosta33/sourdaw/pull/4491) introduced the screen and

@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => ({
     removeMidiClipData: vi.fn<(clipIds: readonly string[]) => void>(),
     readClipSatelliteEntry: vi.fn(),
     readClipScopedAutomationLanes: vi.fn(),
+    ownsMutation: vi.fn(() => true),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -71,7 +72,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(() => ''),
-    captureProjectMutationAuthorization: vi.fn(() => () => true),
+    captureProjectMutationAuthorization: vi.fn(() => mocks.ownsMutation),
     getCrdtDoc: vi.fn(),
 }));
 
@@ -92,6 +93,7 @@ vi.mock('../../../useCases/clip/readClipScopedAutomationLanes', () => ({
 describe('handleRemoveClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.removeClip.mockReset();
         mocks.getTrackStoreState.mockReturnValue(null);
         mocks.planRippleDelete.mockReturnValue(null);
         mocks.rippleDeleteClips.mockReturnValue(null);
@@ -102,6 +104,7 @@ describe('handleRemoveClip', () => {
             warpState: null,
         }));
         mocks.readClipScopedAutomationLanes.mockReturnValue([]);
+        mocks.ownsMutation.mockReturnValue(true);
     });
 
     afterEach(() => {
@@ -181,6 +184,129 @@ describe('handleRemoveClip', () => {
             const midiCleanupOrder = mocks.removeMidiClipData.mock.invocationCallOrder[0] ?? 0;
             expect(rippleMutationOrder).toBeLessThan(midiCleanupOrder);
         });
+    });
+
+    describe('execution-prefix capture', () => {
+        it.each([
+            ['fallback', 1],
+            ['fallback', 0],
+            ['fallback', -2],
+            ['ripple', 1],
+            ['ripple', 0],
+            ['ripple', -2],
+        ] as const)('refreshes the initial %s inverse from the executed source %s', (route, seconds) => {
+            const clip = createTestClip({ id: 'c1', startBeat: 8, endBeat: 12 });
+            clip.type = 'audio';
+            clip.audioOffsetBeats = 2;
+            const state = { tracks: [{ id: 't1', clips: [clip] }] };
+            mocks.getTrackStoreState.mockReturnValue(state);
+            const action = { type: 'removeClip' as const, payload: { clipId: clip.id } };
+            const description = handleRemoveClip.describe(action);
+            expect(description.inverseAction).toMatchObject({ payload: { clipSnapshot: { audioOffsetBeats: 2 } } });
+
+            // A preceding batch member materializes the canonical source after describe.
+            clip.audioOffsetSeconds = seconds;
+            clip.audioOffsetBeats = seconds;
+            const plan = {
+                removedClips: [clip],
+                shiftedClips: [],
+                clipSatellites: [],
+                clipAutomationLanes: [],
+                retiredTakeLanes: [],
+            };
+            if (route === 'ripple') {
+                mocks.planRippleDelete.mockReturnValue(plan);
+                mocks.rippleDeleteClips.mockImplementation(() => {
+                    state.tracks[0]!.clips = [];
+                    return plan;
+                });
+            } else {
+                mocks.removeClip.mockImplementation(() => {
+                    state.tracks[0]!.clips = [];
+                });
+            }
+            handleRemoveClip.execute(action);
+            if (description.inverseAction?.type !== 'restoreClip') {
+                throw new Error('Expected the execution-prefix restore capture');
+            }
+            expect(description.inverseAction.payload.clipSnapshot).toMatchObject({ audioOffsetSeconds: seconds });
+            if (route === 'ripple') {
+                expect(description.inverseAction.payload.ripplePlan?.removedClips[0]).toMatchObject({
+                    audioOffsetSeconds: seconds,
+                });
+            } else {
+                expect(description.inverseAction.payload.ripplePlan).toBeNull();
+            }
+            clip.audioOffsetSeconds = 99;
+            expect(description.inverseAction.payload.clipSnapshot).toMatchObject({ audioOffsetSeconds: seconds });
+        });
+
+        it('discards a prepared capture when batch validation refuses a shared target', () => {
+            const clip = createTestClip({ id: 'c1', startBeat: 8, endBeat: 12 });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
+            const action = { type: 'removeClip' as const, payload: { clipId: clip.id } };
+            const description = handleRemoveClip.describe(action);
+            expect(handleRemoveClip.validate?.(action, { actions: [action, action], actionIndex: 0 })).toBe(false);
+            expect(description.inverseAction).toBeNull();
+        });
+
+        it('does not retain a capture described for an isolated preview', () => {
+            const clip = createTestClip({ id: 'c1', startBeat: 8, endBeat: 12 });
+            const state = { tracks: [{ id: 't1', clips: [clip] }] };
+            mocks.getTrackStoreState.mockReturnValue(state);
+            const action = { type: 'removeClip' as const, payload: { clipId: clip.id } };
+            const description = handleRemoveClip.describe(action, {
+                actions: [action],
+                actionIndex: 0,
+                executionMode: 'isolated-preview',
+            });
+            clip.audioOffsetSeconds = 1;
+            mocks.removeClip.mockImplementationOnce(() => {
+                state.tracks[0]!.clips = [];
+            });
+            handleRemoveClip.execute(action);
+            expect(description.inverseAction).toMatchObject({ payload: { clipSnapshot: { id: clip.id } } });
+            if (description.inverseAction?.type !== 'restoreClip') {
+                throw new Error('Expected the description-only preview capture');
+            }
+            expect(description.inverseAction.payload.clipSnapshot).not.toHaveProperty('audioOffsetSeconds');
+        });
+
+        it.each(['no-write', 'throw', 'foreign-owner'] as const)(
+            'discards the initial pending inverse after %s and cannot reuse it on a later execution',
+            (outcome) => {
+                const clip = createTestClip({ id: 'c1', startBeat: 8, endBeat: 12 });
+                const state = { tracks: [{ id: 't1', clips: [clip] }] };
+                mocks.getTrackStoreState.mockReturnValue(state);
+                const action = { type: 'removeClip' as const, payload: { clipId: clip.id } };
+                const description = handleRemoveClip.describe(action);
+                if (outcome === 'throw') {
+                    mocks.removeClip.mockImplementationOnce(() => {
+                        state.tracks[0]!.clips = [];
+                        throw new Error('Controlled removal failure');
+                    });
+                    expect(() => handleRemoveClip.execute(action)).toThrow('Controlled removal failure');
+                } else {
+                    if (outcome === 'foreign-owner') {
+                        mocks.removeClip.mockImplementationOnce(() => {
+                            state.tracks[0]!.clips = [];
+                            mocks.ownsMutation.mockReturnValue(false);
+                        });
+                    }
+                    handleRemoveClip.execute(action);
+                }
+                expect(description.inverseAction).toBeNull();
+
+                // Reusing the caller's object without a new describe must never fill that discarded capture.
+                state.tracks[0]!.clips = [{ ...clip, audioOffsetSeconds: 7 }];
+                mocks.ownsMutation.mockReturnValue(true);
+                mocks.removeClip.mockImplementationOnce(() => {
+                    state.tracks[0]!.clips = [];
+                });
+                handleRemoveClip.execute(action);
+                expect(description.inverseAction).toBeNull();
+            }
+        );
     });
 
     describe('describe', () => {
