@@ -1,0 +1,230 @@
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_2bfd55a4393d7c::t_846f571f3b10fe 456-458
+  s_2bfd55a4393d7c::t_3401be458d6842 5,447
+  s_2bfd55a4393d7c::t_2f30a8f63dbe26 470-472
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_84042e2d1d0d31 1571
+  s_2bfd55a4393d7c::t_e5de33e8c9d00c 1622
+  s_4c8cd08893b364::t_41f397245a4a0b 1608
+  s_2bfd55a4393d7c::t_abb915a5156312 1632-1633
+  s_2bfd55a4393d7c::t_cdf17d90d60409 1572,1582-1583,1588-1607
+  s_2bfd55a4393d7c::t_29f8812f33f694 27
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_f35fcff3ee9796 10
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_59c7c038b3e8c7 1480-1481
+  s_2bfd55a4393d7c::t_036f41ab620b31 28-30,32
+  s_2bfd55a4393d7c::t_ff33eb86f9750c 1468-1469
+  s_2bfd55a4393d7c::t_70f4949d68e0f4 31,1014
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_5cac3d99fbf860 1,1004-1064
+src/modules/PluginHost/useCases/faustEngine/__tests__/supersawDspBehavior.spec.ts
+  s_1c08b47ac3792f::t_f4c627299705f3 244
+  s_2bfd55a4393d7c::t_66687a291a94fc 164-176,181,183-185,188-191,205-206,209-215,218,220,226-228,231-234,245
+  s_2bfd55a4393d7c::t_35f8b1ec95d548 7,9,11,14-16
+  s_2bfd55a4393d7c::t_81d12ab40b54f1 177-180,182,186-187,192-204,207-208,216-217,219,221-225,229-230,235-243
+crates/daw-dsp/tests/device_process_rt.rs
+  s_2bfd55a4393d7c::t_a310adf6e9f745 1697-1738
+src/modules/Project/useCases/projectTemplates/templateFiles/cinematic.ts
+  s_2bfd55a4393d7c::t_7ec2b178821b05 150
+  s_2bfd55a4393d7c::t_d2a88a4ce7d502 157
+  s_2bfd55a4393d7c::t_5e7773905a9153 164
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_2bfd55a4393d7c::t_9f93607cab83fb 579
+  s_2bfd55a4393d7c::t_8188bec49ae7bf 587
+  s_2bfd55a4393d7c::t_25bc879d108328 536-538,540-541,550,559-561,563-564,574,583,589
+  s_2bfd55a4393d7c::t_a819d49aa230d1 532,539,551,555,562,575,580-582,584-586,588,590-592
+  s_2bfd55a4393d7c::t_327932f777b24f 593
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptorGuidance.ts
+  s_2bfd55a4393d7c::t_68480fc5f9e62a 100
+  s_2bfd55a4393d7c::t_95d2cf6642e383 99,104-105,108
+  s_2bfd55a4393d7c::t_fc3bdf06f1bb96 29-31
+src/modules/Project/useCases/projectTemplates/templateFiles/lofi.ts
+  s_2bfd55a4393d7c::t_1701b72842c061 77
+  s_2bfd55a4393d7c::t_2562e647f34ba6 84
+  s_2bfd55a4393d7c::t_36b6d89182ef79 108
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptors.ts
+  s_2bfd55a4393d7c::t_b2e48df30c68f0 373,375
+  s_2bfd55a4393d7c::t_9e47c0257f7252 333-337,339,341,343-348
+src/modules/AiRuntime/transformers/llmActionStrategies/deviceStrategy.ts
+  s_2bfd55a4393d7c::t_1a48cb2948d326 111
+  s_2bfd55a4393d7c::t_2e977e397ed8bd 112-120
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_2bfd55a4393d7c::t_8d623b7ae82c49 615-616,627-628
+  s_2bfd55a4393d7c::t_0145420397ed4e 16,488
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_840b4bb3d55a5e 1210
+  s_2bfd55a4393d7c::t_16fc3ef5a344a0 1344,1350,1770
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptorsGuidance.ts
+  s_2bfd55a4393d7c::t_7084b27d8667c7 235,241-245,247,250
+  s_2bfd55a4393d7c::t_8e4f0af03f14e1 223-226
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_3e06c53114891a 12,16-18,21
+src/utils/__tests__/deviceTypeMatching.spec.ts
+  s_2bfd55a4393d7c::t_94db2eda90fc28 4,6-8,10-11,18,20-21,25-26,29-30
+  s_2bfd55a4393d7c::t_b62325451de219 14
+  s_2bfd55a4393d7c::t_26c2123bd6f828 3,5,9,12-13,15-17,19,22-24,27-28
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptors.ts
+  s_2bfd55a4393d7c::t_8e990d126782d0 143
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_b5d00091e079f4 1,19-79
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceInspector.spec.tsx
+  s_2bfd55a4393d7c::t_2403ad2c702a2f 300
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptorsGuidance.ts
+  s_2bfd55a4393d7c::t_d5b70c102369ca 113,115
+  s_2bfd55a4393d7c::t_f35a54ed693435 242-254
+src/modules/Synth/useCases/__tests__/drumKitSynth.spec.ts
+  s_2bfd55a4393d7c::t_07a9f1285745a2 5,7-8
+  s_2bfd55a4393d7c::t_4587ed83dfe940 1,3-4,6,10-16,36-40,42-53,55-57
+  s_2bfd55a4393d7c::t_fccc614507e49a 41,54
+  s_2bfd55a4393d7c::t_90a64312bc1b02 9,58-63
+src/modules/Synth/useCases/drumKitSynth.ts
+  s_2bfd55a4393d7c::t_362b363a09a53e 54-63
+  s_2bfd55a4393d7c::t_d34f03cf9925b7 33-37,46-47
+  s_2bfd55a4393d7c::t_05651206d4eda9 53
+src/utils/deviceTypeMatching.ts
+  s_2bfd55a4393d7c::t_a85fb68d2c9046 55,58,65,74,76-77,80,83-85,87-88,90,92
+  s_2bfd55a4393d7c::t_250648f13c2c81 82
+  s_2bfd55a4393d7c::t_7c68bc42a3f40c 66-73,78-79,81,86,89,91
+  s_2bfd55a4393d7c::t_aaa7d07ed59d67 19-20
+  s_2bfd55a4393d7c::t_f9f6394723ddb0 37-42
+  s_2bfd55a4393d7c::t_640b127490a75c 75
+  s_2bfd55a4393d7c::t_f0491be7ea51ca 93
+crates/daw-dsp/src/levain/engine.rs
+  s_2bfd55a4393d7c::t_549c23991eef08 698-701
+  s_2bfd55a4393d7c::t_e5895841c2a13f 696-697
+  s_2bfd55a4393d7c::t_0df45a06b55807 3462-3552
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_2bfd55a4393d7c::t_56386ca3a797e2 1327
+  s_2bfd55a4393d7c::t_041f3a16b75329 1347-1348
+  s_2bfd55a4393d7c::t_59b178cb01aa37 1349-1350
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/trackRoutingDeviceStrategies.spec.ts
+  s_2bfd55a4393d7c::t_bd962109cfa955 3
+  s_2bfd55a4393d7c::t_d722ebc5f2b4ae 413-466
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_2bfd55a4393d7c::t_b3e944e7cfec5e 800
+  s_2bfd55a4393d7c::t_8e589230ccde51 1555
+  s_2bfd55a4393d7c::t_1e176e20fea10a 778
+  s_2bfd55a4393d7c::t_e8e1d3ebb9168e 1471
+  s_2bfd55a4393d7c::t_0d6671f710d4b1 871-879,881
+  s_2bfd55a4393d7c::t_099784d296a30f 856
+  s_2bfd55a4393d7c::t_c4bf73dac95c2c 845-846
+  s_2bfd55a4393d7c::t_3e4502708381e4 5
+  s_2bfd55a4393d7c::t_405696f6699bfe 1553-1554
+  s_2bfd55a4393d7c::t_b5464f70f65a9a 777,779,798-799
+  s_2bfd55a4393d7c::t_4faaf5cbeaf3ae 880
+  s_2bfd55a4393d7c::t_5fc4c39d5aabf1 1535
+  s_2bfd55a4393d7c::t_9ea5a52a8161bd 1469-1470
+  s_2bfd55a4393d7c::t_f3a9f8e9adef02 840
+  s_2bfd55a4393d7c::t_8ff8852b60649d 838-839
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/scheduleDrumKitNote.ts
+  s_2bfd55a4393d7c::t_b90441f94d3469 8-13,22-23,29,31-34
+  s_2bfd55a4393d7c::t_c48c4dd69780c8 30
+src/modules/AudioEngine/useCases/__tests__/audition.spec.ts
+  s_2bfd55a4393d7c::t_cacc5e34198af0 324-326,328-330,342-343
+  s_2bfd55a4393d7c::t_5d4601b13c6826 327,344,348-356,358,360
+  s_2bfd55a4393d7c::t_b6f61d1a3238e4 9
+  s_1f0dcd815e8946::t_309eeb2612b704 361-362,781,815,831
+  s_2bfd55a4393d7c::t_e1c3e729519842 357,359,363,782,822-823,830
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_8cc82422d51336 1,1004-1064
+src/modules/Project/useCases/projectTemplates/templateFiles/edm.ts
+  s_2bfd55a4393d7c::t_dd242742a8118c 86
+  s_2bfd55a4393d7c::t_2febf898d7a44b 100
+  s_2bfd55a4393d7c::t_c64f4eb297fc43 107
+  s_2bfd55a4393d7c::t_c352cd959c1df2 93
+crates/daw-dsp/src/levain/voice.rs
+  s_2bfd55a4393d7c::t_cc57386c36ab36 982-988
+crates/daw-dsp/src/levain/performance.rs
+  s_2bfd55a4393d7c::t_8f53063bcf532b 183-185
+  s_2bfd55a4393d7c::t_ada8640b73127e 222,226
+  s_2bfd55a4393d7c::t_544ee4cdc7324b 197-201,212-221,223-225,227-241
+src/modules/PluginHost/useCases/faustEngine/registerSupersawUnison.ts
+  s_2bfd55a4393d7c::t_e9d6d6f6da8aef 104-108
+  s_2bfd55a4393d7c::t_e3ab5d903ffffb 109-111
+  s_2bfd55a4393d7c::t_3431072a21fd6a 103
+src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts
+  s_2bfd55a4393d7c::t_f72f323671f122 107
+  s_2bfd55a4393d7c::t_37439b73cb8922 93
+  s_2bfd55a4393d7c::t_a5495842ff0e9c 100
+  s_2bfd55a4393d7c::t_d9ddd438924f64 86
+src/modules/PluginHost/useCases/faustEngine/dsp/supersaw-unison.dsp
+  s_2bfd55a4393d7c::t_14577eda035905 27
+  s_2bfd55a4393d7c::t_8f8e447cb2a7ae 2
+src/modules/Arrangement/models/__tests__/DeviceParameter.spec.ts
+  s_893120061bb856::t_fba5c22524b669 32
+  s_2bfd55a4393d7c::t_f2b0e4cc265b0a 3,7-8,14-29
+  s_2bfd55a4393d7c::t_0eca5e1c9ae42a 4,9-13,30-31
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/__tests__/scheduleDrumKitNote.spec.ts
+  s_2bfd55a4393d7c::t_b470574f086b90 42,52,62,64-87
+src/modules/AudioEngine/useCases/audition.ts
+  s_2bfd55a4393d7c::t_3f02224141a157 62,82-84
+  s_2bfd55a4393d7c::t_229522dcc505af 9,59
+src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts
+  s_2bfd55a4393d7c::t_2fdb9ae41e24cf 132
+  s_2bfd55a4393d7c::t_1820119b7d5833 153
+  s_2bfd55a4393d7c::t_869da03e8a9917 146
+  s_2bfd55a4393d7c::t_546a3f8ab3c669 139
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_2bfd55a4393d7c::t_c77b174b6bd051 82
+  s_2bfd55a4393d7c::t_1d2defd7c69e3d 67-68
+  s_2bfd55a4393d7c::t_4cf8b7ab150c9c 73-76
+  s_2bfd55a4393d7c::t_9bba4cca600ea4 48-50
+  s_2bfd55a4393d7c::t_441386f4c216ab 81
+src/modules/MIDI/useCases/webMidiInput/voiceYeastNoteOn.ts
+  s_2bfd55a4393d7c::t_05e2403a9c362a 161-170
+  s_2bfd55a4393d7c::t_0783656d0991c9 3-6,8
+  s_2bfd55a4393d7c::t_6dee8d6a3a344f 182-184
+  s_2bfd55a4393d7c::t_df53290efec558 7,158
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/__tests__/scheduleDrumKitNoteLevel.spec.ts
+  s_2bfd55a4393d7c::t_1a0bd6763559f6 1-44
+  s_2bfd55a4393d7c::t_11fd6cab30d1f2 45-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5af197b4535df4b09cc577b0349be3a7afe4fa31",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_893120061bb856": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1256e-9c67-7563-9585-8e8c8ddee529",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
