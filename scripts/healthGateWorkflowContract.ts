@@ -72,8 +72,16 @@ export const JOB_LEVEL_PERMISSION_FREE_FILES = [
     'wasm-artifacts.yml',
 ] as const;
 
-const SETUP_NODE = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
+const SETUP_NODE = [...NODE_SETUP_ACTIONS, 'Install dependencies'] as const;
 const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+const SHARDED_BROWSER_STEPS = [
+    ...SETUP_PNPM_NODE,
+    'Install Playwright browsers',
+    'Run shard',
+    'Report shard failure',
+    'Upload blob report',
+] as const;
 const STATIC_SUITE_STEPS = [
     'Artifact freshness',
     'App types',
@@ -174,14 +182,21 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         static: [...SETUP_NODE, ...STATIC_SUITE_STEPS],
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
-        unit: [...SETUP_NODE, 'Run shard', 'Report shard failure'],
+        unit: [
+            'Checkout',
+            'Prepare unit tool directory',
+            'Set up pnpm',
+            'Set up Node',
+            'Prepare isolated unit account',
+            'Install dependencies',
+            'Run shard',
+            'Report shard failure',
+        ],
         'tooling-unit': [...SETUP_NODE, 'Run script suite'],
         smoke: [...SETUP_NODE, 'Install Playwright browsers', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
         rust: [
-            'Checkout',
-            'Set up pnpm',
-            'Set up Node',
+            ...NODE_SETUP_ACTIONS,
             'Install ALSA development headers',
             'Restore pinned Rust toolchain',
             'Install the pinned Rust toolchain',
@@ -229,13 +244,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'validation-gate': ['Require selected validation jobs to succeed'],
     },
     'heavy-gates.yml': {
-        e2e: [
-            ...SETUP_PNPM_NODE,
-            'Install Playwright browsers',
-            'Run shard',
-            'Report shard failure',
-            'Upload blob report',
-        ],
+        e2e: SHARDED_BROWSER_STEPS,
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'browser-ai-webgpu': [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'],
         'heavy-gate': ['Require selected browser jobs to succeed'],
@@ -287,13 +296,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Cache cargo build',
             'Test the audio crates',
         ],
-        e2e: [
-            ...SETUP_PNPM_NODE,
-            'Install Playwright browsers',
-            'Run shard',
-            'Report shard failure',
-            'Upload blob report',
-        ],
+        e2e: SHARDED_BROWSER_STEPS,
         'browser-ai-webgpu': [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'],
         'desktop-measure': [
             'Checkout',

@@ -950,9 +950,67 @@ expect(
 );
 expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
 expect(
-    unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
-    'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
+    unitRun === 'node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4',
+    'unit shard must delegate its exact matrix shard through the isolated account context'
 );
+// Exercise the producer rather than searching source: helper metadata must never
+// reach the zero-test wrapper, and pnpm must receive the explicit run subcommand.
+const { runUnitPhase } = await import(`${process.env.REPO_ROOT}/scripts/runIsolatedUnitShard.ts`);
+const shardContext = {
+    workspace: process.env.REPO_ROOT, uid: 20000, gid: 20000, runnerUid: 1001,
+    account: 'sdaw-unit-20000', home: '/unit-shard-contract/home',
+    store: '/unit-shard-contract/store', temp: '/unit-shard-contract/tmp',
+    node: '/tools/node', pnpm: '/tools/pnpm',
+};
+const shardEnvironment = {
+    HOME: shardContext.home, PATH: '/tools:/tools:/usr/local/bin:/usr/bin:/bin',
+    PNPM_CONFIG_STORE_DIR: shardContext.store,
+    CI: 'true', GITHUB_ACTIONS: 'true', GITHUB_WORKSPACE: shardContext.workspace,
+    VITEST_MAX_WORKERS: '4', TMPDIR: shardContext.temp, TMP: shardContext.temp, TEMP: shardContext.temp,
+};
+const shardStatus = [
+    'Uid:\t20000\t20000\t20000\t20000', 'Gid:\t20000\t20000\t20000\t20000',
+    'Groups:\t', 'CapInh:\t0', 'CapPrm:\t0', 'CapEff:\t0', 'CapBnd:\t0', 'CapAmb:\t0', 'NoNewPrivs:\t1', '',
+].join('\n');
+for (const shard of ['1/4', '2/4', '3/4', '4/4']) {
+    const commands = [];
+    const environments = [];
+    const result = runUnitPhase(shardContext, 'shard', shard, {
+        env: shardEnvironment, platform: 'linux', uid: 20000,
+        read: () => shardStatus, canonical: (path) => path,
+        metadata: () => ({ directory: true, uid: 20000, gid: 20000, mode: 0o700 }),
+        executable: () => {},
+        run: (file, args, options) => {
+            commands.push([file, args]); environments.push(options.env);
+            return { status: commands.length === 1 ? 0 : 7 };
+        },
+    });
+    expect(
+        JSON.stringify(commands) === JSON.stringify([
+            [shardContext.pnpm, ['run', 'test:run', 'scripts/__tests__/resourceGuardStorage.spec.ts']],
+            [shardContext.pnpm, ['run', 'test:run', `--shard=${shard}`, '--exclude=scripts/__tests__/resourceGuardStorage.spec.ts']],
+        ]),
+        `isolated unit shard ${shard} must run whole storage before the precise excluded shard through explicit pnpm run`
+    );
+    expect(JSON.stringify(environments) === JSON.stringify([
+        { ...shardEnvironment, VITEST_MAX_WORKERS: '1' }, shardEnvironment,
+    ]), `isolated unit shard ${shard} must preserve its private store and account with one then four workers`);
+    expect(result === 7, `isolated unit shard ${shard} must propagate pnpm failure`);
+    for (const storageStatus of [7, null]) {
+        const aborted = [];
+        const failure = runUnitPhase(shardContext, 'shard', shard, {
+            env: shardEnvironment, platform: 'linux', uid: 20000,
+            read: () => shardStatus, canonical: (path) => path,
+            metadata: () => ({ directory: true, uid: 20000, gid: 20000, mode: 0o700 }),
+            executable: () => {},
+            run: (file, args) => { aborted.push([file, args]); return { status: storageStatus }; },
+        });
+        expect(JSON.stringify(aborted) === JSON.stringify([
+            [shardContext.pnpm, ['run', 'test:run', 'scripts/__tests__/resourceGuardStorage.spec.ts']],
+        ]), `isolated unit shard ${shard} must not start after failed or unavailable storage proof`);
+        expect(failure === (storageStatus ?? 1), `isolated unit shard ${shard} must propagate storage failure`);
+    }
+}
 expect(
     e2eRunStep?.run === 'node scripts/prValidationScope.ts run' &&
         e2eRunStep?.env?.E2E_SPECS === '${{ toJSON(matrix.specs) }}' &&

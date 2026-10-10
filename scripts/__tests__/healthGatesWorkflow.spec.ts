@@ -4520,6 +4520,37 @@ describe('health gates workflow contract', () => {
         }
     });
 
+    it('runs required unit install and shards through a fresh unprivileged identity', () => {
+        const unit = jobAt(validationWorkflow, 'unit');
+        const prepare = stepNamed(unit, 'Prepare isolated unit account');
+        const install = stepNamed(unit, 'Install dependencies');
+        const shard = stepNamed(unit, 'Run shard');
+        const steps = arrayAt(unit, 'steps');
+        const tools = stepNamed(unit, 'Prepare unit tool directory');
+        expect(tools.id).toBe('unit_tools');
+        expect(steps.indexOf(tools)).toBeLessThan(steps.indexOf(stepNamed(unit, 'Set up pnpm')));
+        expect(recordAt(stepNamed(unit, 'Set up pnpm'), 'with').dest).toBe('${{ steps.unit_tools.outputs.root }}');
+        expect(recordAt(prepare, 'env').SOURDAW_UNIT_TOOL_ROOT).toBe('${{ steps.unit_tools.outputs.root }}');
+        expect(prepare.id).toBe('unit_isolation');
+        expect(stringAt(prepare, 'run')).toBe('node scripts/runIsolatedUnitShard.ts prepare');
+        expect(steps.indexOf(prepare)).toBeLessThan(steps.indexOf(install));
+        expect(stringAt(install, 'run')).toBe(
+            'node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"'
+        );
+        expect(stringAt(shard, 'run')).toBe(
+            'node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4'
+        );
+        for (const step of [prepare, install, shard]) {
+            expect(step.if).toBeUndefined();
+            expect(step['continue-on-error']).toBeUndefined();
+        }
+        expect(recordAt(stepNamed(unit, 'Checkout'), 'with')).toMatchObject({
+            'fetch-depth': 0,
+            'persist-credentials': false,
+        });
+        expect(recordAt(shard, 'env').VITEST_MAX_WORKERS).toBe(4);
+    });
+
     it('fetches immutable measurement provenance history only in the unit matrix', () => {
         expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 

@@ -719,6 +719,94 @@ kill prints the budget it applied — record a budget above the observed peak in
 free RAM covers active unused headroom, the new command, and the 2 GiB system reserve. It still
 enforces timeouts, process cleanup, host pressure, and the command RSS ceiling. Never bypass it.
 
+Each guarded command inherits `TMPDIR`, `TMP`, and `TEMP` before startup, pointing to its own
+private directory under the primary repository's `.agents/guard-storage/` on the repository's
+volume. Nested guards use separate directories and retain the shared memory admission registry.
+Normal exits, spawn errors, signals, and forced termination release storage only after the entire
+tracked process tree is proven stopped. A surviving process or unavailable process census retains
+the ownership record and reports failure; the guard never deletes old unowned system-temp caches.
+Before claiming or deleting storage, Unix command/environment census also vetoes removal when a
+process references its original temp path. This protects detached descendants that replace their
+environment and drop the session token. Argument references conservatively retain files too;
+they never grant authority to signal the matching process.
+Absence of those strings alone cannot prove storage abandoned. On macOS the guard also reads bounded
+`lsof` process/file fields; on Linux it reads same-account `/proc` cwd and file-descriptor links.
+Both the original temp path and any moved claim payload path veto reclamation while a process holds
+a working directory or open file there. An empty/unusable process census is unavailable monitoring
+evidence, and denied, malformed, truncated, or incomplete file evidence retains storage.
+On Linux, a descriptor that closes during inspection is checked with link and directory metadata.
+Reopening the descriptor directory can recreate the scanner's own closed slot and cannot prove
+that it remains open. A present slot or unavailable directory still retains storage.
+After a Linux `ENOENT` inspection failure, fresh complete status may prove file release only for
+a zombie whose PID and thread-group ID match the inspected PID, whose four UIDs match the guard,
+and whose thread count is exactly one. A zombie leader with other threads remains uncertain.
+This evidence must arrive within the existing proof deadline and never releases PID ownership
+or signaling fences. Denied inspection and unavailable or malformed status still retain storage.
+On macOS, an unreaped same-UID process positively sampled in zombie state has already released
+its file table; this exception never releases process-identity or signaling fences.
+If an otherwise valid macOS file catalog lacks only a descriptor type, the guard discards it and
+takes at most one fresh full catalog within the same five-second proof deadline. Only complete
+replacement evidence can permit deletion; a second incomplete catalog or any other inspection
+failure retains storage.
+Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
+
+Automatic Unix reclamation covers the guard's own UID and requires private `0700` owned storage.
+Observed owned identities with another or uncertain UID retain storage. Privilege-changing or
+elevated descendants are outside this automatic proof: unrelated other-account processes cannot
+be inspected reliably without additional authority. No file-use match grants signal authority.
+
+Required hosted Linux unit shards prepare a fresh unprivileged account before installing dependencies.
+A complete process census must show its numeric UID unused. The runner checkout stays unchanged.
+An independent mirror transport preserves its actual checked-out HEAD, complete history and refs
+in a fresh physical `0700` execution root under `/var/tmp`; shared objects and alternates are refused.
+Setup changes ownership only of opened physical directories inside this fresh root, preserving
+source files and external store inodes. The unit pnpm action installs its complete tool closure into
+an independent job directory under `/var/tmp`, without granting access to runner HOME or caches.
+Install and unit verification run through `setpriv` with cleared groups and capabilities,
+`no_new_privs`, an explicit environment, and private `0700` HOME, store and temporary directories.
+Before importing checkout source, stdlib admission validates all four UID/GID fields, source search/read
+access, and read/execute access to Node and the complete bounded pnpm closure. Escaping tool symlinks
+and unavailable access fail. Runtime admission repeats identity and private storage checks before pnpm; unavailable
+tools or authority fail the job. The account uses its own frozen-install store.
+
+Before each required unit shard starts parallel workers, the admitted helper runs the whole
+`scripts/__tests__/resourceGuardStorage.spec.ts` through the zero-assertion wrapper with one worker.
+Its conservative complete same-UID file-use proof needs a sequential boundary: unrelated concurrent
+process transitions can make a later cleanup sample unavailable. Failed or unavailable storage
+verification blocks the parallel shard. After success, the shard excludes exactly that already-run
+file and keeps its normal worker setting. This sequencing applies to the required fresh-account
+helper route; the global shard exclusions and nightly/tooling collection routes stay unchanged.
+
+Before install or Vitest concurrency, mandatory native verification starts a nondumpable same-UID
+Python consumer with cwd and an open file in owned storage. It requires denied cwd inspection and
+actual storage retention, then kills and reaps the consumer and requires reclamation. Missing Python
+or uncertain cleanup fails preparation. This negative proof runs before workers because any denied
+same-account process must conservatively block other guard cleanups too. Hosted account setup,
+tool traversal and checkout post-step compatibility require current-head Linux evidence; a local
+macOS port-controlled check cannot establish that acceptance.
+
+New guard starts recover storage only after the supervisor and its descendants are proven dead.
+Records bind UUIDs, process start identities, and directory identities. Atomic rename claims let
+concurrent scavengers serialize one payload, and a claim retains its reclamation owner's identity
+outside that payload until deletion finishes, so a second supervisor crash remains recoverable.
+Live owners, reused or uncertain PID identities, malformed records, and symlinked ownership paths
+are retained. Windows normal cleanup uses its tracked-tree proof; detached, reparented descendants
+that drop the session token while retaining temp paths remain outside that platform's detection.
+Windows cannot establish a complete command/environment/file-use census after supervisor death, so crashed
+spawned runs there retain their storage for explicit inspection.
+
+The guard samples available disk space on the temporary-storage volume, the command's working
+volume, and the system volume without walking their directory trees. It requires a 20 GiB free
+reserve at admission and throughout execution. Set `--disk-reserve-mib <positive-integer>` or
+`SOURDAW_GUARD_DISK_RESERVE_MIB` to configure it; nested guards inherit the chosen reserve. Supply
+the desired override again on `--recover`. Disk pressure stops the process tree with the existing
+`pressure` failure receipt and a disk-specific diagnostic; unavailable or invalid disk sampling
+fails closed with `monitor`. Cleanup uncertainty never turns a stopped run into success.
+
+Existing running commands and old lane copies keep their original guard. After this change lands,
+their next verification must invoke the updated guard, or merge the fix into the owned lane when
+needed. Do not rewrite or clean another agent's lane to upgrade it.
+
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 
 Spec files are excluded from the app `pnpm typecheck` (`tsconfig.app.json` excludes `src/**/*.spec.ts(x)`), so `pnpm typecheck:test` is the only gate that type-checks them. Run it whenever you touch a spec, a dummy factory, or a model shape that fixtures mirror. It must stay at zero errors — fix fixtures to the real types; never silence with `any` or `@ts-expect-error`.
