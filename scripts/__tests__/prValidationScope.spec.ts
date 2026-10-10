@@ -122,10 +122,11 @@ describe('graph-backed browser selection', () => {
         const mixed = 'tests/e2e/devicePanelAllTestId.spec.ts';
         const ai = 'tests/e2e/browserAiWebGpuAdmission.spec.ts';
         const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust, mixed, ai];
-        for (const path of [source, barrel, shell, ...specs, 'scripts/e2eSuiteOwners.json']) {
+        for (const path of [source, barrel, shell, ...specs, 'scripts/e2eSuiteOwners.json', 'public/fixture.js']) {
             mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
         }
         writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
+        writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
         writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerPanel';\n");
         writeFileSync(
             join(root, shell),
@@ -162,7 +163,7 @@ describe('graph-backed browser selection', () => {
         git(['init', '--quiet']);
         git(['config', 'user.email', 'ci@example.invalid']);
         git(['config', 'user.name', 'Scope test']);
-        git(['add', 'src', 'scripts', 'tests', 'tsconfig.json']);
+        git(['add', 'src', 'public', 'scripts', 'tests', 'tsconfig.json']);
         git(['commit', '--quiet', '-m', 'base']);
         const base = git(['rev-parse', 'HEAD']);
         writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');

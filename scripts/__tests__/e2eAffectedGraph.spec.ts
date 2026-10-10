@@ -1,6 +1,10 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
-import { selectAffectedE2e, type SourceNode } from '../e2eAffectedGraph';
+import { completeRuntimeGraph, selectAffectedE2e, type SourceNode } from '../e2eAffectedGraph';
 
 const TUNER = 'src/modules/Tuner/presentations/components/TunerDisplay.tsx';
 const PANEL = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
@@ -31,6 +35,31 @@ const graph: SourceNode[] = [
     { source: CRUST_BARREL, dependencies: [{ resolved: CRUST }] },
     { source: SHELL, dependencies: [{ resolved: BARREL }, { resolved: CRUST_BARREL }] },
 ];
+
+function withRuntimeSources(
+    nodes: SourceNode[],
+    sources: Readonly<Record<string, string>>,
+    run: (root: string) => void
+): void {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-affected-runtime-'));
+    try {
+        for (const node of nodes) {
+            const file = join(root, node.source);
+            mkdirSync(dirname(file), { recursive: true });
+            writeFileSync(file, sources[node.source] ?? '');
+        }
+        run(root);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
+function selectCompleted(root: string, nodes: SourceNode[]) {
+    const completed = completeRuntimeGraph(root, nodes);
+    return selectAffectedE2e([TUNER], inventory, manifest, completed.graph, (path) =>
+        completed.opaqueSources.has(path)
+    );
+}
 
 describe('affected E2E graph', () => {
     it('follows transitive file consumers but stops at the exact composition shell', () => {
@@ -69,6 +98,118 @@ describe('affected E2E graph', () => {
             { source: 'src/modules/AudioEngine/useCases/readTuner.ts', dependencies: [{ resolved: TUNER }] },
         ];
         expect(selectAffectedE2e([TUNER], inventory, manifest, crossDomain).kind).toBe('full');
+    });
+
+    it('widens when an unlinked shared runtime importer can load the changed feature', () => {
+        const sharedLoader = 'src/components/SharedRuntimeLoader.ts';
+        const hiddenConsumer: SourceNode[] = [
+            ...graph.map((node) => {
+                if (node.source === CRUST) {
+                    return { ...node, dependencies: [{ resolved: sharedLoader }] };
+                }
+                return node;
+            }),
+            { source: sharedLoader, dependencies: [] },
+        ];
+        expect(
+            selectAffectedE2e([TUNER], inventory, manifest, hiddenConsumer, (path) => path === sharedLoader)
+        ).toEqual({
+            kind: 'full',
+            reason: 'opaque runtime dependency: src/components/SharedRuntimeLoader.ts',
+        });
+    });
+
+    it('finds a computed import in a shared loader even when the file graph omits its target', () => {
+        const sharedLoader = 'src/components/SharedRuntimeLoader.ts';
+        const hiddenConsumer: SourceNode[] = [...graph, { source: sharedLoader, dependencies: [] }];
+        withRuntimeSources(
+            hiddenConsumer,
+            {
+                [sharedLoader]: 'export async function load(template: string) { return import(template); }',
+            },
+            (root) => {
+                expect(selectCompleted(root, hiddenConsumer)).toEqual({
+                    kind: 'full',
+                    reason: `opaque runtime dependency: ${sharedLoader}`,
+                });
+            }
+        );
+    });
+
+    it('allows a fixed public module only after its graph node and source are inspected', () => {
+        const loader = 'src/modules/AudioEngine/repositories/loadDecoder.ts';
+        const asset = 'public/wasm/decoder.js';
+        const nodes: SourceNode[] = [
+            ...graph,
+            { source: loader, dependencies: [] },
+            { source: asset, dependencies: [] },
+        ];
+        const source = `export async function load() {
+            const decoderUrl = new URL('wasm/decoder.js', globalThis.location.href).href;
+            return import(/* @vite-ignore */ decoderUrl);
+        }`;
+        withRuntimeSources(nodes, { [loader]: source, [asset]: 'export const decoder = true;' }, (root) => {
+            expect(selectCompleted(root, nodes)).toMatchObject({ kind: 'narrow', owners: ['Tuner'] });
+        });
+        const productImport: SourceNode[] = nodes.map((node) =>
+            node.source === asset ? { ...node, dependencies: [{ resolved: TUNER }] } : node
+        );
+        withRuntimeSources(productImport, { [loader]: source, [asset]: `import '../../${TUNER}';` }, (root) => {
+            expect(() => completeRuntimeGraph(root, productImport)).toThrow(
+                'public runtime asset imports product source'
+            );
+        });
+        withRuntimeSources(nodes, { [loader]: source, [asset]: 'export const decoder = import(template);' }, (root) => {
+            expect(selectCompleted(root, nodes)).toMatchObject({ kind: 'full' });
+        });
+    });
+
+    it('widens unknown shared Worker targets but retains graph-represented literal targets', () => {
+        const sharedWorker = 'src/components/SharedWorkerLoader.ts';
+        const unknown: SourceNode[] = [...graph, { source: sharedWorker, dependencies: [] }];
+        withRuntimeSources(unknown, { [sharedWorker]: 'new Worker(runtimeUrl);' }, (root) => {
+            expect(selectCompleted(root, unknown)).toEqual({
+                kind: 'full',
+                reason: `opaque runtime dependency: ${sharedWorker}`,
+            });
+        });
+        const host = 'src/modules/Crust/presentations/views/CrustWorkerHost.tsx';
+        const worker = 'src/modules/Crust/presentations/views/crustWorker.ts';
+        const known: SourceNode[] = [
+            ...graph,
+            { source: host, dependencies: [] },
+            { source: worker, dependencies: [] },
+        ];
+        withRuntimeSources(
+            known,
+            {
+                [host]: `new Worker(new URL('./crustWorker.ts', import.meta.url), { type: 'module' });`,
+                [worker]: 'export const ready = true;',
+            },
+            (root) => {
+                expect(selectCompleted(root, known)).toMatchObject({ kind: 'narrow', owners: ['Tuner'] });
+                const completed = completeRuntimeGraph(root, known);
+                expect(completed.graph.find((node) => node.source === host)?.dependencies).toContainEqual({
+                    resolved: worker,
+                });
+            }
+        );
+        const queryWorker = `${worker}?mode=live`;
+        const unsupported: SourceNode[] = [
+            ...graph,
+            { source: host, dependencies: [] },
+            { source: queryWorker, dependencies: [] },
+        ];
+        withRuntimeSources(
+            unsupported,
+            {
+                [host]: `new Worker(new URL('./crustWorker.ts?mode=live', import.meta.url), { type: 'module' });`,
+                [queryWorker]: 'export const ready = true;',
+            },
+            (root) => {
+                expect(selectCompleted(root, unsupported).kind).toBe('full');
+            }
+        );
     });
 
     it('widens unknown sources, missing graph nodes, and unresolved internal imports', () => {

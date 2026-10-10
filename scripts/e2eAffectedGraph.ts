@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { lstatSync, readFileSync } from 'node:fs';
+import { posix, resolve } from 'node:path';
+
+import ts from 'typescript';
 
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
@@ -141,10 +143,10 @@ function reverseGraph(graph: readonly SourceNode[]): {
             if (!isValidDependency(dependency)) {
                 throw new Error('malformed dependency graph');
             }
-            if (dependency.couldNotResolve && /^(?:\.|#\/)/.test(dependency.module ?? '')) {
+            if (dependency.couldNotResolve && /^(?:\.|#\/|\/?src\/)/.test(dependency.module ?? '')) {
                 throw new Error('unresolved local import');
             }
-            if (dependency.resolved.startsWith('src/')) {
+            if (/^(?:src|public)\//.test(dependency.resolved)) {
                 resolvedSources.add(dependency.resolved);
                 const importers = reverse.get(dependency.resolved) ?? new Set<string>();
                 importers.add(module.source);
@@ -156,6 +158,173 @@ function reverseGraph(graph: readonly SourceNode[]): {
         throw new Error('dependency graph has missing source nodes');
     }
     return { modules, reverse };
+}
+
+function publicAssetFromInitializer(initializer: ts.Expression | undefined, source: ts.SourceFile): string | undefined {
+    if (!initializer || !ts.isPropertyAccessExpression(initializer) || initializer.name.text !== 'href') {
+        return undefined;
+    }
+    const url = initializer.expression;
+    if (!ts.isNewExpression(url) || !ts.isIdentifier(url.expression) || url.expression.text !== 'URL') {
+        return undefined;
+    }
+    const [asset, base] = url.arguments ?? [];
+    if (
+        url.arguments?.length !== 2 ||
+        !asset ||
+        !ts.isStringLiteralLike(asset) ||
+        !base ||
+        base.getText(source) !== 'globalThis.location.href'
+    ) {
+        return undefined;
+    }
+    const name = asset.text;
+    if (
+        !/^[A-Za-z0-9][A-Za-z0-9_./-]*\.(?:[cm]?js)$/.test(name) ||
+        name.split('/').some((part) => part === '' || part === '.' || part === '..')
+    ) {
+        return undefined;
+    }
+    return `public/${name}`;
+}
+
+function sameBlockConstUrl(importCall: ts.CallExpression, source: ts.SourceFile): string | undefined {
+    const argument = importCall.arguments[0];
+    if (importCall.arguments.length !== 1 || !argument || !ts.isIdentifier(argument)) {
+        return undefined;
+    }
+    let enclosing: ts.Node | undefined = importCall.parent;
+    while (enclosing && !ts.isBlock(enclosing)) {
+        enclosing = enclosing.parent;
+    }
+    if (!enclosing || !ts.isBlock(enclosing)) {
+        return undefined;
+    }
+    for (const statement of enclosing.statements) {
+        if (statement.pos >= importCall.pos || !ts.isVariableStatement(statement)) {
+            continue;
+        }
+        if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) {
+            continue;
+        }
+        for (const declaration of statement.declarationList.declarations) {
+            if (!ts.isIdentifier(declaration.name) || declaration.name.text !== argument.text) {
+                continue;
+            }
+            return publicAssetFromInitializer(declaration.initializer, source);
+        }
+    }
+    return undefined;
+}
+
+function staticWorkerTarget(worker: ts.NewExpression, source: ts.SourceFile, sourcePath: string): string | undefined {
+    const url = worker.arguments?.[0];
+    if (!url || !ts.isNewExpression(url) || !ts.isIdentifier(url.expression) || url.expression.text !== 'URL') {
+        return undefined;
+    }
+    const [target, base] = url.arguments ?? [];
+    if (
+        url.arguments?.length !== 2 ||
+        !target ||
+        !ts.isStringLiteralLike(target) ||
+        !base ||
+        base.getText(source) !== 'import.meta.url'
+    ) {
+        return undefined;
+    }
+    const literal = target.text;
+    if (
+        !/^(?:\.\/|\.\.\/)/.test(literal) ||
+        !/^[A-Za-z0-9_./-]+\.(?:[cm]?[jt]sx?)$/.test(literal) ||
+        literal.includes('//')
+    ) {
+        return undefined;
+    }
+    const resolved = posix.normalize(posix.join(posix.dirname(sourcePath), literal));
+    return resolved.startsWith('src/') ? resolved : undefined;
+}
+
+/** Complete syntax-visible runtime edges before trusting reverse reachability. */
+export function completeRuntimeGraph(
+    root: string,
+    graph: readonly SourceNode[]
+): { graph: SourceNode[]; opaqueSources: ReadonlySet<string> } {
+    const { modules } = reverseGraph(graph);
+    const extra = new Map<string, Set<string>>();
+    const publicAssets = new Set<string>();
+    const opaqueSources = new Set<string>();
+    const addEdge = (source: string, target: string): void => {
+        const dependencies = extra.get(source) ?? new Set<string>();
+        dependencies.add(target);
+        extra.set(source, dependencies);
+    };
+    for (const path of modules.keys()) {
+        if (!/^(?:src|public)\//.test(path) || !/\.(?:tsx?|jsx?|mjs|cjs|mts|cts)$/.test(path)) {
+            continue;
+        }
+        const source = ts.createSourceFile(
+            path,
+            readFileSync(resolve(root, path), 'utf8'),
+            ts.ScriptTarget.Latest,
+            true
+        );
+        const visit = (node: ts.Node): void => {
+            if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+                const argument = node.arguments[0];
+                if (node.arguments.length !== 1 || !argument) {
+                    opaqueSources.add(path);
+                } else if (!ts.isStringLiteralLike(argument)) {
+                    const asset = sameBlockConstUrl(node, source);
+                    if (!asset || !modules.has(asset) || !lstatSync(resolve(root, asset)).isFile()) {
+                        opaqueSources.add(path);
+                    } else {
+                        publicAssets.add(asset);
+                        addEdge(path, asset);
+                    }
+                }
+            }
+            if (ts.isCallExpression(node) && node.expression.getText(source) === 'import.meta.glob') {
+                opaqueSources.add(path);
+            }
+            if (ts.isNewExpression(node) && node.expression.getText(source) === 'Worker') {
+                const target = staticWorkerTarget(node, source, path);
+                if (!target || !modules.has(target)) {
+                    opaqueSources.add(path);
+                } else {
+                    addEdge(path, target);
+                }
+            }
+            ts.forEachChild(node, visit);
+        };
+        visit(source);
+    }
+    const pending = [...publicAssets];
+    const checked = new Set<string>();
+    while (pending.length > 0) {
+        const asset = pending.pop()!;
+        if (checked.has(asset)) {
+            continue;
+        }
+        checked.add(asset);
+        for (const dependency of modules.get(asset)?.dependencies ?? []) {
+            if (dependency.resolved.startsWith('src/')) {
+                throw new Error(`public runtime asset imports product source: ${asset}`);
+            }
+            if (dependency.resolved.startsWith('public/')) {
+                pending.push(dependency.resolved);
+            }
+        }
+    }
+    return {
+        graph: graph.map((module) => {
+            const dependencies = [...module.dependencies];
+            for (const target of extra.get(module.source) ?? []) {
+                dependencies.push({ resolved: target });
+            }
+            return { ...module, dependencies };
+        }),
+        opaqueSources,
+    };
 }
 
 function affectedOwners(
@@ -217,6 +386,11 @@ export function selectAffectedE2e(
             return { kind: 'full', reason: 'unknown or shared changed source' };
         }
         const { modules, reverse } = reverseGraph(graph);
+        for (const source of modules.keys()) {
+            if (hasOpaqueDependency(source)) {
+                throw new Error(`opaque runtime dependency: ${source}`);
+            }
+        }
         const owners = affectedOwners(changedSources, knownOwners, modules, reverse, hasOpaqueDependency);
         const specs = Array.from(inventory)
             .filter(
@@ -244,8 +418,7 @@ export async function loadAffectedE2e(
     try {
         const manifest: unknown = JSON.parse(readFileSync(resolve(root, 'scripts/e2eSuiteOwners.json'), 'utf8'));
         const { cruise } = await import('dependency-cruiser');
-        const ts = await import('typescript');
-        const result = await cruise(['src'], {
+        const result = await cruise(['src', 'public'], {
             baseDir: root,
             outputType: 'json',
             doNotFollow: { path: 'node_modules' },
@@ -260,42 +433,10 @@ export async function loadAffectedE2e(
         if (typeof parsed !== 'object' || parsed === null || !('modules' in parsed) || !Array.isArray(parsed.modules)) {
             return { kind: 'full', reason: 'malformed dependency graph' };
         }
-        const opaque = (path: string): boolean => {
-            const source = ts.createSourceFile(
-                path,
-                readFileSync(resolve(root, path), 'utf8'),
-                ts.ScriptTarget.Latest,
-                true
-            );
-            let found = false;
-            const visit = (node: import('typescript').Node): void => {
-                if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-                    const argument = node.arguments[0];
-                    if (node.arguments.length !== 1 || argument === undefined || !ts.isStringLiteralLike(argument)) {
-                        found = true;
-                    }
-                }
-                if (ts.isCallExpression(node) && node.expression.getText(source) === 'import.meta.glob') {
-                    found = true;
-                }
-                if (ts.isNewExpression(node) && node.expression.getText(source) === 'Worker') {
-                    found = true;
-                }
-                if (!found) {
-                    ts.forEachChild(node, visit);
-                }
-            };
-            visit(source);
-            return found;
-        };
-        const modules = parsed.modules as SourceNode[];
-        const potentialConsumers = modules.filter((module) =>
-            /^src\/(?:app\/|modules\/[^/]+\/presentations\/)/.test(module.source)
+        const completed = completeRuntimeGraph(root, parsed.modules as SourceNode[]);
+        return selectAffectedE2e(changedSources, availableSpecs, manifest, completed.graph, (path) =>
+            completed.opaqueSources.has(path)
         );
-        if (potentialConsumers.some((module) => opaque(module.source))) {
-            return { kind: 'full', reason: 'opaque presentation or composition import' };
-        }
-        return selectAffectedE2e(changedSources, availableSpecs, manifest, modules, opaque);
     } catch (error) {
         return { kind: 'full', reason: error instanceof Error ? error.message : 'dependency graph failed' };
     }
