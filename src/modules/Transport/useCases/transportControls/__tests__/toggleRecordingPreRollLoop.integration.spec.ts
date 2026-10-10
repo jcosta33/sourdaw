@@ -493,13 +493,15 @@ describe('a loop recording across a tempo change', () => {
             expect(fileSecondsAt(scenario, 15)).toBeCloseTo(capturedOnLap(15, 1), 9);
         });
 
-        // Pass 1 is the clip's own material from the record point on, so once
-        // the clip is slipped or moved, comping it must sound exactly what the
-        // uncomped clip sounds there — silence where the content has not yet
-        // reached the pass.
+        // The uncomped clip can read the continuous file, but selecting pass 1
+        // owns only its captured [.02, 4.02) seconds after either content edit.
         it.each([
             {
                 name: 'its content slipped a beat later into the media',
+                insidePassBeats: [11.5, 12, 14, 15, 15.499],
+                beforePassBeat: 11.499,
+                passEndBeat: 15.5,
+                beyondPassBeat: 15.75,
                 edit: (clipId: string): AppAction => ({
                     type: 'slipClipContent',
                     payload: { clipId, clipType: 'audio', offset: -5.96 + 1 },
@@ -507,30 +509,45 @@ describe('a loop recording across a tempo change', () => {
             },
             {
                 name: 'the clip moved two beats earlier',
+                insidePassBeats: [11, 11.5, 12, 14, 14.999],
+                beforePassBeat: 10.999,
+                passEndBeat: 15,
+                beyondPassBeat: 15.5,
                 edit: (clipId: string): AppAction => ({
                     type: 'moveClip',
                     payload: { clipId, trackId: TRACK_ID, startBeat: 6 },
                 }),
             },
-        ])('plays pass 1 with the clip’s own content once $name', async ({ edit }) => {
-            await recordLoopAcrossTempoChange(scenario);
-            await executeAppAction(edit(recordedClip().id));
-            flushAutomergeStorageWrites();
-            const beats = [11, 11.5, 12, 14, 15.5];
-            const uncomped = beats.map((beat) => fileSecondsAt(scenario, beat));
+        ])(
+            'plays pass 1 with the clip’s own content once $name',
+            async ({ edit, insidePassBeats, beforePassBeat, passEndBeat, beyondPassBeat }) => {
+                await recordLoopAcrossTempoChange(scenario);
+                const firstPass = takeLaneStore.value?.lanes[0]?.takes.find((take) => take.name === 'Take 2');
+                expect(firstPass?.passDepthSeconds).toBeCloseTo(0.02, 9);
+                expect(firstPass?.passSourceEndSeconds).toBeCloseTo(4.02, 9);
 
-            await compLoop(scenario, 'Take 2');
+                await executeAppAction(edit(recordedClip().id));
+                flushAutomergeStorageWrites();
+                const uncomped = insidePassBeats.map((beat) => fileSecondsAt(scenario, beat));
+                expect(uncomped[0]).toBeCloseTo(0.02, 9);
+                // The full file contains later laps; it still reads through the
+                // selected pass's exclusive source ending when no comp is active.
+                expect(fileSecondsAt(scenario, passEndBeat)).toBeCloseTo(4.02, 9);
+                expect(fileSecondsAt(scenario, beyondPassBeat)).toBeGreaterThan(4.02);
 
-            for (const [index, beat] of beats.entries()) {
-                const content = uncomped[index]!;
-                if (content < 0) {
-                    expect(fileSecondsAt(scenario, beat)).toBeNull();
-                } else {
+                await compLoop(scenario, 'Take 2');
+
+                for (const [index, beat] of insidePassBeats.entries()) {
+                    const content = uncomped[index]!;
+                    expect(content).toBeGreaterThan(0);
+                    expect(content).toBeLessThan(4.02);
                     expect(fileSecondsAt(scenario, beat)).toBeCloseTo(content, 9);
                 }
+                expect(fileSecondsAt(scenario, beforePassBeat)).toBeNull();
+                expect(fileSecondsAt(scenario, passEndBeat)).toBeNull();
+                expect(fileSecondsAt(scenario, beyondPassBeat)).toBeNull();
             }
-            expect(uncomped.filter((content) => content !== null && content >= 0).length).toBeGreaterThanOrEqual(4);
-        });
+        );
     });
 
     describe('begun at the start of loop [8,16), the tempo dropping to 60 BPM at beat 12, no pre-roll', () => {
