@@ -1,0 +1,37 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.deferredBaseline.spec.ts
+  s_2bfd55a4393d7c::t_0ca7d98bdd7474 157,162-168,170-174,177-178,180-185,189,191-196,199,207-213,216,218-220,266-267,269-270,288-289,298-299,303
+  s_2bfd55a4393d7c::t_7d264ac808dfc4 158-161,169,175-176,179,186-188,190,197-198,200-206,214-215,217,221,229,231-239,245-265,268,271-287,290-297,300-302
+  s_2bfd55a4393d7c::t_87afe48b338cf9 222-228,230,240-244
+  s_2bfd55a4393d7c::t_83be6cf4127a25 8
+src/infra/store/storage/createAutomergeStorage.ts
+  s_2bfd55a4393d7c::t_73462ff03c4b57 2523
+  s_2bfd55a4393d7c::t_d40667530fbfbf 1768-1771
+  s_2bfd55a4393d7c::t_f6227f6505a081 1290-1292
+  s_2bfd55a4393d7c::t_6d0c058057cc1f 2092-2094
+  s_2bfd55a4393d7c::t_39c9d50309fa2b 1991
+  s_2bfd55a4393d7c::t_3b2f37f05d7e54 2274
+  s_2bfd55a4393d7c::t_30320784f02eab 2626
+  s_2bfd55a4393d7c::t_deda6d9f066086 1314-1319
+  s_2bfd55a4393d7c::t_5aa1b9693f73f1 1916
+  s_2bfd55a4393d7c::t_4b2b6e8cafe4b9 2597
+  s_2bfd55a4393d7c::t_08653e8e8db95b 1788
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionCost.spec.ts
+  s_2bfd55a4393d7c::t_fafc873e2d8369 194
+  s_2bfd55a4393d7c::t_4186b731838c13 171-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9182776bcc158bc51af2059fbdfc852fb137697c",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
