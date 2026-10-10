@@ -571,11 +571,15 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
 
 No job outside `health-gates.yml` may be named `Gate`.
 
-`scripts/prValidationScope.ts` records the affected browser plan with reasons. Product changes,
-including presentation surfaces, select smoke and the complete browser suite; direct browser spec
-changes select those specs. Deleted and renamed paths retain their old effects. Documentation and
-explicitly known review tooling avoid browser runs. Required selected jobs must succeed, and scope
-resolution or missing evidence fails closed. Nightly remains the unconditional full-load gate.
+`scripts/prValidationScope.ts` records the affected browser plan with reasons. A clean integration
+checkout may narrow feature-presentation changes through the resolved file dependency graph and
+explicit suite owners in `scripts/e2eSuiteOwners.json`; unowned suites remain selected. Unknown,
+shared, deleted, renamed, and unsupported graph inputs select the complete browser suite. Direct
+browser spec changes select those specs. Documentation and explicitly known review tooling avoid
+browser runs. Smoke runs separately for every browser plan; Browser AI hardware admission follows
+selected browser-AI suites. Required selected jobs must succeed, and scope resolution or missing
+evidence fails closed. Nightly remains the unconditional full-load gate. The maintenance contract is
+in [affected E2E](./docs/affected-e2e.md).
 The ruleset requires the single `Gate`; review must catch heads weakening their own workflow.
 
 Resource Safety governs local checks; never rerun repository-wide pipeline gates locally.

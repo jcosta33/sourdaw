@@ -1,0 +1,536 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "spec": "tests/e2e/bacteriaCulturesSearchTestId.spec.ts",
+      "owners": [
+        "Bacteria"
+      ]
+    },
+    {
+      "spec": "tests/e2e/browserAiAdmittedPresentation.spec.ts",
+      "owners": [
+        "BrowserAi"
+      ]
+    },
+    {
+      "spec": "tests/e2e/browserAiPanelsTestId.spec.ts",
+      "owners": [
+        "BrowserAi"
+      ]
+    },
+    {
+      "spec": "tests/e2e/browserAiRedetectKokoroTestId.spec.ts",
+      "owners": [
+        "BrowserAi"
+      ]
+    },
+    {
+      "spec": "tests/e2e/browserAiTestId.spec.ts",
+      "owners": [
+        "BrowserAi"
+      ]
+    },
+    {
+      "spec": "tests/e2e/browserAiWebGpuAdmission.spec.ts",
+      "owners": [
+        "BrowserAi"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustAttackAutoTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustAttackTimeTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustCeilingTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustChannelLinkTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustInputGainTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustLevelChipsTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustOversamplingTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustPresetSelectTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustReleaseAutoTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustReleaseLookaheadTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustRemainingKnobsTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustResetMetersTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustStreamingPresetTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustTruePeakToggleTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/crustUnityDeltaTestId.spec.ts",
+      "owners": [
+        "Crust"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterCoarseFineTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterEffectsTabsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterEnvDecayReleaseTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterEnvelopeKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterFilterKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterFilterResoDriveTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterFxCompKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterFxDelayKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterFxDistKnobsDepthTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterFxMasterKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterFxModKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterFxReverbKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterLevelPwTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterLfoKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterLfoRoutingTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterMacroKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterMacroRemainingTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterNoiseKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterPanelDeepTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterPresetSearchTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterUnisonKnobsTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/fermenterWaveformTestId.spec.ts",
+      "owners": [
+        "Fermenter"
+      ]
+    },
+    {
+      "spec": "tests/e2e/glutenPresetSearchTestId.spec.ts",
+      "owners": [
+        "Gluten"
+      ]
+    },
+    {
+      "spec": "tests/e2e/grinderPresetSearchTestId.spec.ts",
+      "owners": [
+        "Grinder"
+      ]
+    },
+    {
+      "spec": "tests/e2e/levainArticulationTestId.spec.ts",
+      "owners": [
+        "Levain"
+      ]
+    },
+    {
+      "spec": "tests/e2e/levainEngineStatusTestId.spec.ts",
+      "owners": [
+        "Levain"
+      ]
+    },
+    {
+      "spec": "tests/e2e/levainFamilyFilterTestId.spec.ts",
+      "owners": [
+        "Levain"
+      ]
+    },
+    {
+      "spec": "tests/e2e/levainSearchFilterTestId.spec.ts",
+      "owners": [
+        "Levain"
+      ]
+    },
+    {
+      "spec": "tests/e2e/onboardingSkipFinishTestId.spec.ts",
+      "owners": [
+        "Onboarding"
+      ]
+    },
+    {
+      "spec": "tests/e2e/onboardingTour.spec.ts",
+      "owners": [
+        "Onboarding"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofAbCompareTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofChamberDecayMixTestId.spec.ts",
+      "owners": [
+        "ProofChamber"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofChamberPanelTestId.spec.ts",
+      "owners": [
+        "ProofChamber"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofChamberPreKnobTestId.spec.ts",
+      "owners": [
+        "ProofChamber"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofChamberTailKnobsTestId.spec.ts",
+      "owners": [
+        "ProofChamber"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofChamberWidthKnobTestId.spec.ts",
+      "owners": [
+        "ProofChamber"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofDynKnobsTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofEqKnobsTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofImagerExciterKnobsTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofLimiterBypassTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofLimiterCeilingTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofLoudnessGateTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofMissionCeilingTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofModuleTogglesTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/proofPresetSelectTestId.spec.ts",
+      "owners": [
+        "Proof"
+      ]
+    },
+    {
+      "spec": "tests/e2e/setlistAsRemoveTestId.spec.ts",
+      "owners": [
+        "Setlist"
+      ]
+    },
+    {
+      "spec": "tests/e2e/setlistMoveReorder.spec.ts",
+      "owners": [
+        "Setlist"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterBrightKnobTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterEuclidTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterGrooveKitKnobsTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterGrooveTemplateTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterKitGainPanTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterKitPresetTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterKitSearchTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterKitSelectTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterLevelPanTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterPadDriveTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterPadInteractionTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterPadMixerTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterPerPadParamsTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterStepSequencerTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterTextureCharacterTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/toasterTransportChipsTestId.spec.ts",
+      "owners": [
+        "Toaster"
+      ]
+    },
+    {
+      "spec": "tests/e2e/tuner.spec.ts",
+      "owners": [
+        "Tuner"
+      ]
+    },
+    {
+      "spec": "tests/e2e/tunerReferenceHomeEnd.spec.ts",
+      "owners": [
+        "Tuner"
+      ]
+    }
+  ],
+  "owners": [
+    "Bacteria",
+    "BrowserAi",
+    "Crust",
+    "Fermenter",
+    "Gluten",
+    "Grinder",
+    "Levain",
+    "Onboarding",
+    "Proof",
+    "ProofChamber",
+    "Setlist",
+    "Toaster",
+    "Tuner"
+  ]
+}

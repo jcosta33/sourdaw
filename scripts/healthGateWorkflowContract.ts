@@ -147,7 +147,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
     },
     'health-gates.yml': {
-        scope: ['Checkout', 'Set up Node', 'Plan affected checks', 'Upload scope manifest'],
+        scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
         'selection-shadow': [
             'Checkout candidate head',
             'Checkout immutable integration commit',

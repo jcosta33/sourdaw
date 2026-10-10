@@ -7,6 +7,7 @@ import {
     readdirSync,
     renameSync,
     rmSync,
+    symlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,10 +16,11 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
+import { selectAffectedE2e } from '../e2eAffectedGraph';
 import { parseChangedPaths, selectedSpecArguments, selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
 
 const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
-const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'];
+const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'] as const;
 const EXPORT = 'src/modules/AudioRendering/presentations/views/ExportDialog.tsx';
 const PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx';
 const GENERAL_PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx';
@@ -78,6 +80,181 @@ const TRANSPORT_SPECS_FOR_CONTROLS = [
     'countInCycleTestId',
 ].map((name) => `tests/e2e/${name}.spec.ts`);
 const INVENTORY = [SMOKE_SPEC, ...TUNER_SPECS, 'tests/e2e/undo.spec.ts'];
+
+describe('graph-backed browser selection', () => {
+    it('selects an affected feature plus unowned specs and leaves unrelated hardware out', () => {
+        const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+        const ai = 'tests/e2e/browserAiWebGpuAdmission.spec.ts';
+        const inventory = [...INVENTORY, crust, ai];
+        const selected = selectAffectedE2e(
+            [TUNER],
+            inventory,
+            {
+                version: 1,
+                owners: ['BrowserAi', 'Crust', 'Tuner'],
+                entries: [
+                    ...TUNER_SPECS.map((spec) => ({ spec, owners: ['Tuner'] })),
+                    { spec: crust, owners: ['Crust'] },
+                    { spec: ai, owners: ['BrowserAi'] },
+                ],
+            },
+            [
+                { source: TUNER, dependencies: [] },
+                { source: 'src/modules/Tuner/presentations/views/index.ts', dependencies: [{ resolved: TUNER }] },
+                {
+                    source: 'src/modules/WorkspaceShell/presentations/views/AppShell.tsx',
+                    dependencies: [{ resolved: 'src/modules/Tuner/presentations/views/index.ts' }],
+                },
+            ]
+        );
+        expect(selected.kind).toBe('narrow');
+        const plan = selectValidationPlan([TUNER], inventory, new Map(), false, selected);
+        expect(allSelected(plan)).toEqual([...TUNER_SPECS, 'tests/e2e/undo.spec.ts'].sort());
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
+    });
+
+    it('emits a narrowed immutable-head plan that Playwright collects as exact files', () => {
+        const root = temporaryRoot();
+        const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
+        const barrel = 'src/modules/Tuner/presentations/views/index.ts';
+        const shell = 'src/modules/WorkspaceShell/presentations/views/AppShell.tsx';
+        const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+        const mixed = 'tests/e2e/devicePanelAllTestId.spec.ts';
+        const ai = 'tests/e2e/browserAiWebGpuAdmission.spec.ts';
+        const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust, mixed, ai];
+        for (const path of [source, barrel, shell, ...specs, 'scripts/e2eSuiteOwners.json', 'public/fixture.js']) {
+            mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+        }
+        writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
+        writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+        writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerPanel';\n");
+        writeFileSync(
+            join(root, shell),
+            "import { TunerPanel } from '#/modules/Tuner/presentations/views';\nexport const panel = TunerPanel;\n"
+        );
+        writeFileSync(
+            join(root, 'tsconfig.json'),
+            JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
+        );
+        writeFileSync(
+            join(root, 'scripts/e2eSuiteOwners.json'),
+            JSON.stringify({
+                version: 1,
+                owners: ['BrowserAi', 'Crust', 'Tuner'],
+                entries: [
+                    { spec: TUNER_SPECS[0], owners: ['Tuner'] },
+                    { spec: crust, owners: ['Crust'] },
+                    { spec: ai, owners: ['BrowserAi'] },
+                ],
+            })
+        );
+        for (const spec of specs) {
+            writeFileSync(
+                join(root, spec),
+                `import { test, expect } from '@playwright/test';\ntest('${spec}', () => expect(true).toBe(true));\n`
+            );
+        }
+        writeFileSync(
+            join(root, 'playwright.config.mjs'),
+            "export default { testDir: './tests/e2e', projects: [{ name: 'chromium' }] };\n"
+        );
+        symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Scope test']);
+        git(['add', 'src', 'public', 'scripts', 'tests', 'tsconfig.json']);
+        git(['commit', '--quiet', '-m', 'base']);
+        const base = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+        git(['add', source]);
+        git(['commit', '--quiet', '-m', 'change tuner panel']);
+        const head = git(['rev-parse', 'HEAD']);
+        const output = join(root, 'github-output');
+        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+            typeof selectValidationPlan
+        >;
+        expect(allSelected(plan)).toEqual([TUNER_SPECS[0], mixed].sort());
+        expect(plan.browserAi).toBe(false);
+        expect(plan.reasons).toContainEqual({ path: source, reason: 'affected feature owners: Tuner' });
+        expect(readFileSync(output, 'utf8')).toContain('profile=broad\nbrowser=true\nbrowser-ai=false\n');
+
+        const playwright = spawnSync(
+            resolve('node_modules/.bin/playwright'),
+            [
+                'test',
+                '--list',
+                '--config',
+                join(root, 'playwright.config.mjs'),
+                ...selectedSpecArguments(allSelected(plan), root),
+            ],
+            { cwd: root, encoding: 'utf8' }
+        );
+        expect(playwright.status, playwright.stderr).toBe(0);
+        expect(playwright.stdout).toContain('tuner.spec.ts:');
+        expect(playwright.stdout).toContain('devicePanelAllTestId.spec.ts:');
+        expect(playwright.stdout).not.toContain('crustCeilingTestId.spec.ts:');
+        expect(playwright.stdout).not.toContain('browserAiWebGpuAdmission.spec.ts:');
+
+        writeFileSync(join(root, source), 'export const TunerPanel = "dirty";\n');
+        const dirty = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+        });
+        expect(dirty.status, dirty.stderr).toBe(0);
+        const dirtyPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+            typeof selectValidationPlan
+        >;
+        expect(allSelected(dirtyPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+        expect(dirtyPlan.browserAi).toBe(true);
+
+        writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+        const renamed = 'src/modules/Tuner/presentations/views/TunerDisplayPanel.tsx';
+        git(['mv', source, renamed]);
+        git(['commit', '--quiet', '-m', 'rename tuner panel']);
+        const renamedHead = git(['rev-parse', 'HEAD']);
+        const moved = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: head, HEAD_SHA: renamedHead, GITHUB_OUTPUT: output },
+        });
+        expect(moved.status, moved.stderr).toBe(0);
+        const movedPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+            typeof selectValidationPlan
+        >;
+        expect(allSelected(movedPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+        expect(movedPlan.browserAi).toBe(true);
+
+        writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerDisplayPanel';\n");
+        writeFileSync(join(root, 'public/fixture.js'), `import '../${renamed}';\n`);
+        git(['add', barrel, 'public/fixture.js']);
+        git(['commit', '--quiet', '-m', 'add public runtime consumer']);
+        const publicBase = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, renamed), 'export const TunerPanel = "public dirty";\n');
+        git(['add', renamed]);
+        git(['commit', '--quiet', '-m', 'change tuner with public runtime consumer']);
+        const publicHead = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+        const dirtyPublic = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: publicBase, HEAD_SHA: publicHead, GITHUB_OUTPUT: output },
+        });
+        expect(dirtyPublic.status, dirtyPublic.stderr).toBe(0);
+        const dirtyPublicPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+            typeof selectValidationPlan
+        >;
+        expect(allSelected(dirtyPublicPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+        expect(dirtyPublicPlan.browserAi).toBe(true);
+    });
+});
 const PR_4890_PATHS = [
     '.agents/skills/review-stances/correctness.md',
     'scripts/__tests__/semanticReviewContext.spec.ts',
@@ -454,6 +631,7 @@ describe('required affected verification', () => {
             codeql: true,
             matrix: { include: [] },
         });
+        expectBroad(base, head);
 
         writePackage(packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }));
         const unsafeCandidate = commit('unsafe candidate package command');

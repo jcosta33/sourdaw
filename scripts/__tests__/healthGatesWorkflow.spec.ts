@@ -524,9 +524,44 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
     if (checkout['fetch-depth'] !== 0 || checkout['persist-credentials'] !== false) {
         throw new Error('required scope must read complete history without persisted credentials');
     }
+    if (stepNamed(scope, 'Enable Corepack').run !== 'corepack enable') {
+        throw new Error('required scope must enable the pinned package manager');
+    }
+    const pnpm = stepNamed(scope, 'Set up pnpm');
+    if (
+        typeof pnpm.uses !== 'string' ||
+        !pnpm.uses.startsWith('pnpm/action-setup@') ||
+        recordAt(pnpm, 'with').package_json_file !== 'package.json'
+    ) {
+        throw new Error('required scope must install the repository package manager');
+    }
     const node = recordAt(stepNamed(scope, 'Set up Node'), 'with');
-    if (node['node-version'] !== '24.19.0') {
+    if (node['node-version'] !== '24.19.0' || node.cache !== 'pnpm') {
         throw new Error('required scope must use the pinned Node version');
+    }
+    if (stepNamed(scope, 'Install dependencies').run !== 'pnpm install --frozen-lockfile --ignore-scripts') {
+        throw new Error('required scope must install pinned parser dependencies before planning');
+    }
+    const steps = scope.steps;
+    const setupOrder = [
+        'Enable Corepack',
+        'Set up pnpm',
+        'Set up Node',
+        'Install dependencies',
+        'Plan affected checks',
+    ];
+    if (!Array.isArray(steps)) {
+        throw new TypeError('required scope steps are missing');
+    }
+    const indexes = setupOrder.map((name) =>
+        steps.findIndex((step: unknown) => asRecord(step, 'scope step').name === name)
+    );
+    let previous = -1;
+    for (const index of indexes) {
+        if (index <= previous) {
+            throw new Error('required scope must install dependencies before planning');
+        }
+        previous = index;
     }
     const plan = stepNamed(scope, 'Plan affected checks');
     if (
