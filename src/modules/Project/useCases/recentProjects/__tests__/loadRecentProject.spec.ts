@@ -116,6 +116,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
     resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
