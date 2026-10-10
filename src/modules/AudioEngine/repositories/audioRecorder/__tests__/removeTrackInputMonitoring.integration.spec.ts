@@ -347,7 +347,12 @@ describe('track deletion releases the input monitor at Command commit', () => {
             mutateCrdtDoc<{ tracks: { tracks: Array<{ id: string; name: string }> } }>({
                 id: 'root',
                 changeFn: (document) => {
-                    document.tracks.tracks[0].name = 'Incoming owner after publication';
+                    const incomingOwner = document.tracks.tracks[0];
+                    if (!incomingOwner) {
+                        throw new Error('Expected committed incoming owner before publishing its name');
+                    }
+                    expect(incomingOwner.id).toBe('a');
+                    incomingOwner.name = 'Incoming owner after publication';
                 },
             });
             expect(engine.removeTrackStrip).not.toHaveBeenCalled();
