@@ -6,11 +6,13 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
     registerCrdtStorageRuntime,
@@ -39,6 +41,7 @@ import { chooseBacteriaBodyWithAudio } from '../chooseBacteriaBodyWithAudio';
  */
 
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
+let afterEngineWrite: (() => void) | null = null;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     reconcileAutoInputMonitoring: vi.fn(),
@@ -53,6 +56,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     discardDecodedAudioFile: vi.fn(),
     updateDeviceParam: (trackId: string, deviceId: string, paramId: string, value: number) => {
         engineWrites.push({ trackId, deviceId, paramId, value });
+        afterEngineWrite?.();
     },
     updateDevicePatch: vi.fn(),
     addMidiFxToStrip: vi.fn(),
@@ -176,6 +180,7 @@ function undoDepth(): number {
 describe('choosing a Bacteria body', () => {
     beforeEach(() => {
         engineWrites.length = 0;
+        afterEngineWrite = null;
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('bacteria body choice');
         removeCrdtDoc('root');
@@ -204,6 +209,8 @@ describe('choosing a Bacteria body', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         bacteriaStore.set({});
+        agentProjectRepairStateStore.set(null);
+        afterEngineWrite = null;
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -271,6 +278,38 @@ describe('choosing a Bacteria body', () => {
         expect(storedParameterValues()).toEqual({ band0_convolutionEnabled: 1 });
         expect(undoDepth()).toBe(before);
         expect(bodyWrites()).toEqual([2, -1]);
+    });
+
+    // The engine takes the body the moment the handler writes it, before the
+    // document commits. A commit that is then refused must put the engine back to
+    // no body as well, or the band sounds a body the panel and the saved project
+    // do not hold.
+    it('returns the engine to no body when the commit of a band’s first body is refused', async () => {
+        const before = undoDepth();
+        afterEngineWrite = () => {
+            if (bodyWrites().includes(2) && agentProjectRepairStateStore.value === null) {
+                agentProjectRepairStateStore.set({
+                    audioGraphValid: false,
+                    detectedRevision: 'repair-revision',
+                    inspectionAvailable: true,
+                    projectInvariantsValid: false,
+                    rawProjectRetained: true,
+                    repairCandidates: [],
+                    status: 'repair-required',
+                });
+            }
+        };
+
+        await expect(
+            executeAppAction({
+                type: 'setDeviceParameter',
+                payload: { deviceId: DEVICE_ID, paramId: BODY_PARAM, value: 2 },
+            })
+        ).rejects.toThrow('Project repair is required before project actions can execute');
+
+        expect(bodyWrites()).toEqual([2, -1]);
+        expect(storedParameterValues()).toEqual({ band0_convolutionEnabled: 1 });
+        expect(undoDepth()).toBe(before);
     });
 
     it('undoes a body change back to the body chosen before it, then to no body', async () => {

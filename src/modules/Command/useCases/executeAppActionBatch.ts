@@ -38,6 +38,7 @@ import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
+import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
 
 type ExecutedBatchAction = {
@@ -417,23 +418,14 @@ async function executePreparedBatch(
     return executedActions;
 }
 
-async function rollbackAttemptedBatch(
+function rollbackAttemptedBatch(
     attemptedActions: readonly PreparedBatchAction[],
     scope: AutomergeStorageTransactionScope
 ): Promise<string | null> {
-    const failures: string[] = [];
-    for (const prepared of [...attemptedActions].reverse()) {
-        const rollback = prepared.afterAbort;
-        if (!rollback) {
-            continue;
-        }
-        try {
-            await scope(rollback);
-        } catch (error) {
-            failures.push(`${prepared.action.type}: ${failureReason(error)}`);
-        }
-    }
-    return failures.length > 0 ? failures.join('; ') : null;
+    return rollbackAbortedActions(
+        attemptedActions.map((prepared) => ({ actionType: prepared.action.type, rollback: prepared.afterAbort })),
+        scope
+    );
 }
 
 function appendAbortFailures(
