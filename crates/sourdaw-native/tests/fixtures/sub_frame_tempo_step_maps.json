@@ -1,0 +1,9 @@
+{
+    "tempo": [
+        { "startSeconds": 0, "beatsPerMinute": 120 },
+        { "startSeconds": 2, "beatsPerMinute": 120 },
+        { "startSeconds": 2.00001, "beatsPerMinute": 90 }
+    ],
+    "timeSignature": [{ "startSeconds": 0, "numerator": 4, "denominator": 4 }],
+    "loopRegion": null
+}
