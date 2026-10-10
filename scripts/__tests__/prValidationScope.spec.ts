@@ -455,6 +455,13 @@ describe('required affected verification', () => {
             matrix: { include: [] },
         });
 
+        writePackage(packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }));
+        const unsafeCandidate = commit('unsafe candidate package command');
+        writePackage(packageText(known));
+        const safeCheckout = commit('safe checkout after candidate');
+        expect(git(['rev-parse', 'HEAD'])).toBe(safeCheckout);
+        expectBroad(removalHead, unsafeCandidate);
+
         const cases: { name: string; before: string; after: string | null; extra?: string }[] = [
             {
                 name: 'unknown old route',
