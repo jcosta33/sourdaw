@@ -1,12 +1,16 @@
 import { executeAppAction } from '#/modules/Command/useCases';
 import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 
+import { startFirstPassAtRecordPoint } from '../../models/TakeLane';
 import { clipEntrySeconds } from '../../models/TempoTimeline';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Clip } from '../../stores/trackStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
 import { placeRecordingClipStart } from './placeRecordingClipStart';
 import { placeRecordingTakes } from './placeRecordingTakes';
+import { recordingPassTiming } from './recordingPassTiming';
+import { stageRecordingTake } from './stageRecordingTake';
 
 /** Where a captured recording's media truly begins, as the capture terminal measured it. */
 type RecordedCapture = {
@@ -14,7 +18,43 @@ type RecordedCapture = {
     provisionalStartBeat: number;
     /** The song time the capture's first sample sounds on, pre-roll lead and latency included. */
     mediaOriginSeconds: number;
+    /** Producer sample zero less admission latency, on the audio context clock. */
+    sourceContextOriginSeconds: number;
+    sourceDurationSeconds?: number;
 };
+
+function stageFinalCapturedPass(clip: Clip, capture: RecordedCapture): void {
+    if (capture.sourceDurationSeconds === undefined || capture.sourceDurationSeconds <= 0) {
+        return;
+    }
+    const finalPass = recordingPassTiming.finalPass(
+        clip.id,
+        capture.sourceContextOriginSeconds + capture.sourceDurationSeconds
+    );
+    if (!finalPass) {
+        return;
+    }
+    const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === clip.trackId);
+    const previous = lane?.takes.findLast((take) => take.clipId === clip.id && take.sourceOffsetBeats !== undefined);
+    if (!previous || previous.sourceOffsetBeats === undefined) {
+        return;
+    }
+    // The first staged wrap spans the loop, but its recording started at the
+    // record point. Keep the existing unwrapped beat identity of later passes.
+    const previousPass = startFirstPassAtRecordPoint(previous, capture.provisionalStartBeat);
+    const provisional = lane?.takes.find((take) => take.clipId === clip.id && take.sourceOffsetBeats === undefined);
+    if (!provisional) {
+        throw new Error('Recording provisional take is not available');
+    }
+    stageRecordingTake({
+        trackId: clip.trackId,
+        clipId: clip.id,
+        name: provisional.name,
+        provisionalTakeId: provisional.id,
+        ...finalPass,
+        sourceOffsetBeats: previous.sourceOffsetBeats + previous.endBeat - previousPass.startBeat,
+    });
+}
 
 /**
  * Open a captured clip where its loop passes require. The capture terminal has
@@ -32,6 +72,28 @@ function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
     }
     const leadInSeconds = readSecondsAtBeat({ beat: startBeat }) - mediaOriginSeconds;
     return { ...clip, startBeat, audioOffsetBeats: (leadInSeconds * readTempoAtBeat({ beat: startBeat })) / 60 };
+}
+
+/** A continuous capture must also carry the retained passes placed on its loop geometry. */
+function coverRecordedPasses(clip: Clip, capture: RecordedCapture): Clip {
+    const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === clip.trackId);
+    let capturedEnd: ReturnType<typeof recordingPassTiming.captureEnd> = undefined;
+    if (capture.sourceDurationSeconds !== undefined) {
+        capturedEnd = recordingPassTiming.captureEnd(
+            clip.id,
+            capture.sourceContextOriginSeconds + capture.sourceDurationSeconds
+        );
+    }
+    // Keep the original source as an editable handle. Ordinary base playback
+    // ends at the gesture; genuine captured passes may still require a later
+    // song beat after the last lap wrapped back to the loop start.
+    let endBeat = capturedEnd ? Math.min(clip.endBeat, capturedEnd.endBeat) : clip.endBeat;
+    for (const take of lane?.takes ?? []) {
+        if (take.clipId === clip.id && take.passDepthSeconds !== undefined) {
+            endBeat = Math.max(endBeat, take.endBeat);
+        }
+    }
+    return endBeat === clip.endBeat ? clip : { ...clip, endBeat };
 }
 
 /**
@@ -62,16 +124,21 @@ function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
 export async function commitRecording(clip: Clip, capture?: RecordedCapture): Promise<void> {
     if (capture === undefined) {
         await executeAppAction({ type: 'commitRecording', payload: { clip } });
+        recordingPassTiming.retire(clip.id);
         return;
     }
+    stageFinalCapturedPass(clip, capture);
     const placed = placeCapturedClip(clip, capture.mediaOriginSeconds);
     placeRecordingTakes({
         clipId: clip.id,
         recordPointBeat: capture.provisionalStartBeat,
         mediaOriginSeconds: capture.mediaOriginSeconds,
+        sourceContextOriginSeconds: capture.sourceContextOriginSeconds,
+        sourceDurationSeconds: capture.sourceDurationSeconds,
         clipMediaOriginSeconds:
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
-    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } });
+    await executeAppAction({ type: 'commitRecording', payload: { clip: coverRecordedPasses(placed, capture) } });
+    recordingPassTiming.retire(clip.id);
 }

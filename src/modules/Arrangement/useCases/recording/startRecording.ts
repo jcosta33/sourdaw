@@ -7,6 +7,7 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip } from '../../stores/trackStore';
 import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
 
+import { recordingPassTiming } from './recordingPassTiming';
 import { stageRecordingTake } from './stageRecordingTake';
 
 const recordClipId = 1;
@@ -27,7 +28,7 @@ const recordClipId = 1;
  * playback *started* at, not the live position. Omitting it keeps the
  * stationary behaviour — anchor at the store playhead.
  */
-export function startRecording(atBeat?: number): Clip[] {
+export function startRecording(atBeat?: number, firstPassClock?: () => number | null): Clip[] {
     const trackState = getTrackState();
     const transportState = transportStore.value;
     if (!trackState || !transportState) {
@@ -79,6 +80,9 @@ export function startRecording(atBeat?: number): Clip[] {
             muted: false,
         };
         newClips.push(clip);
+        if (clip.type === 'audio') {
+            recordingPassTiming.begin(clipId, recordBeat, firstPassClock);
+        }
 
         // Take labels count per lane, the way the scheduler's wrap path mints
         // them, so takes on different lanes never share or duplicate labels.

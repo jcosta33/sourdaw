@@ -194,3 +194,47 @@ describe('versionedCommandArgumentKeys — dense array admission (#4938)', () =>
         ).toBe(true);
     });
 });
+
+describe('versionedCommandArgumentKeys — captured audio pass ending', () => {
+    it('admits restoreRecording with the saved source ending and legacy snapshots', () => {
+        const take = {
+            id: 'take',
+            clipId: 'c1',
+            name: 'Recorded',
+            startBeat: 0,
+            endBeat: 0.8,
+            selected: false,
+            sourceOffsetBeats: 0,
+            passAnchorSeconds: 0,
+            passDepthSeconds: 0.1,
+            passSourceEndSeconds: 0.5,
+        };
+        const args = {
+            clip: makeClipSnapshot('c1'),
+            midiNotesSnapshot: null,
+            midiCcSnapshot: null,
+            midiPitchBendSnapshot: null,
+            retiredTakeLanes: [
+                {
+                    lane: { id: 'lane', trackId: 't1', takes: [take], activeCompRegions: [] },
+                    laneIndex: 0,
+                    retiredTakeIds: ['take'],
+                },
+            ],
+        };
+        expect(validateVersionedCommandArguments('restoreRecording', args)).toBe(true);
+        const { passSourceEndSeconds, ...legacy } = take;
+        expect(passSourceEndSeconds).toBe(0.5);
+        expect(
+            validateVersionedCommandArguments('restoreRecording', {
+                ...args,
+                retiredTakeLanes: [
+                    {
+                        ...args.retiredTakeLanes[0]!,
+                        lane: { ...args.retiredTakeLanes[0]!.lane, takes: [legacy] },
+                    },
+                ],
+            })
+        ).toBe(true);
+    });
+});

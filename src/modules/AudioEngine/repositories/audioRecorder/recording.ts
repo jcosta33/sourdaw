@@ -19,7 +19,11 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-import { isRecordingSampleCount } from '../../models/RecordingRingProtocol';
+import {
+    isRecordingSampleCount,
+    readRecordingPublication,
+    RECORDING_RING_CONTROL_INTS,
+} from '../../models/RecordingRingProtocol';
 import { audioRecordingStore } from '../../stores/audioRecordingStore';
 import { audioEngine } from '../createWebAudioEngine';
 
@@ -45,7 +49,11 @@ export type { AudioRecordingState } from '../../stores/audioRecordingStore';
 type StartAudioRecording = (
     trackId: string,
     onTerminal: RecordingTerminalCallback,
-    inputId?: string | null
+    inputId?: string | null,
+    onCaptureClock?: (
+        readStart: () =>
+            { status: 'pending' | 'retry' | 'unavailable' } | { status: 'captured'; contextSeconds: number }
+    ) => void
 ) => Promise<boolean>;
 
 export const startAudioRecording: StartAudioRecording = inject({ logger })(
@@ -53,7 +61,8 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
         async function startAudioRecording(
             trackId: string,
             onTerminal: RecordingTerminalCallback,
-            inputId: string | null = null
+            inputId: string | null = null,
+            onCaptureClock?: Parameters<StartAudioRecording>[3]
         ): Promise<boolean> {
             // One-time maintenance on the repository's first use: temp files a
             // crashed previous run left behind have no session to settle them.
@@ -143,6 +152,26 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                 };
                 registeredSession = session;
                 activeSessions.set(trackId, session);
+                const control = new Int32Array(sab, 0, RECORDING_RING_CONTROL_INTS);
+                onCaptureClock?.(() => {
+                    if (activeSessions.get(trackId) !== session) {
+                        return { status: 'unavailable' };
+                    }
+                    const publication = readRecordingPublication(control);
+                    if (publication.status === 'retry') {
+                        return { status: 'retry' };
+                    }
+                    if (publication.status !== 'stable') {
+                        return { status: 'unavailable' };
+                    }
+                    if (publication.sampleZeroContextFrame === null) {
+                        return { status: 'pending' };
+                    }
+                    return {
+                        status: 'captured',
+                        contextSeconds: publication.sampleZeroContextFrame / session.captureSampleRate,
+                    };
+                });
 
                 readyRecordingNode.port.onmessage = ({ data }: MessageEvent): void => {
                     const msg = data as { type?: string; publishedSampleCount?: number };

@@ -77,6 +77,12 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Standing probes
 
+- Cross-module mocks are dependencies too. PR #5165's recorder placement fixture reached the real
+  processor and Command path but mocked eight private Transport functions; hosted Module boundaries
+  rejected those edges before merge. Trace each controlled dependency to an existing public port,
+  preserve the actual producer and caller path, and require the original timing, PCM and Undo/Redo
+  assertions to survive with the foreign private functions running. A green focused spec does not
+  discharge the hosted boundary check.
 - An aggregation test claiming a stored report route must use the production reader's filename and
   assert that both input records were admitted. An ignored artifact can make a boundary control pass
   while never reaching the claimed addition. For TypeSafe usage, prove stored scan plus verification
@@ -774,6 +780,90 @@ Derive the fixture's admitted range from the complete multiline binding; preserv
 independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
 only the committed recognizer is reverted. A full-source screen assertion does not prove
 which region the real scan caller admitted.
+
+### Recording receipt probes must observe each terminal and the actual playback consumer
+
+PR #4987's manual-only capture placement escaped the automatic terminal.
+PR #5165 then exercised manual first-frame relocations but left automatic punch
+on an admission-time correlation, and its pending-ending case inspected only
+take geometry while changing tempo during the flush. Selected pass depth can
+remain correct with a base clip whose first media belongs to the wrong traversal;
+a shortened take cannot bound uncomped playback of an extended base clip.
+
+For both manual and automatic terminals, delay the first frame across a sounded
+wrap and assert the clip's first-media origin, producer frame, and actual PCM.
+Name the physical start and end of the specific take selected: wrap staging
+owns the dying pass, so the incoming partial lap cannot supply its source oracle.
+Retain an unchanged-tempo excess-drain case through real comp resolution and
+source scheduling, before a planned seam and before any planned seam. Assert
+source duration and known PCM alongside raw CRDT, projected clips/takes and real
+Undo/Redo. Keep complete source PCM and the short carrier as separate obligations.
+A mutation of only the take ending cannot establish the base consumer's bound.
+
+The actual-recorder fixture in PR #5165 asserted an unwrapped media end as the
+carrier end without selecting the final incoming lap. Its producer retained
+post-seam PCM that no take could reach. Distinguish carrier geometry, continuous
+source extent, and each pass's physical interval. Use the initialized app's
+gesture-clock port and settled scheduler ticks through Stop, then select both
+the completed dying pass and the final partial lap through comp resolution and
+live source scheduling. Assert exact known PCM boundaries after the real
+recording Undo/Redo, including no sample beyond the producer's final frame.
+Keep the original wrong end assertion and its hosted failure as evidence;
+correcting that assertion alone does not repair missing selectable material.
+Pair the captured final tail with a producer extent ending at or before the
+sounded seam. In the empty case, prove the original unfinished identity retires
+and the completed pass remains selectable exactly once after Undo/Redo; leaving
+the initial no-depth take duplicates that pass even without minting a new take.
+
+### Equal-value CRDT projections must enter scheduler integration probes
+
+The recorder coverage on PR #5165 did not flush the deferred CRDT store
+callbacks while a loop seam was pending. Commit
+`7de4d3ddd9018c9e766ea1d801aeadf927f3cee2` supplied reference-only tempo-map
+change detection; PR #4897 supplied seam invalidation on a real edit. The
+combination let an equal-valued projection look like an edit and create a
+spurious `Take 3` after an empty final lap.
+
+Stub and drain the production animation-frame queue inside the connected
+recorder case. Assert canonical ordered tempo entries are unchanged, the live
+array identity is replaced, and the real Stop, Command commit, raw CRDT,
+projection, comp selection, and Undo/Redo retain only sounded PCM. Reverting
+the semantic comparison must restore the extra positive-depth take. Keep
+separate changed-id, beat, tempo, curve, and loop controls so filtering
+projection churn cannot disable genuine edit re-anchoring.
+
+## Pending tempo and completed source-tail probes
+
+The PR #5165 timing round omitted a tempo Command before the first captured
+frame and checked only the unfinished final pass against the producer extent.
+Require both manual and automatic capture routes to assert media origin after
+a pre-frame tempo edit, and select a completed pass when the producer ends
+before its sounded seam. A correct depth or an empty incoming take alone
+does not establish the completed pass's last readable sample. Keep a genuine
+base-tempo edit beside equal-valued deferred projection, so filtering array
+identity cannot disable actual tempo changes. Retain one real Command/CRDT
+recording history entry and exact clip/take identities through Undo and Redo.
+
+PR #5165 retained a delayed-flush60 oracle that asserted the old intended beat
+without observing playback at that tempo. The test-validity stance escaped the
+coordinate mismatch because its source-position assertion ran only at120.
+A recording endpoint asserted only in beats can bless unavailable PCM when the
+reader's tempo differs. Assert the actual selected source offset plus duration
+against both the producer buffer and the frozen terminal, and retain the same
+source ending through the single recording Undo/Redo. Await a sounded seam clock;
+a wrap counter may report planned look-ahead rather than sounded playback.
+
+### Exclusive-source probes must observe integrated consumption
+
+PR #5165's source-rate coverage compared comp fragments and measured constant
+tempo playback, so it missed a source entry using the 100-microsecond span
+approximation while the ending used exact integrated time. Use a two-second
+carrier, source interval [0.1, 0.5), and 120, 240, 120 BPM at beats 0, 0.0001,
+0.0002, with comp entry at 0.5. Assert actual projected source offset plus
+duration times rate and the last readable 48 kHz frame, at rates 1, 2 and 0.5.
+Keep a separate sample-grid constant-tempo control whose entry arithmetic stays
+exactly unchanged. Reverting the fragment-entry bound must fail the consumption
+case; parity between the two resolver copies cannot carry that obligation.
 
 ### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
 

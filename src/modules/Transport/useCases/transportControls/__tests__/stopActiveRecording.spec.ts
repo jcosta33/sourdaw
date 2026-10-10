@@ -11,6 +11,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     stopRecording: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getAudioContext: vi.fn(() => ({ currentTime: 0.2 })),
     stopAudioRecording: vi.fn(),
 }));
 vi.mock('../../../repositories/transport/updateTransportState', () => ({

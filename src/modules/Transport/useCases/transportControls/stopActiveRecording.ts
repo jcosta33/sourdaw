@@ -5,6 +5,7 @@ import { getTransportState } from '../../repositories/transport/getTransportStat
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 
+import { captureRecordingEnd } from './captureRecordingEnd';
 import { recordingLifecycle } from './recordingLifecycle';
 
 /**
@@ -22,12 +23,14 @@ import { recordingLifecycle } from './recordingLifecycle';
  */
 export async function stopActiveRecording(): Promise<void> {
     recordingLifecycle.cancelPendingRecordingStart();
+    const ending = captureRecordingEnd();
+    recordingLifecycle.endRecording();
     const recordingFlush = stopAudioRecording();
     // Close the clips where the playhead actually is. Mid-playback the transport
     // store still holds the beat playback started at (it is written on discrete
     // events only), which would truncate the take back to its own start beat.
     const rolling = getTransportState()?.isPlaying === true;
-    const recordingCommit = stopRecording(rolling ? playheadPositionRef.current : undefined);
+    const recordingCommit = stopRecording(rolling ? playheadPositionRef.current : undefined, ending);
 
     const timerId = recordingLifecycle.countInTimerId;
     if (timerId !== null) {

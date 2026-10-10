@@ -1,3 +1,5 @@
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
+
 import { type Take } from '../models/TakeLane';
 import { clipEntrySeconds, isTempoConstantBetween, type TempoTimeline } from '../models/TempoTimeline';
 import { type Clip } from '../stores/trackStore';
@@ -7,6 +9,7 @@ import { clipMediaOffsetAt } from './clipMediaOffsetAt';
 type TakeMedia = {
     /** The first beat the take can sound. */
     earliestBeat: number;
+    latestBeatAt?: (fragmentStartBeat: number) => number;
     /** Carries the loop-occurrence count for probability rolls. */
     sourceStartBeat: number;
     /** The media offset a fragment of the take starting at `beat` carries. */
@@ -51,39 +54,71 @@ function legacyPassMedia(clip: Clip, sourceOffsetBeats: number, timeline: TempoT
 
 /**
  * The beat a clip's media reaches `anchorSeconds` on: the song time its media
- * begins, its start less its entry seconds, plus the anchor. Across a span no
- * tempo change lies in it is plain beat arithmetic from the clip's start.
+ * begins: anchor less source entry, divided by the same bounded source rate
+ * playback consumes. Across a constant span this is plain beat arithmetic.
  */
-function beatAtClipMediaSeconds(clip: Clip, anchorSeconds: number, timeline: TempoTimeline): number {
+function beatAtClipMediaSeconds(
+    clip: Clip,
+    anchorSeconds: number,
+    timeline: TempoTimeline,
+    sourceRate: number
+): number {
     const entrySeconds = clipEntrySeconds(timeline, clip.startBeat, clip.audioOffsetBeats ?? 0);
     const constantTempoBeat =
-        clip.startBeat + ((anchorSeconds - entrySeconds) * timeline.tempoAtBeat(clip.startBeat)) / 60;
+        clip.startBeat + ((anchorSeconds - entrySeconds) * timeline.tempoAtBeat(clip.startBeat)) / (60 * sourceRate);
     if (isTempoConstantBetween(timeline, clip.startBeat, constantTempoBeat)) {
         return constantTempoBeat;
     }
-    return timeline.beatAtSeconds(timeline.secondsAtBeat(clip.startBeat) - entrySeconds + anchorSeconds);
+    return timeline.beatAtSeconds(timeline.secondsAtBeat(clip.startBeat) + (anchorSeconds - entrySeconds) / sourceRate);
 }
 
 /**
  * A placed audio pass: it starts on the beat its clip's media reaches
  * `passAnchorSeconds`, and a fragment at a later beat seeks `passDepthSeconds`
- * plus the song time since, converted at that beat's tempo.
+ * plus the source time consumed since, converted at that beat's tempo.
+ * The exclusive source end bounds each fragment at its actual source entry and
+ * playback rate, including entries rounded by the constant-tempo shortcut.
  */
-function placedPassMedia(clip: Clip, anchorSeconds: number, depthSeconds: number, timeline: TempoTimeline): TakeMedia {
-    const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline);
+function placedPassMedia(
+    clip: Clip,
+    anchorSeconds: number,
+    depthSeconds: number,
+    sourceEndSeconds: number | undefined,
+    timeline: TempoTimeline
+): TakeMedia {
+    const sourceRate = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
+    const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline, sourceRate);
     const passStartTempo = timeline.tempoAtBeat(passStartBeat);
     const depthBeats = (depthSeconds * passStartTempo) / 60;
-    return {
+    const media: TakeMedia = {
         earliestBeat: Math.max(clip.startBeat, passStartBeat),
-        sourceStartBeat: passStartBeat - depthBeats,
+        sourceStartBeat: passStartBeat - depthBeats / sourceRate,
         offsetAt: (beat) => {
             if (isTempoConstantBetween(timeline, passStartBeat, beat)) {
-                return depthBeats + (beat - passStartBeat);
+                return depthBeats + (beat - passStartBeat) * sourceRate;
             }
-            const mediaSeconds = depthSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat);
+            const mediaSeconds =
+                depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
             return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
         },
     };
+    if (sourceEndSeconds !== undefined) {
+        const passEndBeat = timeline.beatAtSeconds(
+            timeline.secondsAtBeat(passStartBeat) + (sourceEndSeconds - depthSeconds) / sourceRate
+        );
+        media.latestBeatAt = (beat) => {
+            const entrySeconds = clipEntrySeconds(timeline, beat, media.offsetAt(beat));
+            const remainingSourceSeconds = sourceEndSeconds - entrySeconds;
+            if (remainingSourceSeconds <= 0) {
+                return beat;
+            }
+            const fragmentEndBeat = timeline.beatAtSeconds(
+                timeline.secondsAtBeat(beat) + remainingSourceSeconds / sourceRate
+            );
+            return Math.min(passEndBeat, fragmentEndBeat);
+        };
+    }
+    return media;
 }
 
 /**
@@ -101,7 +136,7 @@ function placedPassMedia(clip: Clip, anchorSeconds: number, depthSeconds: number
  * the tempo of the fragment's own first beat.
  */
 export function resolveTakeMedia(
-    take: Pick<Take, 'sourceOffsetBeats' | 'passAnchorSeconds' | 'passDepthSeconds'>,
+    take: Pick<Take, 'sourceOffsetBeats' | 'passAnchorSeconds' | 'passDepthSeconds' | 'passSourceEndSeconds'>,
     clip: Clip,
     timeline: TempoTimeline
 ): TakeMedia {
@@ -115,5 +150,5 @@ export function resolveTakeMedia(
     if (clip.type !== 'audio' || take.passAnchorSeconds === undefined || take.passDepthSeconds === undefined) {
         return legacyPassMedia(clip, take.sourceOffsetBeats, timeline);
     }
-    return placedPassMedia(clip, take.passAnchorSeconds, take.passDepthSeconds, timeline);
+    return placedPassMedia(clip, take.passAnchorSeconds, take.passDepthSeconds, take.passSourceEndSeconds, timeline);
 }

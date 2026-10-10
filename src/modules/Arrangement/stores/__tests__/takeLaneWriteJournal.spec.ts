@@ -85,6 +85,7 @@ describe('takeLaneWriteJournal', () => {
                                 sourceOffsetBeats: 2,
                                 passAnchorSeconds: -1.5,
                                 passDepthSeconds: 1,
+                                passSourceEndSeconds: 3,
                             };
                         }
                         return structuredClone(take);
@@ -124,6 +125,7 @@ describe('takeLaneWriteJournal', () => {
             sourceOffsetBeats: 2,
             passAnchorSeconds: -1.5,
             passDepthSeconds: 1,
+            passSourceEndSeconds: 3,
         });
         expect(replay.value?.lanes[0]?.activeCompRegions).toEqual(authority.lanes[0]?.activeCompRegions);
         expect(replay.value?.lanes[1]?.takes[0]?.name).toBe('D authoritative');
