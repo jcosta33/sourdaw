@@ -1,0 +1,47 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreReversedClip.spec.ts
+  s_1f0dcd815e8946::t_1830ac025c5121 144-180
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_97ab82e0b4f10c::t_091f5e73d10285 3-4,280-480
+src/modules/Arrangement/handlers/clip/handleRestoreReversedClip.ts
+  s_1f0dcd815e8946::t_94c255557531ef 37
+src/modules/Arrangement/handlers/clip/handleReverseClip.ts
+  s_97ab82e0b4f10c::t_f0ac0b3388138c 77-82,96-98
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_97ab82e0b4f10c::t_c1d26ad733da07 90-102
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineAudioClipPlaybacksLoopOrigin.spec.ts
+  s_1f0dcd815e8946::t_0bc1f6104da03b 138-224
+src/modules/Transport/useCases/scheduling/__tests__/loopWindowBoundary.spec.ts
+  s_97ab82e0b4f10c::t_47483c5ed14729 1-219
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLoopOrigin.spec.ts
+  s_97ab82e0b4f10c::t_1ff440d1efa55e 29-36,56-70,169,254-311
+src/utils/__tests__/clipLoopOrigin.spec.ts
+  s_1f0dcd815e8946::t_31f91202f7a874 3-7,19-24,68-100
+src/utils/clipLoopOrigin.ts
+  s_97ab82e0b4f10c::t_4c3b9c05227d0e 109-117,139-142,158-175
+src/utils/handlerContract.ts
+  s_1f0dcd815e8946::t_b40aeddd3b12dc 2092-2093
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b6dcadf8fa900e8841d4c8df3c270f720c86932c",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
