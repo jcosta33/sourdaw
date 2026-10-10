@@ -1,0 +1,65 @@
+src/modules/Arrangement/handlers/track/discardCreatedTracks.ts
+  s_1f0dcd815e8946::t_28510515ab4bc8 5,22,43-44
+src/modules/Arrangement/useCases/removeTrackModulationReferences.ts
+  s_1f0dcd815e8946::t_468fb6d1877a39 5-6,28,75-76,79-80
+  s_1f0dcd815e8946::t_aaf13e92a32f38 81
+src/modules/Arrangement/useCases/captureTrackRemovalRuntimeAuthority.ts
+  s_1f0dcd815e8946::t_133788bcaa865e 1-16
+  s_1f0dcd815e8946::t_cc481c561ab9a6 17-18
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_cc82775cc2cc58 229-240
+.agents/skills/review-stances/session-lifecycle.md
+  s_1f0dcd815e8946::t_5fa255f4f9adb2 271-283
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_745be292eacc5a 743-755
+src/app/__tests__/initInputMonitoringProjectAccess.spec.ts
+  s_1f0dcd815e8946::t_9ffa4c0fc49295 74,86-91
+src/app/initInputMonitoringProjectAccess.ts
+  s_1f0dcd815e8946::t_fc62ec51d2b310 22-30
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_1f0dcd815e8946::t_0a8f4a81670942 33,366-384
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_1f0dcd815e8946::t_5c8f9d3969173c 192-209
+src/modules/Arrangement/handlers/track/discardCreatedTrack.ts
+  s_1f0dcd815e8946::t_1cba3fb0363fcc 6,44,59-65,67-69,89
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_1f0dcd815e8946::t_f1e65935ebb0ee 7,232,246-251
+src/modules/Arrangement/handlers/track/handleRemoveAllTracks.ts
+  s_1f0dcd815e8946::t_7b51e0ead92fbd 6,23,41-46,49-51,68
+src/modules/Arrangement/handlers/track/handleRemoveTrack.ts
+  s_1f0dcd815e8946::t_d778f60f7daf71 7,85,100-106,108-110,131
+src/modules/Arrangement/useCases/__tests__/removeTrackModulationReferences.spec.ts
+  s_1f0dcd815e8946::t_2f731d4569881f 1-3,43-44,130-145
+src/modules/Arrangement/useCases/finalizeCommittedTrackRuntimeRemoval.ts
+  s_1f0dcd815e8946::t_210cabe7103312 11-18,38
+src/modules/Arrangement/useCases/removeTrack.ts
+  s_1f0dcd815e8946::t_7df6e2a21bd77b 22,52,114,135,139,141
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts
+  s_1f0dcd815e8946::t_09477784834a88 1,5,27-35,92,139-140,145-146,152-153,170,400-546,1242-1356,1440-1481
+src/modules/AudioEngine/stores/inputMonitoringProjectAccess.ts
+  s_1f0dcd815e8946::t_996b92b839c2a3 1-2,6
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/reconcileAutoInputMonitoring.storeOnlyMode.spec.ts
+  s_1f0dcd815e8946::t_c0a8a50190985a 604-635
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startInputMonitoring.spec.ts
+  s_1f0dcd815e8946::t_0539c52a289d20 1,5,8,10,12,25-27,69-118
+src/modules/AudioEngine/useCases/audioRecorder/reconcileAutoInputMonitoring.ts
+  s_1f0dcd815e8946::t_cfba9862e17aa9 3,10,137,145,148,169,175,177-200,202-203
+src/modules/AudioEngine/useCases/audioRecorder/startInputMonitoring.ts
+  s_1f0dcd815e8946::t_a1c1cacffa6485 4,14-15,17,19-20,25,37-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7d00b4723cbe1f82efbe439a399ad78dac3568d",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
