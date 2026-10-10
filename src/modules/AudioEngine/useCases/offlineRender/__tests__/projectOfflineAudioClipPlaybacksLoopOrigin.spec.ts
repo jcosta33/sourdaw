@@ -222,3 +222,106 @@ describe('projectOfflineAudioClipPlaybacks fade parity on a dead head segment', 
         expect(playbacks[1]!.fadeIn).toBeUndefined();
     });
 });
+
+describe('projectOfflineAudioClipPlaybacks split continuity on a stretched looped clip', () => {
+    // The split write law (#4988) on the audio arm, measured at the projector:
+    // the fragment's offset advances by the media delta the runtimes played
+    // over the cut (`timelineSplitDelta * stretch`), so the anchor it carries
+    // must shift by `timelineSplitDelta - contentSplitDelta` — only then does
+    // the recovered region `offset - advance` survive and the fragment enter
+    // on the same source position its source read at the cut. The figures are
+    // the measured regression: source [1, 9), offset 1, anchor 0, loop 4,
+    // ratio 2, cut at 5 — the fragment's offset lands at 9, its carried
+    // anchor at 0 + (4 - 8) = -4. Before the anchor shifted, the fragment
+    // entered at source-second 2.5 while the source read 0.5 at the cut —
+    // displaced by exactly `4 x (2 - 1)` source beats.
+    const STRETCHED_BASE = {
+        id: 'clip-audio',
+        loopEnabled: true,
+        loopLength: 4,
+        stretchMode: 'timestretch' as const,
+        stretchRatio: 2,
+        gain: 1,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+    };
+
+    function project(clip: Record<string, unknown>): ReturnType<typeof projectOfflineAudioClipPlaybacks> {
+        return projectOfflineAudioClipPlaybacks({
+            clip: clip as never,
+            bufferDurationSeconds: 40,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 40,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => beat * 0.5,
+            resolveTempoAtBeat: () => 120,
+        });
+    }
+
+    /** The placement figures continuity reads: where, from where, how long. */
+    const placementOf = (playbacks: ReturnType<typeof projectOfflineAudioClipPlaybacks>) =>
+        playbacks.map((playback) => ({
+            startSec: playback.startSec,
+            bufferOffsetSec: playback.bufferOffsetSec,
+            playDuration: playback.playDuration,
+        }));
+
+    it('enters the fragment on the source position its source read at the cut', () => {
+        const source = project({
+            ...STRETCHED_BASE,
+            startBeat: 1,
+            endBeat: 9,
+            audioOffsetBeats: 1,
+            loopOriginBeat: 0,
+        });
+        // The source's second pass is the beat span the fragment inherits:
+        // two segments, entering at source beat 1 (0.5 s) and wrapping to
+        // the region head (0 s).
+        expect(placementOf(source)).toEqual([
+            { startSec: 0.5, bufferOffsetSec: 0.5, playDuration: 1.5 },
+            { startSec: 2, bufferOffsetSec: 0, playDuration: 0.5 },
+            { startSec: 2.5, bufferOffsetSec: 0.5, playDuration: 1.5 },
+            { startSec: 4, bufferOffsetSec: 0, playDuration: 0.5 },
+        ]);
+
+        // The fragment the split writes: start 5, offset 1 + 4 x 2 = 9,
+        // anchor 0 + (4 - 8) = -4. Its projection must be the source's own
+        // pass over the span it inherited.
+        const fragment = project({
+            ...STRETCHED_BASE,
+            startBeat: 5,
+            endBeat: 9,
+            audioOffsetBeats: 9,
+            loopOriginBeat: -4,
+        });
+        expect(placementOf(fragment)).toEqual(placementOf(source).slice(2));
+        expect(fragment[0]).toMatchObject({ startSec: 2.5, bufferOffsetSec: 0.5, playDuration: 1.5 });
+    });
+
+    it('keeps the unstretched split unchanged: the carried anchor cancels exactly', () => {
+        // The same clip with stretch off ignores its dormant ratio 2: the
+        // split's media delta equals the timeline delta, the anchor shift is
+        // zero, and the fragment reads the source's pass verbatim — the
+        // behavior every pre-anchor spec pinned, now explicit at the
+        // projector.
+        const source = project({
+            ...STRETCHED_BASE,
+            stretchMode: 'off',
+            startBeat: 1,
+            endBeat: 9,
+            audioOffsetBeats: 1,
+            loopOriginBeat: 0,
+        });
+        const fragment = project({
+            ...STRETCHED_BASE,
+            stretchMode: 'off',
+            startBeat: 5,
+            endBeat: 9,
+            audioOffsetBeats: 5,
+            loopOriginBeat: 0,
+        });
+        expect(placementOf(fragment)).toEqual(placementOf(source).slice(2));
+        expect(fragment[0]).toMatchObject({ startSec: 2.5, bufferOffsetSec: 0.5, playDuration: 1.5 });
+    });
+});

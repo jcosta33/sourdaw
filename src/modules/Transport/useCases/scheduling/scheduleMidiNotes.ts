@@ -24,7 +24,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
-import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE, isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { isBypassedNoteReceiver, type NoteReceivingInstrumentKind } from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -780,7 +780,15 @@ function getSourceOccurrenceOffset({
         return 0;
     }
 
-    return Math.floor(beatsFromSourceStart / loopLength);
+    // Mirrors the offline module's tolerant floor (#5198): an advance within the
+    // beat tolerance of an exact multiple of the loop length is that many loops
+    // — the raw quotient mis-floors by one ulp at non-dyadic loop lengths.
+    const quotient = beatsFromSourceStart / loopLength;
+    const nearestMultiple = loopLength * Math.round(quotient);
+    if (Math.abs(beatsFromSourceStart - nearestMultiple) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE) {
+        return Math.round(quotient);
+    }
+    return Math.floor(quotient);
 }
 
 /**

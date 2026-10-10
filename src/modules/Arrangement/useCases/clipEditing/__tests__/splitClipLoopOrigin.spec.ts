@@ -244,6 +244,53 @@ describe('splitClip loop anchoring', () => {
         expect(regionOf(right)).toEqual(regionOf(source));
     });
 
+    it('shifts the carried anchor by the stretch difference so a stretched split keeps the source read', () => {
+        // The offset advances by the media delta — `timelineSplitDelta *
+        // stretch` (pinned in splitClip.spec) — while an unshifted anchor's
+        // advance would grow by the timeline delta alone, displacing the
+        // recovered region by `splitDelta * (stretch - 1)` source beats and
+        // putting the fragment on the wrong material at the cut. The anchor
+        // absorbs the difference: shifted by `timelineSplitDelta -
+        // contentSplitDelta`, its advance grows by the same media delta the
+        // offset advanced by, and the recovered geometry stays the source's.
+        seedTrack([
+            loopedAudioClip({
+                startBeat: 1,
+                endBeat: 9,
+                loopLength: LOOP_LENGTH,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            }),
+        ]);
+
+        const rightId = splitClip('c-audio', 5);
+        expect(rightId).not.toBeNull();
+
+        // Measured figures: timeline delta 4, media delta 8 — offset
+        // 1 + 8 = 9, anchor 0 + (4 - 8) = -4.
+        const right = readClip(rightId!);
+        expect(right.startBeat).toBe(5);
+        expect(right.audioOffsetBeats).toBe(9);
+        expect(right.loopOriginBeat).toBe(-4);
+
+        const source = readClip('c-audio');
+        // The advance is deliberately different — it grows by the media delta
+        // alongside the offset — so the recovered geometry, not the advance,
+        // is the invariant: region and entry phase must equal the source's.
+        const geometryOf = (clip: Clip): { region: number; entry: number } => {
+            const advance = resolveClipLoopOriginAdvance({
+                startBeat: clip.startBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
+            return {
+                region: (clip.audioOffsetBeats ?? 0) - advance,
+                entry: ((advance % clip.loopLength!) + clip.loopLength!) % clip.loopLength!,
+            };
+        };
+        expect(geometryOf(right)).toEqual(geometryOf(source));
+    });
+
     it('leaves the loopOriginBeat key absent when the source was never anchored', () => {
         seedTrack([unloopedMidiClip()]);
 
