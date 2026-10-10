@@ -43,6 +43,7 @@ const engineWrites: { trackId: string; deviceId: string; paramId: string; value:
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
+    rearmCommittedTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
