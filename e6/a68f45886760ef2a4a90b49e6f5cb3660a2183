@@ -1,0 +1,55 @@
+.agents/skills/review-stances/browser-inventory.md
+  s_97ab82e0b4f10c::t_1e3df7f22613b2 19-30
+.agents/skills/review-stances/security-and-platform.md
+  s_97ab82e0b4f10c::t_e9f905811d9c6f 52-71
+.agents/skills/review-stances/test-validity.md
+  s_97ab82e0b4f10c::t_71cf64c20e03a3 156-175
+.github/workflows/health-gates.yml
+  s_97ab82e0b4f10c::t_524d1e074277a8 71-77,86,92,94,102-103
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_97ab82e0b4f10c::t_a43099d2a6be1b 4-6,8-10,18-21,27-37,39-43,48,58-65,67-70,72,82,87-104,106,108,115,119,121-122,149-212,269,282-289,349,352,415,425-426,428-429,446,448,467-468,496-497,504-529,533-568
+crates/daw-dsp/src/gluten/diode.rs
+  s_97ab82e0b4f10c::t_20065cabbd3a50 38-40,44-47,67-68,71-72,117-118,140-154,238-239,250-251,254-255
+crates/daw-dsp/src/gluten/engine.rs
+  s_97ab82e0b4f10c::t_987c2c9bc119c4 440-443,449-451,479,482,487-503,506-509,511,514,625-627,634,638-647,667-700
+crates/daw-dsp/src/gluten/fet.rs
+  s_97ab82e0b4f10c::t_bef417ac654245 44-46,50-53,77-78,81-82,121-122,190-207,244,254-255,266-267,270-271,275-282
+crates/daw-dsp/src/gluten/opto.rs
+  s_97ab82e0b4f10c::t_3064c1e1b5afae 31-33,58-59,187-196,224-225,236-237
+crates/daw-dsp/src/gluten/vca.rs
+  s_97ab82e0b4f10c::t_72d0b9c539b07d 103-105,130-131,238-251,282-283,296-297
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  s_97ab82e0b4f10c::t_d13c66f4c45562 1-166
+crates/daw-dsp/tests/device_process_rt.rs
+  s_97ab82e0b4f10c::t_42cec27b1b6829 1145-1202
+crates/daw-dsp/tests/gluten_lookahead_every_topology.rs
+  s_97ab82e0b4f10c::t_1fd476b02babdc 1-795
+crates/daw-engine/src/scheduler.rs
+  s_97ab82e0b4f10c::t_ab754b9ba4566e 1256-1257,1259,2670-2678,2680,2686-2689,2691-2693,2702,2724-2725,2748,2750-2751,2848-2850,2925,2948-2952,12006,12010-12012,12320-12322,12331,12335,12337,12340,12344-12346,12363,12408-12489,24266,24269
+src/modules/Transport/AGENTS.md
+  s_4c8cd08893b364::t_b2ddb8ce7d07fc 10,29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6a68f45886760ef2a4a90b49e6f5cb3660a2183",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
