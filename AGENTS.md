@@ -86,7 +86,18 @@ set in the bundle's `stances.json` before dispatch, one line per stance naming t
 that admits it — the input or state that breaks — never the path the diff touches; as each draw
 reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
 The caller writes it, no script generates it, and the orchestrator confirms its presence and
-substance before publication. `pnpm stances:check <bundle>` tests each admission line with a typed
+substance before publication. For a fresh plan-carrying reviewer POST, `stances.json` uses
+`format: "stances-admission-v1"` and binds `pr`, `headSha`, and `baseSha` to the risk plan. Its
+`stances` array has at least three unique names; each `{ stance, admittedBy, draws }` row holds
+one draw per completed `(stance, reviewerModel)` pair. Each draw records `reviewerModel`, optional
+`exhaustion` matching the dossier draw, and a `baselineProbe` with bounded, single-line,
+evidence-safe `spec`, `mutation`, `observed`, and `result`. Only `result: "mutation-detected"`
+admits publication; `still-green` and `not-run` record failures but do not discharge the probe.
+Specialist plans (`native-security`, `realtime-audio`, `undo`) also require one completed
+`strongest` dossier draw, on any recorded stance. This checks caller evidence structurally;
+the orchestrator still verifies that the probe ran and the stances address independent risks.
+Published exact replay and recovered binding retain their historical caller-record rules.
+`pnpm stances:check <bundle>` tests each admission line with a typed
 judgment and fails lines that name touched paths instead of failure modes. The checker pins a
 versioned model rather than a moving alias — environment and provider defaults cannot silently select
 another, its run names the model that answered, validated against that pin, in its summary line, and

@@ -143,6 +143,7 @@ const REVIEW_HELPER_STEMS = [
     'reviewPublicationReceiptAdoption',
     'reviewPublicationRecoveryReceipt',
     'reviewPublicationRemoteInspection',
+    'reviewStructuralAdmission',
     'rulesetHardening',
     'retargetCapabilityPlan',
     'retargetCapabilitySnapshot',
@@ -284,6 +285,29 @@ describe('required affected verification', () => {
                 codeql: true,
                 matrix: { include: [] },
             });
+        }
+    });
+
+    it('admits only the exact structural-admission helper paths and retains broad fallback for mixed or unknown edits', () => {
+        const helperPaths = [
+            'scripts/reviewStructuralAdmission.ts',
+            'scripts/__tests__/reviewStructuralAdmission.spec.ts',
+        ];
+        expect(selectValidationPlan(helperPaths, INVENTORY)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+        for (const path of [
+            'scripts/reviewStructuralAdmissionFuture.ts',
+            'scripts/__tests__/reviewStructuralAdmissionFuture.spec.ts',
+            'scripts/prValidationScope.ts',
+        ]) {
+            const plan = selectValidationPlan([...helperPaths, path], INVENTORY);
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
         }
     });
 

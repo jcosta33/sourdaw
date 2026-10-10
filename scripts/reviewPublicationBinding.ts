@@ -9,7 +9,6 @@
 
 import { join } from 'node:path';
 
-import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
 import {
     readBundleGeneratedSet,
@@ -33,7 +32,13 @@ import {
     parseSemanticAssessmentCoverage,
     type SemanticAssessmentCoverage,
 } from './reviewDossierSemanticAssessment.ts';
-import { acceptedFindings, deliveryAuthorization, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
+import {
+    acceptedFindings,
+    completedStances,
+    deliveryAuthorization,
+    publishedFindings,
+    publishedReviewId,
+} from './reviewDossierViews.ts';
 import { recordedReviewStands } from './reviewPublicationRemoteInspection.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
 import {
@@ -44,6 +49,7 @@ import {
     logReviewRoundWarning,
     type ReviewReassessment,
 } from './reviewRoundEscalation.ts';
+import { assertFreshReviewStructuralAdmission, assertReviewEvidenceClaimsSafe } from './reviewStructuralAdmission.ts';
 
 import type { PublishReviewPort } from './publishReview.ts';
 import type { ReviewState } from './pullRequestReviewState.ts';
@@ -94,19 +100,6 @@ function assertReviewRiskPlanBindsBundle(number: number, head: string, plan: Rev
     }
     if (plan.baseSha !== manifest.baseSha) {
         fail(`review risk plan baseSha ${plan.baseSha} does not match the bundle manifest baseSha ${manifest.baseSha}`);
-    }
-}
-
-/**
- * Approval claims are published evidence too, so they carry the same publication-safe shapes the
- * durable dossier enforces. The bounded review body and inline comments are deliberately excluded:
- * both are publication-fixed shapes with their own limits.
- */
-function assertReviewEvidenceClaimsSafe(document: ReviewDocument): void {
-    for (const [index, claim] of (document.evidence?.claims ?? []).entries()) {
-        assertPublicationSafeEvidence(`review evidence claim[${index}].observable`, [claim.observable]);
-        assertPublicationSafeEvidence(`review evidence claim[${index}].verification`, [claim.verification]);
-        assertPublicationSafeEvidence(`review evidence claim[${index}].observed`, [claim.observed]);
     }
 }
 
@@ -304,6 +297,7 @@ export function prepareReviewDossierPublication(input: {
     bundle: string;
     document: ReviewDocument;
     port: PublishReviewPort;
+    recovered?: boolean;
 }): ReviewReassessment | undefined {
     const planPath = join(input.bundle, REVIEW_RISK_PLAN_NAME);
     const planRead = readBundleFile(input.port, planPath);
@@ -337,9 +331,7 @@ export function prepareReviewDossierPublication(input: {
     }
     assertReviewEvidenceClaimsSafe(input.document);
     const discardedRead = readBundleFile(input.port, join(input.bundle, REVIEW_DISCARDED_NAME));
-    // The caller's pre-dispatch stance record is the only stance gate: when it is present the
-    // dossier must correspond to it one-to-one, and when it is absent the publication carries no
-    // stance-completeness constraint. The plan's mechanically derived list is never enforced.
+    // The pre-dispatch stance record names task risks, independent of the plan's menu.
     const stancesPath = join(input.bundle, REVIEW_STANCES_NAME);
     const stancesRead = readBundleFile(input.port, stancesPath);
     const recordedStances = recordedReviewStances(stancesRead, stancesPath);
@@ -354,10 +346,11 @@ export function prepareReviewDossierPublication(input: {
         recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
         recordedStances,
     });
-    // The gate bounds every publication that will actually post: a caller input, or a persisted
-    // canonical record whose publication was never recorded. Only a record that already binds a
-    // publication replays instead of posting, so it is exempt.
+    // Exact published replay is exempt; recovered binding retains historical caller-side rules.
     if (publishedReviewId(publication.dossier) === undefined) {
+        if (input.recovered !== true) {
+            assertFreshReviewStructuralAdmission(plan, completedStances(publication.dossier), stancesRead, stancesPath);
+        }
         assertSemanticAssessmentAcknowledged(
             publication.dossier,
             readSemanticCiRecord(input.port, input.bundle),
@@ -604,6 +597,7 @@ export function recordRecoveredPublicationBindings(
         bundle,
         document,
         port: { ...port, publicReviews: (pr) => publicReviews(pr).filter((review) => review.id !== reviewId) },
+        recovered: true,
     });
     recordPublicationBindings(
         number,

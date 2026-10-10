@@ -207,6 +207,13 @@ describe('planReviewRisk', () => {
         expect(result.triggers).toContain('native-security:scripts/confirmReviewRepairs.ts');
     });
 
+    it('classifies the structural admission helper through the existing trusted-write closure', () => {
+        const result = reviewPlan([handwritten('scripts/reviewStructuralAdmission.ts', 1, 1)]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.triggers).toContain('native-security:scripts/reviewStructuralAdmission.ts');
+    });
+
     it('should pin the governance-transition list to the closure union as sets, in both directions', () => {
         const closurePaths = [...new Set(Object.values(trustedDependencyGraphs).flat())].sort();
 
