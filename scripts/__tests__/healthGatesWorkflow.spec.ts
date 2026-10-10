@@ -4446,6 +4446,11 @@ describe('health gates workflow contract', () => {
         const install = stepNamed(unit, 'Install dependencies');
         const shard = stepNamed(unit, 'Run shard');
         const steps = arrayAt(unit, 'steps');
+        const tools = stepNamed(unit, 'Prepare unit tool directory');
+        expect(tools.id).toBe('unit_tools');
+        expect(steps.indexOf(tools)).toBeLessThan(steps.indexOf(stepNamed(unit, 'Set up pnpm')));
+        expect(recordAt(stepNamed(unit, 'Set up pnpm'), 'with').dest).toBe('${{ steps.unit_tools.outputs.root }}');
+        expect(recordAt(prepare, 'env').SOURDAW_UNIT_TOOL_ROOT).toBe('${{ steps.unit_tools.outputs.root }}');
         expect(prepare.id).toBe('unit_isolation');
         expect(stringAt(prepare, 'run')).toBe('node scripts/runIsolatedUnitShard.ts prepare');
         expect(steps.indexOf(prepare)).toBeLessThan(steps.indexOf(install));

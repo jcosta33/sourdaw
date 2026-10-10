@@ -4,6 +4,7 @@ import { accessSync, constants, lstatSync, mkdirSync, readFileSync, realpathSync
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertIndependentUnitObjects, copyUnitCheckout, unitAccessBootstrap } from './unitExecutionCopy.ts';
 import { ownCheckoutDirectories } from './unitShardCheckoutOwnership.ts';
 
 type CommandResult = { status: number | null; stdout: string; stderr: string };
@@ -12,6 +13,9 @@ type Command = (file: string, args: string[], options?: CommandOptions) => Comma
 type Metadata = { directory: boolean; file: boolean; uid: number; gid: number; mode: number; device: number };
 export type UnitIsolationContext = {
     workspace: string;
+    sourceWorkspace: string;
+    sourceHead: string;
+    toolRoot: string;
     uid: number;
     gid: number;
     runnerUid: number;
@@ -38,6 +42,7 @@ export type UnitIsolationPorts = {
     executable: (path: string) => void;
     chooseUid: () => number;
     nonce: () => string;
+    independentObjects: (path: string) => void;
 };
 
 const helperName = 'scripts/runIsolatedUnitShard.ts';
@@ -87,6 +92,7 @@ function nativePorts(): UnitIsolationPorts {
         },
         chooseUid: () => randomInt(20_000, 60_000),
         nonce: randomUUID,
+        independentObjects: assertIndependentUnitObjects,
     };
 }
 
@@ -202,17 +208,71 @@ function droppedCommand(
         '-i',
         ...envArguments(safeEnvironment(context)),
         context.node,
-        join(context.workspace, helperName),
-        'execute',
-        '--context-json',
+        '-e',
+        unitAccessBootstrap,
         JSON.stringify(context),
-        '--phase',
         phase,
     ];
     if (shard !== undefined) {
-        args.push('--shard', shard);
+        args.push(shard);
     }
-    return ports.run('/usr/bin/sudo', args, { cwd: context.workspace, inheritOutput: true });
+    return ports.run('/usr/bin/sudo', args, { cwd: '/', inheritOutput: true });
+}
+
+function prepareExecutionContext(
+    ports: UnitIsolationPorts,
+    root: string,
+    uid: number,
+    nonce: string
+): UnitIsolationContext {
+    const privateRoot = join('/var/tmp', `ci-unit-${nonce}`);
+    const execution = join(privateRoot, 'checkout');
+    const toolRoot = ports.env.SOURDAW_UNIT_TOOL_ROOT;
+    if (
+        toolRoot === undefined ||
+        !/^\/var\/tmp\/sourdaw-unit-tools-[a-f0-9-]{36}$/.test(toolRoot) ||
+        ports.canonical(toolRoot) !== toolRoot ||
+        !ports.metadata(toolRoot).directory ||
+        ports.metadata(toolRoot).uid !== ports.uid ||
+        ports.metadata(toolRoot).mode !== 0o755
+    ) {
+        throw new Error('unit isolation requires its independent job tool directory');
+    }
+    const pnpm = ports.canonical(requireSuccess(ports.run('/usr/bin/which', ['pnpm']), 'pnpm lookup'));
+    if (!pnpm.startsWith(`${toolRoot}/`)) {
+        throw new Error('unit isolation pnpm must belong to the job tool directory');
+    }
+    ports.mkdir(privateRoot, 0o700);
+    ports.mkdir(execution, 0o700);
+    const sourceHead = copyUnitCheckout(root, execution, {
+        run: (args) =>
+            ports.run('/usr/bin/git', args, {
+                cwd: root,
+                env: {
+                    PATH: systemPath,
+                    GIT_CONFIG_GLOBAL: '/dev/null',
+                    GIT_CONFIG_SYSTEM: '/dev/null',
+                    GIT_TERMINAL_PROMPT: '0',
+                    GIT_TRACE2_EVENT: '0',
+                },
+            }),
+        independentObjects: ports.independentObjects,
+    });
+    return {
+        workspace: execution,
+        sourceWorkspace: root,
+        sourceHead,
+        toolRoot,
+        uid,
+        gid: uid,
+        runnerUid: ports.uid,
+        account: `sdaw-unit-${uid}`,
+        home: join(privateRoot, 'home'),
+        store: join(privateRoot, 'store'),
+        temp: join(privateRoot, 'tmp'),
+        node: ports.canonical(ports.node),
+        pnpm,
+    };
 }
 
 export function prepareUnitIsolation(ports: UnitIsolationPorts = nativePorts()): string {
@@ -249,21 +309,8 @@ export function prepareUnitIsolation(ports: UnitIsolationPorts = nativePorts()):
     if (!/^[a-f0-9-]{36}$/.test(nonce)) {
         throw new Error('unit isolation nonce is invalid');
     }
-    const privateRoot = join(fixtures, `ci-unit-${nonce}`);
-    const pnpm = ports.canonical(requireSuccess(ports.run('/usr/bin/which', ['pnpm']), 'pnpm lookup'));
-    const context: UnitIsolationContext = {
-        workspace: root,
-        uid,
-        gid: uid,
-        runnerUid: ports.uid,
-        account: `sdaw-unit-${uid}`,
-        home: join(privateRoot, 'home'),
-        store: join(privateRoot, 'store'),
-        temp: join(privateRoot, 'tmp'),
-        node: ports.canonical(ports.node),
-        pnpm,
-    };
-    for (const path of [privateRoot, context.home, context.store, context.temp]) {
+    const context = prepareExecutionContext(ports, root, uid, nonce);
+    for (const path of [context.home, context.store, context.temp]) {
         ports.mkdir(path, 0o700);
     }
     const contextPath = join(fixtures, `unit-account-${nonce}.json`);
@@ -334,6 +381,9 @@ function parseContext(text: string): UnitIsolationContext {
     };
     const context = {
         workspace: textAt('workspace'),
+        sourceWorkspace: textAt('sourceWorkspace'),
+        sourceHead: textAt('sourceHead'),
+        toolRoot: textAt('toolRoot'),
         account: textAt('account'),
         home: textAt('home'),
         store: textAt('store'),
@@ -352,7 +402,12 @@ function parseContext(text: string): UnitIsolationContext {
         context.uid === context.runnerUid ||
         context.account !== `sdaw-unit-${context.uid}` ||
         !/^ci-unit-[a-f0-9-]{36}$/.test(root.slice(root.lastIndexOf('/') + 1)) ||
-        dirname(root) !== join(context.workspace, '.agents/guard-storage-fixtures') ||
+        dirname(root) !== '/var/tmp' ||
+        context.workspace !== join(root, 'checkout') ||
+        !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(context.sourceHead) ||
+        !isAbsolute(context.sourceWorkspace) ||
+        !/^\/var\/tmp\/sourdaw-unit-tools-[a-f0-9-]{36}$/.test(context.toolRoot) ||
+        !context.pnpm.startsWith(`${context.toolRoot}/`) ||
         context.home !== join(root, 'home') ||
         context.store !== join(root, 'store') ||
         context.temp !== join(root, 'tmp') ||
@@ -483,7 +538,12 @@ export function launchUnitPhase(
         throw new Error('unit isolation context file ownership is invalid');
     }
     const context = parseContext(ports.read(path));
-    if (context.workspace !== root || context.runnerUid !== ports.uid) {
+    if (
+        context.sourceWorkspace !== root ||
+        context.runnerUid !== ports.uid ||
+        requireSuccess(ports.run('/usr/bin/git', ['-C', root, 'rev-parse', '--verify', 'HEAD']), 'source HEAD') !==
+            context.sourceHead
+    ) {
         throw new Error('unit isolation context does not belong to this runner');
     }
     return droppedCommand(ports, context, phase, shard).status ?? 1;
@@ -511,11 +571,15 @@ function main(args: string[], ports: UnitIsolationPorts): number {
     if (mode === 'prepare-directories') {
         const root = workspace(ports, true);
         const context = parseContext(argument(args, '--context-json'));
-        if (context.workspace !== root) {
+        if (context.sourceWorkspace !== root) {
             throw new Error('unit setup checkout mismatch');
         }
         unusedUid(ports, context.uid);
-        ownCheckoutDirectories(context);
+        const privateRoot = dirname(context.home);
+        if (ports.canonical(privateRoot) !== privateRoot || ports.metadata(privateRoot).uid !== context.runnerUid) {
+            throw new Error('unit setup execution root ownership mismatch');
+        }
+        ownCheckoutDirectories({ workspace: privateRoot, uid: context.uid, gid: context.gid });
         return 0;
     }
     const shard =

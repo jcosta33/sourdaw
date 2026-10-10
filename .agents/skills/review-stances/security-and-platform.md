@@ -52,6 +52,10 @@ prove the account's UID unused before install, all runtime identity fields unpri
 capabilities cleared, and private storage owned. Attack denied same-test-UID consumers before worker
 concurrency and require actual retention followed by reclamation after reaping. Account isolation
 must not excuse production inspection failures, mutate hardlinked files, or weaken shard execution.
+Root or runner loading a helper does not prove the dropped identity can search its ancestry: Node
+may report a negative stat as a missing module. Admit source and the full tool closure under the
+actual identity before importing source. A private execution copy must retain exact checked-out HEAD,
+all refs and history without shared object inodes; leave runner ancestry and action cleanup unchanged.
 
 ### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 

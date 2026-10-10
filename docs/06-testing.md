@@ -756,11 +756,17 @@ elevated descendants are outside this automatic proof: unrelated other-account p
 be inspected reliably without additional authority. No file-use match grants signal authority.
 
 Required hosted Linux unit shards prepare a fresh unprivileged account before installing dependencies.
-A complete process census must show its numeric UID unused. Setup changes ownership only of opened
-physical checkout directories on the checkout device, preserving file and external store inodes.
+A complete process census must show its numeric UID unused. The runner checkout stays unchanged.
+An independent mirror transport preserves its actual checked-out HEAD, complete history and refs
+in a fresh physical `0700` execution root under `/var/tmp`; shared objects and alternates are refused.
+Setup changes ownership only of opened physical directories inside this fresh root, preserving
+source files and external store inodes. The unit pnpm action installs its complete tool closure into
+an independent job directory under `/var/tmp`, without granting access to runner HOME or caches.
 Install and the unchanged shard wrapper run through `setpriv` with cleared groups and capabilities,
 `no_new_privs`, an explicit environment, and private `0700` HOME, store and temporary directories.
-Runtime admission validates all four UID/GID fields and executable access before pnpm; unavailable
+Before importing checkout source, stdlib admission validates all four UID/GID fields, source search/read
+access, and read/execute access to Node and the complete bounded pnpm closure. Escaping tool symlinks
+and unavailable access fail. Runtime admission repeats identity and private storage checks before pnpm; unavailable
 tools or authority fail the job. The account uses its own frozen-install store.
 
 Before install or Vitest concurrency, mandatory native verification starts a nondumpable same-UID

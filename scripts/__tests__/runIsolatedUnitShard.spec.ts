@@ -13,9 +13,14 @@ import { ownCheckoutDirectories, type DirectoryPorts } from '../unitShardCheckou
 
 const root = '/checkout';
 const nonce = '01234567-0123-4123-8123-012345678901';
-const privateRoot = `${root}/.agents/guard-storage-fixtures/ci-unit-${nonce}`;
+const privateRoot = `/var/tmp/ci-unit-${nonce}`;
+const toolRoot = `/var/tmp/sourdaw-unit-tools-${nonce}`;
+const sourceHead = 'a'.repeat(40);
 const context: UnitIsolationContext = {
-    workspace: root,
+    workspace: `${privateRoot}/checkout`,
+    sourceWorkspace: root,
+    sourceHead,
+    toolRoot,
     uid: 20000,
     gid: 20000,
     runnerUid: 1001,
@@ -24,7 +29,7 @@ const context: UnitIsolationContext = {
     store: join(privateRoot, 'store'),
     temp: join(privateRoot, 'tmp'),
     node: '/tools/node/bin/node',
-    pnpm: '/tools/pnpm/pnpm',
+    pnpm: `${toolRoot}/pnpm`,
 };
 const status = [
     'Uid:\t20000\t20000\t20000\t20000',
@@ -41,6 +46,19 @@ const status = [
 
 function setupPorts() {
     const run = vi.fn<UnitIsolationPorts['run']>((file, args) => {
+        if (file === '/usr/bin/git') {
+            let stdout = '';
+            if (args.includes('HEAD')) {
+                stdout = sourceHead;
+            }
+            if (args.includes('--is-shallow-repository')) {
+                stdout = 'false';
+            }
+            if (args.includes('show-ref')) {
+                stdout = `${sourceHead} refs/remotes/origin/main`;
+            }
+            return { status: 0, stdout, stderr: '' };
+        }
         if (file === '/usr/bin/ps') {
             return { status: 0, stdout: '777 1001\n888 0\n', stderr: '' };
         }
@@ -62,6 +80,7 @@ function setupPorts() {
             RUNNER_OS: 'Linux',
             RUNNER_ENVIRONMENT: 'github-hosted',
             GITHUB_WORKSPACE: root,
+            SOURDAW_UNIT_TOOL_ROOT: toolRoot,
             NODE_OPTIONS: '--unexpected-loader',
             EXTRA_CREDENTIAL: 'private-fixture',
         },
@@ -86,6 +105,7 @@ function setupPorts() {
         executable: vi.fn(),
         chooseUid: () => context.uid,
         nonce: () => nonce,
+        independentObjects: vi.fn(),
     };
     return { ports, run, write };
 }
@@ -98,7 +118,7 @@ function runtimePorts() {
         PATH: `${dirname(context.node)}:${dirname(context.pnpm)}:/usr/local/bin:/usr/bin:/bin`,
         CI: 'true',
         GITHUB_ACTIONS: 'true',
-        GITHUB_WORKSPACE: root,
+        GITHUB_WORKSPACE: context.workspace,
         VITEST_MAX_WORKERS: '4',
         TMPDIR: context.temp,
         TMP: context.temp,
@@ -118,6 +138,26 @@ function runtimePorts() {
 }
 
 describe('required unit account isolation', () => {
+    it('admits a private execution copy when the new UID cannot search original checkout ancestry', () => {
+        const { ports, run } = setupPorts();
+        const original = run.getMockImplementation();
+        run.mockImplementation((file, args, options) => {
+            if (args.includes('/usr/bin/setpriv') && args.includes(`${root}/scripts/runIsolatedUnitShard.ts`)) {
+                return { status: 1, stdout: '', stderr: 'MODULE_NOT_FOUND\n' };
+            }
+            return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
+        });
+        expect(() => prepareUnitIsolation(ports)).not.toThrow();
+        const dropped = run.mock.calls.find(([, args]) => args.includes('/usr/bin/setpriv'));
+        expect(dropped?.[1]).toContain('-e');
+        expect(JSON.parse(dropped?.[1].find((value) => value.startsWith('{')) ?? '{}').workspace).toBe(
+            context.workspace
+        );
+        const preparation = run.mock.calls.find(([, args]) => args.includes('prepare-directories'));
+        const saved = preparation?.[1].find((value) => value.startsWith('{'));
+        expect(JSON.parse(saved ?? '{}').workspace).toBe(`/var/tmp/ci-unit-${nonce}/checkout`);
+    });
+
     it('allocates the fresh no-mail account with supported shadow options', () => {
         const { ports, run } = setupPorts();
         const original = run.getMockImplementation();
@@ -249,11 +289,17 @@ describe('required unit account isolation', () => {
 
     it('keeps launch failure and exact shard arguments after validating runner-owned context', () => {
         const { ports, run } = setupPorts();
-        run.mockReturnValue({ status: 7, stdout: '', stderr: '' });
+        const original = run.getMockImplementation();
+        run.mockImplementation((file, args, options) => {
+            if (file === '/usr/bin/sudo') {
+                return { status: 7, stdout: '', stderr: '' };
+            }
+            return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
+        });
         expect(
             launchUnitPhase(`${root}/.agents/guard-storage-fixtures/unit-account-${nonce}.json`, 'shard', '3/4', ports)
         ).toBe(7);
-        expect(run.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(['--phase', 'shard', '--shard', '3/4']));
+        expect(run.mock.calls[1]?.[1]).toEqual(expect.arrayContaining(['-e', 'shard', '3/4']));
         const metadata = ports.metadata;
         ports.metadata = (path) => {
             if (path.endsWith('.json')) {
@@ -269,7 +315,7 @@ describe('required unit account isolation', () => {
                 ports
             )
         ).toThrow('ownership');
-        expect(run).toHaveBeenCalledTimes(1);
+        expect(run).toHaveBeenCalledTimes(2);
     });
 
     it('requires the native denied-consumer proof during verification and propagates its failure before any install', () => {
@@ -278,7 +324,7 @@ describe('required unit account isolation', () => {
         expect(runUnitPhase(context, 'verify', undefined, ports)).toBe(6);
         expect(run.mock.calls[0]?.slice(0, 2)).toEqual([
             context.node,
-            [`${root}/scripts/verifyUnitStorageIsolation.ts`],
+            [`${context.workspace}/scripts/verifyUnitStorageIsolation.ts`],
         ]);
         expect(run).toHaveBeenCalledTimes(1);
         const setup = setupPorts();
@@ -412,7 +458,7 @@ function directoryPorts() {
 describe('checkout directory ownership', () => {
     it('changes only opened physical directory descriptors, excluding hardlinked files and symlink targets', () => {
         const { ports, own, close, open } = directoryPorts();
-        ownCheckoutDirectories(context, ports);
+        ownCheckoutDirectories({ ...context, workspace: root }, ports);
         expect(open.mock.calls).toEqual([[root], ['/proc/self/fd/1/physical']]);
         expect(own.mock.calls).toEqual([
             [1, 20000, 20000],
@@ -439,7 +485,7 @@ describe('checkout directory ownership', () => {
                 let calls = 0;
                 ports.now = () => (++calls > 2 ? 300001 : 0);
             }
-            expect(() => ownCheckoutDirectories(context, ports)).toThrow('boundary');
+            expect(() => ownCheckoutDirectories({ ...context, workspace: root }, ports)).toThrow('boundary');
             expect(own.mock.calls).toEqual([[1, 20000, 20000]]);
             expect(close.mock.calls).toEqual([[2], [1]]);
         }

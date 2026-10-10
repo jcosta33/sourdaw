@@ -182,7 +182,10 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
         unit: [
-            ...NODE_SETUP_ACTIONS,
+            'Checkout',
+            'Prepare unit tool directory',
+            'Set up pnpm',
+            'Set up Node',
             'Prepare isolated unit account',
             'Install dependencies',
             'Run shard',
