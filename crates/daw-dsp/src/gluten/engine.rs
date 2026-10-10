@@ -437,14 +437,18 @@ impl GlutenEngine {
             let delayed_l = self.lookahead_l.process(proc_l, lookahead_samples);
             let delayed_r = self.lookahead_r.process(proc_r, lookahead_samples);
 
-            // The diode is feed-forward, so its internal detector must stay on
-            // the undelayed program while the audio path receives lookahead.
-            // Stage two historically shared this same detector source.
+            // The undelayed programme. The diode always detects from it, in
+            // both stages; under lookahead every other topology detects from
+            // it or from its output estimated from it, so the detector runs
+            // ahead of the delayed audio.
             let program_detector = match self.stereo_mode {
                 StereoMode::Mid => (proc_l, 0.0),
                 StereoMode::Side => (0.0, proc_r),
                 _ => (proc_l, proc_r),
             };
+            let stage_one = self.active_topology;
+            let stage_one_detector = (lookahead_samples > 0)
+                .then(|| self.lookahead_detector_source(stage_one, program_detector));
 
             let external_detector = if self.ext_sidechain && i < self.ext_sc_left.len() {
                 let raw = (
@@ -472,20 +476,42 @@ impl GlutenEngine {
             };
             // Primary topology
             let (mut wet_l, mut wet_r, gr_db) = self.process_topology(
-                self.active_topology,
+                stage_one,
                 topo_l,
                 topo_r,
+                stage_one_detector,
                 program_detector,
                 external_detector,
             );
 
+            // Stage two's input ahead of the delay is stage one's output
+            // estimated from the programme, at the gain stage one's output
+            // carries into stage two without lookahead. A feedback stage one
+            // detected from its estimate at the gain it applied last, which
+            // lookahead already runs one sample ahead, so that estimate
+            // carries it. A feed-forward stage one detects the programme and
+            // applies the gain it detected this sample, so its estimate is
+            // taken now, at that gain. Taken every sample, so an estimate
+            // with filter state stays continuous.
+            let stage_two_ahead_input = stage_one_detector.map(|detector| {
+                if self.feeds_forward(stage_one) {
+                    self.ahead_output(stage_one, program_detector)
+                } else {
+                    detector
+                }
+            });
+
             // Dual-stage serial routing (Shadow Hills style)
             // Second topology processes the output of the first
-            if self.blend_amount > 0.001 && self.blend_topology != self.active_topology {
+            if self.blend_amount > 0.001 && self.blend_topology != stage_one {
+                let stage_two = self.blend_topology;
+                let stage_two_detector = stage_two_ahead_input
+                    .map(|input| self.lookahead_detector_source(stage_two, input));
                 let (s2_l, s2_r, gr2) = self.process_topology(
-                    self.blend_topology,
+                    stage_two,
                     wet_l,
                     wet_r,
+                    stage_two_detector,
                     program_detector,
                     external_detector,
                 );
@@ -596,23 +622,29 @@ impl GlutenEngine {
         };
     }
 
+    /// Run one stage. `lookahead_detector` is the stage's detector source
+    /// ahead of the delay, present only while lookahead delays the audio; the
+    /// diode ignores it, and an external key overrides both.
     #[inline]
     fn process_topology(
         &mut self,
         topo: Topology,
         l: f32,
         r: f32,
+        lookahead_detector: Option<(f32, f32)>,
         program_detector: (f32, f32),
         external_detector: Option<(f32, f32)>,
     ) -> (f32, f32, f32) {
-        let detector_source = external_detector.unwrap_or_else(|| match topo {
-            Topology::Vca => self.vca.detector_source(l, r),
-            Topology::Opto => self.opto.detector_source(),
-            Topology::Fet => self.fet.detector_source(),
-            Topology::Diode => self
-                .diode
-                .detector_source(program_detector.0, program_detector.1),
-        });
+        let detector_source =
+            external_detector.unwrap_or_else(|| match (topo, lookahead_detector) {
+                (Topology::Diode, _) => self
+                    .diode
+                    .detector_source(program_detector.0, program_detector.1),
+                (_, Some(source)) => source,
+                (Topology::Vca, None) => self.vca.detector_source(l, r),
+                (Topology::Opto, None) => self.opto.detector_source(),
+                (Topology::Fet, None) => self.fet.detector_source(),
+            });
         let (detector_l, detector_r) =
             self.sidechains[topo.index()].process(detector_source.0, detector_source.1);
 
@@ -629,6 +661,40 @@ impl GlutenEngine {
             Topology::Diode => self
                 .diode
                 .process_sample_with_detector(l, r, detector_l, detector_r),
+        }
+    }
+
+    /// Whether `topo` detects from its input rather than its output.
+    fn feeds_forward(&self, topo: Topology) -> bool {
+        match topo {
+            Topology::Diode => true,
+            Topology::Vca => self.vca.is_feed_forward(),
+            Topology::Opto | Topology::Fet => false,
+        }
+    }
+
+    /// `topo`'s detector source while lookahead delays the audio, from its
+    /// input ahead of the delay. A feed-forward stage reads that input. A
+    /// feedback stage keeps sensing its output, estimated from that input at
+    /// the gain it applied last, which settles where its delayed output does.
+    fn lookahead_detector_source(&mut self, topo: Topology, ahead_input: (f32, f32)) -> (f32, f32) {
+        if self.feeds_forward(topo) {
+            ahead_input
+        } else {
+            self.ahead_output(topo, ahead_input)
+        }
+    }
+
+    /// `topo`'s output estimated from `input` ahead of the delay, at the gain
+    /// and colour it applied last. FET's and Diode's estimates carry
+    /// oversampler state, so take each stage's at most once per sample.
+    fn ahead_output(&mut self, topo: Topology, input: (f32, f32)) -> (f32, f32) {
+        let (l, r) = input;
+        match topo {
+            Topology::Vca => self.vca.ahead_output(l, r),
+            Topology::Opto => self.opto.ahead_output(l, r),
+            Topology::Fet => self.fet.ahead_output(l, r),
+            Topology::Diode => self.diode.ahead_output(l, r),
         }
     }
 

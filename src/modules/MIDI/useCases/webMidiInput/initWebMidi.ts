@@ -3,6 +3,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { initWebMidi as initializeWebMidi } from '../../repositories/webMidi/lifecycle/initWebMidi';
+import { releaseHeldYeastVoices } from '../../repositories/webMidi/releaseCapturedYeastVoices';
 import { releaseCapturedYeastLifecycleVoices } from '../../repositories/webMidi/routeYeastLifecycleNoteOff';
 import { routeYeastNoteOffsForTargetTrack } from '../../repositories/webMidi/routeYeastNoteOff';
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
@@ -59,15 +60,26 @@ function subscribeToYeastNotesOff(): void {
     }
 
     const eventBus = Container.get(WebMidiEventBus);
+    // A rack topology change ends the notes the rack had sounding on its
+    // instrument track (the live route's track id). Each off ends the voices
+    // the rack's note-ons started, on the device and pad they sound on;
+    // forced offs carry no release-velocity byte and sound at once.
     webMidiSubscriptionState.disposeYeastNotesOffSubscription = eventBus.on(
         'yeast.notesOff',
         ({ trackId, noteOffs }) => {
             // Lifecycle offs name the voice that started them (#4873): release
             // the captured owner first so the ORIGINAL instrument control
-            // settles its voice even after the track's instrument changed.
+            // settles its voice even after the track's instrument changed, and
+            // a same-pitch successor on the replacement stays untouched.
             // Only what no captured owner claims falls through to the
             // current-node route.
             const unroutedNoteOffs = releaseCapturedYeastLifecycleVoices(trackId, noteOffs);
+            // A held key's own transformed voices live on its active note, not
+            // the route registry, so the lifecycle release never sees them;
+            // end them at each off's pitch.
+            for (const { channel, note } of noteOffs) {
+                releaseHeldYeastVoices(trackId, channel, note);
+            }
             if (unroutedNoteOffs.length === 0) {
                 return;
             }

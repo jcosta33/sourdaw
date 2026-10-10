@@ -207,12 +207,13 @@ function levainEngineParameterName({ paramId }: { paramId: string }): string | n
  * native audio-thread door therefore drops.
  *
  * `BACTERIA_CONTROL_THREAD_ONLY` in `crates/daw-engine/src/scheduler.rs` is
- * the same pair, and that constant carries the reason: `convolutionIr`
- * rebuilds the cabinet impulse response and `phaserStages` reallocates both
- * all-pass chains past the six the constructor builds. A persisted record
- * still carries them — the mapper applies a device's whole record on the
- * control thread, where those arms are allowed to run — so they stay in
- * [projectPatch].
+ * the same set, and that constant carries the reason: `phaserStages`
+ * reallocates both all-pass chains past the six the constructor builds. A
+ * persisted record still carries it — the mapper applies a device's whole
+ * record on the control thread, where that arm is allowed to run — so it stays
+ * in [projectPatch]. `convolutionIr` is not here: the convolver builds every
+ * body when it is constructed and a write only chooses one, so a body picked
+ * mid-session is carried natively like any other control.
  *
  * A live single-key write is not refused the same way for every producer.
  * [addressesParameter] is what `readLiveAutomationWrites` gates an automation
@@ -223,7 +224,7 @@ function levainEngineParameterName({ paramId }: { paramId: string }): string | n
  * (`crates/daw-engine/src/scheduler.rs`) is what drops it there. Either way
  * the parameter keeps the value the persisted record's patch gave it.
  */
-const BACTERIA_CONTROL_THREAD_ONLY: ReadonlySet<string> = new Set(['convolutionIr', 'phaserStages']);
+const BACTERIA_CONTROL_THREAD_ONLY: ReadonlySet<string> = new Set(['phaserStages']);
 
 /**
  * `paramId` with an optional `band{digit}` prefix stripped: the bare name the
@@ -237,12 +238,12 @@ const BACTERIA_CONTROL_THREAD_ONLY: ReadonlySet<string> = new Set(['convolutionI
  * rather than only the six bands that exist, because the engine strips first
  * and bounds-checks the band afterwards. The sixth character is matched by
  * `.` rather than pinned to `_` for exactly that reason: a stricter pattern
- * here would read `band00convolutionIr` and `band0XphaserStages` as unmatched
- * bare names while the engine reads both as band 0's `convolutionIr` and
- * `phaserStages`, which is the gap this function exists to close rather than
- * reopen. So `band3_phaserStages`, `band00convolutionIr` and `phaserStages`
- * all reach the same answer here, while `bandCount` is not a prefixed name at
- * all and reads as itself.
+ * here would read `band00phaserStages` and `band0XphaserStages` as unmatched
+ * bare names while the engine reads both as band 0's `phaserStages`, which is
+ * the gap this function exists to close rather than reopen. So
+ * `band3_phaserStages`, `band00phaserStages` and `phaserStages` all reach the
+ * same answer here, while `bandCount` is not a prefixed name at all and reads
+ * as itself.
  */
 function bareBacteriaParamName(paramId: string): string {
     const prefixed = /^band\d.(?<bare>.*)$/s.exec(paramId);
@@ -440,17 +441,17 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * broadcast to sub-processors that ignore it, exactly as it does
              * under the worklet.
              *
-             * `addressesParameter` refuses the two names whose engine arms
-             * allocate, but that only keeps an automation write off the
+             * `addressesParameter` refuses the name whose engine arm
+             * allocates, but that only keeps an automation write off the
              * native door — `readLiveAutomationWrites` gates on this answer
              * before it builds a write. A panel write skips this gate
              * entirely (`updateDeviceParam.ts` sends every live write
              * natively through `nativeBuiltinWriteTarget`), reaches the
              * native door regardless, and is dropped there by
              * `BacteriaBody::set_param`. Either way the persisted record
-             * still carries both names, because the mapper applies it
-             * control-side where those arms are legal, and the parameter
-             * keeps the value that record gave it.
+             * still carries the name, because the mapper applies it
+             * control-side where that arm is legal, and the parameter keeps
+             * the value that record gave it.
              *
              * This engine reports a real group delay, and it is the one body
              * here whose delay the native engine compensates itself: the

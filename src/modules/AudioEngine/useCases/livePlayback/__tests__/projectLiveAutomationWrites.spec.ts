@@ -504,6 +504,37 @@ describe('projectLiveAutomationWrites — dropped-send exclusion', () => {
             result.entries.some((entry) => entry.target.kind === 'track-send-level' && entry.target.busId === 'bus-x')
         ).toBe(false);
     });
+
+    it('targets a bus’s own send lane at the send the topology emits from that bus (#5067)', () => {
+        const verb = createTrack({
+            id: 'verb',
+            kind: 'bus',
+            name: 'Reverb',
+            sends: [{ busId: 'squash', level: 0.5, preFader: false }],
+        });
+        const squash = createTrack({ id: 'squash', kind: 'bus', name: 'Parallel' });
+        const lanes: AutomationLane[] = [
+            lane({ trackId: verb.id, parameterId: 'send:squash', points: [point(0, 0.25, 'step')] }),
+        ];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            stripTracks: [verb, squash],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([]);
+        expect(
+            result.entries.filter(
+                (entry) =>
+                    entry.target.kind === 'track-send-level' &&
+                    entry.target.trackId === 'verb' &&
+                    entry.target.busId === 'squash'
+            )
+        ).toHaveLength(1);
+    });
 });
 
 /**

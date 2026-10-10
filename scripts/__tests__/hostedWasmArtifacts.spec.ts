@@ -29,6 +29,7 @@ import { wasmArtifacts } from '../wasm-artifacts';
 
 const readHostedArtifactZip = (zip: Buffer) =>
     decodeHostedArtifactZip(zip, hostedArtifactPaths(['scoring', 'proof-chamber']).length + 1);
+const fixedZipFixtureMtime = new Date(Date.UTC(2026, 0, 1, 12));
 
 describe('hosted WASM package selection', () => {
     const manifest = wasmArtifacts.readManifest();
@@ -335,7 +336,7 @@ function returnedFixture() {
             readFileSync(join(input.outputDirectory, path)),
         ])
     );
-    const zip = Buffer.from(zipSync(files, { level: 1 }));
+    const zip = Buffer.from(zipSync(files, { level: 1, mtime: fixedZipFixtureMtime }));
     const hash = (bytes: Buffer) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
     const run = {
         id: 100,
@@ -383,12 +384,13 @@ describe('verified artifact return', () => {
             chunks.push(Buffer.from(bytes));
         });
         const entry = new ZipDeflate('one.txt');
+        entry.mtime = fixedZipFixtureMtime;
         archive.add(entry);
         entry.push(Buffer.from('streamed'), true);
         archive.end();
         const zip = Buffer.concat(chunks);
-        expect(readHostedArtifactZip(zip).get('one.txt')?.toString()).toBe('streamed');
         const central = zip.readUInt32LE(zip.length - 6);
+        expect(readHostedArtifactZip(zip).get('one.txt')?.toString()).toBe('streamed');
         zip.writeUInt32LE(0, central - 12);
         expect(() => readHostedArtifactZip(zip)).toThrow('data descriptor disagrees');
     });
@@ -397,7 +399,9 @@ describe('verified artifact return', () => {
     });
 
     it('bounds aggregate declared output before inflating any member', () => {
-        const zip = Buffer.from(zipSync({ 'one.txt': Buffer.from('one'), 'two.txt': Buffer.from('two') }));
+        const zip = Buffer.from(
+            zipSync({ 'one.txt': Buffer.from('one'), 'two.txt': Buffer.from('two') }, { mtime: fixedZipFixtureMtime })
+        );
         const central = zip.readUInt32LE(zip.length - 6);
         const second = central + 46 + zip.readUInt16LE(central + 28);
         for (const entry of [central, second]) {
@@ -411,7 +415,9 @@ describe('verified artifact return', () => {
     it.each(['size', 'crc', 'inflation'])(
         'checks actual decompressed %s independently of central claims',
         (mutation) => {
-            const zip = Buffer.from(zipSync({ 'one.txt': Buffer.from('one'.repeat(1000)) }));
+            const zip = Buffer.from(
+                zipSync({ 'one.txt': Buffer.from('one'.repeat(1000)) }, { mtime: fixedZipFixtureMtime })
+            );
             const central = zip.readUInt32LE(zip.length - 6);
             if (mutation === 'crc') {
                 zip.writeUInt32LE(0, 14);
@@ -472,7 +478,7 @@ describe('verified artifact return', () => {
             if (mutation === 'receipt') {
                 delete input.files['receipt.json'];
             }
-            input.zip = Buffer.from(zipSync(input.files));
+            input.zip = Buffer.from(zipSync(input.files, { mtime: fixedZipFixtureMtime }));
             input.artifact.digest = input.hash(input.zip);
             input.artifact.size_in_bytes = input.zip.length;
             expect(() => verifyHostedWasmReturn(input)).toThrow();
@@ -485,7 +491,10 @@ describe('verified artifact return', () => {
         (mutation) => {
             const input = returnedFixture();
             const zip = Buffer.from(
-                zipSync({ 'one.txt': Buffer.from('one'), 'two.txt': Buffer.from('two') }, { level: 0 })
+                zipSync(
+                    { 'one.txt': Buffer.from('one'), 'two.txt': Buffer.from('two') },
+                    { level: 0, mtime: fixedZipFixtureMtime }
+                )
             );
             const central = zip.readUInt32LE(zip.length - 6);
             const secondCentral = central + 46 + zip.readUInt16LE(central + 28);

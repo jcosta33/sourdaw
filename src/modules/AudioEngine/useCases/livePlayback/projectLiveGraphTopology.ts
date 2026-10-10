@@ -71,8 +71,9 @@
  * ── Bus fidelity ──────────────────────────────────────────────────────────
  *
  * A native bus strip holds the same mixer state a track strip does: fader,
- * pan, mute, and solo gate. The producer sends the project's real values.
- * Bus-sourced sends are still dropped — the native strip has no send taps.
+ * pan, mute, solo gate, and pre- and post-fader send taps. The producer sends
+ * the project's real values, and a bus's sends travel on `add-send` exactly as
+ * a track's do.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -196,21 +197,18 @@ function createStripCommand(input: {
 }
 
 /**
- * The sends the native graph has a path for.
+ * The sends the native graph has a path for, from a track or a bus alike.
  *
- * Two kinds are dropped rather than sent, because the mapper refuses the *whole*
- * batch over either one and a declined batch is a play button that starts no
- * engine at all. See `admittedSendBusIds.ts` for which two — that module
- * states the same admission as a standalone predicate for
- * `projectLiveAutomationWrites.ts`'s own admission of send-level automation
- * targets, so a send this function drops carries no `add-send` command and a
- * lane automating it must not receive writes either.
+ * A send naming no built bus is dropped rather than sent, because the mapper
+ * refuses the *whole* batch over it and a declined batch is a play button that
+ * starts no engine at all. `admittedSendBusIds.ts` states the same admission
+ * as a standalone predicate for `projectLiveAutomationWrites.ts`'s own
+ * admission of send-level automation targets, so a send this function drops
+ * carries no `add-send` command and a lane automating it receives no writes
+ * either.
  */
 function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> }): AudioGraphCommand[] {
     const { track, busStripIds } = input;
-    if (track.kind === 'bus') {
-        return [];
-    }
     return track.sends
         .filter((send) => busStripIds.has(send.busId))
         .map((send): AudioGraphCommand => ({

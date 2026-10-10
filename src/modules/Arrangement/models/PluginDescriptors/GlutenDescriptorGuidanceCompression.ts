@@ -94,7 +94,7 @@ export const GLUTEN_COMPRESSION_PARAMETER_GUIDANCE: Readonly<Record<string, Devi
         1,
         30,
         [
-            'The VCA uses the full 0.02 to 250 ms range, FET clamps to 2 ms, Diode clamps to 0.5 to 30 ms and Opto ignores it for a fixed 10 ms cell; lookahead delays the audio but only Diode detects ahead of it, and release sets the recovery.',
+            'The VCA uses the full 0.02 to 250 ms range, FET clamps to 2 ms, Diode clamps to 0.5 to 30 ms and Opto ignores it for a fixed 10 ms cell; lookahead delays the audio while every topology detects ahead of it, and release sets the recovery.',
         ],
         [
             'On FET anything above 2 ms and on Diode anything above 30 ms is silently shortened to the topology limit, so a long value does not behave as its number suggests.',
@@ -197,7 +197,7 @@ export const GLUTEN_COMPRESSION_PARAMETER_GUIDANCE: Readonly<Record<string, Devi
         0,
         3,
         [
-            'Delays the wet and dry audio together and reports the same number of samples as latency, but only Diode reads its detector ahead of that delay, so on VCA, Opto and FET this value adds latency without earlier detection; attack still sets the rate.',
+            'Delays the wet and dry audio together and reports the same number of samples as latency, while every topology reads its detector ahead of that delay, so reduction starts that much before a transient reaches the output; feedback topologies keep their settled depth, and attack still sets the rate.',
         ],
         [
             'Values above a few milliseconds add noticeable latency for live monitoring, and every millisecond is real delay the host must compensate.',

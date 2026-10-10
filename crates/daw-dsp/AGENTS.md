@@ -58,6 +58,13 @@ free; `levain_bank_retirement.rs` counts allocations to show the frees land in t
 nothing to the commit or the abort that builds, pushes or drops
 ([ADR 0051](../../.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md)).
 
+A disposed instance drains the same way. `retire_sample_bank` moves the sounding bank into the
+retired slot and silences the voices; it frees nothing and allocates only the empty replacement
+pool's `Arc`, and it refuses while the slot is occupied or no PCM sounds. The host releases the slot
+in bounded steps, retires, releases again, and only then frees the instance, so dropping a drained
+engine frees the same bytes whatever the bank's size; `levain_bank_retirement.rs` pins that
+([ADR 0052](../../.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md)).
+
 ## Output level at the engine boundary is pinned
 
 `tests/engine_output_level.rs` drives device families' `*Instance` render exports with a fixed

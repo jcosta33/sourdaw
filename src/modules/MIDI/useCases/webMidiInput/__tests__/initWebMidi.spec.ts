@@ -11,6 +11,8 @@ type RouteYeastNoteOffs = (
     options: { emitGrandBouleEvent: (deviceId: string, midiNote: number) => void }
 ) => void;
 
+type ReleaseHeldYeastVoices = (instrumentTrackId: string, channel: number, pitch: number, sampleFrame?: number) => void;
+
 type LifecycleNoteOff = {
     channel: number;
     note: number;
@@ -32,6 +34,7 @@ const routeYeastNoteOffsMock = vi.hoisted(() => vi.fn<RouteYeastNoteOffs>());
 const releaseCapturedMock = vi.hoisted(() =>
     vi.fn<ReleaseCapturedYeastLifecycleVoices>((_trackId, noteOffs) => [...noteOffs])
 );
+const releaseHeldYeastVoicesMock = vi.hoisted(() => vi.fn<ReleaseHeldYeastVoices>());
 const trackStoreSubscribeMock = vi.hoisted(() => vi.fn());
 const eventBusOnMock = vi.hoisted(() => vi.fn());
 const eventBusEmitMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -78,6 +81,11 @@ vi.mock('../../../repositories/webMidi/lifecycle/initWebMidi', () => ({
     initWebMidi: initializeWebMidiMock,
 }));
 
+vi.mock('../../../repositories/webMidi/releaseCapturedYeastVoices', () => ({
+    releaseCapturedYeastVoices: vi.fn(),
+    releaseHeldYeastVoices: releaseHeldYeastVoicesMock,
+}));
+
 vi.mock('../../../repositories/webMidi/routeYeastNoteOff', () => ({
     routeYeastNoteOffsForTargetTrack: routeYeastNoteOffsMock,
 }));
@@ -107,6 +115,7 @@ describe('initWebMidi', () => {
         routeYeastNoteOffsMock.mockClear();
         releaseCapturedMock.mockClear();
         releaseCapturedMock.mockImplementation((_trackId, noteOffs) => [...noteOffs]);
+        releaseHeldYeastVoicesMock.mockClear();
         trackStoreSubscribeMock.mockReset();
         eventBusOnMock.mockReset();
         eventBusEmitMock.mockClear();
@@ -144,27 +153,20 @@ describe('initWebMidi', () => {
         trackSubscription?.({ selectedTrackId: null, tracks: [] });
         expect(setMidiInputTrackMock).toHaveBeenCalledWith(null);
 
+        // Each forced off ends, at once, the held keys' captured voices of the
+        // rack's track at that channel and pitch; the registry voices the offs
+        // name resolve through the lifecycle path above it.
         yeastNotesOffSubscription?.({
             trackId: 'track-a',
-            noteOffs: [{ channel: 0, note: 60 }],
+            noteOffs: [
+                { channel: 0, note: 60 },
+                { channel: 2, note: 64 },
+            ],
         });
-        expect(routeYeastNoteOffsMock).toHaveBeenCalledWith(
-            {
-                id: 'track-a',
-                devices: [{ id: 'fermenter-a', type: 'fermenter' }],
-            },
-            [{ channel: 0, note: 60 }],
-            expect.any(Object)
-        );
-        const instrumentSnapshot = routeYeastNoteOffsMock.mock.calls[0]?.[0];
-        expect(instrumentSnapshot).not.toBe(arrangementTrack);
-        expect(instrumentSnapshot?.devices).not.toBe(arrangementTrack.devices);
-
-        const routeInput = routeYeastNoteOffsMock.mock.calls[0]?.[2] as {
-            emitGrandBouleEvent: (deviceId: string, midiNote: number) => void;
-        };
-        routeInput.emitGrandBouleEvent('device-a', 60);
-        expect(eventBusEmitMock).toHaveBeenCalledWith('midi.noteOff', { deviceId: 'device-a', midiNote: 60 });
+        expect(releaseHeldYeastVoicesMock.mock.calls).toEqual([
+            ['track-a', 0, 60],
+            ['track-a', 2, 64],
+        ]);
     });
 
     it('routes a fully captured lifecycle batch without touching the current-node route (#4873)', async () => {
@@ -320,6 +322,6 @@ describe('initWebMidi', () => {
         }
 
         expect(setMidiInputTrackMock).toHaveBeenCalledTimes(1);
-        expect(routeYeastNoteOffsMock).toHaveBeenCalledTimes(1);
+        expect(releaseHeldYeastVoicesMock).toHaveBeenCalledTimes(1);
     });
 });

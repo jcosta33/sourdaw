@@ -8,6 +8,7 @@ import {
     YEAST_PREVIEW_FAILED_FLAG,
     YEAST_PREVIEW_OPEN_PHASE,
 } from '../../models/YeastPreviewSnapshot';
+import { sameYeastProcessorTopology } from '../../models/YeastProcessorProjection';
 import { ScheduledEventQueue } from '../MidiProcessor';
 import { MidiRack } from '../MidiRack';
 import { createProcessor } from '../processorFactory';
@@ -1232,6 +1233,47 @@ describe('MidiRack', () => {
     });
 
     describe('replaceProjection', () => {
+        it('settles a held note exactly when sameYeastProcessorTopology says the rack topology changed', () => {
+            const transposer = (id: string, bypassed = false, semitones = 12): YeastProcessorProjectionItem => ({
+                id,
+                type: 'transposer',
+                bypassed,
+                params: { semitones },
+            });
+            const scale = (id: string): YeastProcessorProjectionItem => ({
+                id,
+                type: 'scale',
+                bypassed: false,
+                params: { transpose: 1 },
+            });
+            const base = [transposer('a'), scale('b')];
+            const cases: { name: string; next: YeastProcessorProjectionItem[] }[] = [
+                { name: 'identical', next: base },
+                { name: 'parameters only', next: [transposer('a', false, 7), scale('b')] },
+                { name: 'bypass flipped', next: [transposer('a', true), scale('b')] },
+                { name: 'reordered', next: [scale('b'), transposer('a')] },
+                { name: 'type changed under one id', next: [scale('a'), scale('b')] },
+                { name: 'id replaced', next: [transposer('c'), scale('b')] },
+                { name: 'processor removed', next: [transposer('a')] },
+                { name: 'processor added', next: [...base, transposer('c')] },
+            ];
+            const factory = (type: ProcessorType, id: string): MidiProcessor =>
+                type === 'transposer' ? new Transposer(id) : new ScaleQuantizer(id);
+
+            for (const { name, next } of cases) {
+                const rack = new MidiRack('rack-a');
+                rack.replaceProjection(base, factory);
+                rack.processBlock([noteOn(0, 60)], 0, 128, { ...transport, discontinuityEpoch: 1 }, 'track-a');
+
+                const settled = rack.replaceProjection(next, factory, 128);
+
+                expect({ name, settles: settled.length > 0 }).toEqual({
+                    name,
+                    settles: !sameYeastProcessorTopology(base, next),
+                });
+            }
+        });
+
         it('settles transformed output before acknowledging a bypass change, independent of preview capture', () => {
             const enabledRack = new MidiRack('rack-a');
             const disabledRack = new MidiRack('rack-a');

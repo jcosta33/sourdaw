@@ -449,6 +449,7 @@ export class MidiRack {
         return output;
     }
 
+    /** Mirrors `sameYeastProcessorTopology`, which the Yeast runtime uses to predict a settle; `MidiRack.spec.ts` pins the two. */
     private topologyMatches(projection: readonly YeastProcessorProjectionItem[]): boolean {
         if (projection.length !== this.processors.length) {
             return false;

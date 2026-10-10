@@ -51,7 +51,20 @@ describe('encodePatchValue', () => {
 
     it('should return null without warning for known non-audio string keys', () => {
         expect(encodePatchValue('name', 'My Patch')).toBeNull();
-        expect(encodePatchValue('convolutionIr', 'cathedral')).toBeNull();
+        expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    // The engine selects a body by its index in `convolution.rs`, and reads
+    // -1 as no body. A band saved before bodies could be chosen holds `''` and
+    // has always passed its audio through, so `''` — and any name that is not
+    // a built-in body — must encode to -1 rather than switch a body on.
+    it('should encode each built-in body to its engine index and no body to -1', () => {
+        expect(encodePatchValue('convolutionIr', 'ceramic')).toBe(0);
+        expect(encodePatchValue('convolutionIr', 'wood')).toBe(1);
+        expect(encodePatchValue('convolutionIr', 'metal')).toBe(2);
+        expect(encodePatchValue('convolutionIr', 'spring')).toBe(3);
+        expect(encodePatchValue('convolutionIr', '')).toBe(-1);
+        expect(encodePatchValue('convolutionIr', 'cathedral')).toBe(-1);
         expect(warnSpy).not.toHaveBeenCalled();
     });
 

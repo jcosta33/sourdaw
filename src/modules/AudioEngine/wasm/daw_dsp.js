@@ -1940,6 +1940,17 @@ export class LevainInstance {
         return ret !== 0;
     }
     /**
+     * Move the sounding bank into the retired slot so `release_retired_bank`
+     * can free it in bounded steps before the instance is freed. For a
+     * disposed instance that will never render again. Frees nothing. Returns
+     * false, retiring nothing, while the slot is occupied or no bank sounds.
+     * @returns {boolean}
+     */
+    retire_sample_bank() {
+        const ret = wasm.levaininstance_retire_sample_bank(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * Decoded PCM bytes retained by this instance's current shared bank.
      * @returns {number}
      */

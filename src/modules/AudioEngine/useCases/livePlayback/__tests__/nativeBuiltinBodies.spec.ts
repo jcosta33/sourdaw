@@ -654,32 +654,38 @@ describe('the bacteria body', () => {
 
     // The engine's vocabulary reaches past the fixed automatable slots into
     // two dynamically named families the renderer cannot enumerate, so
-    // admission is the shape check — with the allocating pair taken back out.
+    // admission is the shape check — with the allocating name taken back out.
     it('admits a well-shaped id, band-prefixed or not', () => {
         expect(bodyOf('bacteria').addressesParameter('band0_convolutionSeparation')).toBe(true);
         expect(bodyOf('bacteria').addressesParameter('stepSeqVal_31')).toBe(true);
         expect(bodyOf('bacteria').addressesParameter('bandCount')).toBe(true);
     });
 
-    // A live single-key write of either allocating name is refused by this
-    // gate, because the native door drops it: reporting it as carried would
-    // leave the write nowhere at all. Both spellings the engine reaches the
-    // stage by are refused — a bare name is broadcast to all six bands, and a
-    // `band{N}_` prefix aims it at one.
-    it('refuses the two names whose engine arms allocate, bare or band-prefixed', () => {
+    // The body choice is carried natively in every spelling: choosing a body
+    // allocates nothing in the engine, so a picked or automated body has to
+    // reach the native mix instead of waiting for the next rebuild.
+    it('admits the body choice, bare or band-prefixed', () => {
+        expect(bodyOf('bacteria').addressesParameter('convolutionIr')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('band5_convolutionIr')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('band00convolutionIr')).toBe(true);
+    });
+
+    // A live single-key write of the allocating name is refused by this gate,
+    // because the native door drops it: reporting it as carried would leave the
+    // write nowhere at all. Both spellings the engine reaches the stage by are
+    // refused — a bare name is broadcast to all six bands, and a `band{N}_`
+    // prefix aims it at one.
+    it('refuses the name whose engine arm allocates, bare or band-prefixed', () => {
         expect(bodyOf('bacteria').addressesParameter('phaserStages')).toBe(false);
         expect(bodyOf('bacteria').addressesParameter('band0_phaserStages')).toBe(false);
-        expect(bodyOf('bacteria').addressesParameter('convolutionIr')).toBe(false);
-        expect(bodyOf('bacteria').addressesParameter('band5_convolutionIr')).toBe(false);
         // Any digit, not only the six bands that exist: the engine strips the
         // prefix first and bounds-checks the band afterwards, and the Rust
         // door reads it the same way.
         expect(bodyOf('bacteria').addressesParameter('band9_phaserStages')).toBe(false);
         // The sixth character is never read by the engine, only skipped, so a
         // refusal that required the historical `_` there would miss these:
-        // `apply_param` reads both as band 0's `convolutionIr` and
-        // `phaserStages` all the same.
-        expect(bodyOf('bacteria').addressesParameter('band00convolutionIr')).toBe(false);
+        // `apply_param` reads both as band 0's `phaserStages` all the same.
+        expect(bodyOf('bacteria').addressesParameter('band00phaserStages')).toBe(false);
         expect(bodyOf('bacteria').addressesParameter('band0XphaserStages')).toBe(false);
     });
 
@@ -687,8 +693,8 @@ describe('the bacteria body', () => {
     // own reading rather than as a substring match: `phaserStagesTrim` is not
     // the refused name, and `band9_` is not a band the engine addresses.
     // `bandCount` and `band0_phaserStagesTrim` stay admitted too — neither is
-    // a `band{digit}` prefix followed by one of the two allocating names, so
-    // reading the prefix as loosely as the engine does must not sweep them in.
+    // a `band{digit}` prefix followed by the allocating name, so reading the
+    // prefix as loosely as the engine does must not sweep them in.
     it('refuses only the allocating names themselves', () => {
         expect(bodyOf('bacteria').addressesParameter('phaserStagesTrim')).toBe(true);
         expect(bodyOf('bacteria').addressesParameter('band0_phaserRate')).toBe(true);
