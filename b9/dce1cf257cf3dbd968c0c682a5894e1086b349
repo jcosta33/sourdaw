@@ -1,0 +1,20 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipGestureUndoGrouping.integration.spec.ts
+  s_1f0dcd815e8946::t_969c1153d439af 327,340,353-373
+  s_1f0dcd815e8946::t_97317bdeebef0d 374-375
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b9dce1cf257cf3dbd968c0c682a5894e1086b349",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
