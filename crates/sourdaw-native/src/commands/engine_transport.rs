@@ -701,40 +701,50 @@ mod tests {
     /// malformed one earns: a producer fault stays a refusal wherever it sits.
     #[test]
     fn a_malformed_segment_sharing_a_frame_is_still_refused() {
-        let tempo = TransportMapsPayload {
-            tempo: vec![
-                tempo_at_seconds(0.0, 120.0),
-                tempo_at_seconds(1.0, 0.0),
-                tempo_at_seconds(1.0 + 0.4 * ONE_FRAME_AT_48K, 90.0),
-            ],
-            ..maps_payload()
-        };
-        let meter = TransportMapsPayload {
-            time_signature: vec![
-                meter_at_seconds(0.0, 4, 4),
-                meter_at_seconds(1.0, 0, 4),
-                meter_at_seconds(1.0 + 0.4 * ONE_FRAME_AT_48K, 7, 8),
-            ],
-            ..maps_payload()
-        };
+        for bad_tempo in [0.0, -5.0] {
+            let tempo = TransportMapsPayload {
+                tempo: vec![
+                    tempo_at_seconds(0.0, 120.0),
+                    tempo_at_seconds(1.0, bad_tempo),
+                    tempo_at_seconds(1.0 + 0.4 * ONE_FRAME_AT_48K, 90.0),
+                ],
+                ..maps_payload()
+            };
 
-        let tempo_error = installed_maps(&tempo, 48_000.0).expect_err("a zero tempo is refused");
-        let meter_error = installed_maps(&meter, 48_000.0).expect_err("a zero meter is refused");
+            let error = installed_maps(&tempo, 48_000.0)
+                .expect_err(&format!("a tempo of {bad_tempo} is refused"));
 
-        assert_eq!(
-            tempo_error,
-            format!(
-                "tempo map is unusable: {}",
-                TransportMapError::NonPositiveTempo
-            )
-        );
-        assert_eq!(
-            meter_error,
-            format!(
-                "time signature map is unusable: {}",
-                TransportMapError::NonPositiveTimeSignature
-            )
-        );
+            assert_eq!(
+                error,
+                format!(
+                    "tempo map is unusable: {}",
+                    TransportMapError::NonPositiveTempo
+                ),
+                "tempo {bad_tempo}"
+            );
+        }
+        for (numerator, denominator) in [(0, 4), (3, 0)] {
+            let meter = TransportMapsPayload {
+                time_signature: vec![
+                    meter_at_seconds(0.0, 4, 4),
+                    meter_at_seconds(1.0, numerator, denominator),
+                    meter_at_seconds(1.0 + 0.4 * ONE_FRAME_AT_48K, 7, 8),
+                ],
+                ..maps_payload()
+            };
+
+            let error = installed_maps(&meter, 48_000.0)
+                .expect_err(&format!("a {numerator}/{denominator} meter is refused"));
+
+            assert_eq!(
+                error,
+                format!(
+                    "time signature map is unusable: {}",
+                    TransportMapError::NonPositiveTimeSignature
+                ),
+                "meter {numerator}/{denominator}"
+            );
+        }
     }
 
     /// Only segments on one frame collapse. A segment on an earlier frame than
