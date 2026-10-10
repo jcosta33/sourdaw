@@ -1,0 +1,40 @@
+src/modules/Arrangement/services/__tests__/deriveTakeRetirement.spec.ts
+  s_1f0dcd815e8946::t_6a2a2913369585 1-69
+src/modules/Arrangement/services/deriveTakeRetirement.ts
+  s_1f0dcd815e8946::t_8967be735bb8f1 1-48
+src/modules/Arrangement/useCases/clipEditing/prepareAudioSourcesForTempoChange.ts
+  s_1f0dcd815e8946::t_a908e97a02d790 3,483-495
+  s_1f0dcd815e8946::t_95dad7e71a611f 7,498
+  s_1f0dcd815e8946::t_cff85283836ae2 4-6,11,496-497,499,502,514,527
+src/modules/Arrangement/services/deriveRippleDelete.ts
+  s_1f0dcd815e8946::t_8967be735bb8f1 1-61
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_1f0dcd815e8946::t_95dad7e71a611f 2,11,72-119,134-139
+  s_1f0dcd815e8946::t_bd12f6a1c146ef 140-141,190
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_1f0dcd815e8946::t_0cbc672593733e 49,75,96,107,189-311
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_1f0dcd815e8946::t_1d81ca073825f9 29-31,72-83,85,90-91,93,120-124,128-132,134-150,152-155,157-175,177-182,184-187,189-201,203-229
+src/modules/Arrangement/useCases/comping/planTakeRetirement.ts
+  s_1f0dcd815e8946::t_8c915785b927be 1,4,30-35
+src/modules/Arrangement/useCases/rippleDelete/planRippleDelete.ts
+  s_1f0dcd815e8946::t_a60f49e41fd9d4 3-4,12,15,19-23
+src/modules/Transport/handlers/transport/__tests__/tempoMapEditSource.integration.spec.ts
+  s_1f0dcd815e8946::t_7ede08a0db0edb 8,16-22,54,58,152-155,281-331,333-353,357-374,376-403,405-429,431,434-518,520-570,572-656,659,661-670,673-690,697,743-843
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe40a74ea8715122d75f04052f19b78e7be2a069",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
