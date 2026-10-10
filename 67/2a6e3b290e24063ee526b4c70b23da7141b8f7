@@ -1,0 +1,41 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_1f0dcd815e8946::t_4e7a05a69decce 267-404
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_1f0dcd815e8946::t_9ac9d1a9076b51 4,70-90
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_97ab82e0b4f10c::t_7e695b364795a6 71-86,88
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingCompedTakeLoopOrigin.spec.ts
+  s_1f0dcd815e8946::t_fefe836c3605a9 1-160
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_1f0dcd815e8946::t_6cb0518f5545ca 226-241,243
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLiveSeam.spec.ts
+  s_1f0dcd815e8946::t_d84d971636c9df 1-299
+src/modules/Transport/useCases/scheduling/__tests__/selectMidiNotesForLoopWindowCompedTake.spec.ts
+  s_1f0dcd815e8946::t_67f1cba702540e 1-137
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_1f0dcd815e8946::t_e1b363550624ba 361-368,370
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "672a6e3b290e24063ee526b4c70b23da7141b8f7",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
