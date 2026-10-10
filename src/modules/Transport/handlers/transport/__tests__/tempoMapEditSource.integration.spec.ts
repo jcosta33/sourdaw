@@ -5,7 +5,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
-import { type Clip, type Track, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, type Track, gainEnvelopeStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import {
     getArrangementHandlers,
     isTempoAudioSourceTransition,
@@ -13,7 +13,13 @@ import {
     resolveClipsWithComping,
 } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
-import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import {
+    createAutomationLane,
+    getAutomationHandlers,
+    getAutomationLanes,
+    restoreAutomationLanes,
+    restoreAutomationSnapshot,
+} from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -45,9 +51,11 @@ import {
     sessionUndoWitnessStampPort,
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { initProjectDirtyTracking } from '#/modules/Project/useCases';
+import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 
 import { tempoMapStore } from '../../../stores/tempoMapStore';
@@ -141,6 +149,10 @@ describe('tempo map edit preserves canonical audio source', () => {
         tempoMapStore.set({ changes: [] });
         trackStore.set({ tracks: [structuredClone(track)], selectedTrackId: 'track-1', ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
+        gainEnvelopeStore.set({ envelopes: {} });
+        restoreAutomationSnapshot({ lanes: [] });
+        midiStore.set(structuredClone(defaultMidiStoreState));
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
         flushAutomergeStorageWrites();
     });
 
@@ -266,193 +278,423 @@ describe('tempo map edit preserves canonical audio source', () => {
         }
     });
 
-    it('reloads sequential tempo and removal history and restores prefix membership without overwriting peers', async () => {
-        const indexedDb = installTransactionalIndexedDb();
-        sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
-        try {
-            clearHandlerRegistry();
-            registerProductionHandlers();
-            const projectId = 'tempo-removal-reload';
-            reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
-            trackStore.set({
-                ...trackStore.value!,
-                tracks: [
-                    {
-                        ...trackStore.value!.tracks[0]!,
-                        alternatives: [
-                            {
-                                id: 'inactive-alt',
-                                name: 'Inactive',
-                                clips: [{ ...legacyClip, id: 'inactive', audioOffsetBeats: -4 }],
-                            },
-                            {
-                                id: 'zero-alt',
-                                name: 'Canonical zero',
-                                clips: [
-                                    { ...legacyClip, id: 'zero-source', audioOffsetBeats: 0, audioOffsetSeconds: 0 },
-                                ],
-                            },
-                        ],
-                    },
-                ],
-            });
-            takeLaneStore.set({
-                lanes: [
-                    {
-                        id: 'lane-zero',
-                        trackId: 'track-1',
-                        takes: [
-                            {
-                                id: 'take-zero',
-                                clipId: 'clip-1',
-                                name: 'Canonical zero take',
-                                startBeat: 8,
-                                endBeat: 12,
-                                selected: true,
-                                sourceOffsetBeats: 0,
-                                sourceOffsetSeconds: 0,
-                            },
-                        ],
-                        activeCompRegions: [],
-                    },
-                ],
-            });
-            flushAutomergeStorageWrites();
-            const before = structuredClone(trackStore.value);
-            const beforeTakes = structuredClone(takeLaneStore.value);
-            const groupId = 'sequential-tempo-remove-prefix';
-            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { source: 'manual', groupId });
-            expect(trackStore.value?.tracks[0]?.clips[0]?.audioOffsetSeconds).toBe(1);
-            expect(trackStore.value?.tracks[0]?.alternatives[0]?.clips[0]?.audioOffsetSeconds).toBe(-2);
-            await executeAppAction(
-                { type: 'removeClip', payload: { clipId: 'clip-1' } },
-                { source: 'manual', groupId }
-            );
-            flushAutomergeStorageWrites();
-            expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
-            expect(takeLaneStore.value?.lanes).toEqual([]);
-            const peerClip: Clip = {
-                ...legacyClip,
-                id: 'peer-clip',
-                name: 'Later peer',
-                startBeat: 20,
-                endBeat: 24,
-                audioOffsetBeats: 0,
-                audioOffsetSeconds: 0,
-            };
-            mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
-                id: 'root',
-                changeFn: (project) => {
-                    project.tracks.tracks[0]!.clips.push(peerClip);
-                },
-            });
-            projectCrdtToStores();
-            const assertRaw = () => {
-                const raw = getCrdtDoc<{
-                    tracks: NonNullable<typeof trackStore.value>;
-                    transport: NonNullable<typeof transportStore.value>;
-                    takeLanes: NonNullable<typeof takeLaneStore.value>;
-                }>('root');
-                expect(raw?.tracks.tracks).toEqual(trackStore.value?.tracks);
-                expect(raw?.transport.tempo).toBe(transportStore.value?.tempo);
-                expect(raw?.takeLanes).toEqual(takeLaneStore.value);
-            };
-            await vi.waitFor(() => {
-                const saved: unknown = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}');
-                expect(saved).toMatchObject({
-                    past: [
-                        { action: { type: 'setTempo' } },
+    it.each([
+        { route: 'sequential', source: 'legacy', ripple: false },
+        { route: 'atomic', source: 'legacy', ripple: false },
+        { route: 'atomic', source: 'legacy', ripple: true },
+        { route: 'atomic', source: 'zero', ripple: false },
+        { route: 'atomic', source: 'signed', ripple: false },
+        { route: 'reverse', source: 'legacy', ripple: false },
+        { route: 'reverse', source: 'zero', ripple: false },
+        { route: 'reverse', source: 'signed', ripple: false },
+        { route: 'reverse', source: 'legacy', ripple: true },
+    ] as const)(
+        'reloads $route tempo and removal history with $source source, ripple=$ripple, preserving peers',
+        async ({ route, source, ripple }) => {
+            const indexedDb = installTransactionalIndexedDb();
+            sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
+            try {
+                clearHandlerRegistry();
+                registerProductionHandlers();
+                const projectId = `tempo-removal-reload-${route}-${source}-${String(ripple)}`;
+                const sourceClip = structuredClone(legacyClip);
+                let capturedSeconds = 1;
+                if (source === 'zero') {
+                    sourceClip.audioOffsetBeats = 0;
+                    sourceClip.audioOffsetSeconds = 0;
+                    capturedSeconds = 0;
+                } else if (source === 'signed') {
+                    sourceClip.audioOffsetBeats = -4;
+                    sourceClip.audioOffsetSeconds = -2;
+                    capturedSeconds = -2;
+                }
+                workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
+                const follower: Clip = {
+                    ...legacyClip,
+                    id: 'follower',
+                    startBeat: 16,
+                    endBeat: 20,
+                    audioOffsetBeats: 0,
+                    audioOffsetSeconds: 0,
+                };
+                if (route === 'reverse' && ripple) {
+                    follower.audioOffsetBeats = 4;
+                    delete follower.audioOffsetSeconds;
+                }
+                const clips = [sourceClip];
+                if (ripple) {
+                    clips.push(follower);
+                }
+                reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: [
                         {
-                            action: { type: 'removeClip' },
-                            inverseAction: {
-                                type: 'restoreClip',
-                                payload: { clipSnapshot: { audioOffsetSeconds: 1 } },
-                            },
+                            ...trackStore.value!.tracks[0]!,
+                            clips,
+                            alternatives: [
+                                {
+                                    id: 'inactive-alt',
+                                    name: 'Inactive',
+                                    clips: [{ ...legacyClip, id: 'inactive', audioOffsetBeats: -4 }],
+                                },
+                                {
+                                    id: 'zero-alt',
+                                    name: 'Canonical zero',
+                                    clips: [
+                                        {
+                                            ...legacyClip,
+                                            id: 'zero-source',
+                                            audioOffsetBeats: 0,
+                                            audioOffsetSeconds: 0,
+                                        },
+                                    ],
+                                },
+                            ],
                         },
                     ],
                 });
-            });
-            const liveEntries = undoHistoryStore.value!.past;
-            await persistCrdtProject();
-            const persistedWitness = captureDurableDocumentWitness();
-            const persistedRoot = structuredClone(getCrdtDoc('root'));
-            removeCrdtDoc('root');
-            expect(hasCrdtDoc('root')).toBe(false);
-            createCrdtDoc('root');
-            expect(getCrdtDoc('root')).not.toEqual(persistedRoot);
-            await expect(loadCrdtProject()).resolves.toBe(true);
-            projectCrdtToStores({ resetProjections: true });
-            expect(getCrdtDoc('root')).toEqual(persistedRoot);
-            expect(captureDurableDocumentWitness()).toBe(persistedWitness);
-            clearHandlerRegistry();
-            registerProductionHandlers();
-            reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
-            expect(undoHistoryStore.value?.past).toHaveLength(2);
-            expect(undoHistoryStore.value?.past[0]).not.toBe(liveEntries[0]);
-            expect(undoHistoryStore.value?.past[1]).not.toBe(liveEntries[1]);
-            expect(trackStore.value?.tracks[0]?.clips).toEqual([peerClip]);
-            assertRaw();
-
-            const peerAfterUndo: Clip = { ...peerClip, id: 'peer-after-undo', startBeat: 28, endBeat: 32 };
-            for (const cycle of [1, 2]) {
-                expect((await undo()).headConsumed, `Undo cycle ${cycle}`).toBe(true);
-                expect(transportStore.value?.tempo).toBe(120);
-                let expectedClips = [peerClip, before!.tracks[0]!.clips[0]!];
-                if (cycle === 2) {
-                    expectedClips = [peerClip, peerAfterUndo, before!.tracks[0]!.clips[0]!];
+                takeLaneStore.set({
+                    lanes: [
+                        {
+                            id: 'lane-zero',
+                            trackId: 'track-1',
+                            takes: [
+                                {
+                                    id: 'take-zero',
+                                    clipId: 'clip-1',
+                                    name: 'Canonical zero take',
+                                    startBeat: 8,
+                                    endBeat: 12,
+                                    selected: true,
+                                    sourceOffsetBeats: 0,
+                                    sourceOffsetSeconds: 0,
+                                },
+                            ],
+                            activeCompRegions: [],
+                        },
+                    ],
+                });
+                const envelope = {
+                    clipId: 'clip-1',
+                    enabled: true,
+                    points: [{ id: 'source-gain-point', beatOffset: 1, gainDb: -6 }],
+                };
+                gainEnvelopeStore.set({ envelopes: { 'clip-1': envelope } });
+                const sourceNotes = [{ id: 'source-note', pitch: 60, startBeat: 1, duration: 2, velocity: 100 }];
+                midiStore.set({
+                    ...defaultMidiStoreState,
+                    notesByClipId: { 'clip-1': sourceNotes },
+                    ccByClipId: { 'clip-1': [{ id: 'source-cc', controller: 64, value: 127, beat: 3, channel: 1 }] },
+                    pitchBendByClipId: { 'clip-1': [{ id: 'source-pb', value: 200, beat: 3, channel: 1 }] },
+                });
+                if (ripple) {
+                    restoreAutomationLanes([
+                        {
+                            ...createAutomationLane('track-1', 'gain', 'Gain', 0, 1, 'follower'),
+                            id: 'follower-automation',
+                            points: [{ beat: 17, value: 0.5, curve: 'linear', tension: 0 }],
+                        },
+                        {
+                            ...createAutomationLane('track-1', 'gain', 'Gain', 0, 1, 'clip-1'),
+                            id: 'removed-automation',
+                            points: [{ beat: 9, value: 0.5, curve: 'linear', tension: 0 }],
+                        },
+                    ]);
                 }
-                expect(trackStore.value?.tracks[0]?.clips).toEqual(expectedClips);
-                expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'clip-1')).not.toHaveProperty(
-                    'audioOffsetSeconds'
-                );
-                expect(trackStore.value?.tracks[0]?.alternatives).toEqual(before?.tracks[0]?.alternatives);
-                expect(takeLaneStore.value).toEqual(beforeTakes);
-                expect(undoHistoryStore.value?.past).toHaveLength(0);
-                expect(undoHistoryStore.value?.future).toHaveLength(2);
-                assertRaw();
-                if (cycle === 1) {
-                    mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
-                        id: 'root',
-                        changeFn: (project) => {
-                            project.tracks.tracks[0]!.clips.push(peerAfterUndo);
+                flushAutomergeStorageWrites();
+                const beforeAutomation = structuredClone(getAutomationLanes());
+                const beforeMidi = structuredClone(midiStore.value);
+                const before = structuredClone(trackStore.value);
+                const beforeTakes = structuredClone(takeLaneStore.value);
+                const groupId = `${route}-tempo-remove-prefix`;
+                if (route !== 'sequential') {
+                    const actions: Parameters<typeof executeAppActionBatch>[0][number][] = [
+                        { type: 'setTempo', payload: { bpm: 60 } },
+                        { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                    ];
+                    if (route === 'reverse') {
+                        actions.reverse();
+                    }
+                    const result = await executeAppActionBatch(actions, { source: 'manual', groupId });
+                    expect(result.status).toBe('committed');
+                } else {
+                    await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { source: 'manual', groupId });
+                    expect(trackStore.value?.tracks[0]?.clips[0]?.audioOffsetSeconds).toBe(capturedSeconds);
+                    await executeAppAction(
+                        { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                        { source: 'manual', groupId }
+                    );
+                }
+                flushAutomergeStorageWrites();
+                expect(transportStore.value?.tempo).toBe(60);
+                expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === 'clip-1')).toBe(false);
+                expect(trackStore.value?.tracks[0]?.alternatives[0]?.clips[0]?.audioOffsetSeconds).toBe(-2);
+                expect(takeLaneStore.value?.lanes).toEqual([]);
+                expect(gainEnvelopeStore.value?.envelopes['clip-1']).toBeUndefined();
+                expect(midiStore.value?.notesByClipId['clip-1']).toBeUndefined();
+                const removedClips = structuredClone(trackStore.value!.tracks[0]!.clips);
+                if (ripple) {
+                    const expectedFollower = { ...follower, startBeat: 12, endBeat: 16 };
+                    if (route === 'reverse') {
+                        expectedFollower.audioOffsetSeconds = 2;
+                    }
+                    expect(removedClips).toEqual([expectedFollower]);
+                    expect(getAutomationLanes()).toEqual([
+                        { ...beforeAutomation[0], points: [{ beat: 13, value: 0.5, curve: 'linear', tension: 0 }] },
+                    ]);
+                }
+                const peerClip: Clip = {
+                    ...legacyClip,
+                    id: 'peer-clip',
+                    name: 'Later peer',
+                    startBeat: 0,
+                    endBeat: 2,
+                    audioOffsetBeats: 0,
+                    audioOffsetSeconds: 0,
+                };
+                const peerEnvelope = {
+                    clipId: peerClip.id,
+                    enabled: true,
+                    points: [{ id: 'peer-gain-point', beatOffset: 0.5, gainDb: -3 }],
+                };
+                const peerNotes = [{ id: 'peer-note', pitch: 64, startBeat: 0, duration: 1, velocity: 80 }];
+                mutateCrdtDoc<{
+                    tracks: { tracks: Track[] };
+                    gainEnvelopes: NonNullable<typeof gainEnvelopeStore.value>;
+                    midi: NonNullable<typeof midiStore.value>;
+                }>({
+                    id: 'root',
+                    changeFn: (project) => {
+                        project.tracks.tracks[0]!.clips.push(peerClip);
+                        project.gainEnvelopes.envelopes[peerClip.id] = peerEnvelope;
+                        project.midi.notesByClipId[peerClip.id] = peerNotes;
+                    },
+                });
+                projectCrdtToStores();
+                const assertRaw = () => {
+                    const raw = getCrdtDoc<{
+                        tracks: NonNullable<typeof trackStore.value>;
+                        transport: NonNullable<typeof transportStore.value>;
+                        takeLanes: NonNullable<typeof takeLaneStore.value>;
+                        gainEnvelopes: NonNullable<typeof gainEnvelopeStore.value>;
+                        midi: NonNullable<typeof midiStore.value>;
+                        automation: { lanes: ReturnType<typeof getAutomationLanes> };
+                    }>('root');
+                    expect(raw?.tracks.tracks).toEqual(trackStore.value?.tracks);
+                    expect(raw?.transport.tempo).toBe(transportStore.value?.tempo);
+                    expect(raw?.takeLanes).toEqual(takeLaneStore.value);
+                    expect(raw?.gainEnvelopes).toEqual(gainEnvelopeStore.value);
+                    expect(raw?.midi).toEqual(midiStore.value);
+                    expect(raw?.automation.lanes).toEqual(getAutomationLanes());
+                    expect(gainEnvelopeStore.value?.envelopes[peerClip.id]).toEqual(peerEnvelope);
+                    expect(midiStore.value?.notesByClipId[peerClip.id]).toEqual(peerNotes);
+                };
+                await vi.waitFor(() => {
+                    const saved: unknown = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}');
+                    const expectedActions = [
+                        { action: { type: 'setTempo' } },
+                        { action: { type: 'removeClip' }, inverseAction: { type: 'restoreClip' } },
+                    ];
+                    if (route === 'reverse') {
+                        expectedActions.reverse();
+                    }
+                    expect(saved).toMatchObject({ past: expectedActions });
+                });
+                const liveEntries = undoHistoryStore.value!.past;
+                await persistCrdtProject();
+                const persistedWitness = captureDurableDocumentWitness();
+                const persistedRoot = structuredClone(getCrdtDoc('root'));
+                removeCrdtDoc('root');
+                expect(hasCrdtDoc('root')).toBe(false);
+                createCrdtDoc('root');
+                expect(getCrdtDoc('root')).not.toEqual(persistedRoot);
+                await expect(loadCrdtProject()).resolves.toBe(true);
+                projectCrdtToStores({ resetProjections: true });
+                expect(getCrdtDoc('root')).toEqual(persistedRoot);
+                expect(captureDurableDocumentWitness()).toBe(persistedWitness);
+                clearHandlerRegistry();
+                registerProductionHandlers();
+                reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
+                expect(undoHistoryStore.value?.past).toHaveLength(2);
+                expect(undoHistoryStore.value?.past[0]).not.toBe(liveEntries[0]);
+                expect(undoHistoryStore.value?.past[1]).not.toBe(liveEntries[1]);
+                expect(trackStore.value?.tracks[0]?.clips).toEqual([...removedClips, peerClip]);
+                const removal = undoHistoryStore.value?.past[route === 'reverse' ? 0 : 1];
+                expect.soft(removal).toMatchObject({
+                    inverseAction: {
+                        type: 'restoreClip',
+                        payload: {
+                            clipSnapshot: route === 'reverse' ? sourceClip : { audioOffsetSeconds: capturedSeconds },
+                            ripplePlan: {
+                                removedClips: [
+                                    route === 'reverse' ? sourceClip : { audioOffsetSeconds: capturedSeconds },
+                                ],
+                            },
+                            midiNotesSnapshot: sourceNotes,
+                        },
+                    },
+                });
+                if (route === 'reverse' && source === 'legacy') {
+                    if (removal?.kind !== 'action' || removal.inverseAction?.type !== 'restoreClip') {
+                        throw new Error('Expected real reverse removal inverse');
+                    }
+                    expect(removal.inverseAction.payload.clipSnapshot).not.toHaveProperty('audioOffsetSeconds');
+                }
+                if (route === 'reverse' && ripple) {
+                    const tempo = undoHistoryStore.value?.past[1];
+                    expect(tempo).toMatchObject({
+                        redoAction: {
+                            type: 'setTempo',
+                            payload: {
+                                sourceTransition: {
+                                    clips: expect.arrayContaining([
+                                        {
+                                            trackId: 'track-1',
+                                            alternativeId: null,
+                                            clipId: 'follower',
+                                            audioBufferId: 'source-buffer',
+                                            fileId: null,
+                                            assetHash: null,
+                                            startBeat: 12,
+                                            endBeat: 16,
+                                            audioOffsetBeats: 4,
+                                            originalTempo: 120,
+                                            audioOffsetSeconds: 2,
+                                        },
+                                    ]),
+                                },
+                            },
                         },
                     });
-                    projectCrdtToStores();
                 }
-                await redo();
-                expect(transportStore.value?.tempo).toBe(60);
-                expect(trackStore.value?.tracks[0]?.clips).toEqual([peerClip, peerAfterUndo]);
-                expect(trackStore.value?.tracks[0]?.alternatives[0]?.clips[0]?.audioOffsetSeconds).toBe(-2);
-                expect(trackStore.value?.tracks[0]?.alternatives[1]?.clips[0]?.audioOffsetSeconds).toBe(0);
-                expect(takeLaneStore.value?.lanes).toEqual([]);
-                expect(undoHistoryStore.value?.past).toHaveLength(2);
-                expect(undoHistoryStore.value?.future).toHaveLength(0);
                 assertRaw();
-            }
-        } finally {
-            sessionUndoWitnessStampPort.setProvider(null);
-            await indexedDb.dispose();
-        }
-    });
 
-    it.each(['undo', 'redo'] as const)(
-        'refuses sequential tempo and removal replay atomically after a peer source change before %s',
-        async (leg) => {
+                const peerAfterUndo: Clip = { ...peerClip, id: 'peer-after-undo', startBeat: 3, endBeat: 5 };
+                const peerTake = {
+                    id: 'peer-take',
+                    clipId: 'clip-1',
+                    name: 'Later peer pass',
+                    startBeat: 8,
+                    endBeat: 12,
+                    selected: false,
+                    sourceOffsetBeats: 0,
+                    sourceOffsetSeconds: 0,
+                    passAnchorSeconds: -2,
+                    passDepthSeconds: 2,
+                };
+                for (const cycle of [1, 2]) {
+                    expect((await undo()).headConsumed, `Undo cycle ${cycle}`).toBe(true);
+                    expect(transportStore.value?.tempo).toBe(120);
+                    let expectedClips = [
+                        ...before!.tracks[0]!.clips.filter((clip) => clip.id !== 'clip-1'),
+                        peerClip,
+                        sourceClip,
+                    ];
+                    if (cycle === 2) {
+                        expectedClips = [
+                            ...before!.tracks[0]!.clips.filter((clip) => clip.id !== 'clip-1'),
+                            peerClip,
+                            peerAfterUndo,
+                            sourceClip,
+                        ];
+                    }
+                    expect(trackStore.value?.tracks[0]?.clips).toEqual(expectedClips);
+                    if (source === 'legacy') {
+                        expect(
+                            trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'clip-1')
+                        ).not.toHaveProperty('audioOffsetSeconds');
+                    }
+                    expect(getAutomationLanes()).toEqual(beforeAutomation);
+                    expect(gainEnvelopeStore.value?.envelopes['clip-1']).toEqual(envelope);
+                    expect(midiStore.value?.notesByClipId['clip-1']).toEqual(beforeMidi?.notesByClipId['clip-1']);
+                    expect(midiStore.value?.ccByClipId['clip-1']).toEqual(beforeMidi?.ccByClipId['clip-1']);
+                    expect(midiStore.value?.pitchBendByClipId['clip-1']).toEqual(
+                        beforeMidi?.pitchBendByClipId['clip-1']
+                    );
+                    expect(trackStore.value?.tracks[0]?.alternatives).toEqual(before?.tracks[0]?.alternatives);
+                    const expectedTakes = structuredClone(beforeTakes);
+                    if (cycle === 2) {
+                        expectedTakes?.lanes[0]?.takes.push(peerTake);
+                    }
+                    expect(takeLaneStore.value).toEqual(expectedTakes);
+                    expect(undoHistoryStore.value?.past).toHaveLength(0);
+                    expect(undoHistoryStore.value?.future).toHaveLength(2);
+                    assertRaw();
+                    if (cycle === 1) {
+                        mutateCrdtDoc<{
+                            tracks: { tracks: Track[] };
+                            takeLanes: NonNullable<typeof takeLaneStore.value>;
+                        }>({
+                            id: 'root',
+                            changeFn: (project) => {
+                                project.tracks.tracks[0]!.clips.push(peerAfterUndo);
+                                project.takeLanes.lanes[0]!.takes.push(peerTake);
+                            },
+                        });
+                        projectCrdtToStores();
+                    }
+                    await redo();
+                    expect(transportStore.value?.tempo).toBe(60);
+                    expect(trackStore.value?.tracks[0]?.clips).toEqual([...removedClips, peerClip, peerAfterUndo]);
+                    if (ripple) {
+                        expect(getAutomationLanes()).toEqual([
+                            { ...beforeAutomation[0], points: [{ beat: 13, value: 0.5, curve: 'linear', tension: 0 }] },
+                        ]);
+                    }
+                    expect(trackStore.value?.tracks[0]?.alternatives[0]?.clips[0]?.audioOffsetSeconds).toBe(-2);
+                    expect(trackStore.value?.tracks[0]?.alternatives[1]?.clips[0]?.audioOffsetSeconds).toBe(0);
+                    expect(takeLaneStore.value?.lanes).toEqual([]);
+                    expect(gainEnvelopeStore.value?.envelopes['clip-1']).toBeUndefined();
+                    expect(midiStore.value?.notesByClipId['clip-1']).toBeUndefined();
+                    expect(undoHistoryStore.value?.past).toHaveLength(2);
+                    expect(undoHistoryStore.value?.future).toHaveLength(0);
+                    assertRaw();
+                }
+            } finally {
+                sessionUndoWitnessStampPort.setProvider(null);
+                await indexedDb.dispose();
+            }
+        }
+    );
+
+    it.each([
+        ['sequential', 'undo'],
+        ['sequential', 'redo'],
+        ['atomic', 'undo'],
+        ['atomic', 'redo'],
+        ['reverse', 'undo'],
+        ['reverse', 'redo'],
+    ] as const)(
+        'refuses %s tempo and removal replay atomically after a peer source change before %s',
+        async (route, leg) => {
             clearHandlerRegistry();
             registerProductionHandlers();
-            const groupId = 'sequential-tempo-remove-conflict';
-            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { source: 'manual', groupId });
-            await executeAppAction(
-                { type: 'removeClip', payload: { clipId: 'clip-1' } },
-                { source: 'manual', groupId }
-            );
+            const groupId = `${route}-tempo-remove-conflict`;
+            if (route !== 'sequential') {
+                const actions: Parameters<typeof executeAppActionBatch>[0][number][] = [
+                    { type: 'setTempo', payload: { bpm: 60 } },
+                    { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                ];
+                if (route === 'reverse') {
+                    actions.reverse();
+                }
+                const result = await executeAppActionBatch(actions, { source: 'manual', groupId });
+                expect(result.status).toBe('committed');
+            } else {
+                await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { source: 'manual', groupId });
+                await executeAppAction(
+                    { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                    { source: 'manual', groupId }
+                );
+            }
             if (leg === 'redo') {
                 expect((await undo()).headConsumed).toBe(true);
             }
             mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
                 id: 'root',
                 changeFn: (project) => {
-                    if (leg === 'undo') {
+                    if (leg === 'undo' || route === 'reverse') {
                         // New legacy membership was never captured by the tempo command.
                         project.tracks.tracks[0]!.clips.push({ ...legacyClip, id: 'peer-legacy' });
                     } else {
@@ -494,6 +736,107 @@ describe('tempo map edit preserves canonical audio source', () => {
                 for (const write of writes) {
                     write.mockRestore();
                 }
+            }
+        }
+    );
+
+    it('keeps a refused initial batch atomic before admitting the same removal in a valid prefix', async () => {
+        clearHandlerRegistry();
+        registerProductionHandlers();
+        const tempo = { type: 'setTempo' as const, payload: { bpm: 60 } };
+        const removal = { type: 'removeClip' as const, payload: { clipId: 'clip-1' } };
+        const raw = structuredClone(getCrdtDoc('root'));
+        const owners = structuredClone({ tracks: trackStore.value, transport: transportStore.value });
+        const history = undoHistoryStore.value;
+        const refused = await executeAppActionBatch([tempo, removal, removal], {
+            source: 'manual',
+            groupId: 'refused-remove-prefix',
+        });
+        expect(refused.status).toBe('conflicted');
+        expect(getCrdtDoc('root')).toEqual(raw);
+        expect({ tracks: trackStore.value, transport: transportStore.value }).toEqual(owners);
+        expect(undoHistoryStore.value).toBe(history);
+        const accepted = await executeAppActionBatch([tempo, removal], {
+            source: 'manual',
+            groupId: 'valid-remove-prefix',
+        });
+        expect(accepted.status).toBe('committed');
+        expect(undoHistoryStore.value?.past[1]).toMatchObject({
+            inverseAction: { payload: { clipSnapshot: { audioOffsetSeconds: 1 } } },
+        });
+        expect((await undo()).headConsumed).toBe(true);
+        expect(trackStore.value?.tracks[0]?.clips).toEqual([legacyClip]);
+    });
+
+    it.each(['reverse-order', 'independent-removals', 'independent-ripple'] as const)(
+        'replays the admitted %s atomic batch without inventing a canonical source',
+        async (route) => {
+            clearHandlerRegistry();
+            registerProductionHandlers();
+            const midiClip: Clip = { ...legacyClip, id: 'midi-clip', type: 'midi' };
+            if (route === 'independent-ripple') {
+                midiClip.startBeat = 16;
+                midiClip.endBeat = 20;
+                workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+            }
+            const originalClips = [legacyClip];
+            if (route !== 'reverse-order') {
+                originalClips.push(midiClip);
+                trackStore.set({ ...trackStore.value!, tracks: [{ ...track, clips: structuredClone(originalClips) }] });
+                midiStore.set({
+                    ...defaultMidiStoreState,
+                    notesByClipId: {
+                        'midi-clip': [{ id: 'control-note', pitch: 60, startBeat: 0, duration: 1, velocity: 80 }],
+                    },
+                });
+            }
+            flushAutomergeStorageWrites();
+            const beforeMidi = structuredClone(midiStore.value);
+            const removal = { type: 'removeClip' as const, payload: { clipId: 'clip-1' } };
+            const sibling = { type: 'setTempo' as const, payload: { bpm: 60 } };
+            const independent = { type: 'removeClip' as const, payload: { clipId: 'midi-clip' } };
+            const actions: Parameters<typeof executeAppActionBatch>[0][number][] = [removal, sibling];
+            if (route !== 'reverse-order') {
+                actions.splice(1, 1, independent);
+            }
+            const result = await executeAppActionBatch(actions, { source: 'manual', groupId: route });
+            expect(result.status).toBe('committed');
+            expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+            const captured = undoHistoryStore.value?.past[0];
+            if (captured?.kind !== 'action' || captured.inverseAction?.type !== 'restoreClip') {
+                throw new Error('Expected the production removal capture');
+            }
+            expect(captured.inverseAction.payload.clipSnapshot).not.toHaveProperty('audioOffsetSeconds');
+            if (route === 'independent-ripple') {
+                expect(undoHistoryStore.value?.past[1]).toMatchObject({
+                    inverseAction: {
+                        type: 'restoreClip',
+                        payload: {
+                            clipSnapshot: { id: midiClip.id, startBeat: 12, endBeat: 16 },
+                            ripplePlan: { removedClips: [{ id: midiClip.id, startBeat: 12, endBeat: 16 }] },
+                        },
+                    },
+                });
+            }
+            for (const cycle of [1, 2]) {
+                expect((await undo()).headConsumed, `Undo ${cycle}`).toBe(true);
+                expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id).sort()).toEqual(
+                    originalClips.map((clip) => clip.id).sort()
+                );
+                expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'clip-1')).toEqual(legacyClip);
+                expect(midiStore.value).toEqual(beforeMidi);
+                const raw = getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value>; midi: typeof midiStore.value }>(
+                    'root'
+                );
+                expect(raw?.tracks.tracks).toEqual(trackStore.value?.tracks);
+                expect(raw?.midi).toEqual(midiStore.value);
+                await redo();
+                expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+                expect(undoHistoryStore.value?.past).toHaveLength(2);
+                expect(undoHistoryStore.value?.future).toHaveLength(0);
+                expect(getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>('root')?.tracks.tracks).toEqual(
+                    trackStore.value?.tracks
+                );
             }
         }
     );

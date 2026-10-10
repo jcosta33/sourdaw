@@ -1,4 +1,5 @@
 import { getAutomationLanes, isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import {
     type AppAction,
     type AudioSourceStateSnapshot,
@@ -7,6 +8,7 @@ import {
 } from '#/utils/handlerContract';
 
 import { type Clip } from '../../models/Track';
+import { deriveRippleDelete } from '../../services/deriveRippleDelete';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 import { audioSourceAfterSlip } from './audioSourceAfterSlip';
@@ -67,6 +69,54 @@ function projectClipEdit(clip: ReplayClip, action: AppAction): ReplayClip {
     return clip;
 }
 
+function shiftProjectedLanes(
+    lanes: readonly ClipAutomationLaneSnapshot[],
+    shifts: ReadonlyMap<string, { automationDelta: number }>,
+    direction: 1 | -1
+): readonly ClipAutomationLaneSnapshot[] {
+    return lanes.map((lane) => {
+        const shift = lane.clipId === undefined ? undefined : shifts.get(lane.clipId);
+        if (!shift || shift.automationDelta === 0) {
+            return lane;
+        }
+        return {
+            ...lane,
+            points: lane.points
+                .map((point) => ({ ...point, beat: Math.max(0, point.beat + direction * shift.automationDelta) }))
+                .sort((left, right) => left.beat - right.beat),
+        };
+    });
+}
+
+function projectRemoval(state: ShiftedOwnerState, clipId: string): ShiftedOwnerState | null {
+    const owner = state.clips.find((candidate) => candidate.clip.id === clipId);
+    if (!owner) {
+        return null;
+    }
+    const plan = deriveRippleDelete({
+        clips: state.clips
+            .filter((candidate) => candidate.owningTrackId === owner.owningTrackId)
+            .map(({ clip }) => clip),
+        clipIds: [clipId],
+        rippleEnabled: workspaceStore.value?.rippleEditing ?? false,
+    });
+    if (!plan) {
+        return null;
+    }
+    const nextClips = new Map(plan.nextClips.map((clip) => [clip.id, clip]));
+    const clips = state.clips.flatMap((candidate) => {
+        if (candidate.owningTrackId !== owner.owningTrackId) {
+            return [candidate];
+        }
+        const clip = nextClips.get(candidate.clip.id);
+        return clip ? [{ ...candidate, clip }] : [];
+    });
+    const removedIds = new Set(plan.removedClips.map((clip) => clip.id));
+    const shifts = new Map(plan.shiftedClips.map((shift) => [shift.clipId, shift]));
+    const lanes = state.lanes.filter((lane) => lane.clipId === undefined || !removedIds.has(lane.clipId));
+    return { clips, lanes: shiftProjectedLanes(lanes, shifts, 1) };
+}
+
 /** The clip geometry/source and automation prior replay members write, in group order.
  * Restored lanes matter even when that earlier removal did not ripple: a later
  * inverse may shift the clip the earlier inverse just brought back. */
@@ -81,6 +131,14 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
             ...state,
             clips: state.clips.map((owner) => ({ ...owner, clip: projectClipEdit(owner.clip, action) })),
         };
+        if (action.type === 'removeClip') {
+            const removal = projectRemoval(state, action.payload.clipId);
+            if (!removal) {
+                return null;
+            }
+            state = removal;
+            continue;
+        }
         if (action.type === 'restoreClipSplitState') {
             const { clipId, rightClipId, replacement } = action.payload;
             const trackClips = state.clips
@@ -129,18 +187,7 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
             }
             return { ...owner, clip: { ...owner.clip, startBeat: shift.origStartBeat, endBeat: shift.origEndBeat } };
         });
-        const shiftedLanes = state.lanes.map((lane) => {
-            const shift = lane.clipId === undefined ? undefined : shifts.get(lane.clipId);
-            if (!shift || shift.automationDelta === 0) {
-                return lane;
-            }
-            return {
-                ...lane,
-                points: lane.points
-                    .map((point) => ({ ...point, beat: Math.max(0, point.beat - shift.automationDelta) }))
-                    .sort((left, right) => left.beat - right.beat),
-            };
-        });
+        const shiftedLanes = shiftProjectedLanes(state.lanes, shifts, -1);
         const liveIds = new Set(shiftedLanes.map((lane) => lane.id));
         if (ripplePlan.clipAutomationLanes.some((lane) => liveIds.has(lane.id))) {
             return null;

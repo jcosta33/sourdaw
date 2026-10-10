@@ -1,9 +1,14 @@
 import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
-import { type HandlerValidationContext, type TempoAudioSourceTransition } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type HandlerValidationContext,
+    type TempoAudioSourceTransition,
+} from '#/utils/handlerContract';
 
 import { type Take, type TakeLane } from '../../models/TakeLane';
 import { type Clip, type Track } from '../../models/Track';
+import { deriveTakeRetirement } from '../../services/deriveTakeRetirement';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';
 
@@ -475,9 +480,26 @@ function applyTransition(transition: TempoAudioSourceTransition): void {
     }
 }
 
+function projectRemovalTakes(
+    lanes: NonNullable<typeof takeLaneStore.value>,
+    priorActions: readonly AppAction[]
+): NonNullable<typeof takeLaneStore.value> {
+    let projected = lanes;
+    for (const action of priorActions) {
+        if (action.type !== 'removeClip') {
+            continue;
+        }
+        const retirement = deriveTakeRetirement({ lanes: projected.lanes, clipIds: [action.payload.clipId] });
+        if (retirement) {
+            projected = { ...projected, lanes: retirement.lanes };
+        }
+    }
+    return projected;
+}
+
 export function prepareAudioSourcesForTempoChange(input: TempoSourceInput): PreparedTempoAudioSources | null {
     let tracks = trackStore.value;
-    const lanes = takeLaneStore.value;
+    let lanes = takeLaneStore.value;
     if (!tracks || !lanes) {
         return null;
     }
@@ -489,7 +511,7 @@ export function prepareAudioSourcesForTempoChange(input: TempoSourceInput): Prep
         }
         // Membership and order belong to the prefix too: a prior restore can
         // supply the source a later tempo inverse must guard before it exists live.
-        // Hidden alternatives and take ownership keep their original peer guards.
+        // Hidden alternatives keep their original peer guards.
         const projectedTracks: Track[] = [];
         for (const track of tracks.tracks) {
             const clips: Clip[] = [];
@@ -502,6 +524,7 @@ export function prepareAudioSourcesForTempoChange(input: TempoSourceInput): Prep
             projectedTracks.push({ ...track, clips });
         }
         tracks = { ...tracks, tracks: projectedTracks };
+        lanes = projectRemovalTakes(lanes, priorActions);
     }
     const locations = allClipLocations(tracks.tracks);
     if (!locations) {
