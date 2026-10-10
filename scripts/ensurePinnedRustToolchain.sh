@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cache_hit="${1:?expected exact cache-hit output}"
+cache_hit="${1?expected cache-hit output}"
 toolchain_file="${2:-rust-toolchain.toml}"
 case "$cache_hit" in
   true) source_name=exact-cache ;;
-  false) source_name=distribution ;;
+  false|'') source_name=distribution ;;
   *) printf 'invalid Rust toolchain cache-hit value: %s\n' "$cache_hit" >&2; exit 1 ;;
 esac
 
@@ -40,7 +40,7 @@ PY
 )
 
 # Only a cache miss may ask rustup to install the TOML-declared toolchain.
-if [ "$cache_hit" = false ]; then
+if [ "$source_name" = distribution ]; then
   component_flags=()
   while IFS= read -r component; do
     component_flags+=(--component "$component")

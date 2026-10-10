@@ -13,7 +13,12 @@ afterEach(() => {
     }
 });
 
-function runSetup(cacheHit: 'true' | 'false', installed: boolean, incomplete = false, wrongPin = false) {
+function runSetup(
+    cacheHit: 'true' | 'false' | '' | 'unexpected' | undefined,
+    installed: boolean,
+    incomplete = false,
+    wrongPin = false
+) {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-pinned-rust-'));
     roots.push(root);
     const bin = join(root, 'bin');
@@ -54,7 +59,11 @@ esac
 `,
         { mode: 0o755 }
     );
-    const result = spawnSync('bash', ['scripts/ensurePinnedRustToolchain.sh', cacheHit, toolchain], {
+    const args = ['scripts/ensurePinnedRustToolchain.sh'];
+    if (cacheHit !== undefined) {
+        args.push(cacheHit, toolchain);
+    }
+    const result = spawnSync('bash', args, {
         cwd: join(import.meta.dirname, '../..'),
         encoding: 'utf8',
         env: {
@@ -82,10 +91,11 @@ describe('pinned Rust setup', () => {
     });
 
     it('fails a missing or incomplete exact hit without falling back to distribution', () => {
-        for (const [installed, incomplete] of [
+        const cases: ReadonlyArray<readonly [boolean, boolean]> = [
             [false, false],
             [true, true],
-        ]) {
+        ];
+        for (const [installed, incomplete] of cases) {
             const { result, calls } = runSetup('true', installed, incomplete);
             expect(result.status).not.toBe(0);
             expect(calls).not.toMatch(/^show$/m);
@@ -95,11 +105,21 @@ describe('pinned Rust setup', () => {
         expect(mismatched.calls).not.toMatch(/^show$/m);
     });
 
-    it('propagates a cold installation failure before verification', () => {
-        const { result, calls } = runSetup('false', false);
-        expect(result.status).toBe(73);
-        expect(calls).toBe(
-            'toolchain install nightly-2026-04-14 --profile minimal --component rustfmt --component clippy\n'
-        );
+    it('treats an unset cache output and a false match as cold misses, propagating installation failure', () => {
+        for (const cacheHit of ['', 'false'] as const) {
+            const { result, calls } = runSetup(cacheHit, false);
+            expect(result.status).toBe(73);
+            expect(calls).toBe(
+                'toolchain install nightly-2026-04-14 --profile minimal --component rustfmt --component clippy\n'
+            );
+        }
+    });
+
+    it('rejects a missing argument or unknown cache value before Rustup', () => {
+        for (const cacheHit of [undefined, 'unexpected'] as const) {
+            const { result, calls } = runSetup(cacheHit, false);
+            expect(result.status).not.toBe(0);
+            expect(calls).toBe('');
+        }
     });
 });
