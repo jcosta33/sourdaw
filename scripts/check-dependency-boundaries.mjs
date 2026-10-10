@@ -1603,9 +1603,41 @@ function collectContractReexportRows({ files, repositoryRoot, sourceFilesByPath,
         if (!sourceFile) {
             continue;
         }
-        const visit = (node) => {
-            const moduleSpecifier = ts.isExportDeclaration(node) ? moduleSpecifierText(node.moduleSpecifier) : null;
-            if (moduleSpecifier) {
+        // An `export { X }` without a module specifier re-exports whatever this file's import
+        // declarations bound, so reading only specifier-carrying export declarations misses the
+        // laundering spelling `import { X } from '../models/Foo'; export { X };`. This table binds
+        // each local name to its importing module specifier so the visit below can run bound
+        // re-exports through the same private-surface resolution as spelled ones.
+        const importSpecifiersByLocalName = new Map();
+        const visitImports = (node) => {
+            if (ts.isImportDeclaration(node) && node.importClause) {
+                const moduleSpecifier = moduleSpecifierText(node.moduleSpecifier);
+                if (moduleSpecifier) {
+                    const clause = node.importClause;
+                    const namedBindings = clause.namedBindings;
+                    const localNames = [
+                        clause.name?.text,
+                        namedBindings && ts.isNamespaceImport(namedBindings) ? namedBindings.name.text : null,
+                        ...(namedBindings && ts.isNamedImports(namedBindings)
+                            ? namedBindings.elements.map((element) => (element.propertyName ?? element.name).text)
+                            : []),
+                    ].filter(Boolean);
+                    for (const localName of localNames) {
+                        importSpecifiersByLocalName.set(localName, moduleSpecifier);
+                    }
+                }
+            } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+                const moduleSpecifier = moduleSpecifierText(node.moduleReference.expression);
+                if (moduleSpecifier) {
+                    importSpecifiersByLocalName.set(node.name.text, moduleSpecifier);
+                }
+            }
+            ts.forEachChild(node, visitImports);
+        };
+        visitImports(sourceFile);
+        const privateRowBySpecifier = new Map();
+        const privateRowForSpecifier = (moduleSpecifier) => {
+            if (!privateRowBySpecifier.has(moduleSpecifier)) {
                 const targetFile = resolveRepositoryModuleSpecifier(
                     moduleSpecifier,
                     sourceFile.fileName,
@@ -1613,16 +1645,50 @@ function collectContractReexportRows({ files, repositoryRoot, sourceFilesByPath,
                     compilerHost
                 );
                 const targetPath = targetFile ? toPosixPath(relative(repositoryRoot, targetFile)) : null;
-                if (targetPath?.startsWith('src/') && privateSurfaceSegmentPath.test(targetPath)) {
-                    const row = {
-                        type: 'contract-reexport',
-                        from: repoPath,
-                        to: targetPath,
-                        rule: contractReexportRule,
-                    };
-                    // One file may re-export the same target on several statements (a value and a
-                    // type line); the register speaks in edges, so the duplicates collapse.
-                    rowsByKey.set(keyOf(row), row);
+                privateRowBySpecifier.set(
+                    moduleSpecifier,
+                    targetPath?.startsWith('src/') && privateSurfaceSegmentPath.test(targetPath)
+                        ? {
+                              type: 'contract-reexport',
+                              from: repoPath,
+                              to: targetPath,
+                              rule: contractReexportRule,
+                          }
+                        : null
+                );
+            }
+            return privateRowBySpecifier.get(moduleSpecifier);
+        };
+        const addRow = (row) => {
+            if (!row) {
+                return;
+            }
+            // One file may re-export the same target on several statements (a value and a
+            // type line); the register speaks in edges, so the duplicates collapse.
+            rowsByKey.set(keyOf(row), row);
+        };
+        const visit = (node) => {
+            if (ts.isExportDeclaration(node)) {
+                const moduleSpecifier = moduleSpecifierText(node.moduleSpecifier);
+                if (moduleSpecifier) {
+                    addRow(privateRowForSpecifier(moduleSpecifier));
+                } else if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+                    // `export { X }` and `export { X as Y }` re-export the symbol the file
+                    // imported under the clause's local binding name.
+                    for (const element of node.exportClause.elements) {
+                        const importedSpecifier = importSpecifiersByLocalName.get(
+                            (element.propertyName ?? element.name).text
+                        );
+                        if (importedSpecifier !== undefined) {
+                            addRow(privateRowForSpecifier(importedSpecifier));
+                        }
+                    }
+                }
+            } else if (ts.isExportAssignment(node) && ts.isIdentifier(node.expression)) {
+                // `export default X` re-exports the imported symbol without a module specifier.
+                const importedSpecifier = importSpecifiersByLocalName.get(node.expression.text);
+                if (importedSpecifier !== undefined) {
+                    addRow(privateRowForSpecifier(importedSpecifier));
                 }
             }
             ts.forEachChild(node, visit);

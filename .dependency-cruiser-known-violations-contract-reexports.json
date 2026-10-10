@@ -1,6 +1,33 @@
 [
   {
     "type": "contract-reexport",
+    "from": "src/modules/AiGeneration/useCases/generateChordProgression/algorithm.ts",
+    "to": "src/modules/AiGeneration/models/GenerationStyles.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/AiGeneration/useCases/generateDrumPattern/algorithm.ts",
+    "to": "src/modules/AiGeneration/models/GenerationStyles.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/AiGeneration/useCases/generateMelody/algorithm.ts",
+    "to": "src/modules/AiGeneration/models/GenerationStyles.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
     "from": "src/modules/AiRuntime/useCases/agentToolCatalog.ts",
     "to": "src/modules/AiRuntime/models/AgentToolCatalogNames.ts",
     "rule": {
@@ -28,6 +55,15 @@
   },
   {
     "type": "contract-reexport",
+    "from": "src/modules/Arrangement/stores/markerStore.ts",
+    "to": "src/modules/Arrangement/models/Marker.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
     "from": "src/modules/Arrangement/stores/trackStore.ts",
     "to": "src/modules/Arrangement/models/Track.ts",
     "rule": {
@@ -46,8 +82,62 @@
   },
   {
     "type": "contract-reexport",
+    "from": "src/modules/AudioEngine/useCases/engineAccess/getAudioContext.ts",
+    "to": "src/modules/AudioEngine/repositories/createWebAudioEngine.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Automation/stores/automationStore.ts",
+    "to": "src/modules/Automation/models/Automation.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
     "from": "src/modules/BrowserAi/events/ModelDownloadProgressEvent.ts",
     "to": "src/modules/BrowserAi/models/ModelDownloadProgress.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/BrowserAi/useCases/initBrowserAi.ts",
+    "to": "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/BrowserAi/useCases/initBrowserAi.ts",
+    "to": "src/modules/BrowserAi/models/KokoroArtifactManifest.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Collaboration/useCases/collaborationQueries.ts",
+    "to": "src/modules/Collaboration/models/CollaborationTypes.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Command/useCases/macro/recording/stopMacroRecording.ts",
+    "to": "src/modules/Command/models/Macro.ts",
     "rule": {
       "severity": "error",
       "name": "no-models-repos-transformers-in-contract-folders"
@@ -82,6 +172,15 @@
   },
   {
     "type": "contract-reexport",
+    "from": "src/modules/GrandBoule/stores/grandBouleStore.ts",
+    "to": "src/modules/GrandBoule/models/GrandBouleDeviceState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
     "from": "src/modules/MIDI/stores/grooveTemplateStore.ts",
     "to": "src/modules/MIDI/models/GrooveTemplateState.ts",
     "rule": {
@@ -109,6 +208,15 @@
   },
   {
     "type": "contract-reexport",
+    "from": "src/modules/Preferences/stores/preferencesStore.ts",
+    "to": "src/modules/Preferences/models/Preferences.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
     "from": "src/modules/Preferences/useCases/preferencesDefaults.ts",
     "to": "src/modules/Preferences/models/Preferences.ts",
     "rule": {
@@ -118,8 +226,98 @@
   },
   {
     "type": "contract-reexport",
+    "from": "src/modules/ProjectVersioning/stores/versionControlStore.ts",
+    "to": "src/modules/ProjectVersioning/models/ProjectVersion.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/TimelineEditor/presentations/views/Inspector/deviceLayoutRegistry.ts",
+    "to": "src/modules/TimelineEditor/models/TrackViewTypes.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Transport/stores/transportStore.ts",
+    "to": "src/modules/Transport/models/TransportState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Transport/useCases/transportQueries/helpers.ts",
+    "to": "src/modules/Transport/models/TempoMap.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Transport/useCases/transportQueries/helpers.ts",
+    "to": "src/modules/Transport/models/TimeSignatureMap.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Transport/useCases/transportQueries/helpers.ts",
+    "to": "src/modules/Transport/models/TransportState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/Tuner/stores/tunerStore.ts",
+    "to": "src/modules/Tuner/models/TunerState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/WorkspaceShell/stores/workspaceStore.ts",
+    "to": "src/modules/WorkspaceShell/models/EditingTool.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/WorkspaceShell/stores/workspaceStore.ts",
+    "to": "src/modules/WorkspaceShell/models/WorkspaceState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
     "from": "src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts",
     "to": "src/modules/WorkspaceShell/models/EditingTool.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-models-repos-transformers-in-contract-folders"
+    }
+  },
+  {
+    "type": "contract-reexport",
+    "from": "src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts",
+    "to": "src/modules/WorkspaceShell/models/WorkspaceState.ts",
     "rule": {
       "severity": "error",
       "name": "no-models-repos-transformers-in-contract-folders"
