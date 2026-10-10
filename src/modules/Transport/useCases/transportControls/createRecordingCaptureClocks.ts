@@ -30,7 +30,7 @@ function freezeCaptureClock(clock: CaptureClock, sampleZeroContextSeconds: numbe
     for (const pending of clock.pendingRelocations) {
         if (
             (pending.effectiveFromContextSeconds ?? pending.contextSeconds) <= sampleZeroContextSeconds &&
-            (!clock.relocation || pending.contextSeconds > clock.relocation.contextSeconds)
+            (!clock.relocation || pending.contextSeconds >= clock.relocation.contextSeconds)
         ) {
             clock.relocation = pending;
         }
@@ -60,8 +60,9 @@ function retainCaptureRelocation(clock: CaptureClock, relocation: CaptureRelocat
         // anchor is earlier. Admit the epoch only against sample zero.
         // A torn first publication can span several sounded seams and edits.
         // Keep every candidate until sample zero selects its own latest epoch.
+        // Equal anchors can have different effective instants; retain their observed order.
         const latest = clock.pendingRelocations.at(-1);
-        if (!latest || relocation.contextSeconds > latest.contextSeconds) {
+        if (!latest || relocation.contextSeconds >= latest.contextSeconds) {
             clock.pendingRelocations.push(relocation);
         }
         return;

@@ -97,6 +97,34 @@ describe('recording capture occurrence clocks', () => {
     });
 
     it.each([
+        { publication: 'retry', firstFrame: 51.15, songSeconds: 8, effectiveFromContextSeconds: 51.1 },
+        { publication: 'retry', firstFrame: 51.25, songSeconds: 16, effectiveFromContextSeconds: 51.2 },
+        { publication: 'retry', firstFrame: 51.35, songSeconds: 24, effectiveFromContextSeconds: 51.3 },
+        { publication: 'unadmitted', firstFrame: 51.15, songSeconds: 8, effectiveFromContextSeconds: 51.1 },
+        { publication: 'unadmitted', firstFrame: 51.25, songSeconds: 16, effectiveFromContextSeconds: 51.2 },
+        { publication: 'unadmitted', firstFrame: 51.35, songSeconds: 24, effectiveFromContextSeconds: 51.3 },
+    ] as const)(
+        'selects the latest eligible tied anchor for $publication sample zero at $firstFrame',
+        ({ publication, firstFrame, songSeconds, effectiveFromContextSeconds }) => {
+            const clock = clocks.create('track');
+            recordingLifecycle.observeCaptureClock(8, 51.1, true);
+            if (publication === 'retry') {
+                clock.setReader(() => ({ status: 'retry' }));
+            }
+            recordingLifecycle.observeCaptureClock(8, 51.1, true, 51.1, 8);
+            recordingLifecycle.observeCaptureClock(8, 51.1, true, 51.2, 16);
+            recordingLifecycle.observeCaptureClock(8, 51.1, true, 51.3, 24);
+            clock.freeze(firstFrame);
+            expect(clock.relocation).toEqual({
+                contextSeconds: 51.1,
+                songSeconds,
+                effectiveFromContextSeconds,
+            });
+            expect(clock.pendingRelocations).toEqual([]);
+        }
+    );
+
+    it.each([
         { firstFrame: 51.125, contextSeconds: 51.1, songSeconds: 4 },
         { firstFrame: 51.2, contextSeconds: 51.16, songSeconds: 8.12 },
         { firstFrame: 51.4, contextSeconds: 51.3, songSeconds: 4.13 },

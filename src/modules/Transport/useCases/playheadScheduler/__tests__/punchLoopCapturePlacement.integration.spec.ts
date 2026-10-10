@@ -552,6 +552,68 @@ describe('punch audio capture loop placement', () => {
         }
     );
 
+    it.each(['manual', 'punch'] as const)(
+        '%s places delayed admission after tempo adoption tied to the sounded seam',
+        async (route) => {
+            hardware.now = 51;
+            let admit!: () => void;
+            hardware.admissionGate = new Promise<void>((resolve) => {
+                admit = resolve;
+            });
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.8 });
+            if (route === 'punch') {
+                transportStore.set({ ...transportStore.value!, isPlaying: false });
+                await executeAppAction({ type: 'setPunchIn', payload: { beat: 11.8 } }, { skipUndo: true });
+                await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+                await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+                transportStore.set({ ...transportStore.value!, isPlaying: true });
+            }
+            startPlayheadScheduler();
+            if (route === 'manual') {
+                toggleRecording();
+            }
+            await tick(0.01);
+            await vi.waitFor(() => expect(hardware.starts).toBe(1), { interval: 1 });
+            expect(activeRecordingRef.current).toHaveLength(route === 'manual' ? 0 : 1);
+            expect(hardware.zeroFrame).toBe(0);
+            expect(hardware.correlation).toBeNull();
+            expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(51.1, 10);
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+            await tick(0.09);
+            expect(hardware.now).toBe(51.1);
+            expect(playheadClockRef.beat).toBeCloseTo(8, 10);
+            hardware.now = 51.2;
+            admit();
+            await vi.waitFor(() => expect(hardware.correlation).not.toBeNull(), { interval: 1 });
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1), { interval: 1 });
+            expect(hardware.zeroFrame).toBe(2457600);
+            hardware.now = 51.4;
+            await stopPlayback();
+            const clip = recordedClips()[0]!;
+            const mediaOrigin =
+                secondsBetweenBeats(tempoMapStore.value!.changes, 0, clip.startBeat, 60) - (clip.audioOffsetBeats ?? 0);
+            expect(mediaOrigin).toBeCloseTo(8, 10);
+            expect(clip.startBeat).toBeCloseTo(8, 10);
+            expect(clip.audioOffsetBeats ?? 0).toBeCloseTo(0, 10);
+            expect(hardware.buffer!.duration).toBeCloseTo(0.2, 10);
+            expect(hardware.buffer!.length).toBe(9600);
+            expect(hardware.buffer!.getChannelData(0)[0]).toBe(0);
+            expect(hardware.buffer!.getChannelData(0)[9599]).toBe(9599);
+            expectProjectProjection();
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            const clips = structuredClone(recordedClips());
+            const takes = structuredClone(lane().takes);
+            await undo();
+            expect(recordedClips()).toEqual([]);
+            expect(takeLaneStore.value?.lanes.flatMap((row) => row.takes)).toEqual([]);
+            expectProjectProjection();
+            await redo();
+            expect(recordedClips()).toEqual(clips);
+            expect(lane().takes).toEqual(takes);
+            expectProjectProjection();
+        }
+    );
+
     it('keeps pending PCM on the sounded seam when an optimistic tempo command aborts before adoption', async () => {
         hardware.now = 51;
         hardware.deferFirstFrame = true;
