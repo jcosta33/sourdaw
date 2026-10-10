@@ -111,6 +111,51 @@ describe('migrateTrimmedClipPassTakes', () => {
         expect(mocks.laneStoreSet).not.toHaveBeenCalled();
     });
 
+    it('leaves a slipped pre-record pass byte-identical across a reload', () => {
+        // The same legitimate document as above, then slipClipContent moved
+        // the content left one beat: the offset alone, no trim, no take write.
+        // A trim advances start and offset together, so it can never move the
+        // clip's media origin (2 − 1 = 1) off the record origin; only the slip
+        // walked it toward the take's span start (0). Positive offset is no
+        // longer evidence on its own, so the reload must not rewrite the take.
+        seedTracks([ClipDummy.create({ id: 'clip-1', startBeat: 2, endBeat: 8, audioOffsetBeats: 1 })]);
+        seedLanes([passTake('pass-1', 2, 8, 0), passTake('pass-2', 0, 4, 2)]);
+
+        migrateTrimmedClipPassTakes();
+
+        expect(mocks.laneStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('still clamps the trim of a recording begun at the take span start', () => {
+        // The trim twin of the slipped shape: a recording begun at the loop
+        // start, start-trimmed from 0 to 2. The trim moved start and offset by
+        // the same delta, so the media origin (2 − 2 = 0) stayed on the take's
+        // span start — the one side a slip cannot reach without landing
+        // exactly on it.
+        seedTracks([ClipDummy.create({ id: 'clip-1', startBeat: 2, endBeat: 8, audioOffsetBeats: 2 })]);
+        seedLanes([passTake('pass-1', 0, 4, 0), passTake('pass-2', 0, 4, 4)]);
+
+        migrateTrimmedClipPassTakes();
+
+        expect(writtenTakes()).toEqual([passTake('pass-1', 2, 4, 0), passTake('pass-2', 2, 4, 4)]);
+    });
+
+    it('fires on the boundary slip that re-creates a trim-equivalent origin', () => {
+        // The pre-record-point document slipped left by exactly the distance
+        // from its record origin (2) to the take's span start (0): offset 2,
+        // media origin 0 — byte-identical to the trimmed twin above. Equality
+        // must resolve to the trim, because that figure is exactly what the
+        // clamping cases exist to repair; the false positive is bounded to a
+        // slip of exactly that distance. Pass 1, whose span starts at the clip
+        // itself, never qualified.
+        seedTracks([ClipDummy.create({ id: 'clip-1', startBeat: 2, endBeat: 8, audioOffsetBeats: 2 })]);
+        seedLanes([passTake('pass-1', 2, 8, 0), passTake('pass-2', 0, 4, 2)]);
+
+        migrateTrimmedClipPassTakes();
+
+        expect(writtenTakes()).toEqual([passTake('pass-1', 2, 8, 0), passTake('pass-2', 2, 4, 2)]);
+    });
+
     it('round-trips a current document without touching the lane', () => {
         // Post-#4987 commit of a recording begun inside the loop: the clip opens
         // at the earliest pass with negative media offset (leading silence), and

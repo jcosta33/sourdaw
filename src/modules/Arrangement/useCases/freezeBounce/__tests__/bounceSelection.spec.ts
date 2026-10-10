@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type MidiNote } from '#/modules/MIDI/models/MidiNote';
+import { projectMidiClipPlayback } from '#/modules/MIDI/useCases/midiClipData/projectMidiClipPlayback';
+
 import { normalizeTrack, type Clip, type Track } from '../../../models/Track';
 import { bounceSelection } from '../bounceSelection';
 
@@ -603,6 +606,155 @@ describe('bounceSelection', () => {
         const splitCall = midiMocks.splitMidiNotesAtBeat.mock.calls[0]?.[0];
         expect(splitCall?.sourceClipId).toBe('clip-span-midi');
         expect(splitCall?.newClipId.startsWith('clip-bsel-')).toBe(true);
+    });
+
+    // #5198 — the bounce fragments re-base their notes under midiOffsetBeats 0
+    // and move the head to the selection end: a fresh coordinate basis, so the
+    // anchor re-stamps to the fragment's own start. Carried through, the source
+    // anchor derived a spurious advance whose window silenced the fragment's
+    // surviving material. The projection reads the fragment through
+    // projectMidiClipPlayback, the projection playback draws from; the notes
+    // come from the MIDI mock's behavior-faithful partition.
+    function fragmentNotes(clipId: string): MidiNote[] {
+        const notes = midiMocks.state.value?.notesByClipId[clipId] ?? [];
+        return notes.map((note) => {
+            const id = note.id;
+            const pitch = note.pitch;
+            const startBeat = note.startBeat;
+            const duration = note.duration;
+            const velocity = note.velocity;
+            if (
+                typeof id !== 'string' ||
+                typeof pitch !== 'number' ||
+                typeof startBeat !== 'number' ||
+                typeof duration !== 'number' ||
+                typeof velocity !== 'number'
+            ) {
+                throw new TypeError(`Expected a complete note record for clip ${clipId}`);
+            }
+            return { id, pitch, startBeat, duration, velocity };
+        });
+    }
+
+    function projectFragmentStartBeats(clip: Clip): number[] {
+        return projectMidiClipPlayback({
+            notes: fragmentNotes(clip.id),
+            controlChanges: [],
+            clip,
+        })
+            .notes.map((note) => note.startBeat)
+            .toSorted((left, right) => left - right);
+    }
+
+    function keptFragment(): Clip {
+        const written = mocks.trackStore.set.mock.calls.at(-1)?.[0];
+        if (!written) {
+            throw new Error('expected trackStore.set');
+        }
+        const fragment = written.tracks[0]!.clips.find(
+            (clip: Clip) => clip.id.startsWith('clip-bsel-') && !clip.id.startsWith('clip-bsel-discard')
+        );
+        if (!fragment) {
+            throw new Error('expected the kept right fragment');
+        }
+        return fragment;
+    }
+
+    it('a spanning looped fragment re-stamps the anchor to its head and keeps sounding its surviving notes', async () => {
+        // Looped [0,10), L=4, anchored at 0: window [0,4). n-left sounds and
+        // stays in the left half; n-in (m 3) is in-selection and discarded;
+        // n-right/n-tail (m 9, 13) move to the fragment re-based by −8,
+        // landing at 1 and 5.
+        midiMocks.state.value = {
+            notesByClipId: {
+                'clip-span-midi': [
+                    { id: 'n-left', pitch: 60, startBeat: 1, duration: 0.5, velocity: 100 },
+                    { id: 'n-in', pitch: 62, startBeat: 3, duration: 0.5, velocity: 100 },
+                    { id: 'n-right', pitch: 64, startBeat: 9, duration: 0.5, velocity: 100 },
+                    { id: 'n-tail', pitch: 65, startBeat: 13, duration: 0.5, velocity: 100 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        const spanningMidi = createAudioClip({
+            id: 'clip-span-midi',
+            startBeat: 0,
+            endBeat: 10,
+            type: 'midi',
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        });
+        const track = normalizeTrack({
+            id: 'track-1',
+            name: 'Midi',
+            kind: 'midi',
+            clips: [spanningMidi],
+        } as unknown as Track);
+        setTrackStoreState({ tracks: [track], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 2, 8);
+        expect(result).toBe(true);
+
+        const fragment = keptFragment();
+        expect(fragment.startBeat).toBe(8);
+        expect(fragment.midiOffsetBeats).toBe(0);
+        // Re-stamped to the fragment's own head. The stale carry would derive
+        // advance 8, whose window [−8,−4) silences every survivor.
+        expect(fragment.loopOriginBeat).toBe(8);
+
+        const sounded = projectFragmentStartBeats(fragment);
+        expect(sounded).toEqual([9]);
+        expect(sounded).toEqual(projectFragmentStartBeats({ ...fragment, loopOriginBeat: undefined }));
+    });
+
+    it('a right-edge looped fragment re-stamps the anchor to its head and keeps sounding its surviving notes', async () => {
+        // Looped [4,10), L=4, anchored at 4: window [0,4) covering timeline
+        // [4,8). Selection [4,6) excises the head m∈[0,2): n-a/n-b (m 2.5, 3.5)
+        // sound before and survive onto the fragment at 0.5/1.5; n-c (m 6.5)
+        // lands past the re-stamped window.
+        midiMocks.state.value = {
+            notesByClipId: {
+                'clip-edge': [
+                    { id: 'n-a', pitch: 60, startBeat: 2.5, duration: 0.5, velocity: 100 },
+                    { id: 'n-b', pitch: 62, startBeat: 3.5, duration: 0.5, velocity: 100 },
+                    { id: 'n-c', pitch: 64, startBeat: 6.5, duration: 0.5, velocity: 100 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        const edgeMidi = createAudioClip({
+            id: 'clip-edge',
+            startBeat: 4,
+            endBeat: 10,
+            type: 'midi',
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 4,
+        });
+        const track = normalizeTrack({
+            id: 'track-1',
+            name: 'Midi',
+            kind: 'midi',
+            clips: [edgeMidi],
+        } as unknown as Track);
+        setTrackStoreState({ tracks: [track], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 4, 6);
+        expect(result).toBe(true);
+
+        const fragment = keptFragment();
+        expect(fragment.startBeat).toBe(6);
+        expect(fragment.midiOffsetBeats).toBe(0);
+        expect(fragment.loopOriginBeat).toBe(6);
+
+        const sounded = projectFragmentStartBeats(fragment);
+        expect(sounded).toEqual([6.5, 7.5]);
+        expect(sounded).toEqual(projectFragmentStartBeats({ ...fragment, loopOriginBeat: undefined }));
     });
 
     it('reports no-write when the track store is torn down after a successful render', async () => {

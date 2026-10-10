@@ -15,12 +15,17 @@ function clipOwnMediaOffset(clip: Clip): number {
  * the take's start can only be a trim the take never followed (#4996): commit
  * opens a recording clip at or before its passes' starts, and the only move
  * that separates them leftward is a trim on a build that did not carry takes
- * along. The clip's positive media offset is the trim's own fingerprint — the
- * media origin sits strictly before the clip's start — and rules out the
- * legitimate pre-record-point shapes, whose clips open at their media origin
- * (offset 0) or ahead of it (negative, leading silence). The trim must also
- * leave the take a surviving span: a clip start at or past the take's end
- * consumed the whole take, and clamping would invert it.
+ * along. A start trim advances the clip's start and its media offset by the
+ * same delta, so the clip's media origin (`startBeat − offset`) never moves;
+ * a slip of the clip's content writes an offset with no trim and moves the
+ * origin alone, leftward past the take's span start. The origin sitting at or
+ * before that start is therefore the trim's fingerprint — a positive offset
+ * alone is not, since a slip writes one too. Equality belongs to the trim: a
+ * recording begun exactly at the take's span start trims to origin == start,
+ * and the slip that lands exactly there is byte-identical to it, so geometry
+ * cannot split them and the repair side wins. The trim must also leave the
+ * take a surviving span: a clip start at or past the take's end consumed the
+ * whole take, and clamping would invert it.
  */
 function isUnfollowedTrimStart(take: Take, clip: Clip | undefined): clip is Clip {
     return (
@@ -28,7 +33,7 @@ function isUnfollowedTrimStart(take: Take, clip: Clip | undefined): clip is Clip
         take.sourceOffsetBeats !== undefined &&
         take.startBeat < clip.startBeat &&
         clip.startBeat < take.endBeat &&
-        clipOwnMediaOffset(clip) > 0
+        clip.startBeat - clipOwnMediaOffset(clip) <= take.startBeat
     );
 }
 
@@ -44,9 +49,13 @@ function isUnfollowedTrimStart(take: Take, clip: Clip | undefined): clip is Clip
  * pass's seconds fields ride along untouched: comp resolution anchors a pass's
  * material at its clip's start regardless of the take's span, so the clamp
  * changes what the take lane shows and what a take-anchored reader would read,
- * never what the clip sounds today. A looped MIDI clip trimmed a whole loop or
- * more keeps its offset wrapped to zero by `trimClipStart` and stays
- * undetectable here; #4988's loop-origin record is the door to those.
+ * never what the clip sounds today. Figures whose media origin sits strictly
+ * past the take's span start stay untouched, because a slip lands there just
+ * as a trim of a recording begun mid-loop does — the geometry cannot split
+ * them. A looped MIDI clip's trim also wraps its offset by whole loop lengths
+ * in `trimClipStart`, walking the media origin the same slipward direction.
+ * All of those stay undetectable here; #4988's loop-origin record is the door
+ * to those.
  */
 export function migrateTrimmedClipPassTakes(): void {
     const laneState = takeLaneStore.value;

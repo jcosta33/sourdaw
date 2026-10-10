@@ -1,4 +1,5 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
@@ -657,6 +658,17 @@ function planTrack(
                 audioOffsetBeats:
                     (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
                 midiOffsetBeats: 0,
+                // The fragment re-bases its notes by −splitBeat under
+                // midiOffsetBeats 0 and moves its head to the range end — a
+                // fresh coordinate basis the source anchor has no meaning in:
+                // carried through, it derives a spurious advance whose window
+                // silences the surviving material. The anchor re-stamps to the
+                // fragment's own start, so the window opens at the head exactly
+                // as the pre-anchor read admits the surviving material (#5198).
+                // Unanchored sources keep the key absent — the inverse plan's
+                // snapshot is compared structurally against the normalized
+                // live state.
+                ...restampLoopOriginEntry(clip, operation.endBeat),
             };
             finalClips.push(leftClip, rightClip);
             if (clip.type === 'midi') {
@@ -697,6 +709,12 @@ function planTrack(
                 // plays.
                 audioOffsetBeats:
                     (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
+                // The edge trim keeps the clip's own id, notes, and content
+                // offset — a whole-clip relocation by (endBeat − startBeat),
+                // so the anchor rides that delta: carried through it would
+                // derive a spurious advance whose window silences the surviving
+                // material (#5198). Unanchored clips keep the key absent.
+                ...shiftLoopOriginEntry(clip, operation.endBeat - clip.startBeat),
             });
             changed = true;
             continue;

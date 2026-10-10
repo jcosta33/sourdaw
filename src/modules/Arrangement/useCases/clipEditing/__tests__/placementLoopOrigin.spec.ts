@@ -18,6 +18,7 @@ import { planRippleDelete } from '../../rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../rippleDelete/rippleDeleteClips';
 import { undoRippleDelete } from '../../rippleDelete/undoRippleDelete';
 import { rippleInsertClip } from '../../rippleInsert/rippleInsertClip';
+import { undoRippleInsertClip } from '../../rippleInsert/undoRippleInsertClip';
 import { rippleMoveClip } from '../../rippleMove/rippleMoveClip';
 import { deleteTime } from '../../timeOperations/deleteTime';
 import { duplicateTimeRange } from '../../timeOperations/duplicateTimeRange';
@@ -297,6 +298,28 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         expect(probe(readClip('c-loop'))).toEqual(loopBefore);
     });
 
+    it('undoRippleInsertClip: a restored shift carries the anchor back (draw/discard round trip)', () => {
+        // Discarding a clip drawn after a ripple insert restores the shifted
+        // neighbors through undoRippleInsertClip: the undo reverses the
+        // forward relocation, so the anchor rides the same delta back and the
+        // restored clip reads exactly as before — advance zero included.
+        seedTracks([loopedClip({ id: 'c-next', name: 'Next', startBeat: 16, endBeat: 24, loopOriginBeat: 16 })]);
+        const nextBefore = probe(readClip('c-next'));
+        expect(nextBefore.advance).toBe(0);
+
+        const plan = { shiftedClips: [{ clipId: 'c-next', origStartBeat: 16, origEndBeat: 24 }] };
+        rippleInsertClip({ trackId: 't-keys', insertDuration: LOOP_LENGTH, plan });
+        expect(readClip('c-next').startBeat).toBe(20);
+        expect(readClip('c-next').loopOriginBeat).toBe(20);
+
+        undoRippleInsertClip({ trackId: 't-keys', plan });
+
+        const restored = readClip('c-next');
+        expect(restored.startBeat).toBe(16);
+        expect(restored.loopOriginBeat).toBe(16);
+        expect(probe(restored)).toEqual(nextBefore);
+    });
+
     it('rippleMoveClip: the moved clip and the opened destination both carry the anchor', () => {
         seedTracks([
             loopedClip(),
@@ -384,7 +407,7 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         expect(probe(right)).toEqual(rightBefore);
     });
 
-    it('deleteTime: clips right of the deleted range carry the anchor; split fragments trim like a start trim', () => {
+    it('deleteTime: clips right of the deleted range carry the anchor; split fragments re-stamp to their own head', () => {
         seedTracks([
             loopedClip(),
             loopedClip({ id: 'c-after', name: 'After', startBeat: 12, endBeat: 20, loopOriginBeat: 12 }),
@@ -399,9 +422,13 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         expect(after.loopOriginBeat).toBe(8);
         expect(probe(after)).toEqual(afterBefore);
 
-        // The right fragment of the spanning clip consumed the deleted span:
-        // its content offset advanced, which is a trim working — the anchor
-        // stays and the advance grows.
+        // The right fragment re-bases its notes by −splitBeat under
+        // midiOffsetBeats 0 and moves its head to the operation start — a
+        // fresh coordinate basis the source anchor has no meaning in. Carried
+        // through, the source anchor derives a spurious advance whose window
+        // silences the surviving material; the fragment re-stamps the anchor
+        // to its own start, so the advance is zero and the window opens at
+        // the head — the same two-pass projection the source read (#5198).
         const rightFragment = trackStore.value?.tracks
             .flatMap((track) => track.clips)
             .find((clip) => clip.name === 'Loop (R)');
@@ -409,14 +436,12 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
             throw new Error('Expected the right fragment of the spanning clip');
         }
         expect(rightFragment.startBeat).toBe(4);
-        expect(rightFragment.loopOriginBeat).toBe(0);
-        expect(
-            resolveClipLoopOriginAdvance({
-                startBeat: rightFragment.startBeat,
-                loopOriginBeat: rightFragment.loopOriginBeat,
-                loopEnabled: rightFragment.loopEnabled ?? false,
-            })
-        ).toBe(4);
+        expect(rightFragment.loopOriginBeat).toBe(4);
+        expect(probe(rightFragment)).toEqual({
+            advance: 0,
+            window: [true, false],
+            projection: ['head@0', 'head@4'],
+        });
     });
 
     it('duplicateTimeRange: the copy carries the source anchor at the copy placement', () => {

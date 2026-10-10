@@ -88,6 +88,24 @@ export function shiftLoopOriginEntry(
     return loopOriginEntry(shiftLoopOrigin(clip, deltaBeats));
 }
 
+/**
+ * The spread entry a fragment writer emits after re-basing its clip's notes —
+ * a split fragment that rewrites `midiOffsetBeats` to 0 and re-bases the notes
+ * it keeps lives in a fresh coordinate basis the source's anchor has no
+ * meaning in: carried through, the old anchor derives a spurious advance
+ * whose window silences the surviving material. The anchor that reads the
+ * fresh basis correctly is the fragment's own start — advance zero, the loop
+ * window opening at the head, exactly what the pre-anchor reading admits — so
+ * an anchored source re-stamps there, and a source with no anchor keeps the
+ * key absent (the entry law above).
+ */
+export function restampLoopOriginEntry(
+    clip: ClipLoopOriginShiftInput,
+    anchoredStartBeat: number
+): { loopOriginBeat: number } | Record<string, never> {
+    return loopOriginEntry(clip.loopOriginBeat === undefined ? undefined : anchoredStartBeat);
+}
+
 type ClipLoopWindowMembershipInput = Readonly<{
     /**
      * The candidate's position in the coordinate the loop window reads — for a

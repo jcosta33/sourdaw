@@ -6,6 +6,7 @@ import {
     restoreMidiClipData,
     splitMidiNotesAtBeat,
 } from '#/modules/MIDI/useCases';
+import { restampLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../models/Track';
@@ -169,6 +170,16 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
                     name: `${clip.name} (R)`,
                     audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
                     midiOffsetBeats: 0,
+                    // The fragment re-bases its notes by −splitBeat under
+                    // midiOffsetBeats 0 and moves its head to the selection
+                    // end — a fresh coordinate basis the source anchor has no
+                    // meaning in: carried through, it derives a spurious
+                    // advance whose window silences the surviving material.
+                    // The anchor re-stamps to the fragment's own start, so the
+                    // window opens at the head exactly as the pre-anchor read
+                    // admits the surviving material (#5198). Unanchored
+                    // sources keep the key absent.
+                    ...restampLoopOriginEntry(clip, endBeat),
                 }
             );
             if (clip.type === 'midi') {
@@ -209,6 +220,12 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
             startBeat: endBeat,
             audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
             midiOffsetBeats: 0,
+            // Same fresh basis as the spanning fragment above — the notes
+            // re-base by −splitBeat under midiOffsetBeats 0 — so the source
+            // anchor re-stamps to the fragment's own start instead of deriving
+            // a spurious advance there (#5198). Unanchored sources keep the
+            // key absent.
+            ...restampLoopOriginEntry(clip, endBeat),
         });
         if (clip.type === 'midi') {
             generatedMidiClipIds.push(rightClipId);

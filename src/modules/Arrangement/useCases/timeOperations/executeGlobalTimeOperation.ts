@@ -1,5 +1,5 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
-import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
@@ -977,6 +977,18 @@ function prepareDeletedTracks(
                         name: `${clip.name} (R)`,
                         audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                         midiOffsetBeats: 0,
+                        // The fragment re-bases its notes by −splitBeat under
+                        // midiOffsetBeats 0 and moves its head to the operation
+                        // start — a fresh coordinate basis the source anchor has
+                        // no meaning in: carried through, it derives a spurious
+                        // advance whose window silences the surviving material.
+                        // The anchor re-stamps to the fragment's own start, so
+                        // the window opens at the head exactly as the pre-anchor
+                        // read admits the surviving material (#5198). Unanchored
+                        // sources keep the key absent — the inverse plan's
+                        // snapshot is compared structurally against the
+                        // normalized live state.
+                        ...restampLoopOriginEntry(clip, operation.startBeat),
                     }
                 );
                 if (clip.type === 'midi') {
@@ -1015,6 +1027,13 @@ function prepareDeletedTracks(
                 endBeat: clip.endBeat - duration,
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                 midiOffsetBeats: 0,
+                // Same fresh basis as the spanning fragment above: the notes
+                // re-base by −splitBeat under midiOffsetBeats 0, so the source
+                // anchor would derive a spurious (here negative) advance whose
+                // window drops the surviving head material. It re-stamps to the
+                // fragment's own start; unanchored sources keep the key absent
+                // (#5198).
+                ...restampLoopOriginEntry(clip, operation.startBeat),
             });
             if (clip.type === 'midi') {
                 const mediaSplit = operation.endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
