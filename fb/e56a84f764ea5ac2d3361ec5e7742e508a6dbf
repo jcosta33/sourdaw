@@ -1,0 +1,20 @@
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_1f0dcd815e8946::t_8366ff96bf5aa7 8,18-21,30,32,35,37
+  s_1f0dcd815e8946::t_2527b85120e837 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fbe56a84f764ea5ac2d3361ec5e7742e508a6dbf",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
