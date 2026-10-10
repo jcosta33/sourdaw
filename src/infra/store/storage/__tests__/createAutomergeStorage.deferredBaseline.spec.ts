@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import {
+    AutomergeStorageWriteConflictError,
     configureAutomergeStoragePort,
     countPendingAutomergeStorageWrites,
     createAutomergeStorage,
@@ -28,6 +29,15 @@ const createTestPort = (initialDoc: TestDoc = {}): { doc: TestDoc; port: TestPor
     };
 
     return { doc, port };
+};
+
+// The seed's frame ran with no port: the write was dropped rather than left
+// pending, and its value stays visible as the retained baseline. A case whose
+// frame never ran would otherwise reach the document through the ordinary
+// pending path and pass without exercising the baseline at all.
+const expectDeferredSeed = (storage: { get: () => unknown }, seed: unknown): void => {
+    expect(countPendingAutomergeStorageWrites()).toBe(0);
+    expect(storage.get()).toEqual(seed);
 };
 
 // Issue #4109 — a pending write that takes the `defer` terminal (no CRDT port,
@@ -165,6 +175,7 @@ describe('createAutomergeStorage deferred pending baseline', () => {
 
         storage.set({ count: 7 });
         frameCallback?.(100);
+        expectDeferredSeed(storage, { count: 7 });
 
         const { doc, port } = createTestPort({ state: { count: 0 } });
         configureAutomergeStoragePort(port);
@@ -183,6 +194,7 @@ describe('createAutomergeStorage deferred pending baseline', () => {
 
         storage.set({ count: 7 });
         frameCallback?.(100);
+        expectDeferredSeed(storage, { count: 7 });
         // Buffered with no port, so no document presence could be captured;
         // it reaches the document only after wiring.
         storage.set({ count: 7 });
@@ -208,6 +220,7 @@ describe('createAutomergeStorage deferred pending baseline', () => {
 
         storage.set({ count: 7 });
         frameCallback?.(100);
+        expectDeferredSeed(storage, { count: 7 });
 
         const { doc, port } = createTestPort();
         configureAutomergeStoragePort(port);
@@ -225,6 +238,7 @@ describe('createAutomergeStorage deferred pending baseline', () => {
 
         storage.set({ count: 7 });
         frameCallback?.(100);
+        expectDeferredSeed(storage, { count: 7 });
 
         const { doc, port } = createTestPort({ state: { count: 0 } });
         configureAutomergeStoragePort(port);
@@ -247,6 +261,7 @@ describe('createAutomergeStorage deferred pending baseline', () => {
 
         storage.set({ a: 1 });
         frameCallback?.(100);
+        expectDeferredSeed(storage, { a: 1 });
 
         const { doc, port } = createTestPort({ state: { a: 1, b: 2 } });
         configureAutomergeStoragePort(port);
@@ -267,6 +282,7 @@ describe('createAutomergeStorage deferred pending baseline', () => {
 
         storage.set({ a: 5 });
         frameCallback?.(100);
+        expectDeferredSeed(storage, { a: 5 });
 
         const { doc, port } = createTestPort({ state: { a: 0, b: 0 } });
         configureAutomergeStoragePort(port);
@@ -284,6 +300,7 @@ describe('createAutomergeStorage deferred pending baseline', () => {
 
         storage.set({ a: 1 });
         frameCallback?.(100);
+        expectDeferredSeed(storage, { a: 1 });
 
         const { doc, port } = createTestPort();
         configureAutomergeStoragePort(port);
@@ -300,5 +317,100 @@ describe('createAutomergeStorage deferred pending baseline', () => {
         // The committed base saw `b` but never `c`: only `b` is this writer's
         // deletion, and `c` stands.
         expect(doc.state).toEqual({ a: 1, c: 3 });
+    });
+
+    // Each authority that supersedes the retained baseline must also retire its
+    // deferred mark; otherwise the next write still flushes with an unknown
+    // base and no absence it could decide is carried.
+    it('hands the next write the refused-claim authority once a conflict supersedes the retained baseline', () => {
+        const refusal = new AutomergeStorageWriteConflictError('state changed');
+        const receivedBases: unknown[] = [];
+        const storage = createAutomergeStorage<Record<string, number>>('root', 'state', {
+            mutateCrdt: ({ doc, key, baseValue, value }) => {
+                receivedBases.push(baseValue);
+                if (receivedBases.length === 1) {
+                    throw refusal;
+                }
+                doc[key] = value;
+            },
+        });
+
+        storage.set({ a: 1 });
+        frameCallback?.(100);
+        expectDeferredSeed(storage, { a: 1 });
+
+        const { doc, port } = createTestPort({ state: { a: 1, b: 2 } });
+        configureAutomergeStoragePort(port);
+        storage.set({ a: 1, c: 3 });
+        let flushFailure: unknown = null;
+        try {
+            flushAutomergeStorageWrites();
+        } catch (error) {
+            flushFailure = error;
+        }
+        expect(flushFailure).toMatchObject({ cause: refusal });
+        expect(storage.get()).toEqual({ a: 1, b: 2 });
+
+        storage.set({ a: 1 });
+        flushAutomergeStorageWrites();
+
+        expect(receivedBases).toEqual([null, { a: 1, b: 2 }]);
+        expect(doc.state).toEqual({ a: 1 });
+    });
+
+    it('hands the next write the hydrated authority once a hydrate over a visible pending supersedes the retained baseline', () => {
+        const receivedBases: unknown[] = [];
+        const storage = createAutomergeStorage<Record<string, number>>('root', 'state', {
+            mutateCrdt: ({ doc, key, baseValue, value }) => {
+                receivedBases.push(baseValue);
+                doc[key] = value;
+            },
+        });
+
+        storage.set({ a: 1 });
+        frameCallback?.(100);
+        expectDeferredSeed(storage, { a: 1 });
+
+        const { doc, port } = createTestPort({ state: { a: 1, b: 2 } });
+        configureAutomergeStoragePort(port);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ a: 1, c: 3 });
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        transaction.abort();
+        expect(storage.get()).toEqual({ a: 1, b: 2 });
+
+        storage.set({ a: 1 });
+        flushAutomergeStorageWrites();
+
+        expect(receivedBases).toEqual([{ a: 1, b: 2 }]);
+        expect(doc.state).toEqual({ a: 1 });
+    });
+
+    it('hands the next write the absent-slot default once a hydrate of a slotless document supersedes the retained baseline', () => {
+        const receivedBases: unknown[] = [];
+        const storage = createAutomergeStorage<Record<string, number>>('root', 'state', {
+            hydrateMissing: () => ({ a: 0 }),
+            mutateCrdt: ({ doc, key, baseValue, value }) => {
+                receivedBases.push(baseValue);
+                doc[key] = value;
+            },
+        });
+
+        storage.set({ a: 1 });
+        frameCallback?.(100);
+        expectDeferredSeed(storage, { a: 1 });
+
+        const { doc, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        expect(doc).not.toHaveProperty('state');
+        expect(storage.hydrate?.()).toBe(true);
+        expect(storage.get()).toEqual({ a: 0 });
+
+        storage.set({ a: 1 });
+        flushAutomergeStorageWrites();
+
+        expect(receivedBases).toEqual([{ a: 0 }]);
+        expect(doc.state).toEqual({ a: 1 });
     });
 });
