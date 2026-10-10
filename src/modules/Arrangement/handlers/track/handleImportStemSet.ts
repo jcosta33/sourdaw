@@ -243,12 +243,10 @@ export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSe
         );
         const finalize = () =>
             runAllAsyncEffects(
-                completedRemovals
-                    .flatMap(({ trackId, finalizeRuntimeRemoval }) => [
-                        finalizeRuntimeRemoval,
-                        () => publishTrackRemoved({ trackId }),
-                    ])
-                    .map(runtimeAuthority.guard)
+                completedRemovals.flatMap(({ trackId, finalizeRuntimeRemoval }) => [
+                    runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval),
+                    runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId })),
+                ])
             );
         return {
             status: 'written',

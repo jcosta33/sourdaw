@@ -88,10 +88,11 @@ function beginCaptureAcquisition(key: MonitorCaptureKey): Promise<MediaStream> {
     inputMonitoringSession.pendingRequests.set(key, request);
     void request.then(
         (stream) => {
+            const ownsRequest = inputMonitoringSession.pendingRequests.get(key) === request;
             try {
                 settleCaptureGrant(key, request, stream);
             } catch (error) {
-                releaseFailedCaptureGrant(key, stream, error);
+                releaseFailedCaptureGrant(key, stream, error, ownsRequest);
             }
         },
         () => {
@@ -102,14 +103,22 @@ function beginCaptureAcquisition(key: MonitorCaptureKey): Promise<MediaStream> {
 }
 
 /** A failed graph attachment still owns a granted device until its terminal cleanup completes. */
-function releaseFailedCaptureGrant(key: MonitorCaptureKey, stream: MediaStream, error: unknown): void {
-    for (const trackId of monitorOwnersFor(key)) {
-        inputMonitoringSession.trackKeys.delete(trackId);
-        inputMonitoringAdmissionChecks.delete(trackId);
-    }
+function releaseFailedCaptureGrant(
+    key: MonitorCaptureKey,
+    stream: MediaStream,
+    error: unknown,
+    ownsRequest: boolean
+): void {
     const capture = inputMonitoringSession.captures.get(key);
+    const ownsCapture = capture?.monitorStream === stream;
+    if (ownsRequest && !inputMonitoringSession.pendingRequests.has(key) && (!capture || ownsCapture)) {
+        for (const trackId of monitorOwnersFor(key)) {
+            inputMonitoringSession.trackKeys.delete(trackId);
+            inputMonitoringAdmissionChecks.delete(trackId);
+        }
+    }
     try {
-        if (capture) {
+        if (capture && ownsCapture) {
             capture.monitorEdges.clear();
             releaseMonitorCapture(key);
         } else {
@@ -124,7 +133,7 @@ function releaseFailedCaptureGrant(key: MonitorCaptureKey, stream: MediaStream, 
 /** Adopts a granted stream, or releases a superseded one exactly once. */
 function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream>, stream: MediaStream): void {
     if (inputMonitoringSession.pendingRequests.get(key) !== request) {
-        stopStreamTracks(stream);
+        stopSupersededCaptureStream(stream);
         return;
     }
     inputMonitoringSession.pendingRequests.delete(key);
@@ -138,7 +147,7 @@ function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
         }
     }
     if (interested.size === 0) {
-        stopStreamTracks(stream);
+        stopSupersededCaptureStream(stream);
         return;
     }
     const capture: MonitorCapture = {
@@ -165,6 +174,14 @@ function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
         } catch (error) {
             logger.error(new Error('Failed to release unattached input monitoring', { cause: error }));
         }
+    }
+}
+
+function stopSupersededCaptureStream(stream: MediaStream): void {
+    try {
+        stopStreamTracks(stream);
+    } catch (error) {
+        logger.error(new Error('Failed to release granted input monitoring', { cause: error }));
     }
 }
 

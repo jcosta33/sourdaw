@@ -324,6 +324,24 @@ function seedUnrelatedProjectTruth(): void {
     seedTransaction.commit();
 }
 
+function restoreCommittedTracks(tracks: ReturnType<typeof requireTrackState>['tracks']): void {
+    const restoration = runWithAutomergeStorageTransaction(undefined, () => {
+        trackStore.set({ ...requireTrackState(), tracks });
+    });
+    if (restoration.status !== 'returned') {
+        throw restoration.error;
+    }
+    restoration.commit();
+}
+
+function committedTrackIds(): string[] {
+    const document = getCrdtDoc<{ tracks?: { tracks: Array<{ id: string }> } }>('root');
+    if (!document?.tracks) {
+        throw new Error('Expected committed track state');
+    }
+    return document.tracks.tracks.map((track) => track.id);
+}
+
 describe('handleImportStemSet', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -379,6 +397,49 @@ describe('handleImportStemSet', () => {
             expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
             expect(mocks.removeBusStrip).not.toHaveBeenCalled();
             expect(emitted).not.toHaveBeenCalled();
+        }
+    );
+
+    it('preserves restored stem tracks at the real committed-command boundary', async () => {
+        const inverse = await applyStemImport(createStemImportAction());
+        const restoredTracks = structuredClone(requireTrackState().tracks);
+        const onCommitted = vi.fn(() => restoreCommittedTracks(restoredTracks));
+        mocks.removeTrackStrip.mockClear();
+        mocks.publishTrackRemoved.mockClear();
+
+        await executeAppAction(inverse, { source: 'prompt', onCommitted });
+
+        expect(onCommitted).toHaveBeenCalledOnce();
+        expect(requireTrackState().tracks.map((track) => track.id)).toEqual(
+            inverse.payload.stemTrackIds.concat(inverse.payload.folderId).sort()
+        );
+        expect(committedTrackIds()).toEqual(restoredTracks.map((track) => track.id));
+        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
+    });
+
+    it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
+        'preserves a restored sibling between awaited removal effects, phase=%s',
+        async (phase) => {
+            const inverse = await applyStemImport(createStemImportAction());
+            const restoredTracks = structuredClone(requireTrackState().tracks);
+            const result = await handleDiscardImportedStemSet.execute(inverse);
+            expect(result?.status).toBe('written');
+            mocks.removeTrackStrip.mockClear();
+            mocks.publishTrackRemoved.mockClear();
+            mocks.publishTrackRemoved.mockImplementationOnce(async () => {
+                restoreCommittedTracks(restoredTracks.filter((track) => track.id !== 'track-kick'));
+            });
+
+            await result?.[phase]?.();
+
+            expect(mocks.publishTrackRemoved).toHaveBeenCalledExactlyOnceWith({ trackId: 'track-kick' });
+            expect(mocks.removeTrackStrip).toHaveBeenCalledExactlyOnceWith('track-kick');
+            expect(requireTrackState().tracks.map((track) => track.id)).toEqual([
+                'folder-starter-stems',
+                'track-vocal',
+            ]);
+            expect(committedTrackIds()).toEqual(['folder-starter-stems', 'track-vocal']);
         }
     );
 
