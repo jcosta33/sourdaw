@@ -235,7 +235,24 @@ function tempoSlope(changes: readonly TempoChange[], beat: number): number {
     return Math.abs((next.tempo - previous.tempo) / (next.beat - previous.beat));
 }
 
+// A ramp whose target sits on the cut but before its start has reached that target's tempo
+// there, and never reads past it, so it arrives at the start at the target's tempo a little
+// later than it did: its slope changes by at most (S − T) / (S − G) of the ramp's rise.
+function rampArrivalAllowance(changes: readonly TempoChange[], startBeat: number): { tempo: number; seconds: number } {
+    const sorted = byBeat(changes);
+    const kept = sorted.filter(({ beat }) => beat < startBeat - BEAT_EPSILON);
+    const ramping = kept[kept.length - 1];
+    const target = ramping && sorted.find(({ beat }) => beat > ramping.beat);
+    if (!ramping || ramping.curve !== 'linear' || !target || target.beat >= startBeat) {
+        return { tempo: 0, seconds: 0 };
+    }
+    const tempo = (Math.abs(target.tempo - ramping.tempo) * (startBeat - target.beat)) / (startBeat - ramping.beat);
+    const slowest = Math.min(ramping.tempo, target.tempo);
+    return { tempo, seconds: (60 * tempo * (startBeat - ramping.beat)) / (slowest * slowest) };
+}
+
 function expectTempoBeforeCutKept(before: Maps, after: Maps, { startBeat }: Cut, context: string): void {
+    const allowance = rampArrivalAllowance(before.tempo, startBeat);
     const cutStart = startBeat - BEAT_EPSILON;
     const anchors = uniqueSorted([0, ...before.tempo.map(({ beat }) => beat)]).filter((beat) => beat < cutStart);
     for (const [index, beat] of anchors.entries()) {
@@ -247,14 +264,14 @@ function expectTempoBeforeCutKept(before: Maps, after: Maps, { startBeat }: Cut,
             const expectedTempo = getTempoAtBeat(before.tempo, probe, DEFAULT_TEMPO);
             const tempo = getTempoAtBeat(after.tempo, probe, DEFAULT_TEMPO);
             expect(Math.abs(tempo - expectedTempo), `${context}: tempo before the cut at ${probe}`).toBeLessThanOrEqual(
-                1e-9 * Math.max(1, expectedTempo)
+                1e-9 * Math.max(1, expectedTempo) + allowance.tempo
             );
             const expectedSeconds = secondsBetweenBeats(before.tempo, 0, probe, DEFAULT_TEMPO);
             const seconds = secondsBetweenBeats(after.tempo, 0, probe, DEFAULT_TEMPO);
             expect(
                 Math.abs(seconds - expectedSeconds),
                 `${context}: seconds before the cut at ${probe}`
-            ).toBeLessThanOrEqual(1e-9);
+            ).toBeLessThanOrEqual(1e-9 + allowance.seconds);
         }
     }
 }
