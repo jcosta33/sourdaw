@@ -13,6 +13,13 @@ type RouteYeastNoteOffs = (
 
 type ReleaseHeldYeastVoices = (instrumentTrackId: string, channel: number, pitch: number, sampleFrame?: number) => void;
 
+type ReleaseCapturedYeastVoices = (
+    instrumentTrackId: string,
+    channel: number,
+    pitch: number,
+    sampleFrame?: number
+) => void;
+
 type LifecycleNoteOff = {
     channel: number;
     note: number;
@@ -40,6 +47,12 @@ const actualLifecycleModule = vi.hoisted(() => ({
     releaseCapturedYeastLifecycleVoices: null as ReleaseCapturedYeastLifecycleVoices | null,
 }));
 const releaseHeldYeastVoicesMock = vi.hoisted(() => vi.fn<ReleaseHeldYeastVoices>());
+const releaseCapturedYeastVoicesMock = vi.hoisted(() => vi.fn<ReleaseCapturedYeastVoices>());
+// The real coarse registry sweep, captured by the mock factory below so the
+// handler-level guard case can run the production path against the registry.
+const actualCoarseModule = vi.hoisted(() => ({
+    releaseCapturedYeastVoices: null as ReleaseCapturedYeastVoices | null,
+}));
 const trackStoreSubscribeMock = vi.hoisted(() => vi.fn());
 const eventBusOnMock = vi.hoisted(() => vi.fn());
 const eventBusEmitMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -86,10 +99,14 @@ vi.mock('../../../repositories/webMidi/lifecycle/initWebMidi', () => ({
     initWebMidi: initializeWebMidiMock,
 }));
 
-vi.mock('../../../repositories/webMidi/releaseCapturedYeastVoices', () => ({
-    releaseCapturedYeastVoices: vi.fn(),
-    releaseHeldYeastVoices: releaseHeldYeastVoicesMock,
-}));
+vi.mock('../../../repositories/webMidi/releaseCapturedYeastVoices', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../repositories/webMidi/releaseCapturedYeastVoices')>();
+    actualCoarseModule.releaseCapturedYeastVoices = actual.releaseCapturedYeastVoices;
+    return {
+        releaseCapturedYeastVoices: releaseCapturedYeastVoicesMock,
+        releaseHeldYeastVoices: releaseHeldYeastVoicesMock,
+    };
+});
 
 vi.mock('../../../repositories/webMidi/routeYeastNoteOff', () => ({
     routeYeastNoteOffsForTargetTrack: routeYeastNoteOffsMock,
@@ -126,6 +143,7 @@ describe('initWebMidi', () => {
         releaseCapturedMock.mockClear();
         releaseCapturedMock.mockImplementation((_trackId, noteOffs) => [...noteOffs]);
         releaseHeldYeastVoicesMock.mockClear();
+        releaseCapturedYeastVoicesMock.mockReset();
         trackStoreSubscribeMock.mockReset();
         eventBusOnMock.mockReset();
         eventBusEmitMock.mockClear();
@@ -231,6 +249,17 @@ describe('initWebMidi', () => {
         // successor below; only the instance-keyed path may touch the registry.
         releaseCapturedMock.mockImplementation((trackId, noteOffs) => realLifecycleRelease(trackId, noteOffs));
 
+        const realCoarseRelease = actualCoarseModule.releaseCapturedYeastVoices;
+        if (!realCoarseRelease) {
+            throw new Error('the releaseCapturedYeastVoices mock factory did not capture the actual implementation');
+        }
+        // The coarse module release runs against the real registry here too:
+        // main's pre-#4873 handler carried it beside the held sweep, and its
+        // pitch-keyed registry release is what a re-add would fire.
+        releaseCapturedYeastVoicesMock.mockImplementation((trackId, channel, pitch, sampleFrame) =>
+            realCoarseRelease(trackId, channel, pitch, sampleFrame)
+        );
+
         // The registry is module state; start from an empty one.
         pendingYeastRelease.releaseAllPending();
 
@@ -254,6 +283,9 @@ describe('initWebMidi', () => {
         expect(originalRelease).toHaveBeenCalledExactlyOnceWith(512, 0);
         // The successor at the same track, channel, and pitch stays sounding.
         expect(successorRelease).not.toHaveBeenCalled();
+        // The handler's per-pitch sweep is the narrower held-key release only:
+        // the coarse module release must never be part of the notesOff path.
+        expect(releaseCapturedYeastVoicesMock).not.toHaveBeenCalled();
         // A fully captured batch never reaches the current-node route.
         expect(routeYeastNoteOffsMock).not.toHaveBeenCalled();
     });
