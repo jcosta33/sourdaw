@@ -6,6 +6,12 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
+
+The installed affected-E2E loader case asserted full selection for opaque runtime dependencies, but the actual alias graph escaped its temporary root into the checkout. The published missing-consumer-or-opaque-edge probe preserved that result without observing resolved sources; requested-root scope isolation was the missing stance and probe.
+
+Delegate to the installed cruise implementation and inspect its returned graph, rather than substituting a successful graph. Assert the exact fixture source set and root-relative alias edges for explicit, absent, and inherited `baseUrl`, together with the existing opaque-selection assertions. Reverting parsed-config forwarding or implicit-base normalization must fail the graph oracle even when selection still returns full.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
