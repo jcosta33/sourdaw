@@ -13,7 +13,7 @@ type RecordingPassTiming = {
     openPassBeat: number;
     previousSeamContextSeconds: number | null;
     pendingSeam: { takeId: string; contextSeconds: number; nextStartBeat: number; cancelled: boolean } | null;
-    ending: { takeId: string; receipt: RecordingEnd; endBeat: number } | null;
+    ending: { takeId: string | undefined; receipt: RecordingEnd; endBeat: number } | null;
     nextPassStartBeat: number | null;
     starts: Map<string, PassStart>;
 };
@@ -178,21 +178,30 @@ function relocateRecordingPassEntry(clipId: string, beat: number): void {
     }
 }
 
-/** A scheduled seam remains provisional until its physical clock has sounded. */
+/** Freeze every audio ending; only an unsounded planned pass needs its take shortened here. */
 function finishRecordingPass(clipId: string, receipt: RecordingEnd, intendedEndBeat: number) {
     const timing = recordingPassTimings.get(clipId);
-    const pending = timing?.pendingSeam;
-    if (!timing || !pending) {
+    if (!timing) {
         return undefined;
     }
-    if (!pending.cancelled && receipt.contextSeconds >= pending.contextSeconds) {
-        beginNextPass(timing, pending.contextSeconds, pending.nextStartBeat);
-        timing.pendingSeam = null;
+    // A capture still waiting for its first roll has no moving song clock.
+    // Its stopped PCM is retained on the hold's signed placement instead.
+    const firstPassContextSeconds = timing.openPassContextSeconds ?? timing.firstPassClock?.() ?? null;
+    if (firstPassContextSeconds === null) {
         return undefined;
     }
+    const pending = timing.pendingSeam;
     const endBeat = Math.min(intendedEndBeat, receipt.beatAtContextSeconds(receipt.contextSeconds));
-    timing.ending = { takeId: pending.takeId, receipt, endBeat };
+    const unsounded = pending && (pending.cancelled || receipt.contextSeconds < pending.contextSeconds);
+    timing.ending = { takeId: unsounded ? pending.takeId : undefined, receipt, endBeat };
+    if (!pending) {
+        return undefined;
+    }
     timing.pendingSeam = null;
+    if (!unsounded) {
+        beginNextPass(timing, pending.contextSeconds, pending.nextStartBeat);
+        return undefined;
+    }
     return { takeId: pending.takeId, endBeat };
 }
 

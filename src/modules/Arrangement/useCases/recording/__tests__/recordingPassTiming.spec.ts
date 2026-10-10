@@ -159,6 +159,30 @@ describe('recording pass capture-clock witnesses', () => {
         expect(recordingPassTiming.depthSeconds(third, 50.9, 4.9)).toBeCloseTo(2.1, 10);
     });
 
+    it('bounds an ordinary ending on its frozen map without shortening completed passes', () => {
+        recordingPassTiming.begin('capture', 10);
+        const completed = pass('completed');
+        recordingPassTiming.stage(completed, 52);
+        const ending = {
+            contextSeconds: 52.25,
+            beatAtContextSeconds: (seconds: number) => 8.5 + (seconds - 52.25) * 2,
+        };
+        expect(recordingPassTiming.finish('capture', ending, 8.5)).toBeUndefined();
+        clock.tempo = 60;
+        expect(recordingPassTiming.captureEnd('capture', 53.25)).toEqual({ takeId: undefined, endBeat: 8.5 });
+        expect(recordingPassTiming.captureEnd('capture', 52.15)?.endBeat).toBeCloseTo(8.3, 10);
+        expect(recordingPassTiming.depthSeconds(completed, 50.9, 4.9)).toBeCloseTo(0.1, 10);
+        expect(completed.endBeat).toBe(12);
+    });
+
+    it('does not reinterpret held pre-roll capture as a moving song ending', () => {
+        clock.isPlaying = false;
+        recordingPassTiming.begin('capture', 10, () => null);
+        const ending = { contextSeconds: 53, beatAtContextSeconds: () => 10 };
+        expect(recordingPassTiming.finish('capture', ending, 10)).toBeUndefined();
+        expect(recordingPassTiming.captureEnd('capture', 54)).toBeUndefined();
+    });
+
     it('retires only the discarded capture and refuses its stale source read', () => {
         recordingPassTiming.begin('capture', 10);
         const old = pass('old');

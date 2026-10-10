@@ -69,6 +69,7 @@ const hardware = vi.hoisted(() => ({
     followJump: null as number | null,
     rollStarts: 0,
     rollContinuationAdvance: 0,
+    sourceStarts: [] as { contextSeconds: number; sourceSeconds: number; durationSeconds: number }[],
     finalizedAtFlush: null as { active: string[]; endBeat: number | undefined } | null,
 }));
 
@@ -83,7 +84,25 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
             get currentTime() {
                 return hardware.now;
             },
-            createGain: () => ({ connect: () => {}, disconnect: () => {} }),
+            createGain: () => ({
+                connect: () => {},
+                disconnect: () => {},
+                gain: {
+                    cancelScheduledValues: () => {},
+                    setValueAtTime: () => {},
+                    linearRampToValueAtTime: () => {},
+                },
+            }),
+        }),
+        getCurrentTime: () => hardware.now,
+        ensureTrackStrip: () => ({ gainNode: {} }),
+        createBufferSource: () => ({
+            connect: () => {},
+            disconnect: () => {},
+            playbackRate: { value: 1 },
+            start: (contextSeconds: number, sourceSeconds: number, durationSeconds: number) => {
+                hardware.sourceStarts.push({ contextSeconds, sourceSeconds, durationSeconds });
+            },
         }),
         resumeEngine: () => Promise.resolve(),
         nativeLiveGraphSessionOffered: () => hardware.nativeHold,
@@ -235,6 +254,29 @@ function recordedClips() {
     return trackStore.value!.tracks.find((track) => track.id === TRACK_ID)!.clips;
 }
 
+async function expectUncompedSourceEnding(endBeat: number): Promise<void> {
+    const { scheduleAudioClips } = await vi.importActual<typeof import('../../scheduling/scheduleAudioClips')>(
+        '../../scheduling/scheduleAudioClips'
+    );
+    const clip = recordedClips()[0]!;
+    hardware.sourceStarts = [];
+    scheduleAudioClips(clip.startBeat, clip.endBeat, clip.startBeat, new Set(), new Set(), [], {
+        ...transportStore.value!,
+        isLooping: false,
+    });
+    expect(hardware.sourceStarts).toHaveLength(1);
+    const source = hardware.sourceStarts[0]!;
+    expect(source.contextSeconds + source.durationSeconds - hardware.now).toBeCloseTo(
+        (endBeat - clip.startBeat) / 2,
+        10
+    );
+    const firstFrame = Math.round(source.sourceSeconds * hardware.sampleRate);
+    const lastFrame = Math.round((source.sourceSeconds + source.durationSeconds) * hardware.sampleRate) - 1;
+    expect(hardware.buffer!.getChannelData(0)[firstFrame]).toBe(firstFrame);
+    expect(hardware.buffer!.getChannelData(0)[lastFrame]).toBe(lastFrame);
+    expect(lastFrame).toBeLessThan(hardware.buffer!.length - 1);
+}
+
 function expectProjectProjection(): void {
     flushAutomergeStorageWrites();
     const raw = getCrdtDoc<Project>('root')!;
@@ -290,6 +332,7 @@ describe('punch audio capture loop placement', () => {
         hardware.flushGate = null;
         hardware.flushes = 0;
         hardware.finalizedAtFlush = null;
+        hardware.sourceStarts = [];
         hardware.admissionGate = null;
         hardware.rollGate = null;
         hardware.nativeHold = false;
@@ -323,6 +366,67 @@ describe('punch audio capture loop placement', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
+    });
+
+    it('places automatic punch first media on its sounded traversal and retains completed-pass PCM', async () => {
+        hardware.deferFirstFrame = true;
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        startPlayheadScheduler();
+        await advanceUntil(() => hardware.starts === 1);
+        await advanceUntil(() => playheadWrapCountRef.current >= 1);
+        const firstFrameBeat = playheadClockRef.beat;
+        const firstSeamContextSeconds = schedulerSession.lastLoopSeamAudioTime!;
+        const firstWrapTakeIds = new Set(lane().takes.map((take) => take.id));
+        hardware.zeroFrame = Math.round(hardware.now * hardware.sampleRate);
+        await advanceUntil(() => playheadWrapCountRef.current >= 2);
+        const secondSeamContextSeconds = schedulerSession.lastLoopSeamAudioTime!;
+        hardware.now = secondSeamContextSeconds + 0.25;
+        await stopPlayback();
+        const clip = recordedClips()[0];
+        expect(clip).toBeDefined();
+        const capturedPass = lane().takes.find(
+            (take) =>
+                !firstWrapTakeIds.has(take.id) &&
+                take.startBeat === 8 &&
+                take.endBeat === 12 &&
+                take.passDepthSeconds !== undefined
+        );
+        expect(capturedPass).toBeDefined();
+        await executeAppAction(
+            {
+                type: 'setCompRegion',
+                payload: { trackId: TRACK_ID, takeId: capturedPass!.id, startBeat: 8, endBeat: 12 },
+            },
+            { skipUndo: true }
+        );
+        const selected = resolveClipsWithComping(TRACK_ID, recordedClips()).find((take) => take.regionStartBeat === 8);
+        expect(selected).toBeDefined();
+        const sourceSeconds = ((selected!.audioOffsetBeats ?? 0) * 60) / 120;
+        // Wrap staging names the dying pass, from the first sounded seam
+        // to the second. The incoming partial lap is not a staged take.
+        const expectedSourceSeconds = firstSeamContextSeconds - hardware.zeroFrame / hardware.sampleRate + 0.1;
+        expect(firstFrameBeat).toBeCloseTo(8, 6);
+        expect(secondSeamContextSeconds - firstSeamContextSeconds).toBeCloseTo(2, 10);
+        expect(clip!.startBeat - (clip!.audioOffsetBeats ?? 0)).toBeCloseTo(firstFrameBeat - 0.2, 6);
+        expect(capturedPass!.sourceOffsetBeats).toBe(2);
+        expect(capturedPass!.passDepthSeconds).toBeCloseTo(expectedSourceSeconds, 6);
+        expect(sourceSeconds).toBeCloseTo(expectedSourceSeconds, 6);
+        const frame = Math.round(sourceSeconds * hardware.sampleRate);
+        expect(hardware.buffer!.getChannelData(0)[frame]).toBe(Math.round(expectedSourceSeconds * hardware.sampleRate));
+        expectProjectProjection();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        const committedClips = structuredClone(recordedClips());
+        const committedTakes = structuredClone(lane().takes);
+        await undo();
+        expect(recordedClips()).toEqual([]);
+        expectProjectProjection();
+        await redo();
+        expect(recordedClips()).toEqual(committedClips);
+        expect(lane().takes).toEqual(committedTakes);
+        expectProjectProjection();
     });
 
     it.each([1, 3])('places manual PCM whose first frame arrives after %s rolling loop wraps', async (wraps) => {
@@ -961,9 +1065,31 @@ describe('punch audio capture loop placement', () => {
         }
     );
 
-    it.each(['manual', 'automatic'] as const)(
-        '%s keeps the intended pending-tail end through a delayed excess drain',
-        async (route) => {
+    it('bounds uncomped ordinary Stop playback before any planned seam despite excess drain', async () => {
+        toggleRecording();
+        await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+        await advanceUntil(() => playheadClockRef.beat >= 9.5);
+        expect(schedulerSession.pendingSeam).toBeNull();
+        const intendedEnd = playheadClockRef.beat;
+        hardware.drainSeconds = 1;
+        await stopActiveRecording();
+        const clip = recordedClips()[0]!;
+        expect(clip.endBeat).toBeCloseTo(intendedEnd, 10);
+        expect(resolveClipsWithComping(TRACK_ID, recordedClips())[0]?.endBeat).toBeCloseTo(intendedEnd, 10);
+        expect(hardware.buffer!.duration).toBeCloseTo((intendedEnd - 8) / 2 + 1, 10);
+        expect(hardware.buffer!.getChannelData(0).at(-1)).toBe(hardware.buffer!.length - 1);
+        await expectUncompedSourceEnding(intendedEnd);
+        expectProjectProjection();
+    });
+
+    it.each([
+        { route: 'manual', completionTempo: 60 },
+        { route: 'automatic', completionTempo: 60 },
+        { route: 'manual', completionTempo: 120 },
+        { route: 'automatic', completionTempo: 120 },
+    ] as const)(
+        '$route keeps the intended pending-tail end through a delayed excess drain at $completionTempo BPM',
+        async ({ route, completionTempo }) => {
             transportStore.set({ ...transportStore.value!, playheadPosition: 10 });
             toggleRecording();
             await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
@@ -980,13 +1106,17 @@ describe('punch audio capture loop placement', () => {
             }
             const stopping = stopActiveRecording();
             expect(activeRecordingRef.current).toEqual([]);
-            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+            await executeAppAction({ type: 'setTempo', payload: { bpm: completionTempo } }, { skipUndo: true });
             hardware.now += 1;
             release();
             await stopping;
             const committed = lane().takes.find((take) => take.id === planned.id)!;
             expect(committed.endBeat).toBeCloseTo(intendedEnd, 10);
             expect(committed.passDepthSeconds).toBeCloseTo(0.1, 10);
+            if (completionTempo === 120) {
+                expect(resolveClipsWithComping(TRACK_ID, recordedClips())[0]?.endBeat).toBeCloseTo(intendedEnd, 10);
+                await expectUncompedSourceEnding(intendedEnd);
+            }
             expectProjectProjection();
             const committedClip = structuredClone(recordedClips()[0]);
             const committedTakes = structuredClone(lane().takes);

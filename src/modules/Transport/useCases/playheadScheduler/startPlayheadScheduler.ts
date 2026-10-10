@@ -40,6 +40,7 @@ import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
+import { createRecordingCaptureClocks } from '../transportControls/createRecordingCaptureClocks';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 import { recordingLifecycle } from '../transportControls/recordingLifecycle';
@@ -876,6 +877,11 @@ export function startPlayheadScheduler(): void {
             const clips = startRecording(punchAnchorBeat);
             updateTransportState({ isRecording: true });
 
+            const admissionChanges = structuredClone(changes);
+            const captureClocks = createRecordingCaptureClocks(ctx, (beat) =>
+                secondsBetweenBeats(admissionChanges, 0, beat, current.tempo)
+            );
+            captureClocks.register();
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
                 if (track.kind === 'midi') {
@@ -903,6 +909,7 @@ export function startPlayheadScheduler(): void {
                 }
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
+                    const captureClock = captureClocks.create(track.id);
                     const captureAnchor = recClip && {
                         provisionalStartBeat: recClip.startBeat,
                         songSeconds: secondsBetweenBeats(changes, 0, playheadClockRef.beat, current.tempo),
@@ -914,6 +921,7 @@ export function startPlayheadScheduler(): void {
                         startAudioRecording(
                             track.id,
                             (result) => {
+                                captureClocks.remove(track.id);
                                 if (result.kind === 'failed') {
                                     // A capture that dies mid-punch (ring overrun,
                                     // worker crash, a WAV that never decoded) must
@@ -941,15 +949,20 @@ export function startPlayheadScheduler(): void {
                                     // Sample zero belongs to the producer's clock.
                                     // The callback can arrive after a wrap, tempo
                                     // edit, or stop has replaced the published pair.
+                                    const sampleZeroContextSeconds = result.sampleZeroContextFrame / result.sampleRate;
+                                    if (!captureClock.frozen) {
+                                        captureClock.freeze(sampleZeroContextSeconds);
+                                    }
+                                    const occurrence = captureClock.relocation ?? captureAnchor;
                                     const capture = {
                                         provisionalStartBeat: captureAnchor.provisionalStartBeat,
                                         sourceContextOriginSeconds:
                                             result.sampleZeroContextFrame / result.sampleRate -
                                             captureAnchor.latencySeconds,
                                         mediaOriginSeconds:
-                                            captureAnchor.songSeconds +
-                                            result.sampleZeroContextFrame / result.sampleRate -
-                                            captureAnchor.contextSeconds -
+                                            occurrence.songSeconds +
+                                            sampleZeroContextSeconds -
+                                            occurrence.contextSeconds -
                                             captureAnchor.latencySeconds,
                                     };
                                     // The user-facing stop awaits this through the
@@ -975,11 +988,19 @@ export function startPlayheadScheduler(): void {
                                     );
                                 }
                             },
-                            track.inputId
+                            track.inputId,
+                            captureClock.setReader
                         )
-                    ).catch((error: unknown) => {
-                        logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
-                    });
+                    )
+                        .then((started) => {
+                            if (!started) {
+                                captureClocks.remove(track.id);
+                            }
+                        })
+                        .catch((error: unknown) => {
+                            captureClocks.remove(track.id);
+                            logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
+                        });
                 }
             }
         }

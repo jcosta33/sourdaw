@@ -22,8 +22,8 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { DEFAULT_TEMPO_BPM } from '../../stores/transportStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
-import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
+import { createRecordingCaptureClocks } from './createRecordingCaptureClocks';
 import { recordingLifecycle } from './recordingLifecycle';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { startPlayback } from './startPlayback';
@@ -48,94 +48,7 @@ type TransportHold = {
     songSecondsAtBeat: ((beat: number) => number) | null;
 };
 
-type CaptureRelocation = { contextSeconds: number; songSeconds: number };
-type CaptureClock = {
-    readStart: Parameters<NonNullable<Parameters<typeof startAudioRecording>[3]>>[0] | null;
-    relocation: CaptureRelocation | null;
-    pendingRelocation: CaptureRelocation | null;
-    frozen: boolean;
-};
-
-function freezeCaptureClock(clock: CaptureClock, sampleZeroContextSeconds: number): void {
-    const pending = clock.pendingRelocation;
-    if (
-        pending &&
-        pending.contextSeconds <= sampleZeroContextSeconds &&
-        (!clock.relocation || pending.contextSeconds > clock.relocation.contextSeconds)
-    ) {
-        clock.relocation = pending;
-    }
-    clock.pendingRelocation = null;
-    clock.readStart = null;
-    clock.frozen = true;
-}
-
-function observeCaptureClock(clock: CaptureClock, relocation: CaptureRelocation | null): void {
-    if (clock.frozen) {
-        return;
-    }
-    const start = clock.readStart?.();
-    if (start?.status === 'captured') {
-        if (relocation && relocation.contextSeconds <= start.contextSeconds) {
-            clock.relocation = relocation;
-        }
-        freezeCaptureClock(clock, start.contextSeconds);
-    } else if (start?.status === 'pending' && relocation) {
-        // A stable empty producer publication proves that sample zero is still
-        // ahead, so only this latest sounded traversal needs to be retained.
-        clock.relocation = relocation;
-        clock.pendingRelocation = null;
-    } else if (start?.status === 'retry' && relocation) {
-        // The first block may be in flight across this seam. Keep its two
-        // possible correlations until that same producer publishes its frame.
-        clock.pendingRelocation ??= relocation;
-    }
-}
-
-function detachCaptureReaders(clocks: Map<string, CaptureClock>): void {
-    for (const clock of clocks.values()) {
-        clock.readStart = null;
-    }
-}
-
-function registerCapturePlacementClock(
-    hold: TransportHold,
-    clocks: Map<string, CaptureClock>,
-    context: AudioContext,
-    songSecondsAtBeat: (beat: number) => number
-) {
-    const retainClock = (beat: number, contextSeconds: number, relocated: boolean): void => {
-        if (hold.endedAtContextSeconds !== null) {
-            return;
-        }
-        let relocation: CaptureRelocation | null = null;
-        if (relocated) {
-            relocation = { contextSeconds, songSeconds: hold.songSecondsAtBeat?.(beat) ?? songSecondsAtBeat(beat) };
-        }
-        let waitingForFrame = false;
-        for (const clock of clocks.values()) {
-            observeCaptureClock(clock, relocation);
-            waitingForFrame ||= !clock.frozen;
-        }
-        if (!waitingForFrame) {
-            unregisterClock();
-        }
-    };
-    const unregisterClock = recordingLifecycle.registerCaptureClock(retainClock);
-    const unregisterEnding = recordingLifecycle.registerEnding(() => {
-        // A scheduled seam can sound between the last tick and Stop. Its
-        // cancelled or still-future counterpart is never a captured occurrence.
-        const pending = schedulerSession.pendingSeam;
-        if (pending && context.currentTime >= pending.seamAudioTime) {
-            retainClock(pending.destinationBeat, pending.seamAudioTime, true);
-        }
-        retainClock(playheadClockRef.beat, context.currentTime, false);
-        hold.endedAtContextSeconds ??= context.currentTime;
-        detachCaptureReaders(clocks);
-        unregisterClock();
-    });
-    return { unregisterClock, unregisterEnding };
-}
+type CaptureClock = ReturnType<ReturnType<typeof createRecordingCaptureClocks>['create']>;
 
 function capturePlayingAdmissionClock(hold: TransportHold, changes: readonly TempoChange[], tempo: number): void {
     hold.rolledAtContextSeconds = playheadClockRef.audioTimeSeconds;
@@ -280,7 +193,7 @@ function completeManualRecording(input: ManualRecordingTerminalInput): void {
         // Locate sample zero in its own traversal, even when completion follows
         // further wraps or Stop. Later occurrences cannot redate earlier PCM.
         if (!captureClock.frozen) {
-            freezeCaptureClock(captureClock, sampleZeroContextSeconds);
+            captureClock.freeze(sampleZeroContextSeconds);
         }
         const relocation = captureClock.relocation;
         let originSeconds = captureStartSeconds - offsetSeconds;
@@ -368,33 +281,29 @@ async function beginActualRecording(
     let clips: ReturnType<typeof startRecording> = [];
 
     let unregisterEnding = (): void => {};
-    let unregisterRelocation = (): void => {};
-    const captureClocks = new Map<string, CaptureClock>();
-    const detachReaders = (): void => {
-        detachCaptureReaders(captureClocks);
-        unregisterRelocation();
-    };
+    const captureClocks = createRecordingCaptureClocks(
+        ctx,
+        (beat) =>
+            transportHold.songSecondsAtBeat?.(beat) ?? secondsBetweenBeats(admissionChanges, 0, beat, admissionTempo),
+        () => {
+            transportHold.endedAtContextSeconds ??= ctx.currentTime;
+        }
+    );
+    const detachReaders = captureClocks.dispose;
     // Stop can cancel admission while another track still awaits permission.
     unregisterEnding = recordingLifecycle.registerEnding(detachReaders);
     const recordingStarts = audioTracks.map((track) => {
         const trackLatencySec = getCompensationDelay(track.id);
         const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
-        const captureClock: CaptureClock = {
-            readStart: null,
-            relocation: null,
-            pendingRelocation: null,
-            frozen: false,
-        };
-        captureClocks.set(track.id, captureClock);
+        const captureClock = captureClocks.create(track.id);
 
         return startAudioRecording(
             track.id,
             (result) => {
                 captureClock.readStart = null;
-                captureClocks.delete(track.id);
+                captureClocks.remove(track.id);
                 if (captureClocks.size === 0) {
                     unregisterEnding();
-                    unregisterRelocation();
                 }
                 completeManualRecording({
                     result,
@@ -410,7 +319,7 @@ async function beginActualRecording(
             track.inputId,
             (readStart) => {
                 if (recordingLifecycle.ownsPendingRecordingStart(startToken)) {
-                    captureClock.readStart = readStart;
+                    captureClock.setReader(readStart);
                 }
             }
         );
@@ -459,11 +368,7 @@ async function beginActualRecording(
         clips = startRecording(anchorBeat, () => transportHold.firstPassContextSeconds);
     }
     unregisterEnding();
-    const listeners = registerCapturePlacementClock(transportHold, captureClocks, ctx, (beat) =>
-        secondsBetweenBeats(admissionChanges, 0, beat, admissionTempo)
-    );
-    unregisterRelocation = listeners.unregisterClock;
-    unregisterEnding = listeners.unregisterEnding;
+    captureClocks.register();
     updateTransportState({ isRecording: true });
     return true;
 }

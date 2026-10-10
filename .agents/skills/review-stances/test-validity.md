@@ -766,3 +766,22 @@ Derive the fixture's admitted range from the complete multiline binding; preserv
 independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
 only the committed recognizer is reverted. A full-source screen assertion does not prove
 which region the real scan caller admitted.
+
+### Recording receipt probes must observe each terminal and the actual playback consumer
+
+PR #4987's manual-only capture placement escaped the automatic terminal.
+PR #5165 then exercised manual first-frame relocations but left automatic punch
+on an admission-time correlation, and its pending-ending case inspected only
+take geometry while changing tempo during the flush. Selected pass depth can
+remain correct with a base clip whose first media belongs to the wrong traversal;
+a shortened take cannot bound uncomped playback of an extended base clip.
+
+For both manual and automatic terminals, delay the first frame across a sounded
+wrap and assert the clip's first-media origin, producer frame, and actual PCM.
+Name the physical start and end of the specific take selected: wrap staging
+owns the dying pass, so the incoming partial lap cannot supply its source oracle.
+Retain an unchanged-tempo excess-drain case through real comp resolution and
+source scheduling, before a planned seam and before any planned seam. Assert
+source duration and known PCM alongside raw CRDT, projected clips/takes and real
+Undo/Redo. Keep complete source PCM and the short carrier as separate obligations.
+A mutation of only the take ending cannot establish the base consumer's bound.

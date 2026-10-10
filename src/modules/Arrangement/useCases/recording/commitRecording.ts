@@ -40,9 +40,19 @@ function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
 }
 
 /** A continuous capture must also carry the retained passes placed on its loop geometry. */
-function coverRecordedPasses(clip: Clip): Clip {
+function coverRecordedPasses(clip: Clip, capture: RecordedCapture): Clip {
     const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === clip.trackId);
-    let endBeat = clip.endBeat;
+    let capturedEnd: ReturnType<typeof recordingPassTiming.captureEnd> = undefined;
+    if (capture.sourceDurationSeconds !== undefined) {
+        capturedEnd = recordingPassTiming.captureEnd(
+            clip.id,
+            capture.sourceContextOriginSeconds + capture.sourceDurationSeconds
+        );
+    }
+    // Keep the original source as an editable handle. Ordinary base playback
+    // ends at the gesture; genuine captured passes may still require a later
+    // song beat after the last lap wrapped back to the loop start.
+    let endBeat = capturedEnd ? Math.min(clip.endBeat, capturedEnd.endBeat) : clip.endBeat;
     for (const take of lane?.takes ?? []) {
         if (take.clipId === clip.id && take.passDepthSeconds !== undefined) {
             endBeat = Math.max(endBeat, take.endBeat);
@@ -93,6 +103,6 @@ export async function commitRecording(clip: Clip, capture?: RecordedCapture): Pr
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
-    await executeAppAction({ type: 'commitRecording', payload: { clip: coverRecordedPasses(placed) } });
+    await executeAppAction({ type: 'commitRecording', payload: { clip: coverRecordedPasses(placed, capture) } });
     recordingPassTiming.retire(clip.id);
 }

@@ -108,6 +108,7 @@ correlation across worker readiness and a tempo edit. Distinguish the short
 clip's carrier from its actual sample count, and prove the same placement and
 PCM survive real Command/CRDT Undo/Redo.
 
+Drive both Record joining playback and automatic punch while the first input is pending across a sounded wrap.
 Delay first input while Record joins beat 11.8 in loop [8, 12] at 120 BPM.
 Drive the real scheduler through one and several sounded wraps before the
 producer's first nonempty frame, then through another wrap after that frame.
@@ -128,3 +129,29 @@ sample 196800 at 48 kHz. Reanchor only the open pass. The PR #5165 review had
 held admission and checked first-entry edits, but missed a seam before sample
 zero and an edited entry after a completed pass; neither admission projection
 nor the most recent completed seam identifies those captures.
+
+## Captured ending must bound uncomped playback
+
+Stop an audio capture before a planned seam, keep the capture tempo unchanged,
+and let the producer deliver excess PCM during its delayed drain. Read the
+unselected base clip through real comp resolution and live source scheduling,
+then prove its source stops at the frozen gesture ending. Repeat before any
+planned seam and through automatic finalization. Assert the original buffer's
+complete PCM is retained as an editable handle, one real Command/CRDT Undo/Redo
+restores the same clip and takes, and completed passes still span their captured
+loop geometry after the last lap wraps backwards. Preserve the deliberately
+minimum-length carrier for short recordings separately from captured PCM.
+
+The PR #4987 capture-origin escape recurred in PR #5165's automatic first-frame
+route: manual relocation readers were wired, but automatic punch froze only the
+admission pair. Its deferred-input probe must assert the base clip's first-media
+origin as well as selected PCM; pass depth can be correct while base placement
+is one traversal late. Trace every selected take to the pass it actually stages:
+a scheduled seam ends the dying pass, rather than opening an incoming partial
+lap. A source oracle for that nonexistent lap cannot prove this defect.
+
+The pending-tail repair in PR #5165 bounded a take but left the base clip derived
+from the entire delayed buffer. Its original check changed tempo during the
+flush and never inspected uncomped playback. That omitted consumer, rather than
+forwarded finalizer arguments or a green take-bound assertion, is the required
+ending probe.
