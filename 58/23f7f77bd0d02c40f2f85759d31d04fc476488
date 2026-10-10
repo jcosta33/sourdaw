@@ -1,0 +1,82 @@
+crates/daw-dsp/src/gluten/opto.rs
+  s_2bfd55a4393d7c::t_023c0b19c353bb 224-225
+  s_2bfd55a4393d7c::t_c28d5c4be5821e 58-59
+  s_2bfd55a4393d7c::t_20d1f13043050d 236-237
+  s_2bfd55a4393d7c::t_44ba7779a7a4b2 31-33
+  s_2bfd55a4393d7c::t_e9e5bfc58b02de 187-196
+crates/daw-dsp/tests/gluten_lookahead_every_topology.rs
+  s_2bfd55a4393d7c::t_d35dd755e9ecf5 766,779,781
+  s_2bfd55a4393d7c::t_fad22a0d0f283c 21-22,29-34,115-116,157-158,163,169-171,192,198-211,452-453,455-467,471-478,719-720,722-765,782,784-795
+  s_2bfd55a4393d7c::t_d718800d43c4be 112-114,117-137,154-155,164-167,193-197
+  s_2bfd55a4393d7c::t_99799c4141b062 783
+  s_2bfd55a4393d7c::t_616b3f7c049418 1-20,23-28,35-93,96-106,159,454,468-470
+  s_2bfd55a4393d7c::t_0d40945521fb60 717
+  s_2bfd55a4393d7c::t_b37655b95820b4 172-174
+  s_2bfd55a4393d7c::t_fd59edc06531e5 334-448,497,499,548,566,571-574
+  s_2bfd55a4393d7c::t_a8dd320bb5d825 449-451,479-496,498,500-547,549-565,567-570,575-716,718,721,767-778,780
+crates/daw-dsp/src/gluten/engine.rs
+  s_2bfd55a4393d7c::t_459e2589cc9d97 440-441
+  s_2bfd55a4393d7c::t_34953e64193c36 693-700
+  s_2bfd55a4393d7c::t_e0749a9e50ae34 508-509
+  s_2bfd55a4393d7c::t_0768fe4bec340b 667-691,693,698
+  s_2bfd55a4393d7c::t_c11f51708b547e 449-451
+  s_2bfd55a4393d7c::t_5c8672f413c827 488-495
+  s_2bfd55a4393d7c::t_2c6d97d918f096 442-443
+  s_2bfd55a4393d7c::t_6827550cf36fdf 479,482,487,496-497,499-503,506-507,511,514,647
+  s_2bfd55a4393d7c::t_f22adec630a21f 625-627,634,638-643
+  s_2bfd55a4393d7c::t_9688919a3f8ff9 498
+  s_2bfd55a4393d7c::t_e24682772c2da9 644-646
+crates/daw-dsp/src/gluten/vca.rs
+  s_2bfd55a4393d7c::t_d23dafd16b3998 130-131
+  s_2bfd55a4393d7c::t_56a035a2d60260 282-283
+  s_2bfd55a4393d7c::t_9f9c9aab6dbd57 103-105
+  s_2bfd55a4393d7c::t_b622a2a5de1fae 241-251
+  s_2bfd55a4393d7c::t_f2c2c5e19c10f6 296-297
+  s_2bfd55a4393d7c::t_6e55136067bc32 238-240
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_2bfd55a4393d7c::t_8722629dc1f046 81-83
+src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptorGuidanceCompression.ts
+  s_2bfd55a4393d7c::t_dc28a2b81789d2 97
+  s_2bfd55a4393d7c::t_e43a368f5bab6f 200
+crates/daw-dsp/tests/device_process_rt.rs
+  s_2bfd55a4393d7c::t_01a0f7ffc7ea34 1145-1202
+crates/daw-dsp/src/gluten/diode.rs
+  s_2bfd55a4393d7c::t_f9985820aa7568 238-239
+  s_2bfd55a4393d7c::t_2da86f968654f9 67-68
+  s_2bfd55a4393d7c::t_0770b8c7ae4d81 144,147,152-154
+  s_2bfd55a4393d7c::t_284a1687082c0d 250-251
+  s_2bfd55a4393d7c::t_77f140ddb99c6c 38-40
+crates/daw-dsp/src/gluten/fet.rs
+  s_2bfd55a4393d7c::t_34aa50f998b35f 44-46,77-78,190,196-197,202,205-207,244,254-255,266-267,275-282
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_1a2945a4828190 10
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_01a64d1c6bba72 990-1003,1148-1163
+  s_2bfd55a4393d7c::t_99da92ae145fed 1,1148-1163
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_d6e0dd1ffdd631 5-18,163-178
+  s_2bfd55a4393d7c::t_e4eacbdbbba4ba 1,163-178
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_79bc452848051f 990-1003,1148-1163
+  s_2bfd55a4393d7c::t_dccc82a3b35f3b 1,1148-1163
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_74ca97dd8b3f24 12,16-18,21
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_5eb506ca213a2d 1344,1350,1770
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5823f7f77bd0d02c40f2f85759d31d04fc476488",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
