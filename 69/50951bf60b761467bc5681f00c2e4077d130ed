@@ -1,0 +1,36 @@
+scripts/__tests__/viteBuildFaustWorkletRegistration.spec.ts
+  s_d257b09300b1ad::t_ee5fe30a27d13f 79-80,82
+  s_d257b09300b1ad::t_3c6c828d4fac34 13,15-16
+  s_d257b09300b1ad::t_cc017d894e211f 155-156,158-174,176-179,181-184,186
+  s_d257b09300b1ad::t_737d995d17b05e 175
+  s_d257b09300b1ad::t_6046cd385af2cf 198-201,204-206,209-211
+  s_d257b09300b1ad::t_f85ee42ce3bca5 202-203
+  s_d257b09300b1ad::t_7206364cba0f8c 60-66
+  s_d257b09300b1ad::t_0a3911adb940dd 87
+  s_d257b09300b1ad::t_a977c4f4b7c7d8 269
+  s_d257b09300b1ad::t_2929c31be37fea 1-12,14,17-59,67-78,81,83-86,88-122,126,131-154,157,180,185,187-197,207-208,212-229,231-268,270-292
+  s_d257b09300b1ad::t_d3cc42c77bcda6 123-125,127-130
+  s_d257b09300b1ad::t_922c5462992a16 230
+vite.config.ts
+  s_d257b09300b1ad::t_c6447b062a4b8f 166
+  s_d257b09300b1ad::t_1ca12ae6bbf474 164,167
+  s_d257b09300b1ad::t_62b66383caaeb8 165
+  s_d257b09300b1ad::t_d326d0c7482699 17-34
+  s_d257b09300b1ad::t_2875ddfce0fdaa 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6950951bf60b761467bc5681f00c2e4077d130ed",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
