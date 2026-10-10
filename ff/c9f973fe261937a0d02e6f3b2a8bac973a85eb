@@ -1,0 +1,31 @@
+src/modules/MIDI/useCases/webMidiInput/retireDrainOfRemovedYeast.ts
+  s_2bfd55a4393d7c::t_7b6ca49d3af33a 1-37
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_2bfd55a4393d7c::t_d9a1fc265ff309 1915-2019
+  s_2bfd55a4393d7c::t_45ffeb7f619a6f 2020-2024
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_2bfd55a4393d7c::t_8e77c8d9bf7b9a 370-413
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_2bfd55a4393d7c::t_5680658d9e80a5 102-107
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_2bfd55a4393d7c::t_51c7b2f560af41 29
+  s_2bfd55a4393d7c::t_78800af631c150 174-188
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_2bfd55a4393d7c::t_30e71725c42389 27,192-194,345-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ffc9f973fe261937a0d02e6f3b2a8bac973a85eb",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
