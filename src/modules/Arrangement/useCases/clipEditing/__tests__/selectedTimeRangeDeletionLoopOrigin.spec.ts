@@ -27,7 +27,12 @@ import { executeSelectedTimeRangeDeletion } from '../executeSelectedTimeRangeDel
 
 // The MIDI restore dependency has no real export outside its own module; the
 // transaction under test never reaches it, so it gets the inert prepared shape.
-const prepareMidiTimeStateRestore = () => ({ status: 'ready' as const, hasChanges: false, apply: () => true, revert: () => true });
+const prepareMidiTimeStateRestore = () => ({
+    status: 'ready' as const,
+    hasChanges: false,
+    apply: () => true,
+    revert: () => true,
+});
 
 setTimeOperationDependencies({
     prepareAutomationTimeOperation,
