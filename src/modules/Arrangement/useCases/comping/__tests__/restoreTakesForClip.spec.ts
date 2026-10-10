@@ -5,6 +5,7 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { reKeyedTakeLaneOwnersMatchStore } from '../reKeyedTakeLaneOwnersMatchStore';
 import { removeTakesForClips } from '../removeTakesForClips';
 import { restoreTakesForClip } from '../restoreTakesForClip';
 import { retiredTakeLaneOwnersMatchStore } from '../retiredTakeLaneOwnersMatchStore';
@@ -91,6 +92,68 @@ describe('restoreTakesForClip', () => {
         expect(retiredTakeLaneOwnersMatchStore(capture)).toBe(false);
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
+
+    it.each(['t1', 't2'])('refuses a retired take id occupied by another clip on %s', (trackId) => {
+        const retired = { ...createTake('c1', 'Retired', 0, 4), id: 'retired-take' };
+        const captured = { ...laneWithTakes('t1', [retired]), id: 'captured-lane' };
+        const peer = { ...retired, clipId: trackId === 't1' ? 'c2' : 'c9', selected: true };
+        mocks.takeLaneStoreValue.value = { lanes: [{ ...laneWithTakes(trackId, [peer]), id: 'peer-lane' }] };
+
+        expect(retiredTakeLaneOwnersMatchStore([{ laneIndex: 0, lane: captured, retiredTakeIds: [retired.id] }])).toBe(
+            false
+        );
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+    });
+
+    it('admits the same retired take owner in a replacement lane without claiming untouched captured takes', () => {
+        const retired = { ...createTake('c1', 'Retired', 0, 4), id: 'retired-take' };
+        const untouched = { ...createTake('c2', 'Untouched', 4, 8), id: 'untouched-take' };
+        const captured = { ...laneWithTakes('t1', [retired, untouched]), id: 'captured-lane' };
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    ...laneWithTakes('t1', [{ ...retired, name: 'Later name', selected: true }]),
+                    id: 'replacement-lane',
+                },
+                laneWithTakes('t2', [{ ...untouched, clipId: 'c9' }]),
+            ],
+        };
+
+        expect(retiredTakeLaneOwnersMatchStore([{ laneIndex: 0, lane: captured, retiredTakeIds: [retired.id] }])).toBe(
+            true
+        );
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+    });
+
+    it.each(['apply', 'restore'] as const)(
+        'authenticates the %s source take owner and reserves minted target ids globally',
+        (direction) => {
+            const before = { ...createTake('c1', 'Before', 0, 4), id: 'moved-take' };
+            const after = { ...before, clipId: 'c2', startBeat: 4, endBeat: 8 };
+            const minted = { ...createTake('c3', 'Minted', 8, 12), id: 'minted-take' };
+            const transition = {
+                laneId: 'captured-lane',
+                trackId: 't1',
+                takesBefore: [before],
+                takesAfter: [after, minted],
+                regionsBefore: [],
+                regionsAfter: [],
+            };
+            const source = direction === 'apply' ? before : after;
+            mocks.takeLaneStoreValue.value = {
+                lanes: [{ ...laneWithTakes('t1', [{ ...source, selected: true }]), id: 'replacement-lane' }],
+            };
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(true);
+
+            mocks.takeLaneStoreValue.value.lanes[0]!.takes[0] = direction === 'apply' ? after : before;
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(false);
+
+            mocks.takeLaneStoreValue.value.lanes[0]!.takes[0] = source;
+            mocks.takeLaneStoreValue.value.lanes.push(laneWithTakes('t2', [{ ...minted, clipId: 'c9' }]));
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(false);
+            expect(takeLaneStore.set).not.toHaveBeenCalled();
+        }
+    );
 
     it('re-inserts a lane retired whole at the index it held', () => {
         const firstLane = laneWithTakes('t2', [createTake('c9', 'First survivor', 0, 4)]);

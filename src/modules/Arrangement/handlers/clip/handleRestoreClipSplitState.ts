@@ -74,7 +74,11 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
     return (
         clipSplitCaptureOwnersMatch(action.payload) &&
         retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], priorActions) &&
-        reKeyedTakeLaneOwnersMatchStore(action.payload.reKeyedTakeLanes ?? [], priorActions) &&
+        reKeyedTakeLaneOwnersMatchStore(
+            action.payload.reKeyedTakeLanes ?? [],
+            action.payload.replacement.rightClip ? 'apply' : 'restore',
+            priorActions
+        ) &&
         clipSplitStateRestorable(action.payload, { tracks }) &&
         midiClipSplitStateMatches(
             {
