@@ -11,8 +11,8 @@ import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipR
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
 import { applyTakeReKeyTransitions } from '../../useCases/comping/applyTakeReKeyTransitions';
-import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
+import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { restoreTakeReKeyTransitions } from '../../useCases/comping/restoreTakeReKeyTransitions';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';

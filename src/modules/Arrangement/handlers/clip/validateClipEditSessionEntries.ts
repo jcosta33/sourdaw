@@ -389,6 +389,7 @@ export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
             Object.hasOwn(value.replacement, 'clipAutomationLanes') &&
         (value.expected.clipSatellites === undefined) === (value.replacement.clipSatellites === undefined) &&
         (value.expected.clipAutomationLanes === undefined) === (value.replacement.clipAutomationLanes === undefined) &&
+        typeof value.expected.trackId === 'string' &&
         splitSnapshotCaptureOwnersMatch(value.expected, value.clipId, value.rightClipId) &&
         splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId) &&
         isSplitTakeReKeyCapture(value.reKeyedTakeLanes, value.expected.trackId, value.clipId, value.rightClipId)
@@ -396,8 +397,8 @@ export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
 }
 
 function foreignTakesUnchanged(
-    takes: TakeReKeyLaneTransitionSnapshot['takesBefore'],
-    otherTakes: TakeReKeyLaneTransitionSnapshot['takesAfter'],
+    takes: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['takesBefore'][number]>,
+    otherTakes: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['takesAfter'][number]>,
     clipId: string,
     rightClipId: string
 ): boolean {
@@ -413,9 +414,9 @@ function foreignTakesUnchanged(
 }
 
 function foreignRegionsUnchanged(
-    regions: TakeReKeyLaneTransitionSnapshot['regionsBefore'],
-    otherRegions: TakeReKeyLaneTransitionSnapshot['regionsAfter'],
-    takes: TakeReKeyLaneTransitionSnapshot['takesBefore'],
+    regions: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['regionsBefore'][number]>,
+    otherRegions: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['regionsAfter'][number]>,
+    takes: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['takesBefore'][number]>,
     clipId: string,
     rightClipId: string
 ): boolean {
