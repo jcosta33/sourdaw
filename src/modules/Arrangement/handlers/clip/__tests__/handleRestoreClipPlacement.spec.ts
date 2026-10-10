@@ -10,11 +10,18 @@ const mocks = vi.hoisted(() => ({
     restoreClipAutomationMoveState: vi.fn(),
 }));
 
-vi.mock('#/modules/Automation/useCases', () => ({
-    clipAutomationMoveStateMatches: mocks.clipAutomationMoveStateMatches,
-    getAutomationLanes: mocks.getAutomationLanes,
-    restoreClipAutomationMoveState: mocks.restoreClipAutomationMoveState,
-}));
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
+    return {
+        buildOfflineModulatorPlans: actual.buildOfflineModulatorPlans,
+        clipAutomationMoveStateMatches: mocks.clipAutomationMoveStateMatches,
+        getAutomationLanes: mocks.getAutomationLanes,
+        getAutomationLaneCeiling: actual.getAutomationLaneCeiling,
+        isExactAutomationLaneSnapshots: actual.isExactAutomationLaneSnapshots,
+        isExactClipAutomationMoveSnapshots: actual.isExactClipAutomationMoveSnapshots,
+        restoreClipAutomationMoveState: mocks.restoreClipAutomationMoveState,
+    };
+});
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
@@ -67,6 +74,7 @@ describe('handleRestoreClipPlacement', () => {
         // document itself held.
         expect(mocks.moveClip).toHaveBeenCalledWith('clip-1', 'track-1', 2, undefined, false, {
             historicalPlacement: true,
+            historicalEndBeat: 10,
         });
         expect(mocks.restoreClipAutomationMoveState).toHaveBeenCalledWith(
             'clip-1',

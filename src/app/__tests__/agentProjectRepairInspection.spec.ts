@@ -1,12 +1,15 @@
+import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     agentProjectInspectionPort,
     createCrdtDoc,
+    getCrdtDoc,
     inspectCurrentAgentProjectRepairState,
     mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDocInLineage,
 } from '#/modules/CrdtDocument/useCases';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
@@ -138,6 +141,41 @@ function seedRootDocument(slots: Record<string, unknown>): void {
     });
 }
 
+function trackWithGainClips(): Record<string, unknown> {
+    return {
+        ...track('track-a'),
+        clips: ['clip-left', 'clip-right'].map((id, index) => ({
+            id,
+            trackId: 'track-a',
+            name: id,
+            startBeat: index * 2,
+            endBeat: index * 2 + 2,
+            type: 'midi',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#ffffff',
+            locked: false,
+            muted: false,
+        })),
+    };
+}
+
+function copiedGainEnvelopes(pointId: string): Record<string, unknown> {
+    return {
+        envelopes: Object.fromEntries(
+            ['clip-left', 'clip-right'].map((clipId) => [
+                clipId,
+                {
+                    clipId,
+                    enabled: true,
+                    points: [{ id: pointId, beatOffset: 0, gainDb: -6 }],
+                },
+            ])
+        ),
+    };
+}
+
 describe('agent project repair inspection', () => {
     beforeEach(() => {
         vi.stubGlobal(
@@ -217,6 +255,62 @@ describe('agent project repair inspection', () => {
 
         expect(inspectCurrentAgentProjectRepairState()).toMatchObject({
             repairCandidates: [{ targetIds: ['@project/raw/transport'] }],
+            status: 'repair-required',
+        });
+    });
+
+    it.each(['authored-point', 'track-a'])(
+        'admits old saved gain envelopes whose clip-local point id is %s',
+        (pointId) => {
+            seedRootDocument({
+                tracks: tracksSlot([masterBus(), trackWithGainClips()]),
+                // Split and duplicate preserve authored point ids. The point is
+                // addressed by clipId plus pointId, even when its id equals a track's.
+                gainEnvelopes: copiedGainEnvelopes(pointId),
+            });
+            const current = getCrdtDoc('root');
+            if (!current) {
+                throw new Error('Expected saved project');
+            }
+            const loaded = Automerge.load(Automerge.save(current));
+            expect(loaded).toEqual(current);
+            replaceCrdtDocInLineage({ id: 'root', doc: loaded });
+            expect(inspectCurrentAgentProjectRepairState()).toBeNull();
+        }
+    );
+
+    it('requires repair for duplicate point ids within one clip envelope', () => {
+        seedRootDocument({
+            tracks: tracksSlot([masterBus(), trackWithGainClips()]),
+            gainEnvelopes: {
+                envelopes: {
+                    'clip-left': {
+                        clipId: 'clip-left',
+                        enabled: true,
+                        points: [
+                            { id: 'repeated-point', beatOffset: 0, gainDb: -6 },
+                            { id: 'repeated-point', beatOffset: 1, gainDb: -12 },
+                        ],
+                    },
+                },
+            },
+        });
+        expect(inspectCurrentAgentProjectRepairState()).toMatchObject({
+            projectInvariantsValid: false,
+            status: 'repair-required',
+        });
+    });
+
+    it('keeps gain-point scoping confined to the canonical gain envelope point rows', () => {
+        seedRootDocument({
+            tracks: tracksSlot([masterBus(), trackWithGainClips()]),
+            gainEnvelopes: copiedGainEnvelopes('authored-point'),
+            // A repeated global track id is still a conflict when gain rows
+            // carry independently scoped point ids in the same document.
+            otherEntities: [{ id: 'track-a' }],
+        });
+        expect(inspectCurrentAgentProjectRepairState()).toMatchObject({
+            projectInvariantsValid: false,
             status: 'repair-required',
         });
     });

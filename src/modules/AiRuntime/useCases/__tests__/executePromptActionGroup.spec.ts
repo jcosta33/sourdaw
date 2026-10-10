@@ -65,6 +65,10 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
     }),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(() => ''),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
+    getCrdtDoc: vi.fn(),
+
     captureProjectRevision: () => mocks.projectRevision.value,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
 }));

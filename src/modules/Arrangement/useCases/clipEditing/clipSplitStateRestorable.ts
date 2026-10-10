@@ -1,8 +1,7 @@
-import { type ClipSplitActionSnapshot } from '#/utils/handlerContract';
+import { type ClipSnapshot, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
-import { type Clip } from '../../stores/trackStore';
+import { getTrackState } from '../../repositories/track/getTrackState';
 
 export type ClipSplitStateRestorableInput = {
     clipId: string;
@@ -12,7 +11,7 @@ export type ClipSplitStateRestorableInput = {
 };
 
 function trackSnapshotMatches(
-    clips: readonly Clip[],
+    clips: readonly ClipSnapshot[],
     clipId: string,
     rightClipId: string,
     expected: ClipSplitActionSnapshot
@@ -36,7 +35,7 @@ function trackSnapshotMatches(
  *  with a now-out-of-range index must be refused before executing, not during. */
 export function clipSplitStateRestorable(
     { clipId, rightClipId, expected, replacement }: ClipSplitStateRestorableInput,
-    state: TrackState | null = getTrackState()
+    state: { tracks: readonly { id: string; clips: readonly ClipSnapshot[] }[] } | null = getTrackState()
 ): boolean {
     if (
         expected.trackId !== replacement.trackId ||
@@ -49,6 +48,18 @@ export function clipSplitStateRestorable(
     }
     const track = state?.tracks.find((candidate) => candidate.id === expected.trackId);
     if (!state || !track || !trackSnapshotMatches(track.clips, clipId, rightClipId, expected)) {
+        return false;
+    }
+    if (
+        state.tracks.some(
+            (candidate) =>
+                candidate.id !== expected.trackId &&
+                candidate.clips.some((clip) => clip.id === clipId || clip.id === rightClipId)
+        ) ||
+        state.tracks.flatMap((candidate) => candidate.clips).filter((clip) => clip.id === clipId).length !== 1 ||
+        state.tracks.flatMap((candidate) => candidate.clips).filter((clip) => clip.id === rightClipId).length !==
+            (expected.rightClip === null ? 0 : 1)
+    ) {
         return false;
     }
     if (replacement.rightClip) {

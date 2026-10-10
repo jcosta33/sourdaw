@@ -7,6 +7,8 @@ import { toggleChat } from '../aiPanelActions/toggleChat';
 import { undoLastAction } from '../aiPanelActions/undoLastAction';
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),

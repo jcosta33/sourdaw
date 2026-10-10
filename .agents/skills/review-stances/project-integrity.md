@@ -139,6 +139,191 @@ and without optional metadata, while admitting the owner's canonical and legacy 
 entries and legitimate missing replay legs. Enforce this relationship in the owner: some other
 commands legitimately have different inverse types, so global type equality is not the contract.
 
+## Lesson from the persisted clip-edit undo escape
+
+PR #3354 introduced internal replay contracts for the existing session mirror but did not prove that
+the real Delete Time, split, move, and remove handlers could save their generated inverse and redo
+payloads. Their live undo stacks worked until a reload; the mirror silently omitted entries whose
+internal restore actions lacked owner replay contracts. A neutral generated schema can also be
+narrower than the complete clip or time-operation snapshot captured by its owning handler.
+
+For each affected edit, execute the production action, wait until the session mirror contains its
+entry, register fresh production handlers to hydrate it, and exercise Undo and Redo against the
+authoritative project and its projections. Corrupt the saved inverse and redo separately: swap a
+clip identity, placement, or split snapshot; put a nonfinite number in a snapshot; change a time
+plan's scope or make its replay legs disagree. Hydration must drop each forged entry before any
+project write. Keep internal restore validation with the owner and session mirror; admitting a
+local forward action to the mirror must not add it to executable action discovery.
+
+The first #5064 saved clip-edit validator (`e8163b99cc`) checked a removed clip's satellite
+capture only as an array. Its malformed-history review stance mutated optional clip fields and
+take state, but missed nested gain and warp values. A real `removeClip` with a gain envelope could
+therefore persist an inverse whose `gainDb` was later changed to a string; fresh session hydration
+kept it, and real Undo wrote the string to raw CRDT while the gain-envelope projection discarded it.
+For every saved inverse carrying clip satellites, seed valid envelopes and warp markers through their
+owning stores, remove the clip, corrupt one nested field in the persisted capture, then hydrate and
+invoke real Undo. Require hydration to drop the entry and both raw authority and projections to stay
+unchanged. Keep a valid gain-and-warp remove/reload/Undo/Redo control and the legacy warp alias and
+default-collapse controls; an array check or general finite-number sweep cannot prove shape safety.
+
+The same #5064 removal capture admitted `clipAutomationLanes` when it was merely an array. In a real
+two-lane removal, changing one persisted point value to a string let fresh history hydration keep the
+entry; Undo restored the clip, while Automation rejected the entire lane batch and history advanced.
+For saved clip-removal inverses, compare each lane with Automation's exact snapshot contract before
+admission. Keep a valid producer-capture/reload/Undo/Redo control with two clip lanes and an unrelated
+lane, then corrupt one nested lane field in the saved sibling entry. Hydration must drop that entry,
+and real Undo must leave raw document, track, MIDI, gain, Automation projections and history unchanged.
+
+The next #5064 repair checked each captured automation lane's shape but missed identity across
+siblings. A real two-lane `removeClip` can save an inverse where both captured lanes later carry
+one ID; Undo then appends duplicate IDs, or silently skips both when that ID belongs to a resident
+unrelated lane. Produce the saved entry through the registered action, change only the saved sibling
+IDs, hydrate fresh production contracts, and invoke real Undo. Require hydration to reject the whole
+entry before any write; raw document, owner projections, and complete history must remain unchanged.
+Keep the valid two-lane remove/save/hydrate/Undo/Redo control. A nested-shape-only stance cannot
+detect a duplicate identity among individually valid siblings.
+
+The #5064 removal validator at `06ed9f7c42` also admitted individually valid satellite and
+automation rows owned by a different clip. From a genuine saved removal of clip-a, change only the
+satellite's `clipId` and nested envelope `clipId` to clip-b, then separately redirect just one
+captured automation lane's `clipId`. Shape and duplicate-ID checks cannot detect either relationship
+failure. Require fresh production hydration to drop each entry, and real Undo to leave raw CRDT,
+every exercised owner projection, and the complete public history unchanged. Keep a genuine saved
+gain/warp/multiple-lane control with distinct clip-b owners through repeated Undo/Redo. Bind owners
+to the removed clip without rejecting empty captures or imposing track relationships the producer
+does not guarantee.
+
+The #5064 move capture also needs Automation's point contract at saved-history admission. It records
+partial lane snapshots with only id, trackId, and points, so a full-lane validator is the wrong shape.
+Move a clip with two rich automation lanes through real save and hydration, then corrupt the same
+point in the paired inverse and redo snapshots with an unsupported curve, negative beat, empty id,
+or negative stair steps. Require hydration to discard the entry before real Undo can change raw
+authority, projections, or history; keep a valid rich Undo/Redo control and an empty capture control.
+
+PR #860 (`ad46a80c7e`) introduced a time-operation guard that compared the whole captured track-store state,
+including local selection and ghost clips. The #5064 persisted Delete Time control hydrated handlers
+without resetting projections, so it missed the production load boundary: `loadProject` resets
+projections, clears selection, and leaves durable tracks unchanged. A saved replay then refused solely
+because that UI state differed. Require a genuine registered Delete Time with joined audio, MIDI,
+Automation, gain, warp, and take owners; wait for its saved entry, reset projections as a fresh load
+does, hydrate production handlers, and run real Undo and Redo with different current selection and
+ghosts. Both durable authority and projections must round-trip exactly while current UI state survives.
+Keep strict saved-shape validation and zero-write refusal for changed durable content. The missed
+stance obligation for #5064's newly persisted history is the actual fresh-load boundary, not handler
+registration alone; the historical #860 review prompt is unverified.
+
+PR #4519 (`00f29b9ca2`) restored retired takes by cloning their captured selection before appending
+live-only takes. After split Undo retires a peer's selected right take, another peer can select a
+surviving left take; Redo then revived both selections and the first stale take won resolution. A
+project-integrity stance must synchronize real same-lineage Automerge messages before Undo and again
+before Redo, hydrate both saved history stacks, and inspect the raw lane, projection, and selected-take
+resolver. Restore the retired take and its placed source fields while preserving the later resident
+selection uniquely. Also prove selected restoration when no live selection or lane exists. Retain the
+existing conservative comp policy: any live overlap drops the whole captured region, while disjoint
+regions return. Direct store fixtures without a later selected survivor missed this failure mode.
+
+PR #2169 (`bfbf1dd69b1`) added gain, warp, and automation restoration to clip removal inverses.
+PR #3809 (`b34f9c49345`) guarded grouped restoration only by track presence and clip absence;
+single-entry restoration bypassed that preflight. The missing risk was freshness of target-owned
+material while the clip rectangle remained absent. After a real removal, saved capture, and fresh
+hydration, independently publish later target MIDI notes, CC, pitch bend, gain, warp, and automation.
+Both single and grouped Undo must write no owner or raw document state, keep the complete history
+pending, and leave an earlier independent grouped inverse unapplied. Keep genuine unchanged-capture
+Undo/Redo controls and later disjoint peer owners, current selection, and ghosts. The historical
+review prompts and tiers are unverified. PR #239 routed MIDI restoration through its owner but
+preserved an older unguarded overwrite; it is not evidence of the original MIDI defect introduction.
+
+Saved replay admission also binds relationships between valid rows. For a real rich move, change
+only a captured automation lane's track owner in each mirrored placement leg. For a placed audio
+removal and a split whose Undo retires a later right-fragment pass, redirect the retired lane's track
+owner while preserving its take and placement fields. Fresh hydration must discard each forged entry
+before Undo or Redo writes. Keep rich, fractional, empty, and historical captures and the later
+surviving selected take controls; shape validation alone does not prove containing-owner authority.
+
+The #5064 repair at `7ea9bd75d5` bound captured removal automation to the removed clip but
+still admitted a different containing track. Produce a real two-lane removal, change only
+each captured lane's `trackId` to another existing track in separate attacks, save and reload
+the document, and hydrate fresh production history. Require rejection of the complete single
+entry or group before real Undo can write redirected automation. Prior foreign-clip and
+shape attacks did not change this second ownership relation.
+
+The same head checked removal replay absence only inside the captured track. After a genuine
+remove/save/reload/hydrate cycle, synchronize a separate actor's valid recreation of that clip
+identity on another track. Both single and grouped Undo must refuse with raw document and
+heads, fresh owner projections, and complete history unchanged; in a group, spy on owner
+writes to prove an earlier independent inverse never executes. Prior late MIDI, gain, warp,
+and automation attacks left the clip rectangle absent everywhere, so they missed this live
+identity-to-containing-track relation. Keep the genuine captures, fractional and placed-pass
+controls, and later selected-survivor/disjoint-comp replay controls.
+
+PR #4519 (`00f29b9ca2865f810070253bcb46e486c15c1db5`) introduced retirement restore's
+lane-id-or-track lookup. A saved #5064 removal at `1ee740f340` could change only the
+captured lane id to another track's resident lane while retaining the correct captured
+track. Undo then restored takes and comp regions into the foreign lane. The missed
+ownership probe is identity reuse, independently of the captured track field: change the
+saved id before hydration and synchronize a separate actor's reuse after hydration. Run
+single and grouped removal Undo and split Redo; require zero owner writes, unchanged raw
+document and heads, fresh projections, and pending history. A retired id absent from live
+is valid, and a new lane for the correct track still merges while preserving its unique
+selected survivor and disjoint comp regions. Preflight the complete replay before any
+clip, MIDI, satellite, automation, or take write; refusing only the final take restore
+would leave a partial edit and consume history.
+
+The same #5064 head admitted paired split captures with foreign automation owners.
+`prepareClipSplit` captures automation for the right fragment only, and satellites for
+source and right only; the pre-split right satellite is null. Bind every optional row to
+that producer contract, using Automation's exact normalizers and the satellite codec's
+duplicate and nested-owner checks. Change the paired inverse's expected and redo's
+replacement automation owner independently by clip and track, and change paired source
+satellite outer and nested owners to an unrelated clip. Save/load the real document and
+hydrate the real history before replay; exact mirrored pairing and valid row shape do not
+prove containing ownership. Keep rich fractional captures and absent optional legacy
+fields usable. These saved-capture probes were absent from the earlier review's foreign
+retired-track attacks, which left the retired id and split owner rows unchanged.
+
+The project ID walker introduced in `83be56e84ee` treated every nested `id` as
+global. PR #3032 (`93710471aa`) scoped arrangement snapshots but retained that
+assumption for live gain envelopes. Split and duplicate preserve authored gain
+point IDs; edits address them by clipId plus pointId. A genuine rich split saved
+and binary-loaded in #5064 therefore passed audio-graph inspection but failed
+project invariants, leaving every owner projection empty and refusing Undo.
+Probe the inspector with real binary-loaded canonical gain envelopes that share
+point IDs across clips, including an ID equal to a global track ID, then drive
+the actual rich fractional split through reload and both history legs. Require
+duplicates within one envelope, global entity collisions, and repeated
+arrangement IDs to remain repair-required. The missed stance clause was the
+identity's owning namespace, not whether recursive traversal found every ID.
+
+Ripple removal's restore changed collateral owners without authenticating them.
+Commit `7a85ce6456a79b050b0bf9aaacc79924ef34244e` introduced the unconditional
+shifted-rectangle restore; GitHub reports no associated PR for that commit.
+PR #922 (`cb5cc8fabc22a82f18225deced69e0e01b9c7f6f`) added inverse automation
+shifts to the same route. The #5064 saved-history replay at `f1b39bf9e7` guarded
+the removed clip but still rewrote a later peer move of the shifted clip and
+consumed the head. The missing stance clause was every owner the inverse will
+write, including collateral rectangles and complete shifted automation scope.
+Remove a clip with ripple, binary-save/load and hydrate real history, then sync
+a peer move, track change, owner deletion, point edit, lane deletion/rebinding,
+or added scoped lane onto a shifted clip. Require single and grouped Undo to
+refuse before any owner write with raw document, heads, projections, and history
+unchanged. Keep fractional automated ripple Undo/Redo/Undo with real reloads,
+unrelated peer owners, selection/ghosts, and current take/comp reconciliation.
+Redo's fresh producer capture must reach the retained inverse: authenticating
+the first gesture after a later actual redo is stale. Historical missing lane
+captures remain readable, but only an empty shifted automation scope can be
+authenticated without them. The old probe checked the retired clip's owners
+and left every shifted owner unchanged; its green round trip proved no peer
+protection for these collateral writes.
+
+Capture sequential real removals under one group ID, with automation on both
+the next removed clip and a shared shifted survivor. Group preflight sees the
+same state each inverse will see only after projecting already-validated
+earlier restores in order, including lanes restored by a non-ripple removal.
+Keep saved Undo/Redo/Undo across both reload legs and reject duplicate restored
+lane identities against that prefix before any member writes. A live-only
+guard falsely refuses the genuine group; checking only current lane IDs lets
+an earlier restore occupy a later restore's ID and causes partial replay.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose
@@ -189,3 +374,48 @@ track and on another active track. Undo must keep the original history head and 
 after a successful undo, the same duplicate-ID states must keep redo pending and preserve the restored
 notes. Replay authority requires one live MIDI clip under the captured track owner, not merely a first
 matching clip in that track.
+
+### 2026-10-09 — copied split automation identities broke saved-project replay (PR #4036)
+
+Commit `7961816964ebfe247ead1f057a2cd0f33571f624`, merged through PR #4036, copied
+surviving automation point IDs onto the right fragment while retaining the source lane.
+A split before those points therefore violated global ID uniqueness after binary reload.
+PR #4036's public round-four review described curve, stretch, and link-law probes, but
+its published evidence did not include binary reload or a global identity census. The
+missed stance was reload identity and global-ID preservation; its historical tier is not inferred.
+
+Split before surviving identified main, trim, and ghost points, using both a dyadic cut
+and a non-dyadic cut. Produce entries through real Command, save/load the Automerge
+document, replace it in its lineage, reset every owner projection, and hydrate the separate
+session history mirror. Require a full global-ID census, valid project invariants, exact
+scalar values/order/curves, and all owner projections before real Undo and Redo. Retaining
+copied point IDs must turn that reload assertion red; fresh in-memory curve checks alone
+do not observe this obligation.
+
+### Saved replay authority refinements measured in PR #5064
+
+A saved clip inverse must use its MIDI owner's complete snapshot law before hydration or any
+Arrangement write. Duplicate note identities, malformed CC or pitch-bend rows, and a missing
+required capture are not an empty or null capture. Probe a real removal's saved inverse through
+production hydration, then require no raw, projection or history write; retain separate valid null
+and present-empty controls. Minimal mocked rows cannot establish that the restore owner admitted
+what the earlier Arrangement write already published.
+
+For split replay, recreate either target identity under another track after Undo and binary reload,
+then require direct and grouped Redo to preserve every owner and the pending history. Delete just
+one side of a mirrored optional satellite or automation guard: reject the group before a later peer
+value can be replaced. Both historically absent sides remain valid, and present empty is distinct.
+A durable-head change alone cannot authorize refresh of a removal inverse; roll the root back in
+its lineage from a committed observer before the finalizer, and require the old inverse to survive
+on ordinary and ambiguous commit paths. Keep genuine own-commit warning and refused-flush controls.
+
+Copied split lane, main, trim, ghost and seam identities must reserve the entire live namespace.
+Preoccupy the preferred generated identity under an unrelated owner before the split, then require
+binary reload and repeated Undo/Redo with exact values and valid invariants. After Undo, let a peer
+claim an actual captured identity and require zero-write refusal rather than reminting that saved
+capture. A census only against the source lane misses both collisions. Include nested object points
+and cross-domain clip owners, while preserving clip-local gain point and arrangement namespaces.
+For a batch-admitted restored clip preceding a split, compare captured IDs with the actual committed
+IDs before reloading and replaying twice; a live execution that remints a preflight capture is not
+replay-stable. Draw is singleton-only, so a rejected draw/split batch proves admission, not prefix
+execution. Read executable entries from the full history owner rather than its label-only UI view.

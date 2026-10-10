@@ -1,5 +1,5 @@
 import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
-import { type ClipSplitActionSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -8,6 +8,8 @@ import { type Clip } from '../../stores/trackStore';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
+import { projectClipReplayPrefix } from './projectClipReplayPrefix';
+import { readClipSplitIdentityIds } from './readClipSplitIdentityIds';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
 
 type PrepareClipSplitInput = {
@@ -16,6 +18,7 @@ type PrepareClipSplitInput = {
     rightClipId?: string;
     resolvedSplitBeat?: number;
     targetNoteIds?: readonly string[];
+    priorActions?: readonly AppAction[];
 };
 
 export function prepareClipSplit({
@@ -24,6 +27,7 @@ export function prepareClipSplit({
     rightClipId,
     resolvedSplitBeat,
     targetNoteIds,
+    priorActions = [],
 }: PrepareClipSplitInput) {
     if (
         !Number.isFinite(splitBeat) ||
@@ -76,12 +80,27 @@ export function prepareClipSplit({
     const contentSplitDelta = timelineSplitDelta * consumedStretchFactor(clip);
     const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
 
+    let reservedIdentityIds: ReadonlySet<string> | undefined;
+    let rightClipIndex = track.clips.length;
+    if (priorActions.length > 0) {
+        const projected = projectClipReplayPrefix(priorActions);
+        if (!projected) {
+            return null;
+        }
+        rightClipIndex = projected.clips.filter((owner) => owner.owningTrackId === track.id).length;
+        reservedIdentityIds = readClipSplitIdentityIds(
+            projected.lanes,
+            projected.clips.map((owner) => owner.clip)
+        );
+    }
+
     const satellites = prepareClipSplitSatellites({
         clipId,
         rightClipId: effectiveRightClipId,
         clipRelativeSplitBeats: timelineSplitDelta,
         contentSplitBeats,
         absoluteSplitBeats: adjustedSplitBeat,
+        reservedIdentityIds,
     });
 
     const leftClip: Clip = {
@@ -103,7 +122,7 @@ export function prepareClipSplit({
         trackId: track.id,
         leftClip: structuredClone(clip),
         rightClip: null,
-        rightClipIndex: track.clips.length,
+        rightClipIndex,
         sourceMidi: midiPlan.previousSource,
         rightMidi: midiPlan.previousRight,
         clipSatellites: satellites.previous,
@@ -115,7 +134,7 @@ export function prepareClipSplit({
         trackId: track.id,
         leftClip: structuredClone(leftClip),
         rightClip: structuredClone(rightClip),
-        rightClipIndex: track.clips.length,
+        rightClipIndex,
         sourceMidi: midiPlan.nextSource,
         rightMidi: midiPlan.nextRight,
         clipSatellites: satellites.next,

@@ -2,6 +2,8 @@ import { createHandler } from '#/utils/createHandler';
 
 import { prepareTimeOperationStateRestore } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 
+import { isRestoreTimeOperationSessionPayload } from './validateClipEditSessionEntries';
+
 /**
  * Guarded inverse and redo of `deleteTime`, `insertTime`, and `duplicateTimeRange`, in
  * both directions. None of the three is self-inverse — deleting time discards what it
@@ -12,6 +14,7 @@ import { prepareTimeOperationStateRestore } from '../../useCases/timeOperations/
  * undoable — same as `restoreFreezeState`.
  */
 export const handleRestoreTimeOperationState = createHandler<'restoreTimeOperationState'>({
+    validateSessionActionArguments: isRestoreTimeOperationSessionPayload,
     execute: (action) => {
         const restoration = prepareTimeOperationStateRestore(action.payload.plan);
         if (restoration.status !== 'ready') {
