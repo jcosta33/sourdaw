@@ -26,6 +26,7 @@ use super::tone::ToneTilt;
 use super::types::*;
 use super::voice::{NoteZones, VoicePool};
 use super::zone::{SamplePool, ZoneMap, ZoneMapBuildError};
+use super::LEVAIN_SAMPLE_CHUNK_FLOATS;
 use crate::params::{ATTACK, MASTER_GAIN, RELEASE, TONE};
 
 thread_local! {
@@ -40,9 +41,35 @@ const MAX_STAGGERED_RELEASES: usize = 128;
 /// Round-robin candidates one mic position's lookup offers a note-on.
 const MAX_ROUND_ROBIN_CANDIDATES: usize = 16;
 
+/// A sample whose storage was reserved whole when it began and whose PCM is
+/// still arriving, one bounded chunk per host message. It joins the pool only
+/// when `seal_sample` finds every float written.
+struct OpenSample {
+    id: SampleId,
+    data: Vec<f32>,
+    frame_count: u32,
+    channels: u8,
+    sample_rate: f32,
+    total_floats: usize,
+}
+
+impl OpenSample {
+    fn remaining(&self) -> usize {
+        self.total_floats - self.data.len()
+    }
+
+    /// Floats the host may write next: what is left, capped at one chunk.
+    fn window(&self) -> usize {
+        self.remaining().min(LEVAIN_SAMPLE_CHUNK_FLOATS)
+    }
+}
+
 struct PendingSampleBank {
     zone_map: ZoneMap,
     sample_pool: Arc<SamplePool>,
+    /// The sample being uploaded in chunks, if any. It lives with the staged
+    /// bank so an abort retires it together with the bank.
+    open_sample: Option<OpenSample>,
     instrument_id: String,
     num_articulations: usize,
     num_mics: usize,
@@ -60,6 +87,7 @@ impl PendingSampleBank {
         Self {
             zone_map: ZoneMap::new(),
             sample_pool: Arc::new(SamplePool::new()),
+            open_sample: None,
             instrument_id: instrument_id.to_owned(),
             num_articulations: 0,
             num_mics: 0,
@@ -79,6 +107,8 @@ impl PendingSampleBank {
 /// freed when the slot empties, not when the commit runs.
 struct RetiredBank {
     _zone_map: ZoneMap,
+    /// A sample an abort caught mid-upload; the first release step frees it.
+    open_sample: Option<OpenSample>,
     /// `None` once the pool has been taken for release.
     sample_pool: Option<Arc<SamplePool>>,
     /// A uniquely owned pool being drained a bounded number of entries at a time.
@@ -97,6 +127,7 @@ impl RetiredBank {
     ) -> Self {
         Self {
             _zone_map: zone_map,
+            open_sample: None,
             sample_pool: Some(sample_pool),
             draining: None,
             _legato_transitions: legato_transitions,
@@ -108,6 +139,7 @@ impl RetiredBank {
     fn from_pending(pending: PendingSampleBank) -> Self {
         Self {
             _zone_map: pending.zone_map,
+            open_sample: pending.open_sample,
             sample_pool: Some(pending.sample_pool),
             draining: None,
             _legato_transitions: pending.legato_transitions,
@@ -122,6 +154,8 @@ impl RetiredBank {
     /// unwrapped first (a registry `Weak` does not block that, and once
     /// unwrapped it can no longer be attached), then drained in steps.
     fn release_step(&mut self, max_entries: usize) -> bool {
+        // One free, whatever the sample's size.
+        drop(self.open_sample.take());
         if let Some(shared) = self.sample_pool.take() {
             match Arc::try_unwrap(shared) {
                 Ok(pool) => self.draining = Some(pool),
@@ -276,7 +310,9 @@ impl LevainEngine {
     // -----------------------------------------------------------------------
 
     /// Add a sample to the uniquely-owned loading bank. Returns `None` once
-    /// the bank is shared or its identifiers/byte count exceed the ABI.
+    /// the bank is shared or its identifiers/byte count exceed the ABI, and
+    /// while a chunked upload is open: that sample already holds the next id,
+    /// so adding another would take it and leave the upload unsealable.
     pub fn add_sample(
         &mut self,
         data: Vec<f32>,
@@ -285,10 +321,120 @@ impl LevainEngine {
         sample_rate: f32,
     ) -> Option<SampleId> {
         let sample_pool = match self.pending_sample_bank.as_mut() {
+            Some(pending) if pending.open_sample.is_some() => return None,
             Some(pending) => &mut pending.sample_pool,
             None => &mut self.sample_pool,
         };
         Arc::get_mut(sample_pool)?.add(data, frame_count, channels, sample_rate)
+    }
+
+    /// Start uploading a sample into the staged bank, reserving storage for all
+    /// of its PCM now. Returns the id it will have once sealed.
+    ///
+    /// The reservation is the only allocation an upload makes (plus the pool's
+    /// entry table growing by one slot, amortised): the chunks that follow copy
+    /// into it and allocate nothing, so no single host message copies more than
+    /// `LEVAIN_SAMPLE_CHUNK_FLOATS` floats. Refuses, with nothing reserved,
+    /// when no bank is staged, a sample is already open, the bank's pool is
+    /// shared, the id or byte count exceeds the ABI, `channels` is zero, or the
+    /// storage cannot be had.
+    pub fn begin_sample(
+        &mut self,
+        frame_count: u32,
+        channels: u8,
+        sample_rate: f32,
+    ) -> Option<SampleId> {
+        let pending = self.pending_sample_bank.as_mut()?;
+        if pending.open_sample.is_some() || channels == 0 {
+            return None;
+        }
+        let total_floats = usize::try_from(frame_count)
+            .ok()?
+            .checked_mul(usize::from(channels))?;
+        let id = Arc::get_mut(&mut pending.sample_pool)?.admit(total_floats)?;
+        let mut data = Vec::new();
+        data.try_reserve_exact(total_floats).ok()?;
+        pending.open_sample = Some(OpenSample {
+            id,
+            data,
+            frame_count,
+            channels,
+            sample_rate,
+            total_floats,
+        });
+        Some(id)
+    }
+
+    /// Where the host writes the next chunk of the open sample, and how many
+    /// floats it may write there: what is left, at most one chunk. `None` when
+    /// `sample_id` is not the open sample. The pointer is valid until the next
+    /// call that touches the staged bank; nothing is written until the host
+    /// writes it and calls `commit_sample_frames`.
+    pub fn sample_write_window(&mut self, sample_id: SampleId) -> Option<(*mut f32, usize)> {
+        let open = self.open_sample_mut(sample_id)?;
+        let window = open.window();
+        Some((open.data.spare_capacity_mut().as_mut_ptr().cast(), window))
+    }
+
+    /// Count `float_count` floats the host wrote at `sample_write_window`'s
+    /// pointer as part of the open sample. Refuses (false), changing nothing,
+    /// when `sample_id` is not the open sample or `float_count` exceeds the
+    /// window.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have initialised `float_count` floats starting at the
+    /// pointer `sample_write_window` returned for this sample, and written
+    /// nothing since the bank was last touched.
+    pub unsafe fn commit_sample_frames(&mut self, sample_id: SampleId, float_count: usize) -> bool {
+        let Some(open) = self.open_sample_mut(sample_id) else {
+            return false;
+        };
+        if float_count > open.window() {
+            return false;
+        }
+        // SAFETY: `float_count` fits the spare capacity (the window is at most
+        // `total_floats - len`, and `try_reserve_exact` reserved at least
+        // `total_floats`), and the caller promises it initialised those floats.
+        // Every bit pattern is a valid `f32`.
+        unsafe { open.data.set_len(open.data.len() + float_count) };
+        true
+    }
+
+    /// Publish the open sample into the staged bank's pool once every float is
+    /// written. Allocates and frees nothing: the table slot was reserved at
+    /// `begin_sample`. Refuses (false) for another id, a short sample, or a
+    /// pool that became shared; the sample then stays open.
+    pub fn seal_sample(&mut self, sample_id: SampleId) -> bool {
+        let Some(pending) = self.pending_sample_bank.as_mut() else {
+            return false;
+        };
+        let Some(open) = pending.open_sample.as_ref() else {
+            return false;
+        };
+        if open.id != sample_id || open.data.len() != open.total_floats {
+            return false;
+        }
+        let Some(pool) = Arc::get_mut(&mut pending.sample_pool) else {
+            return false;
+        };
+        // The id the pool would assign must still be the one begun; checked
+        // before the sample is taken, so a refusal leaves it open untouched.
+        if SampleId::try_from(pool.len()) != Ok(sample_id) {
+            return false;
+        }
+        let Some(open) = pending.open_sample.take() else {
+            return false;
+        };
+        pool.add(open.data, open.frame_count, open.channels, open.sample_rate) == Some(sample_id)
+    }
+
+    fn open_sample_mut(&mut self, sample_id: SampleId) -> Option<&mut OpenSample> {
+        self.pending_sample_bank
+            .as_mut()?
+            .open_sample
+            .as_mut()
+            .filter(|open| open.id == sample_id)
     }
 
     /// Start staging a replacement bank. Frees any bank a previous commit
@@ -301,7 +447,8 @@ impl LevainEngine {
     /// Discard the staged bank without changing the sounding one. Runs on the
     /// audio thread in the worklet, so it neither allocates nor frees: the
     /// staged bank moves into the retired slot, whole, for
-    /// `release_retired_bank` to free. Returns true when it retired a bank.
+    /// `release_retired_bank` to free. A sample caught mid-upload goes with it
+    /// (its first release step frees it). Returns true when it retired a bank.
     ///
     /// `begin_sample_bank` empties the slot and a commit consumes the staged
     /// bank, so the slot is empty here unless a host skipped its release. Then
@@ -332,7 +479,7 @@ impl LevainEngine {
         let Some(pending) = self.pending_sample_bank.as_mut() else {
             return false;
         };
-        if pending.sample_pool.len() > 0 {
+        if pending.sample_pool.len() > 0 || pending.open_sample.is_some() {
             return false;
         }
         pending.sample_pool = shared;
@@ -372,7 +519,7 @@ impl LevainEngine {
         let Some(mut pending) = self.pending_sample_bank.take() else {
             return false;
         };
-        if !pending.built || pending.sample_pool.len() == 0 {
+        if !pending.built || pending.sample_pool.len() == 0 || pending.open_sample.is_some() {
             self.pending_sample_bank = Some(pending);
             return false;
         }
@@ -2097,6 +2244,7 @@ mod tests {
         // after the begin can occupy it: stand one in directly.
         engine.retired_bank = Some(RetiredBank {
             _zone_map: ZoneMap::new(),
+            open_sample: None,
             sample_pool: None,
             draining: None,
             _legato_transitions: LegatoTransitionStore::new(),
@@ -2169,6 +2317,7 @@ mod tests {
         // stand one in directly, with nothing PCM-sized left to free.
         engine.retired_bank = Some(RetiredBank {
             _zone_map: ZoneMap::new(),
+            open_sample: None,
             sample_pool: None,
             draining: None,
             _legato_transitions: LegatoTransitionStore::new(),

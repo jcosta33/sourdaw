@@ -79,6 +79,18 @@ impl SamplePool {
         self.entries.len()
     }
 
+    /// Check that a sample of `float_count` floats would be accepted and make
+    /// room for its table slot now, so the `add` that publishes it later grows
+    /// nothing. Returns the id that `add` will assign, or `None` once the id or
+    /// byte count would exceed the ABI or the table cannot grow.
+    pub fn admit(&mut self, float_count: usize) -> Option<SampleId> {
+        let id = SampleId::try_from(self.entries.len()).ok()?;
+        let sample_bytes = float_count.checked_mul(std::mem::size_of::<f32>())?;
+        self.decoded_bytes.checked_add(sample_bytes)?;
+        self.entries.try_reserve(1).ok()?;
+        Some(id)
+    }
+
     /// Add a sample and return its SampleId.
     pub fn add(
         &mut self,
