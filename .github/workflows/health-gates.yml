@@ -42,7 +42,7 @@ jobs:
         with:
           node-version: 24.19.0
           cache: pnpm
-      - name: Install planner dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Plan affected checks
         id: plan
