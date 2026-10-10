@@ -63,7 +63,7 @@ vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
-        decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
+        ...actual,
         getMidiStoreState: () => null,
         restoreMidiClipData: mocks.restoreMidiClipData,
     };
