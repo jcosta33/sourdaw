@@ -1912,6 +1912,121 @@ describe('handleWebMidiNoteOn', () => {
             expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
             expect(live.processNoteOff).not.toHaveBeenCalled();
         });
+
+        // Removing a Yeast edits only the track store: its rack keeps
+        // generating and the idle pump the key-down started keeps handing the
+        // notes back, so the pump itself has to notice the Yeast is gone.
+        describe('the idle pump of a Yeast removed from the chain', () => {
+            const LEVAIN_CHAIN: Instrument[] = [
+                { id: 'y', type: 'yeast' },
+                { id: 'lev-1', type: 'levain' },
+            ];
+            const LEVAIN_ONLY: Instrument[] = [{ id: 'lev-1', type: 'levain' }];
+
+            /** A key struck through a Yeast whose pump callback the spec holds. */
+            async function strike_with_held_pump(
+                processNoteOn: (input: RealtimeMidiInput) => Promise<TestMidiEvent[]> = async () => []
+            ) {
+                const nodes = keyboard_strip();
+                let drain: NonNullable<RealtimeMidiInput['onDrainedEvents']> | undefined;
+                const live = live_chain(LEVAIN_CHAIN, async (input) => {
+                    drain = input.onDrainedEvents;
+                    return processNoteOn(input);
+                });
+                await live.noteOn(0, 60, 100);
+                return {
+                    nodes,
+                    live,
+                    drain: (events: TestMidiEvent[]) => drain!(events),
+                };
+            }
+
+            const generated_note = (note: number, noteInstanceId: string): TestMidiEvent => ({
+                timeSamples: 96_240,
+                noteInstanceId,
+                kind: { type: 'noteOn', channel: 0, note, velocity: 100 },
+            });
+
+            it('voices nothing after the key-up of a key whose Yeast was removed', async () => {
+                const { nodes, live, drain } = await strike_with_held_pump();
+
+                live.chain.devices = LEVAIN_ONLY;
+                await live.noteOff(0, 60);
+                const retired = drain([generated_note(69, 'arp:generated:1')]);
+
+                expect(retired).toBe(false);
+                expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+            });
+
+            it('voices nothing once the Yeast is removed, before the key comes up', async () => {
+                const { nodes, live, drain } = await strike_with_held_pump();
+
+                live.chain.devices = LEVAIN_ONLY;
+                const retired = drain([generated_note(69, 'arp:generated:1')]);
+
+                expect(retired).toBe(false);
+                expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+                expect(activeNotes.has(createWebMidiNoteKey(0, 60))).toBe(true);
+            });
+
+            it('does not revive when the removal is undone after the key comes up', async () => {
+                const { nodes, live, drain } = await strike_with_held_pump();
+
+                live.chain.devices = LEVAIN_ONLY;
+                await live.noteOff(0, 60);
+                live.chain.devices = LEVAIN_CHAIN;
+                const retired = drain([generated_note(69, 'arp:generated:1')]);
+
+                expect(retired).toBe(false);
+                expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+            });
+
+            it('still ends a generated voice that was sounding when the Yeast was removed', async () => {
+                const { nodes, live, drain } = await strike_with_held_pump(async () => [
+                    generated_note(67, 'arp:generated:sounding'),
+                ]);
+                expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(67, 100, 96_240, 0);
+
+                live.chain.devices = LEVAIN_ONLY;
+                drain([generated_note(69, 'arp:generated:late')]);
+
+                // No rack is left to send the note-off, so the pump that
+                // finds the Yeast gone ends the voice itself, key still held.
+                expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
+
+                await live.noteOff(0, 60);
+
+                expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledTimes(1);
+                expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
+            });
+
+            it('leaves a direct key struck on a generated pitch after the removal sounding', async () => {
+                const { nodes, live, drain } = await strike_with_held_pump();
+
+                live.chain.devices = LEVAIN_ONLY;
+                drain([generated_note(69, 'arp:generated:1')]);
+                await live.noteOn(0, 69, 100);
+                await live.noteOff(0, 60);
+
+                expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(
+                    69,
+                    100,
+                    expect.any(Number),
+                    0
+                );
+                expect(nodes.levain.levainControls.noteOff).not.toHaveBeenCalled();
+            });
+
+            it('keeps voicing drained notes while the Yeast is still in the chain', async () => {
+                const { nodes, live, drain } = await strike_with_held_pump();
+
+                await live.noteOff(0, 60);
+                const retired = drain([generated_note(69, 'arp:generated:1')]);
+
+                expect(retired).toBeUndefined();
+                expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(69, 100, 96_240, 0);
+            });
+        });
     });
 
     // A Yeast rack topology change (a processor removed, added or reordered)
