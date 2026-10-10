@@ -65,8 +65,14 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
     }),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectRevision: () => mocks.projectRevision.value,
+    DOC_PREFIX_ROOT: 'root',
+    getCrdtDoc: vi.fn(() => undefined),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
+    subscribeToCrdtChanges: vi.fn<typeof import('#/modules/CrdtDocument/useCases').subscribeToCrdtChanges>(() =>
+        vi.fn()
+    ),
 }));
 vi.mock('../executePlannedActions', () => ({ executePlannedActions: mocks.executePlannedActions }));
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: mocks.notifyAiChange }));

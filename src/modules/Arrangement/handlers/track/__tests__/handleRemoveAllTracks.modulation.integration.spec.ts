@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { clone } from '@automerge/automerge';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
@@ -6,7 +7,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type ModulationStoreState, modulationRuntimeStore, modulationStore } from '#/modules/Automation/stores';
-import { addMapping, addModulator } from '#/modules/Automation/useCases';
+import { addMapping, addModulator, setModulationDependencies } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -22,6 +23,7 @@ import {
     hasCrdtDoc,
     mutateCrdtDoc,
     registerCrdtStorageRuntime,
+    replaceCrdtDoc,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
@@ -38,6 +40,8 @@ type ArrangementTrackEvents = {
     'track.removed': { trackId: string };
     'track.selectionChanged': { trackId: string | null; previousTrackId: string | null };
 };
+
+const writeModulationParam = vi.fn();
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -56,7 +60,7 @@ type StorageRuntimeDoc = {
  * ambiguous commit, which is the only route that runs a handler's
  * afterAmbiguousCommit finalizers.
  */
-function registerVolatileStorageRuntime(): void {
+function registerVolatileStorageRuntime(afterPublication?: () => void, ambiguous = true): void {
     configureAutomergeStoragePort({
         getDoc: (docId) => getCrdtDoc<StorageRuntimeDoc>(docId),
         hasDoc: (docId) => hasCrdtDoc(docId),
@@ -69,7 +73,10 @@ function registerVolatileStorageRuntime(): void {
                 snapshotTransaction,
                 localSlots: changedKeys,
             });
-            throw new Error('Simulated storage loss after the change published');
+            afterPublication?.();
+            if (ambiguous) {
+                throw new Error('Simulated storage loss after the change published');
+            }
         },
     });
 }
@@ -176,6 +183,12 @@ describe('removeAllTracks modulation lifecycle (#5090)', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         modulationRuntimeStore.set({ runtimeValues: {} });
+        writeModulationParam.mockClear();
+        setModulationDependencies({
+            updateDeviceParam: writeModulationParam,
+            getPluginParamRange: () => ({ min: 0, max: 1, defaultValue: 0.5, automatable: true }),
+            quantiseValue: ({ value }) => value,
+        });
     });
 
     afterEach(() => {
@@ -245,6 +258,160 @@ describe('removeAllTracks modulation lifecycle (#5090)', () => {
         expect(documentModulators(document)).toEqual([]);
         expect(modulationRuntimeStore.value).toEqual({ runtimeValues: {} });
     });
+
+    it.each([
+        ['removeAllTracks', false],
+        ['removeAllTracks', true],
+        ['removeTrack', false],
+        ['removeTrack', true],
+    ] as const)(
+        'releases a deleted modulator when only its track returns after %s, ambiguous=%s',
+        async (type, ambiguous) => {
+            const seeded = seedArrangement();
+            const restoredTrack = seeded.tracks.tracks.find((candidate) => candidate.id === 't1');
+            if (!restoredTrack) {
+                throw new Error('Expected the original track');
+            }
+            modulationRuntimeStore.set({ runtimeValues: { 'mod-t1': 0.42, 'mod-t2': -0.2 } });
+            registerVolatileStorageRuntime(() => {
+                mutateCrdtDoc<Project>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.tracks.tracks.push(restoredTrack);
+                    },
+                });
+                trackStore.hydrate();
+                modulationStore.hydrate();
+            }, ambiguous);
+            const action =
+                type === 'removeAllTracks' ? { type, payload: undefined } : { type, payload: { trackId: 't1' } };
+
+            const result = await executeAppActionBatch([action]);
+
+            expect(result.status).toBe(ambiguous ? 'ambiguous' : 'committed');
+            expect(getCrdtDoc<Project>('root')?.tracks.tracks.map((candidate) => candidate.id)).toContain('t1');
+            expect(documentModulators(getCrdtDoc<Project>('root')).some((modulator) => modulator.id === 'mod-t1')).toBe(
+                false
+            );
+            expect(modulatorById('mod-t1')).toBeNull();
+            expect(modulationRuntimeStore.value).toEqual({
+                runtimeValues: type === 'removeAllTracks' ? {} : { 'mod-t2': -0.2 },
+            });
+        }
+    );
+
+    it.each([
+        ['restored-modulator', false],
+        ['restored-modulator', true],
+        ['reused-modulator-id', false],
+        ['reused-modulator-id', true],
+        ['replacement-root', false],
+        ['replacement-root', true],
+    ] as const)('preserves the current modulation owner after %s, ambiguous=%s', async (replacement, ambiguous) => {
+        const seeded = seedArrangement();
+        const original = getCrdtDoc<Project>('root');
+        const restoredTrack = seeded.tracks.tracks.find((candidate) => candidate.id === 't1');
+        const restoredModulator = seeded.modulators.find((candidate) => candidate.id === 'mod-t1');
+        if (!original || !restoredTrack || !restoredModulator) {
+            throw new Error('Expected original modulation owner');
+        }
+        const successor = clone(original);
+        modulationRuntimeStore.set({ runtimeValues: { 'mod-t1': 0.42, 'mod-t2': -0.2 } });
+        registerVolatileStorageRuntime(() => {
+            if (replacement === 'replacement-root') {
+                replaceCrdtDoc({ id: 'root', doc: successor });
+            } else {
+                mutateCrdtDoc<Project>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.tracks.tracks.push(restoredTrack);
+                        document.modulation.modulators.push({
+                            ...restoredModulator,
+                            trackId: replacement === 'reused-modulator-id' ? 'successor-track' : restoredTrack.id,
+                        });
+                    },
+                });
+            }
+            trackStore.hydrate();
+        }, ambiguous);
+
+        const result = await executeAppActionBatch([{ type: 'removeAllTracks', payload: undefined }]);
+
+        expect(result.status).toBe(ambiguous ? 'ambiguous' : 'committed');
+        expect(documentModulators(getCrdtDoc<Project>('root')).map((modulator) => modulator.id)).toContain('mod-t1');
+        expect(modulationRuntimeStore.value).toEqual({
+            runtimeValues: replacement === 'replacement-root' ? { 'mod-t1': 0.42, 'mod-t2': -0.2 } : { 'mod-t1': 0.42 },
+        });
+    });
+
+    it.each([
+        [false, false],
+        [false, true],
+        [true, false],
+        [true, true],
+    ] as const)(
+        'resets only a still-deleted exact mapping after track restoration, restoredMapping=%s, ambiguous=%s',
+        async (restoredMapping, ambiguous) => {
+            const seeded = seedArrangement();
+            const originalTrack = seeded.tracks.tracks.find((candidate) => candidate.id === 't1');
+            if (!originalTrack) {
+                throw new Error('Expected original target track');
+            }
+            const restoredTrack = {
+                ...originalTrack,
+                devices: [
+                    {
+                        id: 'device-a',
+                        name: 'Target',
+                        type: 'bacteria',
+                        bypassed: false,
+                        parameterValues: { cutoff: 0.27 },
+                    },
+                ],
+            };
+            trackStore.set({
+                ...seeded.tracks,
+                tracks: seeded.tracks.tracks.map((candidate) => (candidate.id === 't1' ? restoredTrack : candidate)),
+            });
+            flushAutomergeStorageWrites();
+            registerVolatileStorageRuntime(() => {
+                mutateCrdtDoc<Project>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.tracks.tracks.push(restoredTrack);
+                        if (restoredMapping) {
+                            const currentModulator = document.modulation.modulators.find(
+                                (candidate) => candidate.id === 'mod-t2'
+                            );
+                            if (!currentModulator) {
+                                throw new Error('Expected surviving modulation owner');
+                            }
+                            currentModulator.mappings.push({
+                                targetTrackId: 't1',
+                                targetDeviceId: 'device-a',
+                                targetParamId: 'cutoff',
+                                amount: 0.9,
+                            });
+                        }
+                    },
+                });
+                trackStore.hydrate();
+            }, ambiguous);
+
+            const result = await executeAppActionBatch([{ type: 'removeTrack', payload: { trackId: 't1' } }]);
+
+            expect(result.status).toBe(ambiguous ? 'ambiguous' : 'committed');
+            const mappings = documentModulators(getCrdtDoc<Project>('root')).find(
+                (modulator) => modulator.id === 'mod-t2'
+            )?.mappings;
+            expect(mappings?.some((mapping) => mapping.targetTrackId === 't1')).toBe(restoredMapping);
+            if (restoredMapping) {
+                expect(writeModulationParam).not.toHaveBeenCalled();
+            } else {
+                expect(writeModulationParam).toHaveBeenCalledExactlyOnceWith('t1', 'device-a', 'cutoff', 0.27);
+            }
+        }
+    );
 
     it('undo restores the captured modulation and redo removes it again', async () => {
         seedArrangement();

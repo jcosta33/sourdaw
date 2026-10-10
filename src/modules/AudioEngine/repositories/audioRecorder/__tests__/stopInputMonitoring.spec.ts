@@ -111,6 +111,43 @@ describe('stopInputMonitoring', () => {
         expect(mockTrack.stop).toHaveBeenCalled();
     });
 
+    it('terminally tears down other captures and pending grants even when a source refuses disconnect', async () => {
+        const firstTrack = createMockTrack();
+        const secondTrack = createMockTrack();
+        const firstSource = createMockSourceNode();
+        const secondSource = createMockSourceNode();
+        getUserMedia
+            .mockResolvedValueOnce(createMockStream([firstTrack]))
+            .mockResolvedValueOnce(createMockStream([secondTrack]));
+        createMediaStreamSource.mockReturnValueOnce(firstSource).mockReturnValueOnce(secondSource);
+        ensureTrackStrip.mockReturnValue(createMockStrip());
+        await startInputMonitoring('a', 'input-1');
+        await startInputMonitoring('b', 'input-2');
+        const pending = Promise.withResolvers<MockMediaStream>();
+        getUserMedia.mockReturnValueOnce(pending.promise);
+        const opening = startInputMonitoring('c', 'input-3');
+        firstSource.disconnect.mockImplementation(() => {
+            throw new Error('Source disconnect refused');
+        });
+        const lateTrack = createMockTrack();
+        try {
+            expect(() => stopInputMonitoring()).toThrow();
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            expect(inputMonitoringSession.trackKeys.size).toBe(0);
+            expect(inputMonitoringSession.pendingRequests.size).toBe(0);
+            expect(firstTrack.stop).toHaveBeenCalledOnce();
+            expect(secondTrack.stop).toHaveBeenCalledOnce();
+            expect(firstSource.disconnect).toHaveBeenCalledWith();
+        } finally {
+            firstSource.disconnect.mockReset();
+            pending.resolve(createMockStream([lateTrack]));
+        }
+        expect(await opening).toBe(false);
+        expect(lateTrack.stop).toHaveBeenCalledOnce();
+        expect(createMediaStreamSource).toHaveBeenCalledTimes(2);
+        expect(() => stopInputMonitoring()).not.toThrow();
+    });
+
     it('should reset the session so a later start creates a new monitor source', async () => {
         const firstMockTrack = createMockTrack();
         const firstMockStream = createMockStream([firstMockTrack]);

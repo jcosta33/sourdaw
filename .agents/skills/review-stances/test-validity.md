@@ -77,6 +77,15 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Standing probes
 
+- PR #5091's head `71221839` replaced the registered event bus after earlier deletion
+  cases had cached the injected emitter. Its async-boundary case stayed green when the
+  root guard was disabled. Observe the emitter actually retained by `inject`, using a stable
+  registration across cases and a positive real removal emission. Replace with a root that
+  lacks the outgoing ID so committed-absence checks cannot mask the root-guard mutation.
+  The same named case must fail with `isCurrent = () => true` both alone and after its
+  preceding deletion family. Run that qualification on a committed head in an isolated,
+  owned probe; retain commands, patch, raw output and exit status.
+
 - An aggregation test claiming a stored report route must use the production reader's filename and
   assert that both input records were admitted. An ignored artifact can make a boundary control pass
   while never reaching the claimed addition. For TypeSafe usage, prove stored scan plus verification
@@ -774,6 +783,53 @@ Derive the fixture's admitted range from the complete multiline binding; preserv
 independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
 only the committed recognizer is reverted. A full-source screen assertion does not prove
 which region the real scan caller admitted.
+
+PR #5091's head `1297f963` had green single-owner disconnect and direct-root retirement checks,
+but the surrounding sweep could abandon a second deleted owner and the Command tail could reach
+a replacement root. Use two owners for failure isolation and the real Command commit callbacks
+for continuation authority. Assert raw membership, actual owner maps, distinct source edges,
+stream stops and strip effects, including replacement between effects. A green owner-key check
+alone does not prove terminal release or incoming graph preservation.
+
+An already-granted Auto deletion refusal and an absent-row On permission case do not prove
+pending Auto ownership. Settle permission before aborting the real removal transaction; inspect
+retained capture and absent strip before rollback, then the original edge after rollback without
+reacquisition. Genuine denial and committed ineligibility remain separate controls. Controlled
+media and graph ports prove ownership and control flow, not audible input or physical device stop.
+
+PR #5091's head `b2e7491d` covered committed On deletion and pre-commit On admission separately,
+but missed a disarmed Auto owner deleted before the optimistic On gesture committed. Keep the
+stale On projection visible while actual CRDT truth removes that owner, settle the pending grant,
+and assert strip creation, connected edges, capture ownership and exact stream stop count. Pair
+the negative with an existing committed owner and a shared survivor; a projected-row removal
+or a gesture whose On already committed does not exercise the same admission reader.
+
+The follow-up `3b1c0ad9` deletion check covered absence but left a present owner's committed Off
+or input replacement invisible to pre-commit On settlement. Drive these separately through an
+initialized committed provider and actual CRDT mutation while the projected On selector remains
+unchanged. Require no strip/edge/capture/owner and exactly one stop, then pair unchanged committed
+Auto/Off, an unrelated committed rename, shared permission and a current selected-input owner.
+A global document revision check rejects the valid rename control; a presence-only check misses
+both supersessions. Preserve the committed On latch and actual abort controls independently.
+
+Repair `00f4b688` introduced both fixture defects; the follow-up `46caac58` passed runtime cases
+while its test source used quarantined `vca` as a
+persisted `TrackKind` and wrote through an unchecked array lookup. The original hosted test types
+rejected both. Model kind supersession with a supported non-audio kind and committed Auto; require
+that removing kind from the admission's intent comparison makes the unchanged rejection assertion
+fail. Guard the actual raw-document owner before mutation, including deletion, so a missing ID
+cannot silently splice a shared survivor. Runtime execution does not establish typed fixture
+validity; retain the original type failure and verify the repaired source without widening contracts
+or asserting away absence.
+
+PR #5091's head `e9672c7966` tested root replacement during outgoing removal and pending grants
+during same-root intent changes, but never moved the root while permission itself was pending.
+Drive both the optimistic On transaction and real Undo rearm through initialized project access,
+replace the root with an identical clone, and settle permission only after proving the runtime root
+token changed. Assert `headConsumed` before the Undo grant, zero stale strip/edge/capture ownership,
+one orphan-stream stop, then a fresh two-owner successor capture that remains live. Reverting only
+the shared admission's original-root fencing, including its retained reader, must fail both named cases; a root-cleanup case and a
+same-root intent mutation cannot carry that oracle.
 
 ### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
 

@@ -189,6 +189,24 @@ describe('handleRemoveTrack', () => {
     });
 
     describe('execute', () => {
+        it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
+            'retires strip, modulation, routing and removed-event continuations after root removal, phase=%s',
+            async (phase) => {
+                mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1' }] });
+                const result = await handleRemoveTrack.execute({ type: 'removeTrack', payload: { trackId: 't1' } });
+                if (!result) {
+                    throw new Error('Expected removal continuation');
+                }
+                removeCrdtDoc('root');
+                await result[phase]?.();
+                expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
+                expect(mocks.finalizeModulationRemoval).not.toHaveBeenCalled();
+                expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+                expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+                expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
+            }
+        );
+
         it('rejects an alternative-content guard mismatch before project or runtime removal', async () => {
             const alternativeClip = ClipDummy.create({ id: 'c-hidden', trackId: 't1' });
             const track = TrackDummy.create({

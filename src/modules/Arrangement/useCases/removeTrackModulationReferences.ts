@@ -2,6 +2,8 @@ import { modulationStore } from '#/modules/Automation/stores';
 import { removeMapping, removeModulator } from '#/modules/Automation/useCases';
 import { runAllEffects } from '#/utils/runEffects';
 
+import { captureTrackRemovalRuntimeAuthority } from './captureTrackRemovalRuntimeAuthority';
+
 type RemoveTrackModulationReferencesInput = {
     deferRuntimeEffects?: boolean;
     trackId: string;
@@ -23,6 +25,7 @@ export function removeTrackModulationReferences({
             afterAmbiguousCommit: () => undefined,
         };
     }
+    const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
 
     const ownedIds = modulationState.modulators
         .filter((modulator) => modulator.trackId === trackId)
@@ -68,11 +71,22 @@ export function removeTrackModulationReferences({
         }
     }
 
+    // Track restoration does not restore modulation ownership. Check each exact
+    // owner at execution, including changes made by an earlier finalizer.
+    function finalizeRuntimeEffects(): void {
+        runAllEffects(
+            deferredRuntimeEffects.map(({ finalize, remainsRemoved }) =>
+                runtimeAuthority.guard(() => {
+                    if (remainsRemoved()) {
+                        finalize();
+                    }
+                })
+            )
+        );
+    }
+
     return {
-        afterCommit: () => runAllEffects(deferredRuntimeEffects.map(({ finalize }) => finalize)),
-        afterAmbiguousCommit: () =>
-            runAllEffects(
-                deferredRuntimeEffects.filter(({ remainsRemoved }) => remainsRemoved()).map(({ finalize }) => finalize)
-            ),
+        afterCommit: finalizeRuntimeEffects,
+        afterAmbiguousCommit: finalizeRuntimeEffects,
     };
 }

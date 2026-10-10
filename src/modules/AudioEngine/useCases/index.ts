@@ -20,6 +20,8 @@ export { stopTrackInputMonitoring } from './audioRecorder/stopTrackInputMonitori
 export { reconcileAutoInputMonitoring } from './audioRecorder/reconcileAutoInputMonitoring';
 export { suspendAutoInputMonitoring } from './audioRecorder/suspendAutoInputMonitoring';
 export { syncAutoInputMonitoring } from './audioRecorder/syncAutoInputMonitoring';
+export { rearmCommittedTrackInputMonitoring } from './audioRecorder/rearmCommittedTrackInputMonitoring';
+export { configureInputMonitoringProjectAccess } from './configureInputMonitoringProjectAccess';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';

@@ -11,6 +11,7 @@ const ownerUseCases = vi.hoisted(() => ({
     removeAutomationLanesForTrack: vi.fn(),
     removeMidiClipData: vi.fn(),
     removeTrackStrip: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
     removeBusStrip: vi.fn(),
     setTrackOutput: vi.fn(),
     getAllSidechainRoutes: vi.fn().mockReturnValue([]),
@@ -38,6 +39,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     removeTrackStrip: ownerUseCases.removeTrackStrip,
+    stopTrackInputMonitoring: ownerUseCases.stopTrackInputMonitoring,
     removeBusStrip: ownerUseCases.removeBusStrip,
     setTrackOutput: ownerUseCases.setTrackOutput,
 }));
@@ -70,6 +72,7 @@ describe('removeTrack', () => {
         ownerUseCases.removeAutomationLanesForTrack.mockReset();
         ownerUseCases.removeMidiClipData.mockReset();
         ownerUseCases.removeTrackStrip.mockReset();
+        ownerUseCases.stopTrackInputMonitoring.mockReset();
         ownerUseCases.removeBusStrip.mockReset();
         ownerUseCases.setTrackOutput.mockReset();
         ownerUseCases.getAllSidechainRoutes.mockReset();
@@ -127,6 +130,10 @@ describe('removeTrack', () => {
         // The engine strip for the deleted track must be torn down, otherwise its
         // node keeps processing in the live graph (leaked node).
         expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('t1');
+        expect(ownerUseCases.stopTrackInputMonitoring).toHaveBeenCalledWith('t1');
+        expect(ownerUseCases.stopTrackInputMonitoring.mock.invocationCallOrder[0]).toBeLessThan(
+            ownerUseCases.removeTrackStrip.mock.invocationCallOrder[0]!
+        );
         expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
     });
 
@@ -154,6 +161,7 @@ describe('removeTrack', () => {
 
         expect(setTrackState).toHaveBeenCalled();
         expect(ownerUseCases.removeTrackStrip).not.toHaveBeenCalled();
+        expect(ownerUseCases.stopTrackInputMonitoring).not.toHaveBeenCalled();
         expect(mockEventBus.emit).not.toHaveBeenCalled();
         if (!result.removed) {
             throw new Error('Expected the track removal to be staged');
@@ -161,6 +169,7 @@ describe('removeTrack', () => {
 
         result.finalizeRuntimeRemoval();
 
+        expect(ownerUseCases.stopTrackInputMonitoring).toHaveBeenCalledWith('t1');
         expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('t1');
     });
 
@@ -392,8 +401,8 @@ describe('removeTrack', () => {
         removeTrack('t1');
 
         // Only the two routes referencing t1 are torn down; the unrelated one survives.
-        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r1');
-        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r2');
+        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r1', { deferRuntimeEffect: true });
+        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r2', { deferRuntimeEffect: true });
         expect(ownerUseCases.removeSidechainRoute).not.toHaveBeenCalledWith('r3');
     });
     // FX-6: deleting a bus used to leave every dependent's `outputId` and every

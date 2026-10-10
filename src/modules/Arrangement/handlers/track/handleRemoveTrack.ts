@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { getVcaGroupsState } from '../../stores/vcaGroupStore';
+import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
@@ -81,6 +82,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         if (!currentStateMatches(action)) {
             return { status: 'conflict' };
         }
+        const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,
@@ -95,12 +97,19 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         return {
             status: 'written',
             afterCommit: () =>
-                runAllAsyncEffects([
-                    result.finalizeRuntimeRemoval,
-                    finalizeModulationRemoval.afterCommit,
-                    () => publishTrackRemoved({ trackId: action.payload.trackId }),
-                ]),
+                runAllAsyncEffects(
+                    [
+                        runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
+                        finalizeModulationRemoval.afterCommit,
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            publishTrackRemoved({ trackId: action.payload.trackId })
+                        ),
+                    ].map((effect) => runtimeAuthority.guard<void | Promise<void>>(effect))
+                ),
             afterAmbiguousCommit: async () => {
+                if (!runtimeAuthority.isCurrent()) {
+                    return;
+                }
                 const committedTrack = getTrackStoreState()?.tracks.find(
                     (candidate) => candidate.id === action.payload.trackId
                 );
@@ -116,12 +125,15 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                         });
                     });
                 } else {
-                    effects.unshift(result.finalizeRuntimeRemoval, () =>
-                        publishTrackRemoved({ trackId: action.payload.trackId })
+                    effects.unshift(
+                        runtimeAuthority.guardAbsent(action.payload.trackId, result.finalizeRuntimeRemoval),
+                        runtimeAuthority.guardAbsent(action.payload.trackId, () =>
+                            publishTrackRemoved({ trackId: action.payload.trackId })
+                        )
                     );
                 }
                 try {
-                    await runAllAsyncEffects(effects);
+                    await runAllAsyncEffects(effects.map(runtimeAuthority.guard));
                 } catch (error) {
                     const reason = error instanceof Error ? error.message : String(error);
                     throw new Error(`Track runtime reconciliation failed; manual repair required: ${reason}`, {
