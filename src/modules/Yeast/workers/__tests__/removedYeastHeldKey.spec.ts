@@ -496,4 +496,59 @@ describe('a key released after its Yeast left the chain, through the real Yeast 
         expect(worker.installedProjections.slice(projectionsBeforeKeyUp)).toEqual([]);
         expect(worker.createdProcessorIds).toEqual(['arp-1', 'tr-c']);
     });
+
+    it('withholds the removed Yeast’s key-up once the runtime was torn down, creating no worker for it', async () => {
+        let workersCreated = 0;
+        worker_hook.create = () => {
+            workersCreated += 1;
+            return Promise.resolve(worker.node);
+        };
+        await triggerLiveNoteOn(0, 60, 100);
+        expect(workersCreated).toBe(1);
+
+        setChain([LEVAIN_DEVICE]);
+        destroyYeastRuntime();
+        const projectionsBeforeKeyUp = worker.installedProjections.length;
+        await triggerLiveNoteOff(0, 60);
+
+        expect(workersCreated).toBe(1);
+        expect(worker.installedProjections.slice(projectionsBeforeKeyUp)).toEqual([]);
+    });
+
+    it('judges the removed Yeast’s key-up after the replacement’s queued install, not when it was called', async () => {
+        await triggerLiveNoteOn(0, 60, 100);
+
+        setChain([device(REPLACEMENT_YEAST_ID, 'yeast'), LEVAIN_DEVICE]);
+        const replacementKeyDown = triggerLiveNoteOn(0, 64, 100);
+        const removedKeyUp = triggerLiveNoteOff(0, 60);
+        await Promise.all([replacementKeyDown, removedKeyUp]);
+
+        expect(worker.installedProjections).toEqual([['arp-1'], ['tr-c']]);
+        expect(levainPitchesOn()).toContain(64);
+        expect(levainPitchesOff()).not.toContain(64);
+    });
+
+    it('withholds the removed Yeast’s key-up from a replacement rack with the same processor id but another type', async () => {
+        setChain([YEAST_DEVICE, device(REPLACEMENT_YEAST_ID, 'yeast'), LEVAIN_DEVICE]);
+        hydrateYeastState({
+            racks: {
+                [YEAST_ID]: { processors: ARPEGGIATOR_RACK },
+                [REPLACEMENT_YEAST_ID]: {
+                    processors: [{ ...TRANSPOSER_RACK[0]!, id: 'arp-1' }],
+                },
+            },
+        });
+        setChain([YEAST_DEVICE, LEVAIN_DEVICE]);
+
+        await triggerLiveNoteOn(0, 60, 100);
+        setChain([device(REPLACEMENT_YEAST_ID, 'yeast'), LEVAIN_DEVICE]);
+        await triggerLiveNoteOn(0, 64, 100);
+        expect(levainPitchesOn()).toContain(64);
+        const projectionsBeforeKeyUp = worker.installedProjections.length;
+
+        await triggerLiveNoteOff(0, 60);
+
+        expect(worker.installedProjections.slice(projectionsBeforeKeyUp)).toEqual([]);
+        expect(levainPitchesOff()).not.toContain(64);
+    });
 });
