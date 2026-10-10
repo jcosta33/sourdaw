@@ -81,6 +81,32 @@ async function kill(pid: number): Promise<void> {
     }
 }
 
+async function waitForStorageAbandonment(tempDirectories: string[], deadline: number): Promise<void> {
+    let lastState = 'unknown';
+    let lastReason = 'not sampled';
+    try {
+        await waitUntil(
+            () => {
+                if (Date.now() > deadline) {
+                    return false;
+                }
+                lastReason = 'no diagnostic';
+                lastState = storageFileState(tempDirectories, [], (reason) => {
+                    lastReason = reason;
+                });
+                if (Date.now() > deadline) {
+                    return false;
+                }
+                return lastState === 'dead';
+            },
+            Math.max(0, deadline - Date.now())
+        );
+    } catch (error) {
+        const outcome = Date.now() > deadline ? 'timed out' : 'failed';
+        throw new Error(`storage fixture abandonment proof ${outcome}: ${lastState}: ${lastReason}`, { cause: error });
+    }
+}
+
 afterEach(async () => {
     for (const pid of childPids) {
         await kill(pid);
@@ -338,6 +364,7 @@ describe('guard-owned temporary storage', () => {
     }, 15_000);
 
     it('preserves a killed supervisors storage while descendants live and reclaims it on a later start', async () => {
+        const deadline = Date.now() + 30_000;
         const root = fixture();
         const marker = join(root, 'started.json');
         const descendant = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() })); setInterval(() => {}, 1000);`;
@@ -381,6 +408,7 @@ describe('guard-owned temporary storage', () => {
         expect(existsSync(started.tmp)).toBe(true);
         await kill(rootPid);
         await kill(started.pid);
+        await waitForStorageAbandonment([started.tmp], deadline);
         expect((await guarded(root)).code).toBe(0);
         expect(existsSync(started.tmp)).toBe(false);
     }, 30_000);
@@ -393,6 +421,7 @@ describe('guard-owned temporary storage', () => {
     ] as const)(
         'retains storage for a detached descendant that replaces its environment: $scenario ($program)',
         async ({ scenario, program }) => {
+            const deadline = Date.now() + 15_000;
             const root = fixture();
             const marker = join(root, 'escaped.json');
             const rootMarker = join(root, 'root.pid');
@@ -456,6 +485,7 @@ describe('guard-owned temporary storage', () => {
                 expect(existsSync(started.tmp)).toBe(true);
                 await kill(started.pid);
             }
+            await waitForStorageAbandonment([started.tmp], deadline);
             const recovery = await guarded(root);
             expect(recovery.code).toBe(0);
             expect(isAlive(started.pid)).toBe(false);
@@ -485,6 +515,7 @@ describe('guard-owned temporary storage', () => {
     ] as const)(
         'retains hidden temp users: $consumer after $scenario',
         async ({ consumer, scenario }) => {
+            const deadline = Date.now() + 20_000;
             const root = fixture();
             const marker = join(root, 'hidden.json');
             const heartbeat = join(root, 'heartbeat');
@@ -565,6 +596,7 @@ describe('guard-owned temporary storage', () => {
             expect(existsSync(currentTemp)).toBe(true);
             await waitUntil(() => Number(readFileSync(heartbeat, 'utf8')) > tick);
             await kill(started.pid);
+            await waitForStorageAbandonment([started.tmp, currentTemp], deadline);
             const recovery = await guarded(root);
             expect(recovery.code).toBe(0);
             if (existsSync(currentTemp)) {
@@ -583,6 +615,7 @@ describe('guard-owned temporary storage', () => {
     );
 
     it('treats an exit-zero empty process census as unavailable monitoring evidence and retains live storage', async () => {
+        const deadline = Date.now() + 20_000;
         const root = fixture();
         const marker = join(root, 'empty.json');
         const resultPath = join(root, 'result.json');
@@ -638,6 +671,7 @@ describe('guard-owned temporary storage', () => {
         expect(result.reason).toBe('monitor');
         expect(result.code).not.toBe(0);
         await kill(started.pid);
+        await waitForStorageAbandonment([started.tmp], deadline);
         expect((await guarded(root)).code).toBe(0);
         expect(existsSync(started.tmp)).toBe(false);
     }, 20_000);
@@ -681,6 +715,65 @@ describe('guard-owned temporary storage', () => {
 });
 
 describe('storage ownership recovery', () => {
+    it.each(['original', 'moved claim'] as const)(
+        'requires complete file proof before final recovery of %s storage',
+        (payload) => {
+            const root = fixture();
+            const storage = ownedStorage(root);
+            let currentTemp = storage.tempDirectory;
+            if (payload === 'moved claim') {
+                let checks = 0;
+                expect(
+                    reclaimGuardStorage({
+                        root,
+                        owner: readOwner(storage.tempDirectory),
+                        reclaimer: fakeReclaimer,
+                        canRemove: () => checks++ === 0,
+                    })
+                ).toBe(false);
+                const payloads = claimPayloads(root);
+                expect(payloads).toHaveLength(1);
+                currentTemp = join(payloads[0] ?? '', 'tmp');
+            }
+            const reports: string[] = [];
+            const states: string[] = [];
+            let snapshot = 'Pid:\t123\nTgid:\t123\nUid:\t501\t501\t501\t501\nState:\tZ (zombie)\nThreads:\t2\n';
+            const ports: StorageRecoveryPorts = {
+                identityState: () => 'dead',
+                sessionState: (_owner, original, current = original) => {
+                    const state = linuxStorageFileState(
+                        [123],
+                        501,
+                        [original, current],
+                        5_000,
+                        (reason) => reports.push(reason),
+                        {
+                            inspectUid: () => 501,
+                            readCwd: () => {
+                                throw Object.assign(new Error('closed cwd'), { code: 'ENOENT' });
+                            },
+                            listDescriptors: () => [],
+                            readDescriptor: () => undefined,
+                            readStatus: () => snapshot,
+                            isGone: () => false,
+                            now: () => 0,
+                        }
+                    );
+                    states.push(state);
+                    return state;
+                },
+            };
+            recoverGuardStorage(root, ports, fakeReclaimer);
+            expect(states).toEqual(['unknown']);
+            expect(reports[0]).toContain('pid/tgid/uids/state/threads=123/123/501,501,501,501/Z/2');
+            expect(existsSync(currentTemp)).toBe(true);
+            snapshot = snapshot.replace('Threads:\t2', 'Threads:\t1');
+            recoverGuardStorage(root, ports, fakeReclaimer);
+            expect(states.at(-1)).toBe('dead');
+            expect(existsSync(currentTemp)).toBe(false);
+        }
+    );
+
     it('retains Linux storage when the last successful file read exceeds the proof deadline', async () => {
         const root = fixture();
         const ports: StorageRecoveryPorts = {
