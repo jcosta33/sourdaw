@@ -5,16 +5,20 @@ import {
     type AudioSourceStateSnapshot,
     type ClipAutomationLaneSnapshot,
     type ClipSnapshot,
+    type ClipStateSnapshot,
 } from '#/utils/handlerContract';
 
-import { type Clip } from '../../models/Track';
 import { deriveRippleDelete } from '../../services/deriveRippleDelete';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 import { audioSourceAfterSlip } from './audioSourceAfterSlip';
 import { audioSourceAtBeat } from './audioSourceAtBeat';
 
-type ReplayClip = ClipSnapshot & Partial<Clip>;
+type ReplayClip = ClipSnapshot & Partial<ClipStateSnapshot>;
+type RestoredReplayClip = Omit<ReplayClip, 'audioOffsetSeconds' | 'audioOffsetBeats'> & {
+    audioOffsetSeconds?: number;
+    audioOffsetBeats?: number;
+};
 type LocatedClip = { owningTrackId: string; clip: ReplayClip };
 type ShiftedOwnerState = {
     clips: readonly LocatedClip[];
@@ -23,13 +27,14 @@ type ShiftedOwnerState = {
 
 function withAudioSource(clip: ReplayClip, source: AudioSourceStateSnapshot): ReplayClip {
     const { audioOffsetSeconds: _sourceSeconds, audioOffsetBeats: _sourceBeats, ...restored } = clip;
+    const replayClip: RestoredReplayClip = restored;
     if (source.audioOffsetSeconds !== null) {
-        restored.audioOffsetSeconds = source.audioOffsetSeconds;
+        replayClip.audioOffsetSeconds = source.audioOffsetSeconds;
     }
     if (source.audioOffsetBeats !== null) {
-        restored.audioOffsetBeats = source.audioOffsetBeats;
+        replayClip.audioOffsetBeats = source.audioOffsetBeats;
     }
-    return restored;
+    return replayClip;
 }
 
 function projectClipEdit(clip: ReplayClip, action: AppAction): ReplayClip {
