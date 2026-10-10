@@ -1165,10 +1165,11 @@ export function parseLinuxFileSnapshot(output: string): LinuxFileSnapshot | unde
         if (match === null) {
             continue;
         }
-        if (fields.has(match[1])) {
+        const [, key, value] = match;
+        if (key === undefined || value === undefined || fields.has(key)) {
             return undefined;
         }
-        fields.set(match[1], match[2].trim());
+        fields.set(key, value.trim());
     }
     const state = /^([RSDTtXZPI])(?:[\t ]+\([a-z ]+\))?$/.exec(fields.get('State') ?? '')?.[1];
     const ids = ['Pid', 'Tgid', 'Threads'].map((key) => {
@@ -1177,15 +1178,19 @@ export function parseLinuxFileSnapshot(output: string): LinuxFileSnapshot | unde
     });
     const uidField = fields.get('Uid') ?? '';
     const uids = /^\d+[\t ]+\d+[\t ]+\d+[\t ]+\d+$/.test(uidField) ? uidField.split(/[\t ]+/).map(Number) : [];
+    const [pid, tgid, threads] = ids;
     if (
         state === undefined ||
+        pid === undefined ||
+        tgid === undefined ||
+        threads === undefined ||
         ids.some((value) => !Number.isSafeInteger(value) || value <= 0) ||
         uids.length !== 4 ||
         uids.some((value) => !Number.isSafeInteger(value))
     ) {
         return undefined;
     }
-    return { pid: ids[0], tgid: ids[1], threads: ids[2], uids, state };
+    return { pid, tgid, threads, uids, state };
 }
 
 type LinuxFilePorts = {
