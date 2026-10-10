@@ -11747,7 +11747,7 @@ describe('delivery shell boundary', () => {
                             [
                                 {
                                     node_id: 'IC_x',
-                                    body: deliveryReceiptBody(42, 'head', bodyX, 2372),
+                                    body: deliveryReceiptBody(42, 'superseded-head', bodyX, 2372),
                                     user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
                                     created_at: '2026-08-21T00:00:00Z',
                                     updated_at: '2026-08-21T00:00:00Z',
@@ -11802,7 +11802,7 @@ describe('delivery shell boundary', () => {
                             [
                                 {
                                     node_id: 'IC_x',
-                                    body: deliveryReceiptBody(42, 'head', bodyX, 2372),
+                                    body: deliveryReceiptBody(42, 'superseded-head', bodyX, 2372),
                                     user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
                                     created_at: '2026-08-21T00:00:00Z',
                                     updated_at: '2026-08-21T00:00:00Z',
