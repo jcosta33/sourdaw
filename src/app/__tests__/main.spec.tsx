@@ -85,6 +85,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    decodeMidiClipDataSnapshots: vi.fn(() => null),
     setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,
     projectClipControllerEvents: vi.fn(),
     projectClipControllerRestore: vi.fn(),

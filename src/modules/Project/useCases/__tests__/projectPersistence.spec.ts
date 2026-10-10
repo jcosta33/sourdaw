@@ -120,6 +120,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    decodeMidiClipDataSnapshots: vi.fn(() => null),
     migrateAbsoluteMidiNotes: mocks.migrateAbsoluteMidiNotes,
     readLegacyChordTrackMigration: mocks.readLegacyChordTrackMigration,
     projectClipControllerEvents: vi.fn(),

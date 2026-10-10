@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
 import { prepareClipSplit } from '../../useCases/clipEditing/prepareClipSplit';
@@ -10,7 +10,7 @@ import { isSplitClipSessionEntry } from './validateClipEditSessionEntries';
 
 type SplitClipAction = Extract<AppAction, { type: 'splitClip' }>;
 
-function prepareAction(action: SplitClipAction) {
+function prepareAction(action: SplitClipAction, context?: HandlerValidationContext) {
     const rightClipId = action.payload.rightClipId ?? getNextAppActionClipId();
     action.payload.rightClipId = rightClipId;
     const plan = prepareClipSplit({
@@ -19,6 +19,7 @@ function prepareAction(action: SplitClipAction) {
         rightClipId,
         resolvedSplitBeat: action.payload.resolvedBeat,
         targetNoteIds: action.payload.targetNoteIds,
+        priorActions: context?.actions.slice(0, context.actionIndex),
     });
     if (plan && action.payload.targetNoteIds === undefined) {
         action.payload.targetNoteIds = plan.targetNoteIds;
@@ -45,16 +46,17 @@ export const handleSplitClip = createHandler<'splitClip'>({
         }
         return true;
     },
-    validate: (action) =>
+    validate: (action, context) =>
         prepareClipSplit({
             clipId: action.payload.clipId,
             splitBeat: action.payload.beat,
             rightClipId: action.payload.rightClipId ?? '__split-preflight__',
             resolvedSplitBeat: action.payload.resolvedBeat,
             targetNoteIds: action.payload.targetNoteIds,
+            priorActions: context.actions.slice(0, context.actionIndex),
         }) !== null,
-    materializeCommandArguments: (action) => {
-        prepareAction(action);
+    materializeCommandArguments: (action, context) => {
+        prepareAction(action, context);
     },
     execute: (action) => {
         return toHandlerExecutionResult(
@@ -67,8 +69,8 @@ export const handleSplitClip = createHandler<'splitClip'>({
             ) !== null
         );
     },
-    describe: (action) => {
-        const plan = prepareAction(action);
+    describe: (action, context) => {
+        const plan = prepareAction(action, context);
         if (!plan) {
             return { label: 'Split clip', inverseAction: null };
         }

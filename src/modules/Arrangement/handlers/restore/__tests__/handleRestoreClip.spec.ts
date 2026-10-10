@@ -59,10 +59,14 @@ vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
     restoreTakesForClip: mocks.restoreTakesForClip,
 }));
 
-vi.mock('#/modules/MIDI/useCases', () => ({
-    getMidiStoreState: () => null,
-    restoreMidiClipData: mocks.restoreMidiClipData,
-}));
+vi.mock('#/modules/MIDI/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+    return {
+        decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
+        getMidiStoreState: () => null,
+        restoreMidiClipData: mocks.restoreMidiClipData,
+    };
+});
 
 function createRestoreClipAction(overrides: Partial<RestoreClipAction['payload']> = {}): RestoreClipAction {
     return {
@@ -70,11 +74,12 @@ function createRestoreClipAction(overrides: Partial<RestoreClipAction['payload']
         payload: {
             clipId: 'c1',
             trackId: 't1',
-            clipSnapshot: { id: 'c1', trackId: 't1', startBeat: 0, endBeat: 1 },
+            clipSnapshot: ClipDummy.create({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 1 }),
             ripplePlan: null,
             midiNotesSnapshot: null,
             midiCcSnapshot: null,
             midiPitchBendSnapshot: null,
+            retiredTakeLanes: [],
             ...overrides,
         },
     };
@@ -82,9 +87,9 @@ function createRestoreClipAction(overrides: Partial<RestoreClipAction['payload']
 
 function createMidiSnapshots({ notes, controlChanges, pitchBends }: SnapshotPresence): MidiSnapshotInput {
     return {
-        midiNotesSnapshot: notes ? [{ id: 'note-1' }] : null,
-        midiCcSnapshot: controlChanges ? [{ id: 'cc-1' }] : null,
-        midiPitchBendSnapshot: pitchBends ? [{ id: 'pitch-1' }] : null,
+        midiNotesSnapshot: notes ? [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] : null,
+        midiCcSnapshot: controlChanges ? [{ id: 'cc-1', controller: 1, value: 64, beat: 0.5, channel: 1 }] : null,
+        midiPitchBendSnapshot: pitchBends ? [{ id: 'pitch-1', value: 256, beat: 0.75, channel: 1 }] : null,
     };
 }
 
@@ -200,7 +205,7 @@ describe('handleRestoreClip', () => {
                     ripplePlan:
                         path === 'ripple'
                             ? {
-                                  removedClips: [{ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 1 }],
+                                  removedClips: [createRestoreClipAction().payload.clipSnapshot],
                                   shiftedClips: [
                                       { clipId: 'c2', origStartBeat: 1, origEndBeat: 2, automationDelta: -1 },
                                   ],
@@ -241,6 +246,59 @@ describe('handleRestoreClip', () => {
 
         expect(mocks.restoreTakesForClip).toHaveBeenCalledTimes(1);
         expect(mocks.restoreTakesForClip).toHaveBeenCalledWith([]);
+    });
+
+    describe.each(['ripple', 'track'] as const)('%s restore MIDI admission', (path) => {
+        it.each(['midiNotesSnapshot', 'midiCcSnapshot', 'midiPitchBendSnapshot'] as const)(
+            'refuses malformed or missing %s before any owner writes',
+            (field) => {
+                for (const malformed of [[{ id: 'incomplete-row' }], undefined]) {
+                    const action = createRestoreClipAction({
+                        ripplePlan:
+                            path === 'ripple'
+                                ? {
+                                      removedClips: [createRestoreClipAction().payload.clipSnapshot],
+                                      shiftedClips: [],
+                                      clipSatellites: [],
+                                      clipAutomationLanes: [],
+                                  }
+                                : null,
+                    });
+                    if (malformed === undefined) {
+                        Reflect.deleteProperty(action.payload, field);
+                    } else {
+                        action.payload[field] = malformed;
+                    }
+                    expect(handleRestoreClip.validateSessionActionArguments?.(action.payload)).toBe(false);
+                    expect(handleRestoreClip.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+                    expect(handleRestoreClip.execute(action)).toEqual({ status: 'conflict' });
+                    expect(mocks.updateTrack).not.toHaveBeenCalled();
+                    expect(mocks.undoRippleDelete).not.toHaveBeenCalled();
+                    expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+                    expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+                }
+            }
+        );
+
+        it('preserves present empty MIDI arrays separately from null captures', () => {
+            const action = createRestoreClipAction({
+                ripplePlan:
+                    path === 'ripple'
+                        ? {
+                              removedClips: [createRestoreClipAction().payload.clipSnapshot],
+                              shiftedClips: [],
+                              clipSatellites: [],
+                              clipAutomationLanes: [],
+                          }
+                        : null,
+                midiNotesSnapshot: [],
+                midiCcSnapshot: [],
+                midiPitchBendSnapshot: [],
+            });
+            expect(handleRestoreClip.validateSessionActionArguments?.(action.payload)).toBe(true);
+            expect(handleRestoreClip.execute(action)).toEqual({ status: 'written' });
+            expectMidiRestoreFromAction(action);
+        });
     });
 
     it('provides a description', () => {

@@ -1,4 +1,5 @@
 import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
+import { decodeMidiClipDataSnapshots } from '#/modules/MIDI/useCases';
 import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
@@ -6,6 +7,9 @@ import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
+
+import type { Clip } from '../../stores/trackStore';
+import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 
 function hasFiniteNumbers(value: unknown): boolean {
     if (typeof value === 'number') {
@@ -149,7 +153,7 @@ function isRetiredTakeLanes(value: unknown, clipId: string, trackId: string): bo
     return Array.isArray(value) && value.every((entry) => isRetiredTakeLane(entry, clipId, trackId));
 }
 
-function isClipSnapshot(value: unknown, clipId: string, trackId: string): boolean {
+function isClipSnapshot(value: unknown, clipId: string, trackId: string): value is Clip {
     return (
         isRecord(value) &&
         value.id === clipId &&
@@ -228,7 +232,13 @@ function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: st
     );
 }
 
-export function isRestoreClipSessionPayload(value: unknown): boolean {
+type RestoreClipPayload = Extract<AppAction, { type: 'restoreClip' }>['payload'];
+type ValidatedRestoreClipPayload = Omit<RestoreClipPayload, 'clipSnapshot' | 'ripplePlan'> & {
+    clipSnapshot: Clip;
+    ripplePlan: Omit<Parameters<typeof undoRippleDelete>[0], 'trackId' | 'retiredTakeLanes'> | null;
+};
+
+export function isRestoreClipSessionPayload(value: unknown): value is ValidatedRestoreClipPayload {
     if (!isRecord(value) || typeof value.clipId !== 'string' || typeof value.trackId !== 'string') {
         return false;
     }
@@ -239,6 +249,12 @@ export function isRestoreClipSessionPayload(value: unknown): boolean {
         (value.ripplePlan === null ||
             isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId, value.trackId)) &&
         isRetiredTakeLanes(value.retiredTakeLanes, value.clipId, value.trackId) &&
+        ['midiNotesSnapshot', 'midiCcSnapshot', 'midiPitchBendSnapshot'].every((key) => Object.hasOwn(value, key)) &&
+        decodeMidiClipDataSnapshots({
+            notesSnapshot: value.midiNotesSnapshot,
+            controlChangeSnapshot: value.midiCcSnapshot,
+            pitchBendSnapshot: value.midiPitchBendSnapshot,
+        }) !== null &&
         hasFiniteNumbers(value)
     );
 }
@@ -363,6 +379,11 @@ export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
         isRecord(value.expected) &&
         isRecord(value.replacement) &&
         value.expected.trackId === value.replacement.trackId &&
+        Object.hasOwn(value.expected, 'clipSatellites') === Object.hasOwn(value.replacement, 'clipSatellites') &&
+        Object.hasOwn(value.expected, 'clipAutomationLanes') ===
+            Object.hasOwn(value.replacement, 'clipAutomationLanes') &&
+        (value.expected.clipSatellites === undefined) === (value.replacement.clipSatellites === undefined) &&
+        (value.expected.clipAutomationLanes === undefined) === (value.replacement.clipAutomationLanes === undefined) &&
         splitSnapshotCaptureOwnersMatch(value.expected, value.clipId, value.rightClipId) &&
         splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId)
     );

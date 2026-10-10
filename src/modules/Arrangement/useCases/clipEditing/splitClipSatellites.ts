@@ -9,6 +9,8 @@ import { isDefaultWarpState } from '../../stores/warpStates';
 import { readClipScopedAutomationLanes, type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
 import { sampleGainEnvelopePoints } from '../clipGainEnvelope/sampleGainEnvelopePoints';
 
+import { readClipSplitIdentityIds } from './readClipSplitIdentityIds';
+
 /** Derived rather than imported: Automation owns the point model. */
 type AutomationLanePoint = AutomationLaneValue['points'][number];
 
@@ -38,6 +40,7 @@ type PrepareClipSplitSatellitesInput = {
     contentSplitBeats: number;
     /** Cut position on the absolute timeline — the clip automation axis. */
     absoluteSplitBeats: number;
+    reservedIdentityIds?: ReadonlySet<string>;
 };
 
 type SplitGainEnvelopes = {
@@ -266,7 +269,8 @@ function seamPointFor(
     lane: AutomationLaneValue,
     rightClipId: string,
     laneIndex: number,
-    absoluteSplitBeats: number
+    absoluteSplitBeats: number,
+    reserveId: (preferred: string) => string
 ): AutomationLanePoint | null {
     if (lane.points.some((point) => point.beat === absoluteSplitBeats)) {
         return null;
@@ -285,7 +289,7 @@ function seamPointFor(
     const nextPoint = lane.points.find((point) => point.beat > absoluteSplitBeats);
     const { yAtCut, cp1, cp2 } = bezierSeamControlPoints(lastLeft, nextPoint, absoluteSplitBeats);
     return {
-        id: `asp-split-${rightClipId}-${laneIndex}`,
+        id: reserveId(`asp-split-${rightClipId}-${laneIndex}`),
         beat: absoluteSplitBeats,
         // Value and cps are one polynomial: a cps-carrying seam uses the RAW
         // subdivision value, because the lane-range-clamped live sample paired
@@ -355,10 +359,22 @@ function seamPointFor(
 function splitAutomationLanes(
     sourceClipId: string,
     rightClipId: string,
-    absoluteSplitBeats: number
+    absoluteSplitBeats: number,
+    reservedIdentityIds?: ReadonlySet<string>
 ): AutomationLaneValue[] {
     const atOrAfterCut = (point: { beat: number }): boolean => point.beat >= absoluteSplitBeats;
-    const laneById = new Map(getAutomationLanes().map((lane) => [lane.id, lane]));
+    const liveLanes = getAutomationLanes();
+    const laneById = new Map(liveLanes.map((lane) => [lane.id, lane]));
+    const reservedIds = new Set(reservedIdentityIds ?? readClipSplitIdentityIds(liveLanes));
+    const reserveId = (preferred: string): string => {
+        let id = preferred;
+        let suffix = 1;
+        while (reservedIds.has(id)) {
+            id = `${preferred}-${suffix++}`;
+        }
+        reservedIds.add(id);
+        return id;
+    };
     const copyIdBySourceLaneId = new Map<string, string>();
     const copies: AutomationLaneValue[] = [];
     for (const [index, lane] of readClipScopedAutomationLanes([sourceClipId]).entries()) {
@@ -376,7 +392,7 @@ function splitAutomationLanes(
         if (!hasOwnPlayedCurve && !hasOwnOverlayRightContent && !linkedSourceReachesRightSpan) {
             continue;
         }
-        const copy = buildLaneCopy(lane, index, rightClipId, absoluteSplitBeats, resolvedLink === null);
+        const copy = buildLaneCopy(lane, index, rightClipId, absoluteSplitBeats, resolvedLink === null, reserveId);
         copyIdBySourceLaneId.set(lane.id, copy.id);
         copies.push(copy);
     }
@@ -409,7 +425,8 @@ function buildLaneCopy(
     laneIndex: number,
     rightClipId: string,
     absoluteSplitBeats: number,
-    includeSeam: boolean
+    includeSeam: boolean,
+    reserveId: (preferred: string) => string
 ): AutomationLaneValue {
     const atOrAfterCut = (point: { beat: number }): boolean => point.beat >= absoluteSplitBeats;
     // Both fragments survive. Identified points on their copied lanes therefore
@@ -418,20 +435,20 @@ function buildLaneCopy(
     function copyPoint<Point extends { id?: string }>(point: Point, kind: string, index: number): Point {
         return point.id === undefined
             ? { ...point }
-            : { ...point, id: `asp-split-${rightClipId}-${laneIndex}-${kind}-${index}` };
+            : { ...point, id: reserveId(`asp-split-${rightClipId}-${laneIndex}-${kind}-${index}`) };
     }
     const points = lane.points.filter(atOrAfterCut).map((point, index) => copyPoint(point, 'point', index));
     const trimPoints = lane.trimPoints?.filter(atOrAfterCut).map((point, index) => copyPoint(point, 'trim', index));
     const ghostPoints = lane.ghostPoints?.filter(atOrAfterCut).map((point, index) => copyPoint(point, 'ghost', index));
     if (includeSeam && lane.points.length > 0) {
-        const seamPoint = seamPointFor(lane, rightClipId, laneIndex, absoluteSplitBeats);
+        const seamPoint = seamPointFor(lane, rightClipId, laneIndex, absoluteSplitBeats, reserveId);
         if (seamPoint !== null) {
             points.unshift(seamPoint);
         }
     }
     const copy: AutomationLaneValue = {
         ...lane,
-        id: `auto-split-${rightClipId}-${laneIndex}`,
+        id: reserveId(`auto-split-${rightClipId}-${laneIndex}`),
         clipId: rightClipId,
         points,
         objects: [],
@@ -474,6 +491,6 @@ export function prepareClipSplitSatellites(input: PrepareClipSplitSatellitesInpu
             { clipId, gainEnvelope: gainEnvelopes.left, warpState: warpStates.left },
             { clipId: rightClipId, gainEnvelope: gainEnvelopes.right, warpState: warpStates.right },
         ],
-        rightAutomationLanes: splitAutomationLanes(clipId, rightClipId, absoluteSplitBeats),
+        rightAutomationLanes: splitAutomationLanes(clipId, rightClipId, absoluteSplitBeats, input.reservedIdentityIds),
     };
 }

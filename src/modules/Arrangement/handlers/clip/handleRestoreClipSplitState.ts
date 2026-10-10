@@ -2,11 +2,13 @@ import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { clipSplitStateRestorable } from '../../useCases/clipEditing/clipSplitStateRestorable';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
+import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
@@ -25,18 +27,28 @@ type RestoreClipSplitStateAction = Extract<AppAction, { type: 'restoreClipSplitS
  */
 function clipAutomationLanesMatch(
     action: RestoreClipSplitStateAction,
-    lanes: NonNullable<ReturnType<typeof projectClipReplayPrefix>>['lanes']
+    projected: NonNullable<ReturnType<typeof projectClipReplayPrefix>>
 ): boolean {
     const expectedLanes = action.payload.expected.clipAutomationLanes;
     const replacementLanes = action.payload.replacement.clipAutomationLanes;
     if (expectedLanes === undefined && replacementLanes === undefined) {
         return true;
     }
+    // Captured IDs are stable across replay. A later peer may claim one after
+    // Undo, so refuse instead of reminting or duplicating another owner's ID.
+    const retainedIds = readClipSplitIdentityIds(
+        projected.lanes.filter((lane) => lane.clipId !== action.payload.rightClipId),
+        projected.clips.map((owner) => owner.clip)
+    );
+    const replacementIds = collectClipSplitIdentityIds(replacementLanes ?? []);
+    if (new Set(replacementIds).size !== replacementIds.length || replacementIds.some((id) => retainedIds.has(id))) {
+        return false;
+    }
     return clipAutomationLaneTransitionMatchesStore(
         [action.payload.rightClipId],
         expectedLanes ?? [],
         replacementLanes ?? [],
-        lanes
+        projected.lanes
     );
 }
 
@@ -74,7 +86,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         ) &&
         (action.payload.expected.clipSatellites === undefined ||
             clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites, priorActions)) &&
-        clipAutomationLanesMatch(action, projected.lanes)
+        clipAutomationLanesMatch(action, projected)
     );
 }
 

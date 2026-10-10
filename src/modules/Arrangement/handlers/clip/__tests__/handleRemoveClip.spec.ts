@@ -76,6 +76,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    decodeMidiClipDataSnapshots: vi.fn(() => null),
     getMidiStoreState: mocks.getMidiStoreState,
     removeMidiClipData: mocks.removeMidiClipData,
 }));

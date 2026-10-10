@@ -15,6 +15,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
     return {
         clipAutomationMoveStateMatches: mocks.clipAutomationMoveStateMatches,
         getAutomationLanes: mocks.getAutomationLanes,
+        getAutomationLaneCeiling: actual.getAutomationLaneCeiling,
         isExactAutomationLaneSnapshots: actual.isExactAutomationLaneSnapshots,
         isExactClipAutomationMoveSnapshots: actual.isExactClipAutomationMoveSnapshots,
         restoreClipAutomationMoveState: mocks.restoreClipAutomationMoveState,
