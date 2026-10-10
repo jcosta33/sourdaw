@@ -127,7 +127,16 @@ function resolvedFragments(trackId: string): number[][] {
     ]);
 }
 
-describe('Moving a comped clip takes its takes and comp regions with it', () => {
+// #5100, reconciled with main's pass-anchored take model: comp regions are
+// timeline-anchored and a pass's material is anchored to its clip's own media
+// (resolveTakeMedia), so moving or nudging the clip never writes the lane —
+// the comped overlap keeps sounding its take in sync with the clip's content,
+// the rest of the clip sounds uncomped, and undo restores the comp exactly.
+// These cases hold that outcome for the legacy-pass corner (takes predating
+// pass placement, resolved by sourceOffsetBeats), which the placed-pass spec
+// handleTrimClipStartTakes.integration.spec.ts does not seed.
+
+describe('Moving a comped clip leaves its takes and comp regions anchored to the timeline', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('comp region move re-key integration');
@@ -155,28 +164,32 @@ describe('Moving a comped clip takes its takes and comp regions with it', () => 
         vi.restoreAllMocks();
     });
 
-    it('moveClip re-keys the moved clip takes and comp regions with it', async () => {
+    it('moveClip writes no take or region and the comped overlap keeps sounding pass 2', async () => {
         const { lane: originalLane, compTake } = arrangeLoopComp('track-1', 'source');
 
         await executeAppAction({ type: 'moveClip', payload: { clipId: 'source', trackId: 'track-1', startBeat: 9 } });
 
         expect(undoStore.value?.past).toHaveLength(1);
         expect(clipsOf('track-1').map((clip) => [clip.startBeat, clip.endBeat])).toEqual([[9, 17]]);
+        expect(lane('track-1')).toEqual(originalLane);
         expect(lane('track-1').takes.map((take) => [take.startBeat, take.endBeat])).toEqual([
-            [9, 17],
-            [9, 17],
-            [9, 17],
+            [8, 16],
+            [8, 16],
+            [8, 16],
         ]);
-        expect(lane('track-1').activeCompRegions).toEqual([{ startBeat: 9, endBeat: 17, takeId: compTake.id }]);
-        // The comped audio is beat-identical to the pre-move comp: the fragment
-        // enters the same pass-2 media (offset 8 beats deep), only one beat later.
-        expect(resolvedFragments('track-1')).toEqual([[9, 17, 1, 8]]);
         expect(lane('track-1').takes.map((take) => take.sourceOffsetBeats ?? 0)).toEqual([0, 8, 16]);
+        expect(lane('track-1').activeCompRegions).toEqual([{ startBeat: 8, endBeat: 16, takeId: compTake.id }]);
+        // The moved clip's overlap with the region [8,16) still enters pass-2's
+        // media 8 beats deep (its lap start, carried with the clip); the tail
+        // past the region sounds the clip's own first-pass media.
+        expect(resolvedFragments('track-1')).toEqual([
+            [9, 16, 1, 8],
+            [16, 17, 9, 7],
+        ]);
         expectAuthority();
-        expect(lane('track-1')).not.toEqual(originalLane);
     });
 
-    it('moveClip undo restores the exact pre-move comp facets and redo re-travels them', async () => {
+    it('moveClip undo restores the exact pre-move comp facets and redo re-applies the anchored outcome', async () => {
         const { lane: originalLane } = arrangeLoopComp('track-1', 'source');
 
         await executeAppAction({ type: 'moveClip', payload: { clipId: 'source', trackId: 'track-1', startBeat: 9 } });
@@ -189,21 +202,25 @@ describe('Moving a comped clip takes its takes and comp regions with it', () => 
 
         await redo();
         expect(clipsOf('track-1').map((clip) => [clip.startBeat, clip.endBeat])).toEqual([[9, 17]]);
-        expect(lane('track-1').activeCompRegions).toEqual([
-            { startBeat: 9, endBeat: 17, takeId: originalLane.activeCompRegions[0]!.takeId },
+        expect(lane('track-1')).toEqual(originalLane);
+        expect(resolvedFragments('track-1')).toEqual([
+            [9, 16, 1, 8],
+            [16, 17, 9, 7],
         ]);
-        expect(resolvedFragments('track-1')).toEqual([[9, 17, 1, 8]]);
         expectAuthority();
     });
 
-    it('nudgeClip travels the comp and its inverse nudge restores it', async () => {
-        const { lane: originalLane, compTake } = arrangeLoopComp('track-1', 'source');
+    it('nudgeClip leaves the comp anchored and its inverse nudge restores the clip', async () => {
+        const { lane: originalLane } = arrangeLoopComp('track-1', 'source');
 
         await executeAppAction({ type: 'nudgeClip', payload: { clipId: 'source', beats: 1 } });
 
         expect(undoStore.value?.past).toHaveLength(1);
-        expect(lane('track-1').activeCompRegions).toEqual([{ startBeat: 9, endBeat: 17, takeId: compTake.id }]);
-        expect(resolvedFragments('track-1')).toEqual([[9, 17, 1, 8]]);
+        expect(lane('track-1')).toEqual(originalLane);
+        expect(resolvedFragments('track-1')).toEqual([
+            [9, 16, 1, 8],
+            [16, 17, 9, 7],
+        ]);
         expectAuthority();
 
         await undo();
@@ -260,11 +277,12 @@ describe('Moving a comped clip takes its takes and comp regions with it', () => 
             regions: lane('track-1').activeCompRegions.filter((region) => region.takeId === siblingTake.id),
         }).toEqual(siblingLaneBefore);
         expect(lane('track-1').activeCompRegions.map((region) => [region.startBeat, region.endBeat])).toEqual([
-            [9, 17],
+            [8, 16],
             [20, 24],
         ]);
         expect(resolvedFragments('track-1')).toEqual([
-            [9, 17, 1, 8],
+            [9, 16, 1, 8],
+            [16, 17, 9, 7],
             [20, 24, 16, 4],
         ]);
         expectAuthority();

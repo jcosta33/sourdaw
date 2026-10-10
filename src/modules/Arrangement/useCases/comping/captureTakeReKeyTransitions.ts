@@ -15,7 +15,7 @@ type CaptureTakeReKeyTransitionsInput = {
      * do not fragment behave. `delete-time` (default): the timeline compressed
      * around the span, so a stale-wide region's in-span body is gone and its
      * tail survives only where nothing rehomed under it. `clip-transform`
-     * (#5100, #5048): the operation only moved or split the clips the windows
+     * (#5048): the operation only split the clips the windows
      * name — nothing was deleted and nothing rehomed under an untouched clip,
      * so those regions ride both sides verbatim; trimming them at the span
      * would edit a comp the operation never touched.
