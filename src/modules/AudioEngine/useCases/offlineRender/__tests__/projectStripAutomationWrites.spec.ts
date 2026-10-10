@@ -97,7 +97,6 @@ function lane(overrides: Partial<AutomationLane> & Pick<AutomationLane, 'paramet
 const baseInput: Omit<StripAutomationWritesInput, 'track' | 'lanes' | 'admittedSendBusIds'> = {
     regionStartSeconds: 0,
     durationSeconds: 4,
-    defaultTempo: 120,
     changes: [],
     projectBeatToSeconds: (beat) => beat,
     sampleRate: 48_000,

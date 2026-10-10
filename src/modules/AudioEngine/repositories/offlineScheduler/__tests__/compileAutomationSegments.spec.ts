@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 
 import { compileAutomationSegments } from '../compileAutomationSegments';
 
+import { constantTempoProjector } from './constantTempoProjector';
+
 import type { AutomationPoint } from '#/modules/AudioEngine/models/AutomationViewTypes';
 
 /**
@@ -12,6 +14,8 @@ import type { AutomationPoint } from '#/modules/AudioEngine/models/AutomationVie
  */
 
 const SR = 48_000;
+const AT_120_BPM = constantTempoProjector(120);
+const AT_60_BPM = constantTempoProjector(60);
 
 function point(beat: number, value: number, curve: 'linear' | 'step' = 'linear'): AutomationPoint {
     return { beat, value, curve, tension: 0 };
@@ -19,19 +23,19 @@ function point(beat: number, value: number, curve: 'linear' | 'step' = 'linear')
 
 describe('compileAutomationSegments — guards', () => {
     it('returns [] when sampleRate <= 0', () => {
-        expect(compileAutomationSegments([point(0, 0)], 4, 120, [], SR)).not.toEqual([]);
-        expect(compileAutomationSegments([point(0, 0)], 4, 120, [], 0)).toEqual([]);
+        expect(compileAutomationSegments([point(0, 0)], 4, [], SR, 0, AT_120_BPM)).not.toEqual([]);
+        expect(compileAutomationSegments([point(0, 0)], 4, [], 0, 0, AT_120_BPM)).toEqual([]);
     });
 
     it('returns [] for empty points', () => {
-        expect(compileAutomationSegments([], 4, 120, [], SR)).toEqual([]);
+        expect(compileAutomationSegments([], 4, [], SR, 0, AT_120_BPM)).toEqual([]);
     });
 });
 
 describe('compileAutomationSegments — linear ramp segment', () => {
     it('produces a segment from point 0 to point 1 with linear endValue', () => {
         // 120 BPM: beat 0 = 0s, beat 4 = 2s. Values: 0 → 1.
-        const segments = compileAutomationSegments([point(0, 0), point(4, 1)], 4, 120, [], SR);
+        const segments = compileAutomationSegments([point(0, 0), point(4, 1)], 4, [], SR, 0, AT_120_BPM);
         // Two events → one segment + trailing point = 2 segments.
         expect(segments).toHaveLength(2);
         // First segment: startFrame=0, endFrame=96000 (2s*48000), values 0→1.
@@ -42,7 +46,7 @@ describe('compileAutomationSegments — linear ramp segment', () => {
     });
 
     it('trailing segment is zero-length at the last frame', () => {
-        const segments = compileAutomationSegments([point(0, 0), point(4, 1)], 4, 120, [], SR);
+        const segments = compileAutomationSegments([point(0, 0), point(4, 1)], 4, [], SR, 0, AT_120_BPM);
         const trailing = segments[segments.length - 1]!;
         expect(trailing.startFrame).toBe(trailing.endFrame);
         expect(trailing.startValue).toBe(1);
@@ -56,7 +60,7 @@ describe('compileAutomationSegments — step event endValue', () => {
         // compileAutomationEvents emits 'set' events for step curves.
         // compileAutomationSegments: endValue = event.type === 'linear' ? event.value : previous.value.
         // For a 'set' event, endValue = previous.value.
-        const segments = compileAutomationSegments([point(0, 0), point(4, 1, 'step')], 4, 120, [], SR);
+        const segments = compileAutomationSegments([point(0, 0), point(4, 1, 'step')], 4, [], SR, 0, AT_120_BPM);
         expect(segments.length).toBeGreaterThan(0);
         // The segment endValue must be either the ramp target (if linear) or the held value.
         // Verify the first segment's startValue is 0 (the first event's value).
@@ -67,7 +71,7 @@ describe('compileAutomationSegments — step event endValue', () => {
 describe('compileAutomationSegments — frame clamping', () => {
     it('clamps frames to [0, durationSeconds * sampleRate]', () => {
         // A point at beat 100 (way past duration) clamps to the last frame.
-        const segments = compileAutomationSegments([point(0, 0), point(100, 1)], 2, 120, [], SR);
+        const segments = compileAutomationSegments([point(0, 0), point(100, 1)], 2, [], SR, 0, AT_120_BPM);
         // beat 100 at 120bpm = 50s, but duration is 2s → clamps to 96000.
         expect(segments[0]?.endFrame).toBeLessThanOrEqual(2 * SR);
     });
@@ -80,9 +84,10 @@ describe('compileAutomationSegments — multi-point chain', () => {
         const segments = compileAutomationSegments(
             [point(0, 0), point(1, 0.5), point(2, 0.5), point(3, 1)],
             4,
-            120,
             [],
-            SR
+            SR,
+            0,
+            AT_120_BPM
         );
         expect(segments.length).toBeGreaterThanOrEqual(4);
         // Every segment's endFrame must be >= startFrame.
@@ -101,16 +106,7 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
     it('opens with a held segment and lands the step later by the compensation', () => {
         // 120 BPM: beat 0 = 0s (step curve, value 0), beat 4 = 2s (value 1).
         // compensationDelaySec 0.01 shifts everything 0.01s = 480 frames later.
-        const segments = compileAutomationSegments(
-            [point(0, 0, 'step'), point(4, 1)],
-            4,
-            120,
-            [],
-            SR,
-            0,
-            undefined,
-            0.01
-        );
+        const segments = compileAutomationSegments([point(0, 0, 'step'), point(4, 1)], 4, [], SR, 0, AT_120_BPM, 0.01);
         // Opening segment holds the render-start value (0) across the shift window.
         expect(segments[0]?.startFrame).toBe(0);
         expect(segments[0]?.endFrame).toBe(480);
@@ -123,8 +119,8 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
     });
 
     it('is byte-identical to the uncompensated output when compensationDelaySec is 0 or omitted', () => {
-        const withoutOption = compileAutomationSegments([point(0, 0, 'step'), point(4, 1)], 4, 120, [], SR);
-        const withZero = compileAutomationSegments([point(0, 0, 'step'), point(4, 1)], 4, 120, [], SR, 0, undefined, 0);
+        const withoutOption = compileAutomationSegments([point(0, 0, 'step'), point(4, 1)], 4, [], SR, 0, AT_120_BPM);
+        const withZero = compileAutomationSegments([point(0, 0, 'step'), point(4, 1)], 4, [], SR, 0, AT_120_BPM, 0);
         expect(withZero).toEqual(withoutOption);
         // No opening hold segment: the step lands at 2s = 96000 frames, unshifted.
         expect(withoutOption[0]?.startFrame).toBe(0);
@@ -142,11 +138,10 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
         const segments = compileAutomationSegments(
             [point(0, 0, 'step'), point(4, 1)],
             durationSeconds,
-            120,
             [],
             SR,
             0,
-            undefined,
+            AT_120_BPM,
             0.01
         );
         const maxFrame = durationSeconds * SR;
@@ -163,7 +158,7 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
         // 60 BPM: beat 1 = 1s, beat 2 = 2s. Two linear points make a true ramp,
         // exercising the middle-loop shift (this file's other
         // compensationDelaySec cases only shift a step's opening hold/terminator).
-        const segments = compileAutomationSegments([point(1, 0), point(2, 1)], 4, 60, [], SR, 0, undefined, 0.01);
+        const segments = compileAutomationSegments([point(1, 0), point(2, 1)], 4, [], SR, 0, AT_60_BPM, 0.01);
         const ramp = segments.find((segment) => segment.startValue === 0 && segment.endValue === 1);
         // 1s + 0.01s = 1.01s * 48000 = 48480; 2s + 0.01s = 2.01s * 48000 = 96480.
         expect(ramp?.startFrame).toBe(48_480);
@@ -179,7 +174,7 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
         // an opening hold (which needs a *later* event), so this one was never
         // shifted at all: 2s * 100 = frame 200, not 201.
         const identity = (beat: number): number => beat;
-        const segments = compileAutomationSegments([point(2, 9, 'step')], 4, 60, [], 100, 0, identity, 0.01, {
+        const segments = compileAutomationSegments([point(2, 9, 'step')], 4, [], 100, 0, identity, 0.01, {
             activeWindowSeconds: { startSeconds: 2, endSeconds: 4 },
         });
         expect(segments).toEqual([{ startFrame: 201, endFrame: 201, startValue: 9, endValue: 9 }]);
@@ -198,7 +193,7 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
         const identity = (beat: number): number => beat;
 
         it('opens no hold and shifts nothing for a zero-width linear span (no hold to frame 50)', () => {
-            const segments = compileAutomationSegments([point(0, 0), point(8, 1)], 4, 60, [], 100, 4, identity, 0.5, {
+            const segments = compileAutomationSegments([point(0, 0), point(8, 1)], 4, [], 100, 4, identity, 0.5, {
                 activeWindowSeconds: { startSeconds: 0, endSeconds: 4 },
             });
             expect(segments.length).toBeGreaterThan(0);
@@ -212,7 +207,6 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
             const segments = compileAutomationSegments(
                 [point(0, 3, 'step'), point(4, 9, 'step')],
                 4,
-                60,
                 [],
                 100,
                 4,

@@ -7,6 +7,8 @@ import {
     type ScheduleTrackAutomationInput,
 } from '../automationScheduling';
 
+import { constantTempoProjector } from './constantTempoProjector';
+
 /**
  * The shipping scheduler grain, resolved through the same conversion production
  * uses rather than restating `0.01`. A spec that cares about the grain passes
@@ -134,21 +136,35 @@ function declaredCeiling(lane: Pick<AutomationLane, 'maxValue'>): number {
     return lane.maxValue;
 }
 
+const FIXTURE_FLAT_TEMPO_BPM = 120;
+
 export type ScheduleTrackAutomationFixtureInput = Omit<
     ScheduleTrackAutomationInput,
-    'slewTickSeconds' | 'deviceParameterLaw' | 'resolveLaneCeiling' | 'deviceEntries'
+    'slewTickSeconds' | 'deviceParameterLaw' | 'resolveLaneCeiling' | 'deviceEntries' | 'projectBeatToSeconds'
 > &
-    Partial<Pick<ScheduleTrackAutomationInput, 'slewTickSeconds' | 'deviceParameterLaw' | 'resolveLaneCeiling'>> & {
+    Partial<
+        Pick<
+            ScheduleTrackAutomationInput,
+            'slewTickSeconds' | 'deviceParameterLaw' | 'resolveLaneCeiling' | 'projectBeatToSeconds'
+        >
+    > & {
         deviceEntries: ReadonlyArray<FixtureDeviceEntry>;
+        /**
+         * The flat tempo of the beat projection a case that passes no
+         * `projectBeatToSeconds` rides. The scheduler owns no tempo integrator,
+         * so a case about a tempo map states its projection explicitly.
+         */
+        defaultTempo?: number;
     };
 
-/** `scheduleTrackAutomation` with the three render-context inputs defaulted. */
+/** `scheduleTrackAutomation` with the render-context inputs defaulted. */
 export function scheduleTrackAutomationFixture(input: ScheduleTrackAutomationFixtureInput): void {
-    const { deviceEntries, ...rest } = input;
+    const { deviceEntries, defaultTempo = FIXTURE_FLAT_TEMPO_BPM, ...rest } = input;
     scheduleTrackAutomation({
         slewTickSeconds: SHIPPING_GRAIN_SLEW_TICK_SECONDS,
         deviceParameterLaw: legacyFixtureDeviceLaw(deviceEntries),
         resolveLaneCeiling: declaredCeiling,
+        projectBeatToSeconds: constantTempoProjector(defaultTempo),
         ...rest,
         // `contributesAudio` first, so an entry that states its own value wins.
         deviceEntries: deviceEntries.map((entry) => ({ contributesAudio: true, ...entry })),

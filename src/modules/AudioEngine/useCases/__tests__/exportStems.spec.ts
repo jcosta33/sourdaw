@@ -17,7 +17,6 @@ const offlineRenderMocks = vi.hoisted(() => ({
     audioBufferCache: { get: vi.fn(() => undefined) },
     buildDeviceChain: vi.fn(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
-    beatToSeconds: vi.fn(() => 0),
     resolveDrumKit: vi.fn(() => null),
     scheduleTrackAutomation: vi.fn(),
     scheduleNoteOffline: vi.fn(),
@@ -90,10 +89,6 @@ vi.mock('../buildDeviceChain', () => ({
     buildDeviceChain: offlineRenderMocks.buildDeviceChain,
 }));
 
-vi.mock('#/modules/AudioEngine/services/beatConversion', () => ({
-    beatToSeconds: offlineRenderMocks.beatToSeconds,
-}));
-
 vi.mock('#/modules/AudioEngine/services/deviceResolution', () => ({
     resolveDrumKit: offlineRenderMocks.resolveDrumKit,
 }));
@@ -151,7 +146,14 @@ function createRenderContext(tracks: unknown[] | null) {
         projectMidiEvents: vi.fn(),
         selectMidiEventProbability: vi.fn(() => true),
         projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
-        projectPpqEndpoints: vi.fn(),
+        projectPpqEndpoints: vi.fn(({ startPpq, endPpq }: { startPpq: number; endPpq: number }) => ({
+            startSamples: startPpq,
+            endSamples: endPpq,
+            durationSamples: endPpq - startPpq,
+            startSeconds: startPpq,
+            endSeconds: endPpq,
+            durationSeconds: endPpq - startPpq,
+        })),
         resolveTempoAtBeat: ({ defaultTempo: tempo }: { defaultTempo: number }) => tempo,
         processYeastMidi: null,
     };
