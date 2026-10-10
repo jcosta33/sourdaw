@@ -53,7 +53,8 @@ function collapseCommittedFailures(failures: readonly unknown[], message: string
 type AttemptedAction = {
     readonly actionType: string;
     readonly rollback: (() => void | Promise<void>) | null;
-    readonly compensation: AbortCompensation;
+    /** Read when the action aborts: a handler assigns its inverse while it executes. */
+    readonly readCompensation: () => AbortCompensation;
 };
 
 type AbortFailures = {
@@ -72,7 +73,7 @@ async function compensateRollbackAndAbort(
     transaction: Pick<ReturnType<typeof runWithAutomergeStorageTransaction>, 'abort' | 'scope'>,
     attempted: AttemptedAction
 ): Promise<AbortFailures> {
-    const compensation = await compensateAbortedActions([attempted.compensation], transaction.scope);
+    const compensation = await compensateAbortedActions([attempted.readCompensation()], transaction.scope);
     const rollback = await rollbackAbortedActions([attempted], transaction.scope);
     transaction.abort();
     return { compensation, rollback };
@@ -271,22 +272,28 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                   });
             action = command.action;
 
-            // Captured against the same store state the handler is about to read, before
-            // anything is written, exactly where the batch path captures it.
+            // The rollback is prepared against the same store state the handler is about to
+            // read, before anything is written, exactly where the batch path prepares it.
+            // The inverse is read from the described result at abort time, as the batch does,
+            // because a handler may assign it while it executes.
             // The batch reports a handler that needs compensation but described no inverse as a
             // failed abort. A single action has no atomic-batch preflight that refuses such a
             // handler up front, and every non-undoable handler is one, so here an absent inverse
             // means nothing to replay and the abort keeps its own classification.
-            const inverseAction = undoResult?.inverseAction ?? null;
+            const described = undoResult;
             const attempted: AttemptedAction = {
                 actionType: action.type,
                 rollback: handler.prepareAbort?.(action) ?? null,
-                compensation: {
-                    actionType: action.type,
-                    requiresAbortCompensation: (handler.requiresAbortCompensation ?? true) && inverseAction !== null,
-                    inverseAction,
-                    commandId: command.envelope.commandId,
-                    groupId: command.envelope.groupId,
+                readCompensation: () => {
+                    const inverseAction = described?.inverseAction ?? null;
+                    return {
+                        actionType: action.type,
+                        requiresAbortCompensation:
+                            (handler.requiresAbortCompensation ?? true) && inverseAction !== null,
+                        inverseAction,
+                        commandId: command.envelope.commandId,
+                        groupId: command.envelope.groupId,
+                    };
                 },
             };
 

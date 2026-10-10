@@ -196,6 +196,13 @@ const abortRoutes: AbortRoute[] = [
         },
     },
     {
+        name: 'a storage write conflict raised by the commit',
+        mutateDoc: () => {
+            throw new AutomergeStorageWriteConflictError('commit conflict');
+        },
+        execute: ({ storage }) => storage.set({ tool: 'marquee' }),
+    },
+    {
         name: 'another commit failure',
         mutateDoc: () => {
             throw new Error('CRDT commit failed');
@@ -343,6 +350,19 @@ describe('executeAppAction abort rollback', () => {
 
         expect(recorder.calls).toEqual(['prepareAbort', 'execute', 'rollback']);
         expect(storedDuringRollback).toEqual({ tool: 'marquee' });
+        expect(doc.editingTool).toEqual({ tool: 'select' });
+    });
+
+    it('rolls back once and still reports a storage write conflict raised by the commit as a conflict', async () => {
+        const { doc, storage } = createHarness(() => {
+            throw new AutomergeStorageWriteConflictError('commit conflict');
+        });
+        const recorder = recordRollback();
+        registerHandler(recorder, () => storage.set({ tool: 'marquee' }));
+
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
+
+        expect(recorder.calls).toEqual(['prepareAbort', 'execute', 'rollback']);
         expect(doc.editingTool).toEqual({ tool: 'select' });
     });
 

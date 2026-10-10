@@ -8,7 +8,7 @@ type TransactionScope = <Result>(callback: () => Result) => Result;
 export type AbortCompensation = {
     readonly actionType: string;
     readonly requiresAbortCompensation: boolean;
-    /** The inverse described before the action executed. */
+    /** The inverse the action's described result holds when it aborts; a handler may assign it while it executes. */
     readonly inverseAction: AppAction | null | undefined;
     readonly commandId: string;
     readonly groupId: string | undefined;
