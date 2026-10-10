@@ -406,21 +406,10 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         setParam: result.setParam,
                         setPadParam: result.setPadParam,
                         setBypass: result.setBypass,
-                        destroy: () => {
-                            result.destroy();
-                            // Signal teardown so the Toaster module disposes the device:
-                            // stop the sequencer, note-repeat and 16-Levels sessions and
-                            // cancel any queued rAF pad-param flush, then delete the store
-                            // record. Emitted (not called directly) to keep the boundary
-                            // acyclic — AudioEngine must not statically import the Toaster
-                            // useCases barrel, whose closure reaches back into AudioEngine
-                            // (would be a no-circular error). The Toaster subscriber runs
-                            // disposeToasterDevice synchronously on this emit, mirroring the
-                            // audioDevice.loaded hydration path. A bare store delete (the
-                            // prior behavior) left a running:true sequencer re-arming ghost
-                            // hits after the device was gone.
-                            getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
-                        },
+                        // Destroying the node announces nothing: the engine also
+                        // destroys it for recovery and rollback while the device
+                        // stays in the project. The track announces a removal.
+                        destroy: result.destroy,
                     },
                     toasterControls: {
                         ready: true,
@@ -540,13 +529,26 @@ const levainDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                // Every teardown route ends this node's registration: a port left
+                // registered would take later sample loads after the processor
+                // closed it, and they would never settle. The port names this
+                // node's own registration, so a rejected or superseded node
+                // leaves a newer registration under the same id alone.
+                const destroy = (): void => {
+                    result.destroy();
+                    try {
+                        getAudioDeviceRuntimeSink().unregisterLevainDevice(deviceId, result.workletNode.port);
+                    } catch (error) {
+                        logger.warn(`[WebAudioEngine] ${deviceType} unregister failed: ${String(error)}`);
+                    }
+                };
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    dispose: result.destroy,
+                    dispose: destroy,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -555,15 +557,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         handleCc: result.handleCc,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: () => {
-                            result.destroy();
-                            try {
-                                getAudioDeviceRuntimeSink().unregisterLevainDevice(deviceId);
-                            } catch {
-                                // Intentionally empty: the device may already be
-                                // unregistered from the Levain store; teardown proceeds.
-                            }
-                        },
+                        destroy,
                     },
                     levainControls: {
                         ready: true,
@@ -575,7 +569,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         discardStoredCc: result.discardStoredCc,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                 };
                 const accepted = onLoaded(loadedNode);
@@ -1681,9 +1675,10 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             if (placeholder.grandBouleControls) {
                 placeholder.grandBouleControls.setParam = () => {};
             }
+            // The failed stand-in stays in the chain, so the device has not left
+            // the project and its failure announces no removal.
             replaceRuntimeFailure?.(publishedNode, placeholder);
             publishedResult.destroy();
-            getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
         };
         const onRuntimeFailure = (message: string): void => {
             if (runtimeFailureMessage !== null) {

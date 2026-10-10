@@ -15,8 +15,6 @@ const SMF_NOTE_OFF = 0x80;
 const SMF_NOTE_ON = 0x90;
 const SMF_CONTROL_CHANGE = 0xb0;
 const SUSTAIN_PEDAL = 64;
-// A wrap remainder of float noise (around 1e-16 to 1e-15 beats) is no hit; the export writes none.
-const FLOAT_NOISE_BEATS = 1e-9;
 
 const mocks = vi.hoisted(() => ({
     getAllTracks: vi.fn(),
@@ -321,6 +319,30 @@ describe('exportMidiClip writes what the clip plays', () => {
             ]);
         });
 
+        it('writes a pedal the loop carries onto a sub-tick note start tick behind that release', () => {
+            // Pass 0's sliver (1.9996 for 0.0004) releases on tick 961, and the pedal
+            // carry onto pass 1's head (beat 2, tick 960) follows the sliver's true end.
+            // Playback posts the release before the carry; ahead of the repair the file
+            // wrote the carry on tick 960 and held the note under it to the pedal-up
+            // release at tick 1872.
+            const events = exportClip(
+                { startBeat: 0, endBeat: 4, loopEnabled: true, loopLength: 2 },
+                [note('sliver', 1.9996, 0.0004, 62)],
+                [sustain('down', 0, 127), sustain('up', 1.9, 0)]
+            );
+
+            expect(summary(events)).toEqual([
+                ['cc', 0],
+                ['cc', 912],
+                ['on', 960],
+                ['off', 961],
+                ['cc', 961],
+                ['cc', 1872],
+                ['on', 1920],
+                ['off', 1921],
+            ]);
+        });
+
         it('releases a note before a same-pitch note it overlaps by under a tick is struck', () => {
             const events = exportClip(clip, [note('a', 0, 1.0011), note('b', 1.00105, 0.5)], []);
 
@@ -479,6 +501,66 @@ describe('exportMidiClip writes what the clip plays', () => {
         });
     });
 
+    it('writes a lift stored on the closing line of the loop once, on the clip end, and none on a pass head', () => {
+        const events = exportClip(
+            { startBeat: 1 / 3, endBeat: 1 / 3 + 8, loopEnabled: true, loopLength: 2 },
+            [note('n', 0, 1.5)],
+            [sustain('down', 0, 127), sustain('lift', 2, 0)]
+        );
+
+        const pedals = events.filter((event) => event.kind === 'cc');
+        expect(pedals.map((event) => [event.tick, event.data2])).toEqual([
+            ...[0, 1, 2, 3].map((pass) => [Math.round((1 / 3 + 2 * pass) * TICKS_PER_BEAT), 127]),
+            [Math.round((1 / 3 + 8) * TICKS_PER_BEAT), 0],
+        ]);
+    });
+
+    it('writes the pedal lift drawn on the closing line of a clip, after the release of the note ending there', () => {
+        const events = exportClip(
+            { startBeat: 1, endBeat: 5 },
+            [note('held', 0, 4), note('on-the-line', 4, 1, 62)],
+            [sustain('down', 0, 127), sustain('lift', 4, 0)]
+        );
+
+        expect(events.map(({ tick, kind, data1, data2 }) => [tick / TICKS_PER_BEAT, kind, data1, data2])).toEqual([
+            [1, 'cc', SUSTAIN_PEDAL, 127],
+            [1, 'on', 60, 100],
+            [5, 'off', 60, 0],
+            [5, 'cc', SUSTAIN_PEDAL, 0],
+        ]);
+    });
+
+    it('writes a press a rounding step before the closing-line lift ahead of it, so the pedal ends up as playback leaves it', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 2 },
+            [],
+            [sustain('press', 2 - 1e-6, 127), sustain('lift', 2, 0)]
+        );
+
+        expect(events.map(({ tick, kind, data2 }) => [tick / TICKS_PER_BEAT, kind, data2])).toEqual([
+            [2, 'cc', 127],
+            [2, 'cc', 0],
+        ]);
+    });
+
+    it('writes no press and no mod-wheel row stored on the closing line, where a trim ends the clip', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 4 },
+            [],
+            [
+                sustain('down', 0, 127),
+                sustain('lift', 2, 0),
+                sustain('down-again', 4, 127),
+                { id: 'mod', controller: 1, value: 90, beat: 4, channel: 0 },
+            ]
+        );
+
+        expect(events.map(({ tick, kind, data1, data2 }) => [tick / TICKS_PER_BEAT, kind, data1, data2])).toEqual([
+            [0, 'cc', SUSTAIN_PEDAL, 127],
+            [2, 'cc', SUSTAIN_PEDAL, 0],
+        ]);
+    });
+
     it('writes a controller ahead of a note struck at the same content beat when the slip projects them a float apart', () => {
         const clip = { startBeat: 0.1, endBeat: 4.1, midiOffsetBeats: 1 / 3 };
         const [played] = projectClipMidiEvents({
@@ -598,7 +680,7 @@ describe('exportMidiClip writes what the clip plays', () => {
     describe('in the coordinates the scheduler projects in', () => {
         type SchedulerClip = { startBeat: number; endBeat: number; loopLength: number };
 
-        /** The segments of positive length the note scheduler's projection returns, pass by pass. */
+        /** Every segment the note scheduler's projection returns, pass by pass. */
         function schedulerSegments(clip: SchedulerClip, stored: NoteFixture[]) {
             const passes = Math.ceil((clip.endBeat - clip.startBeat) / clip.loopLength);
             return Array.from({ length: passes }, (_, pass) =>
@@ -612,10 +694,20 @@ describe('exportMidiClip writes what the clip plays', () => {
                     midiOffsetBeats: 0,
                     loopEnabled: true,
                 })
-            )
-                .flat()
-                .filter((segment) => segment.duration > FLOAT_NOISE_BEATS);
+            ).flat();
         }
+
+        it('writes no extra one-tick note at the head of a pass for a third-of-a-beat kick that ends on the loop end', () => {
+            const clip = { startBeat: 4, endBeat: 12, loopLength: 4 };
+            const stored = [note('kick', 11 / 3, 1 / 3, 36)];
+
+            const events = exportClip({ ...clip, loopEnabled: true }, stored, []);
+
+            // One hit per pass, at 4 + 11/3 and 8 + 11/3 beats, and no strike at beats 4 or 8.
+            expect(schedulerSegments(clip, stored)).toHaveLength(2);
+            expect(ticks(events, 'on')).toEqual([3680, 5600]);
+            expect(ticks(events, 'off')).toEqual([3840, 5760]);
+        });
 
         it('writes a loop pass of a clip not at beat 0 once, without a rounding sliver of its wrap', () => {
             const clip = { startBeat: 4, endBeat: 12, loopLength: 4 };

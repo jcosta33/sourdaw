@@ -5,6 +5,7 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
+import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import {
@@ -22,6 +23,7 @@ import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvide
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
+import { type ThreadContext } from '../models/ThreadContext';
 import {
     isWorkflowCapabilityId,
     WORKFLOW_ACTION_TOOL_NAMES,
@@ -58,6 +60,7 @@ import {
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
+    ANSWER_RESPOND_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
@@ -86,6 +89,25 @@ import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpret
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
+
+type ParsePromptToActionsInput = {
+    prompt: string;
+    context: ProjectContext;
+    signal?: AbortSignal;
+    projectRevision?: string;
+    stemImportScope?: StemImportPromptScope;
+    onProviderResult?: (result: ModelProviderResult) => void;
+    streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>;
+    onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult;
+    correction?: {
+        creativeAuthority: CreativeRequestAuthority | null;
+        rejectionEvidence?: PlanningRejectionEvidence;
+    };
+    providerPlanning?: 'enabled' | 'disabled';
+    onMeasurementAttempt?: MeasurementAdmitter;
+    /** The chat thread's earlier turns, which the planner reads as its `thread_context` section. */
+    thread?: ThreadContext | null;
+};
 
 type CreateFastPathResultInput = {
     actions: RuntimeAction[];
@@ -411,22 +433,20 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
  */
 const planPromptIntent = inject({ logger })(
     ({ logger }) =>
-        async function planPromptIntent(
-            prompt: string,
-            context: ProjectContext,
-            signal?: AbortSignal,
-            projectRevision?: string,
-            stemImportScope?: StemImportPromptScope,
-            onProviderResult?: (result: ModelProviderResult) => void,
-            streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
-            onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
-            correction?: {
-                creativeAuthority: CreativeRequestAuthority | null;
-                rejectionEvidence?: PlanningRejectionEvidence;
-            },
-            providerPlanning: 'enabled' | 'disabled' = 'enabled',
-            onMeasurementAttempt?: MeasurementAdmitter
-        ): Promise<IntentResult> {
+        async function planPromptIntent({
+            prompt,
+            context,
+            signal,
+            projectRevision,
+            stemImportScope,
+            onProviderResult,
+            streamIdentity,
+            onProviderAttempt,
+            correction,
+            providerPlanning = 'enabled',
+            onMeasurementAttempt,
+            thread,
+        }: ParsePromptToActionsInput): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
             const trimmedPrompt = prompt.trim();
 
@@ -522,6 +542,7 @@ const planPromptIntent = inject({ logger })(
                     WORKFLOW_CAPABILITY_TOOL_NAME,
                     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
                     COMMAND_BATCH_DECLINE_TOOL_NAME,
+                    ANSWER_RESPOND_TOOL_NAME,
                     RENDER_REQUEST_TOOL_NAME,
                     ANALYSIS_REQUEST_TOOL_NAME,
                     ...WORKFLOW_ACTION_TOOL_NAMES,
@@ -567,6 +588,7 @@ const planPromptIntent = inject({ logger })(
                         validationFailures: agentRun?.errors.map((error) => ({ code: error.code })),
                         rejectionEvidence: correction?.rejectionEvidence,
                         priorEvidence: agentRun?.contextEvidence,
+                        thread,
                     });
                     if (agentRun) {
                         agentRunLifecycle.recordContextEvidence({
@@ -720,7 +742,17 @@ const planPromptIntent = inject({ logger })(
                             // A hosted turn repeats the run's first message unchanged and carries the
                             // receipts as its own earlier turns; only a local backend reads the text
                             // form above, which restates them inside the prompt.
-                            { firstUserMessage: initialPlanningContext.message, history, budgetNote }
+                            {
+                                firstUserMessage: initialPlanningContext.message,
+                                history,
+                                budgetNote,
+                                // Measured deltas in the thread context are figures, which the
+                                // hosted request declares as the evidence category it admits.
+                                ...(initialPlanningContext.hostedThreadCarriesMeasurement
+                                    ? { messageDataCategories: REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES }
+                                    : {}),
+                            },
+                            planningContext.localMessage
                         );
                     },
                 });
@@ -786,6 +818,18 @@ const planPromptIntent = inject({ logger })(
                         ...creativeAuthorityFields,
                         ...(outcome.kind === 'denied' ? { rejectionReason: outcome.reason } : {}),
                         planningOutcome: outcome,
+                    };
+                }
+                // The loop admitted the answer only as the sole call of its turn, with every cited
+                // receipt resolved, so it reaches the caller as a reply with no batch beside it.
+                if (planningOutcome.answer) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
+                        planningOutcome: { kind: 'answer', ...planningOutcome.answer },
                     };
                 }
                 const providerProposal =
@@ -1103,34 +1147,7 @@ const planPromptIntent = inject({ logger })(
  * The planner's public entry point. It classifies every result, so a caller never has to infer from
  * an empty action list whether the run refused, asked a question, or simply matched nothing.
  */
-export async function parsePromptToActions(
-    prompt: string,
-    context: ProjectContext,
-    signal?: AbortSignal,
-    projectRevision?: string,
-    stemImportScope?: StemImportPromptScope,
-    onProviderResult?: (result: ModelProviderResult) => void,
-    streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
-    onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
-    correction?: {
-        creativeAuthority: CreativeRequestAuthority | null;
-        rejectionEvidence?: PlanningRejectionEvidence;
-    },
-    providerPlanning: 'enabled' | 'disabled' = 'enabled',
-    onMeasurementAttempt?: MeasurementAdmitter
-): Promise<PlannedIntentResult> {
-    const result = await planPromptIntent(
-        prompt,
-        context,
-        signal,
-        projectRevision,
-        stemImportScope,
-        onProviderResult,
-        streamIdentity,
-        onProviderAttempt,
-        correction,
-        providerPlanning,
-        onMeasurementAttempt
-    );
+export async function parsePromptToActions(input: ParsePromptToActionsInput): Promise<PlannedIntentResult> {
+    const result = await planPromptIntent(input);
     return { ...result, planningOutcome: classifyPlannedIntentResult(result) };
 }

@@ -6,6 +6,7 @@ export { repairRuntimeGraphFromProject } from './repairRuntimeGraphFromProject';
 export { getSchedulerTimingDiagnostics } from './getSchedulerTimingDiagnostics';
 export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/reconcileVcaGroupRuntimeGain';
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
+export { resolvePlaybackNoteReceiver } from './scheduling/resolvePlaybackNoteReceiver';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
 export { readNativeEngineCursorBeats } from './playheadScheduler/readNativeEngineCursorBeats';
 
@@ -23,7 +24,6 @@ export { createMusicalPositionProjector } from './createMusicalPositionProjector
 export { createSamplePositionProjector } from './createSamplePositionProjector';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
-export { deleteTimelineMapsTimeRange } from './tempoMap/deleteTimelineMapsTimeRange';
 export { prepareTimelineMapStateRestore } from './tempoMap/prepareTimelineMapStateRestore';
 export { prepareTimelineMapTimeOperation } from './tempoMap/prepareTimelineMapTimeOperation';
 export { removeTempoChange } from './tempoMap/removeTempoChange';

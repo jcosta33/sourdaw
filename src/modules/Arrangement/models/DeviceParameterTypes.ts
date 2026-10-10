@@ -188,6 +188,13 @@ export type PluginDescriptor = {
     /** Numeric engine configuration persisted on newly added devices without
      * exposing a user-facing or automatable parameter. */
     internalParameterValues?: Readonly<Record<string, number>>;
+    /**
+     * What a value its custom panel writes, but `parameters` does not declare,
+     * means while absent from `parameterValues`. It plays the part a declared
+     * parameter's `defaultValue` plays for undo: undoing the first write of such
+     * a value restores its absence and sends this value to the engine.
+     */
+    undeclaredParameterDefaults?: Readonly<Record<string, number>>;
     hasCustomUI: boolean;
     /** Which runtime this plugin is available on. Defaults to 'both'. */
     platform?: PluginPlatform;

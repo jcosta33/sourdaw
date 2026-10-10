@@ -142,8 +142,15 @@
 //!   and the stamp is not honoured at all: the native gates are strip flags,
 //!   not ramped parameters, so the write applies at the block boundary that
 //!   drains the command — even when its stamp names a future time.
-//! - A bus strip has no send taps in `daw-engine`; a send whose source is a
-//!   bus refuses with a reason naming the gap (`bus-send-unsupported`).
+//!
+//! ## Sends
+//!
+//! `add-send`, `remove-send` and a `track-send-level` write name their source
+//! by strip id, and the source may be a track or a bus: a bus sends into a bus
+//! exactly as a track does, on the same taps. The destination is always a bus.
+//! A send that would close a routing cycle — through outputs or sends, from
+//! either kind of strip — refuses the batch here, ahead of the engine's own
+//! counted drop.
 
 use crate::commands::crumbs::{self, CrumbsState};
 use crate::commands::levain::LevainBankStore;
@@ -1455,13 +1462,12 @@ impl GraphRegistry {
                 continue;
             };
             stack.push(next.output);
-            if next.kind == StripKind::Track {
-                for bus_id in &next.send_bus_ids {
-                    let Some(bus) = self.strips.get(bus_id) else {
-                        continue;
-                    };
-                    stack.push(StripOutput::Bus(bus.native_id));
-                }
+            // A bus's sends are edges exactly as a track's are.
+            for bus_id in &next.send_bus_ids {
+                let Some(bus) = self.strips.get(bus_id) else {
+                    continue;
+                };
+                stack.push(StripOutput::Bus(bus.native_id));
             }
         }
         false
@@ -2618,11 +2624,11 @@ fn map_device(
     // instance on this thread; knead's handful travel as commands behind the
     // registration.
     //
-    // For bacteria the thread is not only a budget: two of its names allocate
-    // when they land (`BACTERIA_CONTROL_THREAD_ONLY`,
+    // For bacteria the thread is not only a budget: one of its names allocates
+    // when it lands (`BACTERIA_CONTROL_THREAD_ONLY`,
     // `crates/daw-engine/src/scheduler.rs`), and `BacteriaBody::load_patch`
-    // here is the only door that applies them — its audio-thread `set_param`
-    // drops them.
+    // here is the only door that applies it — its audio-thread `set_param`
+    // drops it.
     //
     // For proof the record carries something no `SetParam` behind it could
     // stand in for either: the five `chain_order_{n}` keys spelling the module
@@ -3410,12 +3416,6 @@ fn map_command(
                 .strips
                 .get(track_id)
                 .ok_or_else(|| format!("add-send: unknown strip '{track_id}'"))?;
-            if source.kind == StripKind::Bus {
-                return Err(format!(
-                    "add-send: bus-send-unsupported — strip '{track_id}' is a bus and the native \
-                     bus strip has no send taps"
-                ));
-            }
             if source.send_bus_ids.iter().any(|id| id == bus_id) {
                 return Err(format!(
                     "add-send: '{track_id}' already sends to '{bus_id}'"
@@ -3441,21 +3441,34 @@ fn map_command(
                     "add-send: routing '{track_id}' there closes a cycle"
                 ));
             }
+            let source_kind = source.kind;
             let source_native = source.native_id;
-            let destination_native = destination.native_id;
-            ops.push(GraphCommand::AddSend {
-                track_id: source_native,
-                bus_id: destination_native,
-                tap: match tap {
-                    SendTapPayload::PreFader => daw_engine::timeline::SendTap::PreFader,
-                    SendTapPayload::PostFader => daw_engine::timeline::SendTap::PostFader,
+            let bus_native = destination.native_id;
+            let tap = match tap {
+                SendTapPayload::PreFader => daw_engine::timeline::SendTap::PreFader,
+                SendTapPayload::PostFader => daw_engine::timeline::SendTap::PostFader,
+            };
+            let level = send_level(*level)?;
+            // Built here, on the control thread: the send's compensation ring
+            // is heap, and the audio thread may not allocate it.
+            let delay = Box::new(daw_engine::pdc::CompensationDelay::new(
+                daw_engine::pdc::MAX_COMPENSATION_FRAMES,
+            ));
+            ops.push(match source_kind {
+                StripKind::Track => GraphCommand::AddSend {
+                    track_id: source_native,
+                    bus_id: bus_native,
+                    tap,
+                    level,
+                    delay,
                 },
-                level: send_level(*level)?,
-                // Built here, on the control thread: the send's compensation
-                // ring is heap, and the audio thread may not allocate it.
-                delay: Box::new(daw_engine::pdc::CompensationDelay::new(
-                    daw_engine::pdc::MAX_COMPENSATION_FRAMES,
-                )),
+                StripKind::Bus => GraphCommand::AddBusSend {
+                    source_bus_id: source_native,
+                    bus_id: bus_native,
+                    tap,
+                    level,
+                    delay,
+                },
             });
             registry
                 .strips
@@ -3480,9 +3493,15 @@ fn map_command(
                 .strips
                 .get(bus_id)
                 .ok_or_else(|| format!("remove-send: unknown bus '{bus_id}'"))?;
-            ops.push(GraphCommand::RemoveSend {
-                track_id: source.native_id,
-                bus_id: destination.native_id,
+            ops.push(match source.kind {
+                StripKind::Track => GraphCommand::RemoveSend {
+                    track_id: source.native_id,
+                    bus_id: destination.native_id,
+                },
+                StripKind::Bus => GraphCommand::RemoveBusSend {
+                    source_bus_id: source.native_id,
+                    bus_id: destination.native_id,
+                },
             });
             let source = registry
                 .strips
@@ -4089,14 +4108,17 @@ fn map_parameter_write(
                 .strips
                 .get(bus_id)
                 .ok_or_else(|| format!("write-parameter: unknown bus '{bus_id}'"))?;
-            (
-                strip,
-                AutomationTarget::TrackSendLevel {
+            let target = match strip.kind {
+                StripKind::Track => AutomationTarget::TrackSendLevel {
                     track_id: strip.native_id,
                     bus_id: destination.native_id,
                 },
-                |value, _| send_level(value),
-            )
+                StripKind::Bus => AutomationTarget::BusSendLevel {
+                    source_bus_id: strip.native_id,
+                    bus_id: destination.native_id,
+                },
+            };
+            (strip, target, |value, _| send_level(value))
         }
         StripParameterTargetPayload::TrackMuteGate { .. }
         | StripParameterTargetPayload::TrackSoloGate { .. } => unreachable!("handled above"),
@@ -10910,12 +10932,112 @@ mod tests {
         assert!(registry.devices.is_empty());
     }
 
-    /// The refusal the producer's send filter exists for. Bus into bus is
-    /// ordinary practice and the project admits it, so the producer must drop
-    /// such a send rather than let the mapper decline the batch that carries it.
+    /// Two buses, the first sending into the second — a reverb return feeding
+    /// a parallel compressor — then whatever `tail` adds.
+    fn bus_into_bus_batch(tail: Value) -> GraphBatchPayload {
+        let mut commands = json!([
+            {
+                "kind": "create-bus-strip", "busId": "verb", "name": "Reverb",
+                "state": strip_state(0.9), "devices": [], "honorMuted": false,
+                "contributesAudio": false
+            },
+            {
+                "kind": "create-bus-strip", "busId": "squash", "name": "Parallel",
+                "state": strip_state(0.9), "devices": [], "honorMuted": false,
+                "contributesAudio": false
+            },
+            { "kind": "add-send", "trackId": "verb", "busId": "squash",
+              "tap": "pre-fader", "level": 0.5 }
+        ]);
+        let commands_list = commands.as_array_mut().expect("a command list");
+        commands_list.extend(tail.as_array().expect("a command list").iter().cloned());
+        batch(commands)
+    }
+
+    /// Bus into bus is ordinary practice, and the engine's bus strip carries
+    /// send taps, so the mapper admits a send whose source is a bus — and its
+    /// level automation and its removal — onto the bus-source engine commands
+    /// rather than the track ones, whose ids name another namespace.
     #[test]
-    fn a_send_whose_source_is_a_bus_refuses_the_batch_with_the_distinct_reason() {
-        let samples = sample_pool();
+    fn a_send_whose_source_is_a_bus_maps_onto_the_bus_send_commands() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_unbound_batch(
+            &bus_into_bus_batch(json!([
+                { "kind": "write-parameter",
+                  "target": { "kind": "track-send-level", "trackId": "verb", "busId": "squash" },
+                  "write": { "shape": "step", "value": 0.25, "time": 1.0 } },
+                { "kind": "remove-send", "trackId": "verb", "busId": "squash" }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bus sends into a bus natively");
+
+        let verb = registry.strips["verb"].native_id;
+        let squash = registry.strips["squash"].native_id;
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddBusSend {
+                source_bus_id,
+                bus_id,
+                tap: daw_engine::timeline::SendTap::PreFader,
+                level,
+                ..
+            } if *source_bus_id == verb && *bus_id == squash && *level == 0.5
+        )));
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AutomateParam {
+                target: AutomationTarget::BusSendLevel { source_bus_id, bus_id },
+                ..
+            } if *source_bus_id == verb && *bus_id == squash
+        )));
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::RemoveBusSend { source_bus_id, bus_id }
+                if *source_bus_id == verb && *bus_id == squash
+        )));
+        assert!(
+            !mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddSend { .. } | GraphCommand::RemoveSend { .. }
+            )),
+            "a bus id never travels on a track send command"
+        );
+    }
+
+    /// A bus send that closes a loop refuses the batch here, on the walk the
+    /// mapper runs for a track's — through the other bus's send, and through
+    /// its output.
+    #[test]
+    fn a_bus_send_that_closes_a_cycle_refuses_the_batch() {
+        for (closing, label) in [
+            (
+                json!({ "kind": "add-send", "trackId": "squash", "busId": "verb",
+                        "tap": "post-fader", "level": 0.5 }),
+                "a send back",
+            ),
+            (
+                json!({ "kind": "set-track-output", "trackId": "squash",
+                        "target": { "kind": "bus", "busId": "verb" } }),
+                "an output back",
+            ),
+        ] {
+            let refusal = map_unbound_batch(
+                &bus_into_bus_batch(json!([closing])),
+                &mut GraphRegistry::default(),
+                &sample_pool(),
+                48_000.0,
+            )
+            .expect_err(label);
+            assert!(
+                refusal.contains("closes a cycle"),
+                "{label}: the refusal names the loop, got: {refusal}"
+            );
+        }
+
+        // And the send itself refuses when the return path came first.
         let refusal = map_unbound_batch(
             &batch(json!([
                 {
@@ -10928,18 +11050,78 @@ mod tests {
                     "state": strip_state(0.9), "devices": [], "honorMuted": false,
                     "contributesAudio": false
                 },
+                { "kind": "set-track-output", "trackId": "squash",
+                  "target": { "kind": "bus", "busId": "verb" } },
                 { "kind": "add-send", "trackId": "verb", "busId": "squash",
-                  "tap": "post-fader", "level": 0.5 }
+                  "tap": "pre-fader", "level": 0.5 }
             ])),
             &mut GraphRegistry::default(),
-            &samples,
+            &sample_pool(),
             48_000.0,
         )
-        .expect_err("a bus has no send tap natively");
-        assert!(
-            refusal.contains("bus-send-unsupported"),
-            "the refusal names the unsupported shape, got: {refusal}"
-        );
+        .expect_err("a send into a bus that already feeds the source");
+        assert!(refusal.contains("add-send: routing 'verb' there closes a cycle"));
+    }
+
+    /// The whole native path, mapper to rendered output: a track feeding bus A
+    /// with A's fader down, so all the master can carry is what A's send
+    /// delivered through bus B — the send level at a pre-fader tap, nothing at
+    /// a post-fader one.
+    #[test]
+    fn a_bus_send_reaches_the_rendered_mix_through_the_bus_it_lands_on() {
+        for (tap, expected) in [("pre-fader", 0.5f32 * 0.5), ("post-fader", 0.0)] {
+            let rendered = render_offline_batch(
+                &batch(json!([
+                    {
+                        "kind": "create-track-strip", "trackId": "t1", "name": "Source",
+                        "state": strip_state(1.0), "devices": [], "honorMuted": true,
+                        "contributesAudio": true
+                    },
+                    {
+                        "kind": "create-bus-strip", "busId": "a", "name": "A",
+                        "state": strip_state(0.0), "devices": [], "honorMuted": true,
+                        "contributesAudio": false
+                    },
+                    {
+                        "kind": "create-bus-strip", "busId": "b", "name": "B",
+                        "state": strip_state(1.0), "devices": [], "honorMuted": true,
+                        "contributesAudio": false
+                    },
+                    { "kind": "set-track-output", "trackId": "t1",
+                      "target": { "kind": "bus", "busId": "a" } },
+                    { "kind": "add-send", "trackId": "a", "busId": "b",
+                      "tap": tap, "level": 0.5 },
+                    { "kind": "schedule-clip",
+                      "playback": {
+                          "trackId": "t1",
+                          "source": { "sourceId": "source-a" },
+                          "startTime": 0.0,
+                          "sourceOffsetSeconds": 0.0,
+                          "durationSeconds": 0.5,
+                          "playbackRate": 1,
+                          "gain": 1.0,
+                          "fade": { "microFadeSeconds": 0.005 }
+                      } }
+                ])),
+                &sample_pool(),
+                &mut LevainBankStore::default(),
+                1_024,
+                48_000.0,
+            )
+            .expect("a bus-to-bus send renders natively");
+
+            // Interleaved frames 512 onward: past the clip's 240-frame
+            // anti-click fade, where nothing is still moving.
+            let settled = &rendered[1_024..2_048];
+            assert!(
+                settled
+                    .iter()
+                    .all(|sample| (sample - expected).abs() < 1e-6),
+                "{tap}: every sample is bus B's copy of the send, expected {expected}, \
+                 got {:?}",
+                &settled[..4]
+            );
+        }
     }
 
     /// One strip carrying one hosted plugin device, parameterised on the two
@@ -13905,8 +14087,8 @@ mod tests {
     /// The same law the instruments, crust and grinder are held to above, and
     /// for the same reason: the command ring is finite, and a multi-effect's
     /// record is its globals plus six bands' worth of band-prefixed names. It
-    /// carries one more reason of its own — two of the engine's names allocate
-    /// when they land, and this thread is the only one allowed to run them
+    /// carries one more reason of its own — one of the engine's names allocates
+    /// when it lands, and this thread is the only one allowed to run it
     /// (`BACTERIA_CONTROL_THREAD_ONLY`, `crates/daw-engine/src/scheduler.rs`).
     ///
     /// The render is what says the patch was applied rather than merely not

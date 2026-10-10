@@ -23,6 +23,7 @@ const getBacteriaStateMock = vi.mocked(getBacteriaState);
 
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';
+const BODY_PARAMETER = 'band0_convolutionIr';
 
 function makeDeps(parameterValues: Record<string, number> = {}) {
     return {
@@ -167,13 +168,12 @@ describe('loadBacteriaPatchWithAudio — engine sync', () => {
         expect(pushedParams(deps)).toContainEqual(['band1_drive', 77]);
     });
 
-    it('never pushes the non-scalar metadata keys as scalar params (name / modAssignments / snapshots / convolutionIr)', () => {
+    it('never pushes the non-scalar metadata keys as scalar params (name / modAssignments / snapshots)', () => {
         const deps = makeDeps();
         const patch: BacteriaPatch = {
             ...DEFAULT_PATCH,
             name: 'My Preset',
             modAssignments: [{ sourceId: 'lfo1', targetParam: 'band0_drive', amount: 0.5, bipolar: true }],
-            bands: [{ ...DEFAULT_BAND, convolutionIr: 'hall-a' }, ...DEFAULT_PATCH.bands.slice(1)],
         };
 
         loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, patch);
@@ -182,7 +182,68 @@ describe('loadBacteriaPatchWithAudio — engine sync', () => {
         expect(pushedKeys).not.toContain('name');
         expect(pushedKeys).not.toContain('modAssignments');
         expect(pushedKeys).not.toContain('snapshots');
-        expect(pushedKeys).not.toContain('band0_convolutionIr');
+    });
+
+    // A patch that names a body has to sound with it: the load pushes and
+    // persists the band's body like any other band parameter, so the engine
+    // plays it now and a reload replays it from the document.
+    it('pushes and persists the body a patch names for each active band', () => {
+        const deps = makeDeps();
+        const patch: BacteriaPatch = {
+            ...DEFAULT_PATCH,
+            bandCount: 2,
+            bands: [
+                { ...DEFAULT_BAND, convolutionIr: 'metal' },
+                { ...DEFAULT_BAND, convolutionIr: 'ceramic' },
+                ...DEFAULT_PATCH.bands.slice(2),
+            ],
+        };
+
+        loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, patch);
+
+        expect(pushedParams(deps)).toContainEqual(['band0_convolutionIr', 2]);
+        expect(pushedParams(deps)).toContainEqual(['band1_convolutionIr', 0]);
+        expect(deps.persistDeviceParam).toHaveBeenCalledWith(DEVICE_ID, 'band0_convolutionIr', 2);
+        expect(deps.persistDeviceParam).toHaveBeenCalledWith(DEVICE_ID, 'band1_convolutionIr', 0);
+    });
+
+    // Loading a patch with no body over a band that had one has to switch the
+    // body off, not leave the previous one sounding under the new patch.
+    it('pushes no body when the loaded patch has none and the band had one', () => {
+        getBacteriaStateMock.mockReturnValue({
+            ...getBacteriaState(DEVICE_ID),
+            patch: {
+                ...DEFAULT_PATCH,
+                bands: [{ ...DEFAULT_BAND, convolutionIr: 'wood' }, ...DEFAULT_PATCH.bands.slice(1)],
+            },
+        });
+        const deps = makeDeps({ band0_convolutionIr: 1 });
+
+        loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, DEFAULT_PATCH);
+
+        const bodyPushes = pushedParams(deps).filter(([param]) => param === BODY_PARAMETER);
+
+        expect(bodyPushes).toEqual([[BODY_PARAMETER, -1]]);
+    });
+
+    // Bands that keep no body across a load have nothing to switch off: the
+    // load neither sends a body to the engine nor writes one into the
+    // document, which still holds no body value afterwards.
+    it('pushes and persists no body when neither the band nor the loaded patch has one', () => {
+        const previous: BacteriaPatch = { ...DEFAULT_PATCH, bandCount: 3 };
+        getBacteriaStateMock.mockReturnValue({ ...getBacteriaState(DEVICE_ID), patch: previous });
+        const deps = makeDeps({ band0_convolutionEnabled: 1 });
+        const patch: BacteriaPatch = {
+            ...previous,
+            bands: [{ ...DEFAULT_BAND, drive: 10 }, ...previous.bands.slice(1)],
+        };
+
+        loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, patch);
+
+        const isBody = (param: unknown) => typeof param === 'string' && /^band\d+_convolutionIr$/.test(param);
+        expect(pushedParams(deps)).toContainEqual(['band0_drive', 10]);
+        expect(pushedParams(deps).filter(([param]) => isBody(param))).toEqual([]);
+        expect(deps.persistDeviceParam.mock.calls.filter((call) => isBody(call[1]))).toEqual([]);
     });
 
     it('pushes the assignment table through the patch door as a wholesale replacement', () => {

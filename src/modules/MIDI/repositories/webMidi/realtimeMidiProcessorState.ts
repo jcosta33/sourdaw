@@ -12,6 +12,14 @@ export type RealtimeMidiInput = {
     noteInstanceId?: string;
     blockSize?: number;
     /**
+     * Deliver this input only while the rack is the one the processor's worker
+     * is running, never installing it. The worker holds a single rack; switching
+     * it to another settles and rebuilds the rack it left, so a stale rack's
+     * input has nothing to reach and must not cost the live rack its state.
+     * Skipped, the answer is the input passed through.
+     */
+    onlyWhileRackCurrent?: boolean;
+    /**
      * Drained batches from the idle pump the processor starts when this input
      * is a stopped transport's only rack driver (#4870). The receiver voices
      * them on their instrument routes; returning `false` cancels the drain.

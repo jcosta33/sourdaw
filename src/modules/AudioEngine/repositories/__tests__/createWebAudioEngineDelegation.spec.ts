@@ -90,6 +90,7 @@ vi.mock('../../engine/TrackNode', () => ({
                 updateMidiFxParam: vi.fn<(...args: unknown[]) => void>(),
                 updateMidiFxBypass: vi.fn<(...args: unknown[]) => void>(),
                 dispose: vi.fn<(...args: unknown[]) => void>(),
+                disposeLeavingProject: vi.fn<(...args: unknown[]) => void>(),
             };
             trackNodeInstances.push({ trackId: id, mocks: this.mocks });
         }
@@ -160,6 +161,9 @@ vi.mock('../../engine/TrackNode', () => ({
         }
         dispose() {
             this.mocks.dispose!();
+        }
+        disposeLeavingProject() {
+            this.mocks.disposeLeavingProject!();
         }
     },
 }));

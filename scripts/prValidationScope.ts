@@ -3,6 +3,7 @@ import { appendFileSync, lstatSync, readdirSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
@@ -12,6 +13,7 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
+    'checkStancesRecord',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -20,20 +22,35 @@ const REVIEW_TOOLING = new Set([
     'publishLane',
     'publishReview',
     'reconcileTrackerIssue',
+    'reconstructReviewRounds',
     'recoverDeliveryLock',
     'recoverPublishReviewLock',
     'repairReviewFinding',
+    'resolveThread',
     'reviewApprovalFormat',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',
+    'reviewDossierChain',
+    'reviewDossierPublication',
+    'reviewDossierReassessed',
+    'reviewDossierSemanticAssessment',
+    'reviewDossierViews',
+    'reviewPublicationBinding',
+    'reviewPublicationLegacyIncidents',
+    'reviewPublicationReceiptAdoption',
+    'reviewPublicationRecoveryReceipt',
+    'reviewPublicationRemoteInspection',
     'reviewerModelDiversity',
     'reviewRoundEscalation',
     'reviewRiskPolicy',
+    'reviewRepair',
     'reviewShadowStatus',
     'savedProjectStatePaths',
     'semanticReview',
     'semanticReviewContext',
+    'semanticReviewEvaluation',
+    'semanticReviewMeasurement',
     'reviewDiffSummary',
     'reviewCommentDiffPreflight',
     'reviewBundleLocator',
@@ -44,27 +61,52 @@ const REVIEW_TOOLING = new Set([
     'pullRequestMutationLock',
     'pruneLane',
     'removeLane',
+    'retargetCapabilityPlan',
+    'retargetCapabilitySnapshot',
+    'rulesetHardening',
     'stackedLanes',
     'stampLaneIdentity',
     'supersedePullRequest',
     'supersedePullRequestGh',
     'syncParentLane',
     'trustedGithubWriteBootstrap',
+    'typesafeRequest',
     'trackerIssueReconciliation',
+]);
+
+const REVIEW_TOOLING_SPEC_ONLY = new Set([
+    'deliveryRiskPlanLoss',
+    'orchestratorReviewState',
+    'recoverDeliveryLockGeneral',
+    'recoverPublishReviewLockReceiptReplay',
+    'threeRoleTransitions',
+]);
+
+const RELEASE_TOOLING_METADATA = new Set([
+    'release/open-source-inventory.json',
+    'release/dependency-license-proofs.json',
 ]);
 
 const SEMANTIC_REVIEW_TOOLING = new Set([
     '__tests__/admissionScheduling.spec.ts',
+    '__tests__/candidateFindings.spec.ts',
+    '__tests__/changeFacts.spec.ts',
+    '__tests__/digestProbes.ts',
     '__tests__/egressVendorShapeExtraction.spec.ts',
     '__tests__/multiPassTransport.spec.ts',
     '__tests__/semanticReview.spec.ts',
     'admissionBytes.ts',
     'candidateFindings.ts',
+    'changeFacts.ts',
     'contractCarrying.ts',
     'contracts.ts',
     'egressVendorShapeExtraction.ts',
     'egressVendorShapes.ts',
     'egressVendorToml.ts',
+    'evaluation/__tests__/semanticEvaluation.spec.ts',
+    'evaluation/corpus.ts',
+    'evaluation/runEvaluation.ts',
+    'evaluation/semanticEvaluationCorpus.json',
     'evidence.ts',
     'evidenceOrdering.ts',
     'fit.ts',
@@ -91,6 +133,8 @@ const SEMANTIC_REVIEW_TOOLING = new Set([
     'withheldReasons.ts',
 ]);
 
+const SEMANTIC_MEASUREMENT_TOOLING = new Set(['artifacts.ts', 'contracts.ts', 'gaps.ts', 'record.ts']);
+
 export type BrowserMatrix = { include: { id: number; specs: string[] }[] };
 export type ValidationPlan = {
     version: 1;
@@ -115,12 +159,27 @@ function needsCodeql(path: string): boolean {
 }
 
 function isReviewTooling(path: string): boolean {
+    if (RELEASE_TOOLING_METADATA.has(path)) {
+        return true;
+    }
     if (path.startsWith('scripts/semanticReview/')) {
         return SEMANTIC_REVIEW_TOOLING.has(path.slice('scripts/semanticReview/'.length));
     }
-    const match = /^scripts\/(?:__tests__\/)?([A-Za-z]+)(?:\.spec)?\.ts$/.exec(path);
-    const scriptName = match?.[1];
-    return scriptName !== undefined && REVIEW_TOOLING.has(scriptName);
+    if (path.startsWith('scripts/semanticReviewMeasurement/')) {
+        return SEMANTIC_MEASUREMENT_TOOLING.has(path.slice('scripts/semanticReviewMeasurement/'.length));
+    }
+    const source = /^scripts\/([A-Za-z]+)\.ts$/.exec(path)?.[1];
+    if (source !== undefined) {
+        return REVIEW_TOOLING.has(source);
+    }
+    const spec = /^scripts\/__tests__\/([A-Za-z0-9]+)\.spec\.ts$/.exec(path)?.[1];
+    if (spec === undefined) {
+        return false;
+    }
+    if (REVIEW_TOOLING_SPEC_ONLY.has(spec)) {
+        return true;
+    }
+    return REVIEW_TOOLING.has(spec.replace(/\d+$/, ''));
 }
 
 function isSpec(path: string): boolean {
@@ -162,7 +221,21 @@ export function parseChangedPaths(diff: string): string[] {
     return [...paths].sort();
 }
 
-export function selectValidationPlan(paths: readonly string[], availableSpecs: readonly string[]): ValidationPlan {
+function browserMatrix(specs: readonly string[], durations: SpecDurations): BrowserMatrix {
+    if (specs.length === 0) {
+        return { include: [] };
+    }
+    const count = Math.min(12, Math.ceil(specs.length / 12));
+    return {
+        include: partitionByDuration(specs, durations, count).map((group, index) => ({ id: index + 1, specs: group })),
+    };
+}
+
+export function selectValidationPlan(
+    paths: readonly string[],
+    availableSpecs: readonly string[],
+    durations: SpecDurations = new Map()
+): ValidationPlan {
     if (paths.length === 0) {
         throw new Error('Changed path list is empty');
     }
@@ -213,17 +286,7 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
     if (broad && specs.length === 0) {
         throw new Error('Full browser coverage has no specs');
     }
-    const count = Math.min(12, Math.ceil(specs.length / 12));
-    const matrix: BrowserMatrix = {
-        include: Array.from({ length: count }, (_, index) => ({ id: index + 1, specs: [] })),
-    };
-    for (const [index, spec] of specs.entries()) {
-        const group = matrix.include[index % count];
-        if (group === undefined) {
-            throw new Error('Invalid E2E partition');
-        }
-        group.specs.push(spec);
-    }
+    const matrix = browserMatrix(specs, durations);
     let profile: ValidationPlan['profile'] = 'docs';
     if (browser) {
         profile = 'broad';
@@ -289,7 +352,7 @@ function main(): void {
         encoding: 'utf8',
         maxBuffer: 16 * 1024 * 1024,
     });
-    const plan = selectValidationPlan(parseChangedPaths(diff), listSpecs(root));
+    const plan = selectValidationPlan(parseChangedPaths(diff), listSpecs(root), readSpecDurations());
     writeFileSync('pr-validation-scope.json', `${JSON.stringify(plan, null, 2)}\n`);
     appendFileSync(
         output,

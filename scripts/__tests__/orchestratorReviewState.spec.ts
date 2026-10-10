@@ -50,6 +50,7 @@ describe('reviewer review ordering', () => {
         expect(inspect([reviewer(), acceptance()])).toEqual({
             latestReviewerStateOnHead: 'APPROVED',
             latestReviewerReviewDatabaseId: 1,
+            latestReviewerCommitOid: head,
             unresolvedThreads: 0,
         });
     });
@@ -70,13 +71,14 @@ describe('reviewer review ordering', () => {
             inspect([reviewer(), acceptance(), review('dismissed', REVIEWER_BOT_NODE_ID, 'DISMISSED', head, 'Bot')])
                 .latestReviewerStateOnHead
         ).toBe('DISMISSED');
-        expect(
-            inspect([
-                reviewer(),
-                acceptance(),
-                review('stale', REVIEWER_BOT_NODE_ID, 'APPROVED', 'b'.repeat(40), 'Bot'),
-            ]).latestReviewerStateOnHead
-        ).toBeNull();
+        const stale = inspect([
+            reviewer(),
+            acceptance(),
+            review('stale', REVIEWER_BOT_NODE_ID, 'APPROVED', 'b'.repeat(40), 'Bot'),
+        ]);
+        expect(stale.latestReviewerStateOnHead).toBeNull();
+        expect(stale.latestReviewerCommitOid).toBe('b'.repeat(40));
+        expect(inspect([]).latestReviewerCommitOid).toBeNull();
     });
 
     it('refuses review mutation between complete scans', () => {

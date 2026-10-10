@@ -1,7 +1,14 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-import { launch_new_project, PREFERENCES_STORAGE_KEY, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import {
+    wait_for_launch_first_paint,
+    launch_new_project,
+    PREFERENCES_STORAGE_KEY,
+    setupWorkspace,
+    wait_for_workspace_ready,
+} from './e2eUtils';
+import { attach_first_paint_console } from './firstPaintDiagnostics';
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 const OFFLINE_IDLE_WINDOW_MS = 500;
@@ -284,9 +291,11 @@ async function openSavedProjectInFreshPage(page: Page, name: string) {
 
     const reopenedPage = await browserContext.newPage();
     const assertOffline = await blockExternalRequests(reopenedPage);
+    // Attached before the navigation so a first-paint timeout here — the wait
+    // that red in #4781's second case — diagnoses itself from the console.
+    attach_first_paint_console(reopenedPage);
     await reopenedPage.goto(appRootUrl);
-    const launchScreen = reopenedPage.getByLabel('Sourdaw — start a project');
-    await expect(launchScreen).toBeVisible({ timeout: 30_000 });
+    await wait_for_launch_first_paint(reopenedPage);
     const recentProject = reopenedPage.getByRole('button', { name: `Open recent project ${name}` });
     await expect(recentProject).toBeVisible();
     await recentProject.click();

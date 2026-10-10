@@ -19,7 +19,33 @@
  *   { type: 'addZone', loadToken, ... }
  *   { type: 'addLegatoTransition', loadToken, sampleId, interval, ... }
  *   { type: 'buildZoneMap', loadToken, numArticulations, numMics }
+ *   { type: 'releaseRetiredBank', loadToken }
+ *   { type: 'releaseDisposedBanks' }
  *   { type: 'dispose' }
+ *
+ * Committing a bank (`buildZoneMap`) builds the zone map in that message, then
+ * commits with a call that allocates and frees nothing: the bank it replaces
+ * waits in the engine's retired slot. Aborting a staged bank does the same with
+ * the staged bank. The host frees it with `releaseRetiredBank` messages of its
+ * own, one bounded step each, answered by
+ * `retiredBankReleased { loadToken, done }`. Nothing frees a bank inside the
+ * commit, the abort or `process()`.
+ *
+ * A disposed processor frees nothing in `dispose`. The host then sends
+ * `releaseDisposedBanks`, one bounded step per message, answered by
+ * `disposedBanksReleased { done }`: a step releases the retired bank, else
+ * retires the sounding bank, else (both slots empty) frees the engine, which
+ * then holds nothing bank-sized. A disposed processor, faulted or not, honours
+ * only that message and a repeated `dispose`, which it answers by posting
+ * `disposed` again, and posts nothing for every other message.
+ *
+ * A faulted processor that has not been disposed drops every message except
+ * `dispose`, which it answers with `disposed` and starts the drain, and
+ * `beginSampleBank` and `releaseRetiredBank`, which it answers by posting its
+ * `error` again, so a host that began listening after the fault still learns
+ * that no answer will come.
+ *
+ * ADR 0052's Message contract tables every answer by state.
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
@@ -147,6 +173,8 @@ type LevainMsg =
     | LevainAddZoneMsg
     | LevainAddLegatoTransitionMsg
     | { type: 'buildZoneMap'; loadToken: number; numArticulations: number; numMics: number }
+    | { type: 'releaseRetiredBank'; loadToken: number }
+    | { type: 'releaseDisposedBanks' }
     | { type: 'dispose' };
 
 type LevainQueued =
@@ -168,12 +196,32 @@ type InFlightBank = { owner: LevainProcessor; followers: Set<LevainProcessor> };
 
 const inFlightBanks = new Map<string, InFlightBank>();
 
+/**
+ * PCM entries one `releaseRetiredBank` message frees. Freeing 2,000 samples
+ * took about 0.45 ms and 6,000 about 2.3 ms in one call (measured on the
+ * shipped wasm under Node), against a 2.67 ms render quantum, so a bank is
+ * freed a few hundred entries per message instead.
+ */
+const RETIRED_BANK_RELEASE_ENTRIES = 256;
+
+/**
+ * Disposed processors whose engine still holds a bank, kept reachable so
+ * neither the processor nor its engine is collected (and its finalizer run, in
+ * one unbounded free) before the host's paced release reaches done.
+ */
+const drainingProcessors = new Set<LevainProcessor>();
+
 class LevainProcessor extends AudioWorkletProcessor {
     _instance: LevainInstance | null = null;
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
+    // The message of the fault that set `_faulted`, posted again to a host that asks after it.
+    _faultMessage: string | null = null;
     _disposed = false;
+    // Set when a disposal-release step threw: the engine can no longer be
+    // trusted, so it is never freed from here.
+    _disposalPoisoned = false;
     _bypassed = false;
     _pendingMessages: LevainMsg[] = [];
     _queue: LevainQueued[] = [];
@@ -182,6 +230,9 @@ class LevainProcessor extends AudioWorkletProcessor {
     _bankRole: BankRole | null = null;
     _bankLoadToken: number | null = null;
     _pendingBankBuild: BankBuild | null = null;
+    // Load token of the commit whose displaced bank still waits in the engine's
+    // retired slot; a `releaseRetiredBank` for any other token frees nothing.
+    _retiredBankToken: number | null = null;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -197,7 +248,17 @@ class LevainProcessor extends AudioWorkletProcessor {
                 this._dispose();
                 return;
             }
+            if (msg.type === 'releaseDisposedBanks') {
+                if (this._disposed) {
+                    this._releaseDisposedBanks();
+                }
+                return;
+            }
             if (this._disposed) {
+                return;
+            }
+            if (this._faulted && (msg.type === 'beginSampleBank' || msg.type === 'releaseRetiredBank')) {
+                this._answerAfterFault();
                 return;
             }
             try {
@@ -260,7 +321,10 @@ class LevainProcessor extends AudioWorkletProcessor {
         }
 
         this._leaveBankLoad(new Error('Levain sample bank load was superseded'));
+        // Begins by freeing any retired bank, the one the leave above just
+        // retired included, so none is left to release.
         inst.begin_sample_bank(instrumentId);
+        this._retiredBankToken = null;
         this._bankKey = bankKey;
         this._bankLoadToken = loadToken;
         this._pendingBankBuild = null;
@@ -288,6 +352,7 @@ class LevainProcessor extends AudioWorkletProcessor {
     }
 
     _completeSampleBankLoad(loadToken: number): void {
+        this._retiredBankToken = loadToken;
         this._bankKey = null;
         this._bankRole = null;
         this._bankLoadToken = null;
@@ -382,11 +447,21 @@ class LevainProcessor extends AudioWorkletProcessor {
 
     _faultWithError(error: unknown): void {
         this._faulted = true;
+        this._faultMessage = error instanceof Error ? error.message : String(error);
         this._leaveBankLoad(error);
-        this.port.postMessage({
-            type: 'error',
-            message: error instanceof Error ? error.message : String(error),
-        });
+        this.port.postMessage({ type: 'error', message: this._faultMessage });
+    }
+
+    /**
+     * A faulted processor that is not disposed answers `beginSampleBank`,
+     * `releaseRetiredBank` and `dispose` and drops every other message, so a
+     * host that registered its port listener after the fault posted `error`
+     * never saw it. A load that begins, or a release loop that asks, gets the
+     * fault posted again: that is the only way either sees that no answer will
+     * come. Once disposed it posts no `error`; see ADR 0052's Message contract.
+     */
+    _answerAfterFault(): void {
+        this.port.postMessage({ type: 'error', message: this._faultMessage });
     }
 
     _dispose(): void {
@@ -395,6 +470,9 @@ class LevainProcessor extends AudioWorkletProcessor {
             return;
         }
         this._disposed = true;
+        if (this._instance) {
+            drainingProcessors.add(this);
+        }
         this._pendingMessages = [];
         this._queue = [];
         this._queueHead = 0;
@@ -410,8 +488,44 @@ class LevainProcessor extends AudioWorkletProcessor {
         }
     }
 
+    /**
+     * One bounded step of emptying a disposed engine, in the order that leaves
+     * nothing bank-sized for `free()`: release the retired bank, retire the
+     * sounding one, and only then free the engine. The answer is `done` once
+     * the engine is gone, or poisoned by a throwing step and left unfreed.
+     */
+    _releaseDisposedBanks(): void {
+        const inst = this._instance;
+        if (!inst || this._disposalPoisoned) {
+            this._finishDisposalRelease();
+            return;
+        }
+        try {
+            if (inst.has_retired_bank()) {
+                inst.release_retired_bank(RETIRED_BANK_RELEASE_ENTRIES);
+            } else if (!inst.retire_sample_bank()) {
+                this._instance = null;
+                inst.free();
+                this._finishDisposalRelease();
+                return;
+            }
+        } catch (error) {
+            console.error('LevainProcessor disposal release failed:', error);
+            this._disposalPoisoned = true;
+            this._finishDisposalRelease();
+            return;
+        }
+        this.port.postMessage({ type: 'disposedBanksReleased', done: false });
+    }
+
+    _finishDisposalRelease(): void {
+        drainingProcessors.delete(this);
+        this.port.postMessage({ type: 'disposedBanksReleased', done: true });
+    }
+
     _leaveBankLoad(error: unknown): void {
         const bankKey = this._bankKey;
+        const loadToken = this._bankLoadToken;
         const inFlight = bankKey ? inFlightBanks.get(bankKey) : undefined;
         this._bankKey = null;
         this._bankRole = null;
@@ -430,7 +544,11 @@ class LevainProcessor extends AudioWorkletProcessor {
             inFlight?.followers.delete(this);
         }
         try {
-            this._instance?.abort_sample_bank();
+            // The abort retires the staged bank instead of freeing it, so the
+            // host's release loop for this load's token frees it in steps.
+            if (this._instance?.abort_sample_bank()) {
+                this._retiredBankToken = loadToken;
+            }
         } catch (abortError) {
             console.error('LevainProcessor sample-bank abort failed:', abortError);
         }
@@ -656,10 +774,30 @@ class LevainProcessor extends AudioWorkletProcessor {
                 }
                 this._buildZoneMap(msg);
                 break;
+            case 'releaseRetiredBank':
+                this._releaseRetiredBank(inst, msg.loadToken);
+                break;
             case 'dispose':
                 this._dispose();
                 break;
         }
+    }
+
+    /**
+     * One bounded step of freeing the bank a commit displaced. Answers every
+     * request, so the host's loop always ends: a request for a load whose
+     * retiree is already gone, or was replaced by a newer commit's, is `done`
+     * without touching the engine.
+     */
+    _releaseRetiredBank(inst: LevainInstance, loadToken: number): void {
+        let done = true;
+        if (loadToken === this._retiredBankToken) {
+            done = inst.release_retired_bank(RETIRED_BANK_RELEASE_ENTRIES);
+            if (done) {
+                this._retiredBankToken = null;
+            }
+        }
+        this.port.postMessage({ type: 'retiredBankReleased', loadToken, done });
     }
 
     _drainQueue(blockEndFrame: number): void {

@@ -40,11 +40,11 @@ import { fail } from './prContract.ts';
 import {
     REVIEW_THREAD_COMMENT_FIELDS,
     confirmClientMutationId,
-    parseReviewRepairReply,
+    reviewerConfirmationState,
     readCommentDatabaseId,
     readFindingLine,
     readFindingReviewedHead,
-    renderReviewRepairReply,
+    renderReviewRepairConfirmationMarker,
     selectEligibleRepairs,
     type ReviewRepairRecord,
     type ReviewRepairSelection,
@@ -85,7 +85,7 @@ export type ConfirmReviewRepairsCoordinatorDependencies = {
 
 export type ConfirmReviewRepairsArgs = { number?: number; head?: string; help: boolean };
 
-type ConfirmRepair = { thread: string; record: ReviewRepairRecord };
+type ConfirmRepair = { thread: string; record: ReviewRepairRecord; replyId: number };
 
 /**
  * `addPullRequestReviewThreadReply` is the mutation that names a thread; `resolveReviewThread` is the
@@ -101,12 +101,11 @@ export function confirmResolveClientMutationId(pr: number, thread: string, head:
 }
 
 /**
- * The confirmation body is a short human sentence plus the contract's own canonical record line, so a
- * later reader reconstructs the accepted record from the exact bytes `parseReviewRepairReply` reads
- * rather than from a second, drifting canonical form.
+ * The confirmation body carries only a canonical digest binding to the author's whole repair record;
+ * evidence and summary stay in the single author-published V1 record.
  */
-export function renderConfirmationReply(record: ReviewRepairRecord): string {
-    return `${CONFIRMATION_SENTENCE}\n\n${renderReviewRepairReply(record)}`;
+export function renderConfirmationReply(record: ReviewRepairRecord, confirmationHead: string = record.head): string {
+    return `${CONFIRMATION_SENTENCE}\n\n${renderReviewRepairConfirmationMarker(record, confirmationHead)}`;
 }
 
 export function parseConfirmReviewRepairsArgs(args: string[]): ConfirmReviewRepairsArgs {
@@ -193,13 +192,25 @@ export function confirmReviewRepairs(
     const confirmed: ConfirmRepair[] = selection.eligible.map((entry) => ({
         thread: entry.thread,
         record: entry.record,
+        replyId: entry.replyId,
     }));
     const threadsById = new Map(threads.map((thread) => [thread.thread, thread] as const));
     for (const entry of confirmed) {
-        if (!confirmationAlreadyPosted(threadsById.get(entry.thread), entry.record)) {
+        if (
+            confirmationAlreadyPosted(
+                threadsById.get(entry.thread),
+                entry.record,
+                entry.replyId,
+                number,
+                head,
+                port.isAncestor
+            )
+        ) {
+            port.log(`repair-confirmation-replayed:${number}:${entry.thread}`);
+        } else {
             port.postConfirmation(
                 entry.thread,
-                renderConfirmationReply(entry.record),
+                renderConfirmationReply(entry.record, head),
                 confirmReplyClientMutationId(number, entry.thread, head)
             );
         }
@@ -212,25 +223,28 @@ export function confirmReviewRepairs(
 /**
  * GitHub echoes the deterministic `clientMutationId` rather than deduplicating the reply, so a rerun
  * after a failed resolve would post the confirmation a second time. The posted reply itself is the
- * state that proves the first post landed: an unresolved thread that already carries this reviewer's
- * confirmation for the same record performs only the missing resolve. The record is compared parsed,
- * exactly as the selection's refusal compares it, so a bare marker line counts as already posted
- * rather than earning a second reply.
+ * state that proves the first post landed: an unresolved thread that already carries one current
+ * confirmation for the same record performs only the missing resolve. The same shared role-aware
+ * parser and ancestry checks that selection uses recognize compact markers and historical full-record
+ * V1 confirmations, including after a descendant push.
  */
-function confirmationAlreadyPosted(thread: ReviewRepairThreadState | undefined, record: ReviewRepairRecord): boolean {
+function confirmationAlreadyPosted(
+    thread: ReviewRepairThreadState | undefined,
+    record: ReviewRepairRecord,
+    authorReplyId: number,
+    pr: number,
+    head: string,
+    isAncestor: (commit: string, head: string) => boolean
+): boolean {
     if (thread === undefined) {
         return false;
     }
-    const accepted = renderReviewRepairReply(record);
-    return thread.replies.some(
-        (reply) => isReviewerBotNodeId(reply.authorNodeId) && parsesToReplyRecord(reply.body, accepted)
-    );
-}
-
-/** A body that carries a marker the contract can read back to exactly the accepted record. */
-function parsesToReplyRecord(body: string, accepted: string): boolean {
-    const posted = parseReviewRepairReply(body);
-    return posted !== undefined && renderReviewRepairReply(posted) === accepted;
+    return reviewerConfirmationState(thread, record, REVIEWER_BOT_NODE_ID, {
+        pr,
+        head,
+        isAncestor,
+        authorReplyId,
+    }).alreadyPosted;
 }
 
 type Gh = (args: string[]) => string;

@@ -11,6 +11,7 @@ import {
 } from '../../../models/CreativeInterpretation';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
+import { LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS } from '../../../models/LocalPlanningBudget';
 import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
@@ -20,8 +21,11 @@ import {
     type HostedToolChoiceDirective,
 } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
+import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebLlmContextWindowSize';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
+import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
+import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
@@ -1485,7 +1489,8 @@ describe('generateToolPlanningOutcome', () => {
             'mute the first track',
             expect.any(Array),
             8192,
-            undefined
+            undefined,
+            expect.any(Number)
         );
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
             state: 'ready',
@@ -1503,13 +1508,40 @@ describe('generateToolPlanningOutcome', () => {
 
         await generateToolPlanningOutcome('system', 'mute the first track', toolSchemas);
 
+        const advertised = (mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[];
+        const promptTokens =
+            estimateConservativePromptTokens(serializeWebLlmToolPlanningPrompt('system', advertised)) +
+            estimateConservativePromptTokens('mute the first track') +
+            LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS;
         expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledWith(
             expect.any(String),
             'mute the first track',
             expect.any(Array),
-            8192,
-            undefined
+            Math.min(8192, getWebLlmContextWindowSize() - promptTokens),
+            undefined,
+            promptTokens
         );
+    });
+
+    it('sends WebLLM the local message and every hosted backend the hosted one', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+
+        await generateToolPlanningOutcome(
+            'system',
+            'hosted message',
+            toolSchemas,
+            undefined,
+            'mute the first track',
+            undefined,
+            undefined,
+            undefined,
+            AUTO_TOOL_CHOICE,
+            undefined,
+            'local message'
+        );
+
+        expect(mocks.generateWebLlmToolCalls.mock.calls[0]?.[1]).toBe('local message');
     });
 
     it('keeps the five application tools available to WebLLM under budget selection pressure', async () => {
@@ -1562,6 +1594,7 @@ describe('generateToolPlanningOutcome', () => {
             toolSchema('project.query'),
             toolSchema('command.batch.propose'),
             toolSchema('command.batch.decline'),
+            toolSchema('answer.respond'),
             toolSchema('agent.command-index.search'),
             toolSchema('agent.catalog.discover'),
             ...competingTools,
@@ -1627,6 +1660,7 @@ describe('generateToolPlanningOutcome', () => {
                 'agent.command-index.search',
                 'command.batch.propose',
                 'command.batch.decline',
+                'answer.respond',
                 'analysis.measure',
                 'recipe.discover',
                 'recipe.expand',

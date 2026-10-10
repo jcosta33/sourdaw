@@ -809,6 +809,20 @@ pub enum GraphCommand {
         track_id: usize,
         bus_id: usize,
     },
+    /// Add a send from the bus `source_bus_id` into the bus `bus_id`, on the
+    /// contract [`GraphCommand::AddSend`] gives a track's: the same taps, the
+    /// same owned compensation delay, and the same cycle refusal.
+    AddBusSend {
+        source_bus_id: usize,
+        bus_id: usize,
+        tap: SendTap,
+        level: f32,
+        delay: Box<CompensationDelay>,
+    },
+    RemoveBusSend {
+        source_bus_id: usize,
+        bus_id: usize,
+    },
     AddBus(Box<TimelineBus>),
     RemoveBus(usize),
     SetBusOutput(usize, RouteTarget),
@@ -987,6 +1001,8 @@ impl GraphCommand {
             | Self::RemoveBusDevice { .. }
             | Self::AddSend { .. }
             | Self::RemoveSend { .. }
+            | Self::AddBusSend { .. }
+            | Self::RemoveBusSend { .. }
             | Self::AddBus(..)
             | Self::RemoveBus(..)
             | Self::SetBusOutput(..)
@@ -1041,6 +1057,8 @@ impl GraphCommand {
             | Self::RemoveBusDeviceRetired { .. }
             | Self::AddSend { .. }
             | Self::RemoveSend { .. }
+            | Self::AddBusSend { .. }
+            | Self::RemoveBusSend { .. }
             | Self::AddBus(..)
             | Self::RemoveBus(..)
             | Self::SetBusOutput(..) => true,
@@ -1235,10 +1253,10 @@ impl PluginCore {
     /// Written into the instance before it crosses the ring for the same
     /// reason as [`Self::fermenter_with_patch`]: a multi-effect's patch is its
     /// globals plus six bands' worth of the engine's own parameters per strip,
-    /// and the command ring is finite. Two of those names allocate when they
-    /// land ([`BACTERIA_CONTROL_THREAD_ONLY`]), which is a second reason this
+    /// and the command ring is finite. One of those names allocates when it
+    /// lands ([`BACTERIA_CONTROL_THREAD_ONLY`]), which is a second reason this
     /// is where the record is applied: this is the only thread allowed to run
-    /// them, and [`BacteriaBody::load_patch`] is the only door that does.
+    /// it, and [`BacteriaBody::load_patch`] is the only door that does.
     ///
     /// The ordering law here is [`BACTERIA_PATCH_PRECEDENCE`], which is empty
     /// — applied through [`BuiltinEffectType::patch_precedence`] all the same,
@@ -2649,32 +2667,30 @@ const BACTERIA_PATCH_PRECEDENCE: &[&str] = &[];
 /// The Bacteria parameter names whose `set_param` arms allocate, and which
 /// [`BacteriaBody::set_param`] therefore refuses on the audio thread.
 ///
-/// `convolutionIr` rebuilds the cabinet impulse response:
-/// `ConvolutionProcessor::set_param` calls `load_builtin`, which builds the
-/// response into a fresh `vec!` and hands it to `load_ir`, which `to_vec`s
-/// both channels and replaces both input rings
-/// (`crates/daw-dsp/src/bacteria/convolution.rs`). `phaserStages` calls
-/// `resize_with` on both all-pass chains for a count the parameter admits up
-/// to 12 where the constructor built 6, so any count above 6 reallocates
-/// (`crates/daw-dsp/src/bacteria/chorus.rs`). Every other arm in the engine's
-/// vocabulary is a scalar store, a clamp, a coefficient recompute, or an
-/// allocation-free rebuild over storage the constructor already sized.
+/// `phaserStages` calls `resize_with` on both all-pass chains for a count the
+/// parameter admits up to 12 where the constructor built 6, so any count above
+/// 6 reallocates (`crates/daw-dsp/src/bacteria/chorus.rs`). Every other arm in
+/// the engine's vocabulary is a scalar store, a clamp, a coefficient
+/// recompute, or an allocation-free rebuild over storage the constructor
+/// already sized — `convolutionIr` among them: the convolver synthesizes every
+/// built-in body when it is built and a write only chooses which one it reads
+/// (`crates/daw-dsp/src/bacteria/convolution.rs`), so the body a musician picks
+/// lands on the audio thread like any other control.
 ///
-/// Both names reach the engine two ways — bare, because an unmatched name is
+/// The name reaches the engine two ways — bare, because an unmatched name is
 /// broadcast to all six bands, and as `band{digit}_…` for one band — so the
 /// refusal compares [`bare_bacteria_param_name`] rather than the name as
 /// written.
 ///
 /// The refusal is the body's own boundary and not the wire's: no producer
-/// emits these names today, but `set-device-parameters` admits any name of
-/// the right shape, so the door a command actually arrives at is the only
-/// place that can hold the line. The control thread is where they are allowed
-/// to land, and [`BacteriaBody::load_patch`] applies them there like any other
-/// name.
+/// emits this name today, but `set-device-parameters` admits any name of the
+/// right shape, so the door a command actually arrives at is the only place
+/// that can hold the line. The control thread is where it is allowed to land,
+/// and [`BacteriaBody::load_patch`] applies it there like any other name.
 ///
-/// A live single-key write of one takes two different routes, neither of
-/// which is "held on the Web Audio fallback" as a whole. An automation write
-/// is kept off the native door entirely: `addressesParameter`
+/// A live single-key write of it takes two different routes, neither of which
+/// is "held on the Web Audio fallback" as a whole. An automation write is kept
+/// off the native door entirely: `addressesParameter`
 /// (`src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts`)
 /// refuses the name, and `readLiveAutomationWrites.ts` gates on that answer
 /// before it ever builds a native `SetParam`. A panel write is not gated the
@@ -2683,7 +2699,7 @@ const BACTERIA_PATCH_PRECEDENCE: &[&str] = &[];
 /// — so it does reach this door, and [`BacteriaBody::set_param`] is what
 /// drops it there. Either route leaves the parameter holding whatever value
 /// the record's own patch gave it.
-const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["convolutionIr", "phaserStages"];
+const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["phaserStages"];
 
 /// The Tuner parameter names [`ScoringBody`] refuses at both of its doors —
 /// the live [`ScoringBody::set_param`] and the record's
@@ -2705,8 +2721,8 @@ const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["convolutionIr", "phaserStages"]
 /// (`crates/scoring/src/yin.rs`, issue #4209). Arming the tracker is therefore
 /// the same hazard one hop later rather than a safe write.
 ///
-/// Unlike [`BACTERIA_CONTROL_THREAD_ONLY`], whose two names are *allowed* on
-/// the control thread and land through [`BacteriaBody::load_patch`], these two
+/// Unlike [`BACTERIA_CONTROL_THREAD_ONLY`], whose name is *allowed* on the
+/// control thread and lands through [`BacteriaBody::load_patch`], these two
 /// are refused on BOTH doors. The reason is not which thread may run the
 /// allocation but that neither name belongs to this device: the Tuner's
 /// descriptor (`native-scoring`,
@@ -2729,10 +2745,10 @@ const SCORING_NATIVE_REFUSED: &[&str] = &["poly", "instrument"];
 /// [`BACTERIA_CONTROL_THREAD_ONLY`] would refuse the name the engine is
 /// about to route, so it has to agree with the engine's reading exactly
 /// rather than a stricter one of its own: a version that required the
-/// underscore would read `band00convolutionIr` and `band0XphaserStages` as
+/// underscore would read `band00phaserStages` and `band0XphaserStages` as
 /// unmatched bare names and let both through, while `apply_param` reads
-/// them as band 0's `convolutionIr` and `phaserStages` all the same — digit
-/// `0`, skipped byte `0` or `X`. Not checking the sixth byte is therefore
+/// both as band 0's `phaserStages` all the same — digit `0`, skipped byte
+/// `0` or `X`. Not checking the sixth byte is therefore
 /// not a gap this helper introduces; it is the engine's own gap, and the
 /// only way to close this door on it is to stop pretending the byte is
 /// checked.
@@ -2829,10 +2845,9 @@ fn bare_bacteria_param_name(name: &str) -> &str {
 ///
 /// Both hosts run the same `BacteriaEngine` over the same key stream, so the
 /// figure the audio thread reads is the figure the sound has:
-/// `updateDeviceParam` sends every write to both, and the only names one host
-/// admits and the other does not — [`BACTERIA_CONTROL_THREAD_ONLY`] — move no
-/// latency at all, since the impulse response's length is fixed by
-/// `load_builtin` and the phaser is an all-pass network with no group delay
+/// `updateDeviceParam` sends every write to both, and the only name one host
+/// admits and the other does not — [`BACTERIA_CONTROL_THREAD_ONLY`] — moves no
+/// latency at all, since the phaser is an all-pass network with no group delay
 /// term in the report.
 ///
 /// The TypeScript side is what stops this being counted twice. A carried
@@ -2907,7 +2922,7 @@ impl BacteriaBody {
     ///
     /// Real-time safe, and this is the door that makes it so. The name arrives
     /// inline in the command ([`BuiltinParamName`]) and the engine resolves it
-    /// by comparison, but two of its arms allocate when they land, so a name
+    /// by comparison, but one of its arms allocates when it lands, so a name
     /// in [`BACTERIA_CONTROL_THREAD_ONLY`] is dropped here rather than
     /// forwarded — with or without a `band{digit}_` prefix. Dropping it is the
     /// conservative half of the trade: the parameter keeps the value the patch
@@ -2930,11 +2945,11 @@ impl BacteriaBody {
     /// Apply a whole patch, on the control thread, before this body crosses
     /// the command ring.
     ///
-    /// Every entry lands, including the two [`BACTERIA_CONTROL_THREAD_ONLY`]
-    /// names [`Self::set_param`] refuses: this is the thread their allocating
-    /// arms are allowed to run on, so the engine is written directly rather
-    /// than through that door. A persisted record naming a cabinet impulse
-    /// response or a phaser stage count therefore builds the device it names.
+    /// Every entry lands, including the [`BACTERIA_CONTROL_THREAD_ONLY`] name
+    /// [`Self::set_param`] refuses: this is the thread its allocating arm is
+    /// allowed to run on, so the engine is written directly rather than
+    /// through that door. A persisted record naming a phaser stage count
+    /// therefore builds the device it names.
     ///
     /// Ordered through [`precedence_first`] and
     /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
@@ -6902,6 +6917,27 @@ impl AudioScheduler {
                         RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
                     })
                 }
+                GraphCommand::AddBusSend {
+                    source_bus_id,
+                    bus_id,
+                    tap,
+                    level,
+                    delay,
+                } => self
+                    .timeline
+                    .add_bus_send(source_bus_id, bus_id, tap, level, delay)
+                    .map(|refused| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                    }),
+                GraphCommand::RemoveBusSend {
+                    source_bus_id,
+                    bus_id,
+                } => self
+                    .timeline
+                    .remove_bus_send(source_bus_id, bus_id)
+                    .map(|removed| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                    }),
                 GraphCommand::AddBus(bus) => self.timeline.add_bus(bus).map(|rejected| {
                     RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(rejected))
                 }),
@@ -11216,6 +11252,82 @@ mod tests {
             ));
         }
 
+        /// A bus send's whole life on the callback: the accepted add, the
+        /// cycle refusal handing its line back, the compensation pass both
+        /// dirty, a callback rendering both buses, and the removal handing its
+        /// line off. The line is the one heap object a send owns, so it is
+        /// built control-side and must leave over the retirement ring rather
+        /// than be freed here.
+        #[test]
+        fn a_bus_send_applies_renders_and_retires_without_allocating() {
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            let send_line = || Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES));
+            for command in [
+                GraphCommand::AddTrack(TimelineTrack::new(1)),
+                GraphCommand::AddBus(TimelineBus::new(50)),
+                GraphCommand::AddBus(TimelineBus::new(51)),
+                GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)),
+            ] {
+                command_tx.push(command).unwrap();
+            }
+            scheduler.update_graph();
+
+            command_tx
+                .push(GraphCommand::AddBusSend {
+                    source_bus_id: 50,
+                    bus_id: 51,
+                    tap: SendTap::PreFader,
+                    level: 0.5,
+                    delay: send_line(),
+                })
+                .unwrap();
+            // The return path closes a loop: refused, and its line must leave.
+            command_tx
+                .push(GraphCommand::AddBusSend {
+                    source_bus_id: 51,
+                    bus_id: 50,
+                    tap: SendTap::PostFader,
+                    level: 0.5,
+                    delay: send_line(),
+                })
+                .unwrap();
+            let mut left = vec![0.0; 64];
+            let mut right = vec![0.0; 64];
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+                scheduler.process_block(&mut left, &mut right, 64);
+            });
+            assert_eq!(
+                scheduler.timeline().bus_send_tap(50, 51),
+                Some(SendTap::PreFader)
+            );
+            assert!(matches!(
+                &retired_rx
+                    .pop()
+                    .expect("the refused send must hand its line off")
+                    .timeline_object,
+                Some(RetiredTimelineObject::Delay(_))
+            ));
+
+            command_tx
+                .push(GraphCommand::RemoveBusSend {
+                    source_bus_id: 50,
+                    bus_id: 51,
+                })
+                .unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+            assert_eq!(scheduler.timeline().bus_send_tap(50, 51), None);
+            assert!(matches!(
+                &retired_rx
+                    .pop()
+                    .expect("the removed send must hand its line off")
+                    .timeline_object,
+                Some(RetiredTimelineObject::Delay(_))
+            ));
+        }
+
         /// A hosted Grand Boule sounds a note and renders without allocating.
         ///
         /// The body is built outside the guard, where its voice pool and its
@@ -11891,14 +12003,13 @@ mod tests {
         /// The patch is chosen for coverage rather than for a sound: the
         /// oversampled Smudge waveshaper on band 0, its lo-fi codec past the
         /// `codecArtifact` threshold that engages the framed transform, its
-        /// convolver over a loaded response, and the spectral and granular
+        /// convolver over a chosen body, and the spectral and granular
         /// stages on band 1 — the stages that keep buffers of their own, and
         /// so the ones an allocation could hide in. `band0_convolutionIr` is
         /// in the patch rather than left out because a convolver with no
-        /// response loaded passes its input through
-        /// (`ConvolutionProcessor::process_stereo` returns early on
-        /// `!ir_loaded`), so the stage would be named and never run; the patch
-        /// is the control-thread route those names are allowed to travel.
+        /// body chosen passes its input through
+        /// (`ConvolutionProcessor::process_stereo` returns early when no body
+        /// is chosen), so the stage would be named and never run.
         ///
         /// Eight 512-frame callbacks, because this patch reports 2048 samples
         /// of latency (band 1's spectral window is the deepest, and `Parallel`
@@ -12206,8 +12317,9 @@ mod tests {
             );
         }
 
-        /// The two allocating names are dropped when they arrive on the audio
-        /// thread, and the body renders exactly as an untouched twin.
+        /// The allocating name is dropped when it arrives on the audio
+        /// thread, in every spelling, and the body renders exactly as an
+        /// untouched twin.
         ///
         /// Sample-exact against a twin rather than merely "close": the claim
         /// is that the write never reached the engine at all, and any figure
@@ -12216,25 +12328,22 @@ mod tests {
         ///
         /// Both bodies carry a patch that makes a landed write audible — the
         /// phaser engaged at full mix with the six stages its constructor
-        /// builds, and the convolver engaged at full mix over the `wood`
-        /// response — so the refusal is what holds the two renders together.
+        /// builds — so the refusal is what holds the two renders together.
         /// That the same writes *do* change the render when they land
         /// control-side is
         /// `a_bacteria_patch_applies_the_allocating_names_control_side`; without
-        /// it this spec could pass against a pair of names the engine ignores
-        /// outright.
+        /// it this spec could pass against a name the engine ignores outright.
         ///
-        /// Both names are sent bare and `band{digit}_`-prefixed, because the
+        /// The name is sent bare and `band{digit}_`-prefixed, because the
         /// engine reaches its stages both ways — an unmatched bare name is
         /// broadcast to all six bands — so a refusal reading only the written
-        /// form would let the other spelling through. `band00convolutionIr`
+        /// form would let the other spelling through. `band00phaserStages`
         /// and `band0XphaserStages` are in the refused set for the same
         /// reason `bare_bacteria_param_name`'s doc gives: the engine reads
         /// the byte after the digit without checking it, so both read as
-        /// band 0's `convolutionIr` and `phaserStages` to `apply_param` even
-        /// though neither spells the historical underscore, and the refusal
-        /// has to catch what the engine actually routes rather than only the
-        /// `_`-separated spelling.
+        /// band 0's `phaserStages` to `apply_param` even though neither spells
+        /// the historical underscore, and the refusal has to catch what the
+        /// engine actually routes rather than only the `_`-separated spelling.
         ///
         /// Run inside the guard as well: a refusal that returned early *after*
         /// touching the engine would abort here rather than only fail the
@@ -12247,15 +12356,11 @@ mod tests {
                 ("band0_phaserEnabled", 1.0),
                 ("band0_phaserMix", 1.0),
                 ("band0_phaserStages", 6.0),
-                ("band0_convolutionEnabled", 1.0),
-                ("band0_convolutionMix", 1.0),
-                ("band0_convolutionIr", 1.0),
             ]);
             let refused = bacteria_guard_writes(&[
                 ("band0_phaserStages", 12.0),
                 ("phaserStages", 12.0),
-                ("band0_convolutionIr", 2.0),
-                ("band00convolutionIr", 2.0),
+                ("band00phaserStages", 12.0),
                 ("band0XphaserStages", 12.0),
             ]);
             let material = bacteria_guard_material(FRAMES);
@@ -12298,6 +12403,88 @@ mod tests {
                 "an allocating name reached the engine from the audio thread and moved the \
                  right channel"
             );
+        }
+
+        /// A body a musician picks while the session plays natively reaches the
+        /// engine on the audio thread, allocating nothing, and the device then
+        /// sounds exactly like one whose saved record named that body.
+        ///
+        /// The picker's write is a live `SetParam`, so it arrives at
+        /// [`BacteriaBody::set_param`]. Refused there, the native mix would go
+        /// on playing the body the record opened with until the next rebuild
+        /// while the panel showed the new one. The twin is built control-side
+        /// through [`PluginCore::bacteria_with_patch`] with `metal` in its
+        /// record, so equality says the live write landed as the record would
+        /// have; the `wood` render beside it says a write that never landed
+        /// could not pass by accident. Both spellings the engine routes are
+        /// sent, as the panel addresses one band and a bare name reaches all
+        /// six.
+        #[test]
+        fn a_bacteria_body_takes_a_body_choice_on_the_audio_thread_without_allocating() {
+            const FRAMES: usize = 512;
+
+            let opened_with_wood = bacteria_guard_writes(&[
+                ("band0_convolutionEnabled", 1.0),
+                ("band0_convolutionMix", 1.0),
+                ("band0_convolutionIr", 1.0),
+            ]);
+            let saved_with_metal = bacteria_guard_writes(&[
+                ("band0_convolutionEnabled", 1.0),
+                ("band0_convolutionMix", 1.0),
+                ("band0_convolutionIr", 2.0),
+            ]);
+            let material = bacteria_guard_material(FRAMES);
+            let render = |body: &mut BacteriaBody| {
+                let mut left = material.clone();
+                let mut right = material.clone();
+                body.process(&mut left, &mut right);
+                left
+            };
+
+            for spelling in ["band0_convolutionIr", "convolutionIr"] {
+                let PluginCore::Bacteria(mut picked) =
+                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &opened_with_wood, &[])
+                else {
+                    unreachable!("bacteria_with_patch builds the bacteria variant");
+                };
+                let PluginCore::Bacteria(mut saved) =
+                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &saved_with_metal, &[])
+                else {
+                    unreachable!("bacteria_with_patch builds the bacteria variant");
+                };
+                let PluginCore::Bacteria(mut unpicked) =
+                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &opened_with_wood, &[])
+                else {
+                    unreachable!("bacteria_with_patch builds the bacteria variant");
+                };
+                let choice = bacteria_guard_writes(&[(spelling, 2.0)]);
+                let mut picked_left = material.clone();
+                let mut picked_right = material.clone();
+
+                assert_no_alloc(|| {
+                    for (name, value) in &choice {
+                        picked.set_param(name.as_str(), *value);
+                    }
+                    picked.process(&mut picked_left, &mut picked_right);
+                });
+
+                let saved_left = render(saved.as_mut());
+                assert!(
+                    saved_left.iter().any(|sample| *sample != 0.0),
+                    "the saved-metal twin rendered silence, so an equality against it proves nothing"
+                );
+                assert_eq!(
+                    picked_left, saved_left,
+                    "a live {spelling} write of metal did not leave the body sounding as a record \
+                     naming metal does"
+                );
+                assert_ne!(
+                    picked_left,
+                    render(unpicked.as_mut()),
+                    "metal and wood render alike, so the equality above cannot tell a landed \
+                     {spelling} write from a dropped one"
+                );
+            }
         }
 
         /// The rate every Proof guard below builds its body at, and the rate
@@ -18010,6 +18197,301 @@ mod timeline_tests {
             vec![ALIGNED; 16],
             "past the onset every frame carries all three routes"
         );
+    }
+
+    /// The level every bus-send latency row sends at.
+    const BUS_SEND_LEVEL: f32 = 0.5;
+
+    /// The latency on each chain of the bus-send latency graph — a genuinely
+    /// late device at the head of that chain, where a zero leaves it empty.
+    ///
+    /// The graph: track 1 → bus A (50) → master, bus A sending into bus B
+    /// (51), track 2 → bus B → master, and, when `master_track` is non-zero,
+    /// track 3 → master. Unity faders and centred pans throughout, so a
+    /// pre-fader and a post-fader send carry the same level.
+    #[derive(Clone, Copy, Default)]
+    struct BusSendLatencies {
+        /// Track 1's chain, ahead of bus A.
+        feeder: usize,
+        /// Bus A's chain, the sending bus.
+        bus_a: usize,
+        /// Track 2's chain: bus B's other input.
+        direct: usize,
+        /// Bus B's chain, behind the point the send lands on.
+        bus_b: usize,
+        /// Track 3's chain, routed straight to the master.
+        master_track: usize,
+    }
+
+    impl BusSendLatencies {
+        /// Where bus A's send and its output leave the strip: every hop ahead.
+        fn a_arrival(self) -> usize {
+            self.feeder + self.bus_a
+        }
+
+        /// The deepest arrival at bus B's input.
+        fn b_depth(self) -> usize {
+            self.a_arrival().max(self.direct)
+        }
+
+        /// The deepest arrival at the master.
+        fn master_depth(self) -> usize {
+            self.a_arrival()
+                .max(self.b_depth() + self.bus_b)
+                .max(self.master_track)
+        }
+
+        /// What the master carries once every route has arrived: bus A's own
+        /// output, its send through bus B, track 2, and track 3 if there is one.
+        fn aligned(self) -> f32 {
+            let master_track = if self.master_track > 0 { 1.0 } else { 0.0 };
+            1.0 + BUS_SEND_LEVEL + 1.0 + master_track
+        }
+    }
+
+    fn insert_latent_bus_device(
+        harness: &mut Harness,
+        bus_id: usize,
+        effect_id: usize,
+        latency: usize,
+    ) {
+        let declared = Arc::new(AtomicUsize::new(latency));
+        harness.send(GraphCommand::AddPlugin(
+            effect_id,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
+        ));
+        harness.send(insert_bus_device(bus_id, effect(effect_id), 0));
+        harness.send(set_latency(effect_id, latency));
+    }
+
+    /// The bus-send latency graph, with bus A's send at `tap`.
+    fn bus_send_latency_harness(tap: SendTap, latencies: BusSendLatencies) -> Harness {
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 128);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 128);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+        harness.send(GraphCommand::SetTrackOutput(2, RouteTarget::Bus(51)));
+        if latencies.feeder > 0 {
+            insert_latent_device(&mut harness, 1, 902, latencies.feeder);
+        }
+        if latencies.bus_a > 0 {
+            insert_latent_bus_device(&mut harness, 50, 900, latencies.bus_a);
+        }
+        if latencies.direct > 0 {
+            insert_latent_device(&mut harness, 2, 901, latencies.direct);
+        }
+        if latencies.bus_b > 0 {
+            insert_latent_bus_device(&mut harness, 51, 903, latencies.bus_b);
+        }
+        if latencies.master_track > 0 {
+            track_with_constant_clip(&mut harness, 3, 103, 1.0, 128);
+            insert_latent_device(&mut harness, 3, 904, latencies.master_track);
+        }
+        harness.send(GraphCommand::AddBusSend {
+            source_bus_id: 50,
+            bus_id: 51,
+            tap,
+            level: BUS_SEND_LEVEL,
+            delay: uncompensated(),
+        });
+        harness
+    }
+
+    /// Every hold the graph aimed, against the figure the law gives it, then a
+    /// render: everything arrives at the master on its deepest arrival and
+    /// not a frame before.
+    ///
+    /// Bus B's input and the master are separate summing points of different
+    /// depth in every row that calls this, and bus B's output is one line for
+    /// everything summed into it, so the master meeting on one frame is also
+    /// the proof that the send and track 2 met at bus B.
+    fn assert_bus_send_aim(harness: &mut Harness, latencies: BusSendLatencies, tap: SendTap) {
+        let timeline = harness.scheduler.timeline();
+        let bus_a = timeline.bus(50).expect("bus A is in the graph");
+        assert_eq!(
+            bus_a.send_delay_frames(51),
+            Some(latencies.b_depth() - latencies.a_arrival()),
+            "{tap:?}: bus A's send is held to bus B's depth"
+        );
+        assert_eq!(
+            bus_a.output_delay_frames(),
+            latencies.master_depth() - latencies.a_arrival(),
+            "{tap:?}: bus A's own output is held to the master's depth"
+        );
+        assert_eq!(
+            timeline
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            latencies.b_depth() - latencies.direct,
+            "{tap:?}: track 2 is held to bus B's depth"
+        );
+        assert_eq!(
+            timeline
+                .bus(51)
+                .expect("bus B is in the graph")
+                .output_delay_frames(),
+            latencies.master_depth() - latencies.b_depth() - latencies.bus_b,
+            "{tap:?}: bus B's output is held to the master's depth"
+        );
+        assert_ne!(
+            latencies.b_depth(),
+            latencies.master_depth(),
+            "the row must keep bus B's depth apart from the master's"
+        );
+
+        let onset = latencies.master_depth();
+        let frames = onset + 16;
+        let (left, _) = harness.render(frames);
+        let mut expected = vec![latencies.aligned(); frames];
+        expected[..onset].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "{tap:?}: bus A's send reaches the master through bus B on the frame every other \
+             route arrives"
+        );
+    }
+
+    /// A bus's send is compensated on the law a track's is: the bus it lands
+    /// on is a summing point, and the send's own line holds it to that point's
+    /// deepest arrival.
+    ///
+    /// Bus A arrives at its own chain's latency and the track feeding bus B
+    /// directly arrives later still, so the send out of A has to wait the
+    /// difference. Left unaimed it would reach B — and the master — that many
+    /// frames early. Bus A's own output waits as well, and a post-fader send
+    /// taps the strip ahead of that output line, so it must not wait twice.
+    #[test]
+    fn a_bus_send_waits_for_the_deepest_arrival_at_the_bus_it_lands_on() {
+        // Bus A arrives at 7, track 2 lands on bus B at 10, bus B's chain
+        // carries it to 16 at the master: the send waits 3.
+        let latencies = BusSendLatencies {
+            feeder: 2,
+            bus_a: 5,
+            direct: 10,
+            bus_b: 6,
+            master_track: 0,
+        };
+        for tap in [SendTap::PreFader, SendTap::PostFader] {
+            let mut harness = bus_send_latency_harness(tap, latencies);
+            assert_bus_send_aim(&mut harness, latencies, tap);
+        }
+    }
+
+    /// A send is held to the bus it lands on, never to the master: with a
+    /// track routed straight to the master deeper than everything reaching
+    /// bus B, the two depths part, and only the send's own summing point
+    /// gives its hold.
+    #[test]
+    fn a_bus_send_is_held_to_the_bus_it_lands_on_not_to_the_master() {
+        // Bus A arrives at 7, bus B's depth is track 2's 9, the master's is
+        // track 3's 20: the send waits 2, bus A's output 13.
+        let latencies = BusSendLatencies {
+            feeder: 3,
+            bus_a: 4,
+            direct: 9,
+            bus_b: 0,
+            master_track: 20,
+        };
+        for tap in [SendTap::PreFader, SendTap::PostFader] {
+            let mut harness = bus_send_latency_harness(tap, latencies);
+            assert_bus_send_aim(&mut harness, latencies, tap);
+        }
+    }
+
+    /// Taking a bus send away changes what bus B's input is waiting for, and
+    /// so what the master is waiting for: the removal re-aims every hold that
+    /// read the send's arrival.
+    #[test]
+    fn removing_a_bus_send_re_aims_the_holds_its_arrival_set() {
+        // With the send, bus B's depth is bus A's 10 and the master's is bus
+        // B's 25; without it, bus B's depth is track 2's 0 and the master's
+        // is bus B's own chain, 15.
+        let latencies = BusSendLatencies {
+            feeder: 3,
+            bus_a: 7,
+            direct: 0,
+            bus_b: 15,
+            master_track: 0,
+        };
+        for tap in [SendTap::PreFader, SendTap::PostFader] {
+            let mut harness = bus_send_latency_harness(tap, latencies);
+            assert_bus_send_aim(&mut harness, latencies, tap);
+
+            harness.send(GraphCommand::RemoveBusSend {
+                source_bus_id: 50,
+                bus_id: 51,
+            });
+
+            let timeline = harness.scheduler.timeline();
+            let bus_a = timeline.bus(50).expect("bus A is in the graph");
+            assert_eq!(bus_a.send_delay_frames(51), None);
+            assert_eq!(
+                bus_a.output_delay_frames(),
+                15 - latencies.a_arrival(),
+                "{tap:?}: bus A's output is re-aimed at the shallower master"
+            );
+            assert_eq!(
+                timeline
+                    .track(2)
+                    .expect("track 2 is in the graph")
+                    .output_delay_frames(),
+                0,
+                "{tap:?}: track 2 no longer waits for a send that is gone"
+            );
+            assert_eq!(
+                timeline
+                    .bus(51)
+                    .expect("bus B is in the graph")
+                    .output_delay_frames(),
+                0,
+                "{tap:?}: bus B is now the master's deepest arrival"
+            );
+        }
+    }
+
+    /// The other side of the same law: a bus send is a contributor, so when
+    /// the sending bus is the deepest arrival at the bus it lands on, it is
+    /// the send that sets that bus's depth and every other input waits for it.
+    #[test]
+    fn a_bus_send_deeper_than_the_other_inputs_sets_the_depth_of_the_bus_it_lands_on() {
+        // Bus A arrives at 10 over two hops, track 2 at 0: bus B's depth is
+        // the send's, and bus B's chain carries it to 16 at the master.
+        let latencies = BusSendLatencies {
+            feeder: 3,
+            bus_a: 7,
+            direct: 0,
+            bus_b: 6,
+            master_track: 0,
+        };
+        for tap in [SendTap::PreFader, SendTap::PostFader] {
+            let mut harness = bus_send_latency_harness(tap, latencies);
+            assert_bus_send_aim(&mut harness, latencies, tap);
+        }
+    }
+
+    /// A bus send lands at the sending bus's whole arrival, not at its own
+    /// chain's latency alone: what reached bus A had already waited for the
+    /// latent track feeding it, and the hops add up.
+    #[test]
+    fn a_bus_send_lands_at_the_arrival_every_hop_ahead_of_it_adds_up_to() {
+        // Bus A arrives at 4 + 10 = 14, so track 2 (6) waits 8; aimed at bus
+        // A's chain alone (10) it would wait 4. Track 3 keeps the master at 20.
+        let latencies = BusSendLatencies {
+            feeder: 4,
+            bus_a: 10,
+            direct: 6,
+            bus_b: 0,
+            master_track: 20,
+        };
+        for tap in [SendTap::PreFader, SendTap::PostFader] {
+            let mut harness = bus_send_latency_harness(tap, latencies);
+            assert_bus_send_aim(&mut harness, latencies, tap);
+        }
     }
 
     /// A note the control thread stamps for one timeline frame.
@@ -23781,10 +24263,10 @@ mod timeline_tests {
         );
     }
 
-    /// The persisted record's route applies the two names
+    /// The persisted record's route applies the name
     /// [`BacteriaBody::set_param`] refuses on the audio thread.
     ///
-    /// The refusal is only sound if there is a thread where those names *do*
+    /// The refusal is only sound if there is a thread where that name *does*
     /// land: a body that dropped `phaserStages` everywhere would satisfy
     /// `a_bacteria_body_drops_the_allocating_names_on_the_audio_thread`
     /// while quietly rendering a saved project's phaser with the wrong stage

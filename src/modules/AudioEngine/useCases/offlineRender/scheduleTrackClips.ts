@@ -49,8 +49,10 @@ import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants
 import { getSourceOccurrenceOffset } from './getSourceOccurrenceOffset';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
+import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveTrackClipsWithComping, type ResolvedClip } from './resolveTrackClipsWithComping';
 import { scheduleOfflineClipSource } from './scheduleOfflineClipSource';
+import { selectOfflineNoteReceiver } from './selectOfflineNoteReceiver';
 import { type OfflineScheduleTally, type PendingNoteWorkletEvent, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
@@ -221,6 +223,8 @@ export async function scheduleTrackClips({
     function resolveClipTempo(beat: number): number {
         return resolveTempoAtBeat({ changes, beat, defaultTempo });
     }
+    // The map comp resolution writes each fragment's offset against.
+    const tempoTimeline = renderTempoTimeline(projectBeatToSeconds, resolveClipTempo);
     const regionStartSec = projectBeatToSeconds(regionStartBeat);
     const compensationDelay = captured
         ? getCompensationDelay(track.id, undefined, undefined, captured.latency)
@@ -371,7 +375,7 @@ export async function scheduleTrackClips({
     }
 
     const clipsToProcess: { clip: ResolvedClip; padIndex: number; sourceTrack: Track }[] = [];
-    for (const clip of resolveTrackClipsWithComping(track.id, track.clips, captured?.takeLanes)) {
+    for (const clip of resolveTrackClipsWithComping(track.id, track.clips, captured?.takeLanes, tempoTimeline)) {
         clipsToProcess.push({ clip, padIndex: -1, sourceTrack: track });
     }
 
@@ -388,7 +392,11 @@ export async function scheduleTrackClips({
         }
     }
 
-    const instrumentEntry = deviceEntries.find((event) => event.instrumentControls);
+    const {
+        receiver,
+        instrumentEntry,
+        silent: receiverSilent,
+    } = selectOfflineNoteReceiver(track.devices, deviceEntries);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
     const isToaster = instrumentEntry?.deviceType === 'toaster';
     const toasterDeviceId = isToaster ? instrumentEntry.deviceId : null;
@@ -401,7 +409,12 @@ export async function scheduleTrackClips({
             if (!childTrack || (honorMuted && childTrack.muted) || childTrack.disabled) {
                 continue;
             }
-            const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips, captured?.takeLanes);
+            const childClips = resolveTrackClipsWithComping(
+                childTrack.id,
+                childTrack.clips,
+                captured?.takeLanes,
+                tempoTimeline
+            );
             clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: index, sourceTrack: childTrack })));
         }
     }
@@ -465,11 +478,13 @@ export async function scheduleTrackClips({
         return mpe;
     }
 
-    // Live playback's resolution, step for step (`scheduleMidiNotes`): the
+    // Live playback's resolution, step for step (`scheduleMidiNotes`): a kit
+    // voices the track only when a drum device is its receiving instrument, the
     // dedicated drum-voice definition wins for every drum device type, and the
     // factory kit voices only a device no definition covers.
-    const kitDef = resolveDrumKitBy(track.devices, getDrumKitDefByIndex);
-    const drumKit = kitDef ? null : resolveDrumKit(track.devices);
+    const receivesOnDrumKit = receiver?.kind === 'drum';
+    const kitDef = receivesOnDrumKit ? resolveDrumKitBy(track.devices, getDrumKitDefByIndex) : null;
+    const drumKit = receivesOnDrumKit && !kitDef ? resolveDrumKit(track.devices) : null;
     const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
     function projectPitch({
         pitch,
@@ -492,7 +507,7 @@ export async function scheduleTrackClips({
     // Read off the strategy, not `instrumentControls`, like expression: only an
     // instrument whose engine honours a stored controller carries one.
     const dispatchControl = instrumentEntry?.strategy.controlChange;
-    const workletControlEvents: { time: number; controller: number; value: number }[] = [];
+    const workletControlEvents: { time: number; controller: number; value: number; atClipClose: boolean }[] = [];
     let noteCount = 0;
 
     function getScheduledArticulationId(articulation: string | undefined): number | undefined {
@@ -525,6 +540,11 @@ export async function scheduleTrackClips({
     }
 
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
+        // A bypassed receiver plays nothing, as it does live; no note is handed
+        // to an instrument, so none is counted either.
+        if (receiverSilent) {
+            return;
+        }
         for (const note of notes) {
             checkCallerAbort();
             if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {
@@ -774,9 +794,13 @@ export async function scheduleTrackClips({
             // uses and timed exactly as a note at its beat is. A move before
             // the region start is dropped, as a note that ends before it is:
             // the chase a mid-song start needs belongs to the transport.
+            // The clip's moves at the time its closing-line move plays apply, in its own
+            // order, ahead of a clip starting there, as live playback posts them.
             const storedControllers = dispatchControl ? midi.ccByClipId[clip.id] : undefined;
             if (storedControllers && projectClipControllers) {
                 const regionStartSamples = regionStartSec * offlineCtx.sampleRate;
+                const clipControlEvents: { time: number; controller: number; value: number }[] = [];
+                let closingTime: number | undefined;
                 for (const controller of projectClipControllers({
                     controlChanges: storedControllers,
                     clip,
@@ -798,7 +822,13 @@ export async function scheduleTrackClips({
                     if (time >= durationSeconds) {
                         continue;
                     }
-                    workletControlEvents.push({ time, controller: controller.controller, value: controller.value });
+                    clipControlEvents.push({ time, controller: controller.controller, value: controller.value });
+                    if (controller.closesClip) {
+                        closingTime = time;
+                    }
+                }
+                for (const event of clipControlEvents) {
+                    workletControlEvents.push({ ...event, atClipClose: event.time === closingTime });
                 }
             }
 
@@ -907,8 +937,12 @@ export async function scheduleTrackClips({
     }
 
     if (dispatchControl && pendingWorkletEvents) {
-        for (const event of workletControlEvents) {
-            pendingWorkletEvents.push({ type: 'control', dispatch: dispatchControl, ...event });
+        for (const { atClipClose, ...event } of workletControlEvents) {
+            pendingWorkletEvents.push({
+                type: atClipClose ? 'closing-control' : 'control',
+                dispatch: dispatchControl,
+                ...event,
+            });
         }
     }
 

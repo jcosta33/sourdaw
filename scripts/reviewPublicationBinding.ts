@@ -34,7 +34,7 @@ import {
     type SemanticAssessmentCoverage,
 } from './reviewDossierSemanticAssessment.ts';
 import { acceptedFindings, deliveryAuthorization, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
-import { exactPublishedReview } from './reviewPublicationRemoteInspection.ts';
+import { recordedReviewStands } from './reviewPublicationRemoteInspection.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
 import {
     REASSESSMENT_FILE_NAME,
@@ -46,6 +46,7 @@ import {
 } from './reviewRoundEscalation.ts';
 
 import type { PublishReviewPort } from './publishReview.ts';
+import type { ReviewState } from './pullRequestReviewState.ts';
 import type { DeliveryAuthorization, ReviewDocument } from './reviewDocumentParser.ts';
 
 const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
@@ -273,18 +274,22 @@ function hasRiskPlan(bundle: string, port: PublishReviewPort): boolean {
  * without the caller having to establish the risk plan first.
  */
 function bundleRecordsPublication(bundle: string, port: PublishReviewPort): boolean {
+    return bundleRecordedPublicationId(bundle, port) !== undefined;
+}
+
+function bundleRecordedPublicationId(bundle: string, port: PublishReviewPort): number | undefined {
     const dossierRead = readBundleFile(port, join(bundle, REVIEW_DOSSIER_NAME));
     if (!dossierRead.present) {
-        return false;
+        return undefined;
     }
     const value = dossierRead.value;
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        return false;
+        return undefined;
     }
     if ((value as { format?: unknown }).format !== REVIEW_DOSSIER_FORMAT) {
-        return false;
+        return undefined;
     }
-    return publishedReviewId(parseReviewDossier(value)) !== undefined;
+    return publishedReviewId(parseReviewDossier(value));
 }
 
 /**
@@ -374,14 +379,16 @@ export function prepareReviewDossierPublication(input: {
  * binding. The run then reports that id instead of posting a duplicate. A recorded publication that
  * no longer stands, or stands differently, is corrupt evidence and fails closed before any write.
  * Returns undefined while the bundle records no publication: a legacy bundle (no risk plan) or a
- * dossier whose POST has not completed.
+ * dossier whose POST has not completed. Only recovery passes `recoveryLiveHead`, which lets a
+ * reviewer approval that a later push dismissed stand as the recorded publication (#5046).
  */
 export function recordedPublicationReplay(
     number: number,
     head: string,
     document: ReviewDocument,
     actorNodeId: string,
-    port: PublishReviewPort
+    port: PublishReviewPort,
+    recoveryLiveHead?: string
 ): number | undefined {
     const bundle = reviewBundlePath(port.primaryRoot(), number, head);
     if (readBundleFile(port, join(bundle, REVIEW_RISK_PLAN_NAME)).present !== true) {
@@ -409,7 +416,7 @@ export function recordedPublicationReplay(
     }
     const rendered = { ...document, body: renderReviewDocumentBody(document) };
     const remote = port.remoteReview(number, recorded);
-    if (remote === undefined || !exactPublishedReview(remote, rendered, head, actorNodeId)) {
+    if (remote === undefined || !recordedReviewStands(remote, rendered, head, actorNodeId, recoveryLiveHead)) {
         fail(
             `recorded review publication ${recorded} does not stand live and exact for head ${head}; refusing to post a duplicate`
         );
@@ -426,13 +433,24 @@ export function recordedPublicationReplay(
     return recorded;
 }
 
+function assertCompleteReviewerIdentityForBinding(state: ReviewState, reviewId: number): void {
+    if (
+        state.latestReviewerCommitOid === null ||
+        state.latestReviewerCommitOid === undefined ||
+        (state.latestReviewerStateOnHead === 'APPROVED' && state.latestReviewerReviewDatabaseId === null)
+    ) {
+        fail(`review ${reviewId} has incomplete reviewer approval identity; retry when the live state is complete`);
+    }
+}
+
 /**
  * Appends the landed publication's public ids to the head's dossier (#3375, spec #3367 AC-004):
  * one `review-published` and one `finding-published` per posted comment, matched to the review
  * document positionally after a path/line/side correspondence check. An APPROVE for a plan-carrying
  * bundle then appends one `delivery-authorized` event in the same write, binding the just-posted
- * reviewer review to the dossier digest and the unresolved-thread count observed at publication —
- * the reviewer publication is the delivery authorization (#4584). When the escalation gate consumed
+ * reviewer review to the dossier digest when that review remains the latest independent approval
+ * on the head and no review threads remain unresolved — the reviewer publication is the delivery
+ * authorization (#4584). When the escalation gate consumed
  * a reassessment, one `review-reassessed` event records its observed count, threshold, action and
  * reason in that same write. The record was persisted before the POST; this binding is the record's
  * only post-write step, and it re-validates the whole chain before persisting. Legacy bundles carry
@@ -444,7 +462,8 @@ export function recordPublicationBindings(
     document: ReviewDocument,
     reviewId: number,
     port: PublishReviewPort,
-    reviewReassessment?: ReviewReassessment
+    reviewReassessment?: ReviewReassessment,
+    authorizeDelivery = true
 ): void {
     const bundle = reviewBundlePath(port.primaryRoot(), number, head);
     if (readBundleFile(port, join(bundle, REVIEW_RISK_PLAN_NAME)).present !== true) {
@@ -491,21 +510,31 @@ export function recordPublicationBindings(
     });
     let bound = appendReviewDossierEvents(dossier, [{ kind: 'review-published', reviewId }, ...bindings]);
     const postPublication: ReviewDossierEvent[] = [];
-    if (document.event === 'APPROVE') {
+    if (document.event === 'APPROVE' && authorizeDelivery) {
         if (port.reviewState === undefined) {
             fail(
                 `review ${reviewId} approved a plan-carrying bundle but the port has no review-state reader to bind its delivery authorization`
             );
         }
         const state = port.reviewState(number, head);
-        postPublication.push({
-            kind: 'delivery-authorized',
-            reviewId,
-            approvalReviewId: reviewId,
-            unresolvedThreads: state.unresolvedThreads,
-            evidenceManifestDigest: authorizedEvidenceDigest(bound),
-            intent: 'deliver',
-        });
+        assertCompleteReviewerIdentityForBinding(state, reviewId);
+        const currentPullRequest = port.pullRequest(number);
+        if (
+            currentPullRequest.state === 'OPEN' &&
+            currentPullRequest.head === head &&
+            state.latestReviewerStateOnHead === 'APPROVED' &&
+            state.latestReviewerReviewDatabaseId === reviewId &&
+            state.unresolvedThreads === 0
+        ) {
+            postPublication.push({
+                kind: 'delivery-authorized',
+                reviewId,
+                approvalReviewId: reviewId,
+                unresolvedThreads: 0,
+                evidenceManifestDigest: authorizedEvidenceDigest(bound),
+                intent: 'deliver',
+            });
+        }
     }
     if (reviewReassessment !== undefined) {
         postPublication.push({
@@ -523,6 +552,68 @@ export function recordPublicationBindings(
         fail(`review publication cannot write ${dossierPath}: the port has no bundle writer`);
     }
     port.writeBundleText(dossierPath, serializeReviewDossier(bound));
+}
+
+/**
+ * Binds a publication that review:publish:recover found landed exactly after the posting run died
+ * before binding it (#5008), so a later review:publish on the head replays it instead of posting a
+ * duplicate. The events are the ones review:publish writes. The escalation gate re-runs with the
+ * landed review hidden from the public rounds, so it sees the count the posting run saw and yields
+ * the reassessment that run consumed. A dossier already binding this review is left unchanged.
+ * An approval recovered after the pull request's head moved or merged binds no delivery
+ * authorization. An open current approval binds authority only while it remains the latest
+ * independent reviewer approval on that head with zero unresolved threads.
+ * Every other step reads only the bundle and the review's own public record.
+ */
+export function recordRecoveredPublicationBindings(
+    publication: {
+        number: number;
+        head: string;
+        liveHead: string;
+        state: string;
+        reviewId: number;
+        actorNodeId: string;
+    },
+    document: ReviewDocument,
+    port: PublishReviewPort
+): void {
+    const { number, head, reviewId } = publication;
+    const bundle = reviewBundlePath(port.primaryRoot(), number, head);
+    const recorded = bundleRecordedPublicationId(bundle, port);
+    if (recorded !== undefined && recorded !== reviewId) {
+        fail(`review dossier binds publication ${recorded}, not the recovered landed review ${reviewId}`);
+    }
+    if (
+        recordedPublicationReplay(number, head, document, publication.actorNodeId, port, publication.liveHead) !==
+        undefined
+    ) {
+        return;
+    }
+    if (!hasRiskPlan(bundle, port)) {
+        // A legacy bundle binds nothing; the binding itself refuses a plan its manifest records.
+        recordPublicationBindings(number, head, document, reviewId, port);
+        return;
+    }
+    const publicReviews = port.publicReviews;
+    if (publicReviews === undefined) {
+        fail('review publication recovery requires the port to read the pull request public reviews');
+    }
+    const reassessment = prepareReviewDossierPublication({
+        number,
+        head,
+        bundle,
+        document,
+        port: { ...port, publicReviews: (pr) => publicReviews(pr).filter((review) => review.id !== reviewId) },
+    });
+    recordPublicationBindings(
+        number,
+        head,
+        document,
+        reviewId,
+        port,
+        reassessment,
+        publication.state === 'OPEN' && publication.liveHead === head
+    );
 }
 
 /**

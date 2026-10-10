@@ -8,11 +8,16 @@ import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { type AgentDataCategory } from '../../models/AgentDataPolicy';
 import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
-import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
+import {
+    LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+    LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
+} from '../../models/LocalPlanningBudget';
+import { WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODEL_ID, WEBLLM_MODELS } from '../../models/ModelInfo';
 import {
     estimateCompiledProviderRequestTokenCeiling,
     type ProviderAttemptCostEstimate,
@@ -37,13 +42,21 @@ import {
 } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { usesStrictCloudToolSchemas } from '../../repositories/cloudLlm/usesStrictCloudToolSchemas';
+import { getWebLlmContextWindowSize } from '../../repositories/webLlm/getWebLlmContextWindowSize';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
 import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
+import { budgetLocalPlanningRequest } from '../../transformers/budgetLocalPlanningRequest';
+import {
+    describeLocalContextWindowShortfall,
+    type LocalContextWindowShortfall,
+    readEngineContextWindowShortfall,
+} from '../../transformers/localContextWindowRefusal';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
+import { serializeWebLlmToolPlanningPrompt } from '../../transformers/serializeWebLlmToolPlanningPrompt';
 import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
@@ -61,7 +74,7 @@ import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategori
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
 
-// What WebLLM advertises on every request: the eight mandatory planning tools, the command-index
+// What WebLLM advertises on every request: the nine mandatory planning tools, the command-index
 // search, catalog discovery and the creative interpretation tool.
 const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     ...MANDATORY_PLANNING_TOOL_NAMES,
@@ -70,13 +83,22 @@ const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     CREATIVE_INTERPRETATION_TOOL_NAME,
 ]);
 
-// The mandatory planning contract (workflow selector, eleven application tools, the 23 workflow
-// action tools: 35) plus one prompt-selected slot; the budget bounds browser prompt size, not a
+// The mandatory planning contract (workflow selector, twelve application tools, the 23 workflow
+// action tools: 36) plus one prompt-selected slot; the budget bounds browser prompt size, not a
 // provider limit. Raise it with the mandatory set, never below it plus one free slot.
-export const WEBLLM_TOOL_BUDGET = 36;
+export const WEBLLM_TOOL_BUDGET = 37;
 
-/** What one hosted turn replays: the run's first user message, the turns behind it, and the note closing them. */
-type HostedTurnRequest = { firstUserMessage: string; history: HostedTurnHistory; budgetNote: string };
+/**
+ * What one hosted turn replays: the run's first user message, the turns behind it, and the note
+ * closing them, with any evidence category the message itself carries beyond the text every
+ * request declares.
+ */
+type HostedTurnRequest = {
+    firstUserMessage: string;
+    history: HostedTurnHistory;
+    budgetNote: string;
+    messageDataCategories?: readonly AgentDataCategory[];
+};
 
 /**
  * The protocol record of a replayed hosted turn: the first user message, then every earlier
@@ -328,6 +350,66 @@ function preSessionProviderResult(input: {
     };
 }
 
+type LocalToolPlanningAttempt =
+    { status: 'generated'; outcome: unknown } | { status: 'exceeded'; shortfall: LocalContextWindowShortfall };
+
+/**
+ * Plans on the local model only when the whole request fits its window: the serialized system
+ * prompt, the user message and the template, plus a reserve for the reply. The engine is never
+ * called over budget, and an overflow its own tokenizer finds is the same refusal.
+ */
+async function generateLocalToolPlanningOutcome(input: {
+    systemPrompt: string;
+    userMessage: string;
+    tools: readonly ToolSchema[];
+    configuredMaxOutputTokens: number;
+    signal?: AbortSignal;
+}): Promise<LocalToolPlanningAttempt> {
+    const windowTokens = getWebLlmContextWindowSize();
+    const budget = budgetLocalPlanningRequest({
+        systemPrompt: serializeWebLlmToolPlanningPrompt(input.systemPrompt, input.tools),
+        userMessage: input.userMessage,
+        windowTokens,
+        configuredMaxOutputTokens: input.configuredMaxOutputTokens,
+    });
+    if (budget.status === 'exceeded') {
+        return { status: 'exceeded', shortfall: budget };
+    }
+    if (!isWebLlmLoaded()) {
+        await waitForInference(initWebLlmEngine(undefined, { signal: input.signal }), input.signal);
+    }
+    const generatedInference = Promise.resolve<unknown>(
+        Reflect.apply(generateWebLlmToolCalls, undefined, [
+            input.systemPrompt,
+            input.userMessage,
+            input.tools,
+            budget.maxOutputTokens,
+            input.signal,
+            budget.promptTokens,
+        ])
+    );
+    try {
+        return { status: 'generated', outcome: await waitForInference(generatedInference, input.signal) };
+    } catch (error) {
+        const shortfall = readEngineContextWindowShortfall(error, {
+            neededTokens: budget.promptTokens + LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
+            windowTokens,
+        });
+        if (shortfall === null) {
+            throw error;
+        }
+        return { status: 'exceeded', shortfall };
+    }
+}
+
+/** The display name of a local model whose larger window would hold a refused request, if one exists. */
+function findLocalModelHolding(shortfall: LocalContextWindowShortfall): string | undefined {
+    return WEBLLM_MODELS.find((model) => {
+        const windowTokens = WEBLLM_CONTEXT_WINDOW_TOKENS[model.id] ?? 0;
+        return windowTokens > shortfall.windowTokens && windowTokens >= shortfall.neededTokens;
+    })?.displayName;
+}
+
 async function waitForInference<TResult>(inference: Promise<TResult>, signal?: AbortSignal): Promise<TResult> {
     if (!signal) {
         return inference;
@@ -397,9 +479,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         // ignores this; only the cloud backend below translates it for its provider.
         directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE,
         // The application-owned loop's turn so far. A hosted backend replays it natively and
-        // sends `firstUserMessage` unchanged on every turn; WebLLM keeps reading `userMessage`,
-        // which already carries the same receipts as text.
-        hostedTurn?: HostedTurnRequest
+        // sends `firstUserMessage` unchanged on every turn; WebLLM keeps reading the composed
+        // message, which already carries the same receipts as text.
+        hostedTurn?: HostedTurnRequest,
+        // The same turn in the local profile, which a WebLLM attempt sends in place of
+        // `userMessage`: the local window cannot carry the policy and the project twice.
+        localUserMessage: string = userMessage
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const reportProviderResult = (result: ModelProviderResult): void => {
@@ -487,7 +572,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 });
                 const correlationId = `tool-planning-${crypto.randomUUID()}`;
                 const requestId = streamIdentity?.requestId ?? correlationId;
-                const declaredDataCategories = declareHostedTurnDataCategories(hostedTurn?.history);
+                const declaredDataCategories = declareHostedTurnDataCategories(
+                    hostedTurn?.history,
+                    hostedTurn?.messageDataCategories
+                );
                 const remoteDisclosure =
                     backend === 'cloud'
                         ? remoteTransmissionDisclosure.prepare({
@@ -513,7 +601,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             ? buildHostedTurnMessages(systemPrompt, replayedTurn)
                             : [
                                   { role: 'system', content: systemPrompt },
-                                  { role: 'user', content: userMessage },
+                                  { role: 'user', content: backend === 'webllm' ? localUserMessage : userMessage },
                               ],
                     tools: providerTools.map((tool) => ({
                         name: tool.function.name,
@@ -621,20 +709,38 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const toolCalls = plan.calls;
                     outcome = { status: 'complete', toolCalls, proposal: extractAgentPlanProposal(toolCalls) };
                 } else if (backend === 'webllm') {
-                    if (!isWebLlmLoaded()) {
-                        await waitForInference(initWebLlmEngine(undefined, { signal }), signal);
+                    const local = await generateLocalToolPlanningOutcome({
+                        systemPrompt: providerSystemPrompt,
+                        userMessage: providerUserMessage,
+                        tools: providerTools,
+                        configuredMaxOutputTokens: providerRequest.limits.maxOutputTokens,
+                        signal,
+                    });
+                    if (local.status === 'exceeded') {
+                        const reason = describeLocalContextWindowShortfall(
+                            local.shortfall,
+                            findLocalModelHolding(local.shortfall)
+                        );
+                        const refusedResult = providerSource.finish({
+                            reason: 'error',
+                            failure: {
+                                code: LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+                                retryable: false,
+                                safeMessage: reason,
+                            },
+                        });
+                        providerSessionSettled = true;
+                        reportProviderResult(refusedResult);
+                        logger.warn(`[AI Engine] (webllm) tool planning refused: ${reason}`);
+                        // A request refused before the engine loaded leaves the engine as it was.
+                        llmStatusStore.set(
+                            isWebLlmLoaded()
+                                ? { state: 'ready', backend, modelId: getBackendModelId(backend) }
+                                : previousStatus
+                        );
+                        return { status: 'rejected', reason };
                     }
-                    const generatedInference = Promise.resolve<unknown>(
-                        Reflect.apply(generateWebLlmToolCalls, undefined, [
-                            providerSystemPrompt,
-                            providerUserMessage,
-                            providerTools,
-                            providerRequest.limits.maxOutputTokens,
-                            signal,
-                        ])
-                    );
-                    const generatedOutcome = await waitForInference(generatedInference, signal);
-                    outcome = normalizeGeneratedToolPlanningOutcome(generatedOutcome);
+                    outcome = normalizeGeneratedToolPlanningOutcome(local.outcome);
                 } else {
                     throw createAiRuntimeError('No supported AI backend is available.');
                 }

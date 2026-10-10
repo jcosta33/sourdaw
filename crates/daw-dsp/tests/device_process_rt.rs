@@ -1142,6 +1142,64 @@ fn gluten_process_does_not_allocate_with_an_unlinked_detector() {
     }
 }
 
+/// Lookahead engaged on every topology, with a second stage behind it.
+///
+/// Lookahead off takes each topology's original detector route, so the guards
+/// above never run the undelayed one that lookahead selects, nor the second
+/// stage reading the first stage's output ahead of the delay.
+#[test]
+fn gluten_process_does_not_allocate_with_lookahead_on_every_topology() {
+    use daw_dsp::gluten::GlutenInstance;
+
+    for topology in 0..4_u32 {
+        let mut instance = GlutenInstance::new(SAMPLE_RATE);
+        instance.set_param("topology", topology as f32);
+        instance.set_param("blend_topology", ((topology + 1) % 4) as f32);
+        instance.set_param("blend_amount", 0.5);
+        instance.set_param("threshold", -24.0);
+        instance.set_param("ratio", 8.0);
+        instance.set_param("lookahead", 5.0);
+
+        unsafe {
+            fill_input(
+                instance.get_input_left_ptr(),
+                instance.get_input_right_ptr(),
+                BLOCK,
+                0,
+            );
+        }
+        let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+        assert_all_finite(&warmup, "gluten lookahead");
+
+        assert_no_alloc(|| {
+            for block in 0..GUARDED_BLOCKS {
+                unsafe {
+                    fill_input(
+                        instance.get_input_left_ptr(),
+                        instance.get_input_right_ptr(),
+                        BLOCK,
+                        (block + 1) * BLOCK,
+                    );
+                }
+                instance.process(BLOCK as u32);
+            }
+        });
+
+        let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+        assert_all_finite(&out, "gluten lookahead");
+        assert!(
+            peak(&out) > 1e-4,
+            "gluten topology {topology} fell silent, so the guarded region did not \
+             exercise the lookahead detector"
+        );
+        assert!(
+            instance.get_gr_db() < -1.0,
+            "gluten topology {topology} was not compressing, so the guarded region did \
+             not exercise the lookahead detector"
+        );
+    }
+}
+
 /// Driven at **non-default** calibration on purpose.
 ///
 /// `cc_smoothing_ms` defaults to 0, and at 0 `advance_sustain_smoothing`
@@ -1695,6 +1753,168 @@ fn levain_note_lifecycle_does_not_allocate_on_slurs_and_note_offs() {
         peak(&right) > 1e-6,
         "levain's right channel is silent across the guarded lifecycle, so the \
          guard did not exercise the switched mic channel"
+    );
+}
+
+/// Committing a staged bank runs in the worklet's message handler, on the
+/// render thread. It must neither allocate nor free: the displaced bank moves
+/// to the retired slot and `release_retired_bank` frees it later. The guard
+/// aborts on a free as well as an allocation, so a commit that dropped the old
+/// zone map, the old transition store or the old PCM pool fails here.
+///
+/// The staged bank carries more transitions than a fresh `Vec` holds without
+/// regrowing (the original `LegatoTransitionStore::add` push allocated 48
+/// bytes), shares its PCM pool with a second instance as production followers
+/// do, and replaces a bank that is sounding two held notes.
+#[test]
+fn levain_bank_commit_with_a_transition_does_not_allocate() {
+    use daw_dsp::levain::LevainInstance;
+
+    const TRANSITIONS: i8 = 6;
+
+    let mut owner = LevainInstance::new(SAMPLE_RATE, 8);
+    owner.begin_sample_bank("violin-1");
+    let shared_sample = owner
+        .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
+    stage_two_mic_levain_zones(&mut owner, shared_sample);
+    assert!(owner.build_zone_map(1, LEVAIN_RT_MICS));
+    assert!(owner.publish_sample_bank("levain-commit-guard-shared-bank"));
+    assert!(owner.commit_sample_bank());
+
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    spread_levain_mics(&mut instance);
+    instance.begin_sample_bank("violin-1");
+    let sounding_sample = instance
+        .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
+    stage_two_mic_levain_zones(&mut instance, sounding_sample);
+    // The sounding bank owns a transition store with heap storage, so a commit
+    // that dropped it would free here.
+    instance.add_legato_transition(2, 0, 3, sounding_sample, 20.0);
+    assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
+    assert!(instance.commit_sample_bank());
+    instance.note_on(60, 100);
+    instance.note_on(64, 90);
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "levain bank commit");
+
+    // The replacement is staged the way a follower stages one: its PCM is the
+    // owner's published pool, its zones and transitions are its own.
+    instance.begin_sample_bank("cello");
+    assert!(instance.attach_sample_bank("levain-commit-guard-shared-bank"));
+    stage_two_mic_levain_zones(&mut instance, shared_sample);
+    for interval in 0..TRANSITIONS {
+        instance.add_legato_transition(interval - 3, 0, 3, shared_sample, 20.0);
+    }
+    assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
+
+    let mut committed = false;
+    assert_no_alloc(|| {
+        committed = instance.commit_sample_bank();
+    });
+
+    assert!(committed, "the staged bank should have committed");
+    assert!(
+        instance.has_retired_bank(),
+        "the displaced bank should wait in the retired slot, not be dropped by the commit"
+    );
+    instance.note_on(60, 100);
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "levain after bank commit");
+    assert!(
+        peak(&out) > 1e-6,
+        "the committed bank is silent, so the commit did not install the staged zone map and PCM"
+    );
+    while !instance.release_retired_bank(2) {}
+    assert!(!instance.has_retired_bank());
+}
+
+/// Aborting a staged bank runs in the worklet's message handler, on the render
+/// thread, so it is under the commit's contract: the staged bank moves to the
+/// retired slot whole and `release_retired_bank` frees it later. The guard
+/// aborts on a free as well as an allocation, so an abort that dropped the
+/// staged zone map, transitions or PCM pool fails here.
+///
+/// Both owners of a staged pool abort under the guard: an owner whose staged
+/// bank holds its own PCM, a built zone map and a transition, and a follower
+/// whose staged pool is the owner's published one.
+#[test]
+fn levain_bank_abort_does_not_allocate() {
+    use daw_dsp::levain::LevainInstance;
+
+    let mut owner = LevainInstance::new(SAMPLE_RATE, 8);
+    owner.begin_sample_bank("violin-1");
+    let shared_sample = owner
+        .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
+    stage_two_mic_levain_zones(&mut owner, shared_sample);
+    assert!(owner.build_zone_map(1, LEVAIN_RT_MICS));
+    assert!(owner.publish_sample_bank("levain-abort-guard-shared-bank"));
+    assert!(owner.commit_sample_bank());
+
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    spread_levain_mics(&mut instance);
+    instance.begin_sample_bank("violin-1");
+    let sounding_sample = instance
+        .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
+    stage_two_mic_levain_zones(&mut instance, sounding_sample);
+    assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
+    assert!(instance.commit_sample_bank());
+    instance.note_on(60, 100);
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "levain bank abort");
+
+    // An owner's staged bank: its own PCM, a built zone map and a transition.
+    instance.begin_sample_bank("cello");
+    let staged_sample = instance
+        .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
+    stage_two_mic_levain_zones(&mut instance, staged_sample);
+    instance.add_legato_transition(2, 0, 3, staged_sample, 20.0);
+    assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
+
+    let mut aborted = false;
+    assert_no_alloc(|| {
+        aborted = instance.abort_sample_bank();
+    });
+    assert!(aborted, "the staged bank should have been retired");
+    assert!(
+        instance.has_retired_bank(),
+        "the aborted bank should wait in the retired slot, not be dropped by the abort"
+    );
+    while !instance.release_retired_bank(2) {}
+    assert!(!instance.has_retired_bank());
+
+    // A follower's staged bank: the pool is the owner's published one.
+    instance.begin_sample_bank("viola");
+    assert!(instance.attach_sample_bank("levain-abort-guard-shared-bank"));
+    stage_two_mic_levain_zones(&mut instance, shared_sample);
+    instance.add_legato_transition(2, 0, 3, shared_sample, 20.0);
+    assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
+
+    let mut aborted = false;
+    assert_no_alloc(|| {
+        aborted = instance.abort_sample_bank();
+    });
+    assert!(
+        aborted,
+        "the follower's staged bank should have been retired"
+    );
+    assert!(instance.has_retired_bank());
+    while !instance.release_retired_bank(2) {}
+    assert!(!instance.has_retired_bank());
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "levain after bank abort");
+    assert!(
+        peak(&out) > 1e-6,
+        "the sounding bank is silent, so the abort disturbed the bank it should have left alone"
+    );
+    assert!(
+        !instance.abort_sample_bank(),
+        "an abort with nothing staged retires nothing"
     );
 }
 

@@ -81,6 +81,31 @@ describe('releaseAllActiveNotes', () => {
         expect(levain_note_off).toHaveBeenCalledWith(72);
     });
 
+    it('releases a held Crumbs voice on the instance that played it, not the first of its kind', () => {
+        const first_crumbs_note_off = vi.fn<(note: number, sampleFrame?: number) => void>();
+        const played_crumbs_note_off = vi.fn<(note: number, sampleFrame?: number) => void>();
+        const strip: WebMidiInstrumentStrip = {
+            deviceNodes: [
+                { deviceId: 'crumbs-a', type: 'builtin-crumbs', crumbsControls: { noteOff: first_crumbs_note_off } },
+                { deviceId: 'crumbs-b', type: 'builtin-crumbs', crumbsControls: { noteOff: played_crumbs_note_off } },
+            ],
+        };
+        activeNotes.set(createWebMidiNoteKey(0, 64), {
+            channel: 0,
+            note: 64,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+            crumbsDeviceId: 'crumbs-b',
+        });
+
+        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip, releaseNativeNote: () => {} });
+
+        expect(played_crumbs_note_off).toHaveBeenCalledExactlyOnceWith(64);
+        expect(first_crumbs_note_off).not.toHaveBeenCalled();
+    });
+
     it('releases the Toaster pad the note-on actually routed to', () => {
         const { strip, toaster_note_off } = make_strip();
         activeNotes.set(createWebMidiNoteKey(0, 36), {

@@ -5,7 +5,13 @@ import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../mode
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
-import { buildLlmActionUserMessage, type LlmActionCapabilityData } from '../transformers/llmActionBridge';
+import { type ThreadContext } from '../models/ThreadContext';
+import { fitThreadContext } from '../transformers/fitThreadContext';
+import {
+    buildLlmActionUserMessage,
+    type LlmActionCapabilityData,
+    type LlmActionMessageProfile,
+} from '../transformers/llmActionBridge';
 
 const MAX_CONTEXT_TARGETS = 64;
 const MAX_VALIDATION_FAILURES = 16;
@@ -25,6 +31,99 @@ const MAX_MEASUREMENTS = 16;
 /** The rejection fragment quotes provider output back to it; it stays small and trust-labeled. */
 const MAX_REJECTION_FRAGMENT_LENGTH = 512;
 const MAX_REJECTION_CANDIDATES = 8;
+/**
+ * The characters the capability data may take in `capability_schemas`, hosted and local alike.
+ * Both copies are bounded at whole capability entries, never a character slice: a cut mid-value
+ * would only hand the model malformed JSON it cannot parse. Entries that cannot fit whole are
+ * omitted whole and named — in the hosted copy's sibling `omittedCapabilityNames` field, whose
+ * full capability data still rides the hosted project_context, and in the local message's
+ * `context_omissions` — so the worst case is an empty object plus the full omission list.
+ */
+const MAX_AVAILABLE_CAPABILITIES_LENGTH = 8_192;
+/**
+ * What a local model reads when the capped sections left part of the project out. The hosted
+ * project context restates everything; the local one restates none of it, so the model is told
+ * where the rest is.
+ */
+const PROJECT_SECTION_OMISSIONS = `untrusted_project_data lists at most ${String(MAX_CONTEXT_TARGETS)} tracks, ${String(MAX_SELECTED_CLIPS)} clips and ${String(MAX_CONTEXT_TARGETS)} sends on each, and ${String(MAX_CONTEXT_TARGETS)} sections and automation lanes, and its omitted counts and targetCount say what it left out; read the rest with project.query.`;
+/**
+ * How a capability entry comes to be in the request, which decides its place when the entries do
+ * not all fit. A `request` capability exists only because the request asked for its workflow: the
+ * sidechain routing scope matches the request's own wording, and the stem import scope exists only
+ * after the planner asked to prepare an import. A `project` capability is derived from the project
+ * alone whenever its shape fits the workflow, so the request may or may not need it. The
+ * `creative` catalog interprets a request no workflow covers. Every key has a kind, so a new
+ * capability cannot be added without one.
+ */
+const LOCAL_CAPABILITY_KIND = {
+    sidechainRoutingCapability: 'request',
+    stemImportCapability: 'request',
+    articulationTransferCapability: 'project',
+    backingVocalPlateCapability: 'project',
+    bassProcessingCopyCapability: 'project',
+    drumRoutingCapability: 'project',
+    drumRenderComparisonCapability: 'project',
+    drumPreviewBranchesCapability: 'project',
+    midiOverlapTransformCapability: 'project',
+    sharedVocalFxBusesCapability: 'project',
+    syncopatedArpeggioCapability: 'project',
+    wholeProjectVibeMixCapability: 'project',
+    creativeInterpretationCatalog: 'creative',
+} as const satisfies Record<keyof LlmActionCapabilityData, 'request' | 'project' | 'creative'>;
+
+type LocalCapabilityKey = keyof typeof LOCAL_CAPABILITY_KIND;
+
+function isLocalCapabilityKey(key: string): key is LocalCapabilityKey {
+    return Object.hasOwn(LOCAL_CAPABILITY_KIND, key);
+}
+
+/**
+ * Where an entry stands: workflow capabilities the request asked for, then the workflow
+ * capabilities the project offers, then the creative catalog, which a workflow covering the
+ * request makes the wrong tool. With no workflow capability present the catalog stands alone.
+ */
+function capabilityTier(key: LocalCapabilityKey): number {
+    const kind = LOCAL_CAPABILITY_KIND[key];
+    if (kind === 'request') {
+        return 0;
+    }
+    if (kind === 'project') {
+        return 1;
+    }
+    return 2;
+}
+
+/**
+ * The capability data a local message carries: whole entries, by tier and then cheapest first
+ * within a tier, while the serialized object stays within the capability budget. An entry's cost
+ * is what it adds to the serialized object, its key included, so cheapest first means a workflow
+ * capability is never left out while a costlier one of its tier is kept. An entry that does not
+ * fit the budget left after the entries kept before it is left out whole and named, never cut
+ * mid-value, and the entries after it are still tried.
+ */
+function selectLocalCapabilities(capabilityData: LlmActionCapabilityData | undefined): {
+    serialized: string;
+    omitted: string[];
+} {
+    const capabilityKeys = Object.keys(LOCAL_CAPABILITY_KIND).filter(isLocalCapabilityKey);
+    const present = capabilityKeys
+        .flatMap((key) => {
+            const value = capabilityData?.[key];
+            return value === undefined ? [] : [{ key, value, cost: stableJson({ [key]: value }).length }];
+        })
+        .sort(
+            (left, right) =>
+                capabilityTier(left.key) - capabilityTier(right.key) ||
+                left.cost - right.cost ||
+                left.key.localeCompare(right.key)
+        );
+    const { kept, omitted } = fitWholeCapabilityEntries(present.map(({ key, value }) => [key, value] as const));
+    return { serialized: stableJson(capabilityData === undefined ? null : kept), omitted };
+}
+
+function describeOmittedCapabilities(omitted: readonly string[]): string {
+    return `capability_schemas.availableCapabilities leaves out ${omitted.join(', ')}, which did not fit what the ${String(MAX_AVAILABLE_CAPABILITIES_LENGTH)}-character capability budget had left after the entries it keeps; no tool returns capability data, so plan without ${omitted.length === 1 ? 'it' : 'them'} or ask for a hosted model.`;
+}
 
 function isRelevantLock(
     lock: NonNullable<ProjectContext['productionBrief']>['locks'][number],
@@ -60,10 +159,53 @@ type BuildAgentContextInput = {
     rejectionEvidence?: PlanningRejectionEvidence;
     measurements?: Array<{ name: string; value: number; unit: string }>;
     priorEvidence?: AgentContextEvidence | null;
+    /** The chat thread's earlier turns; absent or `null`, the message carries no `thread_context` section. */
+    thread?: ThreadContext | null;
 };
 
 function stableJson(value: unknown): string {
     return JSON.stringify(value);
+}
+
+/**
+ * Keeps whole capability entries, in the order given, while the serialized object stays within
+ * the capability budget. An entry that does not fit what the entries kept before it left is
+ * named and left out whole, and the entries after it are still tried. Each copy of the
+ * capability data passes its own order.
+ */
+function fitWholeCapabilityEntries(entries: ReadonlyArray<readonly [string, unknown]>): {
+    kept: Record<string, unknown>;
+    omitted: string[];
+} {
+    let kept: Record<string, unknown> = {};
+    const omitted: string[] = [];
+    for (const [key, value] of entries) {
+        if (stableJson({ ...kept, [key]: value }).length > MAX_AVAILABLE_CAPABILITIES_LENGTH) {
+            omitted.push(key);
+            continue;
+        }
+        kept = { ...kept, [key]: value };
+    }
+    return { kept, omitted };
+}
+
+/**
+ * Selects whole capability entries for the hosted copy: under budget the data serializes
+ * exactly as before, over budget each entry is kept whole only while the running total fits
+ * the budget, in the data's own entry order, and every dropped entry is named. An entry
+ * larger than the whole budget is omitted whole, so the result parses even when it is empty.
+ */
+function buildAvailableCapabilities(capabilityData: LlmActionCapabilityData | undefined): {
+    value: string;
+    omittedCapabilityNames: string[];
+} {
+    const full = stableJson(capabilityData ?? null);
+    if (full.length <= MAX_AVAILABLE_CAPABILITIES_LENGTH) {
+        return { value: full, omittedCapabilityNames: [] };
+    }
+    const presentEntries = Object.entries(capabilityData ?? {}).filter(([, entry]) => entry !== undefined);
+    const { kept, omitted } = fitWholeCapabilityEntries(presentEntries);
+    return { value: stableJson(kept), omittedCapabilityNames: omitted };
 }
 
 function boundedTo(value: string, maxLength: number): { value: string; truncated: boolean } {
@@ -294,10 +436,20 @@ function buildRevisionPayload(input: {
     };
 }
 
+/**
+ * The planning context for one turn, in two renderings of the same evidence. `message` is what a
+ * hosted provider reads. `localMessage` is what the local model reads inside its context window:
+ * the same grounding sections, without the fixed policy and tool names its system prompt already
+ * carries or the selected track's duplicate, closed by the local project context, which states only
+ * what those sections leave out.
+ */
 export function buildAgentContext(input: BuildAgentContextInput): {
     authorityComplete: boolean;
     message: string;
+    localMessage: string;
     evidence: AgentContextEvidence;
+    /** Whether the hosted message's thread context carries measured figures, the `measurement` category. */
+    hostedThreadCarriesMeasurement: boolean;
 } {
     const revision = input.projectRevision ?? null;
     const projectData = buildProjectData(input.context);
@@ -322,11 +474,14 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         name: boundedString(schema.name).value,
         schemaVersion: schema.schemaVersion,
     }));
+    const hostedCapabilities = buildAvailableCapabilities(input.capabilityData);
     const measurements = (input.measurements ?? []).slice(-MAX_MEASUREMENTS).map((measurement) => ({
         name: boundedString(measurement.name).value,
         value: measurement.value,
         unit: boundedString(measurement.unit).value,
     }));
+    const hostedThread = input.thread ? fitThreadContext(input.thread, 'hosted') : null;
+    const localThread = input.thread ? fitThreadContext(input.thread, 'local') : null;
     const validationFailureEvidence = {
         total: input.validationFailures?.length ?? 0,
         retained: validationFailures.length,
@@ -388,6 +543,9 @@ export function buildAgentContext(input: BuildAgentContextInput): {
             validationFailures: validationFailureEvidence,
             measurementCount: measurements.length,
             trackCount: input.context.tracks.length,
+            ...(hostedThread === null || localThread === null
+                ? {}
+                : { thread: { hosted: hostedThread.evidence, local: localThread.evidence } }),
         },
         snapshot,
         delta: revisionPayload.delta,
@@ -415,18 +573,72 @@ export function buildAgentContext(input: BuildAgentContextInput): {
           }
         : null;
 
-    const userMessage = buildLlmActionUserMessage({
-        prompt: input.prompt,
-        context: input.context,
-        projectRevision: input.projectRevision,
-        ...input.capabilityData,
-    });
-
-    const suffix = evidence.delta.mode === 'delta' ? '' : `\n\n${userMessage}`;
+    // The thread context follows the request it frames, sized to each profile's own cap; a request
+    // with no thread state carries no section, so its message is exactly what it was without one.
+    const leadingSections = (thread: ReturnType<typeof fitThreadContext> | null) => [
+        `run_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}`,
+        `user_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}`,
+        ...(thread === null ? [] : [thread.section]),
+        `production_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}`,
+        `revision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}`,
+        `relevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}`,
+    ];
+    const trailingSections = [
+        `validation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })), ...(rejectionEvidenceItem === null ? {} : { correction: rejectionEvidenceItem }) })}`,
+        `measurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}`,
+    ];
+    const hostedSections = [
+        ...leadingSections(hostedThread),
+        `capability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: hostedCapabilities.value, ...(hostedCapabilities.omittedCapabilityNames.length === 0 ? {} : { omittedCapabilityNames: hostedCapabilities.omittedCapabilityNames }) })}`,
+        ...trailingSections,
+        `untrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}`,
+    ].join('\n\n');
+    // The local message carries every section a model grounds targets and capabilities in. It
+    // leaves out three things the local model reads elsewhere: the fixed policy and the tool names,
+    // which its system prompt already spells, and the selected track's second copy, which repeats
+    // a selectable target the selection already names by id. It carries the capability data as
+    // whole entries and counts the sections the project data left out, and closes with every
+    // omission it made and where to read the rest, if anywhere.
+    const { selectedTrack: _selectedTrackCopy, ...localProjectPayload } = revisionPayload.projectPayload;
+    const localCapabilities = selectLocalCapabilities(input.capabilityData);
+    const contextOmissions = [
+        projectData.truncated ? PROJECT_SECTION_OMISSIONS : null,
+        localCapabilities.omitted.length === 0 ? null : describeOmittedCapabilities(localCapabilities.omitted),
+    ].filter((omission) => omission !== null);
+    const localSections = [
+        ...leadingSections(localThread),
+        `capability_schemas:\n${stableJson({ trust: 'untrusted_project_data', availableCapabilities: localCapabilities.serialized })}`,
+        ...trailingSections,
+        `untrusted_project_data:\n${stableJson({
+            snapshotIdentity: snapshot.identity,
+            mode: evidence.delta.mode,
+            // The hosted payload's bytes are fixed and its project context lists every section, so
+            // only the local payload counts the sections it left out.
+            data: {
+                ...localProjectPayload,
+                omittedSectionCount: Math.max(0, (input.context.sections?.length ?? 0) - projectData.sections.length),
+            },
+        })}`,
+        `context_omissions:\n${stableJson(contextOmissions)}`,
+    ].join('\n\n');
+    // A delta turn carries no project context; a full turn closes with it, and the local profile
+    // of it states only what the sections above leave out.
+    const projectContextMessage = (profile: LlmActionMessageProfile): string =>
+        evidence.delta.mode === 'delta'
+            ? ''
+            : `\n\n${buildLlmActionUserMessage({
+                  prompt: input.prompt,
+                  context: input.context,
+                  projectRevision: input.projectRevision,
+                  profile,
+                  ...input.capabilityData,
+              })}`;
 
     return {
         authorityComplete: productionBrief?.incompleteRelevantAuthority !== true,
         evidence,
-        message: `fixed_policy:\n${input.fixedPolicy}\n\nrun_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}\n\nuser_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}\n\nproduction_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}\n\nrevision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}\n\nrelevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}\n\ncapability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: stableJson(input.capabilityData ?? null).slice(0, 8_192) })}\n\nvalidation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })), ...(rejectionEvidenceItem === null ? {} : { correction: rejectionEvidenceItem }) })}\n\nmeasurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}\n\nuntrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}${suffix}`,
+        message: `fixed_policy:\n${input.fixedPolicy}\n\n${hostedSections}${projectContextMessage('hosted')}`,
+        localMessage: `${localSections}${projectContextMessage('local')}`,
+        hostedThreadCarriesMeasurement: hostedThread?.carriesMeasurement === true,
     };
 }

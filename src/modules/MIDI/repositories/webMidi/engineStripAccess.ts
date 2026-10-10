@@ -13,6 +13,7 @@ export type WebMidiInstrumentDeviceNode = {
         noteOff: (midiNote: number, sampleFrame?: number, releaseVelocity?: number) => void;
     };
     levainControls?: { noteOff: (note: number, sampleFrame?: number) => void };
+    crumbsControls?: { noteOff: (note: number, sampleFrame?: number) => void };
 };
 
 export type WebMidiInstrumentStrip = {

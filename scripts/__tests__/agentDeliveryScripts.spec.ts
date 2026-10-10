@@ -93,6 +93,10 @@ import type {
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
 import type { Readable, Writable } from 'node:stream';
 
+// Cases that spawn git or node, or create and remove real fixture directories, pass an explicit 30 s ceiling
+// because they measured up to ~6 s on a loaded machine (#5229). In-memory cases keep vitest's 5 s default so an
+// injected delay in them still fails.
+
 const stackSummarySources = [
     'scripts/stackedLanes.ts',
     'scripts/reviewDiffSummary.ts',
@@ -115,6 +119,20 @@ function runGit(repository: string, args: string[]): string {
 
 function initializeDeliveryLockRepository(root: string): void {
     runGit(root, ['init', '--quiet']);
+}
+
+/**
+ * Commits one base file and returns its oid, giving a workflow classification read a real commit
+ * to diff: the coordinator derives the merge-diff classification from the snapshot's base and head
+ * oids, so a stub snapshot needs oids `git diff` can actually resolve in the case's primary root.
+ */
+function commitBase(root: string): string {
+    runGit(root, ['config', 'user.name', 'Fixture']);
+    runGit(root, ['config', 'user.email', 'fixture@example.com']);
+    writeFileSync(join(root, 'base.txt'), 'base\n');
+    runGit(root, ['add', 'base.txt']);
+    runGit(root, ['commit', '--no-gpg-sign', '--quiet', '-m', 'chore: base']);
+    return runGit(root, ['rev-parse', 'HEAD']);
 }
 
 /**
@@ -1074,6 +1092,7 @@ describe('package scripts and gitignore', () => {
             'prepareReview.ts',
             'publishReview.ts',
             'recoverPublishReviewLock.ts',
+            'reviewPublicationReceiptAdoption.ts',
             'reviewCommentDiffPreflight.ts',
             'reviewDocumentParser.ts',
             'reviewerModelDiversity.ts',
@@ -1144,6 +1163,7 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/recoverPublishReviewLock.ts',
+            'scripts/reviewPublicationReceiptAdoption.ts',
             'scripts/reconstructReviewRounds.ts',
             'scripts/reviewRepair.ts',
             'scripts/reviewRoundEscalation.ts',
@@ -1351,10 +1371,11 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:publish:recover' as const,
                 entry: 'scripts/recoverPublishReviewLock.ts',
-                required: 'scripts/pullRequestMutationLock.ts',
+                required: 'scripts/reviewPublicationReceiptAdoption.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/recoverPublishReviewLock.ts',
+                    'scripts/reviewPublicationReceiptAdoption.ts',
                     'scripts/reconstructReviewRounds.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
@@ -1492,6 +1513,7 @@ describe('package scripts and gitignore', () => {
 
         it.each(cases)(
             'pins the complete and exact $command source closure',
+            { timeout: 30_000 },
             async ({ command, entry, required, expected }) => {
                 const repositoryRoot = join(import.meta.dirname, '..', '..');
                 const paths = trustedDependencyPaths(command);
@@ -2470,7 +2492,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(fixtureRoot);
         }
-    }, 15_000);
+    }, 30_000);
 
     it('publishes a pre-migration lane through the primary package without executing its package route', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-primary-lane-route-'));
@@ -2505,7 +2527,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(fixtureRoot);
         }
-    });
+    }, 30_000);
 
     it('resolves the trusted snapshot with no inherited Git or GitHub routing', () => {
         const env = trustedGitReadEnv({
@@ -2605,7 +2627,7 @@ describe('package scripts and gitignore', () => {
             process.env.PATH = previousPath;
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('rejects Windows command scripts as trusted executable bindings', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-win32-command-scripts-'));
@@ -2627,19 +2649,20 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(fixtureRoot);
         }
-    });
+    }, 30_000);
 
-    describe('trusted launcher bindings with shared primary fixture', () => {
+    // Every case clones the git-backed primary fixture, which the hooks build and remove (#5229).
+    describe('trusted launcher bindings with shared primary fixture', { timeout: 30_000 }, () => {
         beforeAll(() => {
             ensureTrustedPublishPrimaryTemplate();
-        });
+        }, 30_000);
 
         afterAll(() => {
             if (trustedPublishPrimaryTemplateRoot !== undefined) {
                 removeTemporaryDirectory(trustedPublishPrimaryTemplateRoot);
                 trustedPublishPrimaryTemplateRoot = undefined;
             }
-        });
+        }, 30_000);
 
         it('binds split trusted git, gh, and ps paths and carries them into the snapshot env', () => {
             const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture('sourdaw-split-trusted-tools-');
@@ -3102,7 +3125,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     /**
      * Only `deliver` decides a merge, so no other command reads a workflow. A launcher that read one
@@ -3192,7 +3215,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(fixtureRoot);
         }
-    });
+    }, 30_000);
 
     it('cleans the exact-byte snapshot tree after success and failure', async () => {
         await expect(
@@ -3230,7 +3253,7 @@ describe('package scripts and gitignore', () => {
         expect(existsSync(snapshotDirectory)).toBe(false);
         await expect(execute(true)).rejects.toThrow('command failed');
         expect(existsSync(snapshotDirectory)).toBe(false);
-    });
+    }, 30_000);
 
     it('passes the exact publisher argv tuple into the trusted snapshot runner', async () => {
         const expectedArgs = ['12', '--test', 'Run the focused publisher specs and confirm they pass.'];
@@ -3253,7 +3276,7 @@ describe('package scripts and gitignore', () => {
                 ]),
             })
         ).resolves.toBe(0);
-    });
+    }, 30_000);
 
     it.each([
         {
@@ -3314,39 +3337,43 @@ describe('package scripts and gitignore', () => {
             runner: 'runRulesetHardeningCli',
             args: ['--apply'],
         },
-    ])('imports the $command entry and forwards its exact arguments', async ({ command, entry, runner, args }) => {
-        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-entry-'));
-        const recordPath = join(fixtureRoot, 'args.json');
-        try {
-            const source = [
-                "import { writeFileSync } from 'node:fs';",
-                `export async function ${runner}(args) {`,
-                `    writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify(args));`,
-                '    return 0;',
-                '}',
-            ].join('\n');
-            await expect(
-                executeTrustedSnapshot(command, args, {
-                    commit: 'pinned-sha',
-                    sources: new Map([[entry, source]]),
-                })
-            ).resolves.toBe(0);
-            expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(args);
-            const importedRunners = {
-                'review:accept': runAcceptReviewCli,
-                'review:publish': runPublishReviewCli,
-                'review:publish:recover': runRecoverPublishReviewLockCli,
-                'review:repair': runRepairReviewFindingCli,
-                'review:confirm': runConfirmReviewRepairsCli,
-                'review:resolve': runResolveReviewThreadCli,
-                'review:shadow-status': runReviewShadowStatusCli,
-                'ruleset:harden': runRulesetHardeningCli,
-            } as const;
-            expect(importedRunners[command]).toBeTypeOf('function');
-        } finally {
-            removeTemporaryDirectory(fixtureRoot);
+    ])(
+        'imports the $command entry and forwards its exact arguments',
+        { timeout: 30_000 },
+        async ({ command, entry, runner, args }) => {
+            const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-entry-'));
+            const recordPath = join(fixtureRoot, 'args.json');
+            try {
+                const source = [
+                    "import { writeFileSync } from 'node:fs';",
+                    `export async function ${runner}(args) {`,
+                    `    writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify(args));`,
+                    '    return 0;',
+                    '}',
+                ].join('\n');
+                await expect(
+                    executeTrustedSnapshot(command, args, {
+                        commit: 'pinned-sha',
+                        sources: new Map([[entry, source]]),
+                    })
+                ).resolves.toBe(0);
+                expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(args);
+                const importedRunners = {
+                    'review:accept': runAcceptReviewCli,
+                    'review:publish': runPublishReviewCli,
+                    'review:publish:recover': runRecoverPublishReviewLockCli,
+                    'review:repair': runRepairReviewFindingCli,
+                    'review:confirm': runConfirmReviewRepairsCli,
+                    'review:resolve': runResolveReviewThreadCli,
+                    'review:shadow-status': runReviewShadowStatusCli,
+                    'ruleset:harden': runRulesetHardeningCli,
+                } as const;
+                expect(importedRunners[command]).toBeTypeOf('function');
+            } finally {
+                removeTemporaryDirectory(fixtureRoot);
+            }
         }
-    });
+    );
 
     it('refuses lane-mutated reviewer closures and executes only the pinned lock from the primary route', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-route-'));
@@ -3391,7 +3418,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(fixtureRoot);
         }
-    }, 15_000);
+    }, 30_000);
 
     it('refuses a live delivery owner before authentication or delivery starts', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3424,7 +3451,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('refuses review publication before remote work while delivery owns the same PR fence', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3511,7 +3538,7 @@ describe('package scripts and gitignore', () => {
             }
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('leaves malformed primary-lock bytes untouched and starts no authentication or operation', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3544,7 +3571,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('fails closed without changing current or stale owner blobs that carry an extra key', async () => {
         const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
@@ -3574,7 +3601,7 @@ describe('package scripts and gitignore', () => {
                 removeTemporaryDirectory(root);
             }
         }
-    });
+    }, 30_000);
 
     it('rejects each invalid value guard in an exact three-key stale owner blob without takeover', async () => {
         const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
@@ -3609,7 +3636,7 @@ describe('package scripts and gitignore', () => {
                 removeTemporaryDirectory(root);
             }
         }
-    });
+    }, 30_000);
 
     it('refuses a well-formed lock whose owner process is conclusively dead without takeover', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3639,7 +3666,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('releases the current delivery token after success and a pre-mutation failure', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3666,7 +3693,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('retains the exact owner after an attempted mutation error and refuses reacquisition', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3695,7 +3722,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('releases the exact owner when a known-absent record precedes an error', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3715,7 +3742,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it.each<[string, (port: DeliveryPort) => void, (command: string, args: string[]) => boolean]>([
         [
@@ -3744,40 +3771,44 @@ describe('package scripts and gitignore', () => {
             (command, args) =>
                 command === 'gh' && args.includes('PATCH') && args.includes('repos/jcosta33/sourdaw/pulls/2496'),
         ],
-    ])('retains the exact owner when production %s dispatch is indeterminate', async (_label, mutate, isDispatch) => {
-        let dispatched = 0;
-        await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
-            await withPullRequestDeliveryLock(root, number, async ({ markRemoteMutationAttempt }) => {
-                const failDispatch = (command: string, args: string[]): never => {
-                    if (!isDispatch(command, args)) {
-                        throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
-                    }
-                    dispatched += 1;
-                    throw new Error('remote mutation result is indeterminate');
-                };
-                const port = shellPort(
-                    'jcosta33/sourdaw',
-                    {
-                        capture: (command, args) => {
-                            if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
-                                return JSON.stringify({
-                                    allow_merge_commit: false,
-                                    allow_rebase_merge: false,
-                                    allow_squash_merge: true,
-                                    delete_branch_on_merge: false,
-                                });
-                            }
-                            return failDispatch(command, args);
+    ])(
+        'retains the exact owner when production %s dispatch is indeterminate',
+        { timeout: 30_000 },
+        async (_label, mutate, isDispatch) => {
+            let dispatched = 0;
+            await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
+                await withPullRequestDeliveryLock(root, number, async ({ markRemoteMutationAttempt }) => {
+                    const failDispatch = (command: string, args: string[]): never => {
+                        if (!isDispatch(command, args)) {
+                            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+                        }
+                        dispatched += 1;
+                        throw new Error('remote mutation result is indeterminate');
+                    };
+                    const port = shellPort(
+                        'jcosta33/sourdaw',
+                        {
+                            capture: (command, args) => {
+                                if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                                    return JSON.stringify({
+                                        allow_merge_commit: false,
+                                        allow_rebase_merge: false,
+                                        allow_squash_merge: true,
+                                        delete_branch_on_merge: false,
+                                    });
+                                }
+                                return failDispatch(command, args);
+                            },
+                            run: failDispatch,
                         },
-                        run: failDispatch,
-                    },
-                    { markRemoteMutationAttempt, mergeCapture: failDispatch }
-                );
-                mutate(port);
+                        { markRemoteMutationAttempt, mergeCapture: failDispatch }
+                    );
+                    mutate(port);
+                });
             });
-        });
-        expect(dispatched).toBe(1);
-    });
+            expect(dispatched).toBe(1);
+        }
+    );
 
     it.each<[string, (port: ReconcileTrackerIssuePort) => void, 'PATCH' | 'POST']>([
         [
@@ -3796,9 +3827,11 @@ describe('package scripts and gitignore', () => {
         ],
     ])(
         'retains the exact owner when production %s dispatch is indeterminate',
+        { timeout: 30_000 },
         async (_label, mutate, expectedMethod) => {
             let dispatched = 0;
             await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
+                const baseSha = commitBase(root);
                 const authentication: DeliveryAuthentication = {
                     minted: {
                         token: 'ghs_delivery',
@@ -3809,8 +3842,11 @@ describe('package scripts and gitignore', () => {
                     session: { configDir: '/tmp/sourdaw-delivery', env: {}, dispose: () => undefined },
                 };
                 const unusedPort: DeliveryPort = {
-                    fetch: () => expect.fail('delivery domain should not run'),
-                    pullRequest: () => expect.fail('delivery domain should not run'),
+                    fetch: () => undefined,
+                    pullRequest: (snapshotNumber) => {
+                        expect(snapshotNumber).toBe(number);
+                        return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
+                    },
                     gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
                     gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
                     headCheckRuns: () => expect.fail('delivery domain should not run'),
@@ -3859,6 +3895,7 @@ describe('package scripts and gitignore', () => {
     it('forwards the known-absent marker so a definitive merge rejection releases the exact owner', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const baseSha = commitBase(root);
         const restorePs = writeTrustedPsFixture(root);
         const authentication: DeliveryAuthentication = {
             minted: {
@@ -3870,8 +3907,11 @@ describe('package scripts and gitignore', () => {
             session: { configDir: '/tmp/sourdaw-delivery', env: {}, dispose: () => undefined },
         };
         const unusedPort: DeliveryPort = {
-            fetch: () => expect.fail('delivery domain should not run'),
-            pullRequest: () => expect.fail('delivery domain should not run'),
+            fetch: () => undefined,
+            pullRequest: (number) => {
+                expect(number).toBe(2495);
+                return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
+            },
             gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
             gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
             headCheckRuns: () => expect.fail('delivery domain should not run'),
@@ -3926,7 +3966,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('does not release a delivery lock whose ownership token changed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3953,7 +3993,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('keeps per-PR owners isolated without releasing the wrong delivery', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3975,7 +4015,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('admits exactly one fresh process while a same-PR contender is held at the lock boundary', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -3993,7 +4033,7 @@ describe('package scripts and gitignore', () => {
             restorePs();
             removeTemporaryDirectory(root);
         }
-    }, 10_000);
+    }, 30_000);
 
     it('round-trips prepared, merge-authorized, and terminal receipt authority across fresh shellPort instances', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
@@ -4128,7 +4168,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('refuses malformed delivery receipt authority refs and blobs in a temp repository', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
@@ -4153,7 +4193,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('fails closed on corrupt packed delivery receipt refs instead of treating them as absent', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
@@ -4174,7 +4214,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('fails closed on child-prefix delivery receipt refs instead of treating them as exact authority', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
@@ -4200,7 +4240,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('rejects symbolic delivery receipt authority refs before resolving any object ID', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
@@ -4231,7 +4271,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('reads delivery receipt authority blobs from their literal object IDs even when replace refs are present', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
@@ -4266,7 +4306,7 @@ describe('package scripts and gitignore', () => {
         } finally {
             removeTemporaryDirectory(root);
         }
-    });
+    }, 30_000);
 
     it('does not delete a delivery receipt authority ref whose object changed after verification', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
@@ -4328,7 +4368,7 @@ describe('package scripts and gitignore', () => {
             removeTemporaryDirectory(root);
             removeTemporaryDirectory(wrapperRoot);
         }
-    });
+    }, 30_000);
 
     it('routes merge and receipt writes through author-role runners', () => {
         const calls: Array<{ actor: string; args: string[] }> = [];
@@ -4387,6 +4427,9 @@ describe('package scripts and gitignore', () => {
     });
 
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        const baseSha = commitBase(root);
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({
             minted: { token, login: 'renamed-author[bot]', actorNodeId: AUTHOR_BOT_NODE_ID, permissions },
@@ -4400,7 +4443,10 @@ describe('package scripts and gitignore', () => {
         const tracker = authentication('ghs_tracker', { issues: 'write' });
         const deliveryPort: DeliveryPort = {
             fetch: () => undefined,
-            pullRequest: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            pullRequest: (number) => {
+                expect(number).toBe(2495);
+                return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
+            },
             gateRequiredCheckNames: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredSkipAliases: () => expect.fail('delivery domain should be injected in this coordinator test'),
             headCheckRuns: () => expect.fail('delivery domain should be injected in this coordinator test'),
@@ -4411,21 +4457,23 @@ describe('package scripts and gitignore', () => {
                 expect.fail('delivery domain should be injected in this coordinator test'),
             dependents: () => [],
             repositoryDeletesMergedBranches: () => false,
-            merge: () => undefined,
-            retarget: () => undefined,
+            merge: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            retarget: () => expect.fail('delivery domain should be injected in this coordinator test'),
             deliveryReceipts: () => [],
             deliveryReceiptProof: () => deliveryReceiptProof([]),
             addDeliveryReceipt: () => expect.fail('delivery domain should be injected in this coordinator test'),
             readDeliveryReceiptAuthority: () => undefined,
-            writeDeliveryReceiptAuthority: () => undefined,
-            clearDeliveryReceiptAuthority: () => undefined,
+            writeDeliveryReceiptAuthority: () =>
+                expect.fail('delivery domain should be injected in this coordinator test'),
+            clearDeliveryReceiptAuthority: () =>
+                expect.fail('delivery domain should be injected in this coordinator test'),
             log: () => undefined,
         };
         const seen: string[] = [];
         const adapterRequests: Array<{ args: string[]; token: string }> = [];
         let trackerPort: ReconcileTrackerIssuePort | undefined;
         const dependencies: DeliveryCoordinatorDependencies = {
-            primaryRoot: () => '/repo',
+            primaryRoot: () => root,
             serializeDelivery: async (_primaryRoot, number, operation) => {
                 seen.push(`lock:${number}:acquire`);
                 try {
@@ -4480,13 +4528,18 @@ describe('package scripts and gitignore', () => {
             },
         };
 
-        await coordinateDelivery(2495, dependencies);
+        try {
+            await coordinateDelivery(2495, dependencies);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
 
         expect(author.minted.permissions).toEqual({ contents: 'write', pull_requests: 'write' });
         expect(tracker.minted.permissions).toEqual({ issues: 'write' });
         expect(seen).toEqual([
             'lock:2495:acquire',
             'repository:ghs_author',
+            'delivery:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
             `complete:${AUTHOR_BOT_NODE_ID}`,
@@ -4512,16 +4565,17 @@ describe('package scripts and gitignore', () => {
             },
         ]);
         expect(disposed).toEqual(['ghs_tracker', 'ghs_author']);
-    });
+    }, 30_000);
 });
 
 describe('origin/main snapshot freshness (#4436)', () => {
     const scratchRoots: string[] = [];
+    // Removing the git-backed scratch repositories is fixture work (#5229).
     afterEach(() => {
         for (const root of scratchRoots.splice(0)) {
             rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
-    });
+    }, 30_000);
 
     function runGitWithInput(repository: string, args: string[], input: string): string {
         const env = { ...process.env };
@@ -4585,7 +4639,7 @@ describe('origin/main snapshot freshness (#4436)', () => {
         const resolved = defaultPort(bindingFor(primary)).resolveOriginMain();
 
         expect(resolved).toBe(newHead);
-    });
+    }, 30_000);
 
     it('reports a failed fetch loudly and still resolves the local ref', () => {
         const fixtureRoot = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-dead-origin-')));
@@ -4613,7 +4667,7 @@ describe('origin/main snapshot freshness (#4436)', () => {
         } finally {
             console.error = originalError;
         }
-    });
+    }, 30_000);
 
     it('fetchOriginMain pins the fetch argv, the ambient environment, and the failure shapes', () => {
         const calls: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];

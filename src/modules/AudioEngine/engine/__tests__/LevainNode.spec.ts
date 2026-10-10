@@ -99,10 +99,62 @@ describe('createLevainNode runtime-fault notification', () => {
 
         expect(onFault).toHaveBeenCalledWith('Unknown error');
     });
+});
 
-    it('waits for the processor disposal acknowledgement before closing the port', async () => {
-        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
-        const result = await createLevainNode(ctx);
+// A disposed processor frees its bank in bounded steps the node paces with
+// `releaseDisposedBanks` messages, so the port has to stay open until the
+// worklet reports done, reports an error, or loses its context.
+describe('createLevainNode disposal release', () => {
+    let postMessage: ReturnType<typeof vi.fn>;
+    let close: ReturnType<typeof vi.fn>;
+    let disconnect: ReturnType<typeof vi.fn>;
+    let node: {
+        port: {
+            postMessage: ReturnType<typeof vi.fn>;
+            close: ReturnType<typeof vi.fn>;
+            onmessage: ((e: MessageEvent) => void) | null;
+        };
+    };
+    let stateListeners: (() => void)[];
+    let ctx: { currentTime: number; state: string; addEventListener: unknown; removeEventListener: unknown };
+    let removeEventListener: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        postMessage = vi.fn();
+        close = vi.fn();
+        disconnect = vi.fn();
+        node = { port: { postMessage, close, onmessage: null } };
+        class FakeWorkletNode {
+            port = node.port;
+            connect = vi.fn();
+            disconnect = disconnect;
+        }
+        vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
+        stateListeners = [];
+        removeEventListener = vi.fn((_type: string, listener: () => void) => {
+            stateListeners = stateListeners.filter((registered) => registered !== listener);
+        });
+        ctx = {
+            currentTime: 0,
+            state: 'running',
+            addEventListener: vi.fn((_type: string, listener: () => void) => {
+                stateListeners.push(listener);
+            }),
+            removeEventListener,
+        };
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    function receive(data: unknown): void {
+        node.port.onmessage?.({ data } as MessageEvent);
+    }
+
+    it('paces the release after the disposal acknowledgement and closes the port only on done', async () => {
+        const result = await createLevainNode(ctx as unknown as BaseAudioContext);
         postMessage.mockClear();
 
         result.destroy();
@@ -112,10 +164,146 @@ describe('createLevainNode runtime-fault notification', () => {
         expect(postMessage).toHaveBeenCalledTimes(1);
         expect(postMessage).toHaveBeenCalledWith({ type: 'dispose' });
         expect(close).not.toHaveBeenCalled();
+        postMessage.mockClear();
 
-        node.port.onmessage?.({ data: { type: 'disposed' } } as MessageEvent);
+        receive({ type: 'disposed' });
+
+        expect(close).not.toHaveBeenCalled();
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenLastCalledWith({ type: 'releaseDisposedBanks' });
+
+        receive({ type: 'disposedBanksReleased', done: false });
+        receive({ type: 'disposedBanksReleased', done: false });
+
+        expect(close).not.toHaveBeenCalled();
+        expect(postMessage).toHaveBeenCalledTimes(3);
+
+        receive({ type: 'disposedBanksReleased', done: true });
 
         expect(close).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledTimes(3);
+        expect(removeEventListener).toHaveBeenCalledWith('statechange', expect.any(Function));
+    });
+
+    it('starts one release loop however many times the processor acknowledges disposal', async () => {
+        const result = await createLevainNode(ctx as unknown as BaseAudioContext);
+        result.destroy();
+        postMessage.mockClear();
+
+        receive({ type: 'disposed' });
+        receive({ type: 'disposed' });
+
+        expect(postMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the port when the worklet reports an error during the release', async () => {
+        const onFault = vi.fn();
+        const result = await createLevainNode(ctx as unknown as BaseAudioContext, undefined, onFault);
+        result.destroy();
+        receive({ type: 'disposed' });
+        expect(close).not.toHaveBeenCalled();
+
+        receive({ type: 'error', message: 'wasm trap' });
+
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(onFault).not.toHaveBeenCalled();
+    });
+
+    it('closes the port when the context closes mid-release and not for another state change', async () => {
+        const result = await createLevainNode(ctx as unknown as BaseAudioContext);
+        result.destroy();
+        receive({ type: 'disposed' });
+        const [listener] = stateListeners;
+        if (!listener) {
+            throw new TypeError('Expected a statechange listener after destroy');
+        }
+
+        ctx.state = 'suspended';
+        listener();
+        expect(close).not.toHaveBeenCalled();
+
+        ctx.state = 'closed';
+        listener();
+
+        expect(close).toHaveBeenCalledTimes(1);
+
+        receive({ type: 'disposedBanksReleased', done: true });
+        expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the port at once when destroyed on a closed live AudioContext', async () => {
+        const result = await createLevainNode(ctx as unknown as BaseAudioContext);
+        ctx.state = 'closed';
+        postMessage.mockClear();
+
+        result.destroy();
+
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it('posts dispose and keeps the port open when destroyed on a suspended context', async () => {
+        const result = await createLevainNode(ctx as unknown as BaseAudioContext);
+        ctx.state = 'suspended';
+        postMessage.mockClear();
+
+        result.destroy();
+
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'dispose' });
+        expect(close).not.toHaveBeenCalled();
+    });
+
+    describe('on a closed OfflineAudioContext, which still answers its worklet port', () => {
+        function stubOfflineContext(): void {
+            class FakeOfflineAudioContext {}
+            vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+            Object.setPrototypeOf(ctx, FakeOfflineAudioContext.prototype);
+        }
+
+        it('posts dispose, drains to done and closes the port only then', async () => {
+            stubOfflineContext();
+            const result = await createLevainNode(ctx as unknown as BaseAudioContext);
+            ctx.state = 'closed';
+            postMessage.mockClear();
+
+            result.destroy();
+
+            expect(postMessage).toHaveBeenCalledTimes(1);
+            expect(postMessage).toHaveBeenCalledWith({ type: 'dispose' });
+            expect(close).not.toHaveBeenCalled();
+
+            receive({ type: 'disposed' });
+            receive({ type: 'disposedBanksReleased', done: false });
+
+            expect(postMessage).toHaveBeenLastCalledWith({ type: 'releaseDisposedBanks' });
+            expect(postMessage).toHaveBeenCalledTimes(3);
+            expect(close).not.toHaveBeenCalled();
+
+            receive({ type: 'disposedBanksReleased', done: true });
+
+            expect(close).toHaveBeenCalledTimes(1);
+        });
+
+        it('keeps draining when its state changes to closed mid-drain', async () => {
+            stubOfflineContext();
+            const result = await createLevainNode(ctx as unknown as BaseAudioContext);
+            result.destroy();
+            receive({ type: 'disposed' });
+            const [listener] = stateListeners;
+            if (!listener) {
+                throw new TypeError('Expected a statechange listener after destroy');
+            }
+
+            ctx.state = 'closed';
+            listener();
+
+            expect(close).not.toHaveBeenCalled();
+
+            receive({ type: 'disposedBanksReleased', done: true });
+
+            expect(close).toHaveBeenCalledTimes(1);
+        });
     });
 });
 

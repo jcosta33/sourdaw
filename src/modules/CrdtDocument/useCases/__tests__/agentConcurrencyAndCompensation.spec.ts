@@ -13,12 +13,14 @@ import {
     commandBatchPreviewPort,
     commandProjectDivergencePort,
     commandProjectRevisionPort,
+    captureCommandTargetFingerprints,
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
     executeAppAction,
     executeVersionedCommandBatch,
     executeVersionedCommandBatchEnvelope,
+    getCommandDivergenceTargetIds,
     issueCommandApprovalBinding,
     serializeVersionedCommandEnvelope,
     undo,
@@ -49,6 +51,8 @@ function statedLinearGain(payload: { gain?: number }): number {
     }
     return payload.gain;
 }
+
+type CreateEnvelopeInput = Parameters<typeof createVersionedCommandEnvelope>[0];
 
 const projectionMocks = vi.hoisted(() => ({ hydrate: vi.fn() }));
 
@@ -116,6 +120,44 @@ function inspectTestProject(input: {
                 return target ? [[targetId, JSON.stringify(target)]] : [];
             })
         ),
+    };
+}
+
+type StoredArrangementDocument = {
+    arrangements: {
+        activeArrangementId: string;
+        arrangements: { id: string; tracks: { tracks: { devices: { id: string }[]; id: string }[] } }[];
+    };
+    tracks: { tracks: { devices: { id: string; parameterValues: Record<string, number> }[]; id: string }[] };
+};
+
+/**
+ * A saved project: the live `tracks` slot and the arrangement snapshot
+ * `syncCurrentArrangementToStore` wrote of it, both carrying the track `trk`
+ * and its device `dev1`.
+ */
+function seedSavedProjectWithStoredArrangement(): void {
+    automergeRepository.changeDoc<StoredArrangementDocument>('root', (draft) => {
+        draft.tracks = { tracks: [{ devices: [{ id: 'dev1', parameterValues: { drive: 0.4 } }], id: 'trk' }] };
+        draft.arrangements = {
+            activeArrangementId: 'arrangement-1',
+            arrangements: [{ id: 'arrangement-1', tracks: { tracks: [{ devices: [{ id: 'dev1' }], id: 'trk' }] } }],
+        };
+    });
+}
+
+/** Inspects the project the way production does: through the real fingerprint capture. */
+function inspectProjectWithCapturedFingerprints(input: {
+    projectDocument: Readonly<Record<string, unknown>>;
+    targetIds: readonly string[];
+}) {
+    return {
+        audioGraphValid: true,
+        projectInvariantsValid: true,
+        targetFingerprints: captureCommandTargetFingerprints({
+            document: input.projectDocument,
+            targetIds: input.targetIds,
+        }),
     };
 }
 
@@ -321,6 +363,277 @@ describe('agent concurrency and compensation', () => {
             })
         ).toMatchObject({ kind: 'invariant-breaking', mayReapply: false });
     });
+
+    it.each([
+        [
+            'addAutomationLane',
+            {
+                type: 'addAutomationLane',
+                payload: { parameterId: 'dev1:drive', parameterName: 'Drive', trackId: 'trk' },
+            },
+        ],
+        [
+            'automateParameterRange',
+            {
+                type: 'automateParameterRange',
+                payload: { parameterId: 'dev1:drive', range: { endBeat: 8, startBeat: 0 }, trackId: 'trk', value: 0.5 },
+            },
+        ],
+    ] satisfies [string, AppAction][])(
+        'classifies a removed device as the deleted target of a %s on its parameter',
+        (_name, action) => {
+            const withDevice = {
+                tracks: [{ devices: [{ id: 'dev1', parameterValues: { drive: 0.4 } }], id: 'trk', name: 'Track' }],
+            };
+            const withoutDevice = { tracks: [{ devices: [], id: 'trk', name: 'Track' }] };
+            const targetIds = getCommandDivergenceTargetIds({ actions: [action], targetIds: [] });
+
+            expect(targetIds.toSorted()).toEqual(['dev1', 'trk']);
+            expect(
+                classifyAgentProjectDivergence({
+                    audioGraphValid: true,
+                    baseRevision: 'revision-1',
+                    baseTargetFingerprints: captureCommandTargetFingerprints({ document: withDevice, targetIds }),
+                    commandsCompatible: true,
+                    currentRevision: 'revision-2',
+                    currentTargetFingerprints: captureCommandTargetFingerprints({ document: withoutDevice, targetIds }),
+                    projectInvariantsValid: true,
+                    targetIds,
+                })
+            ).toMatchObject({
+                kind: 'deleted-target',
+                mayReapply: false,
+                repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: ['dev1'] }],
+                targetIds: ['dev1'],
+            });
+        }
+    );
+
+    it('classifies a device removed from the live arrangement as deleted although a stored copy keeps it', () => {
+        const live = (devices: { id: string; parameterValues: Record<string, number> }[]) => ({
+            arrangements: {
+                arrangements: [{ id: 'arrangement-1', tracks: { tracks: [{ devices: [{ id: 'dev1' }], id: 'trk' }] } }],
+            },
+            tracks: { tracks: [{ devices, id: 'trk' }] },
+        });
+        const targetIds = getCommandDivergenceTargetIds({
+            actions: [
+                {
+                    type: 'automateParameterRange',
+                    payload: {
+                        parameterId: 'dev1:drive',
+                        range: { endBeat: 8, startBeat: 0 },
+                        trackId: 'trk',
+                        value: 0.5,
+                    },
+                },
+            ],
+            targetIds: [],
+        });
+
+        expect(
+            classifyAgentProjectDivergence({
+                audioGraphValid: true,
+                baseRevision: 'revision-1',
+                baseTargetFingerprints: captureCommandTargetFingerprints({
+                    document: live([{ id: 'dev1', parameterValues: { drive: 0.4 } }]),
+                    targetIds,
+                }),
+                commandsCompatible: true,
+                currentRevision: 'revision-2',
+                currentTargetFingerprints: captureCommandTargetFingerprints({ document: live([]), targetIds }),
+                projectInvariantsValid: true,
+                targetIds,
+            })
+        ).toMatchObject({
+            kind: 'deleted-target',
+            mayReapply: false,
+            repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: ['dev1'] }],
+            targetIds: ['dev1'],
+        });
+    });
+
+    it('classifies a track removed from the live arrangement as deleted although a stored copy keeps it', () => {
+        const stored = { arrangements: [{ id: 'arrangement-1', tracks: { tracks: [{ devices: [], id: 'trk' }] } }] };
+        const targetIds = ['trk'];
+
+        expect(
+            classifyAgentProjectDivergence({
+                audioGraphValid: true,
+                baseRevision: 'revision-1',
+                baseTargetFingerprints: captureCommandTargetFingerprints({
+                    document: { arrangements: stored, tracks: { tracks: [{ devices: [], id: 'trk' }] } },
+                    targetIds,
+                }),
+                commandsCompatible: true,
+                currentRevision: 'revision-2',
+                currentTargetFingerprints: captureCommandTargetFingerprints({
+                    document: { arrangements: stored, tracks: { tracks: [] } },
+                    targetIds,
+                }),
+                projectInvariantsValid: true,
+                targetIds,
+            })
+        ).toMatchObject({
+            kind: 'deleted-target',
+            mayReapply: false,
+            repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: ['trk'] }],
+            targetIds: ['trk'],
+        });
+    });
+
+    it('does not read an edit to only a stored arrangement copy as divergence of its target', () => {
+        const targetIds = ['trk', 'dev1'];
+        const document = (storedDrive: number) => ({
+            arrangements: {
+                arrangements: [
+                    {
+                        id: 'arrangement-1',
+                        tracks: {
+                            tracks: [{ devices: [{ id: 'dev1', parameterValues: { drive: storedDrive } }], id: 'trk' }],
+                        },
+                    },
+                ],
+            },
+            tracks: { tracks: [{ devices: [{ id: 'dev1', parameterValues: { drive: 0.4 } }], id: 'trk' }] },
+        });
+
+        expect(
+            classifyAgentProjectDivergence({
+                audioGraphValid: true,
+                baseRevision: 'revision-1',
+                baseTargetFingerprints: captureCommandTargetFingerprints({ document: document(0.4), targetIds }),
+                commandsCompatible: true,
+                currentRevision: 'revision-2',
+                currentTargetFingerprints: captureCommandTargetFingerprints({ document: document(0.9), targetIds }),
+                projectInvariantsValid: true,
+                targetIds,
+            })
+        ).toMatchObject({ kind: 'non-overlapping', mayReapply: true });
+    });
+
+    it.each([
+        [
+            'device',
+            {
+                type: 'automateParameterRange',
+                payload: {
+                    parameterId: 'dev1:drive',
+                    range: { endBeat: 8, startBeat: 0 },
+                    trackId: 'trk',
+                    value: 0.5,
+                    writeId: 'automation-range-command-1',
+                },
+            },
+            [{ argument: 'writeId', value: 'automation-range-command-1' }],
+            [
+                { argument: 'trackId', id: 'trk', scope: 'stable' },
+                { argument: 'writeId', id: 'automation-range-command-1', scope: 'stable' },
+            ],
+            [
+                { argument: 'range.endBeat', unit: 'beats' },
+                { argument: 'range.startBeat', unit: 'beats' },
+                { argument: 'value', unit: 'unitless' },
+            ],
+            [
+                { argument: 'range.endBeat', domain: 'musical', unit: 'beats', value: 8 },
+                { argument: 'range.startBeat', domain: 'musical', unit: 'beats', value: 0 },
+            ],
+            (draft: StoredArrangementDocument) => {
+                draft.tracks.tracks[0]!.devices.splice(0, 1);
+            },
+            ['dev1'],
+        ],
+        [
+            'track',
+            { type: 'setTrackGain', payload: { expectedGain: 0.8, gain: 0.6, trackId: 'trk' } },
+            [],
+            [{ argument: 'trackId', id: 'trk', scope: 'stable' }],
+            [
+                { argument: 'expectedGain', unit: 'linear-gain' },
+                { argument: 'gain', unit: 'linear-gain' },
+            ],
+            [],
+            (draft: StoredArrangementDocument) => {
+                draft.tracks.tracks.splice(0, 1);
+            },
+            ['trk'],
+        ],
+    ] satisfies [
+        string,
+        AppAction,
+        NonNullable<CreateEnvelopeInput['applicationAssignedIds']>,
+        CreateEnvelopeInput['objectReferences'],
+        CreateEnvelopeInput['parameterUnits'],
+        CreateEnvelopeInput['time'],
+        (draft: StoredArrangementDocument) => void,
+        string[],
+    ][])(
+        'names a %s removed from the live arrangement as the deleted target when a stored copy keeps it',
+        async (
+            kind,
+            action,
+            applicationAssignedIds,
+            objectReferences,
+            parameterUnits,
+            time,
+            removeFromLive,
+            deletedTargetIds
+        ) => {
+            seedProject();
+            registerCrdtStorageRuntime();
+            agentProjectInspectionPort.setProvider(inspectProjectWithCapturedFingerprints);
+            commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
+                const document = projectDocument ?? automergeRepository.getDoc<Record<string, unknown>>('root');
+                if (!document) {
+                    throw new Error('Expected project document for command preflight');
+                }
+                return {
+                    ...inspectProjectWithCapturedFingerprints({ projectDocument: document, targetIds }),
+                    availableAssetHashes: [],
+                    availableAudioBufferIds: [],
+                    lockedRanges: [],
+                    projectId: 'project-test',
+                };
+            });
+            seedSavedProjectWithStoredArrangement();
+            const execute = vi.fn();
+            const handler = {
+                describe: () => ({ inverseAction: null, label: 'Edit the saved project' }),
+                execute,
+                undoable: false,
+                validate: () => true,
+            };
+            registerHandlerMap({ automateParameterRange: handler, setTrackGain: handler });
+            const command = createVersionedCommandEnvelope({
+                action,
+                applicationAssignedIds,
+                availableDeviceVersions: {},
+                expectedEffect: `Edit the ${kind}.`,
+                normalizedProjectRevision: captureProjectRevision(),
+                objectReferences,
+                parameterUnits,
+                reason: `Edit the ${kind}.`,
+                time,
+            });
+            automergeRepository.changeDoc<StoredArrangementDocument>('root', removeFromLive);
+
+            const result = await executeVersionedCommandBatch({
+                commands: [serializeVersionedCommandEnvelope(command)],
+            });
+
+            expect(result).toMatchObject({
+                divergence: {
+                    kind: 'deleted-target',
+                    mayReapply: false,
+                    repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: deletedTargetIds }],
+                    targetIds: deletedTargetIds,
+                },
+                status: 'conflicted',
+            });
+            expect(execute).not.toHaveBeenCalled();
+        }
+    );
 
     it('uses historical Automerge heads to distinguish unrelated and compatible target edits', () => {
         seedProject();
@@ -751,6 +1064,102 @@ describe('agent concurrency and compensation', () => {
         });
         expect(targetStorage.get()?.['track-bass']).toBeUndefined();
     });
+
+    it.each([
+        [
+            'addAutomationLane',
+            {
+                type: 'addAutomationLane',
+                payload: { parameterId: 'dev1:drive', parameterName: 'Drive', trackId: 'trk' },
+            },
+            [{ argument: 'trackId', id: 'trk', scope: 'stable' }],
+            [],
+            [],
+            [],
+        ],
+        [
+            'automateParameterRange',
+            {
+                type: 'automateParameterRange',
+                payload: {
+                    parameterId: 'dev1:drive',
+                    range: { endBeat: 8, startBeat: 0 },
+                    trackId: 'trk',
+                    value: 0.5,
+                    writeId: 'automation-range-command-1',
+                },
+            },
+            [
+                { argument: 'trackId', id: 'trk', scope: 'stable' },
+                { argument: 'writeId', id: 'automation-range-command-1', scope: 'stable' },
+            ],
+            [{ argument: 'writeId', value: 'automation-range-command-1' }],
+            [
+                { argument: 'range.endBeat', unit: 'beats' },
+                { argument: 'range.startBeat', unit: 'beats' },
+                { argument: 'value', unit: 'unitless' },
+            ],
+            [
+                { argument: 'range.endBeat', domain: 'musical', unit: 'beats', value: 8 },
+                { argument: 'range.startBeat', domain: 'musical', unit: 'beats', value: 0 },
+            ],
+        ],
+    ] satisfies [
+        string,
+        AppAction,
+        CreateEnvelopeInput['objectReferences'],
+        NonNullable<CreateEnvelopeInput['applicationAssignedIds']>,
+        CreateEnvelopeInput['parameterUnits'],
+        CreateEnvelopeInput['time'],
+    ][])(
+        'names the removed device as the deleted target of a %s on its parameter',
+        async (_name, action, objectReferences, applicationAssignedIds, parameterUnits, time) => {
+            seedProject();
+            registerCrdtStorageRuntime();
+            const execute = vi.fn();
+            const handler = {
+                describe: () => ({ inverseAction: null, label: 'Automate device parameter' }),
+                execute,
+                undoable: false,
+                validate: () => true,
+            };
+            registerHandlerMap({ addAutomationLane: handler, automateParameterRange: handler });
+            automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+                draft.targets.trk = { gain: 0.8, id: 'trk', name: 'Track' };
+                draft.targets.dev1 = { gain: 0, id: 'dev1', name: 'Drive device' };
+            });
+            const command = createVersionedCommandEnvelope({
+                action,
+                applicationAssignedIds,
+                availableDeviceVersions: {},
+                expectedEffect: 'Automate the drive.',
+                normalizedProjectRevision: captureProjectRevision(),
+                objectReferences,
+                parameterUnits,
+                reason: 'Automate the drive.',
+                time,
+            });
+            automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+                delete draft.targets.dev1;
+                draft.targets.trk!.name = 'Track without drive';
+            });
+
+            const result = await executeVersionedCommandBatch({
+                commands: [serializeVersionedCommandEnvelope(command)],
+            });
+
+            expect(result).toMatchObject({
+                divergence: {
+                    kind: 'deleted-target',
+                    mayReapply: false,
+                    repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: ['dev1'] }],
+                    targetIds: ['dev1'],
+                },
+                status: 'conflicted',
+            });
+            expect(execute).not.toHaveBeenCalled();
+        }
+    );
 
     it('rejects all commands while raw project invariants require repair', async () => {
         const { command, targetStorage } = prepareTargetCommand();

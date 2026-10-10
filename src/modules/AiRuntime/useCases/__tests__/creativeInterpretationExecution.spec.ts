@@ -878,7 +878,7 @@ describe('creative interpretation execution', () => {
 
         const revision = captureProjectRevision();
         const context = getProjectContext();
-        const parsed = await parsePromptToActions(RADIO_PROMPT, context, undefined, revision);
+        const parsed = await parsePromptToActions({ prompt: RADIO_PROMPT, context, projectRevision: revision });
 
         expect(parsed.rejectionReason).toBeUndefined();
         expect(turnIndex).toBe(3);

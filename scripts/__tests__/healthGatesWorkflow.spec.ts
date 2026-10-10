@@ -80,6 +80,46 @@ const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
+const BROWSER_INSTALL_ATTEMPTS = 3;
+const ROOT_DEPENDENCY_CAP_MINUTES = 8;
+const USER_BROWSER_CAP_MINUTES = 3;
+const INSTALL_KILL_AFTER_SECONDS = 15;
+// The loop sleeps `attempt * 5` seconds after a failed attempt except the last.
+const INSTALL_BACKOFF_SECONDS = 5 + 10;
+// Apt gets a TERM and a grace period; the browser download is killed outright,
+// because GNU timeout's grace period ends when the direct child exits even if a
+// grandchild survives.
+const ROOT_DEPENDENCY_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m node_modules/.bin/playwright install-deps chromium`;
+const USER_BROWSER_INSTALL_COMMAND = `timeout --signal=KILL ${USER_BROWSER_CAP_MINUTES}m pnpm exec playwright install chromium`;
+// Every attempt times out at its caps, the root half after its kill-after, so a
+// job must hold this plus the time its other steps have been measured to take.
+const BROWSER_INSTALL_WORST_CASE_SECONDS =
+    BROWSER_INSTALL_ATTEMPTS *
+        ((ROOT_DEPENDENCY_CAP_MINUTES + USER_BROWSER_CAP_MINUTES) * 60 + INSTALL_KILL_AFTER_SECONDS) +
+    INSTALL_BACKOFF_SECONDS;
+// What a retry loop ends with once its last attempt has failed: the exit that
+// fails the step. Without it three failed installs fall out of the loop green.
+const BROWSER_INSTALL_FAILING_EXIT = 'if [ "$attempt" -eq 3 ]; then\n    exit 1\n  fi';
+// The ALSA headers are one small apt install, but `apt-get update` is the slow
+// part on a slow mirror, so each attempt carries the same 8 minute root cap as
+// the browser dependency install, and apt gets a TERM before the KILL.
+const ALSA_ATTEMPT_CAP_MINUTES = 8;
+const ALSA_INSTALL_COMMAND = `sudo timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ALSA_ATTEMPT_CAP_MINUTES}m bash -c 'apt-get update && apt-get install -y libasound2-dev'`;
+// The loop sleeps `attempt * 15` seconds after a failed attempt except the last.
+const ALSA_BACKOFF_SECONDS = 15 + 30;
+const ALSA_INSTALL_WORST_CASE_SECONDS =
+    BROWSER_INSTALL_ATTEMPTS * (ALSA_ATTEMPT_CAP_MINUTES * 60 + INSTALL_KILL_AFTER_SECONDS) + ALSA_BACKOFF_SECONDS;
+// What the ALSA run script ends with: the exit that fails the step.
+const ALSA_FAILING_TAIL = 'done\nexit 1';
+const HEAVY_E2E_INSTALL_STEP_MINUTES = 35;
+// Longest observed time of every step except the browser install, per job.
+const SMOKE_NON_INSTALL_SECONDS = 480;
+const E2E_SHARD_NON_INSTALL_SECONDS = 2040;
+// The derived minimum is a floor only; the declared limit is also a ceiling, so
+// raising a job toward GitHub's 360-minute default (an effectively unbounded
+// job) is a deliberate edit to these constants and not a silent workflow change.
+const SMOKE_JOB_MINUTES = 45;
+const E2E_JOB_MINUTES = 75;
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
 const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
 // A cancelled upstream job must still reach the required assertion. GitHub
@@ -123,6 +163,24 @@ const NATIVE_ADDON_ARTIFACT = 'crates/sourdaw-native/sourdaw-native.node';
 // such spec added without this leg would otherwise skip on every hosted run
 // forever, and a written list is exactly what nobody updates.
 const NATIVE_ADDON_IMPORT = 'NATIVE_ADDON_FILE';
+// The cargo registry index cache layer keys its archive per job: the two
+// native macOS jobs consult different index entries, so a key shared across
+// jobs lets whichever job's post-save ran first fix the archived index for
+// both (#5094, #5136). The recorded snapshot re-records in lockstep with the
+// workflow it pins, so this scoping is asserted against the parsed workflow
+// itself, never against the fixture alone.
+const CARGO_INDEX_KEY_PREFIX = 'cargo-index-';
+const CACHE_ACTION_USES_PREFIX = 'actions/cache@';
+const JOB_SCOPE_EXPRESSION = '${{ github.job }}';
+const CARGO_DEPENDENCY_KEY =
+    "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+const CARGO_INDEX_KEY =
+    "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+const CARGO_INDEX_RESTORE = 'cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n';
+const CARGO_DEPENDENCY_PATH = '~/.cargo/registry\n~/.cargo/git\n';
+const CARGO_OFFLINE_EXACT = "${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}";
+const NATIVE_OFFLINE_EXACT =
+    "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}";
 const PNPM_SETUP_STEP = 'Set up pnpm';
 const NODE_SETUP_STEP = 'Set up Node';
 const PULL_REQUEST_EXCLUDED_JOBS = [
@@ -245,6 +303,7 @@ const NIGHTLY_REPORT_NEEDS = [
     'native-windows',
     'desktop-measure',
     'e2e',
+    'e2e-report',
     'browser-ai-webgpu',
     'codeql',
     'secrets',
@@ -382,6 +441,7 @@ const isolationScriptSource = readFileSync(join(repositoryRoot, DEPLOY_WEB_ISOLA
 
 const { document: workflowDocument, parsed: workflow } = loadWorkflow('health-gates.yml');
 const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
+const { parsed: cargoDependencySeed } = loadWorkflow('cargo-dependency-seed.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
 const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
@@ -701,19 +761,79 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
     }
 }
 
+function requiredBrowserInstallJobMinutes(nonInstallSeconds: number): number {
+    return Math.ceil((BROWSER_INSTALL_WORST_CASE_SECONDS + nonInstallSeconds) / 60);
+}
+
+// apt-get runs as root through sudo, where a timeout owned by the runner user
+// cannot signal it: the stalled apt would survive as an orphan holding its lock
+// and every later attempt would fail on it. The root half is therefore bounded
+// from the root side, and the user-side browser download separately.
+function assertBoundedBrowserInstall(
+    job: UnknownRecord,
+    label: string,
+    nonInstallSeconds: number,
+    declaredJobMinutes: number
+): void {
+    const installRun = stringAt(stepNamed(job, 'Install Playwright browsers'), 'run');
+    if (!installRun.includes('for attempt in 1 2 3')) {
+        throw new Error(`${label} must retry browser and dependency installation against mirror outages`);
+    }
+    if (installRun.includes('--with-deps')) {
+        throw new Error(`${label} must not install system dependencies through the runner-user browser install`);
+    }
+    if (!installRun.includes(ROOT_DEPENDENCY_INSTALL_COMMAND)) {
+        throw new Error(`${label} must bound the root dependency install from the root side with sudo timeout`);
+    }
+    if (!installRun.includes(USER_BROWSER_INSTALL_COMMAND)) {
+        throw new Error(`${label} must bound the browser download with its own timeout`);
+    }
+    if (!installRun.includes(BROWSER_INSTALL_FAILING_EXIT)) {
+        throw new Error(`${label} must fail the step after the third failed install attempt`);
+    }
+    const timeoutMinutes = job['timeout-minutes'];
+    if (typeof timeoutMinutes !== 'number' || timeoutMinutes < requiredBrowserInstallJobMinutes(nonInstallSeconds)) {
+        throw new Error(
+            `${label} must have a job limit that holds three timed-out install attempts and its other steps`
+        );
+    }
+    if (timeoutMinutes !== declaredJobMinutes) {
+        throw new Error(`${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`);
+    }
+}
+
+// A hung apt never exits, so a retry loop alone never retries (#5072): every
+// attempt carries a root-side deadline, the step a limit that holds all
+// attempts plus backoff below its job's limit, and the loop ends in the exit
+// that fails the step.
+function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
+    const step = stepNamed(job, 'Install ALSA development headers');
+    const run = stringAt(step, 'run');
+    if (!run.includes('for attempt in 1 2 3')) {
+        throw new Error(`${label} must retry the ALSA header install against mirror outages`);
+    }
+    if (!run.includes(ALSA_INSTALL_COMMAND)) {
+        throw new Error(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
+    }
+    if (!run.trimEnd().endsWith(ALSA_FAILING_TAIL)) {
+        throw new Error(`${label} must fail the step after the third failed ALSA install attempt`);
+    }
+    const stepTimeoutMinutes = step['timeout-minutes'];
+    if (typeof stepTimeoutMinutes !== 'number' || stepTimeoutMinutes * 60 <= ALSA_INSTALL_WORST_CASE_SECONDS) {
+        throw new Error(`${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`);
+    }
+    const jobTimeoutMinutes = job['timeout-minutes'];
+    if (typeof jobTimeoutMinutes !== 'number' || stepTimeoutMinutes >= jobTimeoutMinutes) {
+        throw new Error(`${label} must keep the ALSA step limit below its job limit`);
+    }
+}
+
 function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     const smoke = jobAt(candidate, 'smoke');
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
     }
-    const installStep = stepNamed(smoke, 'Install Playwright browsers');
-    const installRun = stringAt(installStep, 'run');
-    if (!installRun.includes('pnpm exec playwright install --with-deps chromium')) {
-        throw new Error('the offline smoke job must install Playwright chromium with system dependencies');
-    }
-    if (!installRun.includes('for attempt in 1 2 3')) {
-        throw new Error('the offline smoke job must retry browser and dependency installation against mirror outages');
-    }
+    assertBoundedBrowserInstall(smoke, 'the offline smoke job', SMOKE_NON_INSTALL_SECONDS, SMOKE_JOB_MINUTES);
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
@@ -724,19 +844,19 @@ function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
     const install = stepNamed(e2e, 'Install Playwright browsers');
     const run = stringAt(install, 'run');
     const stepTimeoutMinutes = install['timeout-minutes'];
-    if (e2e['timeout-minutes'] !== 60 || stepTimeoutMinutes !== 35) {
-        throw new Error('the Playwright install step must be bounded below the 60-minute E2E job limit');
-    }
+    const jobTimeoutMinutes = e2e['timeout-minutes'];
     if (
-        !run.includes('for attempt in 1 2 3') ||
-        !run.includes('timeout --signal=KILL 10m pnpm exec playwright install --with-deps chromium') ||
-        !run.includes('sleep $((attempt * 5))') ||
-        !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')
+        stepTimeoutMinutes !== HEAVY_E2E_INSTALL_STEP_MINUTES ||
+        typeof jobTimeoutMinutes !== 'number' ||
+        stepTimeoutMinutes >= jobTimeoutMinutes
     ) {
+        throw new Error('the Playwright install step must be bounded below the E2E job limit');
+    }
+    assertBoundedBrowserInstall(e2e, 'the heavy E2E job', E2E_SHARD_NON_INSTALL_SECONDS, E2E_JOB_MINUTES);
+    if (!run.includes('sleep $((attempt * 5))') || !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')) {
         throw new Error('the heavy E2E install must retry three bounded attempts and fail after the third');
     }
-    const maximumSeconds = 3 * (10 * 60) + 15;
-    if (typeof stepTimeoutMinutes !== 'number' || stepTimeoutMinutes * 60 <= maximumSeconds) {
+    if (stepTimeoutMinutes * 60 <= BROWSER_INSTALL_WORST_CASE_SECONDS) {
         throw new Error('the heavy E2E install step limit must leave room for all bounded attempts and backoff');
     }
     const steps = arrayAt(e2e, 'steps').map((step) => asRecord(step, 'heavy E2E step'));
@@ -1063,9 +1183,189 @@ function assertNativeParityJob(candidate: UnknownRecord): void {
     }
 }
 
+type CargoIndexCacheStep = { job: string; key: string; restorePrefixes: string[] };
+
+// Substitutes the per-job expression with the value each job evaluates it to,
+// so two templates that differ only by embedding `${{ github.job }}` compare
+// as the distinct runtime keys they are, while two jobs sharing the unscoped
+// form compare equal — the collision.
+function runtimeKeyShape(key: string, job: string): string {
+    return key.split(JOB_SCOPE_EXPRESSION).join(job);
+}
+
+function cargoIndexCacheSteps(candidate: UnknownRecord): CargoIndexCacheStep[] {
+    const found: CargoIndexCacheStep[] = [];
+    for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+        const job = asRecord(jobValue, `${jobId} job`);
+        const steps = job.steps === undefined ? [] : arrayAt(job, 'steps');
+        for (const step of steps) {
+            const stepRecord = asRecord(step, 'step');
+            if (typeof stepRecord.uses !== 'string' || !stepRecord.uses.startsWith(CACHE_ACTION_USES_PREFIX)) {
+                continue;
+            }
+            if (stepRecord.with === null || typeof stepRecord.with !== 'object' || Array.isArray(stepRecord.with)) {
+                continue;
+            }
+            const stepWith = asRecord(stepRecord.with, 'with');
+            const key = stepWith.key;
+            if (typeof key !== 'string' || !key.startsWith(CARGO_INDEX_KEY_PREFIX)) {
+                continue;
+            }
+            const restoreKeys = stepWith['restore-keys'];
+            found.push({
+                job: jobId,
+                key,
+                restorePrefixes:
+                    typeof restoreKeys === 'string'
+                        ? restoreKeys.split('\n').filter((line) => line.trim().length > 0)
+                        : [],
+            });
+        }
+    }
+    return found;
+}
+
+/**
+ * The recorded snapshot re-records in lockstep with the workflow it pins, so a
+ * cargo-index key reverted from the per-job form would re-bless itself green.
+ * This reads the parsed workflow directly: no two jobs may share a runtime key
+ * or restore prefix — the poisoning race the per-job scoping exists to end —
+ * and every key and restore line must carry the per-job expression that keeps
+ * them distinct at runtime. The equality clauses run before the expression
+ * checks so each can be observed failing on its own mutation.
+ */
+function assertCargoIndexCacheKeysJobScoped(candidate: UnknownRecord): void {
+    const cargoIndexSteps = cargoIndexCacheSteps(candidate);
+    if (cargoIndexSteps.length === 0) {
+        throw new Error('the cargo registry index cache layer must keep a keyed actions/cache step');
+    }
+    for (const [index, entry] of cargoIndexSteps.entries()) {
+        const entryShape = runtimeKeyShape(entry.key, entry.job);
+        const entryPrefixes = entry.restorePrefixes.map((prefix) => runtimeKeyShape(prefix, entry.job));
+        for (const other of cargoIndexSteps.slice(index + 1)) {
+            if (other.job === entry.job) {
+                continue;
+            }
+            const otherShape = runtimeKeyShape(other.key, other.job);
+            const otherPrefixes = other.restorePrefixes.map((prefix) => runtimeKeyShape(prefix, other.job));
+            if (otherShape === entryShape) {
+                throw new Error(`the ${entry.job} and ${other.job} cargo-index cache keys must differ per job`);
+            }
+            for (const prefix of entryPrefixes) {
+                if (otherPrefixes.includes(prefix)) {
+                    throw new Error(`the ${entry.job} and ${other.job} cargo-index restore keys must differ per job`);
+                }
+            }
+        }
+    }
+    for (const entry of cargoIndexSteps) {
+        if (!entry.key.includes(JOB_SCOPE_EXPRESSION)) {
+            throw new Error(`the ${entry.job} cargo-index cache key must embed ${JOB_SCOPE_EXPRESSION}`);
+        }
+        for (const prefix of entry.restorePrefixes) {
+            if (!prefix.includes(JOB_SCOPE_EXPRESSION)) {
+                throw new Error(`the ${entry.job} cargo-index restore keys must embed ${JOB_SCOPE_EXPRESSION}`);
+            }
+        }
+    }
+}
+
+function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord): void {
+    expect(Object.keys(recordAt(seed, 'on'))).toEqual(['push']);
+    const push = recordAt(recordAt(seed, 'on'), 'push');
+    expect(push.branches).toEqual(['main']);
+    expect(push.paths).toEqual([
+        '.github/workflows/cargo-dependency-seed.yml',
+        'Cargo.lock',
+        '**/Cargo.toml',
+        '.cargo/config.toml',
+        'rust-toolchain.toml',
+    ]);
+    expect(seed.permissions).toEqual({ contents: 'read' });
+    expect(Object.keys(recordAt(seed, 'jobs'))).toEqual(['rust', 'native-macos']);
+    expect(JSON.stringify(seed)).not.toMatch(/secrets\.|"environment"|pnpm deliver|vercel/iu);
+
+    const linuxSeed = jobAt(seed, 'rust');
+    const linuxConsumer = jobAt(consumer, 'rust');
+    const nativeSeed = jobAt(seed, 'native-macos');
+    const nativeConsumer = jobAt(consumer, 'native-macos');
+    for (const [job, runner] of [
+        [linuxSeed, 'ubuntu-latest'],
+        [nativeSeed, 'macos-latest'],
+    ] as const) {
+        expect(job['runs-on']).toBe(runner);
+        expect(job.if).toBe("github.ref == 'refs/heads/main'");
+        expect(job['timeout-minutes']).toBe(60);
+        expect(stepNamed(job, 'Checkout').uses).toBe('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1');
+        expect(stepNamed(job, 'Cache cargo build').uses).toBe(
+            'Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6'
+        );
+    }
+    const linuxSeedNames = arrayAt(linuxSeed, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(linuxSeedNames).toEqual([
+        'Checkout',
+        'Install ALSA development headers',
+        'Install the pinned Rust toolchain',
+        'Cache cargo build',
+        'Cache Cargo dependencies',
+        'Rust workspace health gates',
+    ]);
+    const nativeSeedNames = arrayAt(nativeSeed, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(nativeSeedNames).toEqual([
+        'Checkout',
+        'Install the pinned Rust toolchain',
+        'Cache cargo build',
+        'Cache the cargo registry index',
+        'Test the audio crates',
+        'Test the native crate',
+    ]);
+    expect(stepNamed(linuxSeed, 'Rust workspace health gates').run).toBe('sh scripts/health-gates-rust.sh');
+    expect(stepNamed(nativeSeed, 'Test the audio crates').run).toBe(
+        'cargo test --package daw-core --package daw-dsp --package daw-engine --all-features'
+    );
+    expect(stepNamed(nativeSeed, 'Test the native crate').run).toBe('cargo test --package sourdaw-native');
+
+    for (const job of [linuxSeed, linuxConsumer]) {
+        const cache = stepNamed(job, 'Cache Cargo dependencies');
+        expect(cache.uses).toBe('actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830');
+        const options = recordAt(cache, 'with');
+        expect(options.path).toBe(CARGO_DEPENDENCY_PATH);
+        expect(options.key).toBe(CARGO_DEPENDENCY_KEY);
+    }
+    expect(stepNamed(linuxConsumer, 'Cache Cargo dependencies').id).toBe('cargo-deps');
+    const linuxConsumerNames = arrayAt(linuxConsumer, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(linuxConsumerNames.indexOf('Cache cargo build')).toBeLessThan(
+        linuxConsumerNames.indexOf('Cache Cargo dependencies')
+    );
+    expect(linuxConsumerNames.indexOf('Cache Cargo dependencies')).toBeLessThan(
+        linuxConsumerNames.indexOf('Server and Rust workspace health gates')
+    );
+    const linuxHealth = stepNamed(linuxConsumer, 'Server and Rust workspace health gates');
+    expect(linuxHealth.run).toBe('pnpm health:server:full');
+    expect(recordAt(linuxHealth, 'env')).toEqual({
+        CARGO_HTTP_MULTIPLEXING: 'false',
+        CARGO_NET_OFFLINE: CARGO_OFFLINE_EXACT,
+    });
+
+    for (const job of [nativeSeed, nativeConsumer]) {
+        const cache = stepNamed(job, 'Cache the cargo registry index');
+        expect(cache.id).toBe('cargo-index');
+        expect(cache.uses).toBe('actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830');
+        expect(recordAt(cache, 'with')).toEqual({
+            path: '~/.cargo/registry/index',
+            key: CARGO_INDEX_KEY,
+            'restore-keys': CARGO_INDEX_RESTORE,
+        });
+    }
+    for (const name of ['Test the audio crates', 'Test the native crate']) {
+        expect(recordAt(stepNamed(nativeConsumer, name), 'env').CARGO_NET_OFFLINE).toBe(NATIVE_OFFLINE_EXACT);
+    }
+}
+
 type WorkflowSet = {
     health: UnknownRecord;
     validation: UnknownRecord;
+    cargoDependencySeed: UnknownRecord;
     heavy: UnknownRecord;
     nightly: UnknownRecord;
     hostedQuantumMeasurement: UnknownRecord;
@@ -1077,6 +1377,7 @@ function workflowSet(): WorkflowSet {
     return {
         health: workflow,
         validation: validationWorkflow,
+        cargoDependencySeed,
         heavy: heavyWorkflow,
         nightly,
         hostedQuantumMeasurement,
@@ -1090,6 +1391,7 @@ function cloneWorkflows(label: string): WorkflowSet {
     return {
         health: asRecord(clone.health, `${label} health`),
         validation: asRecord(clone.validation, `${label} validation`),
+        cargoDependencySeed: asRecord(clone.cargoDependencySeed, `${label} cargo dependency seed`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
         nightly: asRecord(clone.nightly, `${label} nightly`),
         hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
@@ -1119,6 +1421,7 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
     return [
         ['health-gates.yml', set.health],
         ['validation.yml', set.validation],
+        ['cargo-dependency-seed.yml', set.cargoDependencySeed],
         ['heavy-gates.yml', set.heavy],
         ['nightly.yml', set.nightly],
         ['quantum-measurements.yml', set.hostedQuantumMeasurement],
@@ -1536,6 +1839,12 @@ function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
     }
 }
 
+function assertBrowserAiChromiumInstallBounded(job: UnknownRecord): void {
+    if (stepNamed(job, 'Install Chromium')['timeout-minutes'] !== 5) {
+        throw new Error('Browser AI WebGPU job must bound its Chromium install so a stalled download fails fast');
+    }
+}
+
 function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     const job = jobAt(candidate, BROWSER_AI_WEBGPU_JOB);
     if (job.name !== BROWSER_AI_WEBGPU_JOB_NAME) {
@@ -1550,6 +1859,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
     }
+    assertBrowserAiChromiumInstallBounded(job);
     if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
         throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
     }
@@ -1577,6 +1887,7 @@ function assertNightlyBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
     }
+    assertBrowserAiChromiumInstallBounded(job);
     if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
         throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
     }
@@ -3080,6 +3391,293 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('bounds both halves of every Linux browser install and keeps three attempts inside the job limit', () => {
+        const installs = [
+            {
+                label: 'the offline smoke job',
+                workflow: validationWorkflow,
+                job: 'smoke',
+                nonInstallSeconds: SMOKE_NON_INSTALL_SECONDS,
+                declaredJobMinutes: SMOKE_JOB_MINUTES,
+            },
+            {
+                label: 'the affected end-to-end job',
+                workflow: heavyWorkflow,
+                job: 'e2e',
+                nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
+                declaredJobMinutes: E2E_JOB_MINUTES,
+            },
+            {
+                label: 'the nightly end-to-end job',
+                workflow: nightly,
+                job: 'e2e',
+                nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
+                declaredJobMinutes: E2E_JOB_MINUTES,
+            },
+        ];
+        const unwrappedRoot = ROOT_DEPENDENCY_INSTALL_COMMAND.replace(
+            `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m `,
+            'sudo '
+        );
+        const rootRunAsRunner = ROOT_DEPENDENCY_INSTALL_COMMAND.replace('sudo env "PATH=$PATH" ', '');
+
+        for (const { label, workflow, job, nonInstallSeconds, declaredJobMinutes } of installs) {
+            const check = (candidate: UnknownRecord): void => {
+                assertBoundedBrowserInstall(jobAt(candidate, job), label, nonInstallSeconds, declaredJobMinutes);
+            };
+            const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
+                const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
+                change(jobAt(clone, job));
+                return clone;
+            };
+            const rewriteInstall = (name: string, rewrite: (run: string) => string): UnknownRecord =>
+                mutate(name, (target) => {
+                    const step = stepNamed(target, 'Install Playwright browsers');
+                    step.run = rewrite(stringAt(step, 'run'));
+                });
+
+            expect(() => check(workflow)).not.toThrow();
+
+            expect(() =>
+                check(
+                    rewriteInstall('unbounded root', (run) =>
+                        run.replace(ROOT_DEPENDENCY_INSTALL_COMMAND, unwrappedRoot)
+                    )
+                )
+            ).toThrow(`${label} must bound the root dependency install from the root side with sudo timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('runner-owned root timeout', (run) =>
+                        run.replace(ROOT_DEPENDENCY_INSTALL_COMMAND, rootRunAsRunner)
+                    )
+                )
+            ).toThrow(`${label} must bound the root dependency install from the root side with sudo timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('unbounded browser download', (run) =>
+                        run.replace(USER_BROWSER_INSTALL_COMMAND, 'pnpm exec playwright install chromium')
+                    )
+                )
+            ).toThrow(`${label} must bound the browser download with its own timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall(
+                        'coupled dependencies',
+                        (run) => `${run}\npnpm exec playwright install --with-deps chromium`
+                    )
+                )
+            ).toThrow(`${label} must not install system dependencies through the runner-user browser install`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('single attempt', (run) => run.replace('for attempt in 1 2 3', 'for attempt in 1'))
+                )
+            ).toThrow(`${label} must retry browser and dependency installation against mirror outages`);
+
+            const requiredMinutes = requiredBrowserInstallJobMinutes(nonInstallSeconds);
+            expect(jobAt(workflow, job)['timeout-minutes']).toBeGreaterThanOrEqual(requiredMinutes);
+            const justBelowLimit = mutate('limit just below the requirement', (target) => {
+                target['timeout-minutes'] = requiredMinutes - 1;
+            });
+            expect(() => check(justBelowLimit)).toThrow(
+                `${label} must have a job limit that holds three timed-out install attempts and its other steps`
+            );
+            expect(declaredJobMinutes).toBeGreaterThanOrEqual(requiredMinutes);
+            const pinMessage = `${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`;
+            const justAboveLimit = mutate('limit just above the declaration', (target) => {
+                target['timeout-minutes'] = declaredJobMinutes + 1;
+            });
+            expect(() => check(justAboveLimit)).toThrow(pinMessage);
+            const defaultLimit = mutate('GitHub default limit', (target) => {
+                target['timeout-minutes'] = 360;
+            });
+            expect(() => check(defaultLimit)).toThrow(pinMessage);
+            const unlimited = mutate('absent limit', (target) => {
+                delete target['timeout-minutes'];
+            });
+            expect(() => check(unlimited)).toThrow(
+                `${label} must have a job limit that holds three timed-out install attempts and its other steps`
+            );
+        }
+    });
+
+    it('bounds, retries and fails every ALSA header install inside its step and job limits', () => {
+        const installs = [
+            { label: 'the validation Rust job', workflow: validationWorkflow },
+            { label: 'the nightly Rust job', workflow: nightly },
+        ];
+
+        for (const { label, workflow } of installs) {
+            const check = (candidate: UnknownRecord): void => {
+                assertBoundedAlsaInstall(jobAt(candidate, 'rust'), label);
+            };
+            const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
+                const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
+                change(jobAt(clone, 'rust'));
+                return clone;
+            };
+            const rewriteInstall = (name: string, rewrite: (run: string) => string): UnknownRecord =>
+                mutate(name, (target) => {
+                    const step = stepNamed(target, 'Install ALSA development headers');
+                    step.run = rewrite(stringAt(step, 'run'));
+                });
+
+            expect(() => check(workflow)).not.toThrow();
+
+            expect(() =>
+                check(
+                    rewriteInstall('unbounded attempt', (run) =>
+                        run.replace(
+                            ALSA_INSTALL_COMMAND,
+                            'sudo apt-get update && sudo apt-get install -y libasound2-dev'
+                        )
+                    )
+                )
+            ).toThrow(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('runner-owned timeout', (run) =>
+                        run.replace(ALSA_INSTALL_COMMAND, ALSA_INSTALL_COMMAND.replace('sudo timeout', 'timeout'))
+                    )
+                )
+            ).toThrow(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('single attempt', (run) => run.replace('for attempt in 1 2 3', 'for attempt in 1'))
+                )
+            ).toThrow(`${label} must retry the ALSA header install against mirror outages`);
+
+            expect(() =>
+                check(rewriteInstall('swallowed failure', (run) => run.replace(/\nexit 1\s*$/, '\n')))
+            ).toThrow(`${label} must fail the step after the third failed ALSA install attempt`);
+
+            const justBelowLimit = mutate('step limit just below the requirement', (target) => {
+                stepNamed(target, 'Install ALSA development headers')['timeout-minutes'] = Math.floor(
+                    ALSA_INSTALL_WORST_CASE_SECONDS / 60
+                );
+            });
+            expect(() => check(justBelowLimit)).toThrow(
+                `${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`
+            );
+
+            const unlimited = mutate('absent step limit', (target) => {
+                delete stepNamed(target, 'Install ALSA development headers')['timeout-minutes'];
+            });
+            expect(() => check(unlimited)).toThrow(
+                `${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`
+            );
+
+            const stepAtJobLimit = mutate('step limit at the job limit', (target) => {
+                stepNamed(target, 'Install ALSA development headers')['timeout-minutes'] = Number(
+                    target['timeout-minutes']
+                );
+            });
+            expect(() => check(stepAtJobLimit)).toThrow(`${label} must keep the ALSA step limit below its job limit`);
+        }
+    });
+
+    // Executes the ALSA run script with shims standing in for the privileged
+    // and slow commands, so a loop edit that keeps the contract's substrings
+    // but changes what the loop does is observed (#5072).
+    const runAlsaInstall = (
+        run: string,
+        succeedOnAttempt: number
+    ): { attempts: number; sleeps: string[]; status: number | null; stderr: string } => {
+        const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
+        const attemptLog = join(probeDirectory, 'attempts.log');
+        const sleepLog = join(probeDirectory, 'sleeps.log');
+        const shim = (name: string, lines: string[]): void => {
+            writeFileSync(join(probeDirectory, name), ['#!/usr/bin/env bash', ...lines].join('\n'), { mode: 0o755 });
+        };
+        try {
+            shim('sudo', ['exec "$@"']);
+            // Drops the --kill-after and duration operands, then runs the command.
+            shim('timeout', ['shift 2', 'exec "$@"']);
+            shim('sleep', ['printf "%s\\n" "$1" >> "$SLEEP_LOG"']);
+            // Each attempt runs `apt-get update` once; that call is the attempt count.
+            shim('apt-get', [
+                'if [ "$1" = update ]; then',
+                '  printf "attempt\\n" >> "$ATTEMPT_LOG"',
+                '  [ "$(wc -l < "$ATTEMPT_LOG")" -ge "$SUCCEED_ON_ATTEMPT" ] || exit 100',
+                'fi',
+            ]);
+            const result = spawnSync('bash', ['-c', run], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    ATTEMPT_LOG: attemptLog,
+                    SLEEP_LOG: sleepLog,
+                    SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
+                    PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
+                },
+                timeout: 10_000,
+            });
+            expect(result.error).toBeUndefined();
+            const lines = (path: string): string[] =>
+                existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n') : [];
+            return {
+                attempts: lines(attemptLog).length,
+                sleeps: lines(sleepLog),
+                status: result.status,
+                stderr: result.stderr,
+            };
+        } finally {
+            rmSync(probeDirectory, { force: true, recursive: true });
+        }
+    };
+
+    for (const { label, workflow } of [
+        { label: 'the validation Rust job', workflow: validationWorkflow },
+        { label: 'the nightly Rust job', workflow: nightly },
+    ]) {
+        const alsaRun = stringAt(stepNamed(jobAt(workflow, 'rust'), 'Install ALSA development headers'), 'run');
+
+        it(`${label} makes three ALSA install attempts, then fails the step`, () => {
+            const outcome = runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
+            expect(outcome.attempts).toBe(3);
+            expect(outcome.sleeps).toEqual(['15', '30']);
+            expect(outcome.status).toBe(1);
+            expect(outcome.stderr).toContain('ALSA header install failed (attempt 3/3)');
+        });
+
+        it(`${label} stops retrying the ALSA install once an attempt succeeds`, () => {
+            const outcome = runAlsaInstall(alsaRun, 2);
+            expect(outcome.attempts).toBe(2);
+            expect(outcome.sleeps).toEqual(['15']);
+            expect(outcome.status).toBe(0);
+        });
+    }
+
+    it('fails every Linux browser install step after its third failed attempt', () => {
+        const installs = [
+            { label: 'the offline smoke job', workflow: validationWorkflow, job: 'smoke' },
+            { label: 'the affected end-to-end job', workflow: heavyWorkflow, job: 'e2e' },
+            { label: 'the nightly end-to-end job', workflow: nightly, job: 'e2e' },
+        ];
+
+        for (const { label, workflow, job } of installs) {
+            const clone = asRecord(structuredClone(workflow), `swallowed failure ${label}`);
+            const step = stepNamed(jobAt(clone, job), 'Install Playwright browsers');
+            step.run = stringAt(step, 'run').replace(
+                BROWSER_INSTALL_FAILING_EXIT,
+                'if [ "$attempt" -eq 3 ]; then\n    true\n  fi'
+            );
+            expect(() =>
+                assertBoundedBrowserInstall(
+                    jobAt(clone, job),
+                    label,
+                    job === 'smoke' ? SMOKE_NON_INSTALL_SECONDS : E2E_SHARD_NON_INSTALL_SECONDS,
+                    job === 'smoke' ? SMOKE_JOB_MINUTES : E2E_JOB_MINUTES
+                )
+            ).toThrow(`${label} must fail the step after the third failed install attempt`);
+        }
+    });
+
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
         expect(() => assertOfflineSmokeJob(validationWorkflow)).not.toThrow();
         expect(() => assertPullRequestSecretScan(validationWorkflow)).not.toThrow();
@@ -3101,16 +3699,6 @@ describe('health gates workflow contract', () => {
             'pnpm exec playwright install --with-deps chromium';
         expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
             'the offline smoke job must retry browser and dependency installation against mirror outages'
-        );
-
-        const missingDepsInstall = asRecord(
-            structuredClone(validationWorkflow),
-            'missing deps install validationWorkflow'
-        );
-        stepNamed(jobAt(missingDepsInstall, 'smoke'), 'Install Playwright browsers').run =
-            'for attempt in 1 2 3; do pnpm exec playwright install chromium; done';
-        expect(() => assertOfflineSmokeJob(missingDepsInstall)).toThrow(
-            'the offline smoke job must install Playwright chromium with system dependencies'
         );
 
         const eventGatedDiffScan = asRecord(
@@ -3150,17 +3738,27 @@ describe('health gates workflow contract', () => {
 
         const unboundedInstall = cloneWorkflows('unbounded heavy E2E browser install');
         stepNamed(jobAt(unboundedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
-            'timeout --signal=KILL 10m ',
-            ''
+            USER_BROWSER_INSTALL_COMMAND,
+            'pnpm exec playwright install chromium'
         );
         expect(() => assertBoundedHeavyE2eInstall(unboundedInstall.heavy)).toThrow(
+            'the heavy E2E job must bound the browser download with its own timeout'
+        );
+
+        const unretriedInstall = cloneWorkflows('unretried heavy E2E browser install');
+        stepNamed(jobAt(unretriedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
+            'sleep $((attempt * 5))',
+            'sleep 0'
+        );
+        expect(() => assertBoundedHeavyE2eInstall(unretriedInstall.heavy)).toThrow(
             'the heavy E2E install must retry three bounded attempts and fail after the third'
         );
 
         const overlongInstall = cloneWorkflows('overlong heavy E2E browser install');
-        stepNamed(jobAt(overlongInstall.heavy, 'e2e'), 'Install Playwright browsers')['timeout-minutes'] = 60;
+        const overlongJob = jobAt(overlongInstall.heavy, 'e2e');
+        stepNamed(overlongJob, 'Install Playwright browsers')['timeout-minutes'] = overlongJob['timeout-minutes'];
         expect(() => assertBoundedHeavyE2eInstall(overlongInstall.heavy)).toThrow(
-            'the Playwright install step must be bounded below the 60-minute E2E job limit'
+            'the Playwright install step must be bounded below the E2E job limit'
         );
     });
 
@@ -3215,6 +3813,9 @@ describe('health gates workflow contract', () => {
                     ].join('\n'),
                     { mode: 0o755 }
                 );
+                // The root dependency half succeeds, so each attempt reaches the
+                // user-side browser download that this probe stalls.
+                writeFileSync(join(probeDirectory, 'sudo'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
                 try {
                     if (gnuTimeout !== 'timeout') {
                         const resolvedTimeout = spawnSync('which', [gnuTimeout], { encoding: 'utf8' });
@@ -3400,6 +4001,71 @@ describe('health gates workflow contract', () => {
             jobAt(softenedJob[wiring.workflow], suite)['continue-on-error'] = true;
             expect(() => assertJobGraph(softenedJob)).toThrow(`${suite} must not use job-level continue-on-error`);
         }
+    });
+
+    it('keeps a failed or missing E2E shadow artifact outside every required result', () => {
+        const health = workflowSet().health;
+        const shadow = jobAt(health, 'selection-shadow');
+        expect(shadow.needs).toBe('scope');
+        expect(shadow.outputs).toBeUndefined();
+        expect(shadow['continue-on-error']).toBeUndefined();
+        expect(arrayAt(jobAt(health, 'gate'), 'needs')).toEqual(['scope', 'validation', 'affected', 'codeql']);
+        expect(jobAt(health, 'validation').needs).toBe('scope');
+        expect(jobAt(health, 'affected').needs).toEqual(['scope', 'validation']);
+        expect(stepNamed(shadow, 'Checkout candidate head').with).toEqual({
+            ref: '${{ github.event.pull_request.head.sha }}',
+            'fetch-depth': 0,
+            'persist-credentials': false,
+        });
+        expect(stepNamed(shadow, 'Checkout immutable integration commit').with).toEqual({
+            ref: '${{ github.sha }}',
+            path: 'shadow-integration',
+            'fetch-depth': 0,
+            'persist-credentials': false,
+        });
+        expect(stepNamed(shadow, 'Checkout immutable shadow control').with).toEqual({
+            ref: '${{ github.event.pull_request.base.sha }}',
+            path: 'shadow-control',
+            'fetch-depth': 0,
+            'persist-credentials': false,
+        });
+        expect(stepNamed(shadow, 'Download authoritative scope').with).toEqual({
+            name: 'pr-validation-scope',
+            path: 'shadow-scope',
+        });
+        expect(stepNamed(shadow, 'Set up pnpm').with).toEqual({ package_json_file: 'shadow-control/package.json' });
+        expect(stepNamed(shadow, 'Set up Node').with).toMatchObject({
+            'cache-dependency-path': 'shadow-control/pnpm-lock.yaml',
+        });
+        expect(stepNamed(shadow, 'Install dependencies')['working-directory']).toBe('shadow-control');
+        expect(stepNamed(shadow, 'Upload shadow measurement').with).toMatchObject({
+            name: 'e2e-selection-shadow',
+            'if-no-files-found': 'error',
+        });
+        expect(stepNamed(shadow, 'Upload shadow measurement').if).toBe('${{ always() }}');
+        expect(stepNamed(shadow, 'Measure shadow selection').run).toBe(
+            'node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
+        );
+        expect(stepNamed(shadow, 'Measure shadow selection').env).toEqual({
+            BASE_SHA: '${{ github.event.pull_request.base.sha }}',
+            HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
+            INTEGRATION_SHA: '${{ github.sha }}',
+            INTEGRATION_ROOT: 'shadow-integration',
+            CONTROL_ROOT: 'shadow-control',
+        });
+        const gateScript = assertGateContract(health, 'gate', 'Gate', GATE_CONDITION);
+        const required = JSON.stringify({
+            scope: { result: 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql: 'false' } },
+            validation: { result: 'success' },
+            affected: { result: 'success' },
+            codeql: { result: 'skipped' },
+        });
+        expect(runResultsGuard(gateScript, required)).toBe(0);
+        const diagnosticAsNeed = structuredClone(health);
+        arrayAt(jobAt(diagnosticAsNeed, 'gate'), 'needs').push('selection-shadow');
+        expect(() => assertJobGraph({ ...workflowSet(), health: diagnosticAsNeed })).toThrow(
+            'gate must depend on exactly the pinned member list'
+        );
     });
 
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
@@ -3594,7 +4260,11 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('builds the native addon and runs every spec that loads it, unsoftened', () => {
+    // Measured budget, not the 5 s default: discovering addon-loading specs
+    // reads every spec under src once per process — 7.2 s on a cold external-SSD
+    // file cache under load (#5106), 19 s on a loaded lane — and no narrower
+    // scan exists, because any spec under src may import the addon.
+    it('builds the native addon and runs every spec that loads it, unsoftened', { timeout: 60_000 }, () => {
         expect(() => assertNativeParityJob(validationWorkflow)).not.toThrow();
         expect(addonLoadingSpecs(join(repositoryRoot, 'src'))).toContain(
             'src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts'
@@ -3628,7 +4298,9 @@ describe('health gates workflow contract', () => {
         expect(() => assertNativeParityJob(droppedSpec)).toThrow(`native parity must run ${dropped}`);
     });
 
-    it('refuses an addon presence guard that cannot fail', () => {
+    // Same measured budget: both assertions reach the addon discovery through
+    // assertNativeParityJob, whose scan is cold whenever this row runs alone.
+    it('refuses an addon presence guard that cannot fail', { timeout: 60_000 }, () => {
         // Executed, not read: each of these bodies names the artifact exactly as
         // the real step does, and each would let the parity specs skip on every
         // hosted run while a substring pin reported the leg intact.
@@ -3645,6 +4317,127 @@ describe('health gates workflow contract', () => {
         expect(() => assertNativeParityJob(misdirectedGuard)).toThrow(
             'native parity must accept the addon its own builder produces'
         );
+    });
+
+    it('scopes every cargo registry index cache key and restore key to its own job', () => {
+        expect(() => assertCargoIndexCacheKeysJobScoped(validationWorkflow)).not.toThrow();
+
+        // The pre-#5136 shared forms. The recorded escape: revert a native job
+        // to these and re-record the snapshot — the snapshot leg greens in
+        // lockstep, while this named pin reads the workflow and stays red.
+        const sharedKey = "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}";
+        const sharedRestoreKeys = 'cargo-index-${{ runner.os }}-${{ runner.arch }}-\n';
+
+        const sharedKeyJob = asRecord(structuredClone(validationWorkflow), 'shared cargo-index key');
+        const sharedKeyStep = stepNamed(jobAt(sharedKeyJob, 'native-macos'), 'Cache the cargo registry index');
+        recordAt(sharedKeyStep, 'with').key = sharedKey;
+        recordAt(sharedKeyStep, 'with')['restore-keys'] = sharedRestoreKeys;
+        expect(() => assertCargoIndexCacheKeysJobScoped(sharedKeyJob)).toThrow(
+            'the native-macos cargo-index cache key must embed ${{ github.job }}'
+        );
+
+        // A key that keeps its job scope but restores on the shared prefix
+        // still hands the other macOS job's index over on a partial match.
+        const sharedRestoreJob = asRecord(structuredClone(validationWorkflow), 'shared cargo-index restore keys');
+        const sharedRestoreStep = stepNamed(jobAt(sharedRestoreJob, 'native-macos'), 'Cache the cargo registry index');
+        recordAt(sharedRestoreStep, 'with')['restore-keys'] = sharedRestoreKeys;
+        expect(() => assertCargoIndexCacheKeysJobScoped(sharedRestoreJob)).toThrow(
+            'the native-macos cargo-index restore keys must embed ${{ github.job }}'
+        );
+
+        // Both macOS jobs on the shared key is the poisoning race itself: the
+        // cross-job equality clauses refuse it before the expression checks run.
+        const collidingJobs = asRecord(structuredClone(validationWorkflow), 'colliding cargo-index keys');
+        for (const jobId of ['native-macos', 'native-parity'] as const) {
+            const collidingStep = stepNamed(jobAt(collidingJobs, jobId), 'Cache the cargo registry index');
+            recordAt(collidingStep, 'with').key = sharedKey;
+            recordAt(collidingStep, 'with')['restore-keys'] = sharedRestoreKeys;
+        }
+        expect(() => assertCargoIndexCacheKeysJobScoped(collidingJobs)).toThrow(
+            'the native-macos and native-parity cargo-index cache keys must differ per job'
+        );
+
+        // A removed layer must vacate this pin loudly rather than guard nothing.
+        const emptiedJobs = asRecord(structuredClone(validationWorkflow), 'emptied cargo-index layer');
+        for (const jobId of ['native-macos', 'native-windows', 'native-parity'] as const) {
+            removeStepNamed(jobAt(emptiedJobs, jobId), 'Cache the cargo registry index');
+        }
+        expect(() => assertCargoIndexCacheKeysJobScoped(emptiedJobs)).toThrow(
+            'the cargo registry index cache layer must keep a keyed actions/cache step'
+        );
+    });
+
+    it('seeds complete Cargo dependencies on main and consumes only exact Linux and macOS hits offline', () => {
+        const seed = loadWorkflow('cargo-dependency-seed.yml').parsed;
+        expect(() => assertCargoDependencySeed(seed, validationWorkflow)).not.toThrow();
+
+        const missingRegistry = asRecord(structuredClone(seed), 'seed missing registry');
+        recordAt(stepNamed(jobAt(missingRegistry, 'rust'), 'Cache Cargo dependencies'), 'with').path =
+            '~/.cargo/registry';
+        expect(() => assertCargoDependencySeed(missingRegistry, validationWorkflow)).toThrow();
+
+        const mismatchedKey = asRecord(structuredClone(validationWorkflow), 'mismatched key');
+        recordAt(stepNamed(jobAt(mismatchedKey, 'rust'), 'Cache Cargo dependencies'), 'with').key =
+            CARGO_DEPENDENCY_KEY.replace(", 'rust-toolchain.toml'", '');
+        expect(() => assertCargoDependencySeed(seed, mismatchedKey)).toThrow();
+
+        const targetCoupled = asRecord(structuredClone(validationWorkflow), 'target coupled');
+        recordAt(
+            stepNamed(jobAt(targetCoupled, 'rust'), 'Server and Rust workspace health gates'),
+            'env'
+        ).CARGO_NET_OFFLINE =
+            "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}";
+        expect(() => assertCargoDependencySeed(seed, targetCoupled)).toThrow();
+
+        const prefixAdmitted = asRecord(structuredClone(validationWorkflow), 'prefix admitted');
+        recordAt(
+            stepNamed(jobAt(prefixAdmitted, 'rust'), 'Server and Rust workspace health gates'),
+            'env'
+        ).CARGO_NET_OFFLINE = "${{ steps.cargo-deps.outputs.cache-matched-key && 'true' || 'false' }}";
+        expect(() => assertCargoDependencySeed(seed, prefixAdmitted)).toThrow();
+
+        const missingNativeTest = asRecord(structuredClone(seed), 'missing native test');
+        removeStepNamed(jobAt(missingNativeTest, 'native-macos'), 'Test the native crate');
+        expect(() => assertCargoDependencySeed(missingNativeTest, validationWorkflow)).toThrow();
+
+        const unsafeTrigger = asRecord(structuredClone(seed), 'unsafe trigger');
+        recordAt(unsafeTrigger, 'on').workflow_dispatch = {};
+        expect(() => assertCargoDependencySeed(unsafeTrigger, validationWorkflow)).toThrow();
+
+        const unsafePermissions = asRecord(structuredClone(seed), 'unsafe permissions');
+        recordAt(unsafePermissions, 'permissions').contents = 'write';
+        expect(() => assertCargoDependencySeed(unsafePermissions, validationWorkflow)).toThrow();
+
+        const reorderedCache = asRecord(structuredClone(seed), 'reordered cache');
+        arrayAt(jobAt(reorderedCache, 'rust'), 'steps').reverse();
+        expect(() => assertCargoDependencySeed(reorderedCache, validationWorkflow)).toThrow();
+    });
+
+    it('invalidates both macOS index identities for every Cargo graph input', () => {
+        const seed = loadWorkflow('cargo-dependency-seed.yml').parsed;
+        const graphInputs = ['Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml'];
+        const expectedKey =
+            "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}";
+        const expectedRestore = 'cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n';
+        const assertGraphIdentity = (producer: UnknownRecord, consumer: UnknownRecord): void => {
+            for (const job of [jobAt(producer, 'native-macos'), jobAt(consumer, 'native-macos')]) {
+                const options = recordAt(stepNamed(job, 'Cache the cargo registry index'), 'with');
+                expect(options.key).toBe(expectedKey);
+                expect(options['restore-keys']).toBe(expectedRestore);
+            }
+        };
+
+        expect(() => assertGraphIdentity(seed, validationWorkflow)).not.toThrow();
+        for (const input of graphInputs.slice(1)) {
+            for (const side of ['producer', 'consumer'] as const) {
+                const producer = asRecord(structuredClone(seed), `${side} producer`);
+                const consumer = asRecord(structuredClone(validationWorkflow), `${side} consumer`);
+                const job = side === 'producer' ? jobAt(producer, 'native-macos') : jobAt(consumer, 'native-macos');
+                const options = recordAt(stepNamed(job, 'Cache the cargo registry index'), 'with');
+                options.key = expectedKey.replace(`, '${input}'`, '');
+                expect(() => assertGraphIdentity(producer, consumer)).toThrow();
+            }
+        }
     });
 
     it('fetches immutable measurement provenance history only in the unit matrix', () => {
@@ -3690,6 +4483,18 @@ describe('health gates workflow contract', () => {
             'pnpm test:e2e tests/e2e/browserAiWebGpuAdmission.spec.ts';
         expect(() => assertBrowserAiWebGpuJob(defaultMatrix)).toThrow(
             'Browser AI WebGPU job must run the dedicated hardware command'
+        );
+
+        const unboundedHeavyInstall = asRecord(structuredClone(heavyWorkflow), 'unbounded Browser AI heavyWorkflow');
+        delete stepNamed(jobAt(unboundedHeavyInstall, BROWSER_AI_WEBGPU_JOB), 'Install Chromium')['timeout-minutes'];
+        expect(() => assertBrowserAiWebGpuJob(unboundedHeavyInstall)).toThrow(
+            'Browser AI WebGPU job must bound its Chromium install so a stalled download fails fast'
+        );
+
+        const unboundedNightlyInstall = asRecord(structuredClone(nightly), 'unbounded Browser AI nightly');
+        delete stepNamed(jobAt(unboundedNightlyInstall, BROWSER_AI_WEBGPU_JOB), 'Install Chromium')['timeout-minutes'];
+        expect(() => assertNightlyBrowserAiWebGpuJob(unboundedNightlyInstall)).toThrow(
+            'Browser AI WebGPU job must bound its Chromium install so a stalled download fails fast'
         );
 
         const disconnectedGate = asRecord(structuredClone(heavyWorkflow), 'disconnected Browser AI heavy workflow');
@@ -3770,6 +4575,95 @@ describe('health gates workflow contract', () => {
         expect(() => requireBrowserWebGpuHardware({ status: 'unavailable', reason: 'fallback-adapter' })).toThrow(
             'This Browser AI proof requires hardware WebGPU (fallback-adapter)'
         );
+    });
+
+    it('reports a sole nightly E2E report failure on scheduled runs', () => {
+        const report = jobAt(nightly, 'nightly-report');
+        expect.soft(arrayAt(report, 'needs')).toContain('e2e-report');
+        expect(report.if).toBe("${{ failure() && github.event_name == 'schedule' }}");
+
+        const reporter = stepNamed(report, 'Open or update the nightly failure issue');
+        expect(recordAt(reporter, 'env').RESULTS).toBe('${{ toJSON(needs) }}');
+
+        const runReporter = (existingIssue: '' | '37') => {
+            const directory = mkdtempSync(join(tmpdir(), 'sourdaw-nightly-report-'));
+            try {
+                const bin = join(directory, 'bin');
+                mkdirSync(bin);
+                writeFileSync(
+                    join(bin, 'gh'),
+                    [
+                        '#!/usr/bin/env node',
+                        "const fs = require('node:fs');",
+                        'const args = process.argv.slice(2);',
+                        "const fail = () => { process.stderr.write('unsupported gh invocation\\n'); process.exit(97); };",
+                        'const append = () => fs.appendFileSync(process.env.GH_CAPTURE, `${JSON.stringify(args)}\\n`);',
+                        "if (JSON.stringify(args) === JSON.stringify(['issue', 'list', '--repo', 'owner/repository', '--state', 'open', '--search', '\"ci(nightly): health gates red on main\" in:title', '--json', 'number', '--jq', '.[0].number // empty'])) {",
+                        '  append();',
+                        "  if (process.env.GH_LOOKUP_RESULT === '37') process.stdout.write('37\\n');",
+                        "  else if (process.env.GH_LOOKUP_RESULT !== '') fail();",
+                        '  process.exit(0);',
+                        '}',
+                        "if (args[0] === 'issue' && args[1] === 'create' && process.env.GH_LOOKUP_RESULT === '') {",
+                        "  if (args.length !== 14 || args[2] !== '--repo' || args[3] !== 'owner/repository' || args[4] !== '--title' || args[5] !== 'ci(nightly): health gates red on main' || args[6] !== '--body' || args[8] !== '--label' || args[9] !== 'bug' || args[10] !== '--label' || args[11] !== 'status:ready' || args[12] !== '--label' || args[13] !== 'priority:P1') fail();",
+                        "  if (!args[7].includes('Failing jobs: e2e-report') || !args[7].includes('https://github.com/owner/repository/actions/runs/1')) fail();",
+                        '  append();',
+                        '  process.exit(0);',
+                        '}',
+                        "if (args[0] === 'issue' && args[1] === 'comment' && process.env.GH_LOOKUP_RESULT === '37') {",
+                        "  if (args.length !== 7 || args[2] !== '37' || args[3] !== '--repo' || args[4] !== 'owner/repository' || args[5] !== '--body' || !args[6].includes('Failing jobs: e2e-report') || !args[6].includes('https://github.com/owner/repository/actions/runs/1')) fail();",
+                        '  append();',
+                        '  process.exit(0);',
+                        '}',
+                        'fail();',
+                    ].join('\n'),
+                    { mode: 0o755 }
+                );
+                const result = spawnSync('bash', ['-c', stringAt(reporter, 'run')], {
+                    encoding: 'utf8',
+                    env: {
+                        ...process.env,
+                        GH_CAPTURE: join(directory, 'gh-calls.txt'),
+                        GH_TOKEN: 'unit-test',
+                        GITHUB_REPOSITORY: 'owner/repository',
+                        GH_LOOKUP_RESULT: existingIssue,
+                        PATH: `${bin}:${process.env.PATH ?? ''}`,
+                        RESULTS: JSON.stringify({ 'e2e-report': { result: 'failure' } }),
+                        RUN_URL: 'https://github.com/owner/repository/actions/runs/1',
+                    },
+                });
+                expect(result.status).toBe(0);
+                return readFileSync(join(directory, 'gh-calls.txt'), 'utf8')
+                    .trim()
+                    .split('\n')
+                    .map((line) => JSON.parse(line) as string[]);
+            } finally {
+                rmSync(directory, { recursive: true, force: true });
+            }
+        };
+
+        const createCalls = runReporter('');
+        expect(createCalls).toHaveLength(2);
+        expect(createCalls[0]).toEqual(expect.arrayContaining(['issue', 'list']));
+        const createCall = createCalls[1];
+        if (createCall === undefined) {
+            throw new Error('nightly issue create call was not captured');
+        }
+        expect(createCall.slice(0, 2)).toEqual(['issue', 'create']);
+        const createdBody = createCall[7];
+        expect(createdBody).toContain('Failing jobs: e2e-report');
+        expect(createdBody).toContain('https://github.com/owner/repository/actions/runs/1');
+
+        const updateCalls = runReporter('37');
+        expect(updateCalls).toHaveLength(2);
+        expect(updateCalls[0]).toEqual(expect.arrayContaining(['issue', 'list']));
+        const updateCall = updateCalls[1];
+        if (updateCall === undefined) {
+            throw new Error('nightly issue comment call was not captured');
+        }
+        expect(updateCall.slice(0, 3)).toEqual(['issue', 'comment', '37']);
+        expect(updateCall[6]).toContain('Failing jobs: e2e-report');
+        expect(updateCall[6]).toContain('https://github.com/owner/repository/actions/runs/1');
     });
 
     it('requires selected PR and browser checks to succeed, including after cancellation', () => {

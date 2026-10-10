@@ -80,7 +80,9 @@
  *   and so no clock at all;
  * - each row's compute must fit inside its own independently-measured
  *   main-thread wall clock — a bound the worklet's own clock cannot fake;
- * - each row's tick rate must hold steady across its own timed window;
+ * - each row's tick rate must hold steady across its own timed window; a row
+ *   that breaks the ceiling is re-measured alone, and only an attempt within
+ *   the ceiling is admitted (see `MAX_CALIBRATION_ATTEMPTS`);
  * - each row's occupancy check must pass at both ends of the timed run.
  *
  * The machine load is **recorded per row, not gated**. The rate-spread gate is
@@ -179,6 +181,8 @@ import { startServer } from './server.mjs';
  * @property {number} minTicksPerMs
  * @property {number} maxTicksPerMs
  * @property {number} spreadPct
+ * @property {number} attempts measurements this row took to come within the
+ *   spread ceiling; above 1 means the row was re-measured
  */
 
 /**
@@ -337,6 +341,19 @@ const MEDIAN_TRUSTWORTHY_SPREAD_PCT = 25;
 const MAX_CALIBRATION_SPREAD_PCT = 150;
 
 /**
+ * Measurements a row may take before a spread over `MAX_CALIBRATION_SPREAD_PCT`
+ * refuses the run: the first, then up to two re-measures of that row alone.
+ *
+ * On a shared hosted runner the spinning clock thread can be starved for part
+ * of one row's window: run 37797465510 refused `bacteria_smudge` at 160% on a
+ * head that passed three other runs unchanged. That drift belongs to the
+ * window, not the row, so a fresh window is the remedy, while a clock that
+ * breaks the ceiling in three consecutive windows of one row is a fault the
+ * run must refuse. Each re-measure costs one row, a twentieth of a full table.
+ */
+const MAX_CALIBRATION_ATTEMPTS = 3;
+
+/**
  * Fraction of samples that may read zero ticks before this row's **floor** stops
  * being measurable.
  *
@@ -386,8 +403,10 @@ function parseArgs(argv) {
         json: null,
         headed: false,
         // Subset runs are for investigating one question. A partial run is not
-        // a table: its rows were taken in a different order, on a different
-        // machine state, from the ones already in `quantum-cost-table.md`.
+        // a table: its rows were taken at another moment, on a different
+        // machine state, from the ones already in `quantum-cost-table.md`. A
+        // drifting row re-measured inside one run is not a subset run; see
+        // `remeasureDriftingRows`.
         deviceIds: [],
     };
     for (let i = 0; i < argv.length; i += 1) {
@@ -485,6 +504,100 @@ function dutyCycleSplit(samplesMs, periodQuanta) {
         amortisedMeanMs: meanOf(sorted),
         amortisedFloorMs: rest.length > 0 ? rest[0] + (ticks[0] - rest[0]) / periodQuanta : ticks[0] / periodQuanta,
     };
+}
+
+/**
+ * The range of a row's valid in-window segment rates as a percentage of their
+ * median: the figure the calibration gate holds to `MAX_CALIBRATION_SPREAD_PCT`.
+ *
+ * @param {readonly number[]} segmentRates
+ * @returns {number}
+ */
+function calibrationSpreadPct(segmentRates) {
+    const sortedRates = segmentRates.filter((rate) => Number.isFinite(rate) && rate > 0).sort((a, b) => a - b);
+    if (sortedRates.length < 2) {
+        return 0;
+    }
+    const medianRate = quantile(Float64Array.from(sortedRates), 0.5);
+    return ((sortedRates[sortedRates.length - 1] - sortedRates[0]) / medianRate) * 100;
+}
+
+/**
+ * Re-measures one row alone while its own spread is over the ceiling, up to
+ * `MAX_CALIBRATION_ATTEMPTS` measurements in all. Returns the first attempt
+ * within the ceiling, or the last one, which the calibration gate refuses.
+ *
+ * @template {{ segmentRates: readonly number[] }} Row
+ * @param {Row} firstAttempt
+ * @param {(previous: Row, attempt: number) => Promise<Row>} remeasure
+ * @returns {Promise<{ row: Row; attempts: number }>}
+ */
+async function measureWithinCalibrationCeiling(firstAttempt, remeasure) {
+    let row = firstAttempt;
+    let attempts = 1;
+    while (calibrationSpreadPct(row.segmentRates) > MAX_CALIBRATION_SPREAD_PCT && attempts < MAX_CALIBRATION_ATTEMPTS) {
+        attempts += 1;
+        row = await remeasure(row, attempts);
+    }
+    return { row, attempts };
+}
+
+/**
+ * @param {{ id: string; calibration: { spreadPct: number; attempts: number } }} row
+ * @returns {string | null}
+ */
+function calibrationSpreadRefusal(row) {
+    const { spreadPct, attempts } = row.calibration;
+    if (spreadPct <= MAX_CALIBRATION_SPREAD_PCT) {
+        return null;
+    }
+    return (
+        `${row.id}: the tick rate moved ${spreadPct.toFixed(1)}% across its own timed window ` +
+        `(ceiling ${MAX_CALIBRATION_SPREAD_PCT}%) — the segmentation is meaningless, not even a floor survives ` +
+        `(over the ceiling on every one of ${attempts} attempts)`
+    );
+}
+
+/**
+ * Runs every row of the first full-table pass through
+ * `measureWithinCalibrationCeiling`, re-measuring a drifting row through a
+ * single-row call to the page, in the first pass's row order.
+ *
+ * @param {Pick<import('playwright').Page, 'evaluate'>} page
+ * @param {QuantumCostPagePayload} firstPass
+ * @param {QuantumCostTableConfig} tableConfig
+ * @returns {Promise<{ row: QuantumCostPageRow; attempts: number }[]>}
+ */
+async function remeasureDriftingRows(page, firstPass, tableConfig) {
+    /**
+     * @param {QuantumCostPageRow} previous
+     * @param {number} attempt
+     * @returns {Promise<QuantumCostPageRow>}
+     */
+    const remeasureRow = async (previous, attempt) => {
+        console.log(
+            `re-measuring ${previous.id} alone: its tick rate moved ` +
+                `${calibrationSpreadPct(previous.segmentRates).toFixed(1)}% across its own timed window ` +
+                `(ceiling ${MAX_CALIBRATION_SPREAD_PCT}%), attempt ${attempt} of ${MAX_CALIBRATION_ATTEMPTS}`
+        );
+        const rerun = await page.evaluate((config) => window.runQuantumCostTable(config), {
+            ...tableConfig,
+            deviceIds: [previous.id],
+        });
+        const [row] = rerun.results;
+        if (rerun.results.length !== 1 || row.id !== previous.id) {
+            throw new Error(
+                `re-measuring ${previous.id} returned rows ${rerun.results.map((result) => result.id).join(', ')}`
+            );
+        }
+        return row;
+    };
+    /** @type {{ row: QuantumCostPageRow; attempts: number }[]} */
+    const admitted = [];
+    for (const firstAttempt of firstPass.results) {
+        admitted.push(await measureWithinCalibrationCeiling(firstAttempt, remeasureRow));
+    }
+    return admitted;
 }
 
 /**
@@ -642,6 +755,8 @@ async function main() {
 
     /** @type {QuantumCostPagePayload} */
     let payload;
+    /** @type {number[]} */
+    let calibrationAttempts;
     try {
         const page = await browser.newPage();
         page.on('console', (message) => {
@@ -665,12 +780,18 @@ async function main() {
             );
         }
 
-        payload = await page.evaluate((config) => window.runQuantumCostTable(config), {
+        /** @type {QuantumCostTableConfig} */
+        const tableConfig = {
             warmupQuanta: options.warmupQuanta,
             measureQuanta: options.measureQuanta,
             segmentTargetMs: options.segmentTargetMs,
             deviceIds: options.deviceIds,
-        });
+        };
+        payload = await page.evaluate((config) => window.runQuantumCostTable(config), tableConfig);
+
+        const admitted = await remeasureDriftingRows(page, payload, tableConfig);
+        payload.results = admitted.map(({ row }) => row);
+        calibrationAttempts = admitted.map(({ attempts }) => attempts);
 
         payload.browser = browser.version();
     } finally {
@@ -706,14 +827,14 @@ async function main() {
     const dutyCycleByDeviceId = DUTY_CYCLE;
     /**
      * @param {QuantumCostPageRow} result
+     * @param {number} index
      * @returns {AnalyzedRow}
      */
-    const analyzeResult = (result) => {
+    const analyzeResult = (result, index) => {
         const rates = result.segmentRates.filter((rate) => Number.isFinite(rate) && rate > 0);
         const sortedRates = [...rates].sort((a, b) => a - b);
         const medianRate = quantile(Float64Array.from(sortedRates), 0.5);
-        const rateSpreadPct =
-            sortedRates.length > 1 ? ((sortedRates[sortedRates.length - 1] - sortedRates[0]) / medianRate) * 100 : 0;
+        const rateSpreadPct = calibrationSpreadPct(result.segmentRates);
 
         const samplesMs = calibration.rows[calibratedRowIndex++].samplesMs;
         const floorMs = result.harnessFloorTicks.map((ticks) => ticks / medianRate);
@@ -756,6 +877,7 @@ async function main() {
                 minTicksPerMs: sortedRates[0],
                 maxTicksPerMs: sortedRates[sortedRates.length - 1],
                 spreadPct: rateSpreadPct,
+                attempts: calibrationAttempts[index],
             },
             timedTotalMs,
             warmupTotalMs,
@@ -801,11 +923,9 @@ async function main() {
                     `tolerance ${WALL_RATIO_TOLERANCE}) — the tick rate is wrong by a factor and every figure in the row is inflated`
             );
         }
-        if (row.calibration.spreadPct > MAX_CALIBRATION_SPREAD_PCT) {
-            failures.push(
-                `${row.id}: the tick rate moved ${row.calibration.spreadPct.toFixed(1)}% across its own timed window ` +
-                    `(ceiling ${MAX_CALIBRATION_SPREAD_PCT}%) — the segmentation is meaningless, not even a floor survives`
-            );
+        const spreadRefusal = calibrationSpreadRefusal(row);
+        if (spreadRefusal !== null) {
+            failures.push(spreadRefusal);
         }
         if (row.zeroFraction > MAX_ZERO_TICK_FRACTION_FOR_MEDIAN) {
             failures.push(
@@ -1074,7 +1194,8 @@ async function main() {
         console.log(`      load     : ${row.note}`);
         console.log(
             `      clock    : ${c.segments} in-window segments, ${sig2(c.medianTicksPerMs)} ticks/ms median, ` +
-                `spread ${c.spreadPct.toFixed(1)}% (${sig2(c.minTicksPerMs)}-${sig2(c.maxTicksPerMs)})`
+                `spread ${c.spreadPct.toFixed(1)}% (${sig2(c.minTicksPerMs)}-${sig2(c.maxTicksPerMs)}), ` +
+                `measured on attempt ${c.attempts} of ${MAX_CALIBRATION_ATTEMPTS}`
         );
         console.log(
             `      drift    : first 500 ${us(row.stats.firstFiveHundredMean)}us -> last 500 ${us(row.stats.lastFiveHundredMean)}us ` +

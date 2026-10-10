@@ -818,6 +818,8 @@ const schemaDefinitions = [
             endBeat: 1,
             selected: 42,
             sourceOffsetBeats: 1,
+            passAnchorSeconds: 1,
+            passDepthSeconds: 1,
         },
         required: ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'],
         additionalProperties: false,
