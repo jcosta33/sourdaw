@@ -1,20 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type InstrumentSnapshot = Readonly<{
-    id: string;
-    devices: readonly Readonly<{ id: string; type: string }>[];
-}>;
-
-type RouteYeastNoteOffs = (
-    instrumentTrack: InstrumentSnapshot | null,
-    noteOffs: readonly { channel: number; note: number }[],
-    options: { emitGrandBouleEvent: (deviceId: string, midiNote: number) => void }
+type ReleaseCapturedYeastVoices = (
+    instrumentTrackId: string,
+    channel: number,
+    pitch: number,
+    sampleFrame?: number
 ) => void;
 
 const initializeWebMidiMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const setMidiInputTrackMock = vi.hoisted(() => vi.fn());
 const getMidiInputTrackOwnerIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
-const routeYeastNoteOffsMock = vi.hoisted(() => vi.fn<RouteYeastNoteOffs>());
+const releaseCapturedYeastVoicesMock = vi.hoisted(() => vi.fn<ReleaseCapturedYeastVoices>());
 const trackStoreSubscribeMock = vi.hoisted(() => vi.fn());
 const eventBusOnMock = vi.hoisted(() => vi.fn());
 const eventBusEmitMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -62,8 +58,8 @@ vi.mock('../../../repositories/webMidi/lifecycle/initWebMidi', () => ({
     initWebMidi: initializeWebMidiMock,
 }));
 
-vi.mock('../../../repositories/webMidi/routeYeastNoteOff', () => ({
-    routeYeastNoteOffsForTargetTrack: routeYeastNoteOffsMock,
+vi.mock('../../../repositories/webMidi/releaseCapturedYeastVoices', () => ({
+    releaseCapturedYeastVoices: releaseCapturedYeastVoicesMock,
 }));
 
 vi.mock('../setMidiInputTrack', () => ({
@@ -84,7 +80,7 @@ describe('initWebMidi', () => {
         setMidiInputTrackMock.mockClear();
         getMidiInputTrackOwnerIdMock.mockReset();
         getMidiInputTrackOwnerIdMock.mockReturnValue(null);
-        routeYeastNoteOffsMock.mockClear();
+        releaseCapturedYeastVoicesMock.mockClear();
         trackStoreSubscribeMock.mockReset();
         eventBusOnMock.mockReset();
         eventBusEmitMock.mockClear();
@@ -122,27 +118,19 @@ describe('initWebMidi', () => {
         trackSubscription?.({ selectedTrackId: null, tracks: [] });
         expect(setMidiInputTrackMock).toHaveBeenCalledWith(null);
 
+        // Each forced off ends, at once, the captured voices of the rack's
+        // track at that channel and pitch.
         yeastNotesOffSubscription?.({
             trackId: 'track-a',
-            noteOffs: [{ channel: 0, note: 60 }],
+            noteOffs: [
+                { channel: 0, note: 60 },
+                { channel: 2, note: 64 },
+            ],
         });
-        expect(routeYeastNoteOffsMock).toHaveBeenCalledWith(
-            {
-                id: 'track-a',
-                devices: [{ id: 'fermenter-a', type: 'fermenter' }],
-            },
-            [{ channel: 0, note: 60 }],
-            expect.any(Object)
-        );
-        const instrumentSnapshot = routeYeastNoteOffsMock.mock.calls[0]?.[0];
-        expect(instrumentSnapshot).not.toBe(arrangementTrack);
-        expect(instrumentSnapshot?.devices).not.toBe(arrangementTrack.devices);
-
-        const routeInput = routeYeastNoteOffsMock.mock.calls[0]?.[2] as {
-            emitGrandBouleEvent: (deviceId: string, midiNote: number) => void;
-        };
-        routeInput.emitGrandBouleEvent('device-a', 60);
-        expect(eventBusEmitMock).toHaveBeenCalledWith('midi.noteOff', { deviceId: 'device-a', midiNote: 60 });
+        expect(releaseCapturedYeastVoicesMock.mock.calls).toEqual([
+            ['track-a', 0, 60],
+            ['track-a', 2, 64],
+        ]);
     });
 
     it('drops the live input target when the selection moves to a non-MIDI track', async () => {
@@ -260,6 +248,6 @@ describe('initWebMidi', () => {
         }
 
         expect(setMidiInputTrackMock).toHaveBeenCalledTimes(1);
-        expect(routeYeastNoteOffsMock).toHaveBeenCalledTimes(1);
+        expect(releaseCapturedYeastVoicesMock).toHaveBeenCalledTimes(1);
     });
 });

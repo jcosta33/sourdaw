@@ -1,15 +1,13 @@
 import { Container } from '#/infra/di/Container';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { initWebMidi as initializeWebMidi } from '../../repositories/webMidi/lifecycle/initWebMidi';
-import { routeYeastNoteOffsForTargetTrack } from '../../repositories/webMidi/routeYeastNoteOff';
+import { releaseCapturedYeastVoices } from '../../repositories/webMidi/releaseCapturedYeastVoices';
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
 
 import { disposeWebMidiSubscriptions } from './disposeWebMidiSubscriptions';
 import { getMidiInputTrackOwnerId } from './getMidiInputTrackOwnerId';
 import { handleWebMidiMessage } from './handleWebMidiMessage';
-import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { setMidiInputTrack } from './setMidiInputTrack';
 import { webMidiSubscriptionState } from './webMidiSubscriptionState';
 
@@ -58,23 +56,16 @@ function subscribeToYeastNotesOff(): void {
     }
 
     const eventBus = Container.get(WebMidiEventBus);
+    // A rack topology change ends the notes the rack had sounding on its
+    // instrument track (the live route's track id). Each off ends the voices
+    // the rack's note-ons started, on the device and pad they sound on;
+    // forced offs carry no release-velocity byte and sound at once.
     webMidiSubscriptionState.disposeYeastNotesOffSubscription = eventBus.on(
         'yeast.notesOff',
         ({ trackId, noteOffs }) => {
-            const resolvedInstrument = resolveInstrumentTrack(trackStore.value, trackId);
-            const instrumentTrack = resolvedInstrument?.instrumentTrack;
-            const instrumentSnapshot = instrumentTrack
-                ? {
-                      id: instrumentTrack.id,
-                      devices: instrumentTrack.devices.map(({ id, type }) => ({ id, type })),
-                  }
-                : null;
-            routeYeastNoteOffsForTargetTrack(instrumentSnapshot, noteOffs, {
-                emitGrandBouleEvent: (deviceId, midiNote) => {
-                    void eventBus.emit('midi.noteOff', { deviceId, midiNote });
-                },
-                getTrackStrip: (trackId) => audioEngine.getTrackStrip(trackId),
-            });
+            for (const { channel, note } of noteOffs) {
+                releaseCapturedYeastVoices(trackId, channel, note);
+            }
         }
     );
 }

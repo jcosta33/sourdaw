@@ -11727,90 +11727,112 @@ describe('delivery shell boundary', () => {
     it('fails shellPort merged recovery when proof count exceeds the complete REST lineage even if the latest id matches', () => {
         const bodyX = relationshipBody('Closes #2372');
         const effects: string[] = [];
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) => {
-                const joined = args.join(' ');
-                if (joined.includes('pr view')) {
-                    return JSON.stringify(
-                        shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
-                    );
-                }
-                if (joined.includes('mergedBy{__typename')) {
-                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
-                }
-                if (joined.includes('issues/42/comments?per_page=100')) {
-                    return JSON.stringify([
-                        [
-                            {
-                                node_id: 'IC_x',
-                                body: deliveryReceiptBody(42, 'head', bodyX, 2372),
-                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
-                                created_at: '2026-08-21T00:00:00Z',
-                                updated_at: '2026-08-21T00:00:00Z',
-                            },
-                        ],
-                    ]);
-                }
-                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
-                    return shellDeliveryReceiptProofResponse(['IC_x', 'IC_hidden_y']);
-                }
-                effects.push(`capture:${joined}`);
-                throw new Error(`unexpected capture: ${joined}`);
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(
+                            shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                        );
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [
+                                {
+                                    node_id: 'IC_x',
+                                    body: deliveryReceiptBody(42, 'superseded-head', bodyX, 2372),
+                                    user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                    created_at: '2026-08-21T00:00:00Z',
+                                    updated_at: '2026-08-21T00:00:00Z',
+                                },
+                            ],
+                        ]);
+                    }
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                        return shellDeliveryReceiptProofResponse(['IC_x', 'IC_hidden_y']);
+                    }
+                    effects.push(`capture:${joined}`);
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
             },
-            run: () => undefined,
-        });
+            { primaryRoot }
+        );
 
-        expect(() =>
-            deliverPullRequest(42, port, {
-                complete: (issue) => effects.push(`complete:${issue}`),
-            })
-        ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        try {
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it('fails shellPort merged recovery when proof latest id differs despite an equal comment count', () => {
         const bodyX = relationshipBody('Closes #2372');
         const effects: string[] = [];
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) => {
-                const joined = args.join(' ');
-                if (joined.includes('pr view')) {
-                    return JSON.stringify(
-                        shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
-                    );
-                }
-                if (joined.includes('mergedBy{__typename')) {
-                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
-                }
-                if (joined.includes('issues/42/comments?per_page=100')) {
-                    return JSON.stringify([
-                        [
-                            {
-                                node_id: 'IC_x',
-                                body: deliveryReceiptBody(42, 'head', bodyX, 2372),
-                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
-                                created_at: '2026-08-21T00:00:00Z',
-                                updated_at: '2026-08-21T00:00:00Z',
-                            },
-                        ],
-                    ]);
-                }
-                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
-                    return shellDeliveryReceiptProofResponse(['IC_hidden_y']);
-                }
-                effects.push(`capture:${joined}`);
-                throw new Error(`unexpected capture: ${joined}`);
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(
+                            shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                        );
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [
+                                {
+                                    node_id: 'IC_x',
+                                    body: deliveryReceiptBody(42, 'superseded-head', bodyX, 2372),
+                                    user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                    created_at: '2026-08-21T00:00:00Z',
+                                    updated_at: '2026-08-21T00:00:00Z',
+                                },
+                            ],
+                        ]);
+                    }
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                        return shellDeliveryReceiptProofResponse(['IC_hidden_y']);
+                    }
+                    effects.push(`capture:${joined}`);
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
             },
-            run: () => undefined,
-        });
+            { primaryRoot }
+        );
 
-        expect(() =>
-            deliverPullRequest(42, port, {
-                complete: (issue) => effects.push(`complete:${issue}`),
-            })
-        ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        try {
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it('fails shellPort receipt proof when the first GraphQL page already reaches totalCount but still claims another page', () => {
         const port = shellPort('jcosta33/sourdaw', {
