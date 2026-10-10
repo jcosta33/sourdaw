@@ -1,0 +1,45 @@
+src/modules/MIDI/useCases/webMidiInput/releaseKeyInRemovedYeastRack.ts
+  s_2bfd55a4393d7c::t_2a5bd96ac4e400 1-22,32-46,48-52
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_2bfd55a4393d7c::t_3e496f993255aa 1916,1923
+  s_2bfd55a4393d7c::t_309933f4fee0c6 1924,1926-1963,1965-1967,1997-2018
+  s_2bfd55a4393d7c::t_87da12cf0e84ff 1925,2019-2020
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_2bfd55a4393d7c::t_1c7d3110c07b60 22
+  s_2bfd55a4393d7c::t_12907f5919e2e3 197-198,200-208
+  s_2bfd55a4393d7c::t_646a0483bd588f 199
+src/modules/Yeast/workers/__tests__/removedYeastHeldKey.spec.ts
+  s_2bfd55a4393d7c::t_3880eaa20a4515 24-25,28-29
+  s_2bfd55a4393d7c::t_dcd58b2794e209 2-3,8-10,13-15,17-19,21,30-38,51-241
+  s_2bfd55a4393d7c::t_c1989f943d07cc 263
+  s_2bfd55a4393d7c::t_6c90b742decdc5 22
+  s_2bfd55a4393d7c::t_41be2e3e28cc18 466-498
+  s_2bfd55a4393d7c::t_55ff24b745e687 312
+  s_2bfd55a4393d7c::t_2736920636b7d4 330
+src/modules/Yeast/engine/yeastRuntime.ts
+  s_2bfd55a4393d7c::t_88fc6ca9d453d8 48-49
+  s_2bfd55a4393d7c::t_2abdfd78416932 858
+  s_2bfd55a4393d7c::t_378491ce5ba2af 219-229,234-236,238-239
+  s_2bfd55a4393d7c::t_f2fe323543a81d 93
+  s_2bfd55a4393d7c::t_13672ff0d461f8 33
+  s_2bfd55a4393d7c::t_fa898a00bf249e 143,486,535,959
+  s_2bfd55a4393d7c::t_a8508058ba4131 708
+  s_2bfd55a4393d7c::t_c9a05f65dc9052 822-825,835-838
+  s_2bfd55a4393d7c::t_02b65c92c9d63b 599
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8d1a3004ce6de0f2e63cefcfa52d5a1cf6f4242f",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
