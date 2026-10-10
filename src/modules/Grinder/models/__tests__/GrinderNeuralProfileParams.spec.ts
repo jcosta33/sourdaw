@@ -198,7 +198,10 @@ describe('derivedGrinderNeuralModelId — digest participation', () => {
         const a: GrinderNeuralProfile = { ...buildProfile([[0.1, 0.2, 0.3]]), modelDigest: '0001-0002-0003-0004' };
         const b: GrinderNeuralProfile = { ...buildProfile([[0.1, 0.2, 0.3]]), modelDigest: '0001-0002-0003-0005' };
         expect(derivedGrinderNeuralModelId(a)).not.toBe(derivedGrinderNeuralModelId(b));
-        expect(derivedGrinderNeuralModelId(a)).toBe(derivedGrinderNeuralModelId(b));
+        // The same record rebuilt — same digest — reconstructs to the same id
+        // on every reload; only a digest change moves it.
+        const aAgain: GrinderNeuralProfile = { ...buildProfile([[0.1, 0.2, 0.3]]), modelDigest: '0001-0002-0003-0004' };
+        expect(derivedGrinderNeuralModelId(a)).toBe(derivedGrinderNeuralModelId(aAgain));
         const identical = profileWithModel(FULL_MODEL);
         expect(derivedGrinderNeuralModelId(a)).not.toBe(derivedGrinderNeuralModelId(identical));
     });

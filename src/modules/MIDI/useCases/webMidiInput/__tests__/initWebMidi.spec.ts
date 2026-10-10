@@ -104,9 +104,12 @@ vi.mock('../../../repositories/webMidi/releaseCapturedYeastVoices', async (impor
     actualCoarseModule.releaseCapturedYeastVoices = actual.releaseCapturedYeastVoices;
     return {
         releaseCapturedYeastVoices: releaseCapturedYeastVoicesMock,
-        releaseHeldYeastVoices: releaseHeldYeastVoicesMock,
     };
 });
+
+vi.mock('../../../repositories/webMidi/releaseHeldYeastVoices', () => ({
+    releaseHeldYeastVoices: releaseHeldYeastVoicesMock,
+}));
 
 vi.mock('../../../repositories/webMidi/routeYeastNoteOff', () => ({
     routeYeastNoteOffsForTargetTrack: routeYeastNoteOffsMock,

@@ -3,7 +3,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { initWebMidi as initializeWebMidi } from '../../repositories/webMidi/lifecycle/initWebMidi';
-import { releaseHeldYeastVoices } from '../../repositories/webMidi/releaseCapturedYeastVoices';
+import { releaseHeldYeastVoices } from '../../repositories/webMidi/releaseHeldYeastVoices';
 import { releaseCapturedYeastLifecycleVoices } from '../../repositories/webMidi/routeYeastLifecycleNoteOff';
 import { routeYeastNoteOffsForTargetTrack } from '../../repositories/webMidi/routeYeastNoteOff';
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
