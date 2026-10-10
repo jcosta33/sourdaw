@@ -1,0 +1,31 @@
+scripts/__tests__/runIsolatedUnitShard.spec.ts
+  s_893120061bb856::t_43d94bda250cc5 1-3,368-390,392-438
+  s_893120061bb856::t_f37dac8d40ee02 122,391,461-462,498-502
+  s_1f0dcd815e8946::t_bf89a7ad257257 439-440,503
+scripts/runIsolatedUnitShard.ts
+  s_893120061bb856::t_f37dac8d40ee02 155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1204cb161cfb8884e09f0859258e97574b332791",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_893120061bb856": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1256e-9c67-7563-9585-8e8c8ddee529",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
