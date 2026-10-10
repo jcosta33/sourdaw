@@ -1,0 +1,62 @@
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_4c8cd08893b364::t_0338b17eba6148 704,706-707
+  s_4c8cd08893b364::t_1a00f55b360448 709
+  s_4c8cd08893b364::t_241cd8b73294d8 1143,1146-1150,1157,1159,1163-1181,1183-1184
+  s_4c8cd08893b364::t_b6f6efa8207bfa 445-459
+  s_4c8cd08893b364::t_c3fdec60455197 701,703,1138,1144
+src/modules/Transport/AGENTS.md
+  s_4c8cd08893b364::t_6ff7331128ca1c 24
+  s_4c8cd08893b364::t_40a9025c04f03f 23
+src/modules/Arrangement/handlers/clip/__tests__/handleInsertTime.integration.spec.ts
+  s_4c8cd08893b364::t_4d45093d97fc2a 1-130
+  s_4c8cd08893b364::t_190e654d536ef6 131-137
+src/modules/Transport/useCases/tempoMap/__tests__/deleteTimeLaw.property.spec.ts
+  s_4c8cd08893b364::t_37ca2f1baea067 267,274
+  s_4c8cd08893b364::t_953d012fe55d81 238-253,255
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_4c8cd08893b364::t_a8908b044b1598 543,548
+  s_4c8cd08893b364::t_ffb68a5d9b7131 365-367
+  s_4c8cd08893b364::t_d677c8ebc1c5d4 339-340,342
+  s_4c8cd08893b364::t_121bce6c687175 182-187
+  s_4c8cd08893b364::t_cfe635d228abd4 314,320,323
+  s_4c8cd08893b364::t_71c003185e6f19 359
+src/modules/Transport/useCases/tempoMap/__tests__/insertTimeLaw.property.spec.ts
+  s_4c8cd08893b364::t_abe95d9f1244b9 260,584-586
+  s_4c8cd08893b364::t_455273fefb80cf 393,395,397,401,403-405
+  s_4c8cd08893b364::t_e13f62f46da1fa 205,415-420
+  s_4c8cd08893b364::t_acb76cfc982cdf 303,305-314,324-325,328-331
+  s_4c8cd08893b364::t_86afafe274e614 27-28
+  s_4c8cd08893b364::t_adaae2594d688a 516
+  s_4c8cd08893b364::t_a61f2d4f5b143c 253,255,258-259
+  s_4c8cd08893b364::t_a534e118d51ff6 106-107,113
+  s_4c8cd08893b364::t_45cd9ee8ff328a 216-217,219,223
+  s_4c8cd08893b364::t_799bbbcd81a612 231-235
+  s_4c8cd08893b364::t_aaef0519f26d69 304
+  s_4c8cd08893b364::t_bdafaa2f25605f 414
+  s_4c8cd08893b364::t_5992f104aa2fee 425,428,434-435,440,444-445
+  s_4c8cd08893b364::t_ec80423cdc4b47 594
+  s_4c8cd08893b364::t_566a7d3c4e10f4 640-641,645
+  s_4c8cd08893b364::t_3c821bada02b6e 633-634,637,642-644
+  s_4c8cd08893b364::t_444d65a84d1e78 55-58
+  s_4c8cd08893b364::t_94a15d35907d96 160-173,176-181,186-204
+  s_4c8cd08893b364::t_79358660802b5a 460
+  s_4c8cd08893b364::t_b5fb381deb2531 424
+  s_4c8cd08893b364::t_f16a269a5cf488 336
+  s_4c8cd08893b364::t_053ba82f6797c5 206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6fa1587ee83e99399eee0c85d06394f970ad7bd2",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
