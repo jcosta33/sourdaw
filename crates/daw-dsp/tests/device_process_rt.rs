@@ -1694,6 +1694,48 @@ fn levain_process_does_not_allocate_with_notes_held() {
     );
 }
 
+/// Ensemble timing holds each fresh attack for its pitch's onset offset. The
+/// offset is computed at note-on, which the worklet runs from its message drain
+/// on the render thread, and counted down per frame inside `process`, so both
+/// run inside the guard. Legato is off so every chord note is a fresh attack
+/// rather than a glide of the voice before it.
+#[test]
+fn levain_ensemble_onsets_do_not_allocate() {
+    use daw_dsp::levain::LevainInstance;
+
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    spread_levain_mics(&mut instance);
+    instance.begin_sample_bank("violin-1");
+    let sample_id = instance
+        .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
+    stage_two_mic_levain_zones(&mut instance, sample_id);
+    assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
+    assert!(instance.commit_sample_bank());
+    instance.set_param("legato_enabled", 0.0);
+    instance.set_param("ensemble_timing", 1.0);
+
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "levain ensemble onsets");
+
+    assert_no_alloc(|| {
+        for note in [55_u8, 60, 64, 67] {
+            instance.note_on(note, 100);
+        }
+        for _ in 0..GUARDED_BLOCKS {
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "levain ensemble onsets");
+    assert!(
+        peak(&out) > 1e-6,
+        "levain fell silent after its delayed ensemble onsets, so the guarded \
+         region did not exercise the held attacks it exists to cover"
+    );
+}
+
 /// The guard above holds two notes for its whole run, so it never executes a
 /// note-off or a slur — `LevainVoice::release` (and the `exit_loop` on every
 /// stream of every mic layer) and `start_crossfade` (and its `SamplePlayback`

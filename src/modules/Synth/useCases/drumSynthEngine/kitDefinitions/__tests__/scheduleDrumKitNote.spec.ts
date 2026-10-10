@@ -39,7 +39,7 @@ describe('scheduleDrumKitNote', () => {
     it('should not schedule when the note has no matching voice', () => {
         const ctx = createMockAudioContext();
 
-        scheduleDrumKitNote(asBaseAudioContext(ctx), asAudioNode(ctx.destination), KIT_808_DEF, 41, 1.25, 100);
+        scheduleDrumKitNote(asBaseAudioContext(ctx), asAudioNode(ctx.destination), KIT_808_DEF, 41, 1.25, 100, 1, 1);
 
         expect(scheduleDrumVoice).not.toHaveBeenCalled();
     });
@@ -49,7 +49,7 @@ describe('scheduleDrumKitNote', () => {
         const context = asBaseAudioContext(ctx);
         const destination = asAudioNode(ctx.destination);
 
-        scheduleDrumKitNote(context, destination, KIT_808_DEF, 36, 1.25, 64);
+        scheduleDrumKitNote(context, destination, KIT_808_DEF, 36, 1.25, 64, 1, 1);
 
         expect(scheduleDrumVoice).toHaveBeenCalledWith(context, destination, 'kick', 1.25, 64);
     });
@@ -59,10 +59,31 @@ describe('scheduleDrumKitNote', () => {
         const context = asBaseAudioContext(ctx);
         const destination = asAudioNode(ctx.destination);
 
-        scheduleDrumKitNote(context, destination, KIT_808_DEF, 36, 1.25, 100, 2);
-        scheduleDrumKitNote(context, destination, KIT_808_DEF, 38, 1.5, 64, -1);
+        scheduleDrumKitNote(context, destination, KIT_808_DEF, 36, 1.25, 100, 2, 1);
 
-        expect(scheduleDrumVoice).toHaveBeenNthCalledWith(1, context, destination, 'kick', 1.25, 127);
-        expect(scheduleDrumVoice).toHaveBeenNthCalledWith(2, context, destination, 'snare', 1.5, 0);
+        expect(scheduleDrumVoice).toHaveBeenCalledExactlyOnceWith(context, destination, 'kick', 1.25, 127);
+    });
+
+    it('should scale the clamped hit by the kit gain, so a loud clip cannot push the kit level out', () => {
+        const ctx = createMockAudioContext();
+        const context = asBaseAudioContext(ctx);
+        const destination = asAudioNode(ctx.destination);
+
+        scheduleDrumKitNote(context, destination, KIT_808_DEF, 36, 1.25, 100, 1, 0.5);
+        scheduleDrumKitNote(context, destination, KIT_808_DEF, 38, 1.5, 100, 2, 0.5);
+
+        expect(scheduleDrumVoice).toHaveBeenNthCalledWith(1, context, destination, 'kick', 1.25, 50);
+        expect(scheduleDrumVoice).toHaveBeenNthCalledWith(2, context, destination, 'snare', 1.5, 63.5);
+    });
+
+    it('should schedule nothing for a hit left with no level', () => {
+        const ctx = createMockAudioContext();
+        const context = asBaseAudioContext(ctx);
+        const destination = asAudioNode(ctx.destination);
+
+        scheduleDrumKitNote(context, destination, KIT_808_DEF, 56, 1.25, 100, 1, 0);
+        scheduleDrumKitNote(context, destination, KIT_808_DEF, 38, 1.5, 64, -1, 1);
+
+        expect(scheduleDrumVoice).not.toHaveBeenCalled();
     });
 });

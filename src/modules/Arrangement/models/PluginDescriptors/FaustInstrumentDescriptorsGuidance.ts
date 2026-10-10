@@ -110,9 +110,9 @@ export const ELECTRIC_PIANO_PARAMETER_GUIDANCE: Readonly<Record<string, DevicePa
 };
 
 export const SUPERSAW_GUIDANCE = instrumentGuidance(
-    'Play a seven-sawtooth unison voice through a resonant lowpass with its own cutoff LFO and ADSR; it has no level or velocity control of its own.',
+    'Play a seven-sawtooth unison voice through a resonant lowpass with its own cutoff LFO and ADSR, its level set by note velocity.',
     [
-        'Note velocity and clip gain do not change this instrument’s level, because its DSP declares no gain control for the voice allocator to write; set its level after it on the track.',
+        'Note velocity and clip gain set each voice’s level through the gain control, so audition the part at the velocities it actually uses.',
     ],
     [
         'detune and center_mix set the unison width; cutoff, resonance, lfo_rate and lfo_depth filter the summed saws of each voice.',
@@ -236,6 +236,19 @@ export const SUPERSAW_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParamete
         ],
         [
             'Long releases keep voices allocated, so fast passages run out of the eight voices and steal released voices mid-fade.',
+        ],
+        noExternalModulation
+    ),
+    gain: parameterGuidance(
+        'Per-voice velocity level',
+        'Scales the voice output linearly after the filter; each note-on overwrites it on that voice with velocity/127 times the clip gain.',
+        0.4,
+        1,
+        [
+            'Unlike the electric piano’s gain it changes level only, so soft notes are quieter but no darker; shape tone with cutoff and resonance.',
+        ],
+        [
+            'A value written from the inspector or an automation lane reaches every allocated voice but lasts only until that voice’s next note-on, so it cannot hold a steady level.',
         ],
         noExternalModulation
     ),

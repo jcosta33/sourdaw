@@ -1,6 +1,33 @@
 import { describe, it, expect } from 'vitest';
 
-import { isDrumDevice, isBuiltinSynthDevice, resolveDrumKitBy } from '../deviceTypeMatching';
+import { dbToGain } from '../audioLevelLaw';
+import {
+    DRUM_KIT_DEFAULT_LEVEL_DB,
+    isDrumDevice,
+    isBuiltinSynthDevice,
+    resolveDrumKitBy,
+    resolveDrumKitOutputGain,
+} from '../deviceTypeMatching';
+
+describe('resolveDrumKitOutputGain', () => {
+    it('reads the level of the first drum device on the chain, the one the kit comes from', () => {
+        const devices: { type: string; parameterValues: Record<string, number> }[] = [
+            { type: 'eq', parameterValues: { level: -20 } },
+            { type: 'builtin-drum-machine-808', parameterValues: { kit: 1, level: -6 } },
+            { type: 'builtin-drum-kit', parameterValues: { kit: 0, level: -12 } },
+        ];
+        expect(resolveDrumKitOutputGain(devices)).toBe(dbToGain(-6));
+    });
+
+    it('plays a drum device that stores no level at unity, the level every kit had before it', () => {
+        expect(DRUM_KIT_DEFAULT_LEVEL_DB).toBe(0);
+        expect(resolveDrumKitOutputGain([{ type: 'drum-kit', parameterValues: { kitId: 2 } }])).toBe(1);
+    });
+
+    it.each([0.8, 0.6, 0])('ignores a legacy stored gain of %s, which no kit ever played at', (gain) => {
+        expect(resolveDrumKitOutputGain([{ type: 'builtin-drum-kit', parameterValues: { kit: 0, gain } }])).toBe(1);
+    });
+});
 
 describe('resolveDrumKitBy', () => {
     const lookup = (kitIndex: number) => (kitIndex < 3 ? `kit-${kitIndex}` : null);

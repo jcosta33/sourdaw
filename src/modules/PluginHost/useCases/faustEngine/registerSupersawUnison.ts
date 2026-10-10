@@ -101,6 +101,15 @@ export function registerSupersawUnison(): void {
                 scaling: 'log',
             },
             {
+                address: '/supersaw/gain',
+                label: 'Gain',
+                min: 0,
+                max: 1,
+                defaultValue: 0.5,
+                step: 0.01,
+                type: 'hslider',
+            },
+            {
                 address: '/supersaw/freq',
                 label: 'Freq',
                 min: 20,
