@@ -346,7 +346,7 @@
                 "sha256:45259c508c8dad298d975a2559fc2f8e0b0d707a18ccc501e74f3aa889cd281d:src/modules/BrowserAi/models/InferenceRequest.ts",
                 "sha256:c4e4e5ba9ceb16f7da586195bbc498d4235fefaae49f068f934234bf5fbb723b:src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts",
                 "sha256:7e5f06c67a7824cf43f307d7e1c92d8de1c1396759c52f43d7564f05c17a8848:src/modules/BrowserAi/services/computeDdspSessionKey.ts",
-                "sha256:08c788a4bde41fa1248ede289e1381137bce202196315dcbd2837d158ce92469:src/modules/BrowserAi/workers/tfjsInferenceWorker.ts",
+                "sha256:79825048a714b52c3da3ef8059f9d5ae8bbd956e9a5429b4f6cd835b9d4b34cb:src/modules/BrowserAi/workers/tfjsInferenceWorker.ts",
                 "sha256:5f1f9ff20d903c3bec83dc38cd49956da251b5743c5c805cbf02b8efe8a464de:src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",

@@ -31,13 +31,14 @@ minimumReleaseAgeExclude:
     - '@vitejs/plugin-react@6.1.0'
     - vite@8.2.2
 
-# One tfjs-core identity for the whole tree (#4466). @spotify/basic-pitch pulls
-# @tensorflow/tfjs 3.21.0 (exact-pinned sub-packages) while the app pins
-# tfjs-core 4.22.0 for its WebGPU DDSP worker; two same-named type identities in
-# one program made `pnpm typecheck:test` fail nondeterministically (TS2345) via
-# the native tsc shim. Audited before pinning: every tfjs-core name imported by
-# the 3.21.0 stack exists in 4.22.0 with matching or widened signatures, and
-# basic-pitch itself never imports tfjs-core directly. pnpm 11 no longer reads
-# overrides from package.json's pnpm field; this settings block is their home.
-overrides:
-    '@tensorflow/tfjs-core': 4.22.0
+# Two coexisting tfjs-core stacks are deliberate (#4466). The app pins
+# tfjs-core/converter/backend-webgpu 4.22.0 exactly for its WebGPU DDSP worker;
+# @spotify/basic-pitch depends on the @tensorflow/tfjs 3.x umbrella, which pins
+# its own 3.21.0 sub-packages under itself. Neither stack may be repinned
+# tree-wide: forcing tfjs-core 4.22.0 into basic-pitch's chain breaks inference
+# (its backend-webgl 3.21 reads ENGINE_COMPILE_ONLY at kernel paths core 4.22
+# no longer registers, so evaluateModel rejects and polyphonic audio-to-MIDI
+# returns null). Keep the stacks internally consistent and never import a
+# second tfjs-core identity into a file: src/modules/BrowserAi/workers/
+# tfjsInferenceWorker.ts derives its types from its own single dynamic import,
+# and app code touches only basic-pitch's own exports, never @tensorflow/tfjs.
