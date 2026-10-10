@@ -179,7 +179,7 @@ describe('startInputMonitoring', () => {
             } else if (changeKind === 'input') {
                 committed.inputId = 'new-input';
             } else if (changeKind === 'kind') {
-                committed.kind = 'vca';
+                committed.kind = 'midi';
             } else {
                 committed.armed = false;
             }

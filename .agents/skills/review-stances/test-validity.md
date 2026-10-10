@@ -788,3 +788,13 @@ unchanged. Require no strip/edge/capture/owner and exactly one stop, then pair u
 Auto/Off, an unrelated committed rename, shared permission and a current selected-input owner.
 A global document revision check rejects the valid rename control; a presence-only check misses
 both supersessions. Preserve the committed On latch and actual abort controls independently.
+
+Repair `00f4b688` introduced both fixture defects; the follow-up `46caac58` passed runtime cases
+while its test source used quarantined `vca` as a
+persisted `TrackKind` and wrote through an unchecked array lookup. The original hosted test types
+rejected both. Model kind supersession with a supported non-audio kind and committed Auto; require
+that removing kind from the admission's intent comparison makes the unchanged rejection assertion
+fail. Guard the actual raw-document owner before mutation, including deletion, so a missing ID
+cannot silently splice a shared survivor. Runtime execution does not establish typed fixture
+validity; retain the original type failure and verify the repaired source without widening contracts
+or asserting away absence.

@@ -629,7 +629,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
                             id: string;
                             inputMonitoring: 'auto' | 'on' | 'off';
                             inputId: string | null;
-                            kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca';
+                            kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
                             armed: boolean;
                         }>;
                     };
@@ -645,7 +645,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
                         } else if (changeKind === 'input') {
                             track.inputId = 'committed-input';
                         } else if (changeKind === 'kind') {
-                            track.kind = 'vca';
+                            track.kind = 'midi';
                         } else {
                             track.armed = false;
                         }
@@ -668,7 +668,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
                 } else if (changeKind === 'input') {
                     expect(committed?.inputId).toBe('committed-input');
                 } else if (changeKind === 'kind') {
-                    expect(committed?.kind).toBe('vca');
+                    expect(committed?.kind).toBe('midi');
                 } else {
                     expect(committed?.armed).toBe(false);
                 }
@@ -725,10 +725,14 @@ describe('track deletion releases the input monitor at Command commit', () => {
                     id: 'root',
                     changeFn: (document) => {
                         const index = document.tracks.tracks.findIndex((track) => track.id === 'a');
+                        const track = document.tracks.tracks[index];
+                        if (!track) {
+                            throw new Error('Expected committed owner before shared grant supersession');
+                        }
                         if (supersession === 'delete') {
                             document.tracks.tracks.splice(index, 1);
                         } else {
-                            document.tracks.tracks[index].inputMonitoring = 'off';
+                            track.inputMonitoring = 'off';
                         }
                     },
                 });
