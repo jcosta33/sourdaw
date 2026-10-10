@@ -19,6 +19,8 @@ src/modules/Levain/useCases/levainParamBridge/unregisterLevainDevice.ts
   s_97ab82e0b4f10c::t_6346214c2b494c 3-4
 release/open-source-inventory.json
   s_4c8cd08893b364::t_ed01ee91f6d06c 1210
+pnpm-lock.yaml
+  s_97ab82e0b4f10c::t_a19e13ecba06d6 2463,2475,2485,2492-2495,2503,2509,3018-3020,7776,7778,7788,7790-7791,7803,7805,7811-7823,7836,7838,7846,7848,7852-7857,8286-8287
 ---
 {
   "schema_version": "authorship/3.0.0",
