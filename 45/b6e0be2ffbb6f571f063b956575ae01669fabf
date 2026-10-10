@@ -5,6 +5,8 @@ scripts/__tests__/deliverPullRequest.spec.ts
   s_2bfd55a4393d7c::t_ecd2b433f2d29c 11732-11749,11751-11760,11762,11777,11780,11785-11804,11806-11811,11826,11828-11832,11835
   s_2bfd55a4393d7c::t_c7bd9a3cd22c7b 11750
   s_2bfd55a4393d7c::t_fb414861687403 11805
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/loadBacteriaPatchWithAudio.behavior.spec.ts
+  s_2bfd55a4393d7c::t_465a7e37395c9b 186-187
 ---
 {
   "schema_version": "authorship/3.0.0",
