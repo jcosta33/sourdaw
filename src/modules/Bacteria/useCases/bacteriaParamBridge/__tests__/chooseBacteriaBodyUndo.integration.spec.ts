@@ -16,6 +16,7 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 
@@ -219,8 +220,9 @@ describe('choosing a Bacteria body', () => {
 
     // The band's first body is the case with no stored value to return to;
     // undo has to put the band back to no body, in the document and in the
-    // engine, rather than leave the body sounding or record no undo at all.
-    it('undoes a band’s first body back to no body, and redoes it', async () => {
+    // engine, rather than leave the body sounding or record no undo at all —
+    // and the document goes back to holding no body value, as it did before.
+    it('undoes a band’s first body back to no body in one step, and redoes it', async () => {
         const before = undoDepth();
         chooseBacteriaBodyWithAudio(DEVICE_ID, 0, 'wood');
         await vi.waitFor(() => {
@@ -230,7 +232,8 @@ describe('choosing a Bacteria body', () => {
 
         await undo();
 
-        expect(storedParameterValues()[BODY_PARAM]).toBe(-1);
+        expect(storedParameterValues()).toEqual({ band0_convolutionEnabled: 1 });
+        expect(undoDepth()).toBe(before);
         expect(bodyWrites()).toEqual([1, -1]);
         hydrateBacteriaPatchFromProject(DEVICE_ID);
         expect(getBacteriaState(DEVICE_ID).patch.bands[0]?.convolutionIr).toBe('');
@@ -243,7 +246,35 @@ describe('choosing a Bacteria body', () => {
         expect(getBacteriaState(DEVICE_ID).patch.bands[0]?.convolutionIr).toBe('wood');
     });
 
-    it('undoes a body change back to the body chosen before it', async () => {
+    // None on a band that has never had a body is no change: the project
+    // stays as it was and there is nothing to undo.
+    it('leaves the project untouched when None is chosen on a band that never had a body', async () => {
+        const before = undoDepth();
+        const revisionBefore = settlePendingProjectWritesAndCaptureRevision();
+
+        chooseBacteriaBodyWithAudio(DEVICE_ID, 0, '');
+
+        expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revisionBefore);
+        expect(storedParameterValues()).toEqual({ band0_convolutionEnabled: 1 });
+        expect(bodyWrites()).toEqual([]);
+
+        // A later pick is the only undo step: one undo returns the band to
+        // holding no body value at all.
+        chooseBacteriaBodyWithAudio(DEVICE_ID, 0, 'metal');
+        await vi.waitFor(() => {
+            expect(storedParameterValues()[BODY_PARAM]).toBe(2);
+        });
+        expect(undoDepth()).toBe(before + 1);
+
+        await undo();
+
+        expect(storedParameterValues()).toEqual({ band0_convolutionEnabled: 1 });
+        expect(undoDepth()).toBe(before);
+        expect(bodyWrites()).toEqual([2, -1]);
+    });
+
+    it('undoes a body change back to the body chosen before it, then to no body', async () => {
+        const before = undoDepth();
         chooseBacteriaBodyWithAudio(DEVICE_ID, 0, 'ceramic');
         await vi.waitFor(() => {
             expect(storedParameterValues()[BODY_PARAM]).toBe(0);
@@ -252,11 +283,20 @@ describe('choosing a Bacteria body', () => {
         await vi.waitFor(() => {
             expect(storedParameterValues()[BODY_PARAM]).toBe(3);
         });
+        expect(undoDepth()).toBe(before + 2);
 
         await undo();
 
         expect(storedParameterValues()[BODY_PARAM]).toBe(0);
         expect(bodyWrites().at(-1)).toBe(0);
+
+        await undo();
+
+        expect(storedParameterValues()).toEqual({ band0_convolutionEnabled: 1 });
+        expect(undoDepth()).toBe(before);
+        expect(bodyWrites()).toEqual([0, 3, 0, -1]);
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+        expect(getBacteriaState(DEVICE_ID).patch.bands[0]?.convolutionIr).toBe('');
     });
 
     // A reopened project starts with an empty session store; the panel shows

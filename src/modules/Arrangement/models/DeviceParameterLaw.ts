@@ -44,6 +44,22 @@ export function isInternalDeviceParameter({ deviceType, paramId }: DeviceParamet
 }
 
 /**
+ * The value a parameter holds while absent from `parameterValues`: its declared
+ * default, or the default its descriptor records for a value the panel writes
+ * without declaring it. `undefined` when the descriptor states neither.
+ */
+export function findDeviceParameterDefault({ deviceType, paramId }: DeviceParameterIdentity): number | undefined {
+    const declared = findParameterDescriptor({ deviceType, paramId });
+    if (declared) {
+        return declared.defaultValue;
+    }
+    const undeclaredDefaults = getPluginById(deviceType)?.undeclaredParameterDefaults;
+    return undeclaredDefaults !== undefined && Object.hasOwn(undeclaredDefaults, paramId)
+        ? undeclaredDefaults[paramId]
+        : undefined;
+}
+
+/**
  * The value a write is actually allowed to land, given the declared range.
  *
  * Clamps rather than rejects. A write that overshoots is a caller bug or stale

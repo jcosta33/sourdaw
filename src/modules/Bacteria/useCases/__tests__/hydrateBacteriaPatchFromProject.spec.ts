@@ -100,9 +100,10 @@ describe('hydrateBacteriaPatchFromProject', () => {
         expect(patch.bands[0]?.mute).toBe(true);
     });
 
-    // A reopened project shows the body each band was saved with, and an undo
-    // of a band's first body (which writes the no-body value -1) shows None.
-    it('decodes each band’s stored body index, and -1 as no body', () => {
+    // A reopened project shows the body each band was saved with; -1 is None,
+    // and so is no stored value at all, which is what an undo of a band's
+    // first body leaves.
+    it('decodes each band’s stored body index, and -1 or no value as no body', () => {
         seedProjectDevice({ band0_convolutionIr: 2, band1_convolutionIr: 3, band2_convolutionIr: 0 });
         hydrateBacteriaPatchFromProject(DEVICE_ID);
 
@@ -113,6 +114,15 @@ describe('hydrateBacteriaPatchFromProject', () => {
         hydrateBacteriaPatchFromProject(DEVICE_ID);
 
         expect(getBacteriaState(DEVICE_ID).patch.bands[0]?.convolutionIr).toBe('');
+
+        seedProjectDevice({ band2_convolutionIr: 0 });
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(
+            getBacteriaState(DEVICE_ID)
+                .patch.bands.slice(0, 3)
+                .map((band) => band.convolutionIr)
+        ).toEqual(['', '', 'ceramic']);
     });
 
     it('leaves a band’s body alone when the stored value names no body index', () => {

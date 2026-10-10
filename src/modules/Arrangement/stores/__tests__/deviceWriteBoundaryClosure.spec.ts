@@ -193,14 +193,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // device-param write through the shared rAF batcher; the morph never
         // touches a store directly.
         'src/modules/Bacteria/useCases/bacteriaParamBridge/applyBacteriaMorph.ts': 2,
-        // Count provenance: new file, measured 2 — the `persistDeviceParam`
-        // import and its one call, which writes a band's no-body value (-1) into
-        // a record that has never held a body, so the body choice that follows
-        // has a stored value for its undo to return to. That write changes
-        // nothing audible or visible. The choice itself reaches no sink here: it
-        // dispatches `setDeviceParameter` through `executeUserAppAction`, which
-        // writes the document and the engine behind the action.
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/chooseBacteriaBodyWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts': 6,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 3,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
@@ -1153,7 +1145,6 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Arrangement/useCases/setTrackGainPan/helpers.ts',
     'src/modules/Automation/useCases/modulation/applyModulationToEngine.ts',
     'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts',
-    'src/modules/Bacteria/useCases/bacteriaParamBridge/chooseBacteriaBodyWithAudio.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/createFlushParam.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts',
     'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts',

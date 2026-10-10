@@ -1,4 +1,4 @@
-import { persistDeviceParam, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { encodeBacteriaBody, NO_BODY_INDEX } from '../../models/BacteriaBodyIndex';
@@ -15,7 +15,9 @@ import { paramBatcher } from './helpers';
  * stack and in the document, and sends it to the engine — the web worklet and
  * the native engine alike — through `updateDeviceParam`. Everything that
  * rebuilds the device afterwards (a reload, a graph rebuild, an export) replays
- * it from `parameterValues` like any other band parameter.
+ * it from `parameterValues` like any other band parameter. A band that has
+ * never had a body stores nothing, which means no body: Bacteria's descriptor
+ * records that, so undoing the band's first choice removes the value again.
  *
  * The session store moves first so the picker answers at once; the panel's
  * hydration re-projects it from the document after undo and redo.
@@ -33,30 +35,21 @@ export function chooseBacteriaBodyWithAudio(deviceId: string, bandIndex: number,
     setBacteriaBandParam(deviceId, bandIndex, 'convolutionIr', body);
 
     const paramId = `band${bandIndex}_convolutionIr`;
+    const value = encodeBacteriaBody(body);
     paramBatcher.cancel(`${target.deviceId}:${paramId}`);
-    recordNoBodyWhenUnset(target.deviceId, paramId);
+    if (storedBody(target.deviceId, paramId) === value) {
+        return;
+    }
     void executeUserAppAction({
         type: 'setDeviceParameter',
-        payload: { deviceId: target.deviceId, paramId, value: encodeBacteriaBody(body) },
+        payload: { deviceId: target.deviceId, paramId, value },
     });
 }
 
-/**
- * Give a band that has never had a body chosen its no-body value in the
- * document before the choice is committed.
- *
- * An undo restores the value the parameter held before the edit, and a
- * parameter the device declares no default for has nothing to restore when it
- * was never written — the per-band body is such a parameter, so its first
- * choice would land with no undo at all. Writing the no-body value first is not
- * a change anyone can hear or see: the band already plays and shows no body.
- */
-function recordNoBodyWhenUnset(deviceId: string, paramId: string): void {
+/** The body index the document holds for a band, where absence is no body. */
+function storedBody(deviceId: string, paramId: string): number {
     const device = trackStore.value?.tracks
         .flatMap((track) => track.devices)
         .find((candidate) => candidate.id === deviceId);
-    if (!device || Object.hasOwn(device.parameterValues, paramId)) {
-        return;
-    }
-    persistDeviceParam(deviceId, paramId, NO_BODY_INDEX);
+    return device?.parameterValues[paramId] ?? NO_BODY_INDEX;
 }

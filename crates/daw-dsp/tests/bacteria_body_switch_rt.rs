@@ -115,3 +115,52 @@ fn the_body_chosen_without_allocating_is_the_body_heard() {
         );
     }
 }
+
+/// Longer than any body's response at any rate (the stage caps it at 4096
+/// samples), so a span this long outlasts every tail.
+const LONGER_THAN_ANY_BODY: usize = 8_192;
+
+/// Choosing a body again after a spell of none starts it from silence. A burst
+/// played into the body, then a long stretch with no body chosen, then the
+/// body chosen again over silence: nothing of the burst may come back, because
+/// a musician who switched the body off and on again long after the burst
+/// ended would otherwise hear it ring out of nowhere.
+#[test]
+fn re_choosing_a_body_after_none_carries_nothing_from_before() {
+    let mut body = ConvolutionProcessor::new(SAMPLE_RATE);
+    body.set_param("convolutionMix", 1.0);
+
+    body.set_param("convolutionIr", 1.0);
+    let burst_heard: f32 = (0..256)
+        .map(|n| {
+            let loud = if n % 2 == 0 { 1.0 } else { -1.0 };
+            body.process_stereo(loud, loud).0.abs()
+        })
+        .sum();
+    assert!(
+        burst_heard > 0.0,
+        "the burst never sounded through the body, so the test proves nothing"
+    );
+
+    body.set_param("convolutionIr", -1.0);
+    for _ in 0..LONGER_THAN_ANY_BODY {
+        assert_eq!(
+            body.process_stereo(0.0, 0.0),
+            (0.0, 0.0),
+            "no body chosen passes silence through as silence"
+        );
+    }
+
+    body.set_param("convolutionIr", 1.0);
+    let leaked: Vec<(usize, f32)> = (0..LONGER_THAN_ANY_BODY)
+        .map(|n| (n, body.process_stereo(0.0, 0.0).0))
+        .filter(|&(_, sample)| sample != 0.0)
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "silence through the re-chosen body rang with the burst played before the spell of \
+         none: {} non-zero samples, first {:?}",
+        leaked.len(),
+        leaked.first()
+    );
+}
