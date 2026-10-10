@@ -1,0 +1,151 @@
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_2bfd55a4393d7c::t_e664dcb6fbdb06 5
+  s_2bfd55a4393d7c::t_2f30a8f63dbe26 470-472
+  s_2bfd55a4393d7c::t_846f571f3b10fe 447,456-458
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_2bfd55a4393d7c::t_8ec11c05c44a49 9
+  s_2bfd55a4393d7c::t_25bc879d108328 533,537-542,551-552,556,560-565,575-576,580-585
+  s_2bfd55a4393d7c::t_327932f777b24f 586-587
+src/modules/PluginHost/useCases/faustEngine/registerSupersawUnison.ts
+  s_2bfd55a4393d7c::t_e9d6d6f6da8aef 104-108
+  s_2bfd55a4393d7c::t_e3ab5d903ffffb 109-111
+  s_2bfd55a4393d7c::t_3431072a21fd6a 103
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_2bfd55a4393d7c::t_8f40c5b6379bae 5
+  s_2bfd55a4393d7c::t_b5464f70f65a9a 777-779,798-800
+  s_2bfd55a4393d7c::t_9ea5a52a8161bd 1467-1469
+  s_2bfd55a4393d7c::t_b0d9fea063a87a 1533
+  s_2bfd55a4393d7c::t_405696f6699bfe 1551-1553
+  s_2bfd55a4393d7c::t_8ff8852b60649d 838-840
+  s_2bfd55a4393d7c::t_0d6671f710d4b1 854,869-879
+crates/daw-dsp/src/levain/performance.rs
+  s_2bfd55a4393d7c::t_544ee4cdc7324b 197-201,212-221,223-225,227-241
+  s_2bfd55a4393d7c::t_ada8640b73127e 222,226
+  s_2bfd55a4393d7c::t_8f53063bcf532b 183-185
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_2bfd55a4393d7c::t_8d623b7ae82c49 615-616,627-628
+  s_2bfd55a4393d7c::t_7ff2aa3d63afcc 16
+  s_2bfd55a4393d7c::t_00493f7b3013c0 488
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptorsGuidance.ts
+  s_2bfd55a4393d7c::t_2026160f06163a 234
+  s_2bfd55a4393d7c::t_54e8dcb11cfc09 223-225
+  s_2bfd55a4393d7c::t_a4067f4d41f359 241-244,246,249
+src/modules/Arrangement/models/__tests__/DeviceParameter.spec.ts
+  s_2bfd55a4393d7c::t_0eca5e1c9ae42a 3-4,7-20
+  s_893120061bb856::t_fba5c22524b669 21
+src/utils/deviceTypeMatching.ts
+  s_2bfd55a4393d7c::t_a85fb68d2c9046 53,56,63-74,76-85
+  s_2bfd55a4393d7c::t_97082821c4f8fd 75
+  s_2bfd55a4393d7c::t_f9f6394723ddb0 35-40
+  s_2bfd55a4393d7c::t_f0491be7ea51ca 86
+src/modules/AudioEngine/useCases/__tests__/audition.spec.ts
+  s_2bfd55a4393d7c::t_c7af6206086781 9
+  s_2bfd55a4393d7c::t_cacc5e34198af0 324-330,342-344,348-356,362-363
+  s_2bfd55a4393d7c::t_e1c3e729519842 357-361,364,782,815,822-823,830-831
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceInspector.spec.tsx
+  s_2bfd55a4393d7c::t_2403ad2c702a2f 300
+src/modules/Synth/useCases/__tests__/drumKitSynth.spec.ts
+  s_2bfd55a4393d7c::t_fccc614507e49a 41,54
+  s_2bfd55a4393d7c::t_07a9f1285745a2 5,7-8
+  s_2bfd55a4393d7c::t_4587ed83dfe940 1,3-4,6,10-16,36-40,42-53,55-57
+  s_2bfd55a4393d7c::t_90a64312bc1b02 9,58-63
+crates/daw-dsp/tests/device_process_rt.rs
+  s_2bfd55a4393d7c::t_a310adf6e9f745 1697-1738
+src/modules/PluginHost/useCases/faustEngine/dsp/supersaw-unison.dsp
+  s_2bfd55a4393d7c::t_14577eda035905 27
+  s_2bfd55a4393d7c::t_8f8e447cb2a7ae 2
+crates/daw-dsp/src/levain/engine.rs
+  s_2bfd55a4393d7c::t_549c23991eef08 698-701
+  s_2bfd55a4393d7c::t_0df45a06b55807 3462-3552
+  s_2bfd55a4393d7c::t_e5895841c2a13f 696-697
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_2bfd55a4393d7c::t_041f3a16b75329 1327,1347-1349
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_84042e2d1d0d31 1570-1571,1581-1582
+  s_2bfd55a4393d7c::t_e5de33e8c9d00c 1600,1610
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/__tests__/scheduleDrumKitNote.spec.ts
+  s_2bfd55a4393d7c::t_b470574f086b90 42,52,62,64-87
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptorGuidance.ts
+  s_2bfd55a4393d7c::t_95d2cf6642e383 99,104-105,108
+  s_2bfd55a4393d7c::t_68480fc5f9e62a 100
+  s_2bfd55a4393d7c::t_fc3bdf06f1bb96 29-31
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_59c7c038b3e8c7 1480-1481
+  s_2bfd55a4393d7c::t_3b9981ac81f705 1014
+  s_2bfd55a4393d7c::t_ff33eb86f9750c 1468-1469
+  s_2bfd55a4393d7c::t_036f41ab620b31 28-32
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_2bfd55a4393d7c::t_441386f4c216ab 81
+  s_2bfd55a4393d7c::t_c77b174b6bd051 82
+  s_2bfd55a4393d7c::t_b5256d47c9524d 73-76
+  s_2bfd55a4393d7c::t_343a33e3aaa343 48-50
+  s_2bfd55a4393d7c::t_1d2defd7c69e3d 67-68
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptors.ts
+  s_2bfd55a4393d7c::t_ad8e9689e1676c 368,370
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptors.ts
+  s_2bfd55a4393d7c::t_8e990d126782d0 143
+src/modules/MIDI/useCases/webMidiInput/voiceYeastNoteOn.ts
+  s_2bfd55a4393d7c::t_05e2403a9c362a 158,161-170
+  s_2bfd55a4393d7c::t_6dee8d6a3a344f 182-184
+  s_2bfd55a4393d7c::t_0783656d0991c9 3-8
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_455b5387ea365b 1210
+  s_2bfd55a4393d7c::t_16fc3ef5a344a0 1344,1350,1770
+crates/daw-dsp/src/levain/voice.rs
+  s_2bfd55a4393d7c::t_cc57386c36ab36 982-988
+src/modules/PluginHost/useCases/faustEngine/__tests__/supersawDspBehavior.spec.ts
+  s_2bfd55a4393d7c::t_35f8b1ec95d548 7,9,11,14-16
+  s_2bfd55a4393d7c::t_66687a291a94fc 164-219
+src/modules/Synth/useCases/drumKitSynth.ts
+  s_2bfd55a4393d7c::t_d34f03cf9925b7 33-37,46-47
+  s_2bfd55a4393d7c::t_05651206d4eda9 53
+  s_2bfd55a4393d7c::t_362b363a09a53e 54-63
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/scheduleDrumKitNote.ts
+  s_2bfd55a4393d7c::t_c48c4dd69780c8 30
+  s_2bfd55a4393d7c::t_b90441f94d3469 8-13,22-23,29,31-34
+src/utils/__tests__/deviceTypeMatching.spec.ts
+  s_2bfd55a4393d7c::t_94db2eda90fc28 3-12,14-28
+  s_2bfd55a4393d7c::t_b62325451de219 13
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_0252c7aaf0f38a 10
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptorsGuidance.ts
+  s_2bfd55a4393d7c::t_d5b70c102369ca 113,115
+  s_2bfd55a4393d7c::t_f35a54ed693435 242-254
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/__tests__/scheduleDrumKitNoteLevel.spec.ts
+  s_2bfd55a4393d7c::t_1a0bd6763559f6 1-44
+  s_2bfd55a4393d7c::t_11fd6cab30d1f2 45-53
+src/modules/AudioEngine/useCases/audition.ts
+  s_2bfd55a4393d7c::t_3f02224141a157 9,59,62,82-84
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_5cac3d99fbf860 1,1004-1064
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_b5d00091e079f4 1,19-79
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_3e06c53114891a 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_8cc82422d51336 1,1004-1064
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1f132ee9a63f02b81dd428948c1f8342032635f9",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_893120061bb856": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1256e-9c67-7563-9585-8e8c8ddee529",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
