@@ -1,0 +1,107 @@
+crates/daw-dsp/src/grinder/nam/activations.rs
+  s_97ab82e0b4f10c::t_cd531e298930cd 83-90
+crates/daw-dsp/src/grinder/nam/mod.rs
+  s_1c08b47ac3792f::t_cbfe36004a5b12 576-631
+crates/daw-dsp/src/grinder/nam/wavenet.rs
+  s_97ab82e0b4f10c::t_12ef374dc4a8ae 595-600
+crates/daw-dsp/src/grinder/neural.rs
+  s_97ab82e0b4f10c::t_2ba51246d15fcb 277-284,669-673,676-734,739-752
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_1c08b47ac3792f::t_b618495c8e562e 1,995,998-1012,1047-1128,1190-1213
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_1c08b47ac3792f::t_7c51dc05e6df3f 1,5,8-22,57-138,200-223
+public/wasm/manifest.json
+  s_4c8cd08893b364::t_d446fdc105c12c 12,16-18,21
+src/modules/AudioEngine/models/RuntimeGrinderNeuralPatch.ts
+  s_2bfd55a4393d7c::t_33dacb6a661c3a 44-50
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineModulatorParity.spec.ts
+  s_2bfd55a4393d7c::t_6a4b6c40c9b98c 9,110-127
+src/modules/AudioEngine/services/__tests__/grinderProcessorNeuralPatch.spec.ts
+  s_1f0dcd815e8946::t_42bf70d9d6c453 18-20,41,168,178-247
+src/modules/AudioEngine/services/__tests__/runtimeGrinderNeuralPatch.spec.ts
+  s_1f0dcd815e8946::t_60edec34c34fab 89,107,111-112,118-142
+src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts
+  s_2bfd55a4393d7c::t_193e43c8aab18b 132,136-142
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_97ab82e0b4f10c::t_2d8a1deebaa623 220-221,224-226,255-259,261-263,274-279,281-285,327-329,338-342,417-418,609
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_2bfd55a4393d7c::t_2e9b1bce5edb9b 3,2257-2313
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  s_4c8cd08893b364::t_5694b22bb3a6b4 507-642
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_4c8cd08893b364::t_d4938eaaa59c42 1,281-293
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_1f0dcd815e8946::t_50ad020d6f3274 311,316-319,324-327
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_1c08b47ac3792f::t_a2957eb2cfc19c 111-113,134-142,199-200,221,229-231,236
+src/modules/AudioEngine/useCases/offlineRender/tryNativeOfflineRender.ts
+  s_893120061bb856::t_67a24e30d94553 26,45-49
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_1c08b47ac3792f::t_b00e2336205309 1,995,998-1012,1047-1128,1190-1213
+src/modules/Grinder/models/__tests__/GrinderNeuralModelJson.spec.ts
+  s_2bfd55a4393d7c::t_43e86ef7c3f600 4
+src/modules/Grinder/services/validateGrinderNamModel.ts
+  s_4c8cd08893b364::t_db75bea6479ba4 102-128
+src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
+  s_2bfd55a4393d7c::t_05650b3dd9fff8 4
+src/modules/Yeast/engine/YeastWorkerClient.ts
+  s_97ab82e0b4f10c::t_54d98704bed0af 782-787
+src/modules/Yeast/engine/__tests__/YeastWorkerClient.spec.ts
+  s_1f0dcd815e8946::t_8231f0337b9671 1294-1321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "481a5b4a66ebdd235450ee66007a440f50ce1af4",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_893120061bb856": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1256e-9c67-7563-9585-8e8c8ddee529",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
