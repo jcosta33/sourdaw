@@ -2065,6 +2065,26 @@ describe('handleWebMidiNoteOn', () => {
 
             expect(nodes.levain.levainControls.noteOff).not.toHaveBeenCalled();
         });
+
+        // A held key's transformed voice carries no note instance id, so it is
+        // found on the held key itself: only its own track and channel reach it.
+        it('leaves another track’s and another channel’s held key voice sounding', async () => {
+            const nodes = lifecycle_strip();
+            const live = yeast_chain([{ id: 'lev-1', type: 'levain' }], async () => [
+                { timeSamples: 96_240, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+            ]);
+
+            await live.noteOn(0, 60, 100);
+            releaseCapturedYeastVoices('track-2', 0, 67);
+            releaseCapturedYeastVoices('track-1', 1, 67);
+
+            expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(67, 100, 96_240, 0);
+            expect(nodes.levain.levainControls.noteOff).not.toHaveBeenCalled();
+
+            releaseCapturedYeastVoices('track-1', 0, 67);
+
+            expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, undefined, 0);
+        });
     });
 
     // A key on a Toaster child is a pad of the parent's kit, whatever
@@ -2110,6 +2130,52 @@ describe('handleWebMidiNoteOn', () => {
 
             expect(toaster.toasterControls.noteOn).toHaveBeenCalledExactlyOnceWith(1, 100, 62, 96_240);
             expect(levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('a direct key on a Toaster child’s instrument track', () => {
+        it.each([
+            { name: 'levain', ahead: { id: 'lev-1', type: 'levain' } },
+            { name: 'faust instrument', ahead: { id: 'faust-1', type: 'faust-epiano' } },
+            { name: 'drum kit', ahead: { id: 'kit-1', type: 'builtin-drum-machine-808', parameterValues: { kit: 0 } } },
+        ])('plays the child’s Toaster pad, never the $name ahead of the Toaster', async ({ ahead }) => {
+            faust_instrument_types.value = new Set(['faust-epiano']);
+            const voice = () => ({ ready: true, noteOn: vi.fn(), noteOff: vi.fn() });
+            const levain = { type: 'levain', deviceId: 'lev-1', levainControls: voice() };
+            const toaster = { type: 'toaster', deviceId: 'toaster-1', toasterControls: voice() };
+            const strip = { gainNode: {}, deviceNodes: [levain, toaster] };
+            ensure_track_strip.mockReturnValue(strip);
+            get_track_strip.mockReturnValue(strip);
+            target_track_id.value = 'child-1';
+            const schedule_drum_kit_note = vi.fn();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [
+                            {
+                                id: 'parent',
+                                devices: [ahead, { id: 'toaster-1', type: 'toaster' }],
+                            },
+                            { id: 'child-0', parentId: 'parent', devices: [] },
+                            { id: 'child-1', parentId: 'parent', devices: [] },
+                        ],
+                        selectedTrackId: 'child-1',
+                    }),
+                    getDrumKitDefByIndex: (index: number) => ({ id: `kit-def-${index}` }),
+                    scheduleDrumKitNote: schedule_drum_kit_note,
+                })
+            );
+
+            await fn(0, 60, 100);
+
+            expect(toaster.toasterControls.noteOn).toHaveBeenCalledExactlyOnceWith(1, 100, 60, LIVE_DISPATCH_FRAME);
+            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.toasterRoute).toEqual({
+                deviceId: 'toaster-1',
+                pad: 1,
+            });
+            expect(levain.levainControls.noteOn).not.toHaveBeenCalled();
+            expect(start_faust_note).not.toHaveBeenCalled();
+            expect(schedule_drum_kit_note).not.toHaveBeenCalled();
         });
     });
 

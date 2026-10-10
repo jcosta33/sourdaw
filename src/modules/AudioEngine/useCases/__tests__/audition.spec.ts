@@ -637,6 +637,60 @@ describe('playAuditionNote device dispatch', () => {
         expect(crumbsNoteOff).toHaveBeenCalledWith(48);
     });
 
+    // A note auditioned on a Toaster child is a pad of the parent's kit, whatever
+    // instrument sits ahead of the Toaster in the parent's chain.
+    it.each([
+        {
+            name: 'levain',
+            ahead: { id: 'lev-d', type: 'levain' },
+            node: (noteOn: () => void): MockDeviceNode => ({
+                deviceId: 'lev-d',
+                type: 'levain',
+                levainControls: { ready: true, noteOn, noteOff: vi.fn() },
+            }),
+        },
+        {
+            name: 'faust instrument',
+            ahead: { id: 'faust-d', type: FAUST_INSTRUMENT_TYPE },
+            node: (): MockDeviceNode => ({ deviceId: 'faust-d', type: FAUST_INSTRUMENT_TYPE }),
+        },
+    ])('auditions a Toaster child on the pad, never on the $name ahead of the Toaster', ({ ahead, node }) => {
+        const aheadNoteOn = vi.fn();
+        const toasterNoteOn = vi.fn();
+        const toasterNoteOff = vi.fn();
+        setStrip('parent', [
+            node(aheadNoteOn),
+            {
+                deviceId: 'toaster-d',
+                type: 'toaster',
+                toasterControls: { ready: true, noteOn: toasterNoteOn, noteOff: toasterNoteOff },
+            },
+        ]);
+        setTrack({
+            tracks: [
+                {
+                    id: 'parent',
+                    devices: [
+                        { ...ahead, parameterValues: {} },
+                        { id: 'toaster-d', type: 'toaster', parameterValues: {} },
+                    ],
+                    parentId: null,
+                },
+                { id: 'child-a', devices: [], parentId: 'parent' },
+                { id: 'child-b', devices: [], parentId: 'parent' },
+            ],
+        });
+
+        const stop = playAuditionNote('child-b', 55, 80);
+
+        expect(toasterNoteOn).toHaveBeenCalledExactlyOnceWith(1, 80, 55);
+        expect(aheadNoteOn).not.toHaveBeenCalled();
+        expect(startFaustNote).not.toHaveBeenCalled();
+        expect(mocks.scheduleNote).not.toHaveBeenCalled();
+        stop();
+        expect(toasterNoteOff).toHaveBeenCalledExactlyOnceWith(1);
+    });
+
     // A bypassed instrument is silent on every route: the note neither reaches
     // the instrument behind it nor falls back to the default synth.
     it('plays nothing for a bypassed receiving instrument', () => {
