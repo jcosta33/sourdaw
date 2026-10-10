@@ -1,0 +1,215 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackLevelSection.spec.tsx
+  s_1f0dcd815e8946::t_03f21e5dfd5ec3 41
+crates/daw-dsp/src/grinder/engine.rs
+  s_1f0dcd815e8946::t_4ffa0cb5fae209 694-704
+crates/daw-dsp/src/grinder/mod.rs
+  s_1f0dcd815e8946::t_e52aee0f923c43 12,78-93
+crates/daw-dsp/src/grinder/nam/activations.rs
+  s_1f0dcd815e8946::t_a6cdb9196f0057 1-191
+crates/daw-dsp/src/grinder/nam/conv.rs
+  s_1f0dcd815e8946::t_050e3aced5cf40 1-198
+crates/daw-dsp/src/grinder/nam/convnet.rs
+  s_1f0dcd815e8946::t_119f6302436bf2 1-266
+crates/daw-dsp/src/grinder/nam/fixtures/convnet_synthetic.nam
+  s_1f0dcd815e8946::t_ebf0f104cc95d3 1
+crates/daw-dsp/src/grinder/nam/fixtures/gated_wavenet_synthetic.nam
+  s_1f0dcd815e8946::t_e2b7246f66c75b 1
+crates/daw-dsp/src/grinder/nam/fixtures/golden_convnet_synthetic_bs64.txt
+  s_1f0dcd815e8946::t_56d9bb910a16ab 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_gated_wavenet_synthetic_bs64.txt
+  s_1f0dcd815e8946::t_04277394f5b664 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_lstm_bs256.txt
+  s_1f0dcd815e8946::t_a69f7e061b2745 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_lstm_bs64.txt
+  s_1f0dcd815e8946::t_d4bd3c45749cbe 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_wavenet_bs256.txt
+  s_1f0dcd815e8946::t_69e306a85177cc 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_wavenet_bs64.txt
+  s_1f0dcd815e8946::t_071b8be4639c5b 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/lstm.nam
+  s_1f0dcd815e8946::t_c2b635ff4a6bad 1
+crates/daw-dsp/src/grinder/nam/fixtures/wavenet.nam
+  s_1f0dcd815e8946::t_d24ebb240644dc 1
+crates/daw-dsp/src/grinder/nam/linear.rs
+  s_1f0dcd815e8946::t_1f370296d77309 1-110
+crates/daw-dsp/src/grinder/nam/lstm.rs
+  s_1f0dcd815e8946::t_6dd1cc36b08fdd 1-237
+crates/daw-dsp/src/grinder/nam/mod.rs
+  s_1f0dcd815e8946::t_cc5c07f92ce00f 1-632
+crates/daw-dsp/src/grinder/nam/wavenet.rs
+  s_1f0dcd815e8946::t_e843ea9b58cb5c 1-833
+crates/daw-dsp/src/grinder/neural.rs
+  s_1f0dcd815e8946::t_9a0ee4332a2a7a 11-12,201-204,241,277-284,291-293,315-334,341-348,393-395,490,542-753
+crates/daw-dsp/src/levain/voice.rs
+  s_1f0dcd815e8946::t_3a929fad7a8199 411-412,1186-1193,1226-1238
+crates/daw-dsp/tests/levain_mic_mix_is_audible.rs
+  s_1f0dcd815e8946::t_b2b832636f942b 902-990
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_1f0dcd815e8946::t_a0af78f16f3280 1,611-622,1018,1021-1035,1082,1123-1221,1226
+public/wasm/daw-dsp/daw_dsp.js
+  s_1f0dcd815e8946::t_b7911308373b5a 1262-1285,2242-2246,2379-2384
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_1f0dcd815e8946::t_c85de7c31d49aa 1,21,24-38,85,126-224,229
+public/wasm/manifest.json
+  s_1f0dcd815e8946::t_191678fd0c0a62 12,15-18,20-21
+release/open-source-inventory.json
+  s_1f0dcd815e8946::t_92df76089fc5ef 1345,1351,1771
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  s_1f0dcd815e8946::t_5edd9f72f55aa7 136
+src/modules/Arrangement/useCases/freezeBounce/__tests__/detectSilentBake.spec.ts
+  s_1f0dcd815e8946::t_c8ea11c4ab4258 8-12
+src/modules/AudioEngine/models/RuntimeGrinderNeuralPatch.ts
+  s_1f0dcd815e8946::t_e15edd58673149 37-50
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineModulatorParity.spec.ts
+  s_1f0dcd815e8946::t_006b2e9aa25352 1-186
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_1f0dcd815e8946::t_1546aee0d1ccd3 13-17,27,37-64,230-245,341-505,525-526,1098-1154,1160-1175,1191-1200,1203-1207,1209,1211-1212,1214-1233,1235-1243,1245
+src/modules/AudioEngine/repositories/offlineScheduler/makeSecondsToBeat.ts
+  s_1f0dcd815e8946::t_2fbc8e7ca4670a 1-44
+src/modules/AudioEngine/services/__tests__/grinderProcessorNeuralPatch.spec.ts
+  s_1f0dcd815e8946::t_a2f1bba8829e22 5,8,18-20,41,161-270
+src/modules/AudioEngine/services/__tests__/grinderProcessorTestHarness.ts
+  s_1f0dcd815e8946::t_6efec7470466d8 57,64,92-98,190,197,204-207
+src/modules/AudioEngine/services/__tests__/runtimeGrinderNeuralPatch.spec.ts
+  s_1f0dcd815e8946::t_44e7e7391f5525 69-159
+src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts
+  s_1f0dcd815e8946::t_a5906a1a81007f 40,48-55,70-71,119-143,150
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_1f0dcd815e8946::t_e398cd6c542d26 218-221,224-226,255-259,261-263,268-287,323-340,417-418,609
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineAdjustmentLayerParity.spec.ts
+  s_1f0dcd815e8946::t_a03a6030a6b2b9 1-268
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_1f0dcd815e8946::t_c4df6ef95fdf12 3,2261-2317
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_1f0dcd815e8946::t_fc4dbb99fcce35 4-5,1293,1296-1298,1300-1302,1305-1361
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  s_1f0dcd815e8946::t_f237e6ff6fefa7 432-567,633-647,650-664
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_1f0dcd815e8946::t_0a323206b55845 1-2,6,8,12,14,16,18,21,23,30-31,55-71,117-180,182-268,270,277,300-314,320-324,326-327,370-390
+src/modules/AudioEngine/useCases/offlineRender/composeOfflineStripLevel.ts
+  s_1f0dcd815e8946::t_5ef4778bc714e5 1-19
+src/modules/AudioEngine/useCases/offlineRender/createOfflineAdjustmentBusChain.ts
+  s_1f0dcd815e8946::t_036bff8c78f4a5 1-50
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_1f0dcd815e8946::t_21954af582bc28 95
+src/modules/AudioEngine/useCases/offlineRender/offlineAdjustmentLayers.ts
+  s_1f0dcd815e8946::t_4105220e817a34 1-175
+src/modules/AudioEngine/useCases/offlineRender/readOfflineAdjustmentLayerSnapshot.ts
+  s_1f0dcd815e8946::t_d41e3c916238d3 1-6
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_1f0dcd815e8946::t_114a16665f9101 1,3-4,11,17,20,24,28,32,36,274-332,343-357,360,413-416,418-425,446-483
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineAdjustmentCurves.ts
+  s_1f0dcd815e8946::t_5b9a26be11cdec 1-70
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_1f0dcd815e8946::t_0ec21f76b41cdf 3,312-323,325-328,371,377
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_1f0dcd815e8946::t_0cf35fef1ded9e 82-107,116-126,135-143,154-201,249
+src/modules/AudioEngine/useCases/offlineRender/tryNativeOfflineRender.ts
+  s_1f0dcd815e8946::t_e903fcd36fa840 1-3,26,39-49
+src/modules/AudioEngine/useCases/offlineRender/wireAdjustmentBusChain.ts
+  s_1f0dcd815e8946::t_778465c9698a40 1-22
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_1f0dcd815e8946::t_3f594c5b992ce4 1,611-622,1018,1021-1035,1082,1123-1221,1226
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_1f0dcd815e8946::t_5992bca187f68b 1439-1462,2419-2423,2556-2561
+src/modules/Automation/useCases/index.ts
+  s_1f0dcd815e8946::t_9826bb6cb9e485 18-19
+src/modules/Automation/useCases/modulation/offlineModulatorSchedule.ts
+  s_1f0dcd815e8946::t_8d7e72ab379996 1-100
+src/modules/Grinder/models/GrinderNeuralModelJson.ts
+  s_1f0dcd815e8946::t_acd33fabfc7088 1-28
+src/modules/Grinder/models/GrinderNeuralProfileParams.ts
+  s_1f0dcd815e8946::t_6127422832328e 1,14-93,104-106,109,118-121,220-225,238,253-254,260-266,269-271,293-298,308
+src/modules/Grinder/models/GrinderPatch.ts
+  s_1f0dcd815e8946::t_b90d454a850c43 32-49,62-69,430-438,442-443
+src/modules/Grinder/models/__tests__/GrinderNeuralModelJson.spec.ts
+  s_1f0dcd815e8946::t_088556d274e333 1-48
+src/modules/Grinder/models/__tests__/GrinderNeuralProfileParams.spec.ts
+  s_1f0dcd815e8946::t_b82fea1a17be97 3-26,41-42,101-208
+src/modules/Grinder/models/__tests__/GrinderPatch.spec.ts
+  s_1f0dcd815e8946::t_366212e750bf5e 122-123,145-146
+src/modules/Grinder/models/__tests__/GrinderProjectParameterMap.spec.ts
+  s_1f0dcd815e8946::t_b2c7244d86b42f 7-12,30-31,142-207
+src/modules/Grinder/presentations/components/__tests__/ImportedNeuralLibraryCard.spec.tsx
+  s_1f0dcd815e8946::t_eb8e55ca43eef8 40-41
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_1f0dcd815e8946::t_9bf610c1553915 170-171
+src/modules/Grinder/repositories/neuralLibraryPersistence/__tests__/neuralLibraryPersistence.spec.ts
+  s_1f0dcd815e8946::t_07b05aaf5616a0 31-32
+src/modules/Grinder/services/__tests__/parseGrinderNamFile.spec.ts
+  s_1f0dcd815e8946::t_53b855bbf4120d 5-44,47,60-63,81-83,85,95,122-125,139
+src/modules/Grinder/services/__tests__/parseGrinderNamFileBranches.spec.ts
+  s_1f0dcd815e8946::t_e941e67c83da6e 6-10,13-58,60-113,117-120,126-127,132-133,138-141,146-147,151-156,163,168,173,178,186,191,197,201,206,209,214,218,224,230-231,233,236,244,250,253,269,285-324,352,369-398,402-403,407-413,417-418,425,430,435
+src/modules/Grinder/services/__tests__/validateGrinderNamModel.spec.ts
+  s_1f0dcd815e8946::t_01f5202061d7c4 1-313
+src/modules/Grinder/services/parseGrinderNamFile.ts
+  s_1f0dcd815e8946::t_4cf5fd13ec30bf 1,8-9,94-99,105-110,154-168,175-196,202
+src/modules/Grinder/services/validateGrinderNamModel.ts
+  s_1f0dcd815e8946::t_6e5f27214b773b 1-623
+src/modules/Grinder/stores/__tests__/grinderNeuralLibraryStore.spec.ts
+  s_1f0dcd815e8946::t_da86dcdd17c5e1 34-35
+src/modules/Grinder/useCases/__tests__/exportGrinderNeuralModel.spec.ts
+  s_1f0dcd815e8946::t_6291e2c94f0bf7 45-46
+src/modules/Grinder/useCases/__tests__/importGrinderNeuralModels.spec.ts
+  s_1f0dcd815e8946::t_52efa9812912e4 23-25,30,32-50
+src/modules/Grinder/useCases/__tests__/removeGrinderNeuralModel.spec.ts
+  s_1f0dcd815e8946::t_2dbe57e7bc17dd 52-53,89-90
+src/modules/Grinder/useCases/__tests__/restoreGrinderNeuralLibrary.spec.ts
+  s_1f0dcd815e8946::t_6596e167aa7a22 66-67
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/loadGrinderPatchWithAudio.spec.ts
+  s_1f0dcd815e8946::t_8015b9f696e5df 163-164,190-191
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/syncGrinderPatchToAudio.spec.ts
+  s_1f0dcd815e8946::t_7738a7cbb052a8 176-177,232-316
+src/modules/Grinder/useCases/grinderParamBridge/helpers.ts
+  s_1f0dcd815e8946::t_6c34618d5045b4 28-35
+src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
+  s_1f0dcd815e8946::t_915bb252bee095 4,305-309,312-316
+src/modules/MIDI/repositories/webMidi/__tests__/routeYeastLifecycleNoteOff.spec.ts
+  s_1f0dcd815e8946::t_06168cefcb9a41 1-150
+src/modules/MIDI/repositories/webMidi/pendingYeastRelease.ts
+  s_1f0dcd815e8946::t_1fdf59c75d6659 19-23,34-52,67,98,125,135,267-311,340
+src/modules/MIDI/repositories/webMidi/releaseCapturedYeastVoices.ts
+  s_1f0dcd815e8946::t_e17afdae4b5a71 2,21
+src/modules/MIDI/repositories/webMidi/releaseHeldYeastVoices.ts
+  s_1f0dcd815e8946::t_f25cb4b3349866 1-28
+src/modules/MIDI/repositories/webMidi/routeYeastLifecycleNoteOff.ts
+  s_1f0dcd815e8946::t_0e9762d780be04 1-47
+src/modules/MIDI/repositories/webMidi/routeYeastNoteOff.ts
+  s_1f0dcd815e8946::t_87e1864b19843d 1-52
+src/modules/MIDI/repositories/webMidi/routeYeastNoteOffToInstrument.ts
+  s_1f0dcd815e8946::t_121d81c10bef3e 1-58
+src/modules/MIDI/repositories/webMidi/webMidiEventBus.ts
+  s_1f0dcd815e8946::t_5c3e2b4beedc7f 11-18
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_1f0dcd815e8946::t_a0aa2e0c019fbe 3-15,23-34,38-49,51-55,102-115,118-125,134,145-149,187-189,197,203-295,411
+src/modules/MIDI/useCases/webMidiInput/initWebMidi.ts
+  s_1f0dcd815e8946::t_7edd4c9f456317 3,6-8,14,70-79,81,83-99
+src/modules/Project/useCases/arrangement/__tests__/loadSnapshot.spec.ts
+  s_1f0dcd815e8946::t_5b3a07859c62af 32
+src/modules/Yeast/engine/YeastWorkerClient.ts
+  s_1f0dcd815e8946::t_dafc9008be1964 773,778-788,791-792,796-806
+src/modules/Yeast/engine/__tests__/YeastWorkerClient.spec.ts
+  s_1f0dcd815e8946::t_910138788909fe 1170-1172,1190-1191,1214-1316,1430-1431
+src/modules/Yeast/events/YeastNotesOffPayload.ts
+  s_1f0dcd815e8946::t_1a3c7f082e6dc8 4-12
+src/modules/Yeast/workers/MidiRack.ts
+  s_1f0dcd815e8946::t_b6cf0ca1371e11 388-391,395-399
+src/modules/Yeast/workers/__tests__/MidiRack.spec.ts
+  s_1f0dcd815e8946::t_58cea42b7f1cbd 1164-1234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ee796cb5d1418808ef3434eea4de8b2700d4a66",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
