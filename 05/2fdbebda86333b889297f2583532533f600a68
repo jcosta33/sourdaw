@@ -1,0 +1,120 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_1f0dcd815e8946::t_b1001d5954e43e 149
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_1f0dcd815e8946::t_634184a263b7bb 2,11-12,21,30,92-93
+  s_1f0dcd815e8946::t_064a5d43f09822 83-91
+  s_1f0dcd815e8946::t_ec489f37b8318a 94-96,103,125,137
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_1f0dcd815e8946::t_770f524ba5a406 94-95,97,114
+  s_1f0dcd815e8946::t_39a4ddad8c832e 92
+  s_1f0dcd815e8946::t_0233ac31fb5f78 93,115-117,121
+src/modules/Arrangement/useCases/clipEditing/clipSplitStateRestorable.ts
+  s_1f0dcd815e8946::t_770f524ba5a406 53-64
+src/modules/Arrangement/useCases/clipEditing/splitClipSatellites.ts
+  s_1f0dcd815e8946::t_634184a263b7bb 43,362-363,368,494
+  s_1f0dcd815e8946::t_a561931a2d201e 272-273,292,366-367,369-377,395,428-429,438,444,451
+  s_1f0dcd815e8946::t_d2664d256dd817 12-13
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_1f0dcd815e8946::t_770f524ba5a406 86-97,105
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_1f0dcd815e8946::t_204fc7ee7fb27f 14-23,151-153,234-237,332-335
+  s_1f0dcd815e8946::t_dcaf94862cfd8b 11-13,24-25
+  s_1f0dcd815e8946::t_a52c71998d6950 223
+  s_1f0dcd815e8946::t_23d7a9c131a8d5 144-150,154-164
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_1f0dcd815e8946::t_1725f3d0282391 123
+.agents/skills/review-stances/correctness.md
+  s_1f0dcd815e8946::t_07ae1cde55e1ab 566-571
+  s_1f0dcd815e8946::t_587ce75b985871 544
+  s_1f0dcd815e8946::t_592e001b15bc19 545-565
+src/modules/MIDI/useCases/index.ts
+  s_1f0dcd815e8946::t_51bbd0aff27339 29
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_1f0dcd815e8946::t_f7a2e049ceb8f3 94
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_1f0dcd815e8946::t_634184a263b7bb 5,11,43
+  s_1f0dcd815e8946::t_d2664d256dd817 30,39-42,51,89
+  s_1f0dcd815e8946::t_3cae60e5354c52 37-38,44-45
+  s_1f0dcd815e8946::t_e65977d163954e 46
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_1f0dcd815e8946::t_0959cf593668e3 82
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipPlacement.spec.ts
+  s_1f0dcd815e8946::t_405804a5581fac 18
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_1f0dcd815e8946::t_39a4ddad8c832e 11-12,386
+  s_1f0dcd815e8946::t_0aa28626d9d010 252
+  s_1f0dcd815e8946::t_770f524ba5a406 2,156,235-241,253-257,382-385
+  s_1f0dcd815e8946::t_a2c0d6030c54fd 13
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_1f0dcd815e8946::t_204fc7ee7fb27f 16-29
+src/modules/Arrangement/services/collectClipSplitIdentityIds.ts
+  s_1f0dcd815e8946::t_634184a263b7bb 1-28
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_1f0dcd815e8946::t_26db3535921172 85
+src/modules/MIDI/useCases/midiClipData/decodeMidiClipDataSnapshots.ts
+  s_1f0dcd815e8946::t_51bbd0aff27339 1-52,54,57-58,60,62-78
+  s_1f0dcd815e8946::t_064a5d43f09822 53,55-56,59,61
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_1f0dcd815e8946::t_9b66413eb3e1b0 223
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_23b59c8c070b79 780
+  s_1f0dcd815e8946::t_da4aea9939cfb8 781-801
+  s_1f0dcd815e8946::t_1e8932a4474fbf 802-807
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1f0dcd815e8946::t_064a5d43f09822 803,1483-1484,1488,1499,1549,2971-2981,2983-3014,3019-3038,3040-3043,3045-3047,3053-3056,3061-3063,3068-3071,3073-3075,3083-3101,3108-3114,3116-3118,3124-3130,3135-3137,3143-3145,3158-3169,3171-3174,3179-3181
+  s_1f0dcd815e8946::t_c5a49d1d4a20fe 1571,1575,3064-3065
+  s_1f0dcd815e8946::t_581984a54a642f 3048
+  s_1f0dcd815e8946::t_cfa36df9e30f95 3103,3119
+  s_1f0dcd815e8946::t_95c85d8589d5e8 770-799,801-802,804-812,814-822,1528-1548,1550-1570,1572-1574,2075-2107,2109-2119,2121-2148,2150-2152,2154,3018,3049-3050,3052,3058-3059,3066,3186,3188-3189,3198-3199,3232-3248,3275-3298
+  s_1f0dcd815e8946::t_39a4ddad8c832e 26,3219-3228
+  s_1f0dcd815e8946::t_e5cfd42180fff1 3190-3197,3200-3218,3229-3231,3249-3274
+  s_1f0dcd815e8946::t_4ecace760e9fae 3102,3104,3120
+  s_1f0dcd815e8946::t_244112dffec20a 3131-3132,3141,3146-3157,3170,3175-3178,3182-3184
+  s_1f0dcd815e8946::t_2e28a6209458a8 3016,3039,3044,3060,3078-3082,3105,3107,3115,3121-3123,3133-3134,3138-3140,3142
+  s_1f0dcd815e8946::t_20abf976be9c7f 2982,3015
+  s_1f0dcd815e8946::t_449fcbd5f48e7a 3106
+  s_1f0dcd815e8946::t_857dff31e5057e 3187
+  s_1f0dcd815e8946::t_af56ff248dd522 3051,3067,3072,3076-3077
+  s_1f0dcd815e8946::t_ea4f1b56a18c84 800,813,823,1471-1482,1485-1486,1498,1500-1526,2108,2120,2149,2153,2900-2969,3017,3057,3185,3299,3595-3596,3639,3682-3686,3718,3733-3735
+  s_1f0dcd815e8946::t_6345307dade81b 1487,1489-1497
+  s_1f0dcd815e8946::t_e9c90f0c7d5eef 1527,2155,2970
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipSplitStateRestorable.spec.ts
+  s_1f0dcd815e8946::t_665089c2137e48 27-36
+  s_1f0dcd815e8946::t_93bc02692f50de 37-40
+src/app/__tests__/main.spec.tsx
+  s_1f0dcd815e8946::t_a12518e89b5c03 88
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_1f0dcd815e8946::t_8f687dac1fac8d 79
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_1f0dcd815e8946::t_634184a263b7bb 2,13,22,49,56,58-59,72-73
+src/modules/Arrangement/useCases/clipEditing/readClipSplitIdentityIds.ts
+  s_1f0dcd815e8946::t_634184a263b7bb 5,17,36,38,40
+  s_1f0dcd815e8946::t_d2664d256dd817 1-4,8-16,18-32,37,39,41-42
+  s_1f0dcd815e8946::t_39a4ddad8c832e 6-7,33-35
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreClip.spec.ts
+  s_1f0dcd815e8946::t_f0774732973118 62-69,77,82,90-92,208
+  s_1f0dcd815e8946::t_42338b2201f310 251-295,299
+  s_1f0dcd815e8946::t_9a4e9103b30cc9 296-298,300-303
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_1fcc4c65d7733a 394
+  s_1f0dcd815e8946::t_6f28c352a75942 395-415
+  s_1f0dcd815e8946::t_402d94b58d0918 416-421
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipData.ts
+  s_1f0dcd815e8946::t_55007a6f41b9eb 4-5,30-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "052fdbebda86333b889297f2583532533f600a68",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
