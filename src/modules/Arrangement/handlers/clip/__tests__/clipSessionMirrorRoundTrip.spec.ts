@@ -460,10 +460,12 @@ async function persistRemovalWithDistinctOwners(grouped = false) {
     if (grouped) {
         trackStore.set({
             ...trackStore.value!,
-            tracks: trackStore.value!.tracks.map((track) => ({
-                ...track,
-                clips: [...track.clips, createClipFixture('clip-c', 8, 12)],
-            })),
+            tracks: trackStore.value!.tracks.map((track) => {
+                if (track.id !== TRACK_ID) {
+                    return track;
+                }
+                return { ...track, clips: [...track.clips, createClipFixture('clip-c', 8, 12)] };
+            }),
         });
     }
     for (const [clipId, gainDb, warpedBeat] of [
