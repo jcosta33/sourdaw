@@ -18,7 +18,7 @@ jobs:
   scope:
     name: Plan required checks
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       profile: ${{ steps.plan.outputs.profile }}
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -31,10 +31,19 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.19.0
+          cache: pnpm
+      - name: Install planner dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Plan affected checks
         id: plan
         env:

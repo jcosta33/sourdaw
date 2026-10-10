@@ -4,6 +4,7 @@ import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
+import { loadAffectedE2e, type AffectedSelection } from './e2eAffectedGraph.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
@@ -334,11 +335,41 @@ function browserMatrix(specs: readonly string[], durations: SpecDurations): Brow
     };
 }
 
+function browserPathSelection(
+    path: string,
+    available: ReadonlySet<string>,
+    affected?: AffectedSelection
+): { specs: readonly string[]; browserAi: boolean; broad: boolean; reason: string } {
+    if (isSpec(path) && available.has(path)) {
+        return {
+            specs: [path],
+            browserAi: path.startsWith('tests/e2e/browserAi'),
+            broad: false,
+            reason: 'changed browser spec',
+        };
+    }
+    if (affected?.kind === 'narrow' && path.startsWith('src/modules/')) {
+        return {
+            specs: affected.specs,
+            browserAi: affected.browserAi,
+            broad: false,
+            reason: `affected feature owners: ${affected.owners.join(', ')}`,
+        };
+    }
+    return {
+        specs: [],
+        browserAi: true,
+        broad: true,
+        reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+    };
+}
+
 export function selectValidationPlan(
     paths: readonly string[],
     availableSpecs: readonly string[],
     durations: SpecDurations = new Map(),
-    packageScriptOnly = false
+    packageScriptOnly = false,
+    affected?: AffectedSelection
 ): ValidationPlan {
     if (paths.length === 0) {
         throw new Error('Changed path list is empty');
@@ -368,21 +399,13 @@ export function selectValidationPlan(
             continue;
         }
         browser = true;
-        if (isSpec(path) && available.has(path)) {
-            selected.add(path);
-            // Hardware policy is shared by these browser proofs; keep both host branches.
-            if (path.startsWith('tests/e2e/browserAi')) {
-                browserAi = true;
-            }
-            reasons.push({ path, reason: 'changed browser spec' });
-        } else {
-            broad = true;
-            browserAi = true;
-            reasons.push({
-                path,
-                reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
-            });
+        const selection = browserPathSelection(path, available, affected);
+        for (const spec of selection.specs) {
+            selected.add(spec);
         }
+        broad ||= selection.broad;
+        browserAi ||= selection.browserAi;
+        reasons.push({ path, reason: selection.reason });
     }
     if (browser && !available.has(SMOKE_SPEC)) {
         throw new Error(`Required smoke spec is missing: ${SMOKE_SPEC}`);
@@ -435,7 +458,75 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
-function main(): void {
+async function affectedFromCheckout(
+    root: string,
+    base: string,
+    head: string,
+    diff: string,
+    candidatePaths: readonly string[],
+    specs: readonly string[]
+): Promise<{ paths: string[]; packageScriptOnly: boolean; affected?: AffectedSelection }> {
+    const checkout = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const integrated =
+        checkout === head ||
+        (spawnSync('git', ['merge-base', '--is-ancestor', base, checkout]).status === 0 &&
+            spawnSync('git', ['merge-base', '--is-ancestor', head, checkout]).status === 0);
+    let integrationDiff = '';
+    if (integrated && checkout !== head) {
+        integrationDiff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', base, checkout, '--'], {
+            encoding: 'utf8',
+            maxBuffer: 16 * 1024 * 1024,
+        });
+    }
+    const allPaths = new Set(candidatePaths);
+    if (integrationDiff !== '') {
+        for (const path of parseChangedPaths(integrationDiff)) {
+            allPaths.add(path);
+        }
+    }
+    const paths = [...allPaths].sort();
+    const packageUnchangedAtCheckout =
+        checkout === head || spawnSync('git', ['diff', '--quiet', head, checkout, '--', 'package.json']).status === 0;
+    const packageScriptOnly =
+        paths.includes('package.json') &&
+        packageUnchangedAtCheckout &&
+        isOperationalPackageScriptChange(diff, base, head);
+    const productPaths = paths.filter(
+        (path) =>
+            !isDocumentation(path) &&
+            toolingReason(path, packageScriptOnly) === null &&
+            !(isSpec(path) && specs.includes(path))
+    );
+    const historicalChange = [diff, integrationDiff].some((value) => /(?:^|\0)(?:D|R\d+|C\d+|T)\0/.test(value));
+    const graphInputsDirty = spawnSync(
+        'git',
+        [
+            'status',
+            '--porcelain',
+            '--untracked-files=all',
+            '--',
+            'src',
+            'scripts/e2eSuiteOwners.json',
+            'scripts/e2eAffectedGraph.ts',
+            'tsconfig.json',
+        ],
+        { encoding: 'utf8' }
+    );
+    const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
+    let affected: AffectedSelection | undefined;
+    if (
+        integrated &&
+        cleanGraphInputs &&
+        !historicalChange &&
+        productPaths.length > 0 &&
+        productPaths.every((path) => path.startsWith('src/modules/'))
+    ) {
+        affected = await loadAffectedE2e(root, productPaths, specs);
+    }
+    return { paths, packageScriptOnly, affected };
+}
+
+async function main(): Promise<void> {
     const root = process.cwd();
     if (process.argv[2] === 'run') {
         const args = selectedSpecArguments(JSON.parse(process.env.E2E_SPECS ?? 'null'), root);
@@ -457,13 +548,20 @@ function main(): void {
         encoding: 'utf8',
         maxBuffer: 16 * 1024 * 1024,
     });
-    const paths = parseChangedPaths(diff);
-    const plan = selectValidationPlan(
-        paths,
-        listSpecs(root),
-        readSpecDurations(),
-        paths.includes('package.json') && isOperationalPackageScriptChange(diff, base, head)
+    const candidatePaths = parseChangedPaths(diff);
+    const specs = listSpecs(root);
+    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(
+        root,
+        base,
+        head,
+        diff,
+        candidatePaths,
+        specs
     );
+    const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
+    if (affected?.kind === 'full') {
+        plan.reasons.push({ path: 'affected graph', reason: affected.reason });
+    }
     writeFileSync('pr-validation-scope.json', `${JSON.stringify(plan, null, 2)}\n`);
     appendFileSync(
         output,
@@ -473,5 +571,8 @@ function main(): void {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    main();
+    main().catch((error: unknown) => {
+        console.error(error);
+        process.exitCode = 1;
+    });
 }
