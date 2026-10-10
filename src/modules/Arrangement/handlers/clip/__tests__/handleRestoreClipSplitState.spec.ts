@@ -116,6 +116,20 @@ function makeAction(expected: ClipSplitActionSnapshot, replacement: ClipSplitAct
     };
 }
 
+function makeAsymmetricAction(field: 'clipSatellites' | 'clipAutomationLanes', side: 'expected' | 'replacement') {
+    let asymmetricSnapshot: ClipSplitActionSnapshot;
+    if (field === 'clipSatellites') {
+        asymmetricSnapshot = makeSnapshot({ clipSatellites: [] });
+    } else {
+        asymmetricSnapshot = makeSnapshot({ clipAutomationLanes: [] });
+    }
+
+    if (side === 'expected') {
+        return makeAction(asymmetricSnapshot, makeSnapshot());
+    }
+    return makeAction(makeSnapshot(), asymmetricSnapshot);
+}
+
 function makeTakeLaneAction(
     expected: ClipSplitActionSnapshot,
     replacement: ClipSplitActionSnapshot,
@@ -145,8 +159,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
         'refuses asymmetric %s presence during session admission, preflight and execution',
         (field) => {
             for (const side of ['expected', 'replacement'] as const) {
-                const action = makeAction(makeSnapshot(), makeSnapshot());
-                action.payload[side][field] = [];
+                const action = makeAsymmetricAction(field, side);
                 expect(handleRestoreClipSplitState.validateSessionActionArguments?.(action.payload)).toBe(false);
                 expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(
                     false

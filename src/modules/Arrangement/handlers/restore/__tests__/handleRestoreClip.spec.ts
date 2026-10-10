@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type MidiStoreState } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
@@ -86,10 +87,20 @@ function createRestoreClipAction(overrides: Partial<RestoreClipAction['payload']
 }
 
 function createMidiSnapshots({ notes, controlChanges, pitchBends }: SnapshotPresence): MidiSnapshotInput {
+    const notesSnapshot: MidiStoreState['notesByClipId'][string] = [
+        { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 },
+    ];
+    const controlChangesSnapshot: MidiStoreState['ccByClipId'][string] = [
+        { id: 'cc-1', controller: 1, value: 64, beat: 0.5, channel: 1 },
+    ];
+    const pitchBendsSnapshot: MidiStoreState['pitchBendByClipId'][string] = [
+        { id: 'pitch-1', value: 256, beat: 0.75, channel: 1 },
+    ];
+
     return {
-        midiNotesSnapshot: notes ? [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] : null,
-        midiCcSnapshot: controlChanges ? [{ id: 'cc-1', controller: 1, value: 64, beat: 0.5, channel: 1 }] : null,
-        midiPitchBendSnapshot: pitchBends ? [{ id: 'pitch-1', value: 256, beat: 0.75, channel: 1 }] : null,
+        midiNotesSnapshot: notes ? notesSnapshot : null,
+        midiCcSnapshot: controlChanges ? controlChangesSnapshot : null,
+        midiPitchBendSnapshot: pitchBends ? pitchBendsSnapshot : null,
     };
 }
 
