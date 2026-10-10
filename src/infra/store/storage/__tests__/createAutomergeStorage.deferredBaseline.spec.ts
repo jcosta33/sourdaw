@@ -413,4 +413,47 @@ describe('createAutomergeStorage deferred pending baseline', () => {
         expect(receivedBases).toEqual([{ a: 0 }]);
         expect(doc.state).toEqual({ a: 1 });
     });
+
+    // A pending queued while the retained baseline still stands carries an
+    // unknown base; a genuine commit landing first must hand it the committed
+    // value, or its deletion of `b` reads as a full-value write and `b` stays.
+    it('hands a pending outstanding across a genuine commit the committed base', () => {
+        const storage = createAutomergeStorage<Record<string, number>>('root', 'state');
+
+        storage.set({ a: 1 });
+        frameCallback?.(100);
+        expectDeferredSeed(storage, { a: 1 });
+
+        const { doc, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ a: 1, b: 2 });
+        });
+        storage.set({ a: 1 });
+        transaction.commit();
+        flushAutomergeStorageWrites();
+
+        expect(doc.state).toEqual({ a: 1 });
+        expect(storage.get()).toEqual({ a: 1 });
+    });
+
+    it('keeps the deferred mark through a second deferral before wiring', () => {
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: 0 }),
+        });
+
+        storage.set({ count: 7 });
+        frameCallback?.(100);
+        expectDeferredSeed(storage, { count: 7 });
+        storage.set({ count: 7 });
+        frameCallback?.(200);
+        expectDeferredSeed(storage, { count: 7 });
+
+        const { doc, port } = createTestPort({ state: { count: 0 } });
+        configureAutomergeStoragePort(port);
+        storage.set({ count: 7 });
+        flushAutomergeStorageWrites();
+
+        expect(doc.state).toEqual({ count: 7 });
+    });
 });
