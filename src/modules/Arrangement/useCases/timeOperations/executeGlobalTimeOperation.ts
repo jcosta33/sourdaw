@@ -967,6 +967,26 @@ function prepareDeletedTracks(
             if (clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat) {
                 trackChanged = true;
                 const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
+                // The fragment anchor follows the basis it creates (#4988).
+                // The MIDI fragment re-bases its notes by −splitBeat under
+                // midiOffsetBeats 0 — a fresh coordinate basis the source
+                // anchor has no meaning in, whose carried advance would open
+                // the window behind the head and silence the survivors — so
+                // it re-stamps to its own start, key absent for an unanchored
+                // source. The audio fragment keeps source-coordinate offsets
+                // advanced by the consumed span, and its head also rides the
+                // compressing relocation by −duration, so its anchor rides
+                // that relocation: composed, the consumed advance cancels the
+                // offset advance, the region
+                // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the
+                // source's own, and the entry lands at the cut phase.
+                // Unanchored sources keep the key absent — the inverse plan's
+                // snapshot is compared structurally against the normalized
+                // live state.
+                const rightLoopOriginEntry =
+                    clip.type === 'midi'
+                        ? restampLoopOriginEntry(clip, operation.startBeat)
+                        : shiftLoopOriginEntry(clip, -duration);
                 clips.push(
                     { ...clip, endBeat: operation.startBeat, name: `${clip.name} (L)` },
                     {
@@ -977,18 +997,7 @@ function prepareDeletedTracks(
                         name: `${clip.name} (R)`,
                         audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                         midiOffsetBeats: 0,
-                        // The fragment re-bases its notes by −splitBeat under
-                        // midiOffsetBeats 0 and moves its head to the operation
-                        // start — a fresh coordinate basis the source anchor has
-                        // no meaning in: carried through, it derives a spurious
-                        // advance whose window silences the surviving material.
-                        // The anchor re-stamps to the fragment's own start, so
-                        // the window opens at the head exactly as the pre-anchor
-                        // read admits the surviving material (#5198). Unanchored
-                        // sources keep the key absent — the inverse plan's
-                        // snapshot is compared structurally against the
-                        // normalized live state.
-                        ...restampLoopOriginEntry(clip, operation.startBeat),
+                        ...rightLoopOriginEntry,
                     }
                 );
                 if (clip.type === 'midi') {
@@ -1020,6 +1029,20 @@ function prepareDeletedTracks(
 
             trackChanged = true;
             const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
+            // Same per-basis law as the spanning fragment above (#4988): the
+            // MIDI notes re-base under midiOffsetBeats 0, so the source
+            // anchor would derive a spurious (here negative) advance whose
+            // window drops the surviving head material and it re-stamps to
+            // its own start. The audio offset stays in source coordinates
+            // advanced by the consumed span while the head rides the
+            // compressing relocation by −duration, so the audio anchor rides
+            // that relocation — the region stays the source's own, entering
+            // at the cut phase. Unanchored sources keep the key absent
+            // (#5198).
+            const rightLoopOriginEntry =
+                clip.type === 'midi'
+                    ? restampLoopOriginEntry(clip, operation.startBeat)
+                    : shiftLoopOriginEntry(clip, -duration);
             clips.push({
                 ...clip,
                 id: identity.targetClipId,
@@ -1027,13 +1050,7 @@ function prepareDeletedTracks(
                 endBeat: clip.endBeat - duration,
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                 midiOffsetBeats: 0,
-                // Same fresh basis as the spanning fragment above: the notes
-                // re-base by −splitBeat under midiOffsetBeats 0, so the source
-                // anchor would derive a spurious (here negative) advance whose
-                // window drops the surviving head material. It re-stamps to the
-                // fragment's own start; unanchored sources keep the key absent
-                // (#5198).
-                ...restampLoopOriginEntry(clip, operation.startBeat),
+                ...rightLoopOriginEntry,
             });
             if (clip.type === 'midi') {
                 const mediaSplit = operation.endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);

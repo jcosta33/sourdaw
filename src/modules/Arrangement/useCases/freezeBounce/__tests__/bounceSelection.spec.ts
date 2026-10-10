@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+
 import { normalizeTrack, type Clip, type Track } from '../../../models/Track';
 import { bounceSelection } from '../bounceSelection';
 
@@ -619,6 +621,25 @@ describe('bounceSelection', () => {
         return fragment;
     }
 
+    /**
+     * The geometry every audio loop reader recovers per pass
+     * (`scheduleAudioClips`, `projectOfflineAudioClipPlaybacks`): the region
+     * the clip was looped with, `audioOffsetBeats - (startBeat -
+     * loopOriginBeat)`, and the phase the pass enters it at,
+     * `advance % loopLength`.
+     */
+    function regionOf(clip: Clip): { region: number; entry: number } {
+        const advance = resolveClipLoopOriginAdvance({
+            startBeat: clip.startBeat,
+            loopOriginBeat: clip.loopOriginBeat,
+            loopEnabled: clip.loopEnabled ?? false,
+        });
+        return {
+            region: (clip.audioOffsetBeats ?? 0) - advance,
+            entry: ((advance % 4) + 4) % 4,
+        };
+    }
+
     it('a spanning looped fragment re-stamps the anchor to its head and keeps sounding its surviving notes', async () => {
         // Looped [0,10), L=4, anchored at 0: window [0,4). n-left sounds and
         // stays in the left half; n-in (m 3) is in-selection and discarded;
@@ -710,6 +731,36 @@ describe('bounceSelection', () => {
         expect(fragment.startBeat).toBe(6);
         expect(fragment.midiOffsetBeats).toBe(0);
         expect(fragment.loopOriginBeat).toBe(6);
+    });
+
+    it('a spanning looped audio fragment carries its anchor and keeps the source region', async () => {
+        // Audio clip [0,10) anchored at 0, region [0,4). Bounce selection
+        // [2,8) advances the right fragment's offset to 8 — the content the
+        // source played at the selection end — with its head at 8, the same
+        // preserved media basis the split's audio fragment keeps: the anchor
+        // carries, the advance grows by the consumed span, and region
+        // 8 − 8 = 0 at entry phase 0 is the source's own. The type-blind
+        // restamp would have read offset 8 outright.
+        const spanningAudio = createAudioClip({
+            id: 'clip-span-audio',
+            startBeat: 0,
+            endBeat: 10,
+            audioOffsetBeats: 0,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        });
+        setTrackStoreState({ tracks: [createAudioTrack({ clips: [spanningAudio] })], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 2, 8);
+        expect(result).toBe(true);
+
+        const fragment = keptFragment();
+        expect(fragment.startBeat).toBe(8);
+        expect(fragment.audioOffsetBeats).toBe(8);
+        expect(fragment.loopOriginBeat).toBe(0);
+        expect(regionOf(fragment)).toEqual({ region: 0, entry: 0 });
     });
 
     it('reports no-write when the track store is torn down after a successful render', async () => {

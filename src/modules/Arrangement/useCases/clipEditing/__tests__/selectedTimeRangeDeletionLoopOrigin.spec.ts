@@ -11,6 +11,7 @@ import {
     setNotesForClip,
 } from '#/modules/MIDI/useCases';
 import { prepareTimelineMapTimeOperation, prepareTimelineMapStateRestore } from '#/modules/Transport/useCases';
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 import { setTimeOperationDependencies } from '../../timeOperations/timeOperationDependencies';
 import { executeSelectedTimeRangeDeletion } from '../executeSelectedTimeRangeDeletion';
@@ -24,6 +25,13 @@ import { executeSelectedTimeRangeDeletion } from '../executeSelectedTimeRangeDel
  * anchor rides the placement delta. Carried through, the stale anchor silenced
  * every surviving note of an excised head (the #5198 review draw).
  *
+ * The audio twins follow the same per-basis law on the other side: an audio
+ * fragment's `audioOffsetBeats` stays in source coordinates advanced by the
+ * cut, so it carries the source anchor — the offset advance and the
+ * anchor-advance growth cancel, the region the audio readers recover,
+ * `audioOffsetBeats - (startBeat - loopOriginBeat)`, stays the source's own,
+ * and the entry lands at the cut phase.
+ *
  * Each case drives the real transaction (real MIDI split, real arrangement
  * write) and reads the survivor back through `projectMidiClipPlayback`.
  */
@@ -36,6 +44,8 @@ const prepareMidiTimeStateRestore = () => ({
     apply: () => true,
     revert: () => true,
 });
+
+const LOOP_LENGTH = 4;
 
 setTimeOperationDependencies({
     prepareAutomationTimeOperation,
@@ -105,6 +115,35 @@ function midiTrack(clips: Clip[]): Track {
     };
 }
 
+function audioLoopedClip(overrides: Partial<Clip> = {}): Clip {
+    return {
+        id: 'c-loop',
+        trackId: 't-keys',
+        name: 'c-loop',
+        startBeat: 0,
+        endBeat: 16,
+        type: 'audio',
+        audioBufferId: 'buf-loop',
+        audioOffsetBeats: 0,
+        loopEnabled: true,
+        loopLength: LOOP_LENGTH,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '',
+        locked: false,
+        muted: false,
+        ...overrides,
+    };
+}
+
+function audioTrack(clips: Clip[]): Track {
+    return {
+        ...midiTrack(clips),
+        kind: 'audio',
+    };
+}
+
 function seedLoopedClip(notes: Array<{ id: string; startBeat: number }>): void {
     midiStore.set({ ...defaultMidiStoreState, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     trackStore.set({ ...defaultTrackState, tracks: [midiTrack([loopedClip()])] });
@@ -121,6 +160,13 @@ function allClips(): Clip[] {
     return trackStore.value?.tracks.flatMap((track) => track.clips) ?? [];
 }
 
+function seedAudioLoopedClip(clipOverrides: Partial<Clip> = {}): void {
+    trackStore.set({ ...defaultTrackState, tracks: [audioTrack([audioLoopedClip(clipOverrides)])] });
+    // Loop established at the clip's placement: the anchor a real user gesture
+    // (setClipLoop) stamps.
+    expect(setClipLoop('c-loop', true)).toBe(true);
+}
+
 function projectSoundingStartBeats(clip: Clip): number[] {
     return projectMidiClipPlayback({
         notes: getNotesForClip(clip.id),
@@ -129,6 +175,24 @@ function projectSoundingStartBeats(clip: Clip): number[] {
     })
         .notes.map((note) => note.startBeat)
         .toSorted((left, right) => left - right);
+}
+
+/**
+ * The geometry every audio loop reader recovers per pass (`scheduleAudioClips`,
+ * `projectOfflineAudioClipPlaybacks`): the region the clip was looped with,
+ * `audioOffsetBeats - (startBeat - loopOriginBeat)`, and the phase the pass
+ * enters it at, `advance % loopLength`.
+ */
+function regionOf(clip: Clip): { region: number; entry: number } {
+    const advance = resolveClipLoopOriginAdvance({
+        startBeat: clip.startBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    return {
+        region: (clip.audioOffsetBeats ?? 0) - advance,
+        entry: ((advance % LOOP_LENGTH) + LOOP_LENGTH) % LOOP_LENGTH,
+    };
 }
 
 describe('selected-range excise keeps looped survivors sounding (#5198)', () => {
@@ -193,6 +257,60 @@ describe('selected-range excise keeps looped survivors sounding (#5198)', () => 
         const sounded = projectSoundingStartBeats(trimmed);
         expect(sounded).toEqual([4.5, 5.5, 8.5, 9.5, 12.5, 13.5]);
         expect(sounded).toEqual(projectSoundingStartBeats({ ...trimmed, loopOriginBeat: undefined }));
+    });
+
+    it('the spanning audio fragment carries its anchor and keeps the source region', () => {
+        // Audio clip [0,16) anchored at 0, region [0,4). Excise [4,8)
+        // advances the fragment's offset to 8 — the content the source played
+        // at the range end — with its head at 8, the same preserved media
+        // basis the split's audio fragment keeps: the anchor carries, the
+        // advance grows by the consumed span, and region 8 − 8 = 0 at entry
+        // phase 0 is the source's own. The type-blind restamp would have read
+        // offset 8 outright.
+        seedAudioLoopedClip();
+
+        const result = executeSelectedTimeRangeDeletion({ startBeat: 4, endBeat: 8, trackIds: ['t-keys'] });
+        expect(result.status).toBe('applied');
+
+        const fragment = allClips().find((clip) => clip.id.startsWith('clip-dtr-'));
+        if (!fragment) {
+            throw new Error('Expected the excise right fragment in the track store');
+        }
+        expect(fragment.startBeat).toBe(8);
+        expect(fragment.audioOffsetBeats).toBe(8);
+        expect(fragment.loopOriginBeat).toBe(0);
+        expect(regionOf(fragment)).toEqual({ region: 0, entry: 0 });
+
+        // The kept left half preserves the source basis, so the region the
+        // fragment reads is still the source's own.
+        const kept = allClips().find((clip) => clip.id === 'c-loop');
+        if (!kept) {
+            throw new Error('Expected the left fragment to keep the source id');
+        }
+        expect(regionOf(fragment)).toEqual(regionOf(kept));
+    });
+
+    it('the head-excised audio fragment carries its anchor: the region stays pinned at the cut phase', () => {
+        // Audio clip [0,16) anchored at 0, region [0,4). Excise [0,5) keeps
+        // the clip's id and advances its offset by the span to 5. The carried
+        // anchor lets the advance grow by the same span: region 5 − 5 = 0 with
+        // the entry at phase 5 mod 4 = 1, the cut phase. The relocation shift
+        // the MIDI side takes here would pin the advance at 0 and slide the
+        // region to 5 — the fragment reading source beats 5-6 outside the
+        // region — the #5198 review draw.
+        seedAudioLoopedClip();
+
+        const result = executeSelectedTimeRangeDeletion({ startBeat: 0, endBeat: 5, trackIds: ['t-keys'] });
+        expect(result.status).toBe('applied');
+
+        const trimmed = allClips().find((clip) => clip.id === 'c-loop');
+        if (!trimmed) {
+            throw new Error('Expected the head-excised clip to keep its id');
+        }
+        expect(trimmed.startBeat).toBe(5);
+        expect(trimmed.audioOffsetBeats).toBe(5);
+        expect(trimmed.loopOriginBeat).toBe(0);
+        expect(regionOf(trimmed)).toEqual({ region: 0, entry: 1 });
     });
 
     it('an unanchored clip writes no anchor key on its fragment', () => {

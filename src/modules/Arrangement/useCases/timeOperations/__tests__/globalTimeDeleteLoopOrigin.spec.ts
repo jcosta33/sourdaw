@@ -11,6 +11,7 @@ import {
     setNotesForClip,
 } from '#/modules/MIDI/useCases';
 import { prepareTimelineMapTimeOperation, prepareTimelineMapStateRestore } from '#/modules/Transport/useCases';
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 import { executeGlobalTimeOperation } from '../executeGlobalTimeOperation';
 import { setTimeOperationDependencies } from '../timeOperationDependencies';
@@ -27,6 +28,14 @@ import { setTimeOperationDependencies } from '../timeOperationDependencies';
  * [4,8) over a looped clip [0,16) left the fragment projecting 0 notes where
  * the anchor-free state projects 4.
  *
+ * The audio twin follows the same per-basis law on the other side: its
+ * `audioOffsetBeats` stays in source coordinates, advanced by the consumed
+ * span, while its head rides the compressing relocation by −duration — so it
+ * carries the source anchor through the cut and rides that relocation, and the
+ * region the audio readers recover,
+ * `audioOffsetBeats - (startBeat - loopOriginBeat)`, stays the source's own
+ * with the entry landing at the cut phase.
+ *
  * Each case drives the real transaction (real MIDI split, real arrangement
  * write) and reads the fragment back through `projectMidiClipPlayback`, the
  * projection the note scheduler draws from.
@@ -40,6 +49,8 @@ const prepareMidiTimeStateRestore = () => ({
     apply: () => true,
     revert: () => true,
 });
+
+const LOOP_LENGTH = 4;
 
 setTimeOperationDependencies({
     prepareAutomationTimeOperation,
@@ -62,6 +73,28 @@ function loopedClip(overrides: Partial<Clip> = {}): Clip {
         midiOffsetBeats: 0,
         loopEnabled: true,
         loopLength: 4,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '',
+        locked: false,
+        muted: false,
+        ...overrides,
+    };
+}
+
+function audioLoopedClip(overrides: Partial<Clip> = {}): Clip {
+    return {
+        id: 'c-loop',
+        trackId: 't-keys',
+        name: 'c-loop',
+        startBeat: 0,
+        endBeat: 16,
+        type: 'audio',
+        audioBufferId: 'buf-loop',
+        audioOffsetBeats: 0,
+        loopEnabled: true,
+        loopLength: LOOP_LENGTH,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1,
@@ -109,6 +142,13 @@ function midiTrack(clips: Clip[]): Track {
     };
 }
 
+function audioTrack(clips: Clip[]): Track {
+    return {
+        ...midiTrack(clips),
+        kind: 'audio',
+    };
+}
+
 function seedLoopedClip(notes: Array<{ id: string; startBeat: number }>, clipOverrides: Partial<Clip> = {}): void {
     midiStore.set({ ...defaultMidiStoreState, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     trackStore.set({ ...defaultTrackState, tracks: [midiTrack([loopedClip(clipOverrides)])] });
@@ -123,6 +163,13 @@ function seedLoopedClip(notes: Array<{ id: string; startBeat: number }>, clipOve
 
 function allClips(): Clip[] {
     return trackStore.value?.tracks.flatMap((track) => track.clips) ?? [];
+}
+
+function seedAudioLoopedClip(clipOverrides: Partial<Clip> = {}): void {
+    trackStore.set({ ...defaultTrackState, tracks: [audioTrack([audioLoopedClip(clipOverrides)])] });
+    // Loop established at the clip's placement: the anchor a real user gesture
+    // (setClipLoop) stamps.
+    expect(setClipLoop('c-loop', true)).toBe(true);
 }
 
 function requireRightFragment(): Clip {
@@ -141,6 +188,24 @@ function projectSoundingStartBeats(clip: Clip): number[] {
     })
         .notes.map((note) => note.startBeat)
         .toSorted((left, right) => left - right);
+}
+
+/**
+ * The geometry every audio loop reader recovers per pass (`scheduleAudioClips`,
+ * `projectOfflineAudioClipPlaybacks`): the region the clip was looped with,
+ * `audioOffsetBeats - (startBeat - loopOriginBeat)`, and the phase the pass
+ * enters it at, `advance % loopLength`.
+ */
+function regionOf(clip: Clip): { region: number; entry: number } {
+    const advance = resolveClipLoopOriginAdvance({
+        startBeat: clip.startBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    return {
+        region: (clip.audioOffsetBeats ?? 0) - advance,
+        entry: ((advance % LOOP_LENGTH) + LOOP_LENGTH) % LOOP_LENGTH,
+    };
 }
 
 describe('global time delete keeps a looped fragment sounding (#5198)', () => {
@@ -215,6 +280,37 @@ describe('global time delete keeps a looped fragment sounding (#5198)', () => {
         const sounded = projectSoundingStartBeats(fragment);
         expect(sounded).toEqual([4.5, 5.5, 8.5, 9.5, 12.5, 13.5]);
         expect(sounded).toEqual(projectSoundingStartBeats({ ...fragment, loopOriginBeat: undefined }));
+    });
+
+    it('the audio survivor carries its anchor through the cut, rides the relocation, and keeps the source region', () => {
+        // Audio clip [0,16) anchored at 0, region [0,4). Delete [4,8)
+        // advances the fragment's offset to 8 — the content the source played
+        // at the range end — while its head rides the compressing relocation
+        // to 4. The anchor carries through the cut and rides that relocation
+        // (0 → −4), so the advance grows by the consumed span: region
+        // 8 − 8 = 0, entry phase 0 — the source's own region and cycle phase,
+        // reading buffer beat 0. The type-blind restamp read offset 8
+        // outright, and a bare carry without the relocation would read 4.
+        seedAudioLoopedClip();
+
+        const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 4, endBeat: 8 } });
+        expect(result.status).toBe('applied');
+
+        const fragment = requireRightFragment();
+        expect(fragment.type).toBe('audio');
+        expect(fragment.startBeat).toBe(4);
+        expect(fragment.endBeat).toBe(12);
+        expect(fragment.audioOffsetBeats).toBe(8);
+        expect(fragment.loopOriginBeat).toBe(-4);
+        expect(regionOf(fragment)).toEqual({ region: 0, entry: 0 });
+
+        // The kept left half preserves the source basis, so the region the
+        // survivor reads is still the source's own.
+        const kept = allClips().find((clip) => clip.id === 'c-loop');
+        if (!kept) {
+            throw new Error('Expected the left fragment to keep the source id');
+        }
+        expect(regionOf(fragment)).toEqual(regionOf(kept));
     });
 
     it('an unanchored clip writes no anchor key on its fragment', () => {
