@@ -45,7 +45,9 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     // The drum kit, its four machine variants, the Faust instruments, Toaster,
     // Levain, Crumbs and Grand Boule carry owner-authored parameter guidance
     // (#4370 AC-001), which is part of the descriptor fingerprint.
-    'builtin-drum-kit': 'descriptor-v1:4fa87745',
+    // The drum kit and its variants declare a dB level that every route reads,
+    // and no longer declare the unitless gain nothing read (#4991).
+    'builtin-drum-kit': 'descriptor-v1:86a6a248',
     'dutch-oven': 'descriptor-v1:697d31a3',
     'native-scoring': 'descriptor-v1:6236c1eb',
     'faust-zita-rev1-reverb': 'descriptor-v1:8fe5016c',
@@ -62,20 +64,22 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     'faust-de-esser': 'descriptor-v1:01925fec',
     'faust-rhodes': 'descriptor-v1:419b06d4',
     'faust-fm-synth': 'descriptor-v1:a198b63c',
-    'faust-supersaw-unison': 'descriptor-v1:65c1a63b',
+    // Supersaw Unison declares the gain control note velocity writes (#4991).
+    'faust-supersaw-unison': 'descriptor-v1:521524c5',
     'builtin-synth-mellotron': 'descriptor-v1:71cf9d31',
     'builtin-synth-strings': 'descriptor-v1:11f074db',
     'builtin-synth-808bass': 'descriptor-v1:274a35d6',
     'builtin-synth-brass': 'descriptor-v1:5dbc0228',
-    'builtin-drum-machine-808': 'descriptor-v1:1af2e278',
-    'builtin-drum-machine-analog': 'descriptor-v1:b6106b4c',
-    'builtin-drum-machine-electronic': 'descriptor-v1:406d7f6a',
-    'builtin-drum-machine-acoustic': 'descriptor-v1:a4e0ce0f',
+    'builtin-drum-machine-808': 'descriptor-v1:b7189ef7',
+    'builtin-drum-machine-analog': 'descriptor-v1:069a35f9',
+    'builtin-drum-machine-electronic': 'descriptor-v1:44ead9c3',
+    'builtin-drum-machine-acoustic': 'descriptor-v1:59ccde2a',
     // Fermenter carries owner-authored parameter guidance (#4370 AC-001),
     // which is part of the descriptor fingerprint.
     fermenter: 'descriptor-v1:1101b100',
     toaster: 'descriptor-v1:4badfeb2',
-    levain: 'descriptor-v1:c5a90e63',
+    // Levain records that ensembleTiming spreads fresh attacks (#4991).
+    levain: 'descriptor-v1:4cd5b078',
     // Gluten, Bacteria and Grinder carry owner-authored parameter guidance
     // (#4370 AC-001), which is part of the descriptor fingerprint.
     // Gluten records that lookahead detects ahead of the delay on every

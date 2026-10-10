@@ -693,6 +693,12 @@ impl LevainEngine {
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
                 voice.apply_note_humanization(&humanize, self.sample_rate, &self.sample_pool);
+                // Ensemble attack spread offsets fresh attacks only: a legato
+                // transition continues a sounding line and has no attack to spread.
+                voice.delay_onset(
+                    self.ensemble_timing
+                        .onset_delay_samples(note, self.sample_rate),
+                );
                 self.attach_dynamic_layer(voice_idx, art, note, &zones, velocity);
             }
             LegatoResult::TrueTransition {
@@ -3451,6 +3457,97 @@ mod tests {
         assert!(
             !is_releasing(&engine, 60),
             "new note 60 must remain held and sounding across blocks"
+        );
+    }
+
+    /// First rendered frame that is not silent.
+    fn onset_frame(samples: &[f32]) -> Option<usize> {
+        samples.iter().position(|sample| sample.abs() > 1e-6)
+    }
+
+    /// A sawtooth engine with humanize off, so the ensemble attack spread is
+    /// the only onset offset in play.
+    fn ensemble_engine(ensemble_timing: bool) -> LevainEngine {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.set_param("humanize", 0.0);
+        engine.set_param("ensemble_timing", if ensemble_timing { 1.0 } else { 0.0 });
+        engine
+    }
+
+    fn render_lone_note(note: u8, ensemble_timing: bool) -> Vec<f32> {
+        let mut engine = ensemble_engine(ensemble_timing);
+        engine.note_on(note, 100);
+        render(&mut engine, 12)
+    }
+
+    #[test]
+    fn ensemble_timing_delays_each_attack_by_its_pitch_offset_sample_for_sample() {
+        let spread_ms = ensemble_engine(true).ensemble_timing.attack_spread_ms;
+        let spread_frames = (spread_ms / 1000.0 * SAMPLE_RATE) as usize;
+        let notes = [48_u8, 55, 60, 64, 67, 72];
+        let mut delays = Vec::with_capacity(notes.len());
+        for note in notes {
+            let off = render_lone_note(note, false);
+            let on = render_lone_note(note, true);
+            assert_eq!(
+                onset_frame(&off),
+                Some(0),
+                "with ensemble timing off note {note} must start on its own frame"
+            );
+            let delay = onset_frame(&on).expect("a delayed note must still sound");
+            assert!(
+                delay < spread_frames,
+                "note {note} waited {delay} frames, past the {spread_ms} ms spread"
+            );
+            assert_eq!(
+                delay as u32,
+                ensemble_engine(true)
+                    .ensemble_timing
+                    .onset_delay_samples(note, SAMPLE_RATE),
+                "note {note} must start exactly on its declared onset offset"
+            );
+            assert_eq!(
+                &on[delay..],
+                &off[..off.len() - delay],
+                "the delayed attack of note {note} must be the undelayed one moved, not a different sound"
+            );
+            delays.push(delay);
+        }
+        let mut distinct = delays.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert!(
+            distinct.len() > notes.len() / 2,
+            "notes struck together must land at different moments, got {delays:?}"
+        );
+    }
+
+    #[test]
+    fn an_ensemble_onset_does_not_depend_on_what_the_engine_played_before() {
+        // A fresh engine is what an offline render starts from; a live engine
+        // has a history of notes behind it. Both must place the attack alike.
+        let fresh = render_lone_note(64, true);
+
+        let mut seasoned = ensemble_engine(true);
+        for note in [60_u8, 62, 67, 64, 71] {
+            seasoned.note_on(note, 90);
+            render(&mut seasoned, 3);
+            seasoned.note_off(note);
+        }
+        render(&mut seasoned, 200);
+        assert_eq!(
+            seasoned.active_voice_count(),
+            0,
+            "every earlier note must have died away before the comparison note"
+        );
+        seasoned.note_on(64, 100);
+        let replayed = render(&mut seasoned, 12);
+
+        assert!(onset_frame(&fresh).is_some_and(|frame| frame > 0));
+        assert_eq!(onset_frame(&replayed), onset_frame(&fresh));
+        assert_eq!(
+            replayed, fresh,
+            "a note must render identically whatever the engine played before it"
         );
     }
 }

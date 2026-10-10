@@ -24,6 +24,7 @@ import {
 import { isFaustInstrumentModule, registerFaustDSP } from '#/modules/PluginHost/useCases';
 import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
+import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import {
@@ -1567,8 +1568,8 @@ describe('scheduleMidiNotes', () => {
         it('routes a drum-kit-def track through scheduleDrumKitNote', async () => {
             vi.mocked(getDrumKitDefByIndex).mockReturnValue({ id: 'kit-1', voices: [] } as never);
             const track = midiTrack({
-                clips: [midiClip()],
-                devices: [{ id: 'dk', type: 'builtin-drum-kit', parameterValues: { kit: 0 } }],
+                clips: [midiClip({ gain: 0.9 })],
+                devices: [{ id: 'dk', type: 'builtin-drum-kit', parameterValues: { kit: 0, level: -6 } }],
             });
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = {
@@ -1578,9 +1579,32 @@ describe('scheduleMidiNotes', () => {
             await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleDrumKitNote).toHaveBeenCalledTimes(1);
+            // Clip gain, then the kit's own level as a linear gain.
+            expect(vi.mocked(scheduleDrumKitNote).mock.calls[0]?.slice(5)).toEqual([110, 0.9, dbToGain(-6)]);
             expect(scheduleKitNote).not.toHaveBeenCalled();
             expect(scheduleNote).not.toHaveBeenCalled();
         });
+
+        it.each([0.8, 0.6])(
+            'plays a saved kit holding legacy gain %s and no level at unity, as it played before',
+            async (gain) => {
+                vi.mocked(getDrumKitDefByIndex).mockReturnValue({ id: 'kit-1', voices: [] } as never);
+                const track = midiTrack({
+                    clips: [midiClip()],
+                    devices: [{ id: 'dk', type: 'builtin-drum-kit', parameterValues: { kit: 0, gain } }],
+                });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: {
+                        'clip-1': [{ id: 'n1', pitch: 36, startBeat: 0, duration: 0.25, velocity: 110 }],
+                    },
+                };
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(vi.mocked(scheduleDrumKitNote).mock.calls[0]?.slice(5)).toEqual([110, 1, 1]);
+            }
+        );
 
         it('routes a resolved-drum-kit track through scheduleKitNote with the note duration', async () => {
             // clearAllMocks() in beforeEach resets call counts but NOT the
@@ -1595,7 +1619,7 @@ describe('scheduleMidiNotes', () => {
             } as never);
             const track = midiTrack({
                 clips: [midiClip()],
-                devices: [{ id: 'dk', type: 'builtin-drum-kit', parameterValues: { kit: 0 } }],
+                devices: [{ id: 'dk', type: 'builtin-drum-kit', parameterValues: { kit: 0, gain: 0.7 } }],
             });
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = {
@@ -1605,6 +1629,8 @@ describe('scheduleMidiNotes', () => {
             await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleKitNote).toHaveBeenCalledTimes(1);
+            // The legacy gain is inert: no level, so the kit plays at unity.
+            expect(vi.mocked(scheduleKitNote).mock.calls[0]?.slice(6)).toEqual([95, 1, 1]);
             // The resolved kit (not the kit-def) carries the note duration, so the
             // call reaches scheduleKitNote rather than the one-shot drumKitDef path.
             expect(scheduleDrumKitNote).not.toHaveBeenCalled();

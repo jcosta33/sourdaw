@@ -220,7 +220,10 @@ export const BUILTIN_SYNTH_PARAMETER_GUIDANCE: Readonly<Record<string, DevicePar
  * Kit 0 resolves through `getDrumKitDefByIndex` to the dedicated drum-voice
  * set `scheduleDrumKitNote` plays; kits 1–5 resolve through
  * `getDrumKitByIndex` to the factory kits `scheduleKitNote` plays as builtin
- * synth voices. Neither scheduler receives the device's `gain`.
+ * synth voices. Both receive the device's `level` as a linear gain
+ * (`resolveDrumKitOutputGain`) on every route — live input, audition,
+ * sequenced playback and the offline render — and multiply it into each hit
+ * after velocity and clip gain. The retired unitless `gain` is read by none.
  */
 export const BUILTIN_DRUM_KIT_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameterGuidance>> = {
     kit: synthParameterGuidance(
@@ -229,22 +232,22 @@ export const BUILTIN_DRUM_KIT_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         0,
         3,
         [
-            'Each kit carries its own per-voice levels (the factory kits span 0.3 to 0.9), and gain does not rescale them, so level a kit change with track or clip gain.',
+            'Each kit carries its own per-voice levels (the factory kits span 0.3 to 0.9), and level scales them all by one ratio, so level a kit change with level.',
         ],
         [
             'Kit 0 answers notes 36, 37, 38, 39, 42, 43, 46, 47, 50, 56, 62, 63, 64, 70 and 75, while kits 1 to 5 answer only 36, 38, 40, 42, 45, 46, 47 and 48, so a pattern written for one goes partly silent on the other (a clap on 39 or a high tom on 50 stops sounding on kits 1 to 5).',
         ]
     ),
-    gain: synthParameterGuidance(
-        'Stored kit output level that no drum scheduler reads',
-        'Has no audible effect: every drum hit takes its level from the selected kit voice and the note velocity alone.',
-        0.8,
-        0.8,
+    level: synthParameterGuidance(
+        'Kit output level in dB',
+        'Scales every hit the kit plays, after velocity and clip gain, by this many decibels: 0 dB is the kit’s own level, −6 dB about half, +6 dB about double.',
+        -12,
+        0,
         [
-            'Changing kit is what changes the voice levels; set the kit level with track gain or clip gain, which the schedulers do read.',
+            'Velocity and clip gain set each hit first and level scales the result, so the kit stays balanced across voices and dynamics at any level.',
         ],
         [
-            'An automation lane on gain records but cannot duck or swell the kit, because the live, audition and offline drum paths never pass it to scheduleDrumKitNote or scheduleKitNote.',
+            'Above 0 dB a loud kit can clip downstream, and level is not automatable: each hit takes the level stored when it is scheduled, so ride the track gain for moves.',
         ]
     ),
 };

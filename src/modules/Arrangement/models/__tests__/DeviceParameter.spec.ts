@@ -1,6 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { DRUM_KIT_DEFAULT_LEVEL_DB } from '#/utils/deviceTypeMatching';
+
 import { BUILTIN_PLUGINS, getPluginById, isDeviceSupportedOnCurrentPlatform } from '../DeviceParameter';
+
+describe('drum kit level', () => {
+    const DRUM_KIT_TYPES = [
+        'builtin-drum-kit',
+        'builtin-drum-machine-808',
+        'builtin-drum-machine-analog',
+        'builtin-drum-machine-electronic',
+        'builtin-drum-machine-acoustic',
+    ];
+
+    // The kit schedulers play a device that stores no level at
+    // DRUM_KIT_DEFAULT_LEVEL_DB, so it must be the default the descriptors
+    // declare, and it must be unity: every kit saved before the level existed
+    // played at unity and must keep doing so.
+    it.each(DRUM_KIT_TYPES)('%s declares a dB level whose default is the unity the schedulers fall back to', (id) => {
+        const level = getPluginById(id)?.parameters.find((parameter) => parameter.id === 'level');
+        expect(level).toMatchObject({ unit: 'dB', defaultValue: DRUM_KIT_DEFAULT_LEVEL_DB, value: 0, minValue: -60 });
+        expect(DRUM_KIT_DEFAULT_LEVEL_DB).toBe(0);
+    });
+
+    // The former unitless gain was never read; projects still store it, so it
+    // stays undeclared (agents cannot address it) and inert.
+    it.each(DRUM_KIT_TYPES)('%s declares no gain parameter', (id) => {
+        expect(getPluginById(id)?.parameters.map((parameter) => parameter.id)).toEqual(['kit', 'level']);
+    });
+});
 
 describe('getPluginById', () => {
     it('returns a descriptor for a known built-in id', () => {

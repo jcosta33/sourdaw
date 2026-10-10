@@ -1324,7 +1324,7 @@ describe('handleWebMidiNoteOff', () => {
             const fn = handleWebMidiNoteOff._factory(
                 make_dependencies({
                     getTrackStoreState: single_track([
-                        { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 0 } },
+                        { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 0, gain: 0.6 } },
                         { id: 'lev-1', type: 'levain' },
                         { id: 'y', type: 'yeast' },
                     ]),
@@ -1344,7 +1344,10 @@ describe('handleWebMidiNoteOff', () => {
                 { id: 'kit-def-0' },
                 67,
                 96_480 / 48_000,
-                100
+                100,
+                1,
+                // The legacy gain is inert: the kit plays at unity, as it did before.
+                1
             );
             expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
         });
