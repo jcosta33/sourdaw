@@ -1,0 +1,41 @@
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_1f0dcd815e8946::t_e0d65658fd2434 122
+  s_1f0dcd815e8946::t_ca220a3a4c69db 105-106
+src/modules/Arrangement/stores/__tests__/takeLaneStore.spec.ts
+  s_1f0dcd815e8946::t_109403a1e64262 629-642,653-670
+  s_1f0dcd815e8946::t_2024c030bba8b2 5,624-628,643-651,671-673
+  s_1f0dcd815e8946::t_52a99001cbdf8f 652,674
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_7b29c3eb14b995 527,552,554-564,579,585-593,595
+  s_1f0dcd815e8946::t_6709ac90bf6c86 566-567,583-584
+  s_1f0dcd815e8946::t_2024c030bba8b2 62,133,335,493,594,596
+  s_1f0dcd815e8946::t_d0f6a6a513f829 500-526,528-551,553,565,568-578,580-582
+  s_1f0dcd815e8946::t_3719071951f8f1 494-499
+  s_1f0dcd815e8946::t_18cbf883f88df6 597
+src/modules/Transport/useCases/transportControls/createRecordingCaptureClocks.ts
+  s_1f0dcd815e8946::t_e0d65658fd2434 12,30-36,38,61-66,73,105
+  s_1f0dcd815e8946::t_9e9ab33eedacac 108
+src/modules/Transport/useCases/transportControls/__tests__/createRecordingCaptureClocks.spec.ts
+  s_1f0dcd815e8946::t_e0d65658fd2434 51,54
+  s_1f0dcd815e8946::t_2c6ce8ae7b76a3 99-114,165
+  s_1f0dcd815e8946::t_ca220a3a4c69db 157-163
+  s_1f0dcd815e8946::t_7f0d775e1928d7 115-116,164,166
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_1f0dcd815e8946::t_e0d65658fd2434 421,423,426-437,439-440,443,495-508
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c52d8156c3dac637e3aa5ceec5c2cacec5d51992",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
