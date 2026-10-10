@@ -1,0 +1,35 @@
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts
+  s_1f0dcd815e8946::t_781854d37a2e47 535-537
+  s_1f0dcd815e8946::t_a6be172c321d33 528-534,538-584,1495-1536
+src/modules/AudioEngine/stores/inputMonitoringProjectAccess.ts
+  s_1f0dcd815e8946::t_e600b64be6cf6d 5,17-19
+  s_1f0dcd815e8946::t_1d6a090dcd8cf3 20-21
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startInputMonitoring.spec.ts
+  s_1f0dcd815e8946::t_a266e5c3490142 81,106,128,151,173,203
+src/modules/AudioEngine/useCases/audioRecorder/admitInputMonitoring.ts
+  s_1f0dcd815e8946::t_e600b64be6cf6d 2,11,20-22
+src/app/__tests__/initInputMonitoringProjectAccess.spec.ts
+  s_1f0dcd815e8946::t_a266e5c3490142 4-9,75
+src/app/initInputMonitoringProjectAccess.ts
+  s_1f0dcd815e8946::t_e600b64be6cf6d 3-8,13
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_100e68ef2cb726 801-809
+.agents/skills/review-stances/session-lifecycle.md
+  s_1f0dcd815e8946::t_100e68ef2cb726 299-308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "71221839e788024fab2769d7b0db1120140fcabd",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
