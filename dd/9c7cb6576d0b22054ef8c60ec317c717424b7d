@@ -1,0 +1,19 @@
+scripts/resourceGuard.ts
+  s_893120061bb856::t_e5877b4120b134 1168-1169,1172,1181,1184-1186,1193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dd9c7cb6576d0b22054ef8c60ec317c717424b7d",
+  "prompts": {},
+  "sessions": {
+    "s_893120061bb856": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1256e-9c67-7563-9585-8e8c8ddee529",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
