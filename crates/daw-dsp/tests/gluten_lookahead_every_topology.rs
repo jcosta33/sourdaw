@@ -169,6 +169,9 @@ fn lookahead_reduces_gain_before_the_delayed_burst_reaches_the_output_in_stage_t
         .iter()
         .map(|&(label, topology)| (format!("idle Opto into {label}"), idle_opto_into(topology)))
         .collect();
+    let mut feed_forward = idle_opto_into(VCA);
+    feed_forward.push(("feed_forward", 1.0));
+    cases.push(("idle Opto into VCA feed-forward".to_string(), feed_forward));
     cases.extend([
         // Range 0 caps VCA's reduction at nothing.
         (
@@ -328,6 +331,124 @@ fn lookahead_keeps_treble_and_noise_settling_at_the_same_reduction_at_every_over
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Chains whose stage one is feed-forward — Diode, or VCA in feed-forward
+/// mode — as `(label, stage one, stage two, feed_forward)`. A feed-forward
+/// stage applies the gain it detects this sample, so under lookahead stage two
+/// must hear stage one's output ahead of the delay at that gain, not the one
+/// before it.
+const FEED_FORWARD_CHAINS: [(&str, f32, f32, f32); 6] = [
+    ("VCA feed-forward into FET", VCA, FET, 1.0),
+    ("VCA feed-forward into Opto", VCA, OPTO, 1.0),
+    ("Diode into VCA", DIODE, VCA, 0.0),
+    ("Diode into VCA feed-forward", DIODE, VCA, 1.0),
+    ("Diode into FET", DIODE, FET, 0.0),
+    ("Diode into Opto", DIODE, OPTO, 0.0),
+];
+
+/// Peak detection at the fastest attack, so stage one's gain moves sample by
+/// sample and a stage two that heard it one sample late would show it.
+fn fast_peak_chain(
+    stage_one: f32,
+    stage_two: f32,
+    feed_forward: f32,
+    oversampling: f32,
+    blend_amount: f32,
+) -> Vec<(&'static str, f32)> {
+    vec![
+        ("topology", stage_one),
+        ("blend_topology", stage_two),
+        ("blend_amount", blend_amount),
+        ("feed_forward", feed_forward),
+        ("threshold", -20.0),
+        ("ratio", 4.0),
+        ("attack", 0.02),
+        ("detection", 1.0),
+        ("oversampling", oversampling),
+    ]
+}
+
+#[test]
+fn lookahead_keeps_a_feed_forward_stage_one_chain_settling_at_the_same_reduction() {
+    let programme = sine(16_000.0);
+    let mut failures = Vec::new();
+    for oversampling in OVERSAMPLING_FACTORS {
+        for (chain_label, stage_one, stage_two, feed_forward) in FEED_FORWARD_CHAINS {
+            let params = fast_peak_chain(stage_one, stage_two, feed_forward, oversampling, 1.0);
+            let without = settled_reduction(&params, 0.0, &programme);
+            let with = settled_reduction(&params, LOOKAHEAD_MS, &programme);
+            let label = format!("{chain_label}, {oversampling}x, 16 kHz");
+            println!(
+                "{label}: {without:.3} dB without, {:+.3} dB moved",
+                with - without
+            );
+            if (with - without).abs() >= 0.05 {
+                failures.push(format!(
+                    "{label}: settled reduction moved from {without} dB to {with} dB with \
+                     lookahead"
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The burst's attack, where stage one's gain is still moving.
+const ATTACK_WINDOW: usize = 480;
+
+/// Stage two's own reduction per sample: the chain's, less stage one's alone.
+/// Stage one never hears stage two, so the chain at blend 0 renders exactly
+/// stage one's reduction.
+fn stage_two_gr_db(
+    chain: &[(&str, f32)],
+    stage_one_alone: &[(&str, f32)],
+    lookahead_ms: f32,
+) -> Vec<f32> {
+    let chain = render(chain, lookahead_ms);
+    let stage_one = render(stage_one_alone, lookahead_ms);
+    chain
+        .gr_db
+        .iter()
+        .zip(&stage_one.gr_db)
+        .map(|(chain, stage_one)| chain - stage_one)
+        .collect()
+}
+
+/// Largest per-sample difference over the attack between stage two's
+/// reduction with lookahead and without it read `shift` samples later.
+fn attack_deviation_db(with: &[f32], without: &[f32], shift: usize) -> f32 {
+    (ONSET..ONSET + ATTACK_WINDOW)
+        .map(|frame| (with[frame] - without[frame + shift]).abs())
+        .fold(0.0, f32::max)
+}
+
+/// Lookahead may only move stage two's reduction earlier: a feedback stage
+/// two reaches each step of its attack one sample sooner, a feed-forward one
+/// on the same sample. Its attack envelope must otherwise trace the one it has
+/// without lookahead, not run deeper because stage one's gain reached it late.
+#[test]
+fn lookahead_keeps_stage_two_attack_behind_a_feed_forward_stage_one_on_its_envelope() {
+    let mut failures = Vec::new();
+    for oversampling in OVERSAMPLING_FACTORS {
+        for (chain_label, stage_one, stage_two, feed_forward) in FEED_FORWARD_CHAINS {
+            let chain = fast_peak_chain(stage_one, stage_two, feed_forward, oversampling, 1.0);
+            let alone = fast_peak_chain(stage_one, stage_two, feed_forward, oversampling, 0.0);
+            let without = stage_two_gr_db(&chain, &alone, 0.0);
+            let with = stage_two_gr_db(&chain, &alone, LOOKAHEAD_MS);
+            let deviation = attack_deviation_db(&with, &without, 0)
+                .min(attack_deviation_db(&with, &without, 1));
+            let label = format!("{chain_label}, {oversampling}x");
+            println!("{label}: stage two's attack deviates {deviation:.4} dB");
+            if deviation >= 0.05 {
+                failures.push(format!(
+                    "{label}: stage two's attack envelope with lookahead strays up to \
+                     {deviation} dB from the one without"
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 #[test]
 fn reported_latency_is_the_lookahead_time() {
     for (lookahead_ms, expected) in [(0.0, 0), (LOOKAHEAD_MS, 240), (20.0, 960)] {
@@ -355,9 +476,249 @@ const REFERENCE_FRAMES: [usize; 5] = [
     FRAMES - 1,
 ];
 
+/// Every stage-one × stage-two pairing at blend 0.6, the VCA in each of its
+/// detector modes, as `(label, stage one, stage two, feed_forward, reference)`.
+/// Captured with the single stages, from the same implementation.
+const PAIR_REFERENCES: [(&str, f32, f32, f32, [(f32, f32); 5]); 18] = [
+    (
+        "Diode into VCA",
+        DIODE,
+        VCA,
+        0.0,
+        [
+            (0.45640522, -0.024727345),
+            (-0.4202016, -0.94622403),
+            (0.04626494, -12.603197),
+            (-0.053832427, -19.123402),
+            (0.05290205, -18.5774),
+        ],
+    ),
+    (
+        "Diode into VCA feed-forward",
+        DIODE,
+        VCA,
+        1.0,
+        [
+            (0.45640522, -0.024727345),
+            (-0.41980952, -0.95442367),
+            (0.045632333, -12.750458),
+            (-0.050756708, -19.850489),
+            (0.048732087, -19.543358),
+        ],
+    ),
+    (
+        "Diode into Opto",
+        DIODE,
+        OPTO,
+        0.0,
+        [
+            (0.4560309, -0.024727345),
+            (-0.42063296, -0.9437721),
+            (0.04578527, -12.713847),
+            (-0.053163365, -19.273829),
+            (0.05153896, -18.873222),
+        ],
+    ),
+    (
+        "Diode into FET",
+        DIODE,
+        FET,
+        0.0,
+        [
+            (0.18073966, -0.024727345),
+            (-0.46733403, -2.2230494),
+            (0.058838148, -15.437128),
+            (-0.051070355, -20.274216),
+            (0.0511362, -19.02225),
+        ],
+    ),
+    (
+        "VCA into Diode",
+        VCA,
+        DIODE,
+        0.0,
+        [
+            (0.45897898, -0.01879502),
+            (-0.38677377, -0.7427481),
+            (0.020720843, -10.860964),
+            (-0.08157083, -18.996086),
+            (0.08174565, -18.834648),
+        ],
+    ),
+    (
+        "VCA feed-forward into Diode",
+        VCA,
+        DIODE,
+        1.0,
+        [
+            (0.45888907, -0.022919446),
+            (-0.38612586, -0.757946),
+            (0.019769225, -11.277119),
+            (-0.043805722, -24.398373),
+            (0.042813063, -24.450214),
+        ],
+    ),
+    (
+        "VCA into Opto",
+        VCA,
+        OPTO,
+        0.0,
+        [
+            (0.46229374, -0.00537084),
+            (-0.33758447, -0.39326656),
+            (-1.6137696e-7, -7.451378),
+            (-0.10805125, -14.123061),
+            (0.1107309, -13.790121),
+        ],
+    ),
+    (
+        "VCA feed-forward into Opto",
+        VCA,
+        OPTO,
+        1.0,
+        [
+            (0.4620741, -0.009493642),
+            (-0.33699983, -0.40833372),
+            (-1.5396927e-7, -7.8572874),
+            (-0.058643084, -19.383175),
+            (0.06015309, -18.932455),
+        ],
+    ),
+    (
+        "VCA into FET",
+        VCA,
+        FET,
+        0.0,
+        [
+            (0.53059626, -0.0039586145),
+            (-0.41386896, -1.8870516),
+            (0.033325087, -10.240662),
+            (-0.11551274, -14.737088),
+            (0.12156172, -13.808679),
+        ],
+    ),
+    (
+        "VCA feed-forward into FET",
+        VCA,
+        FET,
+        1.0,
+        [
+            (0.53050697, -0.008083038),
+            (-0.41326866, -1.9014337),
+            (0.031882796, -10.642814),
+            (-0.06311082, -19.937206),
+            (0.068733566, -18.576372),
+        ],
+    ),
+    (
+        "Opto into Diode",
+        OPTO,
+        DIODE,
+        0.0,
+        [
+            (0.458345, -0.01715364),
+            (-0.38740626, -0.74015105),
+            (0.019991465, -11.172362),
+            (-0.07751633, -19.444021),
+            (0.076722205, -19.380432),
+        ],
+    ),
+    (
+        "Opto into VCA",
+        OPTO,
+        VCA,
+        0.0,
+        [
+            (0.46207386, -0.004692399),
+            (-0.33777606, -0.39216626),
+            (-1.5801135e-7, -7.5998178),
+            (-0.10486692, -14.288979),
+            (0.108618416, -13.768607),
+        ],
+    ),
+    (
+        "Opto into VCA feed-forward",
+        OPTO,
+        VCA,
+        1.0,
+        [
+            (0.46194208, -0.0071665915),
+            (-0.3374302, -0.40118068),
+            (-1.5513513e-7, -7.8028417),
+            (-0.09552979, -15.611356),
+            (0.096329115, -15.413071),
+        ],
+    ),
+    (
+        "Opto into FET",
+        OPTO,
+        FET,
+        0.0,
+        [
+            (0.5299766, -0.0023172316),
+            (-0.41453338, -1.8835409),
+            (0.032231513, -10.539522),
+            (-0.11008364, -15.150921),
+            (0.11492826, -14.270863),
+        ],
+    ),
+    (
+        "FET into Diode",
+        FET,
+        DIODE,
+        0.0,
+        [
+            (0.22843924, -0.014836407),
+            (-0.47729194, -3.2348912),
+            (0.064715244, -16.125637),
+            (-0.095215194, -19.75364),
+            (0.08820758, -19.766716),
+        ],
+    ),
+    (
+        "FET into VCA",
+        FET,
+        VCA,
+        0.0,
+        [
+            (0.57601285, 0.0),
+            (-0.461522, -2.9076104),
+            (0.067920774, -12.379911),
+            (-0.13542956, -14.356218),
+            (0.12876038, -14.199949),
+        ],
+    ),
+    (
+        "FET into VCA feed-forward",
+        FET,
+        VCA,
+        1.0,
+        [
+            (0.5760031, -0.00014664701),
+            (-0.46100494, -2.9174955),
+            (0.066968024, -12.532922),
+            (-0.11693002, -16.477852),
+            (0.10962072, -16.503906),
+        ],
+    ),
+    (
+        "FET into Opto",
+        FET,
+        OPTO,
+        0.0,
+        [
+            (0.57541686, 0.0),
+            (-0.46183768, -2.9087641),
+            (0.06712865, -12.505899),
+            (-0.13405287, -14.489172),
+            (0.12645635, -14.427539),
+        ],
+    ),
+];
+
 #[test]
 fn lookahead_off_matches_the_captured_reference() {
-    let cases: [(&str, Vec<(&str, f32)>, [(f32, f32); 5]); 5] = [
+    let cases: [(&str, Vec<(&str, f32)>, [(f32, f32); 5]); 4] = [
         (
             "Diode",
             single_stage(DIODE),
@@ -402,24 +763,21 @@ fn lookahead_off_matches_the_captured_reference() {
                 (0.18800776, -10.316272),
             ],
         ),
-        (
-            "VCA into Opto",
-            {
-                let mut params = single_stage(VCA);
-                params.extend([("blend_topology", OPTO), ("blend_amount", 0.6)]);
-                params
-            },
-            [
-                (0.46229374, -0.00537084),
-                (-0.33758447, -0.39326656),
-                (-1.6137696e-7, -7.451378),
-                (-0.10805125, -14.123061),
-                (0.1107309, -13.790121),
-            ],
-        ),
     ];
+    let pairs =
+        PAIR_REFERENCES
+            .iter()
+            .map(|&(label, stage_one, stage_two, feed_forward, expected)| {
+                let mut params = single_stage(stage_one);
+                params.extend([
+                    ("feed_forward", feed_forward),
+                    ("blend_topology", stage_two),
+                    ("blend_amount", 0.6),
+                ]);
+                (label, params, expected)
+            });
 
-    for (label, params, expected) in cases {
+    for (label, params, expected) in cases.into_iter().chain(pairs) {
         let render = render(&params, 0.0);
         for (&frame, &(output, gr_db)) in REFERENCE_FRAMES.iter().zip(expected.iter()) {
             assert!(
