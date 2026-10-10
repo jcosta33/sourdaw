@@ -1,0 +1,35 @@
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  s_97ab82e0b4f10c::t_ac33ec370927b4 4,280,342,344-349,408,453
+  s_97ab82e0b4f10c::t_3a00b4dcbbafc9 1,5-7,248-279,281-341,343,350-361,372-377,389-396,400-406,409-414
+  s_97ab82e0b4f10c::t_3e97d2470897ba 416-423,437-452,454-456,459-472
+  s_97ab82e0b4f10c::t_e0cba25922ad33 457-458
+  s_97ab82e0b4f10c::t_c24efcbe85a14a 3,378-388,407
+  s_97ab82e0b4f10c::t_080de8374ea16e 362-371,397-399,424-436
+  s_1f0dcd815e8946::t_b2d6ea8231ee39 415
+scripts/retargetCapabilitySnapshot.ts
+  s_97ab82e0b4f10c::t_35a9b5a8d82759 547,550
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "770c2e523c71e358d424968b1651c784609e71d1",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
