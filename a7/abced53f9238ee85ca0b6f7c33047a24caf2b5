@@ -1,0 +1,23 @@
+pnpm-lock.yaml
+  s_97ab82e0b4f10c::t_a19e13ecba06d6 2463,2475,2485,2492-2495,2503,2509,3018-3020,7776,7778,7788,7790-7791,7803,7805,7811-7823,7836,7838,7846,7848,7852-7857,8286-8287
+pnpm-workspace.yaml
+  s_97ab82e0b4f10c::t_0b263e8fd828e8 34-44
+src/modules/BrowserAi/workers/tfjsInferenceWorker.ts
+  s_97ab82e0b4f10c::t_71a102f18604d9 59-66,94-95,108-110,127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a7abced53f9238ee85ca0b6f7c33047a24caf2b5",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
