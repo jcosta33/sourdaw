@@ -172,3 +172,19 @@ Initialize the same gesture-clock port as app
 bootstrap and drive settled ticks to Stop; a stale beat paired with a later
 context time is not an ending receipt. The deliberate minimum carrier and
 physical producer cutoff remain a separate obligation.
+
+## Equal tempo projection must preserve a sounded seam
+
+Commit `7de4d3ddd9018c9e766ea1d801aeadf927f3cee2` treated every replacement
+tempo-map array as an edit. PR #4897 later made a pending loop seam carry the
+recording pass boundary. Together, an equal-valued CRDT re-projection could
+tear down that already-sounded seam and stage a positive-depth final take from
+an empty lap.
+
+While a real recorder crosses a loop seam, flush the production projection's
+deferred animation-frame callbacks and prove the ordered tempo entries remain
+equal even though their array identity changes. Stop just after the seam and
+assert there is no final take beyond the measured PCM, while the dying pass
+remains selectable through source scheduling and Command/CRDT Undo/Redo.
+Changing an entry's id, beat, tempo, or curve, and changing the loop region,
+must still invalidate and re-anchor the pending seam.

@@ -800,3 +800,20 @@ Pair the captured final tail with a producer extent ending at or before the
 sounded seam. In the empty case, prove the original unfinished identity retires
 and the completed pass remains selectable exactly once after Undo/Redo; leaving
 the initial no-depth take duplicates that pass even without minting a new take.
+
+### Equal-value CRDT projections must enter scheduler integration probes
+
+The recorder coverage on PR #5165 did not flush the deferred CRDT store
+callbacks while a loop seam was pending. Commit
+`7de4d3ddd9018c9e766ea1d801aeadf927f3cee2` supplied reference-only tempo-map
+change detection; PR #4897 supplied seam invalidation on a real edit. The
+combination let an equal-valued projection look like an edit and create a
+spurious `Take 3` after an empty final lap.
+
+Stub and drain the production animation-frame queue inside the connected
+recorder case. Assert canonical ordered tempo entries are unchanged, the live
+array identity is replaced, and the real Stop, Command commit, raw CRDT,
+projection, comp selection, and Undo/Redo retain only sounded PCM. Reverting
+the semantic comparison must restore the extra positive-depth take. Keep
+separate changed-id, beat, tempo, curve, and loop controls so filtering
+projection churn cannot disable genuine edit re-anchoring.

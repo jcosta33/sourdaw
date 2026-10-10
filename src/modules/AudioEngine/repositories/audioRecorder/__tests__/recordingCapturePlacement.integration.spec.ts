@@ -161,6 +161,8 @@ let worker: {
     sab: SharedArrayBuffer | null;
     messages: string[];
 };
+const pendingAnimationFrames = new Map<number, FrameRequestCallback>();
+let nextAnimationFrame = 0;
 type Project = { tracks: NonNullable<typeof trackStore.value>; takeLanes: NonNullable<typeof takeLaneStore.value> };
 function publication() {
     if (!worker.sab) {
@@ -200,6 +202,14 @@ async function schedulerTick(seconds: number): Promise<void> {
 
 describe('real recorder first-frame capture placement', () => {
     beforeEach(async () => {
+        pendingAnimationFrames.clear();
+        nextAnimationFrame = 0;
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+            const id = ++nextAnimationFrame;
+            pendingAnimationFrames.set(id, callback);
+            return id;
+        });
+        vi.stubGlobal('cancelAnimationFrame', (id: number) => pendingAnimationFrames.delete(id));
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('real recorder first-frame capture placement');
         removeCrdtDoc('root');
@@ -448,6 +458,17 @@ describe('real recorder first-frame capture placement', () => {
             // The actual processor, not readiness/callback time, publishes sample zero.
             if (loops) {
                 for (const seconds of [50.25, 50.3, 50.35, 50.4, 50.45, 50.5, 50.55, 50.6]) {
+                    if (emptyFinalLap && seconds === 50.35) {
+                        const previousChanges = tempoMapStore.value!.changes;
+                        const callbacks = [...pendingAnimationFrames.values()];
+                        pendingAnimationFrames.clear();
+                        expect(callbacks.length).toBeGreaterThan(0);
+                        for (const callback of callbacks) {
+                            callback(performance.now());
+                        }
+                        expect(tempoMapStore.value!.changes).toEqual(previousChanges);
+                        expect(tempoMapStore.value!.changes).not.toBe(previousChanges);
+                    }
                     await schedulerTick(seconds);
                     expect(playheadClockRef.audioTimeSeconds).toBe(seconds);
                 }

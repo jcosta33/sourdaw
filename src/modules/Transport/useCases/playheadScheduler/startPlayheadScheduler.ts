@@ -28,7 +28,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
-import { tempoMapStore } from '../../stores/tempoMapStore';
+import { tempoMapStore, type TempoChange } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { evaluateFollowActions } from '../evaluateFollowActions';
 import { appliedAutomationBases } from '../scheduling/applyAutomation/appliedAutomationBases';
@@ -58,6 +58,27 @@ function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd
 
 function positiveModulo(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function haveSameTempoChanges(left: readonly TempoChange[], right: readonly TempoChange[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    for (let index = 0; index < left.length; index++) {
+        const previous = left[index];
+        const current = right[index];
+        if (
+            !previous ||
+            !current ||
+            previous.id !== current.id ||
+            previous.beat !== current.beat ||
+            previous.tempo !== current.tempo ||
+            previous.curve !== current.curve
+        ) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /**
@@ -372,7 +393,9 @@ export function startPlayheadScheduler(): void {
         // the wrap path does. A pending seam is re-anchored on the dying pass
         // (below); otherwise the playhead and the metronome stay where they are.
         const loopSignature = loopSignatureOf(current);
-        const tempoMapChanged = schedulerSession.lastTempoMapChanges !== liveChanges;
+        const tempoMapChanged =
+            schedulerSession.lastTempoMapChanges !== liveChanges && !haveSameTempoChanges(priorChanges, changes);
+        schedulerSession.lastTempoMapChanges = liveChanges;
         const loopChanged = schedulerSession.lastLoopSignature !== loopSignature;
         let rackDiscontinuity = false;
         // #4905 — set when a wrap arm runs this tick (the seam-edit re-anchor
@@ -387,7 +410,6 @@ export function startPlayheadScheduler(): void {
         // like a jump's it must restore the stored controllers in force there.
         let reemitAfterEdit = false;
         if (tempoMapChanged || loopChanged) {
-            schedulerSession.lastTempoMapChanges = liveChanges;
             schedulerSession.lastLoopSignature = loopSignature;
             // A wrap tail the fence was sparing is gone with the teardown, and
             // the region the seam pivoted on may be the one this edit replaced:
