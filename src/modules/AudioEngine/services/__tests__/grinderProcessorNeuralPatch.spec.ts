@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
     createReadyGrinderProcessor,
+    grinderLoadModelCalls,
     grinderSetParamCalls,
     resetGrinderProcessorCalls,
+    setGrinderModelRejection,
     type GrinderProcessorLike,
 } from './grinderProcessorTestHarness';
 
@@ -12,6 +14,9 @@ import {
 // validation). Drive it through the versioned patch message and assert which params the
 // instance received — deriving expected values from the documented neural patch
 // contract, never from implementation output.
+
+/** The processor refuses a stale control sequence, so each patch carries the next one. */
+let nextPatchSequence = 1;
 
 function patch(processor: GrinderProcessorLike, neural: Record<string, unknown>): void {
     processor.port.onmessage?.({
@@ -33,7 +38,7 @@ function patch(processor: GrinderProcessorLike, neural: Record<string, unknown>)
             command: 'apply-grinder-neural-patch',
             target: { trackId: 'track-1', deviceId: 'grinder-1', deviceType: 'grinder' },
             patch: neural,
-            correlation: { workletGeneration: 7, controlSequence: 1 },
+            correlation: { workletGeneration: 7, controlSequence: nextPatchSequence++ },
             scheduling: { targetFrame: null, deadlineFrame: null },
         },
     });
@@ -152,6 +157,116 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
             (c) => (c[0] as { type?: string }).type === 'latency-changed'
         );
         expect(latencyCalls).toEqual([]);
+    });
+
+    it('loads a model-carrying patch before writing the scalar profile (#3774)', async () => {
+        const processor = await createReadyGrinderProcessor();
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: { preferredTier: 'standard' },
+            modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+            modelDigest: 'digest-1',
+        });
+
+        expect(grinderLoadModelCalls).toEqual(['{"architecture":"WaveNet","config":{},"weights":[0.5]}']);
+        // The model load lands before the scalars: the runtime parses the real
+        // network first, then the tier/scalars mode the stage in.
+        expect(grinderSetParamCalls[0]?.name).toBe('neuralCustomTier');
+        expect(paramMap(grinderSetParamCalls).neuralModelMode).toBe(1);
+    });
+
+    it('skips the load when the patch digest matches the model already loaded', async () => {
+        const processor = await createReadyGrinderProcessor();
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: { preferredTier: 'standard' },
+            modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+            modelDigest: 'digest-1',
+        });
+        resetGrinderProcessorCalls();
+        // The sender re-posts the patch on every patch sync; the parse runs on
+        // the render thread, so an already-loaded capture must not re-parse.
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: { preferredTier: 'lite' },
+            modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+            modelDigest: 'digest-1',
+        });
+
+        expect(grinderLoadModelCalls).toEqual([]);
+        expect(paramMap(grinderSetParamCalls).neuralCustomTier).toBe(1);
+        expect(paramMap(grinderSetParamCalls).neuralModelMode).toBe(1);
+    });
+
+    it('reloads when the digest changes and after a builtin detour', async () => {
+        const processor = await createReadyGrinderProcessor();
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: {},
+            modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+            modelDigest: 'digest-1',
+        });
+        resetGrinderProcessorCalls();
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: {},
+            modelJson: '{"architecture":"LSTM","config":{},"weights":[0.5]}',
+            modelDigest: 'digest-2',
+        });
+        expect(grinderLoadModelCalls).toEqual(['{"architecture":"LSTM","config":{},"weights":[0.5]}']);
+
+        // A builtin patch makes the runtime discard the imported model, so the
+        // gate must forget the digest: the next imported patch reloads.
+        resetGrinderProcessorCalls();
+        patch(processor, { neuralModelMode: 'builtin' });
+        resetGrinderProcessorCalls();
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: {},
+            modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+            modelDigest: 'digest-1',
+        });
+        expect(grinderLoadModelCalls).toEqual(['{"architecture":"WaveNet","config":{},"weights":[0.5]}']);
+    });
+
+    it('reloads a model-carrying patch that carries no digest — it cannot prove identity', async () => {
+        const processor = await createReadyGrinderProcessor();
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: {},
+            modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+        });
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: {},
+            modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+        });
+
+        expect(grinderLoadModelCalls).toHaveLength(2);
+    });
+
+    it('never calls load_neural_model without a model', async () => {
+        const processor = await createReadyGrinderProcessor();
+        patch(processor, { neuralModelMode: 'imported', profile: { preferredTier: 'standard' } });
+        expect(grinderSetParamCalls.length).toBeGreaterThan(0);
+        expect(grinderLoadModelCalls).toEqual([]);
+    });
+
+    it('faults the processor when the runtime rejects a model the sender validated', async () => {
+        setGrinderModelRejection('unsupported NAM file version "0.4.9"');
+        const processor = await createReadyGrinderProcessor();
+        patch(processor, {
+            neuralModelMode: 'imported',
+            profile: {},
+            modelJson: '{"architecture":"WaveNet"}',
+        });
+
+        // The rejection propagates: the onmessage catch faults the processor and
+        // posts the error instead of running the substitute silently.
+        expect(grinderLoadModelCalls).toEqual(['{"architecture":"WaveNet"}']);
+        expect(grinderSetParamCalls).toEqual([]);
+        const error = processor.port.postMessage.mock.calls.find((c) => (c[0] as { type?: string }).type === 'error');
+        expect(error).toBeDefined();
     });
 });
 

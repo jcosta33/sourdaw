@@ -899,3 +899,92 @@ fn cc1_blends_every_mic_layer_toward_its_adjacent_dynamic() {
 
     assert_both(&out.left, soft_0_hz, soft_1_hz, "CC1 dynamic layer");
 }
+
+// ---------------------------------------------------------------------------
+// Pitch modulation must reach the CC1 dynamic-layer streams (#4843)
+// ---------------------------------------------------------------------------
+
+/// The adjacent CC1 layer tones of the bank below. Both sit far from every
+/// other rendered frequency, so one DFT bin separates the layer's bent tone
+/// from its unbent one.
+const SOFT_0_HZ: f32 = 500.0;
+const SOFT_1_HZ: f32 = 800.0;
+
+/// The issue's probe bank: loud primaries at 440/660 Hz with
+/// velocity-adjacent CC1 layers at 500/800 Hz, CC1 at its midpoint, humanize
+/// off, and the mics hard-panned so the left channel is mic 0 alone. The
+/// held note takes a +12-semitone per-note bend. `vibrato_depth` 0.0 keeps
+/// `update_vibrato_block` in its static-bend branch; any real depth moves it
+/// into the LFO branch.
+fn bent_cc1_instance(vibrato_depth: f32) -> LevainInstance {
+    let mut instance = instance_with(
+        NEUTRAL_INSTRUMENT,
+        2,
+        &[
+            Take::sustain(0, MIC_0_HZ).velocities(72, 127),
+            Take::sustain(1, MIC_1_HZ).velocities(72, 127),
+            Take::sustain(0, SOFT_0_HZ).velocities(0, 71),
+            Take::sustain(1, SOFT_1_HZ).velocities(0, 71),
+        ],
+    );
+    instance.set_param("humanize", 0.0);
+    instance.set_param("vibrato_depth", vibrato_depth);
+    instance.set_param("mic_0_pan", -1.0);
+    instance.set_param("mic_1_pan", 1.0);
+    instance.handle_cc(1, 64);
+    instance
+}
+
+/// Play the held note, bend it +12 semitones per-note, and capture one
+/// measurement window past the attack.
+fn play_bent_and_measure(instance: &mut LevainInstance) -> Stereo {
+    instance.note_on(NOTE, VELOCITY);
+    instance.note_expression(NOTE, 0, 12.0, 0.0, 0.0);
+    render(instance, SETTLE_FRAMES);
+    render(instance, WINDOW)
+}
+
+/// The issue's ratio probe on mic 0: the layer's bent tone at twice its
+/// recorded frequency must dominate its unbent tone by at least 10x. A
+/// layer that ignores the pitch modulation reads as a second, detuned
+/// voice under the bent one.
+fn assert_bent_layer_dominates(signal: &[f32], context: &str) {
+    let bent_hz = transposed(SOFT_0_HZ, NOTE + 12);
+    let bent = amplitude_at(signal, bent_hz);
+    let unbent = amplitude_at(signal, SOFT_0_HZ);
+    assert!(
+        bent > 0.05,
+        "{context}: the bent layer tone is inaudible at {bent_hz} Hz (amplitude {bent})",
+    );
+    assert!(
+        bent >= 10.0 * unbent,
+        "{context}: the unbent tone holds {unbent} against {bent} at {bent_hz} Hz — the dynamic \
+         layer is not following the pitch modulation",
+    );
+}
+
+#[test]
+fn a_per_note_bend_carries_the_cc1_dynamic_layer_with_it() {
+    let mut instance = bent_cc1_instance(0.0);
+
+    let out = play_bent_and_measure(&mut instance);
+
+    assert_bent_layer_dominates(&out.left, "per-note bend");
+}
+
+#[test]
+fn vibrato_also_carries_the_cc1_dynamic_layer_with_it() {
+    let mut instance = bent_cc1_instance(0.25);
+
+    let out = play_bent_and_measure(&mut instance);
+
+    // The vibrato branch must actually be running: with depth engaged, the
+    // render must differ from the static-bend render above.
+    let mut static_instance = bent_cc1_instance(0.0);
+    let static_out = play_bent_and_measure(&mut static_instance);
+    assert!(
+        max_abs_diff(&out.left, &static_out.left) > 1e-4,
+        "vibrato depth produced an identical render — the LFO branch never ran",
+    );
+    assert_bent_layer_dominates(&out.left, "vibrato branch");
+}

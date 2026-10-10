@@ -28,6 +28,8 @@ function make_entry(overrides: Partial<GrinderImportedNeuralModel> = {}): Grinde
             contourMix: 0.2,
             recurrentBias: 0.01,
             convWeights: [[0.1, 0.7, 0.2]],
+            model: null,
+            modelDigest: null,
         },
         ...overrides,
     };

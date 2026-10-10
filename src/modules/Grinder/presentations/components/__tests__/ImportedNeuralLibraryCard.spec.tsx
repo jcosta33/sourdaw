@@ -37,6 +37,8 @@ const base_entry: GrinderImportedNeuralModel = {
             [0.09, 0.7, 0.17],
             [0.11, 0.68, 0.17],
         ],
+        model: null,
+        modelDigest: null,
     },
 };
 
