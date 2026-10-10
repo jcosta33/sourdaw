@@ -166,7 +166,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:ace2c25e8368a28fdf535938f4a7858c9b8e30e1e460ca83fc94cc03bbe5752e:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:22d6c8bdce602ce07ca04f402d985ae92ef9a274126955cec4aa44f3b075486a:release/dependency-license-proofs.json"
+                "sha256:2cb4014291e3aa97aa31ca645bcf5d9076e5ac5fc7bfa389d59b1fcb6b79e4be:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1739,7 +1739,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "9668930c62197bf8a6555865edc5411436dee1395d20f055bd730f7558378f2a"
+            "sha256": "780199de6af6edde7a11faf667589666b9484d6ad923b3c164c55f50b3cb043a"
         },
         {
             "path": "server/package.json",
@@ -2236,6 +2236,17 @@
             "surface": "project-source",
             "file": "scripts/resolveVercelProductionDeployment.ts",
             "value": "https://api.vercel.com/v7/deployments"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/retargetCapabilityPlan.ts",
+            "value": "https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/retargetCapabilitySnapshot.ts",
+            "value": "https://api.github.com/${slot}${slot}per_page=100&page=${slot}",
+            "templateSha256": "3922199f6821c354d4734cda7d408d616ef2f881c16d52c41a0de012cc8bbe9c"
         },
         {
             "surface": "project-source",
