@@ -36,6 +36,7 @@ function runSetup(
 printf '%s\\n' "$*" >> "$RUSTUP_TEST_LOG"
 case "$*" in
   'toolchain install nightly-2026-04-14 --profile minimal --component rustfmt --component clippy')
+    [ "$RUSTUP_TEST_EXACT_HIT" = 1 ] && exit 77
     [ "$RUSTUP_TEST_INSTALLED" = 1 ] || exit 73; exit 0 ;;
   *) [ "$RUSTUP_AUTO_INSTALL" = 0 ] || exit 76 ;;
 esac
@@ -72,6 +73,7 @@ esac
             GITHUB_ENV: githubEnv,
             RUSTUP_TEST_LOG: log,
             RUSTUP_TEST_INSTALLED: installed ? '1' : '0',
+            RUSTUP_TEST_EXACT_HIT: cacheHit === 'true' ? '1' : '0',
             RUSTUP_TEST_INCOMPLETE: incomplete ? '1' : '0',
             RUSTUP_TEST_WRONG_PIN: wrongPin ? '1' : '0',
             RUSTUP_DIST_SERVER: 'http://127.0.0.1:9',
@@ -86,6 +88,7 @@ describe('pinned Rust setup', () => {
         expect(result.status).toBe(0);
         expect(result.stdout).toContain('source=exact-cache');
         expect(calls).not.toMatch(/^show$/m);
+        expect(calls).not.toMatch(/^toolchain install(?: |$)/m);
         expect(calls).toContain('run nightly-2026-04-14-x86_64-unknown-linux-gnu rustc -vV');
         expect(readFileSync(githubEnv, 'utf8')).toContain('RUSTUP_AUTO_INSTALL=0');
     });
@@ -99,10 +102,12 @@ describe('pinned Rust setup', () => {
             const { result, calls } = runSetup('true', installed, incomplete);
             expect(result.status).not.toBe(0);
             expect(calls).not.toMatch(/^show$/m);
+            expect(calls).not.toMatch(/^toolchain install(?: |$)/m);
         }
         const mismatched = runSetup('true', true, false, true);
         expect(mismatched.result.status).not.toBe(0);
         expect(mismatched.calls).not.toMatch(/^show$/m);
+        expect(mismatched.calls).not.toMatch(/^toolchain install(?: |$)/m);
     });
 
     it('treats an unset cache output and a false match as cold misses, propagating installation failure', () => {
