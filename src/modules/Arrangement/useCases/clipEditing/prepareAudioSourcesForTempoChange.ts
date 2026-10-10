@@ -14,6 +14,43 @@ type ClipSource = TempoAudioSourceTransition['clips'][number];
 type TakeSource = TempoAudioSourceTransition['takes'][number];
 type ClipLocation = { track: Track; alternativeId: string | null; clip: Clip };
 
+type ProjectedClip = NonNullable<ReturnType<typeof projectClipReplayPrefix>>['clips'][number]['clip'];
+
+function projectedSourceFieldsAreValid(clip: ProjectedClip): boolean {
+    return (
+        (clip.audioBufferId === undefined || typeof clip.audioBufferId === 'string') &&
+        (clip.fileId === undefined || typeof clip.fileId === 'string') &&
+        (clip.assetHash === undefined || typeof clip.assetHash === 'string') &&
+        (!Object.hasOwn(clip, 'audioOffsetBeats') ||
+            (typeof clip.audioOffsetBeats === 'number' && Number.isFinite(clip.audioOffsetBeats))) &&
+        (!Object.hasOwn(clip, 'audioOffsetSeconds') ||
+            (typeof clip.audioOffsetSeconds === 'number' && Number.isFinite(clip.audioOffsetSeconds)))
+    );
+}
+
+function isCompleteProjectedClip(clip: ProjectedClip, trackId: string): clip is Clip {
+    return (
+        typeof clip.id === 'string' &&
+        clip.id.length > 0 &&
+        clip.trackId === trackId &&
+        typeof clip.name === 'string' &&
+        Number.isFinite(clip.startBeat) &&
+        Number.isFinite(clip.endBeat) &&
+        clip.endBeat > clip.startBeat &&
+        (clip.type === 'audio' || clip.type === 'midi') &&
+        typeof clip.fadeInBeats === 'number' &&
+        Number.isFinite(clip.fadeInBeats) &&
+        typeof clip.fadeOutBeats === 'number' &&
+        Number.isFinite(clip.fadeOutBeats) &&
+        typeof clip.gain === 'number' &&
+        Number.isFinite(clip.gain) &&
+        typeof clip.color === 'string' &&
+        typeof clip.locked === 'boolean' &&
+        typeof clip.muted === 'boolean' &&
+        projectedSourceFieldsAreValid(clip)
+    );
+}
+
 function ownedClipForTake(locations: readonly ClipLocation[], trackId: string, clipId: string): ClipLocation | null {
     const active = locations.find(
         (location) => location.track.id === trackId && location.alternativeId === null && location.clip.id === clipId
@@ -450,30 +487,21 @@ export function prepareAudioSourcesForTempoChange(input: TempoSourceInput): Prep
         if (!projected) {
             return null;
         }
-        // The projection changes only active clip facets. Hidden alternatives
-        // and take ownership still participate in their original peer guards.
-        tracks = {
-            ...tracks,
-            tracks: tracks.tracks.map((track) => ({
-                ...track,
-                clips: track.clips.map((clip) => {
-                    const owner = projected.clips.find(
-                        (candidate) => candidate.owningTrackId === track.id && candidate.clip.id === clip.id
-                    );
-                    if (!owner) {
-                        return clip;
-                    }
-                    const projectedClip = { ...clip, ...owner.clip };
-                    if (!Object.hasOwn(owner.clip, 'audioOffsetSeconds')) {
-                        delete projectedClip.audioOffsetSeconds;
-                    }
-                    if (!Object.hasOwn(owner.clip, 'audioOffsetBeats')) {
-                        delete projectedClip.audioOffsetBeats;
-                    }
-                    return projectedClip;
-                }),
-            })),
-        };
+        // Membership and order belong to the prefix too: a prior restore can
+        // supply the source a later tempo inverse must guard before it exists live.
+        // Hidden alternatives and take ownership keep their original peer guards.
+        const projectedTracks: Track[] = [];
+        for (const track of tracks.tracks) {
+            const clips: Clip[] = [];
+            for (const owner of projected.clips.filter((candidate) => candidate.owningTrackId === track.id)) {
+                if (!isCompleteProjectedClip(owner.clip, track.id)) {
+                    return null;
+                }
+                clips.push(owner.clip);
+            }
+            projectedTracks.push({ ...track, clips });
+        }
+        tracks = { ...tracks, tracks: projectedTracks };
     }
     const locations = allClipLocations(tracks.tracks);
     if (!locations) {
