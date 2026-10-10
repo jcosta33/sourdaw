@@ -1462,6 +1462,7 @@ function validateCommandBatchProposal(
     if (
         Object.keys(call.arguments).some((key) => !COMMAND_BATCH_PROPOSAL_KEYS.has(key)) ||
         (refines !== undefined &&
+            refines !== null &&
             (typeof refines !== 'string' || refines.length === 0 || refines.length > PROPOSAL_REFINES_MAX_LENGTH)) ||
         hasPrimitiveCommands === hasStructuredList ||
         (hasStructuredList && normalizeAgentPlanProposal(call.arguments.plan) === null)
@@ -1635,16 +1636,20 @@ function validateCatalogTerminalCalls(
     return { status: 'accepted', decline: declineValidation.decline, answer: answerValidation.answer };
 }
 
+/**
+ * A strict reply states every optional property, as `null` when it means none. The proposal drops
+ * those nulls here, so nothing downstream reads a `refines: null` as naming a card: a refinement
+ * is absent in every form, and so are the list and plan beside a primitive command list.
+ */
 function normalizeTerminalProposalCall(call: ToolCallResult): ToolCallResult {
-    if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME || !Array.isArray(call.arguments.commands)) {
+    if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
         return call;
     }
+    const nullableKeys = Array.isArray(call.arguments.commands) ? ['list', 'plan', 'refines'] : ['refines'];
     return {
         ...call,
         arguments: Object.fromEntries(
-            Object.entries(call.arguments).filter(
-                ([key, value]) => (key !== 'list' && key !== 'plan') || value !== null
-            )
+            Object.entries(call.arguments).filter(([key, value]) => !nullableKeys.includes(key) || value !== null)
         ),
     };
 }

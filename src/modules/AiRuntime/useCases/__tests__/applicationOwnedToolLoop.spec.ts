@@ -323,6 +323,59 @@ describe('application-owned tool loop', () => {
         }
     );
 
+    // Red when the strict encoding of no refinement, which every strict reply states, is refused, or
+    // reaches the planner as a `refines` naming a card.
+    it.each([
+        { form: 'a primitive command list', arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 120 } }] } },
+        {
+            form: 'a structured list',
+            arguments: {
+                list: { schemaVersion: 1, items: [{ id: 'tempo', name: 'setTempo', arguments: { bpm: 120 } }] },
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Set the tempo.',
+                    constraints: [],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    capabilityIds: ['setTempo'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: [],
+                    stoppingConditions: [],
+                },
+            },
+        },
+    ])('admits a strict reply’s null refines on $form as no refinement at all', async ({ arguments: stated }) => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-1',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setTempo'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'propose-1', name: 'command.batch.propose', arguments: { ...stated, refines: null } },
+                ],
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-null-refines',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(result.status).toBe('complete');
+        const proposal = result.status === 'complete' ? result.toolCalls[0] : undefined;
+        expect(proposal?.name).toBe('command.batch.propose');
+        expect(proposal?.arguments).not.toHaveProperty('refines');
+    });
+
     it('executes resolve, history, and capability reads as bounded application-owned receipts in one safe-read turn', async () => {
         vi.mocked(querySemanticProject).mockReturnValue({
             schema: 'sourdaw.semantic-project-query',
