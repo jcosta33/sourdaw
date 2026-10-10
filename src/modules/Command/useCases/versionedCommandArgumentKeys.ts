@@ -3223,6 +3223,7 @@ const schemaDefinitions = [
             fadeInBeats: 1,
             fadeOutBeats: 1,
             audioOffsetBeats: 1,
+            loopOriginBeat: 1,
             blobs: 379,
             contour: 382,
         },
