@@ -11,6 +11,7 @@ import { createTrack } from '#/modules/Arrangement/useCases';
 import { compareAgentScopeMeasurements, measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 import {
     configureAudioDeviceRuntimeSink,
+    configureOfflinePpqEndpointProjection,
     configureOfflineYeastMidiProcessing,
     type captureOfflineRenderInput,
     type renderTrackSubgraphOffline,
@@ -31,6 +32,7 @@ import {
     resetGrandBouleStores,
 } from '#/modules/GrandBoule/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 import {
     holdsKeyedYeastRack,
     holdsLegacyYeastRack,
@@ -272,7 +274,13 @@ function installAppYeastRacks(): void {
     });
 }
 
+/** The tempo-map integrator `src/app/bootstrap.ts` injects; every offline capture measures through it. */
+function installAppPpqProjection(): void {
+    configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
+}
+
 beforeEach(() => {
+    installAppPpqProjection();
     installAppYeastRacks();
     configureAutomergeStoragePort(null);
     resetCrdtProjectAuthority('preview measurement render test');
