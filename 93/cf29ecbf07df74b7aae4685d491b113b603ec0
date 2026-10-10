@@ -1,0 +1,22 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_1f0dcd815e8946::t_fb6d45f89da1c1 364-370
+  s_1f0dcd815e8946::t_5d83bf5e1ff14f 404-406
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_85a11dc5ef9258 62-64,374-381,389
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "93cf29ecbf07df74b7aae4685d491b113b603ec0",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
