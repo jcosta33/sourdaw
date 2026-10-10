@@ -681,6 +681,33 @@ describe('guard-owned temporary storage', () => {
 });
 
 describe('storage ownership recovery', () => {
+    it('retains Linux storage when the last successful file read exceeds the proof deadline', async () => {
+        const root = fixture();
+        const ports: StorageRecoveryPorts = {
+            identityState: () => 'dead',
+            sessionState: (_owner, original, current = original) => {
+                let sampledAt = 0;
+                return linuxStorageFileState([123], 501, [original, current], 5_000, () => {}, {
+                    inspectUid: () => 501,
+                    readCwd: () => '/outside-storage',
+                    listDescriptors: () => ['27'],
+                    readDescriptor: () => {
+                        sampledAt = 5_001;
+                        return '/outside-storage/held';
+                    },
+                    readStatus: () => {
+                        throw new Error('successful inspection must not request terminal proof');
+                    },
+                    isGone: () => false,
+                    now: () => sampledAt,
+                });
+            },
+        };
+        const storage = ownedStorage(root, ports);
+        expect(await storage.release(true)).toBe(false);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+    });
+
     const terminalStatus = 'Pid:\t123\nTgid:\t123\nUid:\t501\t501\t501\t501\nState:\tZ (zombie)\nThreads:\t1\n';
     it.each([
         { scenario: 'terminal thread group', status: terminalStatus, released: true },

@@ -1294,6 +1294,9 @@ export function linuxStorageFileState(
             return unknown(linuxInspectionFailure(pid, phase, error, snapshot));
         }
     }
+    if (now() > deadline) {
+        return unknown('proc-time-bound');
+    }
     return 'dead';
 }
 
