@@ -46,6 +46,12 @@ recreated slot. Check presence without re-enumerating the directory; unavailable
 Probe Linux terminal file proof with a real unreaped child and a zombie leader with live threads.
 Require matching PID/thread-group/four UIDs and one thread; denied, incomplete or expired status
 retains. File release never grants authority to treat a registered PID as gone.
+UID equality does not grant `/proc` readlink access: dumpability and access policy can deny a live
+same-UID cwd or file descriptor. Keep denial unknown and retain storage. For hosted test isolation,
+prove the account's UID unused before install, all runtime identity fields unprivileged, groups and
+capabilities cleared, and private storage owned. Attack denied same-test-UID consumers before worker
+concurrency and require actual retention followed by reclamation after reaping. Account isolation
+must not excuse production inspection failures, mutate hardlinked files, or weaken shard execution.
 
 ### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 

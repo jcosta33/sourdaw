@@ -72,7 +72,8 @@ export const JOB_LEVEL_PERMISSION_FREE_FILES = [
     'wasm-artifacts.yml',
 ] as const;
 
-const SETUP_NODE = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
+const SETUP_NODE = [...NODE_SETUP_ACTIONS, 'Install dependencies'] as const;
 const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
 const STATIC_SUITE_STEPS = [
     'Artifact freshness',
@@ -173,14 +174,18 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         static: [...SETUP_NODE, ...STATIC_SUITE_STEPS],
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
-        unit: [...SETUP_NODE, 'Run shard', 'Report shard failure'],
+        unit: [
+            ...NODE_SETUP_ACTIONS,
+            'Prepare isolated unit account',
+            'Install dependencies',
+            'Run shard',
+            'Report shard failure',
+        ],
         'tooling-unit': [...SETUP_NODE, 'Run script suite'],
         smoke: [...SETUP_NODE, 'Install Playwright browsers', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
         rust: [
-            'Checkout',
-            'Set up pnpm',
-            'Set up Node',
+            ...NODE_SETUP_ACTIONS,
             'Install ALSA development headers',
             'Install the pinned Rust toolchain',
             'Cache cargo build',

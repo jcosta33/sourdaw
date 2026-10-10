@@ -771,7 +771,8 @@
             "name": "Checkout",
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "with": {
-              "fetch-depth": 0
+              "fetch-depth": 0,
+              "persist-credentials": false
             }
           },
           {
@@ -790,8 +791,13 @@
             }
           },
           {
+            "name": "Prepare isolated unit account",
+            "id": "unit_isolation",
+            "run": "node scripts/runIsolatedUnitShard.ts prepare"
+          },
+          {
             "name": "Install dependencies",
-            "run": "pnpm install --frozen-lockfile"
+            "run": "node scripts/runIsolatedUnitShard.ts install --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
             "name": "Run shard",
@@ -799,7 +805,7 @@
             "env": {
               "VITEST_MAX_WORKERS": 4
             },
-            "run": "pnpm run test:run --shard=${{ matrix.shard }}/4"
+            "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },
           {
             "name": "Report shard failure",
