@@ -5,9 +5,11 @@ import { randomUUID } from 'node:crypto';
 import {
     existsSync,
     linkSync,
+    lstatSync,
     mkdirSync,
     readdirSync,
     readFileSync,
+    readlinkSync,
     realpathSync,
     renameSync,
     rmSync,
@@ -35,6 +37,9 @@ import {
     diskStorageFailure,
     resolveGuardStorageRoot,
     storageReferenceState,
+    sameUserProcessIds,
+    parseLsofCensus,
+    referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
     type StorageProcessIdentity,
@@ -813,22 +818,24 @@ function processCensus(sessionToken?: string): { rows: ProcessRow[]; rawOutput?:
             const parsed = JSON.parse(result.stdout) as
                 | { ProcessId: number; ParentProcessId: number; WorkingSetSize: number }[]
                 | { ProcessId: number; ParentProcessId: number; WorkingSetSize: number };
-            return {
-                rows: (Array.isArray(parsed) ? parsed : [parsed]).map((row) => ({
-                    pid: row.ProcessId,
-                    parentPid: row.ParentProcessId,
-                    processGroupId: row.ProcessId,
-                    rssBytes: row.WorkingSetSize,
-                    sessionOwned: false,
-                    command: '',
-                })),
-            };
+            const rows = (Array.isArray(parsed) ? parsed : [parsed]).map((row) => ({
+                pid: row.ProcessId,
+                parentPid: row.ParentProcessId,
+                processGroupId: row.ProcessId,
+                rssBytes: row.WorkingSetSize,
+                sessionOwned: false,
+                command: '',
+            }));
+            if (!usableProcessRows(rows)) {
+                return undefined;
+            }
+            return { rows };
         } catch {
             return undefined;
         }
     }
     const samplingArgs = psSamplingArgs(platform(), sessionToken);
-    const result = spawnSync('ps', samplingArgs, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+    const result = spawnSync('ps', samplingArgs, { encoding: 'utf8', timeout: 5_000, maxBuffer: 16 * 1024 * 1024 });
     if (result.status !== 0) {
         return undefined;
     }
@@ -845,7 +852,27 @@ function processCensus(sessionToken?: string): { rows: ProcessRow[]; rawOutput?:
                 sessionToken !== undefined && match[5]?.includes(`${PROCESS_SESSION_ENV}=${sessionToken}`) === true,
             command: match[5] ?? '',
         }));
+    if (!usableProcessRows(rows)) {
+        return undefined;
+    }
     return { rows, rawOutput: result.stdout };
+}
+
+function usableProcessRows(rows: ProcessRow[]): boolean {
+    return (
+        rows.some((row) => row.pid === process.pid) &&
+        rows.every(
+            (row) =>
+                Number.isSafeInteger(row.pid) &&
+                row.pid > 0 &&
+                Number.isSafeInteger(row.parentPid) &&
+                row.parentPid >= 0 &&
+                Number.isSafeInteger(row.processGroupId) &&
+                row.processGroupId >= 0 &&
+                Number.isSafeInteger(row.rssBytes) &&
+                row.rssBytes >= 0
+        )
+    );
 }
 
 function processTable(sessionToken?: string): ProcessRow[] | undefined {
@@ -1013,46 +1040,235 @@ function storageIdentityState(identity: StorageProcessIdentity): 'alive' | 'dead
     return startedAt === identity.startedAt ? 'alive' : 'unknown';
 }
 
-const storageRecoveryPorts: StorageRecoveryPorts = {
-    identityState: storageIdentityState,
-    sessionState: (owner, tempDirectory) => {
-        if (platform() === 'win32' && owner.phase !== 'ready') {
-            return 'unknown';
-        }
-        const census = processCensus(owner.token);
-        if (census === undefined) {
-            return 'unknown';
-        }
-        if (platform() !== 'win32') {
-            const references = storageReferenceState(census.rawOutput, tempDirectory);
-            if (references !== 'dead') {
-                return references;
+function storageRecoveryPorts(report: (reason: string) => void): StorageRecoveryPorts {
+    const ports: StorageRecoveryPorts = {
+        identityState: storageIdentityState,
+        sessionState: (owner, tempDirectory, currentTempDirectory = tempDirectory) => {
+            if (platform() === 'win32' && owner.phase !== 'ready') {
+                return 'unknown';
+            }
+            const census = processCensus(owner.token);
+            if (census === undefined) {
+                return 'unknown';
+            }
+            if (platform() !== 'win32') {
+                const references = storageReferenceState(census.rawOutput, tempDirectory);
+                if (references !== 'dead') {
+                    return references;
+                }
+            }
+            if (
+                census.rows.some(
+                    (row) => row.sessionOwned || (owner.child !== undefined && row.processGroupId === owner.child.pid)
+                )
+            ) {
+                return 'alive';
+            }
+            for (const identity of [...owner.tracked, ...(owner.child === undefined ? [] : [owner.child])]) {
+                const state = storageIdentityState(identity);
+                if (state !== 'dead') {
+                    return state;
+                }
+            }
+            return platform() === 'win32'
+                ? 'dead'
+                : storageFileState(
+                      [tempDirectory, currentTempDirectory],
+                      [
+                          owner.owner.pid,
+                          ...owner.tracked.map((identity) => identity.pid),
+                          ...(owner.child === undefined ? [] : [owner.child.pid]),
+                      ],
+                      report
+                  );
+        },
+        localReleaseAllowed: (owner, tempDirectory, currentTempDirectory) => {
+            // Windows normal cleanup keeps its tracked-tree contract. Its unavailable
+            // environment census remains unknown for crash recovery, never reported dead.
+            if (platform() === 'win32') {
+                return true;
+            }
+            return ports.sessionState(owner, tempDirectory, currentTempDirectory) === 'dead';
+        },
+    };
+    return ports;
+}
+
+function processIsGone(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return false;
+    } catch (error) {
+        return (error as NodeJS.ErrnoException).code === 'ESRCH';
+    }
+}
+
+function processFileSnapshot(pid: number, timeout: number): { uid: number; state: string } | undefined {
+    const result = spawnSync('ps', ['-p', String(pid), '-o', 'uid=,stat='], {
+        encoding: 'utf8',
+        timeout: Math.min(1_000, timeout),
+        maxBuffer: 4096,
+    });
+    if (result.status !== 0 || result.stderr !== '') {
+        return undefined;
+    }
+    const match = /^\s*(\d+)\s+([A-Za-z?])[A-Za-z0-9+<>-]*\s*$/.exec(result.stdout);
+    if (match === null || match[2] === undefined || !Number.isSafeInteger(Number(match[1]))) {
+        return undefined;
+    }
+    return { uid: Number(match[1]), state: match[2] };
+}
+
+export function storageFileState(
+    tempDirectories: string[],
+    ownedPids: number[],
+    report: (reason: string) => void = () => {}
+): 'alive' | 'dead' | 'unknown' {
+    const unknown = (reason: string): 'unknown' => {
+        report(reason);
+        return 'unknown';
+    };
+    const uid = process.getuid?.();
+    if (uid === undefined || process.geteuid?.() !== uid) {
+        return unknown('guard-uid-ambiguous');
+    }
+    const deadline = Date.now() + 5_000;
+    try {
+        // The automatic census covers this account, relying on private owned storage.
+        // It cannot prove safety for a descendant that changes privilege or account.
+        for (const path of new Set(tempDirectories.flatMap((temp) => [temp, dirname(temp)]))) {
+            try {
+                const metadata = lstatSync(path);
+                if (!metadata.isDirectory() || metadata.uid !== uid || (metadata.mode & 0o777) !== 0o700) {
+                    return unknown('storage-not-private-same-uid');
+                }
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                    return unknown('storage-metadata-unavailable');
+                }
             }
         }
-        if (
-            census.rows.some(
-                (row) => row.sessionOwned || (owner.child !== undefined && row.processGroupId === owner.child.pid)
-            )
-        ) {
-            return 'alive';
+        const readProcessUsers = () =>
+            spawnSync('ps', ['-axo', 'pid=,uid='], {
+                encoding: 'utf8',
+                timeout: Math.max(1, deadline - Date.now()),
+                maxBuffer: 16 * 1024 * 1024,
+            });
+        let users = readProcessUsers();
+        if (users.status !== 0 || users.stderr !== '') {
+            return unknown('process-users-unavailable');
         }
-        for (const identity of [...owner.tracked, ...(owner.child === undefined ? [] : [owner.child])]) {
-            const state = storageIdentityState(identity);
-            if (state !== 'dead') {
-                return state;
+        let pids = sameUserProcessIds(users.stdout, uid, process.pid, ownedPids);
+        if (pids === undefined || pids.length > 8192) {
+            return unknown('process-users-unusable');
+        }
+        if (platform() === 'darwin') {
+            for (let observation = 0; observation < 2; observation += 1) {
+                if (Date.now() >= deadline) {
+                    return unknown('file-census-time-bound');
+                }
+                if (observation === 1) {
+                    users = readProcessUsers();
+                    if (users.status !== 0 || users.stderr !== '') {
+                        return unknown('process-users-unavailable');
+                    }
+                    pids = sameUserProcessIds(users.stdout, uid, process.pid, ownedPids);
+                    if (pids === undefined || pids.length > 8192) {
+                        return unknown('process-users-unusable');
+                    }
+                }
+                const result = spawnSync('lsof', ['-nP', '-F0pfnt', '-a', '-u', String(uid)], {
+                    encoding: 'utf8',
+                    timeout: Math.max(1, deadline - Date.now()),
+                    maxBuffer: 16 * 1024 * 1024,
+                });
+                if (result.status !== 0 || result.stderr !== '') {
+                    return unknown('lsof-command-unavailable');
+                }
+                let parseReason = 'unclassified';
+                const census = parseLsofCensus(result.stdout, (reason) => {
+                    parseReason = reason;
+                });
+                if (census === undefined) {
+                    // A descriptor can close between lsof's field reads. Discard
+                    // that catalog; only a wholly valid fresh observation can prove safety.
+                    if (observation === 0 && parseReason === 'descriptor-type-missing') {
+                        continue;
+                    }
+                    return unknown(`lsof-fields-unusable:${parseReason}`);
+                }
+                if (Date.now() >= deadline) {
+                    return unknown('file-census-time-bound');
+                }
+                if (census.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
+                    return 'alive';
+                }
+                const missing: string[] = [];
+                for (const pid of pids) {
+                    if (census.pids.has(pid) || processIsGone(pid)) {
+                        continue;
+                    }
+                    if (Date.now() > deadline) {
+                        return unknown('lsof-coverage-time-bound');
+                    }
+                    const snapshot = processFileSnapshot(pid, Math.max(1, deadline - Date.now()));
+                    // XNU closes the file table before publishing SZOMB. This only
+                    // proves absence of file use, never release of the PID identity.
+                    if (snapshot?.uid === uid && snapshot.state === 'Z') {
+                        continue;
+                    }
+                    missing.push(`${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
+                }
+                const snapshots = missing.slice(0, 4);
+                return missing.length === 0
+                    ? 'dead'
+                    : unknown(`lsof-live-pid-missing:count=${missing.length}:pid/uid/state=${snapshots.join(',')}`);
+            }
+            return unknown('file-census-unavailable');
+        }
+        if (platform() !== 'linux') {
+            return unknown('file-census-platform-unavailable');
+        }
+        let descriptors = 0;
+        for (const pid of pids) {
+            if (Date.now() > deadline) {
+                return unknown('proc-time-bound');
+            }
+            try {
+                const root = `/proc/${pid}`;
+                if (lstatSync(root).uid !== uid) {
+                    return unknown(`proc-uid-changed:pid=${pid}`);
+                }
+                if (referencesStoragePath(readlinkSync(join(root, 'cwd')), tempDirectories)) {
+                    return 'alive';
+                }
+                const fdRoot = join(root, 'fd');
+                for (const fd of readdirSync(fdRoot)) {
+                    if (Date.now() > deadline || ++descriptors > 65_536 || !/^\d+$/.test(fd)) {
+                        return unknown('proc-descriptor-bound');
+                    }
+                    try {
+                        if (referencesStoragePath(readlinkSync(join(fdRoot, fd)), tempDirectories)) {
+                            return 'alive';
+                        }
+                    } catch (error) {
+                        // A concurrently closed descriptor is no longer a storage user.
+                        if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || readdirSync(fdRoot).includes(fd)) {
+                            throw error;
+                        }
+                    }
+                }
+            } catch {
+                if (!processIsGone(pid)) {
+                    return unknown(`proc-inspection-unavailable:pid=${pid}`);
+                }
             }
         }
         return 'dead';
-    },
-    localReleaseAllowed: (owner, tempDirectory) => {
-        // Windows normal cleanup keeps its tracked-tree contract. Its unavailable
-        // environment census remains unknown for crash recovery, never reported dead.
-        if (platform() === 'win32') {
-            return true;
-        }
-        return storageRecoveryPorts.sessionState(owner, tempDirectory) === 'dead';
-    },
-};
+    } catch {
+        return unknown('file-census-unavailable');
+    }
+}
 
 function resolveDiskReserveBytes(value: number | undefined, env: NodeJS.ProcessEnv): number {
     const inheritedMib = env[DISK_RESERVE_ENV];
@@ -1156,6 +1372,13 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             durationMs: 0,
         };
     }
+    let storageEvidenceReported = false;
+    const storagePorts = storageRecoveryPorts((reason) => {
+        if (!storageEvidenceReported) {
+            output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${reason}\n`));
+            storageEvidenceReported = true;
+        }
+    });
     let storage: ReturnType<typeof createGuardStorage>;
     try {
         const supervisorStart = processStartedAt(process.pid);
@@ -1166,7 +1389,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             root: input.storageRoot ?? resolveGuardStorageRoot(cwd),
             token: processToken,
             owner: { pid: process.pid, startedAt: supervisorStart },
-            ports: storageRecoveryPorts,
+            ports: storagePorts,
         });
     } catch (error) {
         if (ownedSession) {

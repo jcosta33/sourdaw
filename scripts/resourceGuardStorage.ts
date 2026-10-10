@@ -36,20 +36,167 @@ type StorageOwner = {
 
 export type StorageRecoveryPorts = {
     identityState: (identity: StorageProcessIdentity) => 'alive' | 'dead' | 'unknown';
-    sessionState: (owner: StorageOwner, tempDirectory: string) => 'alive' | 'dead' | 'unknown';
-    localReleaseAllowed?: (owner: StorageOwner, tempDirectory: string) => boolean;
+    sessionState: (
+        owner: StorageOwner,
+        tempDirectory: string,
+        currentTempDirectory?: string
+    ) => 'alive' | 'dead' | 'unknown';
+    localReleaseAllowed?: (owner: StorageOwner, tempDirectory: string, currentTempDirectory?: string) => boolean;
 };
 
 export function storageReferenceState(
     processOutput: string | undefined,
     tempDirectory: string
 ): 'alive' | 'dead' | 'unknown' {
-    if (processOutput === undefined) {
+    if (processOutput === undefined || processOutput.trim() === '') {
         return 'unknown';
     }
     // Command/environment output can contain continuation lines without a PID header.
     // A reference vetoes deletion but conveys no process identity or signal authority.
     return processOutput.includes(tempDirectory) ? 'alive' : 'dead';
+}
+
+export function sameUserProcessIds(
+    output: string,
+    uid: number,
+    supervisorPid: number,
+    ownedPids: number[]
+): number[] | undefined {
+    const users = new Map<number, number>();
+    for (const line of output.trim().split('\n')) {
+        const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+        if (match === null) {
+            return undefined;
+        }
+        const pid = Number(match[1]);
+        const user = Number(match[2]);
+        if (!Number.isSafeInteger(pid) || pid <= 0 || !Number.isSafeInteger(user) || users.has(pid)) {
+            return undefined;
+        }
+        users.set(pid, user);
+    }
+    if (users.get(supervisorPid) !== uid || ownedPids.some((pid) => users.has(pid) && users.get(pid) !== uid)) {
+        return undefined;
+    }
+    const pids: number[] = [];
+    for (const [pid, user] of users) {
+        if (user === uid) {
+            pids.push(pid);
+        }
+    }
+    return pids;
+}
+
+function parseLsofFile(
+    fields: string[],
+    knownTypes: Set<string>,
+    report: (reason: string) => void
+): { path?: string; missingType: boolean } | undefined {
+    const unavailable = (reason: string) => {
+        report(reason);
+        return undefined;
+    };
+    if (!/^f(?:\d+|cwd|twd|txt|mem|rtd|pd)$/.test(fields[0] ?? '')) {
+        return unavailable('invalid-descriptor');
+    }
+    const type = fields.find((field) => field.startsWith('t'))?.slice(1);
+    const name = fields.find((field) => field.startsWith('n'))?.slice(1);
+    if (type !== undefined && !knownTypes.has(type)) {
+        return unavailable('unknown-file-type');
+    }
+    if (
+        fields.some((field) => !/^[ftn]/.test(field)) ||
+        new Set(fields.map((field) => field[0])).size !== fields.length
+    ) {
+        return unavailable('invalid-file-fields');
+    }
+    if (name !== undefined && /Permission denied|Operation not permitted|no info|\((?:stat|readlink):/i.test(name)) {
+        return unavailable('file-inspection-diagnostic');
+    }
+    if (type === undefined && (fields.length !== 2 || name === undefined || name === '')) {
+        return unavailable('invalid-file-fields');
+    }
+    if (type === 'REG' || type === 'DIR') {
+        if (name === undefined || !name.startsWith('/')) {
+            return unavailable('missing-file-path');
+        }
+        return { path: name, missingType: false };
+    }
+    return { missingType: type === undefined };
+}
+
+export function parseLsofCensus(
+    output: string,
+    report: (reason: string) => void = () => {}
+): { pids: Set<number>; paths: string[] } | undefined {
+    const unavailable = (reason: string) => {
+        report(reason);
+        return undefined;
+    };
+    if (!output.endsWith('\0\n')) {
+        return unavailable('truncated-record');
+    }
+    const pids = new Set<number>();
+    const paths: string[] = [];
+    let fileCount = 0;
+    let missingType = false;
+    const knownTypes = new Set([
+        'REG',
+        'DIR',
+        'CHR',
+        'BLK',
+        'FIFO',
+        'IPv4',
+        'IPv6',
+        'unix',
+        'PIPE',
+        'KQUEUE',
+        'NPOLICY',
+        'systm',
+        'NEXUS',
+        'CHAN',
+        'PSXSEM',
+        'PSXSHM',
+    ]);
+    for (const set of output.slice(0, -2).split('\0\n')) {
+        const fields = set.split('\0');
+        const first = fields[0] ?? '';
+        if (first.startsWith('p')) {
+            if (pids.size > 0 && fileCount === 0) {
+                return unavailable('process-without-files');
+            }
+            const pid = Number(first.slice(1));
+            if (!/^p[1-9]\d*$/.test(first) || !Number.isSafeInteger(pid) || fields.length !== 1 || pids.has(pid)) {
+                return unavailable('invalid-process-record');
+            }
+            pids.add(pid);
+            fileCount = 0;
+            continue;
+        }
+        if (pids.size === 0) {
+            return unavailable('invalid-descriptor');
+        }
+        const file = parseLsofFile(fields, knownTypes, report);
+        if (file === undefined) {
+            return undefined;
+        }
+        missingType ||= file.missingType;
+        if (file.path !== undefined) {
+            paths.push(file.path);
+        }
+        fileCount += 1;
+    }
+    if (fileCount === 0) {
+        return unavailable('process-without-files');
+    }
+    return missingType ? unavailable('descriptor-type-missing') : { pids, paths };
+}
+
+export function referencesStoragePath(path: string, tempDirectories: string[]): boolean {
+    const original = path.endsWith(' (deleted)') ? path.slice(0, -10) : path;
+    return tempDirectories.some(
+        (tempDirectory) => original === tempDirectory || original.startsWith(`${tempDirectory}/`)
+    );
 }
 
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -252,7 +399,7 @@ export function reclaimGuardStorage(input: {
     root: string;
     owner: StorageOwner;
     reclaimer: StorageProcessIdentity;
-    canRemove: () => boolean;
+    canRemove: (payloadPath: string) => boolean;
     sourceClaim?: StorageClaim;
 }): boolean {
     const owner = parseOwner(input.owner, input.owner.token);
@@ -265,7 +412,7 @@ export function reclaimGuardStorage(input: {
     if (input.sourceClaim !== undefined) {
         source = join(claimsRoot, input.sourceClaim.token, owner.token);
     }
-    if (!input.canRemove()) {
+    if (!input.canRemove(source)) {
         return false;
     }
     if (input.sourceClaim === undefined) {
@@ -308,7 +455,7 @@ export function reclaimGuardStorage(input: {
     if (
         directoryIdentity(payload) !== owner.directoryIdentity ||
         JSON.stringify(readClaim(path, token)) !== JSON.stringify(claim) ||
-        !input.canRemove()
+        !input.canRemove(payload)
     ) {
         return false;
     }
@@ -324,9 +471,9 @@ export function recoverGuardStorage(
     reclaimer: StorageProcessIdentity
 ): void {
     ensureStorageRoot(root);
-    const isDead = (owner: StorageOwner) =>
+    const isDead = (owner: StorageOwner, currentTempDirectory = join(root, owner.token, 'tmp')) =>
         ports.identityState(owner.owner) === 'dead' &&
-        ports.sessionState(owner, join(root, owner.token, 'tmp')) === 'dead';
+        ports.sessionState(owner, join(root, owner.token, 'tmp'), currentTempDirectory) === 'dead';
     for (const token of readdirSync(root)) {
         if (!uuidPattern.test(token)) {
             continue;
@@ -334,7 +481,12 @@ export function recoverGuardStorage(
         try {
             const owner = readStorageOwner(join(root, token), token);
             if (owner !== undefined && isDead(owner)) {
-                reclaimGuardStorage({ root, owner, reclaimer, canRemove: () => isDead(owner) });
+                reclaimGuardStorage({
+                    root,
+                    owner,
+                    reclaimer,
+                    canRemove: (payload) => isDead(owner, join(payload, 'tmp')),
+                });
             }
         } catch {
             // Malformed records, unavailable census, raced paths, and symlinks grant no deletion.
@@ -349,7 +501,11 @@ export function recoverGuardStorage(
         try {
             const path = join(claimsRoot, token);
             const claim = readClaim(path, token);
-            if (claim === undefined || ports.identityState(claim.reclaimer) !== 'dead' || !isDead(claim.run)) {
+            if (
+                claim === undefined ||
+                ports.identityState(claim.reclaimer) !== 'dead' ||
+                !isDead(claim.run, join(path, claim.run.token, 'tmp'))
+            ) {
                 continue;
             }
             const removed = reclaimGuardStorage({
@@ -357,10 +513,10 @@ export function recoverGuardStorage(
                 owner: claim.run,
                 reclaimer,
                 sourceClaim: claim,
-                canRemove: () =>
+                canRemove: (payload) =>
                     JSON.stringify(readClaim(path, token)) === JSON.stringify(claim) &&
                     ports.identityState(claim.reclaimer) === 'dead' &&
-                    isDead(claim.run),
+                    isDead(claim.run, join(payload, 'tmp')),
             });
             if (removed) {
                 removeEmptyClaim(path, claim);
@@ -399,11 +555,11 @@ export function createGuardStorage(input: {
         tracked: [],
     };
     writeStorageOwner(path, owner);
-    const localReleaseAllowed = () => {
+    const localReleaseAllowed = (payload: string) => {
         if (input.ports.localReleaseAllowed !== undefined) {
-            return input.ports.localReleaseAllowed(owner, tempDirectory);
+            return input.ports.localReleaseAllowed(owner, tempDirectory, join(payload, 'tmp'));
         }
-        return input.ports.sessionState(owner, tempDirectory) === 'dead';
+        return input.ports.sessionState(owner, tempDirectory, join(payload, 'tmp')) === 'dead';
     };
     return {
         tempDirectory,
@@ -431,7 +587,7 @@ export function createGuardStorage(input: {
                 root: input.root,
                 owner,
                 reclaimer: input.owner,
-                canRemove: () => treeStopped && localReleaseAllowed(),
+                canRemove: (payload) => treeStopped && localReleaseAllowed(payload),
             });
         },
     };

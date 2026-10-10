@@ -2,6 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
     existsSync,
+    chmodSync,
     mkdtempSync,
     mkdirSync,
     readFileSync,
@@ -16,7 +17,7 @@ import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { main, parseCliArgs, runGuardedCommand } from '../resourceGuard';
+import { main, parseCliArgs, runGuardedCommand, storageFileState } from '../resourceGuard';
 import {
     createGuardStorage,
     diskStorageFailure,
@@ -24,6 +25,9 @@ import {
     recoverGuardStorage,
     resolveGuardStorageRoot,
     storageReferenceState,
+    sameUserProcessIds,
+    parseLsofCensus,
+    referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
     type StorageRecoveryPorts,
@@ -52,8 +56,8 @@ function isAlive(pid: number): boolean {
     }
 }
 
-async function waitUntil(predicate: () => boolean): Promise<void> {
-    const deadline = Date.now() + 10_000;
+async function waitUntil(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
     while (!predicate()) {
         if (Date.now() >= deadline) {
             throw new Error('storage fixture condition timed out');
@@ -444,12 +448,191 @@ describe('guard-owned temporary storage', () => {
                 expect(existsSync(started.tmp)).toBe(true);
                 await kill(started.pid);
             }
-            expect((await guarded(root)).code).toBe(0);
+            const recovery = await guarded(root);
+            expect(recovery.code).toBe(0);
             expect(isAlive(started.pid)).toBe(false);
+            if (existsSync(started.tmp)) {
+                console.log(
+                    JSON.stringify({
+                        retainedAfterExit: true,
+                        scenario,
+                        program,
+                        recoveryReason: recovery.reason,
+                        evidence: recovery.output.slice(-512),
+                    })
+                );
+            }
             expect(existsSync(started.tmp)).toBe(false);
         },
         15_000
     );
+
+    it.each([
+        { consumer: 'cwd', scenario: 'parent exit' },
+        { consumer: 'open file', scenario: 'parent exit' },
+        { consumer: 'cwd', scenario: 'supervisor crash' },
+        { consumer: 'open file', scenario: 'supervisor crash' },
+        { consumer: 'cwd', scenario: 'moved claim' },
+        { consumer: 'open file', scenario: 'moved claim' },
+    ] as const)(
+        'retains hidden temp users: $consumer after $scenario',
+        async ({ consumer, scenario }) => {
+            const root = fixture();
+            const marker = join(root, 'hidden.json');
+            const heartbeat = join(root, 'heartbeat');
+            const rootMarker = join(root, 'root.pid');
+            const resultPath = join(root, 'result.json');
+            const descendant = `const fs=require('node:fs'); const tmp=process.cwd(); const fd=fs.openSync('held','w'); ${consumer === 'open file' ? "process.chdir('/');" : 'fs.closeSync(fd);'} fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp})); let n=0; setInterval(()=>{${consumer === 'open file' ? "fs.writeSync(fd,'x');" : "fs.writeFileSync('held',String(n));"} fs.writeFileSync(${JSON.stringify(heartbeat)},String(++n));},50);`;
+            const parent = `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(rootMarker)},String(process.pid)); setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',cwd:process.env.TMPDIR,env:{PATH:process.env.PATH}});child.unref();},375); setInterval(()=>{if(fs.existsSync(${JSON.stringify(marker)})&&${scenario === 'parent exit'})process.exit(0)},5);`;
+            const options = {
+                command: process.execPath,
+                args: ['-e', parent],
+                profile: 'focused',
+                availableMemoryBytes: abundantMemoryBytes,
+                maxRssBytes: 512 * 1024 ** 2,
+                admissionRoot: root,
+                storageRoot: join(root, 'storage'),
+                diskReserveBytes: 1,
+            };
+            const supervisor = spawn(
+                process.execPath,
+                [
+                    '--input-type=module',
+                    '-e',
+                    `const {writeFileSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(resultPath)},JSON.stringify(result));`,
+                ],
+                { stdio: 'ignore' }
+            );
+            const supervisorPid = supervisor.pid;
+            if (supervisorPid === undefined) {
+                throw new Error('hidden temp supervisor did not start');
+            }
+            childPids.add(supervisorPid);
+            await waitUntil(() => existsSync(marker));
+            const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+            childPids.add(started.pid);
+            const rootPid = Number(readFileSync(rootMarker, 'utf8'));
+            childPids.add(rootPid);
+            const owner = scenario === 'parent exit' ? undefined : readOwner(started.tmp);
+            if (scenario === 'parent exit') {
+                await waitUntil(() => existsSync(resultPath) && !isAlive(supervisorPid));
+            } else {
+                await kill(supervisorPid);
+                await kill(rootPid);
+            }
+            let currentTemp = started.tmp;
+            if (scenario === 'moved claim') {
+                if (owner === undefined) {
+                    throw new Error('missing owned claim fixture');
+                }
+                let checks = 0;
+                expect(
+                    reclaimGuardStorage({
+                        root: join(root, 'storage'),
+                        owner,
+                        reclaimer: fakeReclaimer,
+                        canRemove: () => checks++ === 0,
+                    })
+                ).toBe(false);
+                const payloads = claimPayloads(join(root, 'storage'));
+                expect(payloads).toHaveLength(1);
+                currentTemp = join(payloads[0] ?? '', 'tmp');
+            }
+            await waitUntil(() => existsSync(heartbeat) && Number(readFileSync(heartbeat, 'utf8')) >= 2);
+            expect(isAlive(started.pid)).toBe(true);
+            const tick = Number(readFileSync(heartbeat, 'utf8'));
+            console.log(
+                JSON.stringify({
+                    consumer,
+                    scenario,
+                    pid: started.pid,
+                    alive: isAlive(started.pid),
+                    tempExists: existsSync(currentTemp),
+                    tick,
+                })
+            );
+            expect(existsSync(currentTemp)).toBe(true);
+            expect((await guarded(root)).code).toBe(0);
+            expect(isAlive(started.pid)).toBe(true);
+            expect(existsSync(currentTemp)).toBe(true);
+            await waitUntil(() => Number(readFileSync(heartbeat, 'utf8')) > tick);
+            await kill(started.pid);
+            const recovery = await guarded(root);
+            expect(recovery.code).toBe(0);
+            if (existsSync(currentTemp)) {
+                console.log(
+                    JSON.stringify({
+                        retainedAfterExit: true,
+                        consumer,
+                        scenario,
+                        evidence: recovery.output.slice(-512),
+                    })
+                );
+            }
+            expect(existsSync(currentTemp)).toBe(false);
+        },
+        20_000
+    );
+
+    it('treats an exit-zero empty process census as unavailable monitoring evidence and retains live storage', async () => {
+        const root = fixture();
+        const marker = join(root, 'empty.json');
+        const resultPath = join(root, 'result.json');
+        const bin = join(root, 'bin');
+        mkdirSync(bin);
+        const fakePs = join(bin, 'ps');
+        writeFileSync(
+            fakePs,
+            `#!/bin/sh\ncase "$*" in\n *"pid=,ppid=,pgid=,rss=,command="*) if [ -f '${marker.replaceAll("'", "'\\''")}' ]; then exit 0; fi ;;\nesac\nexec /bin/ps "$@"\n`
+        );
+        chmodSync(fakePs, 0o700);
+        const descendant = `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));setInterval(()=>{},1000)`;
+        const parent = `setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',env:{TMPDIR:process.env.TMPDIR,TMP:process.env.TMP,TEMP:process.env.TEMP,PATH:process.env.PATH}});child.unref()},375);setTimeout(()=>process.exit(0),1500)`;
+        const options = {
+            command: process.execPath,
+            args: ['-e', parent],
+            profile: 'focused',
+            availableMemoryBytes: abundantMemoryBytes,
+            maxRssBytes: 512 * 1024 ** 2,
+            admissionRoot: root,
+            storageRoot: join(root, 'storage'),
+            diskReserveBytes: 1,
+        };
+        const supervisor = spawn(
+            process.execPath,
+            [
+                '--input-type=module',
+                '-e',
+                `const {writeFileSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(resultPath)},JSON.stringify(result));`,
+            ],
+            { stdio: 'ignore', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } }
+        );
+        if (supervisor.pid === undefined) {
+            throw new Error('empty census supervisor did not start');
+        }
+        childPids.add(supervisor.pid);
+        await waitUntil(() => existsSync(marker));
+        const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+        childPids.add(started.pid);
+        // Unknown-tree monitor cleanup includes the guard's 7s wait and two 2s cleanup waits.
+        await waitUntil(() => existsSync(resultPath), 15_000);
+        const result = JSON.parse(readFileSync(resultPath, 'utf8'));
+        console.log(
+            JSON.stringify({
+                reason: result.reason,
+                code: result.code,
+                alive: isAlive(started.pid),
+                tempExists: existsSync(started.tmp),
+            })
+        );
+        expect(isAlive(started.pid)).toBe(true);
+        expect(existsSync(started.tmp)).toBe(true);
+        expect(result.reason).toBe('monitor');
+        expect(result.code).not.toBe(0);
+        await kill(started.pid);
+        expect((await guarded(root)).code).toBe(0);
+        expect(existsSync(started.tmp)).toBe(false);
+    }, 20_000);
 
     it('gives a nested guard its own temp and reserve without cleaning the live parents temp', async () => {
         const root = fixture();
@@ -490,6 +673,211 @@ describe('guard-owned temporary storage', () => {
 });
 
 describe('storage ownership recovery', () => {
+    it.skipIf(process.platform !== 'darwin').each([
+        { scenario: 'valid replacement reclaims', persistent: false, consumer: false, released: true },
+        { scenario: 'live consumer replacement retains', persistent: false, consumer: true, released: false },
+        { scenario: 'persistent missing type retains', persistent: true, consumer: false, released: false },
+    ])(
+        'takes bounded fresh file proof for a missing descriptor type: $scenario',
+        async ({ persistent, consumer, released }) => {
+            const root = fixture();
+            const bin = join(root, 'bin');
+            mkdirSync(bin);
+            const count = join(root, 'samples');
+            const utility = join(bin, 'lsof');
+            writeFileSync(
+                utility,
+                `#!/bin/sh\nif ${persistent ? 'true' : `[ ! -e '${count}' ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
+            );
+            chmodSync(utility, 0o700);
+            const resultPath = join(root, 'result.json');
+            const program = `
+            const {writeFileSync,existsSync}=await import('node:fs');
+            const {spawn}=await import('node:child_process');
+            const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
+            const {storageFileState}=await import(${JSON.stringify(guardPath)});
+            const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[])};
+            const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
+            let holder;let closed;
+            try {
+                if(${consumer}) {
+                    holder=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{cwd:storage.tempDirectory,stdio:'ignore'});
+                    closed=new Promise(resolve=>holder.once('close',resolve));
+                    await new Promise((resolve,reject)=>{holder.once('spawn',resolve);holder.once('error',reject)});
+                }
+                const released=await storage.release(true);
+                writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({released,exists:existsSync(storage.tempDirectory)}));
+            } finally {if(holder){holder.kill('SIGKILL');await closed}}
+        `;
+            const supervisor = spawn(process.execPath, ['--input-type=module', '-e', program], {
+                cwd: root,
+                stdio: 'ignore',
+                env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+            });
+            if (supervisor.pid === undefined) {
+                throw new Error('missing-type proof fixture did not start');
+            }
+            childPids.add(supervisor.pid);
+            await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1));
+            expect(JSON.parse(readFileSync(resultPath, 'utf8'))).toEqual({ released, exists: !released });
+            const samples = readFileSync(count, 'utf8').trim().split('\n');
+            expect(samples.slice(0, 2)).toEqual(persistent ? ['incomplete', 'incomplete'] : ['incomplete', 'complete']);
+            expect(samples.length).toBe(released ? 3 : 2);
+        },
+        15_000
+    );
+
+    it.skipIf(process.platform !== 'darwin')(
+        'reclaims storage after an unreaped same-UID consumer has exited',
+        async () => {
+            const root = fixture();
+            const ports: StorageRecoveryPorts = {
+                identityState: () => 'dead',
+                sessionState: (_owner, original, current = original) => storageFileState([original, current], []),
+            };
+            const storage = ownedStorage(join(root, 'storage'), ports);
+            const marker = join(root, 'unreaped.pid');
+            const owner = spawn(
+                process.execPath,
+                [
+                    '-e',
+                    `const child=require('node:child_process').spawn(process.execPath,['-e',"require('node:fs').openSync('held','w');process.exit(0)"],{cwd:${JSON.stringify(storage.tempDirectory)},stdio:'ignore'});require('node:fs').writeFileSync(${JSON.stringify(marker)},String(child.pid));Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,8000)`,
+                ],
+                { cwd: root, stdio: 'ignore' }
+            );
+            if (owner.pid === undefined) {
+                throw new Error('unreaped consumer parent did not start');
+            }
+            childPids.add(owner.pid);
+            await waitUntil(() => existsSync(marker));
+            const pid = Number(readFileSync(marker, 'utf8'));
+            childPids.add(pid);
+            await waitUntil(() => {
+                const snapshot = execFileSync('ps', ['-p', String(pid), '-o', 'uid=,stat='], { encoding: 'utf8' });
+                return new RegExp(`^\\s*${process.getuid?.()}\\s+Z`).test(snapshot);
+            });
+            expect(isAlive(pid)).toBe(true);
+            expect(existsSync(join(storage.tempDirectory, 'held'))).toBe(true);
+            expect(await storage.release(true)).toBe(true);
+            expect(existsSync(storage.tempDirectory)).toBe(false);
+        },
+        15_000
+    );
+
+    it('admits only complete same-UID evidence and retains ambiguous or observed cross-UID owners', () => {
+        const output = '10 501\n11 501\n12 0\n';
+        expect(sameUserProcessIds(output, 501, 10, [11])).toEqual([10, 11]);
+        expect(sameUserProcessIds(output, 501, 10, [12])).toBeUndefined();
+        expect(sameUserProcessIds('10 501\n11 ?\n', 501, 10, [11])).toBeUndefined();
+        expect(sameUserProcessIds('11 501\n', 501, 10, [])).toBeUndefined();
+        expect(sameUserProcessIds('10 501\n10 501\n', 501, 10, [])).toBeUndefined();
+        expect(sameUserProcessIds('', 501, 10, [])).toBeUndefined();
+    });
+
+    it('parses complete NUL file records and rejects malformed, truncated or opaque file evidence', () => {
+        const valid = 'p10\0\nfcwd\0tDIR\0n/owned/tmp\0\nf3\0tREG\0n/owned/tmp/held\0\n';
+        expect(parseLsofCensus(valid)).toEqual({ pids: new Set([10]), paths: ['/owned/tmp', '/owned/tmp/held'] });
+        expect(parseLsofCensus('p10\0\nftwd\0tDIR\0n/owned/tmp\0\n')).toEqual({
+            pids: new Set([10]),
+            paths: ['/owned/tmp'],
+        });
+        const missingType = 'p10\0\nf3\0n/owned/tmp/held\0\n';
+        const reasons: string[] = [];
+        expect(parseLsofCensus(missingType, (reason) => reasons.push(reason))).toBeUndefined();
+        expect(reasons).toEqual(['descriptor-type-missing']);
+        for (const invalid of [
+            `${missingType}f4\0tunknown\0n/owned/tmp\0\n`,
+            `${missingType}f4\0tREG\0\n`,
+            'p10\0\nf3\0\n',
+            'p10\0\nf3\0nPermission denied\0\n',
+        ]) {
+            let reason: string | undefined;
+            expect(
+                parseLsofCensus(invalid, (value) => {
+                    reason = value;
+                })
+            ).toBeUndefined();
+            expect(reason).not.toBe('descriptor-type-missing');
+        }
+        for (const invalid of [
+            '',
+            'p10\0\n',
+            valid.slice(0, -1),
+            'p10\0\nfNOFD\0tDIR\0n/denied\0\n',
+            'p10\0\nf3\0tREG\0\n',
+            'p10\0\nf3\0tunknown\0n/owned/tmp\0\n',
+        ]) {
+            expect(parseLsofCensus(invalid)).toBeUndefined();
+        }
+        expect(referencesStoragePath('/owned/tmp/held', ['/owned/tmp'])).toBe(true);
+        expect(referencesStoragePath('/claim/run/tmp/held (deleted)', ['/owned/tmp', '/claim/run/tmp'])).toBe(true);
+        expect(referencesStoragePath('/owned/tmp-sibling/held', ['/owned/tmp'])).toBe(false);
+    });
+
+    it.skipIf(process.platform !== 'darwin').each([
+        { scenario: 'unavailable utility', script: 'exit 127' },
+        { scenario: 'malformed output', script: "printf 'malformed'" },
+        { scenario: 'partial coverage', script: "printf 'p1\\0\\nfcwd\\0tDIR\\0n/\\0\\n'" },
+        { scenario: 'permission diagnostic', script: "printf 'permission denied' >&2; exit 0" },
+    ])(
+        'retains owned payload for incomplete file census: $scenario',
+        async ({ script }) => {
+            const root = fixture();
+            const bin = join(root, 'bin');
+            mkdirSync(bin);
+            const utility = join(bin, 'lsof');
+            writeFileSync(utility, `#!/bin/sh\n${script}\n`);
+            chmodSync(utility, 0o700);
+            const marker = join(root, 'utility.json');
+            const resultPath = join(root, 'result.json');
+            const options = {
+                command: process.execPath,
+                args: [
+                    '-e',
+                    `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({tmp:require('node:os').tmpdir()}))`,
+                ],
+                profile: 'focused',
+                availableMemoryBytes: abundantMemoryBytes,
+                maxRssBytes: 512 * 1024 ** 2,
+                admissionRoot: root,
+                storageRoot: join(root, 'storage'),
+                diskReserveBytes: 1,
+            };
+            const supervisor = spawn(
+                process.execPath,
+                [
+                    '--input-type=module',
+                    '-e',
+                    `const {writeFileSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(resultPath)},JSON.stringify(result));`,
+                ],
+                { stdio: 'ignore', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } }
+            );
+            if (supervisor.pid === undefined) {
+                throw new Error('file census supervisor did not start');
+            }
+            childPids.add(supervisor.pid);
+            await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1));
+            const started: { tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+            const result = JSON.parse(readFileSync(resultPath, 'utf8'));
+            expect(result.reason).toBe('leak');
+            expect(result.code).toBe(0);
+            expect(
+                await main(['--profile', 'focused', '--', process.execPath], {
+                    cwd: root,
+                    detectLane: () => undefined,
+                    assertModulesPreflight: () => {},
+                    runCommand: async () => result,
+                    log: () => {},
+                    error: () => {},
+                })
+            ).not.toBe(0);
+            expect(existsSync(started.tmp)).toBe(true);
+            expect((await guarded(root)).code).toBe(0);
+            expect(existsSync(started.tmp)).toBe(false);
+        },
+        15_000
+    );
+
     it('vetoes local deletion and crash recovery for temp references on raw census continuation lines', async () => {
         const root = fixture();
         let processOutput: string | undefined;
@@ -506,6 +894,9 @@ describe('storage ownership recovery', () => {
         expect(existsSync(storage.tempDirectory)).toBe(true);
 
         processOutput = undefined;
+        recoverGuardStorage(root, ports, fakeReclaimer);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+        processOutput = '';
         recoverGuardStorage(root, ports, fakeReclaimer);
         expect(existsSync(storage.tempDirectory)).toBe(true);
         processOutput = '123 1 123 4096 node -e completed';

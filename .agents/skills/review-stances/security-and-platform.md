@@ -38,6 +38,9 @@ admission refusal or contained runtime termination with an explicit nonzero fail
 A session token is not a complete storage-user census: repeat lifecycle probes with a detached
 child retaining only `TMPDIR`/`TMP`/`TEMP`, whose parent exits between samples, and with a supervisor
 crash before descendant tracking publication. Unix temp-path references must veto deletion.
+Repeat with no temp variables or token and only cwd or an open file under owned storage, including
+after the payload moves into a claim. Require OS file-use evidence, complete same-UID coverage,
+and uncertainty retention for empty process output, missing utilities, denied or partial fields.
 
 ### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 

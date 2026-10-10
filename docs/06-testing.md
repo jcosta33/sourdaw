@@ -729,6 +729,23 @@ Before claiming or deleting storage, Unix command/environment census also vetoes
 process references its original temp path. This protects detached descendants that replace their
 environment and drop the session token. Argument references conservatively retain files too;
 they never grant authority to signal the matching process.
+Absence of those strings alone cannot prove storage abandoned. On macOS the guard also reads bounded
+`lsof` process/file fields; on Linux it reads same-account `/proc` cwd and file-descriptor links.
+Both the original temp path and any moved claim payload path veto reclamation while a process holds
+a working directory or open file there. An empty/unusable process census is unavailable monitoring
+evidence, and denied, malformed, truncated, or incomplete file evidence retains storage.
+On macOS, an unreaped same-UID process positively sampled in zombie state has already released
+its file table; this exception never releases process-identity or signaling fences.
+If an otherwise valid macOS file catalog lacks only a descriptor type, the guard discards it and
+takes at most one fresh full catalog within the same five-second proof deadline. Only complete
+replacement evidence can permit deletion; a second incomplete catalog or any other inspection
+failure retains storage.
+Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
+
+Automatic Unix reclamation covers the guard's own UID and requires private `0700` owned storage.
+Observed owned identities with another or uncertain UID retain storage. Privilege-changing or
+elevated descendants are outside this automatic proof: unrelated other-account processes cannot
+be inspected reliably without additional authority. No file-use match grants signal authority.
 
 New guard starts recover storage only after the supervisor and its descendants are proven dead.
 Records bind UUIDs, process start identities, and directory identities. Atomic rename claims let
@@ -737,7 +754,7 @@ outside that payload until deletion finishes, so a second supervisor crash remai
 Live owners, reused or uncertain PID identities, malformed records, and symlinked ownership paths
 are retained. Windows normal cleanup uses its tracked-tree proof; detached, reparented descendants
 that drop the session token while retaining temp paths remain outside that platform's detection.
-Windows cannot establish a complete command/environment census after supervisor death, so crashed
+Windows cannot establish a complete command/environment/file-use census after supervisor death, so crashed
 spawned runs there retain their storage for explicit inspection.
 
 The guard samples available disk space on the temporary-storage volume, the command's working
