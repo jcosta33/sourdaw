@@ -1,0 +1,71 @@
+crates/sourdaw-native/src/commands/graph.rs
+  s_2bfd55a4393d7c::t_177e31ed78b044 2627-2628,2630-2631,14090-14091
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  s_2bfd55a4393d7c::t_177e31ed78b044 1-117
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_2bfd55a4393d7c::t_177e31ed78b044 4-6,8-10,18-21,27-37,39-43,48,58-65,67-70,72,82,87-104,106,108,115,119,121-122,149-212,269,282-289,349,352,415,425-426,428-429,446,448,467-468,496-497,504-529,533-568
+crates/daw-engine/src/scheduler.rs
+  s_2bfd55a4393d7c::t_177e31ed78b044 1256-1257,1259,2670-2678,2680,2686-2689,2691-2693,2702,2724-2725,2748,2750-2751,2848-2850,2925,2948-2952,12006,12010-12012,12320-12322,12331,12335,12337,12340,12344-12346,12363,12408-12489,24266,24269
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_667092100b9210 623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_863d813a3d3632 1,1006,1010-1027,1050-1063,1150-1207
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_4eaf4027dc2ca5 1,21,25-42,65-78,165-222
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_56f00c0eedff49 12,16-18,21
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_101a11dc35ef81 1344,1350,1770
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  s_2bfd55a4393d7c::t_a3a31e48fb6003 13-19
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_2bfd55a4393d7c::t_0dd793680bb6eb 196-203,1156
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_2bfd55a4393d7c::t_086e0da8e72ced 657,664-678,687-688,696-697
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_2bfd55a4393d7c::t_e829fd0b743daf 210-216,227,241-246,444-445,452-454
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_ae9ec748217378 1,1006,1010-1027,1050-1063,1150-1207
+src/modules/Bacteria/models/BacteriaBodyIndex.ts
+  s_2bfd55a4393d7c::t_4d00a7ddd1839c 1-36
+src/modules/Bacteria/models/BacteriaPatch.ts
+  s_2bfd55a4393d7c::t_8f7eec3fa81886 24-32,107
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_2bfd55a4393d7c::t_41d2c5e7ca913f 13,25,75-81,1379-1399
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.body.spec.tsx
+  s_2bfd55a4393d7c::t_469279f67bb53f 1-91
+src/modules/Bacteria/useCases/__tests__/hydrateBacteriaPatchFromProject.spec.ts
+  s_2bfd55a4393d7c::t_80eade1b60ccb6 103-128
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/chooseBacteriaBodyUndo.integration.spec.ts
+  s_2bfd55a4393d7c::t_608b46eacf157c 1-278
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/helpers.spec.ts
+  s_2bfd55a4393d7c::t_646459f97ea5ca 54-67
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/loadBacteriaPatchWithAudio.behavior.spec.ts
+  s_2bfd55a4393d7c::t_385de08c61c429 26,171,185-226
+src/modules/Bacteria/useCases/bacteriaParamBridge/chooseBacteriaBodyWithAudio.ts
+  s_2bfd55a4393d7c::t_9f6ec3a1a0526e 1-62
+src/modules/Bacteria/useCases/bacteriaParamBridge/flattenPatchParams.ts
+  s_2bfd55a4393d7c::t_efd914a3bd56c2 3,14-15,40
+src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts
+  s_2bfd55a4393d7c::t_530efe0d9bc0e6 7,51-54,56,103-104,139-142
+src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts
+  s_2bfd55a4393d7c::t_6e7009ca01d883 8
+src/modules/Bacteria/useCases/hydrateBacteriaPatchFromProject.ts
+  s_2bfd55a4393d7c::t_0fe18ac31f3f49 3,317-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55481044ae00180d968429676df8c9642aaa83d0",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
