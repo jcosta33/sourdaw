@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/__tests__/removeTrackModulationReferences.spec.ts
+  s_1f0dcd815e8946::t_9b31d3badccae2 40-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c56bf9916e6a72ecc05f64a4abb4b8a6ebc34a1",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
