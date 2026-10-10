@@ -9,6 +9,8 @@ type RecordingLifecycle = {
     /** Own the synchronous ending snapshot until this capture settles. */
     registerEnding: (end: () => void) => () => void;
     endRecording: () => void;
+    registerCaptureClock: (observe: (beat: number, contextSeconds: number, relocated: boolean) => void) => () => void;
+    observeCaptureClock: (beat: number, contextSeconds: number, relocated: boolean) => void;
     /** Own the commit a capture terminal started, so a stop can await it. */
     trackCommit: (commit: Promise<void>) => void;
     /** Resolve once every tracked commit has settled, including ones registered while waiting. */
@@ -27,6 +29,7 @@ let pendingRecordingStartToken: number | null = null;
  * for the entry — the scheduler never does, because it must not block on it.
  */
 const recordingEndings = new Set<() => void>();
+const recordingClocks = new Set<(beat: number, contextSeconds: number, relocated: boolean) => void>();
 
 const pendingCommits = new Set<Promise<void>>();
 
@@ -80,6 +83,17 @@ export const recordingLifecycle: RecordingLifecycle = {
         recordingEndings.clear();
         for (const end of endings) {
             end();
+        }
+    },
+    registerCaptureClock: (observe) => {
+        recordingClocks.add(observe);
+        return () => {
+            recordingClocks.delete(observe);
+        };
+    },
+    observeCaptureClock: (beat, contextSeconds, relocated) => {
+        for (const observe of recordingClocks) {
+            observe(beat, contextSeconds, relocated);
         }
     },
     trackCommit,

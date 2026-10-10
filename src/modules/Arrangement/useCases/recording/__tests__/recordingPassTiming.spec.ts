@@ -133,8 +133,11 @@ describe('recording pass capture-clock witnesses', () => {
         recordingPassTiming.observeEntry(['capture'], 8, 54, true);
         clock.loopStart = 10;
         recordingPassTiming.observeEntry(['capture'], 8.5, 54.25, false);
-        recordingPassTiming.stage(pass('second', 'capture', 6), 55);
+        recordingPassTiming.observeEntry(['capture'], 10, 55, false);
+        const second = pass('second', 'capture', 6);
+        recordingPassTiming.stage(second, 56);
         expect(recordingPassTiming.depthSeconds(first, 50.9, 2.9)).toBeCloseTo(1.1, 10);
+        expect(recordingPassTiming.depthSeconds(second, 50.9, 2.9)).toBeCloseTo(4.1, 10);
     });
 
     it('reuses a cancelled planned pass while later starts follow sounded boundaries', () => {

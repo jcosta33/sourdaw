@@ -9,10 +9,10 @@ type PassStart = { contextSeconds: number } | { songSeconds: number };
 type RecordingPassTiming = {
     recordPointBeat: number;
     firstPassClock: (() => number | null) | undefined;
-    firstPassContextSeconds: number | null;
-    firstPassBeat: number;
+    openPassContextSeconds: number | null;
+    openPassBeat: number;
     previousSeamContextSeconds: number | null;
-    pendingSeam: { takeId: string; contextSeconds: number; cancelled: boolean } | null;
+    pendingSeam: { takeId: string; contextSeconds: number; nextStartBeat: number; cancelled: boolean } | null;
     ending: { takeId: string; receipt: RecordingEnd; endBeat: number } | null;
     nextPassStartBeat: number | null;
     starts: Map<string, PassStart>;
@@ -28,7 +28,7 @@ function beginRecordingPassTiming(clipId: string, recordPointBeat: number, first
     }
     const seconds = (beat: number): number => readSecondsAtBeat({ beat });
     const recordPointSeconds = seconds(recordPointBeat);
-    const firstPassBeat = Math.max(recordPointBeat, transport.loopStart);
+    const openPassBeat = Math.max(recordPointBeat, transport.loopStart);
     let recordPointContextSeconds: number | null = null;
     if (transport.isPlaying) {
         recordPointContextSeconds =
@@ -37,8 +37,8 @@ function beginRecordingPassTiming(clipId: string, recordPointBeat: number, first
     recordingPassTimings.set(clipId, {
         recordPointBeat,
         firstPassClock,
-        firstPassContextSeconds: firstPassBeat === recordPointBeat ? recordPointContextSeconds : null,
-        firstPassBeat,
+        openPassContextSeconds: openPassBeat === recordPointBeat ? recordPointContextSeconds : null,
+        openPassBeat,
         previousSeamContextSeconds: null,
         pendingSeam: null,
         ending: null,
@@ -54,20 +54,26 @@ function stageRecordingPassTiming(take: Take, passEndContextSeconds?: number, pl
     }
     if (passEndContextSeconds !== undefined) {
         const firstStart =
-            timing.firstPassContextSeconds ??
-            (timing.firstPassBeat === timing.recordPointBeat ? (timing.firstPassClock?.() ?? null) : null);
+            timing.openPassContextSeconds ??
+            (timing.openPassBeat === timing.recordPointBeat ? (timing.firstPassClock?.() ?? null) : null);
         if (firstStart === null) {
             throw new Error('Recording pass has no rolling capture clock');
         }
-        timing.starts.set(take.id, {
-            contextSeconds: timing.previousSeamContextSeconds ?? firstStart,
-        });
+        // A cancelled planned ending reuses the captured entry of that take.
+        if (!timing.starts.has(take.id)) {
+            timing.starts.set(take.id, { contextSeconds: firstStart });
+        }
         timing.nextPassStartBeat = null;
         if (planned) {
-            timing.pendingSeam = { takeId: take.id, contextSeconds: passEndContextSeconds, cancelled: false };
+            timing.pendingSeam = {
+                takeId: take.id,
+                contextSeconds: passEndContextSeconds,
+                nextStartBeat: transportStore.value?.loopStart ?? take.startBeat,
+                cancelled: false,
+            };
         } else {
             timing.pendingSeam = null;
-            timing.previousSeamContextSeconds = passEndContextSeconds;
+            beginNextPass(timing, passEndContextSeconds, transportStore.value?.loopStart ?? take.startBeat);
         }
         return;
     }
@@ -81,6 +87,12 @@ function stageRecordingPassTiming(take: Take, passEndContextSeconds?: number, pl
     if (placed.passDepthSeconds !== undefined) {
         timing.starts.set(take.id, { songSeconds: placed.passDepthSeconds });
     }
+}
+
+function beginNextPass(timing: RecordingPassTiming, contextSeconds: number, beat: number): void {
+    timing.previousSeamContextSeconds = contextSeconds;
+    timing.openPassContextSeconds = contextSeconds;
+    timing.openPassBeat = beat;
 }
 
 function recordingPassDepthSeconds(take: Take, sourceContextOriginSeconds: number, mediaOriginSeconds: number): number {
@@ -114,30 +126,33 @@ function observeRecordingPassEntry(
             !timing.pendingSeam.cancelled &&
             contextSeconds >= timing.pendingSeam.contextSeconds
         ) {
-            timing.previousSeamContextSeconds = timing.pendingSeam.contextSeconds;
+            beginNextPass(timing, timing.pendingSeam.contextSeconds, timing.pendingSeam.nextStartBeat);
             timing.pendingSeam = null;
         }
         // A staged pass owns its start even if its planned seam is cancelled:
         // stageRecordingTake reuses that take's geometry when replacing it.
-        if (timing.previousSeamContextSeconds !== null || timing.starts.size > 0) {
+        if (timing.pendingSeam) {
             continue;
         }
-        const firstPassBeat = Math.max(timing.recordPointBeat, transport.loopStart);
-        const entryMoved = firstPassBeat !== timing.firstPassBeat;
-        if (entryMoved) {
-            // Before the first sounded seam, loop edits redefine that pass's
-            // entry. Its old clock cannot follow the new musical start.
-            timing.firstPassBeat = firstPassBeat;
-            timing.firstPassContextSeconds = null;
+        let openPassBeat = timing.nextPassStartBeat ?? transport.loopStart;
+        if (timing.nextPassStartBeat === null && timing.previousSeamContextSeconds === null) {
+            openPassBeat = Math.max(timing.recordPointBeat, transport.loopStart);
         }
-        if (timing.firstPassContextSeconds !== null || beat < firstPassBeat) {
+        const entryMoved = openPassBeat !== timing.openPassBeat;
+        if (entryMoved) {
+            // Only the still-open pass follows an edited entry. Completed
+            // takes keep their own clocks in starts.
+            timing.openPassBeat = openPassBeat;
+            timing.openPassContextSeconds = null;
+        }
+        if (timing.openPassContextSeconds !== null || beat < openPassBeat) {
             continue;
         }
         if (relocated || entryMoved) {
-            timing.firstPassContextSeconds = contextSeconds;
+            timing.openPassContextSeconds = contextSeconds;
         } else {
-            timing.firstPassContextSeconds =
-                contextSeconds + readSecondsAtBeat({ beat: firstPassBeat }) - readSecondsAtBeat({ beat });
+            timing.openPassContextSeconds =
+                contextSeconds + readSecondsAtBeat({ beat: openPassBeat }) - readSecondsAtBeat({ beat });
         }
     }
 }
@@ -148,7 +163,7 @@ function cancelRecordingPassBoundary(clipId: string, contextSeconds: number): vo
         return;
     }
     if (contextSeconds >= timing.pendingSeam.contextSeconds) {
-        timing.previousSeamContextSeconds = timing.pendingSeam.contextSeconds;
+        beginNextPass(timing, timing.pendingSeam.contextSeconds, timing.pendingSeam.nextStartBeat);
         timing.pendingSeam = null;
         return;
     }
@@ -159,6 +174,7 @@ function relocateRecordingPassEntry(clipId: string, beat: number): void {
     const timing = recordingPassTimings.get(clipId);
     if (timing) {
         timing.nextPassStartBeat = beat;
+        timing.openPassBeat = beat;
     }
 }
 
@@ -170,7 +186,7 @@ function finishRecordingPass(clipId: string, receipt: RecordingEnd, intendedEndB
         return undefined;
     }
     if (!pending.cancelled && receipt.contextSeconds >= pending.contextSeconds) {
-        timing.previousSeamContextSeconds = pending.contextSeconds;
+        beginNextPass(timing, pending.contextSeconds, pending.nextStartBeat);
         timing.pendingSeam = null;
         return undefined;
     }

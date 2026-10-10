@@ -50,22 +50,33 @@ export function placeRecordingTakes(input: PlaceRecordingTakesInput): void {
                     return placeTakeOnClipMedia(take, placement);
                 }
                 const placed = startFirstPassAtRecordPoint(take, input.recordPointBeat);
+                let startBeat = placed.startBeat;
+                let passDepthSeconds = recordingPassTiming.depthSeconds(
+                    take,
+                    input.sourceContextOriginSeconds,
+                    input.mediaOriginSeconds
+                );
+                // An input grant can arrive after this pass opened. Keep only
+                // its captured tail; a negative depth would invent earlier PCM.
+                if (passDepthSeconds < 0) {
+                    startBeat = liveTempoTimeline.beatAtSeconds(
+                        liveTempoTimeline.secondsAtBeat(startBeat) - passDepthSeconds
+                    );
+                    passDepthSeconds = 0;
+                }
                 let endBeat = placed.endBeat;
                 if (captureEnd && captureEnd.takeId === take.id) {
                     endBeat = Math.min(endBeat, captureEnd.endBeat);
                 }
-                if (captureEnd && captureEnd.takeId === take.id && endBeat <= placed.startBeat) {
+                if (endBeat <= startBeat) {
                     return [];
                 }
                 return {
                     ...placed,
+                    startBeat,
                     endBeat,
-                    passAnchorSeconds: liveTempoTimeline.secondsAtBeat(placed.startBeat) - input.clipMediaOriginSeconds,
-                    passDepthSeconds: recordingPassTiming.depthSeconds(
-                        take,
-                        input.sourceContextOriginSeconds,
-                        input.mediaOriginSeconds
-                    ),
+                    passAnchorSeconds: liveTempoTimeline.secondsAtBeat(startBeat) - input.clipMediaOriginSeconds,
+                    passDepthSeconds,
                 };
             }),
         })),

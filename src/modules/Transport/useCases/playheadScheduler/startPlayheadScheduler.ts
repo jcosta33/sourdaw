@@ -336,6 +336,10 @@ export function startPlayheadScheduler(): void {
         }
 
         const now = ctx.currentTime;
+        const soundedSeam = schedulerSession.pendingSeam;
+        if (soundedSeam && now >= soundedSeam.seamAudioTime) {
+            recordingLifecycle.observeCaptureClock(soundedSeam.destinationBeat, soundedSeam.seamAudioTime, true);
+        }
         const priorTempo = previousTempo;
         previousTempo = current.tempo;
         const priorChanges = schedulerSession.lastTempoMapChanges ?? [];
@@ -640,6 +644,7 @@ export function startPlayheadScheduler(): void {
             // and the metronome re-anchored at loopStart.
             schedulerSession.pendingSeam = {
                 seamAudioTime,
+                destinationBeat: current.loopStart,
                 anchorAudioTime: now,
                 anchorPosition: newPosition,
             };
@@ -772,6 +777,16 @@ export function startPlayheadScheduler(): void {
         }
         playheadClockRef.beat = publishedBeat;
         playheadClockRef.audioTimeSeconds = now;
+        if (jumpToPosition !== null) {
+            recordingLifecycle.observeCaptureClock(publishedBeat, now, true);
+        } else if (lateWrap && lateWrapSeamAudioTime !== null) {
+            recordingLifecycle.observeCaptureClock(
+                editPassEndBeat === undefined ? current.loopStart : publishedBeat,
+                lateWrapSeamAudioTime,
+                true
+            );
+        }
+        recordingLifecycle.observeCaptureClock(publishedBeat, now, false);
         // The cursor follows the transport that is producing the sound. While
         // the native engine is that transport it reports where it actually
         // rendered to — loop wraps included — and this integration is only the

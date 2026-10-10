@@ -122,6 +122,7 @@ export const schedulerSession = {
     // startPlayheadScheduler).
     pendingSeam: null as {
         seamAudioTime: number;
+        destinationBeat: number;
         anchorAudioTime: number;
         anchorPosition: number;
     } | null,

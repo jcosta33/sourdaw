@@ -107,3 +107,24 @@ first nonempty processor block, retaining the immutable playing beat/context
 correlation across worker readiness and a tempo edit. Distinguish the short
 clip's carrier from its actual sample count, and prove the same placement and
 PCM survive real Command/CRDT Undo/Redo.
+
+Delay first input while Record joins beat 11.8 in loop [8, 12] at 120 BPM.
+Drive the real scheduler through one and several sounded wraps before the
+producer's first nonempty frame, then through another wrap after that frame.
+With sample zero at beat 8.05 and 100 ms latency, media begins at beat 7.85;
+linear projection from admission places it four beats late. Also publish the
+first frame before a seam and sound a planned seam between the last tick and
+Stop. Freeze the frame's traversal when its owner-bound producer witness first
+becomes observable, retain only bounded unresolved correlations, and detach
+readers on cancellation, failed admission, Stop and settlement. A cancelled
+future seam is no receipt; every admitted seam retains its own destination.
+
+First input can arrive after an old pass opened or completely ended. Trim its
+uncaptured head, discard a pass with no captured span, and assert nonnegative
+selected source depth, signed placement, raw/store equality and exact PCM.
+After one completed pass, edit the loop entry from 8 to 10 at beat 8.2. The
+completed pass keeps depth 1.1 s, while the new entry sounds at depth 4.1 s,
+sample 196800 at 48 kHz. Reanchor only the open pass. The PR #5165 review had
+held admission and checked first-entry edits, but missed a seam before sample
+zero and an edited entry after a completed pass; neither admission projection
+nor the most recent completed seam identifies those captures.

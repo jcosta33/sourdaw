@@ -1528,6 +1528,7 @@ describe('scheduleAudioClips', () => {
         // seam and its instant: the wrap record and the pending seam whose
         // instant (10.1) is still ahead of the clock (10).
         schedulerSession.pendingSeam = {
+            destinationBeat: 4,
             seamAudioTime: 10.1,
             anchorAudioTime: 9.9,
             anchorPosition: 11.8,
