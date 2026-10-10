@@ -1291,6 +1291,34 @@ describe('createYeastWorker — projection protocol', () => {
         ]);
     });
 
+    it('delivers every distinct identityless note-off in one settle batch — one per pitch', async () => {
+        // The identityless dedupe key was the constant 'pitch', so a second
+        // distinct note's off in the same batch collapsed into the first and
+        // that voice hung. The key is per note: only an exact same-pitch
+        // repeat collapses.
+        const node = await createYeastWorker(makeContext());
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
+        const events = [
+            { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+            { timeSamples: 200, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 64 } },
+        ];
+
+        const result = node.setProjection([]);
+        replyProjectionAck(lastWorker(), 0, events);
+
+        await expect(result).resolves.toBeUndefined();
+        expect(onNotesOff).toHaveBeenCalledExactlyOnceWith([
+            {
+                trackId: 'track-a',
+                noteOffs: [
+                    { channel: 0, note: 60, sampleFrame: 128 },
+                    { channel: 0, note: 64, sampleFrame: 200 },
+                ],
+            },
+        ]);
+    });
+
     it('does not let a throwing note-off observer block sibling delivery', async () => {
         const node = await createYeastWorker(makeContext());
         const firstObserver = vi.fn(() => {

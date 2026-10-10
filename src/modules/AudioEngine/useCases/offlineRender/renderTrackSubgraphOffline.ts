@@ -1,4 +1,4 @@
-import { deriveVcaMultiplier, getVcaGroupsState, type Track } from '#/modules/Arrangement/stores';
+import { deriveVcaMultiplier, getVcaGroupsState, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
@@ -278,7 +278,19 @@ export async function renderTrackSubgraphOffline({
     // apply them twice — the same rule `projectStripTrack` applies to the
     // fader and panner those layers compose onto.
     const adjustmentLayers = readOfflineAdjustmentLayerSnapshot();
-    const allTrackIds = renderTracks.map((track) => track.id);
+    // An implicit layer position resolves against the full ordered project
+    // track list — live `resolveAffectedTrackIds` and the mixdown composition
+    // slice that list, not this render's subgraph subset, whose index space
+    // any folder or disabled track ahead of the stack shifts. A document
+    // source renders that document alone, so the live store is read only
+    // without one; the subgraph subset stays the last-resort stand-in.
+    let projectTracks: readonly Track[];
+    if (source !== undefined) {
+        projectTracks = source.project.tracks?.tracks ?? renderTracks;
+    } else {
+        projectTracks = trackStore.value?.tracks ?? renderTracks;
+    }
+    const allTrackIds = projectTracks.map((track) => track.id);
     const compositionsByTrackId = new Map(
         renderTracks.map((track) => [
             track.id,

@@ -573,4 +573,60 @@ mod parity {
             Err(super::NamModelError::UnsupportedVersion(_))
         ));
     }
+
+    /// A PReLU whose `negative_slopes` array is empty would panic `apply` on
+    /// the first sample (`slopes[0]` of an empty vec). The parser refuses the
+    /// shape by name, and the TS mirror refuses it too, so an import can
+    /// never store a model the runtime would crash on.
+    #[test]
+    fn slope_less_prelu_is_rejected_explicitly() {
+        let original = read_fixture("gated_wavenet_synthetic.nam");
+        let mut parsed: serde_json::Value = serde_json::from_str(&original).unwrap();
+        parsed["config"]["head"]["activation"] =
+            serde_json::json!({ "type": "PReLU", "negative_slopes": [] });
+        let mutated = serde_json::to_string(&parsed).unwrap();
+        match parse_nam_model(&mutated) {
+            Err(super::NamModelError::InvalidConfig(message)) => {
+                assert!(
+                    message.contains("PReLU"),
+                    "the rejection must name PReLU, got: {message}"
+                );
+            }
+            Err(other) => {
+                panic!("empty-slope PReLU must be an InvalidConfig rejection, got {other}")
+            }
+            Ok(_) => panic!("a slope-less PReLU must be rejected, not loaded"),
+        }
+        // The bare-string shape carries no slopes at all and is refused the
+        // same way it always was.
+        let mut bare: serde_json::Value = serde_json::from_str(&original).unwrap();
+        bare["config"]["head"]["activation"] = serde_json::json!("PReLU");
+        assert!(matches!(
+            parse_nam_model(&serde_json::to_string(&bare).unwrap()),
+            Err(super::NamModelError::InvalidConfig(_))
+        ));
+    }
+
+    /// A PReLU carrying slopes parses and renders: the post-stack head applies
+    /// the per-channel slope without panicking or going silent.
+    #[test]
+    fn prelu_post_stack_head_loads_and_renders() {
+        let original = read_fixture("gated_wavenet_synthetic.nam");
+        let mut parsed: serde_json::Value = serde_json::from_str(&original).unwrap();
+        parsed["config"]["head"]["activation"] =
+            serde_json::json!({ "type": "PReLU", "negative_slopes": [0.25, 0.125, 0.0625, 0.5] });
+        let mut model = parse_nam_model(&serde_json::to_string(&parsed).unwrap())
+            .expect("PReLU head must load");
+        let input = parity_input(SAMPLE_COUNT);
+        let mut peak = 0.0_f32;
+        for value in &input {
+            let out = model.process(*value);
+            assert!(out.is_finite(), "PReLU head rendered a non-finite sample");
+            peak = peak.max(out.abs());
+        }
+        assert!(
+            peak > 1.0e-3,
+            "PReLU post-head model rendered silence (peak {peak:.3e})"
+        );
+    }
 }

@@ -167,6 +167,47 @@ describe('validateGrinderNamModel', () => {
         );
     });
 
+    it('rejects a slope-less PReLU the native runtime would panic applying', () => {
+        // The runtime resolves a PReLU channel slope as
+        // `slopes.get(channel).unwrap_or(slopes[0])`, so an empty slope array
+        // panics on the first rendered sample. Import refuses the shape —
+        // rejection-for-rejection with the native parser — and never stores it.
+        expectError(
+            mutate((value) => {
+                const config = value.config as { layers: Array<Record<string, unknown>> };
+                config.layers[0]!.activation = { type: 'PReLU', negative_slopes: [] };
+            }),
+            /PReLU requires at least one negative slope/
+        );
+        // A bare "PReLU" carries no slopes at all — the native parser refuses
+        // it, and so does the mirror.
+        expectError(
+            mutate((value) => {
+                const config = value.config as { layers: Array<Record<string, unknown>> };
+                config.layers[0]!.activation = 'PReLU';
+            }),
+            /PReLU requires negative_slope or negative_slopes/
+        );
+    });
+
+    it('accepts a PReLU carrying slopes, in either documented shape', () => {
+        for (const activation of [
+            { type: 'PReLU', negative_slope: 0.1 },
+            { type: 'PReLU', negative_slopes: [0.1, 0.2] },
+        ]) {
+            const model = validateGrinderNamModel(
+                JSON.parse(
+                    mutate((value) => {
+                        const config = value.config as { layers: Array<Record<string, unknown>> };
+                        config.layers[0]!.activation = activation;
+                    })
+                ),
+                'probe.nam'
+            );
+            expect(model.architecture).toBe('WaveNet');
+        }
+    });
+
     it('accepts a complete valid LSTM model', () => {
         const model = validateGrinderNamModel(
             {

@@ -308,17 +308,23 @@ export async function scheduleTrackClips({
     // Offline read no mode at all, so a track the monitor plays flat bounced
     // fully automated. The bounce follows the monitor.
     const trackReadsAutomation = track.automationMode !== 'off';
-    if (includeAutomation && trackReadsAutomation) {
+    if (includeAutomation) {
         // The modulator rack's mappings resolved once against the project's
         // tracks; this pass carries only the ones aimed at this track. Live
         // evaluates the same rack per tick (`applyModulationToEngine`) on top
         // of the automation below — the scheduler composes them per block in
-        // that same order.
+        // that same order. The rack rides `includeAutomation` alone: live's
+        // `applyModulationToEngine` has no automationMode gate (mode `off`
+        // stops the track's lanes, never the mappings aimed at it), so a
+        // track automated out still has its mappings evaluated here.
         const modulatorPlans = buildOfflineModulatorPlans({ tracks: allTracks ?? [track] }).filter(
             (plan) => plan.targetTrackId === track.id
         );
         scheduleTrackAutomation({
-            lanes: automationLanes,
+            // The mode gate stops the track's own lanes; passing none is how
+            // the scheduler skips them while the modulator plans — grouped
+            // independently of the lanes below — still schedule.
+            lanes: trackReadsAutomation ? automationLanes : [],
             trackId: track.id,
             trackGainNode,
             trackPanNode,

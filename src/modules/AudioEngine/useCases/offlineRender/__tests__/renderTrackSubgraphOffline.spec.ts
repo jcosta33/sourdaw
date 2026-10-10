@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
-import { trackStore, vcaGroupStore, type Device, type Track } from '#/modules/Arrangement/stores';
+import { adjustmentLayerStore, trackStore, vcaGroupStore, type Device, type Track } from '#/modules/Arrangement/stores';
 // Statically imported so the barrel load is paid once at module init rather
 // than inside a test's time budget.
 import { getEffectiveGain } from '#/modules/Arrangement/useCases';
@@ -2253,6 +2253,63 @@ describe('renderTrackSubgraphOffline', () => {
                 projectOnly: true,
                 calibration: freshCalibration,
             });
+        });
+
+        // The stack sits at project index 1: below it lies only the target,
+        // because the document's first track is a disabled track the subgraph
+        // never renders. Live's `resolveAffectedTrackIds` slices the full
+        // ordered track list, so the layer reaches the target and its +6 dB
+        // must bake into the strip seed. Slicing the subgraph subset at the
+        // same index finds nothing and would bake a dry fader.
+        it('resolves an implicit layer position against the full supplied track list, not the subgraph', async () => {
+            const ahead = TrackDummy.create({ id: 'ahead-1', name: 'Ahead', kind: 'audio', disabled: true });
+            const target = TrackDummy.create({
+                id: 'track-1',
+                kind: 'midi',
+                gain: 0.5,
+                clips: [midiClip()],
+                devices: [FERMENTER],
+            });
+            adjustmentLayerStore.set({
+                layers: [
+                    {
+                        id: 'layer-1',
+                        name: 'Lift',
+                        effectType: 'volume',
+                        parameters: [{ name: 'Gain', value: 6, min: -24, max: 24, unit: 'dB' }],
+                        affectedTrackIds: [],
+                        insertionIndex: 1,
+                        regions: [],
+                        enabled: true,
+                        mix: 1,
+                        color: '#ff0000',
+                    },
+                ],
+            });
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+            // The recorder keys by the projected gain, which the composition
+            // moves; start from an empty map so this render's strip is the
+            // only entry.
+            mocks.builtFaderGains.clear();
+
+            try {
+                await renderTrackSubgraphOffline({
+                    targetTrackId: target.id,
+                    renderTracks: [target],
+                    startBeat: 0,
+                    endBeat: 4,
+                    source: { project: suppliedDocument([ahead, target]) },
+                });
+
+                // Live `applyVolumePan`'s blended volume override —
+                // `1 + (dbToGain(Gain) − 1) × mix` — folded into the strip
+                // seed on top of the 0.5 stored fader.
+                const levels = [...mocks.builtFaderGains.values()];
+                expect(levels).toHaveLength(1);
+                expect(levels[0]).toBeCloseTo(0.5 * 10 ** (6 / 20), 10);
+            } finally {
+                adjustmentLayerStore.set({ layers: [] });
+            }
         });
     });
 });

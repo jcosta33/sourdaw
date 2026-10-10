@@ -99,6 +99,33 @@ function requireKnownActivation(value: UnknownRecord, message: string): void {
     if (typeof name !== 'string' || !ACTIVATION_NAMES.includes(name)) {
         throw new Error(message);
     }
+    // Mirror the runtime's PReLU parse rejection-for-rejection: it resolves
+    // the channel slope as `slopes.get(channel).unwrap_or(slopes[0])`, so a
+    // slope-less PReLU would panic on the first sample. A bare `"PReLU"`, a
+    // non-numeric `negative_slope`, and an absent, empty or non-numeric
+    // `negative_slopes` are each refused here exactly as the native parser
+    // refuses them, keeping the import guarantee that a validated file
+    // constructs in the runtime.
+    if (name === 'PReLU') {
+        if (!isRecord(raw)) {
+            throw new TypeError('Invalid NAM model: PReLU requires negative_slope or negative_slopes');
+        }
+        if (raw.negative_slope !== undefined) {
+            if (typeof raw.negative_slope !== 'number' || !Number.isFinite(raw.negative_slope)) {
+                throw new TypeError('Invalid NAM model: PReLU negative_slope must be a number');
+            }
+        } else if (!Array.isArray(raw.negative_slopes)) {
+            throw new TypeError('Invalid NAM model: PReLU requires negative_slope or negative_slopes');
+        } else if (raw.negative_slopes.length === 0) {
+            throw new Error('Invalid NAM model: PReLU requires at least one negative slope');
+        } else {
+            for (const slope of raw.negative_slopes) {
+                if (typeof slope !== 'number' || !Number.isFinite(slope)) {
+                    throw new TypeError('Invalid NAM model: PReLU slopes must be numbers');
+                }
+            }
+        }
+    }
 }
 
 function verifyVersion(version: string): void {

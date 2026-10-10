@@ -1,7 +1,7 @@
 import { type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { type DeviceRef } from '#/utils/createFindDeviceRef';
 
-import { grinderNeuralModelJson } from '../../models/grinderNeuralModelJson';
+import { grinderNeuralModelJson } from '../../models/GrinderNeuralModelJson';
 import { grinderNeuralProfileParams } from '../../models/GrinderNeuralProfileParams';
 import { type GrinderPatch, type GrinderPedal } from '../../models/GrinderPatch';
 import { GRINDER_PROJECT_PARAM_KEYS } from '../../models/GrinderProjectParameterMap';

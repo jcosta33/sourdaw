@@ -86,7 +86,7 @@ describe('compileRuntimeGrinderNeuralPatch', () => {
         expect(result).toMatchObject({ status: 'compiled' });
     });
 
-    it('carries a non-empty modelJson into the compiled patch and drops the raw model (#3774)', () => {
+    it('carries a non-empty modelJson into the compiled patch, with its digest, and drops the raw model (#3774)', () => {
         const modelJson = '{"architecture":"WaveNet","config":{},"weights":[0.5]}';
         const result = compileRuntimeGrinderNeuralPatch(
             createPatch({
@@ -104,13 +104,39 @@ describe('compileRuntimeGrinderNeuralPatch', () => {
 
         expect(result).toMatchObject({
             status: 'compiled',
-            patch: { patch: { modelJson } },
+            patch: { patch: { modelJson, modelDigest: '0123-4567-89ab-cdef' } },
         });
         if (result.status === 'compiled' && result.patch.patch.neuralModelMode === 'imported') {
             // The raw model object never crosses the runtime door: only the
-            // serialized text the worklet hands to the wasm loader does.
+            // serialized text the worklet hands to the wasm loader does, plus
+            // the digest the worklet's re-load gate compares.
             expect(result.patch.patch).not.toHaveProperty('profile.model');
             expect(Object.isFrozen(result.patch.patch)).toBe(true);
+        }
+    });
+
+    it.each([
+        ['a null digest', null],
+        ['an empty digest', ''],
+        ['a non-string digest', 12],
+    ])('compiles a model payload with %s without carrying a digest field', (_label, modelDigest) => {
+        const result = compileRuntimeGrinderNeuralPatch(
+            createPatch({
+                patch: {
+                    neuralModelMode: 'imported',
+                    profile: {
+                        convWeights: [[0.1, 0.2, 0.3]],
+                        model: { architecture: 'WaveNet', config: {}, weights: [0.5] },
+                        modelDigest: modelDigest as unknown as string,
+                    },
+                    modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+                },
+            })
+        );
+
+        expect(result).toMatchObject({ status: 'compiled' });
+        if (result.status === 'compiled') {
+            expect(result.patch.patch).not.toHaveProperty('modelDigest');
         }
     });
 

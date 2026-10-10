@@ -80,6 +80,14 @@ impl Activation {
                             .collect::<Result<Vec<_>, _>>()?
                     }
                 };
+                if slopes.is_empty() {
+                    // `apply` resolves the channel slope as
+                    // `slopes.get(channel).unwrap_or(slopes[0])`, so a
+                    // slope-less PReLU would panic on the first sample.
+                    return Err(NamModelError::InvalidConfig(
+                        "PReLU requires at least one negative slope".into(),
+                    ));
+                }
                 Activation::Prelu(slopes)
             }
             "Sigmoid" => Activation::Sigmoid,

@@ -108,9 +108,9 @@ export type OfflineRenderGateModulator = Readonly<{
 }>;
 
 /**
- * The adjustment-layer facts the gates read. A volume/pan layer whose blend is
- * steady across the render folds into the strip state both engines apply; a
- * moving one, and every DSP layer (no native bus), gate to Web Audio.
+ * The adjustment-layer facts the gates read. Every layer that reaches a
+ * renderable track gates to Web Audio: the native render seeds raw track gain
+ * and implements no layer handling at all, steady or moving.
  */
 export type OfflineRenderGateAdjustmentLayer = Readonly<{
     name: string;
@@ -131,6 +131,15 @@ export type SelectOfflineRenderEngineInput = Readonly<{
     scheduledTracks: readonly Track[];
     modulators?: readonly OfflineRenderGateModulator[];
     adjustmentLayers?: readonly OfflineRenderGateAdjustmentLayer[];
+    /**
+     * Every track of the project, in project order — the list live's
+     * `resolveAffectedTrackIds` slices for a layer with no explicit targets.
+     * An implicit layer position must resolve against it, not against the
+     * renderable subset: a folder or disabled track ahead of the stack
+     * shifts every index. Absent, the renderable tracks stand in (they were
+     * the old, wrong list; callers that know the project pass the real one).
+     */
+    projectTrackIds?: readonly string[];
 }>;
 
 /** Why this track's chain cannot render natively, or `null` when every device on it can. */
@@ -187,7 +196,8 @@ function busOriginSendGateReason(renderableTracks: readonly Track[]): string | n
  * Why the modulator rack or the adjustment-layer stack keeps this render off
  * the native engine, or `null` when neither applies. Mirrors what the Web
  * Audio render carries: a modulator's block-sampled schedule, a DSP layer's
- * bus chain, and a moving volume/pan layer's block curve are all web-only.
+ * bus chain, and every volume/pan layer's mix adjustment — steady or moving —
+ * are all web-only.
  */
 /** Live `resolveAffectedTrackIds`: the explicit list, or every track below the stack position. */
 function layerAffectsRenderableTracks(
@@ -208,7 +218,7 @@ function modulationAndLayerGateReason(input: SelectOfflineRenderEngineInput): st
         }
     }
     const trackIds = new Set(input.renderableTracks.map((track) => track.id));
-    const allTrackIds = input.renderableTracks.map((track) => track.id);
+    const allTrackIds = input.projectTrackIds ?? input.renderableTracks.map((track) => track.id);
     for (const layer of input.adjustmentLayers ?? []) {
         if (!layer.enabled) {
             continue;
@@ -216,13 +226,14 @@ function modulationAndLayerGateReason(input: SelectOfflineRenderEngineInput): st
         if (!layerAffectsRenderableTracks(layer, trackIds, allTrackIds)) {
             continue;
         }
-        // A steady volume/pan layer folds into the strip state the native
-        // engine applies like the web one; only a moving one is web-only.
+        // The native render seeds raw track gain and has no layer vocabulary
+        // at all — a steady layer would print as if it did not exist, exactly
+        // the substitution the gates exist to refuse.
         if (layer.effectType === 'volume' || layer.effectType === 'pan') {
             if (layer.regions.length > 0) {
                 return `adjustment layer "${layer.name}" moves across the export, which only the Web Audio render schedules`;
             }
-            continue;
+            return `adjustment layer "${layer.name}" adjusts the mix, which the native render does not apply`;
         }
         return `adjustment layer "${layer.name}" routes DSP the native engine has no bus for`;
     }

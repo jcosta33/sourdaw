@@ -6,7 +6,7 @@ import {
     setModulationDependencies,
 } from '#/modules/Automation/useCases';
 
-import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
+import { scheduleTrackAutomationFixture, SHIPPING_GRAIN_SLEW_TICK_SECONDS } from './scheduleTrackAutomationFixture';
 
 /** The plan shape the builder produces, derived rather than re-declared. */
 type OfflineModulatorParamPlan = ReturnType<typeof buildOfflineModulatorPlans>[number];
@@ -107,6 +107,24 @@ describe('offline render carries modulator movement a lane cannot', () => {
         }
         expect(values[0]).toBeCloseTo(1000 + 0.5 * (20_000 - 20), 6);
         expect(Math.max(...values)).toBeGreaterThan(15_000);
+
+        // Pin the modulation slew coefficient itself. The max and monotonic
+        // assertions above hold for any alpha in (0, 1], so a detuned glide
+        // would sail through them; this recomputes the shipped recurrence —
+        // seed at the first target, then `previous + (target − previous) ×
+        // 0.4` per tick at the shipping grain — from the same LFO plan and
+        // requires the emitted ramp to land on it.
+        const alpha = 0.4;
+        const tickSeconds = SHIPPING_GRAIN_SLEW_TICK_SECONDS;
+        let previous: number | null = null;
+        for (let index = 0; index < 8; index++) {
+            // makeSecondsToBeat at a flat 120 bpm: one beat every 0.5 s.
+            const beat = ((index * tickSeconds) / 120) * 60;
+            const target = 1000 + makeLfoPlan().deltaAtBeat(beat);
+            const expected: number = previous === null ? target : previous + (target - previous) * alpha;
+            previous = expected;
+            expect(values[index]).toBeCloseTo(expected, 4);
+        }
     });
 
     it('anchors a step modulator at its first cell instead of the persisted base', () => {

@@ -779,8 +779,12 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             const seenIdentities = seenByChannel.get(evt.kind.channel) ?? new Set<string>();
             // One off per voice instance, plus one per identityless pitch:
             // distinct instances of the same pitch retire distinct voices, so
-            // only an exact identity repeat collapses (#4873).
-            const identityKey = evt.noteInstanceId !== undefined ? `instance:${evt.noteInstanceId}` : 'pitch';
+            // only an exact identity repeat collapses (#4873). The
+            // identityless key is per note — a constant here would drop the
+            // second distinct note's off in one settle batch and hang its
+            // voice.
+            const identityKey =
+                evt.noteInstanceId !== undefined ? `instance:${evt.noteInstanceId}` : `pitch:${evt.kind.note}`;
             if (seenIdentities.has(identityKey)) {
                 continue;
             }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { validateGrinderNamModel } from '../../services/validateGrinderNamModel';
-import { grinderNeuralModelJson } from '../grinderNeuralModelJson';
+import { grinderNeuralModelJson } from '../GrinderNeuralModelJson';
 import { grinderNeuralModelDigest } from '../GrinderNeuralProfileParams';
 import { type GrinderNeuralModel } from '../GrinderPatch';
 

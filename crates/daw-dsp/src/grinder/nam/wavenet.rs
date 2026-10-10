@@ -592,7 +592,12 @@ impl PostStackHead {
         let last = self.convs.len() - 1;
         self.scratch_a[..input.len()].copy_from_slice(input);
         for index in 0..self.convs.len() {
-            let activation = self.activations[index].clone();
+            // Borrow the activation in place: this loop runs per conv per
+            // sample on the audio thread, and cloning a `Prelu(Vec<f32>)`
+            // activation would allocate there. The field borrows stay
+            // disjoint — `activations` immutably, `convs` and the scratch
+            // buffers mutably.
+            let activation = &self.activations[index];
             let in_len = self.convs[index].input_channels();
             // NAMCore applies each conv's activation to the conv input in
             // place, then runs the conv.

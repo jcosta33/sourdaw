@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
+import { modulationStore } from '#/modules/Automation/stores';
+import { setModulationDependencies } from '#/modules/Automation/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 // The real projection, as the composition root injects it: a controller's
 // placement is the behaviour under test and it carries no store or groove state.
@@ -1278,15 +1280,75 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
         return input!.deviceParameterLaw;
     }
 
-    it("schedules no automation at all for a track whose automationMode is 'off'", async () => {
+    it("schedules no lane automation for a track whose automationMode is 'off', but the pass still runs", async () => {
         // Live `applyAutomation` drops every lane on the track before gain, pan
         // or device params when the mode is 'off'. Offline read no mode at all,
-        // so a track the monitor plays flat bounced fully automated.
+        // so a track the monitor plays flat bounced fully automated. The mode
+        // stops the track's lanes — not the pass itself, which must still
+        // carry the modulator rack (the case below).
         await runSchedule({ automationMode: 'off' });
-        expect(mocks.scheduleTrackAutomation).not.toHaveBeenCalled();
+        expect(mocks.scheduleTrackAutomation).toHaveBeenCalledTimes(1);
+        const offInput = mocks.scheduleTrackAutomation.mock.calls[0]?.[0] as { lanes: unknown[] } | undefined;
+        expect(offInput?.lanes).toEqual([]);
 
         await runSchedule({ automationMode: 'read' });
-        expect(mocks.scheduleTrackAutomation).toHaveBeenCalledTimes(1);
+        expect(mocks.scheduleTrackAutomation).toHaveBeenCalledTimes(2);
+    });
+
+    it('builds modulator plans for a track automated off, so the export evaluates them', async () => {
+        // Live's `applyModulationToEngine` has no automationMode gate: `off`
+        // stops the track's lanes, never the mappings aimed at it. The plans
+        // used to be built only when the track read automation, so an
+        // automated-out track's enabled LFO mapping went silent in the export
+        // while the monitor modulated.
+        setModulationDependencies({
+            updateDeviceParam: vi.fn(),
+            getPluginParamRange: (deviceType: string, paramId: string) => {
+                if (deviceType === 'fermenter' && paramId === 'filterCutoff') {
+                    return { min: 20, max: 20_000, defaultValue: 1000, automatable: true };
+                }
+                return null;
+            },
+            quantiseValue: ({ value }: { value: number }) => value,
+        });
+        modulationStore.set({
+            modulators: [
+                {
+                    id: 'lfo-1',
+                    name: 'LFO 1',
+                    trackId: 'track-inst',
+                    kind: 'lfo',
+                    config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
+                    enabled: true,
+                    mappings: [
+                        {
+                            targetTrackId: 'track-inst',
+                            targetDeviceId: 'inst-1',
+                            targetParamId: 'filterCutoff',
+                            amount: 0.5,
+                        },
+                    ],
+                },
+            ],
+        });
+        try {
+            await runSchedule({ automationMode: 'off' });
+
+            const input = mocks.scheduleTrackAutomation.mock.calls[0]?.[0] as
+                { lanes: unknown[]; modulatorPlans: Array<Record<string, unknown>> } | undefined;
+            expect(input, 'scheduleTrackAutomation was never called').toBeDefined();
+            expect(input!.lanes).toEqual([]);
+            expect(input!.modulatorPlans).toHaveLength(1);
+            expect(input!.modulatorPlans[0]).toMatchObject({
+                targetTrackId: 'track-inst',
+                deviceId: 'inst-1',
+                parameterId: 'filterCutoff',
+                paramMin: 20,
+                paramMax: 20_000,
+            });
+        } finally {
+            modulationStore.set({ modulators: [] });
+        }
     });
 
     it('applies the injected automatable predicate on top of the live parameterValues gate', async () => {

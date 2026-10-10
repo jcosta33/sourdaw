@@ -274,6 +274,14 @@ impl NeuralCapture {
             }
             "neuralModelMode" => {
                 if value > 0.5 {
+                    if self.custom_profile_active {
+                        // Already on the imported path: the patch sender
+                        // re-posts the mode on every patch sync, and a
+                        // repeated write here used to reset the runtime state
+                        // and re-arm the 40 ms warmup crossfade behind a
+                        // model that had already settled.
+                        return;
+                    }
                     self.selected_model_slot = None;
                     self.custom_profile_active = true;
                     self.reset_runtime_state();
@@ -658,21 +666,90 @@ mod tests {
         assert!(capture.has_loaded_model());
     }
 
-    /// The render path may not allocate: a loaded model processes inside the
-    /// no-alloc guard.
+    /// The render path may not allocate — for every architecture the runtime
+    /// can load, not only one fixture per family. The WaveNet entry carries a
+    /// PReLU post-stack head: `PostStackHead::process` used to clone the
+    /// head's activation per conv per sample, and a `Prelu(Vec<f32>)` clone
+    /// allocates on the audio thread.
     #[test]
     fn loaded_model_render_path_is_allocation_free() {
+        let linear_json = serde_json::json!({
+            "architecture": "Linear",
+            "config": { "receptive_field": 8, "bias": true },
+            "weights": [0.5, 0.25, -0.125, 0.5, 0.25, -0.125, 0.5, 0.25, 0.05],
+        })
+        .to_string();
+        let lstm_json = {
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/grinder/nam/fixtures/lstm.nam"
+            );
+            std::fs::read_to_string(path).expect("fixture must be readable")
+        };
+        let convnet_json = {
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/grinder/nam/fixtures/convnet_synthetic.nam"
+            );
+            std::fs::read_to_string(path).expect("fixture must be readable")
+        };
+        let prelu_head_json = {
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/grinder/nam/fixtures/gated_wavenet_synthetic.nam"
+            );
+            let original = std::fs::read_to_string(path).expect("fixture must be readable");
+            let mut parsed: serde_json::Value =
+                serde_json::from_str(&original).expect("fixture must be valid JSON");
+            parsed["config"]["head"]["activation"] = serde_json::json!({ "type": "PReLU", "negative_slopes": [0.25, 0.125, 0.0625, 0.5] });
+            serde_json::to_string(&parsed).expect("mutated fixture must serialize")
+        };
+
+        let models = [
+            ("WaveNet with a PReLU post-stack head", prelu_head_json),
+            ("LSTM", lstm_json),
+            ("ConvNet", convnet_json),
+            ("Linear", linear_json),
+        ];
+        for (name, json) in models {
+            let mut capture = NeuralCapture::new(48_000.0);
+            capture.set_param("engineMode", 1.0);
+            capture
+                .load_model_json(&json)
+                .unwrap_or_else(|error| panic!("{name} model must load: {error:?}"));
+            let input = parity_input(256);
+            assert_no_alloc::assert_no_alloc(|| {
+                for value in &input {
+                    let out = capture.process_capture(*value);
+                    assert!(out.is_finite(), "{name} rendered a non-finite sample");
+                }
+            });
+        }
+    }
+
+    /// The patch sender re-posts `neuralModelMode = 1` on every patch sync; a
+    /// repeated write must not reset the runtime state and re-arm the 40 ms
+    /// warmup crossfade a loaded model has already settled through.
+    #[test]
+    fn repeated_imported_mode_write_does_not_reset_or_rewarm() {
         let json = wavenet_fixture();
         let mut capture = NeuralCapture::new(48_000.0);
         capture.set_param("engineMode", 1.0);
         capture.load_model_json(&json).expect("fixture must load");
-        let input = parity_input(256);
-        assert_no_alloc::assert_no_alloc(|| {
-            for value in &input {
-                let out = capture.process_capture(*value);
-                assert!(out.is_finite());
-            }
-        });
+        // Ride out the warmup crossfade the load armed.
+        for _ in 0..4_000 {
+            capture.process_capture(0.0);
+        }
+        assert!(
+            capture.is_ready(),
+            "the model must settle before the repeated write"
+        );
+
+        capture.set_param("neuralModelMode", 1.0);
+        assert!(
+            capture.is_ready(),
+            "an unchanged mode write re-armed the warmup crossfade"
+        );
     }
 
     fn average_abs_output_for_model(slot: usize) -> f32 {

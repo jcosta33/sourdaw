@@ -129,9 +129,17 @@ function compileImportedPayload(value: unknown): RuntimeGrinderNeuralPatchCompil
         neuralModelMode: 'imported';
         profile: typeof compiledProfile;
         modelJson?: string;
+        modelDigest?: string;
     } = { neuralModelMode: 'imported', profile: compiledProfile };
     if (modelJson !== undefined) {
         compiledPayload.modelJson = modelJson;
+        // The model's digest rides along so the worklet can skip a re-parse of
+        // an already-loaded capture. Only a bounded non-empty string travels:
+        // anything else drops the field, and the worklet reloads as before.
+        const modelDigest = profile.modelDigest;
+        if (typeof modelDigest === 'string' && modelDigest.length > 0 && modelDigest.length <= MAX_ID_LENGTH) {
+            compiledPayload.modelDigest = modelDigest;
+        }
     }
     return {
         status: 'compiled',

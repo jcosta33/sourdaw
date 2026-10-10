@@ -41,6 +41,13 @@ export type RuntimeGrinderNeuralPatchPayload =
            * network. Absent keeps the scalar-only substitute path.
            */
           modelJson?: string;
+          /**
+           * The validated model's digest, when the payload carries a model.
+           * The worklet compares it against the model it already loaded so a
+           * re-posted patch skips `load_neural_model` instead of re-parsing
+           * on the render thread; a payload without one reloads every time.
+           */
+          modelDigest?: string;
       }>;
 
 export type RuntimeGrinderNeuralPatchCompilation =

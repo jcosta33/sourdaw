@@ -505,6 +505,142 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
     });
 
     /**
+     * The modulator rack and the adjustment-layer stack are web-only
+     * vocabulary. One case per gate clause — each with the reason the user
+     * reads on `onWarning` — plus the non-gate shapes that must keep native.
+     */
+    describe('modulators and adjustment layers — every layer gates, steady or moving', () => {
+        const modulator = (overrides: Partial<{ name: string; enabled: boolean; mappings: unknown[] }> = {}) => ({
+            name: 'LFO 1',
+            enabled: true,
+            mappings: [{ parameterId: 'gain' }],
+            ...overrides,
+        });
+        const layer = (
+            overrides: Partial<{
+                name: string;
+                enabled: boolean;
+                effectType: string;
+                regions: { startBeat: number; endBeat: number }[];
+                affectedTrackIds: string[];
+                insertionIndex: number;
+            }> = {}
+        ) => ({
+            name: 'Trim',
+            enabled: true,
+            effectType: 'volume',
+            regions: [],
+            affectedTrackIds: [],
+            insertionIndex: 0,
+            ...overrides,
+        });
+
+        const cases: { name: string; input: () => SelectOfflineRenderEngineInput; reason: string }[] = [
+            {
+                name: 'an enabled modulator with mappings',
+                input: () => ({ ...cleanProject(), modulators: [modulator()] }),
+                reason: 'modulator "LFO 1" drives device parameters, which the native render does not carry',
+            },
+            {
+                name: 'a DSP adjustment layer',
+                input: () => ({ ...cleanProject(), adjustmentLayers: [layer({ effectType: 'reverb', name: 'Wide' })] }),
+                reason: 'adjustment layer "Wide" routes DSP the native engine has no bus for',
+            },
+            {
+                name: 'a moving volume layer',
+                input: () => ({
+                    ...cleanProject(),
+                    adjustmentLayers: [layer({ name: 'Lift', regions: [{ startBeat: 0, endBeat: 4 }] })],
+                }),
+                reason: 'adjustment layer "Lift" moves across the export, which only the Web Audio render schedules',
+            },
+            {
+                // The native render seeds raw track.gain and implements no
+                // layer handling at all: a steady layer would print as if it
+                // did not exist, so it gates like a moving one.
+                name: 'a steady volume layer',
+                input: () => ({ ...cleanProject(), adjustmentLayers: [layer({ name: 'Trim' })] }),
+                reason: 'adjustment layer "Trim" adjusts the mix, which the native render does not apply',
+            },
+            {
+                name: 'a steady pan layer',
+                input: () => ({ ...cleanProject(), adjustmentLayers: [layer({ effectType: 'pan', name: 'Pan' })] }),
+                reason: 'adjustment layer "Pan" adjusts the mix, which the native render does not apply',
+            },
+        ];
+
+        it.each(cases)('degrades $name with its own reason', async ({ input, reason }) => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine(input());
+
+            expect(selection).toEqual({ engine: 'web-audio/offline', reason, degraded: true });
+        });
+
+        it.each([
+            { name: 'a disabled modulator', modulator: modulator({ enabled: false }) },
+            { name: 'a modulator without mappings', modulator: modulator({ mappings: [] }) },
+        ])('hands $name to the native engine', async ({ modulator: shape }) => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine({ ...cleanProject(), modulators: [shape] });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+
+        it.each([
+            { name: 'a disabled layer', layer: layer({ enabled: false }) },
+            {
+                name: 'a layer with explicit targets off every renderable track',
+                layer: layer({ affectedTrackIds: ['track-gone'] }),
+            },
+        ])('hands $name to the native engine', async ({ layer: shape }) => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine({ ...cleanProject(), adjustmentLayers: [shape] });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+
+        /**
+         * An implicit layer position resolves against the full ordered
+         * project track list — live's `resolveAffectedTrackIds` slices that,
+         * not the renderable subset. A folder track ahead of the stack shifts
+         * every index: at project position 2 the layer's implicit targets are
+         * [bus-1] — a renderable track, so the gate holds — while slicing the
+         * renderable subset at 2 finds nothing and would hand a layer live
+         * applies to the native renderer that ignores it.
+         */
+        it('resolves an implicit layer position against the full project track list', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine({
+                ...cleanProject(),
+                projectTrackIds: ['folder-1', 'track-a', 'bus-1'],
+                adjustmentLayers: [layer({ insertionIndex: 2 })],
+            });
+
+            expect(selection).toEqual({
+                engine: 'web-audio/offline',
+                reason: 'adjustment layer "Trim" adjusts the mix, which the native render does not apply',
+                degraded: true,
+            });
+        });
+
+        it('hands a layer whose implicit targets miss every renderable track to the native engine', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine({
+                ...cleanProject(),
+                projectTrackIds: ['folder-1', 'track-a', 'bus-1'],
+                adjustmentLayers: [layer({ insertionIndex: 3 })],
+            });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+    });
+
+    /**
      * #3776 — a chain made only of native built-in bodies renders natively;
      * every other chain names the device that keeps it on Web Audio. One case
      * per exclusion, each with the reason the user reads on `onWarning`.
