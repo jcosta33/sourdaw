@@ -1,6 +1,7 @@
 import { executeAppAction } from '#/modules/Command/useCases';
 import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 
+import { startFirstPassAtRecordPoint } from '../../models/TakeLane';
 import { clipEntrySeconds } from '../../models/TempoTimeline';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Clip } from '../../stores/trackStore';
@@ -9,6 +10,7 @@ import { liveTempoTimeline } from '../liveTempoTimeline';
 import { placeRecordingClipStart } from './placeRecordingClipStart';
 import { placeRecordingTakes } from './placeRecordingTakes';
 import { recordingPassTiming } from './recordingPassTiming';
+import { stageRecordingTake } from './stageRecordingTake';
 
 /** Where a captured recording's media truly begins, as the capture terminal measured it. */
 type RecordedCapture = {
@@ -20,6 +22,39 @@ type RecordedCapture = {
     sourceContextOriginSeconds: number;
     sourceDurationSeconds?: number;
 };
+
+function stageFinalCapturedPass(clip: Clip, capture: RecordedCapture): void {
+    if (capture.sourceDurationSeconds === undefined || capture.sourceDurationSeconds <= 0) {
+        return;
+    }
+    const finalPass = recordingPassTiming.finalPass(
+        clip.id,
+        capture.sourceContextOriginSeconds + capture.sourceDurationSeconds
+    );
+    if (!finalPass) {
+        return;
+    }
+    const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === clip.trackId);
+    const previous = lane?.takes.findLast((take) => take.clipId === clip.id && take.sourceOffsetBeats !== undefined);
+    if (!previous || previous.sourceOffsetBeats === undefined) {
+        return;
+    }
+    // The first staged wrap spans the loop, but its recording started at the
+    // record point. Keep the existing unwrapped beat identity of later passes.
+    const previousPass = startFirstPassAtRecordPoint(previous, capture.provisionalStartBeat);
+    const provisional = lane?.takes.find((take) => take.clipId === clip.id && take.sourceOffsetBeats === undefined);
+    if (!provisional) {
+        throw new Error('Recording provisional take is not available');
+    }
+    stageRecordingTake({
+        trackId: clip.trackId,
+        clipId: clip.id,
+        name: provisional.name,
+        provisionalTakeId: provisional.id,
+        ...finalPass,
+        sourceOffsetBeats: previous.sourceOffsetBeats + previous.endBeat - previousPass.startBeat,
+    });
+}
 
 /**
  * Open a captured clip where its loop passes require. The capture terminal has
@@ -92,6 +127,7 @@ export async function commitRecording(clip: Clip, capture?: RecordedCapture): Pr
         recordingPassTiming.retire(clip.id);
         return;
     }
+    stageFinalCapturedPass(clip, capture);
     const placed = placeCapturedClip(clip, capture.mediaOriginSeconds);
     placeRecordingTakes({
         clipId: clip.id,

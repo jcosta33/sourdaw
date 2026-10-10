@@ -183,6 +183,51 @@ describe('recording pass capture-clock witnesses', () => {
         expect(recordingPassTiming.captureEnd('capture', 54)).toBeUndefined();
     });
 
+    it('finalizes an incoming lap only through captured PCM and the frozen ending', () => {
+        recordingPassTiming.begin('capture', 10);
+        recordingPassTiming.stage(pass('completed'), 52, true);
+        recordingPassTiming.observeEntry(['capture'], 8, 52, true);
+        recordingPassTiming.finish(
+            'capture',
+            {
+                contextSeconds: 52.25,
+                beatAtContextSeconds: (seconds) => 8 + (seconds - 52) * 2,
+            },
+            8.5
+        );
+        clock.tempo = 60;
+        const empty = { startBeat: 8, endBeat: 8, passEndContextSeconds: 52 };
+        expect(recordingPassTiming.finalPass('capture', 51.9)).toEqual(empty);
+        expect(recordingPassTiming.finalPass('capture', 52)).toEqual(empty);
+        expect(recordingPassTiming.finalPass('capture', 52.15)?.endBeat).toBeCloseTo(8.3, 10);
+        expect(recordingPassTiming.finalPass('capture', 53)).toEqual({
+            startBeat: 8,
+            endBeat: 8.5,
+            passEndContextSeconds: 52.25,
+        });
+    });
+
+    it.each([false, true])(
+        'does not invent an incoming lap before a planned seam sounds, cancelled=%s',
+        (cancelled) => {
+            recordingPassTiming.begin('capture', 10);
+            recordingPassTiming.stage(pass('planned'), 52, true);
+            if (cancelled) {
+                recordingPassTiming.cancelBoundary('capture', 51.9);
+            }
+            recordingPassTiming.finish('capture', { contextSeconds: 51.9, beatAtContextSeconds: () => 11.8 }, 11.8);
+            expect(recordingPassTiming.finalPass('capture', 53)).toBeUndefined();
+        }
+    );
+
+    it('does not invent a loop pass for an ordinary first ending or a retired owner', () => {
+        recordingPassTiming.begin('capture', 10);
+        recordingPassTiming.finish('capture', { contextSeconds: 51.5, beatAtContextSeconds: () => 11 }, 11);
+        expect(recordingPassTiming.finalPass('capture', 53)).toBeUndefined();
+        recordingPassTiming.retire('capture');
+        expect(recordingPassTiming.finalPass('capture', 53)).toBeUndefined();
+    });
+
     it('retires only the discarded capture and refuses its stale source read', () => {
         recordingPassTiming.begin('capture', 10);
         const old = pass('old');

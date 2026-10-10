@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { type startAudioRecording } from '#/modules/AudioEngine/useCases';
+
 import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
@@ -21,6 +23,7 @@ type PunchTerminalResult =
     | { kind: 'completed'; buffer: { duration: number }; sampleZeroContextFrame: number; sampleRate: number }
     | { kind: 'failed'; reason: string };
 type PunchTerminal = (result: PunchTerminalResult) => void;
+type PunchCaptureClockRegistration = NonNullable<Parameters<typeof startAudioRecording>[3]>;
 
 function completedPunchResult(
     sampleZeroContextFrame = 4800,
@@ -66,7 +69,14 @@ const audioEngineMocks = {
     audioEngine: { setTransportInfo: vi.fn() },
     stopAllScheduled: vi.fn(),
     startAudioRecording:
-        vi.fn<(trackId: string, terminal: PunchTerminal, inputId?: string | null) => Promise<boolean>>(),
+        vi.fn<
+            (
+                trackId: string,
+                terminal: PunchTerminal,
+                inputId?: string | null,
+                registerCaptureClock?: PunchCaptureClockRegistration
+            ) => Promise<boolean>
+        >(),
     stopAudioRecording: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
@@ -1196,6 +1206,16 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('starts punch-in recording when the playhead crosses punchInBeat with armed audio tracks', async () => {
+        const readCaptureStart = vi.fn<Parameters<PunchCaptureClockRegistration>[0]>(() => ({ status: 'pending' }));
+        audioEngineMocks.startAudioRecording.mockImplementationOnce(
+            (_trackId, _terminal, _inputId, registerCaptureClock) => {
+                if (!registerCaptureClock) {
+                    throw new Error('expected punch recording to register its producer capture clock');
+                }
+                registerCaptureClock(readCaptureStart);
+                return Promise.resolve(true);
+            }
+        );
         trackStoreState.value = {
             tracks: [{ id: 'rec-1', armed: true, kind: 'audio', inputId: 'dev-punch', clips: [] }],
         };
@@ -1212,12 +1232,35 @@ describe('startPlayheadScheduler', () => {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
         emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await vi.waitFor(() => {
+            expect(audioEngineMocks.startAudioRecording).toHaveBeenCalledTimes(1);
+            expect(schedulerSession.tickInFlight).toBe(false);
+        });
 
         expect(arrangementMocks.startRecording).toHaveBeenCalledTimes(1);
-        expect(audioEngineMocks.startAudioRecording).toHaveBeenCalledWith('rec-1', expect.any(Function), 'dev-punch');
+        expect(audioEngineMocks.startAudioRecording).toHaveBeenCalledWith(
+            'rec-1',
+            expect.any(Function),
+            'dev-punch',
+            expect.any(Function)
+        );
         expect(schedulerSession.punchRecordingActive).toBe(true);
+        expect(readCaptureStart).not.toHaveBeenCalled();
+
+        ctxTime.now = 0.2;
+        emitSchedulerTick(worker);
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+        expect(readCaptureStart).toHaveBeenCalledTimes(1);
+        readCaptureStart.mockReturnValueOnce({ status: 'captured', contextSeconds: 0.15 });
+        ctxTime.now = 0.3;
+        emitSchedulerTick(worker);
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+        expect(readCaptureStart).toHaveBeenCalledTimes(2);
+        ctxTime.now = 0.4;
+        emitSchedulerTick(worker);
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+        expect(readCaptureStart).toHaveBeenCalledTimes(2);
+        recordingLifecycle.endRecording();
     });
 
     // The crossing is only detected once the playhead is at or past punchInBeat,

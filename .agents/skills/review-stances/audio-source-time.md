@@ -155,3 +155,20 @@ from the entire delayed buffer. Its original check changed tempo during the
 flush and never inspected uncomped playback. That omitted consumer, rather than
 forwarded finalizer arguments or a green take-bound assertion, is the required
 ending probe.
+
+## A sounded final lap must own its captured tail
+
+PR #5165's recorder fixture confused the continuous media's unwrapped end
+with the loop carrier's end and omitted the final open lap. After a sounded
+seam, Stop must retain a selectable take for the incoming lap's captured PCM,
+bounded by both the producer extent and the frozen gesture. Prove the dying
+and final takes separately through comp resolution and actual source scheduling,
+including known first/last PCM frames and the recording's single Undo/Redo.
+An unsounded or cancelled seam, or PCM ending before the incoming entry, must
+create no phantom final lap. An empty sounded final lap must also retire its original provisional identity,
+so that identity cannot duplicate the completed dying take in comp selection.
+Keep ordinary first takes and unsounded planned replacement identities intact.
+Initialize the same gesture-clock port as app
+bootstrap and drive settled ticks to Stop; a stale beat paired with a later
+context time is not an ending receipt. The deliberate minimum carrier and
+physical producer cutoff remain a separate obligation.

@@ -785,3 +785,18 @@ source scheduling, before a planned seam and before any planned seam. Assert
 source duration and known PCM alongside raw CRDT, projected clips/takes and real
 Undo/Redo. Keep complete source PCM and the short carrier as separate obligations.
 A mutation of only the take ending cannot establish the base consumer's bound.
+
+The actual-recorder fixture in PR #5165 asserted an unwrapped media end as the
+carrier end without selecting the final incoming lap. Its producer retained
+post-seam PCM that no take could reach. Distinguish carrier geometry, continuous
+source extent, and each pass's physical interval. Use the initialized app's
+gesture-clock port and settled scheduler ticks through Stop, then select both
+the completed dying pass and the final partial lap through comp resolution and
+live source scheduling. Assert exact known PCM boundaries after the real
+recording Undo/Redo, including no sample beyond the producer's final frame.
+Keep the original wrong end assertion and its hosted failure as evidence;
+correcting that assertion alone does not repair missing selectable material.
+Pair the captured final tail with a producer extent ending at or before the
+sounded seam. In the empty case, prove the original unfinished identity retires
+and the completed pass remains selectable exactly once after Undo/Redo; leaving
+the initial no-depth take duplicates that pass even without minting a new take.

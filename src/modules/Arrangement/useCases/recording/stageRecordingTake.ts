@@ -10,6 +10,8 @@ type StageRecordingTakeInput = {
     startBeat: number;
     endBeat: number;
     sourceOffsetBeats?: number;
+    /** Reuse this recording's still-open audio take when its final lap closes. */
+    provisionalTakeId?: string;
     /** Physical seam ending this recorded pass, on the capture clock. */
     passEndContextSeconds?: number;
     plannedPassEnd?: boolean;
@@ -31,26 +33,47 @@ type StageRecordingTakeInput = {
 export function stageRecordingTake(input: StageRecordingTakeInput): void {
     const state = takeLaneStore.value;
     if (!state) {
+        if (input.provisionalTakeId !== undefined) {
+            throw new Error('Recording provisional take is not available');
+        }
         return;
     }
 
     const lane = state.lanes.find((existing) => existing.trackId === input.trackId);
-    const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
     let replacement: Take | undefined;
-    if (replacementId !== undefined) {
-        replacement = lane?.takes.find((take) => take.id === replacementId);
-    }
     let take: Take;
-    if (replacement) {
-        take = { ...replacement, endBeat: input.endBeat };
+    if (input.provisionalTakeId !== undefined) {
+        replacement = lane?.takes.find((candidate) => candidate.id === input.provisionalTakeId);
+        if (
+            !replacement ||
+            replacement.clipId !== input.clipId ||
+            replacement.sourceOffsetBeats !== undefined ||
+            input.sourceOffsetBeats === undefined
+        ) {
+            throw new Error('Recording provisional take is not available');
+        }
+        take = {
+            ...replacement,
+            startBeat: input.startBeat,
+            endBeat: input.endBeat,
+            sourceOffsetBeats: input.sourceOffsetBeats,
+        };
     } else {
-        take = createTake(
-            input.clipId,
-            input.name,
-            recordingPassTiming.nextStartBeat(input.clipId) ?? input.startBeat,
-            input.endBeat,
-            input.sourceOffsetBeats
-        );
+        const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
+        if (replacementId !== undefined) {
+            replacement = lane?.takes.find((candidate) => candidate.id === replacementId);
+        }
+        if (replacement) {
+            take = { ...replacement, endBeat: input.endBeat };
+        } else {
+            take = createTake(
+                input.clipId,
+                input.name,
+                recordingPassTiming.nextStartBeat(input.clipId) ?? input.startBeat,
+                input.endBeat,
+                input.sourceOffsetBeats
+            );
+        }
     }
     recordingPassTiming.stage(take, input.passEndContextSeconds, input.plannedPassEnd);
     if (input.nextPassStartBeat !== undefined) {

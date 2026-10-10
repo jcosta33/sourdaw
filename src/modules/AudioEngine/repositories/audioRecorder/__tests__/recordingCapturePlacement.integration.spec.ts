@@ -6,7 +6,11 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { activeRecordingRef, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    getArrangementHandlers,
+    resolveClipsWithComping,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -23,11 +27,18 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { playheadClockRef, playheadPositionRef, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import {
+    playheadClockRef,
+    playheadPositionRef,
+    setGestureClockSource,
+    tempoMapStore,
+    transportStore,
+} from '#/modules/Transport/stores';
 import {
     defaultTransportState,
     getTransportHandlers,
     getSchedulerTimingDiagnostics,
+    seekPlayhead,
     setPlayback,
     stopPlayback,
     toggleRecording,
@@ -53,6 +64,7 @@ const hardware = vi.hoisted(() => ({
     rollStarts: 0,
     rollGate: Promise.resolve(),
     buffer: null as AudioBuffer | null,
+    sourceStarts: [] as { sourceSeconds: number; durationSeconds: number }[],
     schedulerWorker: null as {
         onmessage: ((event: { data: unknown }) => void) | null;
         generation: number;
@@ -66,7 +78,11 @@ const context = {
     get currentTime() {
         return hardware.now;
     },
-    createGain: () => ({ connect: vi.fn(), disconnect: vi.fn() }),
+    createGain: () => ({
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        gain: { cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
+    }),
     createMediaStreamSource: () => ({ connect: vi.fn(), disconnect: vi.fn() }),
     decodeAudioData: () => {
         if (!hardware.buffer) {
@@ -88,6 +104,16 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
     return {
         ...real,
         getAudioContext: () => context,
+        getCurrentTime: () => hardware.now,
+        ensureTrackStrip: () => ({ gainNode: {} }),
+        createBufferSource: () => ({
+            connect: vi.fn(),
+            disconnect: vi.fn(),
+            playbackRate: { value: 1 },
+            start: (_when: number, sourceSeconds: number, durationSeconds: number) => {
+                hardware.sourceStarts.push({ sourceSeconds, durationSeconds });
+            },
+        }),
         resumeEngine: () => Promise.resolve(),
         nativeLiveGraphSessionOffered: () => true,
         startNativeLiveGraphSession: async (): Promise<
@@ -152,6 +178,26 @@ function expectProjection() {
     expect(getCrdtDoc<Project>('root')!.takeLanes.lanes).toEqual(takeLaneStore.value!.lanes);
 }
 
+async function schedulerTick(seconds: number): Promise<void> {
+    hardware.now = seconds;
+    const scheduler = hardware.schedulerWorker;
+    if (!scheduler?.onmessage) {
+        throw new Error('Playback did not open its scheduler worker');
+    }
+    const received = performance.timeOrigin + performance.now();
+    const settled = getSchedulerTimingDiagnostics().ticksSettled;
+    scheduler.onmessage({
+        data: {
+            type: 'tick',
+            generation: scheduler.generation,
+            sequence: ++scheduler.sequence,
+            scheduledAtMs: received - 2,
+            sentAtMs: received - 1,
+        },
+    });
+    await vi.waitFor(() => expect(getSchedulerTimingDiagnostics().ticksSettled).toBe(settled + 1), { interval: 1 });
+}
+
 describe('real recorder first-frame capture placement', () => {
     beforeEach(async () => {
         configureAutomergeStoragePort(null);
@@ -189,7 +235,9 @@ describe('real recorder first-frame capture placement', () => {
         hardware.now = 50;
         hardware.rollStarts = 0;
         hardware.buffer = null;
+        hardware.sourceStarts = [];
         hardware.schedulerWorker = null;
+        setGestureClockSource({ getAudioTimeSeconds: () => hardware.now, readNativeCursorBeats: () => null });
         Object.defineProperty(navigator, 'mediaDevices', {
             configurable: true,
             value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) },
@@ -302,9 +350,17 @@ describe('real recorder first-frame capture placement', () => {
             route: 'joins playback before a loop wrap',
             tempo: 120,
             startBeat: 8,
-            endBeat: 12.1,
+            endBeat: 12,
             originBeat: 11.7,
             pcmEndBeat: 12.1,
+        },
+        {
+            route: 'joins playback before a loop wrap with an empty final lap',
+            tempo: 120,
+            startBeat: 8,
+            endBeat: 12,
+            originBeat: 11.7,
+            pcmEndBeat: 12,
         },
         {
             route: 'joins playback through a tempo edit',
@@ -322,7 +378,9 @@ describe('real recorder first-frame capture placement', () => {
                 roll = resolve;
             });
             const wrapsBeforeInput = route === 'joins playback after a loop wrap';
-            const wrapsAfterInput = route === 'joins playback before a loop wrap';
+            const wrapsAfterInput = route.startsWith('joins playback before a loop wrap');
+            const emptyFinalLap = route.endsWith('with an empty final lap');
+            const capturedFrames = emptyFinalLap ? 7200 : 9600;
             const loops = wrapsBeforeInput || wrapsAfterInput;
             if (loops) {
                 hardware.now = 50.2;
@@ -339,6 +397,7 @@ describe('real recorder first-frame capture placement', () => {
             }
             toggleRecording();
             await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1), { interval: 1 });
+            const provisionalTakeId = takeLaneStore.value!.lanes[0]!.takes[0]!.id;
             // Existing successful admission allows a roll request before worker
             // readiness or first input. This test repairs placement, not admission.
             expect(activeRecordingRef.current).toHaveLength(1);
@@ -370,9 +429,16 @@ describe('real recorder first-frame capture placement', () => {
             const captureInput = (seconds: number): void => {
                 hardware.now = seconds;
                 const firstFrame = Math.round(seconds * context.sampleRate);
-                for (let block = 0; block < 75; block++) {
-                    vi.stubGlobal('currentFrame', firstFrame + block * 128);
-                    processor.process([[Float32Array.from({ length: 128 }, (_value, index) => block * 128 + index)]]);
+                for (let offset = 0; offset < capturedFrames; offset += 128) {
+                    vi.stubGlobal('currentFrame', firstFrame + offset);
+                    processor.process([
+                        [
+                            Float32Array.from(
+                                { length: Math.min(128, capturedFrames - offset) },
+                                (_value, index) => offset + index
+                            ),
+                        ],
+                    ]);
                 }
             };
             const firstFrame = Math.round((wrapsAfterInput ? 50.25 : 50.4) * context.sampleRate);
@@ -381,57 +447,44 @@ describe('real recorder first-frame capture placement', () => {
             }
             // The actual processor, not readiness/callback time, publishes sample zero.
             if (loops) {
-                for (const seconds of [50.25, 50.3, 50.35, 50.4]) {
-                    hardware.now = seconds;
-                    const scheduler = hardware.schedulerWorker;
-                    if (!scheduler?.onmessage) {
-                        throw new Error('Playback did not open its scheduler worker');
-                    }
-                    const received = performance.timeOrigin + performance.now();
-                    const settled = getSchedulerTimingDiagnostics().ticksSettled;
-                    scheduler.onmessage({
-                        data: {
-                            type: 'tick',
-                            generation: scheduler.generation,
-                            sequence: ++scheduler.sequence,
-                            scheduledAtMs: received - 2,
-                            sentAtMs: received - 1,
-                        },
-                    });
-                    await vi.waitFor(() => expect(getSchedulerTimingDiagnostics().ticksSettled).toBe(settled + 1), {
-                        interval: 1,
-                    });
+                for (const seconds of [50.25, 50.3, 50.35, 50.4, 50.45, 50.5, 50.55, 50.6]) {
+                    await schedulerTick(seconds);
                     expect(playheadClockRef.audioTimeSeconds).toBe(seconds);
                 }
-                expect(playheadClockRef.beat).toBeCloseTo(8.2, 10);
+                expect(playheadClockRef.beat).toBeCloseTo(8.6, 10);
             } else {
                 hardware.now = 50.4;
             }
             if (!wrapsAfterInput) {
-                captureInput(hardware.now);
+                captureInput(50.4);
             }
-            expect(publication()).toMatchObject({ sampleCount: 9600, sampleZeroContextFrame: firstFrame });
+            expect(publication()).toMatchObject({ sampleCount: capturedFrames, sampleZeroContextFrame: firstFrame });
             hardware.now = 50.6;
             await stopPlayback();
             const clips = trackStore.value!.tracks[0]!.clips;
             expect(clips).toHaveLength(1);
             expect(clips[0]!.startBeat).toBeCloseTo(startBeat, 10);
             // The existing #4994 carrier minimum survives; no PCM is fabricated
-            // beyond the measured 0.2-second recording.
+            // beyond the measured producer extent.
             expect(clips[0]!.endBeat).toBeCloseTo(endBeat, 10);
             const media = audioBufferCache.get(clips[0]!.audioBufferId!);
-            expect(media?.duration).toBe(0.2);
-            expect(media?.length).toBe(9600);
+            expect(media?.duration).toBe(capturedFrames / context.sampleRate);
+            expect(media?.length).toBe(capturedFrames);
             const placedOrigin = clips[0]!.startBeat - (clips[0]!.audioOffsetBeats ?? 0);
             expect(placedOrigin).toBeCloseTo(originBeat, 10);
             expect(placedOrigin + (media!.duration * tempo) / 60).toBeCloseTo(pcmEndBeat, 10);
-            expect(media?.getChannelData(0)[9599]).toBe(9599);
-            expect(media?.getChannelData(0)[9600]).toBeUndefined();
+            expect(media?.getChannelData(0)[capturedFrames - 1]).toBe(capturedFrames - 1);
+            expect(media?.getChannelData(0)[capturedFrames]).toBeUndefined();
             expect(media?.getChannelData(0)[0]).toBe(0);
             const clickBeat = placedOrigin + (0.1 * tempo) / 60;
             const clickFrame = Math.round(((clickBeat - placedOrigin) * 60 * context.sampleRate) / tempo);
             expect(clickFrame).toBe(4800);
             expect(media?.getChannelData(0)[clickFrame]).toBe(4800);
+            if (wrapsAfterInput && !emptyFinalLap) {
+                const takes = takeLaneStore.value!.lanes[0]!.takes;
+                expect(takes).toHaveLength(2);
+                expect(takes.every((take) => take.sourceOffsetBeats !== undefined)).toBe(true);
+            }
             expectProjection();
             expect(undoHistoryStore.value?.past).toHaveLength(1);
             const committedClips = structuredClone(clips);
@@ -450,6 +503,74 @@ describe('real recorder first-frame capture placement', () => {
                 expect(capturedPass.startBeat).toBeCloseTo(11.8, 10);
                 expect(capturedPass.passAnchorSeconds).toBeCloseTo(0.05, 10);
                 expect(capturedPass.passDepthSeconds).toBeCloseTo(0.05, 10);
+                const finalPass = takeLaneStore.value!.lanes[0]!.takes.find(
+                    (take) => take.sourceOffsetBeats !== undefined && take.sourceOffsetBeats > 0
+                );
+                const selections = [
+                    { take: capturedPass, sourceSeconds: 0.05, durationSeconds: 0.1, firstFrame: 2400 },
+                ];
+                if (!emptyFinalLap) {
+                    expect(finalPass).toBeDefined();
+                    expect(finalPass!.id).toBe(provisionalTakeId);
+                    expect(finalPass!.name).toBe('Take 1');
+                    expect(finalPass!.startBeat).toBe(8);
+                    expect(finalPass!.endBeat).toBeCloseTo(8.1, 10);
+                    expect(finalPass!.sourceOffsetBeats).toBeCloseTo(0.2, 10);
+                    expect(finalPass!.passAnchorSeconds).toBeCloseTo(-1.85, 10);
+                    expect(finalPass!.passDepthSeconds).toBeCloseTo(0.15, 10);
+                    selections.push({ take: finalPass!, sourceSeconds: 0.15, durationSeconds: 0.05, firstFrame: 7200 });
+                }
+                for (const selection of selections) {
+                    await executeAppAction(
+                        {
+                            type: 'setCompRegion',
+                            payload: {
+                                trackId: TRACK_ID,
+                                takeId: selection.take.id,
+                                startBeat: selection.take.startBeat,
+                                endBeat: selection.take.endBeat,
+                            },
+                        },
+                        { skipUndo: true }
+                    );
+                    const resolved = resolveClipsWithComping(TRACK_ID, trackStore.value!.tracks[0]!.clips);
+                    const fragment = resolved.find((clip) => clip.startBeat === selection.take.startBeat)!;
+                    expect((fragment.audioOffsetBeats ?? 0) / 2).toBeCloseTo(selection.sourceSeconds, 10);
+                    seekPlayhead(selection.take.startBeat);
+                    await vi.waitFor(() =>
+                        expect(transportStore.value!.playheadPosition).toBe(selection.take.startBeat)
+                    );
+                    hardware.sourceStarts = [];
+                    setPlayback(true);
+                    await vi.waitFor(() => expect(playheadClockRef.beat).toBe(selection.take.startBeat));
+                    await schedulerTick(hardware.now);
+                    const started = hardware.sourceStarts.find(
+                        (source) => Math.abs(source.sourceSeconds - selection.sourceSeconds) < 1e-9
+                    )!;
+                    expect(started).toBeDefined();
+                    expect(
+                        hardware.sourceStarts.filter(
+                            (source) => Math.abs(source.sourceSeconds - selection.sourceSeconds) < 1e-9
+                        )
+                    ).toHaveLength(1);
+                    expect(started.durationSeconds).toBeCloseTo(selection.durationSeconds, 10);
+                    expect(media!.getChannelData(0)[Math.round(started.sourceSeconds * 48000)]).toBe(
+                        selection.firstFrame
+                    );
+                    expect(
+                        media!.getChannelData(0)[
+                            Math.round((started.sourceSeconds + started.durationSeconds) * 48000) - 1
+                        ]
+                    ).toBe(selection.firstFrame + Math.round(selection.durationSeconds * 48000) - 1);
+                    await stopPlayback();
+                }
+                if (emptyFinalLap) {
+                    expect(finalPass).toBeUndefined();
+                    const takes = takeLaneStore.value!.lanes[0]!.takes;
+                    expect(takes).toHaveLength(1);
+                    expect(takes[0]!.id).toBe(capturedPass.id);
+                    expect(takes[0]!.id).not.toBe(provisionalTakeId);
+                }
             }
         }
     );

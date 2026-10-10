@@ -217,6 +217,31 @@ function recordingPassCaptureEnd(clipId: string, availableEndContextSeconds: num
     };
 }
 
+/** Close the provisional final lap only after its preceding seam sounded. */
+function finalRecordingPass(clipId: string, availableEndContextSeconds: number) {
+    const timing = recordingPassTimings.get(clipId);
+    if (
+        !timing?.ending ||
+        timing.ending.takeId !== undefined ||
+        timing.previousSeamContextSeconds === null ||
+        timing.openPassContextSeconds === null
+    ) {
+        return undefined;
+    }
+    const passEndContextSeconds = Math.min(availableEndContextSeconds, timing.ending.receipt.contextSeconds);
+    const endBeat = Math.min(timing.ending.endBeat, timing.ending.receipt.beatAtContextSeconds(passEndContextSeconds));
+    if (passEndContextSeconds <= timing.openPassContextSeconds || endBeat <= timing.openPassBeat) {
+        // No incoming PCM: close its existing identity at the entry. Normal
+        // take placement retires this empty geometry before the one commit.
+        return {
+            startBeat: timing.openPassBeat,
+            endBeat: timing.openPassBeat,
+            passEndContextSeconds: timing.openPassContextSeconds,
+        };
+    }
+    return { startBeat: timing.openPassBeat, endBeat, passEndContextSeconds };
+}
+
 function retireRecordingPassTiming(clipId: string): void {
     recordingPassTimings.delete(clipId);
 }
@@ -228,6 +253,7 @@ export const recordingPassTiming = {
     retire: retireRecordingPassTiming,
     finish: finishRecordingPass,
     captureEnd: recordingPassCaptureEnd,
+    finalPass: finalRecordingPass,
     observeEntry: observeRecordingPassEntry,
     cancelBoundary: cancelRecordingPassBoundary,
     replacementTakeId: (clipId: string): string | undefined => {
