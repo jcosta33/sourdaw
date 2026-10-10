@@ -1,4 +1,5 @@
 import { startInputMonitoring as startInputMonitoringRepo } from '../../repositories/audioRecorder/inputMonitoring';
+import { captureInputMonitoringProjectRootIdentity } from '../../stores/inputMonitoringProjectAccess';
 
 import { inputMonitoringAdmissions, type Admission, type ReadIntent } from './inputMonitoringAdmission';
 
@@ -7,6 +8,7 @@ export function admitInputMonitoring(
     captureInputId: string | null | undefined,
     readIntent: ReadIntent
 ): Promise<boolean> {
+    const requestingRootIdentity = captureInputMonitoringProjectRootIdentity();
     const intent = readIntent();
     if (!intent) {
         return Promise.resolve(false);
@@ -15,6 +17,9 @@ export function admitInputMonitoring(
     const admission: Admission = { selectorInputId: intent.inputId, captureInputId: requestedInputId, readIntent };
     inputMonitoringAdmissions.set(trackId, admission);
     const isCurrent = (): boolean | 'retain' => {
+        if (captureInputMonitoringProjectRootIdentity() !== requestingRootIdentity) {
+            return false;
+        }
         const current = readIntent();
         if (!current || current.inputId !== admission.selectorInputId) {
             return false;

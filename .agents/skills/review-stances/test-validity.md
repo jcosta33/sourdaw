@@ -798,3 +798,12 @@ fail. Guard the actual raw-document owner before mutation, including deletion, s
 cannot silently splice a shared survivor. Runtime execution does not establish typed fixture
 validity; retain the original type failure and verify the repaired source without widening contracts
 or asserting away absence.
+
+PR #5091's head `e9672c7966` tested root replacement during outgoing removal and pending grants
+during same-root intent changes, but never moved the root while permission itself was pending.
+Drive both the optimistic On transaction and real Undo rearm through initialized project access,
+replace the root with an identical clone, and settle permission only after proving the runtime root
+token changed. Assert `headConsumed` before the Undo grant, zero stale strip/edge/capture ownership,
+one orphan-stream stop, then a fresh two-owner successor capture that remains live. Reverting only
+the shared admission's root comparison must fail both named cases; a root-cleanup case and a
+same-root intent mutation cannot carry that oracle.

@@ -78,6 +78,7 @@ describe('startInputMonitoring', () => {
             inputMonitoring: 'auto' as const,
         };
         setInputMonitoringProjectAccess({
+            captureRootIdentity: () => 'root-identity',
             hasTrack: () => true,
             readTrack: () => committed,
             subscribe: () => () => undefined,
@@ -102,6 +103,7 @@ describe('startInputMonitoring', () => {
         }
         let committed: typeof projected | null = projected;
         setInputMonitoringProjectAccess({
+            captureRootIdentity: () => 'root-identity',
             hasTrack: () => committed !== null,
             readTrack: () => committed,
             subscribe: () => () => undefined,
@@ -123,6 +125,7 @@ describe('startInputMonitoring', () => {
         }
         let committed = { ...projected, inputMonitoring: 'auto' as 'auto' | 'on' | 'off', armed: false };
         setInputMonitoringProjectAccess({
+            captureRootIdentity: () => 'root-identity',
             hasTrack: () => true,
             readTrack: () => committed,
             subscribe: () => () => undefined,
@@ -145,6 +148,7 @@ describe('startInputMonitoring', () => {
         }
         let committed: typeof projected | null = { ...projected, inputMonitoring: 'auto', armed: false };
         setInputMonitoringProjectAccess({
+            captureRootIdentity: () => 'root-identity',
             hasTrack: () => committed !== null,
             readTrack: () => committed,
             subscribe: () => () => undefined,
@@ -166,6 +170,7 @@ describe('startInputMonitoring', () => {
             }
             const committed: typeof projected = { ...projected, inputMonitoring: 'auto', armed: true };
             setInputMonitoringProjectAccess({
+                captureRootIdentity: () => 'root-identity',
                 hasTrack: () => true,
                 readTrack: () => committed,
                 subscribe: () => () => undefined,
@@ -195,6 +200,7 @@ describe('startInputMonitoring', () => {
         }
         let committed: typeof projected = { ...projected, inputMonitoring: 'auto', armed: false };
         setInputMonitoringProjectAccess({
+            captureRootIdentity: () => 'root-identity',
             hasTrack: () => true,
             readTrack: () => committed,
             subscribe: () => () => undefined,

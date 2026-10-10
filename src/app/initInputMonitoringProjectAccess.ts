@@ -1,10 +1,16 @@
 import { sanitizeTrackSnapshot } from '#/modules/Arrangement/stores';
 import { configureInputMonitoringProjectAccess } from '#/modules/AudioEngine/useCases';
-import { DOC_PREFIX_ROOT, getCrdtDoc, subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectRootIdentity,
+    DOC_PREFIX_ROOT,
+    getCrdtDoc,
+    subscribeToCrdtChanges,
+} from '#/modules/CrdtDocument/useCases';
 
 /** Bind fresh committed reads without subscribing or retaining a track projection at registration. */
 export function initInputMonitoringProjectAccess(): void {
     configureInputMonitoringProjectAccess({
+        captureRootIdentity: captureProjectRootIdentity,
         hasTrack: (trackId) => {
             const document = getCrdtDoc(DOC_PREFIX_ROOT);
             // A missing registered root owns no tracks, including during project teardown.

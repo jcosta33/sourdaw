@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { createCrdtDoc, mutateCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectRootIdentity,
+    createCrdtDoc,
+    mutateCrdtDoc,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 
 import { initInputMonitoringProjectAccess } from '../initInputMonitoringProjectAccess';
 
@@ -67,6 +72,7 @@ describe('initInputMonitoringProjectAccess', () => {
 
     it('reads each committed root afresh and treats a missing root or track slot as no owner', () => {
         const access = registeredAccess();
+        expect(access.captureRootIdentity()).toBe(captureProjectRootIdentity());
         expect(access.hasTrack('a')).toBe(false);
         expect(access.readTrack('a')).toBeNull();
         publishCommittedTrack('a');

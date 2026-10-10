@@ -525,6 +525,63 @@ describe('track deletion releases the input monitor at Command commit', () => {
         }
     });
 
+    it('rejects a pending optimistic On grant after the requesting root is replaced', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before gesture');
+        }
+        restoreTrackSnapshot({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'a' ? { ...track, armed: false, inputMonitoring: 'auto' } : track
+            ),
+        });
+        flushAutomergeStorageWrites();
+        const pending = deferredGrant();
+        getUserMedia.mockReturnValueOnce(pending.request);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => toggleInputMonitoring('a'));
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
+            expect(committedInputMonitoring('a')).toBe('auto');
+            expect(trackStore.value?.tracks.find((track) => track.id === 'a')?.inputMonitoring).toBe('on');
+            const outgoingRootIdentity = captureProjectRootIdentity();
+            const outgoing = getCrdtDoc<Record<string, unknown>>('root');
+            if (!outgoing) {
+                throw new Error('Expected outgoing committed root');
+            }
+            replaceCrdtDoc({ id: 'root', doc: clone(outgoing) });
+            expect(captureProjectRootIdentity()).not.toBe(outgoingRootIdentity);
+            engine.ensureTrackStrip.mockClear();
+            source.connect.mockClear();
+
+            pending.grant(stream);
+            await vi.waitFor(() => expect(inputMonitoringSession.pendingRequests.size).toBe(0));
+            expect(engine.ensureTrackStrip).not.toHaveBeenCalledWith('a');
+            expect(source.connect).not.toHaveBeenCalledWith(gains.get('a'));
+            expect(inputTrack.stop).toHaveBeenCalledOnce();
+            expect(monitorOwners()).toEqual([]);
+            expect(inputMonitoringSession.captures.has(null)).toBe(false);
+
+            const successorStop = vi.fn();
+            const successorStream = { getTracks: () => [{ stop: successorStop }] };
+            const successorSource = { connect: vi.fn(), disconnect: vi.fn() };
+            getUserMedia.mockResolvedValueOnce(successorStream);
+            engine.createMediaStreamSource.mockReturnValueOnce(successorSource);
+            await expect(
+                Promise.all([startInputMonitoring('a', null), startInputMonitoring('b', null)])
+            ).resolves.toEqual([true, true]);
+            expect(successorSource.connect).toHaveBeenCalledWith(gains.get('a'));
+            expect(successorSource.connect).toHaveBeenCalledWith(gains.get('b'));
+            expect(monitorOwners()).toEqual(['a', 'b']);
+            expect(successorStop).not.toHaveBeenCalled();
+        } finally {
+            transaction.abort();
+        }
+    });
+
     it.each(['auto', 'off'] as const)(
         'admits a pending optimistic On grant over unchanged committed %s through an unrelated commit',
         async (initialMode) => {
@@ -1433,6 +1490,48 @@ describe('track deletion releases the input monitor at Command commit', () => {
             throw new Error('Expected the surviving independent input capture');
         }
         expect([...survivingCapture.monitorEdges.keys()]).toEqual(['b']);
+    });
+
+    it('rejects a pending Undo rearm grant after the restored root is replaced', async () => {
+        await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+        const pending = deferredGrant();
+        getUserMedia.mockReturnValueOnce(pending.request);
+        const restoring = undo();
+        await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
+        expect(await restoring).toEqual({ headConsumed: true });
+        expect(docTrackIds()).toEqual(['a', 'b']);
+        expect(committedInputMonitoring('a')).toBe('on');
+        const restoredRootIdentity = captureProjectRootIdentity();
+        const restored = getCrdtDoc<Record<string, unknown>>('root');
+        if (!restored) {
+            throw new Error('Expected restored committed root');
+        }
+        replaceCrdtDoc({ id: 'root', doc: clone(restored) });
+        expect(captureProjectRootIdentity()).not.toBe(restoredRootIdentity);
+        engine.ensureTrackStrip.mockClear();
+        source.connect.mockClear();
+
+        pending.grant(stream);
+        await vi.waitFor(() => expect(inputMonitoringSession.pendingRequests.size).toBe(0));
+        expect(engine.ensureTrackStrip).not.toHaveBeenCalledWith('a');
+        expect(source.connect).not.toHaveBeenCalledWith(gains.get('a'));
+        expect(inputTrack.stop).toHaveBeenCalledOnce();
+        expect(monitorOwners()).toEqual([]);
+        expect(inputMonitoringSession.captures.has(null)).toBe(false);
+
+        const successorStop = vi.fn();
+        const successorStream = { getTracks: () => [{ stop: successorStop }] };
+        const successorSource = { connect: vi.fn(), disconnect: vi.fn() };
+        getUserMedia.mockResolvedValueOnce(successorStream);
+        engine.createMediaStreamSource.mockReturnValueOnce(successorSource);
+        await expect(Promise.all([startInputMonitoring('a', null), startInputMonitoring('b', null)])).resolves.toEqual([
+            true,
+            true,
+        ]);
+        expect(successorSource.connect).toHaveBeenCalledWith(gains.get('a'));
+        expect(successorSource.connect).toHaveBeenCalledWith(gains.get('b'));
+        expect(monitorOwners()).toEqual(['a', 'b']);
+        expect(successorStop).not.toHaveBeenCalled();
     });
 
     it.each([

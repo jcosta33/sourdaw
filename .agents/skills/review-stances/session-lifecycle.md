@@ -296,3 +296,13 @@ strip creation, edges, owners and captures plus one orphan-stream stop. A releva
 mode, input, kind or arm change must take authority; unchanged Auto/Off and an unrelated commit
 must still permit the gesture. Pair shared survivors and an already-admitted selected-input
 replacement so rejecting the old grant cannot retire current permission authority.
+
+PR #5091's grant fence was introduced in `2511d0c172` and refined in `46c03b3ab9`, but head
+`e9672c7966` still identified an admission only by track intent. Replace the installed root while
+an optimistic On grant over committed disarmed Auto is pending, preserving the same track ID,
+mode, input, kind and arm; repeat after real Command Undo restores On and has already returned
+`headConsumed`. Each outgoing grant must stop unused without creating a strip, edge, owner or
+capture in the successor. A fresh successor On admission must then connect both same-input owners
+without the stale settlement deleting their authority or stopping their shared stream. Removal
+continuation probes do not exercise this incoming grant boundary; deleting the root-identity
+comparison in the shared admission check must redden both replacement cases.
