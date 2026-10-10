@@ -71,8 +71,9 @@ type OfflineControllerRow = {
 
 /**
  * The stored controller moves a clip plays inside `[fromBeat, toBeat)`, at absolute
- * beats in beat order. The one projection live scheduling uses, handed to the
- * offline render so both place a controller identically.
+ * beats in beat order, each marked when it sits on the clip's closing line. The one
+ * projection live scheduling uses, handed to the offline render so both place and
+ * order a controller identically.
  */
 export type OfflineClipControllerProjector = (input: {
     controlChanges: readonly OfflineControllerRow[];
@@ -85,7 +86,7 @@ export type OfflineClipControllerProjector = (input: {
     };
     fromBeat: number;
     toBeat: number;
-}) => readonly OfflineControllerRow[];
+}) => readonly (OfflineControllerRow & { closesClip: boolean })[];
 
 export const offlineMidiEventProjectorState: {
     createProjector: OfflineMidiEventProjectorFactory | null;

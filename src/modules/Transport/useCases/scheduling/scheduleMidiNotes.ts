@@ -22,11 +22,11 @@ import {
     shouldPlayMidiEvent,
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
-import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { isBypassedNoteReceiver, type NoteReceivingInstrumentKind } from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
@@ -51,6 +51,7 @@ import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote
 import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
+import { resolvePlaybackNoteReceiver } from './resolvePlaybackNoteReceiver';
 import { resolveStoredControllerClips } from './resolveStoredControllerClips';
 import { restoreStoredControllers } from './restoreStoredControllers';
 import { createSameFramePostQueue } from './sameFramePostQueue';
@@ -81,20 +82,21 @@ const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
     'builtin-crumbs': { controlsKey: 'crumbsControls' },
 };
 
-// The three note-voicing categories, each a single first match. The note loop
-// below calls exactly these to pick the device it dispatches to, and
-// `resolveNoteVoicingDevice` calls them in the same order to name that device
-// without a node. Two copies of a priority order drift; one does not.
+// A Toaster child's notes go to its parent's kit, whatever else the parent's
+// chain holds; only this parent arm looks for a toaster outside the receiver.
 function findToasterDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
     return devices.find((device) => device.type === 'toaster');
 }
 
-function findWorkletSynthDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
-    return devices.find((device) => device.type in WORKLET_SYNTH_DEVICES);
-}
-
-function findFaustInstrumentDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
-    return devices.find((device) => isFaustInstrumentModule(device.type));
+// The receiver of a track's own notes when it is of one family, else undefined.
+// The note loop and `resolveNoteVoicingDevice` both read the one receiver
+// `resolvePlaybackNoteReceiver` chooses, so they cannot name different devices.
+function findReceiverOfKind<TDevice extends { type: string }>(
+    devices: readonly TDevice[],
+    kind: NoteReceivingInstrumentKind
+): TDevice | undefined {
+    const receiver = resolvePlaybackNoteReceiver(devices);
+    return receiver?.kind === kind ? receiver.device : undefined;
 }
 
 type SchedulerTrack = NonNullable<(typeof trackStore)['value']>['tracks'][number];
@@ -102,8 +104,9 @@ type SchedulerTrackStrip = ReturnType<typeof ensureTrackStrip>;
 
 /**
  * The toaster a track's notes are dispatched to, when one has live controls: the
- * track's own, or its parent's when the parent carries one (a child is a pad of the
- * parent's kit, numbered among the parent's children).
+ * track's own when it is the track's receiving instrument, or its parent's when the
+ * parent carries one (a child is a pad of the parent's kit, numbered among the
+ * parent's children).
  */
 function resolveToasterTarget(
     track: SchedulerTrack,
@@ -116,7 +119,7 @@ function resolveToasterTarget(
     controls: ToasterControls;
 } | null {
     let ownerTrack = track;
-    let device = findToasterDevice(track.devices);
+    let device = findReceiverOfKind(track.devices, 'toaster');
     let pad = -1;
     const parentTrack = track.parentId ? tracks.find((candidate) => candidate.id === track.parentId) : undefined;
     const parentDevice = parentTrack ? findToasterDevice(parentTrack.devices) : undefined;
@@ -146,18 +149,14 @@ function resolveStoredControllerDevice(
     track: SchedulerTrack,
     tracks: readonly SchedulerTrack[]
 ): { device: SchedulerTrack['devices'][number]; node: SchedulerTrackStrip['deviceNodes'][number] } | null {
-    if (
-        track.devices.some((candidate) => candidate.type === 'yeast') ||
-        resolveDrumKitDef(track.devices) ||
-        resolveDrumKit(track.devices)
-    ) {
+    if (track.devices.some((candidate) => candidate.type === 'yeast')) {
         return null;
     }
     const strip = ensureTrackStrip(track.id);
     if (resolveToasterTarget(track, tracks, strip)) {
         return null;
     }
-    const device = findWorkletSynthDevice(track.devices);
+    const device = findReceiverOfKind(track.devices, 'worklet-synth');
     if (!device || (device.type !== 'grand-boule' && device.type !== 'levain')) {
         return null;
     }
@@ -166,35 +165,35 @@ function resolveStoredControllerDevice(
 }
 
 /**
- * The one device on this rack that would voice the track's notes.
+ * The node-backed device on this rack that would voice the track's notes.
  *
- * A rack does not get scanned for "anything note-capable". The note loop
- * resolves one candidate per category in a fixed order and dispatches to
- * whichever resolves first, with no fall-through to a second candidate of the
- * same category — so a rack of `[fermenter, grand-boule]` is a `fermenter`
- * track, and the Grand Boule behind it is never in the note's signal path. A
- * predicate that matched either one would let the device further back answer
- * questions about a device it does not stand in for.
+ * It is the track's receiving instrument (`resolvePlaybackNoteReceiver`, the
+ * first note-accepting instrument in chain order) when that instrument needs a
+ * node: a Toaster, a worklet synth or a Faust instrument. A device further back
+ * is never in the note's signal path, so it must not answer questions about the
+ * device it does not stand in for.
  *
- * Effects are not a category here, deliberately. A MIDI track whose rack holds
- * only effects is *supposed* to reach the builtin fallback synth, so letting an
- * effect answer would invent a new defect rather than fix one — the same MD-4
- * shape `acceptsNotes` prevents offline.
+ * Effects never answer. A MIDI track whose rack holds only effects is *supposed*
+ * to reach the builtin fallback synth, so letting an effect answer would invent
+ * a new defect rather than fix one — the same MD-4 shape `acceptsNotes` prevents
+ * offline.
  *
- * Drum kits are absent for a different reason: `resolveDrumKitDef` and
- * `resolveDrumKit` read `track.devices` and need no node, so a kit voices its
- * samples either way and its branch runs ahead of the fallback regardless.
- * Whether admission should gate sample kits at all is a separate question about
- * a separate mechanism.
+ * A drum kit or built-in synth receiver answers nothing: both are voiced without
+ * a node, so admission of a node never decides whether they sound. Whether
+ * admission should gate sample kits at all is a separate question about a
+ * separate mechanism.
  *
  * Resolved without consulting `strip.deviceNodes`, which is what keeps this
- * answerable for a device that has no node. The note loop *does* cross from one
- * category to the next when a node is missing; that crossing is exactly the
- * environment-failure case, where reaching the fallback is the behaviour we
- * intend to keep.
+ * answerable for a device that has no node. When the receiver's node is missing
+ * for an environment reason, the note loop reaches the fallback synth, which is
+ * the behaviour we intend to keep.
  */
 function resolveNoteVoicingDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
-    return findToasterDevice(devices) ?? findWorkletSynthDevice(devices) ?? findFaustInstrumentDevice(devices);
+    const receiver = resolvePlaybackNoteReceiver(devices);
+    if (!receiver || receiver.kind === 'drum' || receiver.kind === 'builtin-synth') {
+        return undefined;
+    }
+    return receiver.device;
 }
 
 type NoteVoicingLookupTrack = {
@@ -1004,8 +1003,11 @@ export async function scheduleMidiNotes(
             continue;
         }
 
-        const drumKitDef = resolveDrumKitDef(track.devices);
-        const drumKit = drumKitDef ? null : resolveDrumKit(track.devices);
+        // A kit voices the track only when a drum device is its receiving
+        // instrument; the first drum device on the chain is then that receiver.
+        const receivesOnDrumKit = findReceiverOfKind(track.devices, 'drum') !== undefined;
+        const drumKitDef = receivesOnDrumKit ? resolveDrumKitDef(track.devices) : null;
+        const drumKit = receivesOnDrumKit && !drumKitDef ? resolveDrumKit(track.devices) : null;
         const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track, tracks);
         const yeastDevice = track.devices.find((device) => device.type === 'yeast');
         const liveYeastIterations: LiveYeastIteration[] = [];
@@ -1230,8 +1232,16 @@ export async function scheduleMidiNotes(
                           }),
                   }
                 : null;
+            // A bypassed receiver plays none of the track's notes, as the export
+            // renders none: the toaster a child's pads reach is that child's
+            // receiver, and the track's own receiver otherwise.
+            const receiverBypassed = toasterTarget
+                ? toasterTarget.device.bypassed
+                : isBypassedNoteReceiver(resolvePlaybackNoteReceiver(track.devices));
 
-            const workletSynthDevice = toasterRoute ? null : findWorkletSynthDevice(track.devices);
+            const workletSynthDevice = toasterRoute
+                ? null
+                : (findReceiverOfKind(track.devices, 'worklet-synth') ?? null);
             const workletSynthEntry = workletSynthDevice
                 ? (WORKLET_SYNTH_DEVICES[workletSynthDevice.type] ?? null)
                 : null;
@@ -1252,12 +1262,12 @@ export async function scheduleMidiNotes(
             // offline picks its note target from `instrumentControls`, which
             // `buildDeviceChain` only attaches when the strategy declares
             // `acceptsNotes` — and `FaustDeviceStrategy` takes that from
-            // `isFaustInstrumentModule`. Asking the same question here is what
-            // keeps the two runtimes on the same device.
+            // `isFaustInstrumentModule`. The shared receiver asks the same
+            // question, which is what keeps the two runtimes on the same device.
             const faustDevice =
                 toasterRoute || drumKitDef || drumKit || workletSynthControls
                     ? null
-                    : findFaustInstrumentDevice(track.devices);
+                    : (findReceiverOfKind(track.devices, 'faust') ?? null);
 
             // Stored controllers join the window's queue, which posts them ahead
             // of the note-ons of their frame (so a note struck there sounds under
@@ -1444,6 +1454,9 @@ export async function scheduleMidiNotes(
                         }).sampleFrame;
                         const noteGain = isTrackScopedYeastNote ? 1 : clip.gain;
 
+                        if (receiverBypassed) {
+                            continue;
+                        }
                         if (toasterRoute) {
                             const pad = toasterRoute.pad >= 0 ? toasterRoute.pad : resolveToasterPadIndex(pitch);
                             if (pad !== null) {

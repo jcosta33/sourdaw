@@ -103,4 +103,25 @@ describe('projectPpqToSamples', () => {
 
         expect(projectPpqToSamples(queryPpq, withTempoMap)).toBe(Math.round(expectedSeconds * transport.sampleRate));
     });
+
+    it('integrates a ramp up to the arrival change when two changes share the ramp end beat', () => {
+        const withTempoMap: TransportInfo = {
+            ...transport,
+            tempoMap: {
+                defaultTempo: 100,
+                changes: [
+                    { beat: 0, tempo: 100, curve: 'linear' },
+                    { beat: 4, tempo: 140, curve: 'instant' },
+                    { beat: 4, tempo: 160, curve: 'linear' },
+                    { beat: 8, tempo: 200, curve: 'instant' },
+                ],
+            },
+        };
+        // BPM(b) = 100 + 10b on the first leg, so beats 0..4 take 6 * ln(1.4)
+        // seconds; the second leg runs 160 -> 200 and takes 6 * ln(1.25).
+        expect(projectPpqToSamples(4, withTempoMap)).toBe(Math.round(6 * Math.log(1.4) * transport.sampleRate));
+        expect(projectPpqToSamples(8, withTempoMap)).toBe(
+            Math.round((6 * Math.log(1.4) + 6 * Math.log(1.25)) * transport.sampleRate)
+        );
+    });
 });

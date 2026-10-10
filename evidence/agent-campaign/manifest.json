@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "0c2d9bf09e7caa99580875192ebecfb2c8861e0461eacea53dc9d0565c13fddd"
+        "digest": "34b03fded663d47836e059204e71eccd868181a4e2ac596f5e835b8364f81ae1"
     },
     "census": {
         "digest": "fab967ce35ead06daa75511f79664e42a0bc84674d23f8c20fe256def7e32e06"
@@ -283,7 +283,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts",
-                    "digest": "1667894043c52740d041feea4541b4e6f91870daf56133ef2b7d1f91fe2fd80a"
+                    "digest": "f03ef2a76e9f075d648a7834de808ac70390f5f755c79b9eedf4a65a824ac0b1"
                 }
             ]
         },
@@ -620,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "aa9ca05134e25fba9b01ceaf1ce38b363ed44a2d6dd8156c8b7f3e5dc0f134d9"
+                    "digest": "8e08c83f8ba813f36c6c3da65b37a9b4ebc0e10d62c882c8a82d242163b7f402"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",

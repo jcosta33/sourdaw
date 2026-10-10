@@ -9,6 +9,23 @@ function kick(startBeat: number, duration: number): MidiNote {
 }
 
 describe('projectMidiClipPlayback', () => {
+    it('plays a sustain lift on the clip closing line on the clip end, but no note that starts there', () => {
+        const played = projectMidiClipPlayback({
+            notes: [kick(0, 4), kick(4, 1)],
+            controlChanges: [
+                { id: 'down', controller: 64, value: 127, beat: 0, channel: 0 },
+                { id: 'lift', controller: 64, value: 0, beat: 4, channel: 0 },
+            ],
+            clip: { id: 'clip', startBeat: 1, endBeat: 5 },
+        });
+
+        expect(played.notes.map(({ startBeat, duration }) => [startBeat, duration])).toEqual([[1, 4]]);
+        expect(played.controlChanges).toEqual([
+            { id: 'down', controller: 64, value: 127, beat: 1, channel: 0 },
+            { id: 'lift', controller: 64, value: 0, beat: 5, channel: 0 },
+        ]);
+    });
+
     it('plays a looped third-of-a-beat kick that ends on the loop end once per pass, with no phantom hit', () => {
         const { notes } = projectMidiClipPlayback({
             notes: [kick(11 / 3, 1 / 3)],

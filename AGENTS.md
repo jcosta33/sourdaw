@@ -264,7 +264,7 @@ publication, and repair. The warning asks the agent to make sure it knows what i
 to review the churn and remaining findings. It does not block another review when a valid
 reassessment and all other publication requirements are met. `review:repair` and `review:confirm`
 remain open so unresolved threads can be resolved
-([ADR 0050](./.agents/decisions/0050-freeze-pull-requests-at-five-review-rounds.md)).
+([ADR 0053](./.agents/decisions/0053-freeze-pull-requests-at-five-review-rounds.md)).
 
 Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and
 bounded, and are refused when they carry a credential-shaped value, a private-key header, a JWT, a
