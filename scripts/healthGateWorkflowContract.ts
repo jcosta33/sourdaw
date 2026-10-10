@@ -150,6 +150,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'selection-shadow': [
             'Checkout candidate head',
             'Checkout immutable integration commit',
+            'Checkout immutable shadow control',
             'Download authoritative scope',
             'Set up pnpm',
             'Set up Node',

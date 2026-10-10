@@ -1,7 +1,9 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     closeSync,
+    copyFileSync,
+    existsSync,
     fstatSync,
     lstatSync,
     mkdirSync,
@@ -16,7 +18,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -116,6 +118,224 @@ function withIntegrationCheckout(
     }
 }
 
+function withShadowCliCheckouts(
+    capability:
+        | 'absent'
+        | 'present'
+        | 'malformed'
+        | 'zero-byte'
+        | 'comments-only'
+        | 'partial'
+        | 'deleted'
+        | 'merge-deleted'
+        | 'integration-matcher'
+        | 'invalid-scope',
+    run: (
+        result: ReturnType<typeof spawnSync>,
+        report: Record<string, unknown>,
+        base: string,
+        head: string,
+        integration: string
+    ) => void,
+    dirtyControlPath?: string,
+    advertiseCleanControl = false
+): void {
+    const root = mkdtempSync(join(process.cwd(), '.agents/shadow-cli-'));
+    const repository = join(root, 'repository');
+    const candidateRoot = join(root, 'candidate');
+    const integrationRoot = join(root, 'integration');
+    const controlRoot = join(root, 'control');
+    const cleanControlRoot = join(root, 'clean-control');
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim();
+    const commit = (message: string) => {
+        git('add', '.');
+        git('-c', 'user.name=Shadow Test', '-c', 'user.email=shadow@example.invalid', 'commit', '-q', '-m', message);
+        return git('rev-parse', 'HEAD');
+    };
+    const controlPaths = [
+        '.github/workflows/health-gates.yml',
+        '.github/workflows/heavy-gates.yml',
+        '.github/workflows/validation.yml',
+        'package.json',
+        'pnpm-lock.yaml',
+        'playwright.config.ts',
+        'scripts/e2eSelectionShadow.ts',
+        'scripts/e2eSelectionShadowCompatibility.ts',
+        'scripts/e2eSelectionShadowCertificate.json',
+        'scripts/e2eSelectionShadowIntegration.ts',
+        'scripts/e2eShardPartition.ts',
+        'scripts/e2eSpecDurations.json',
+        'scripts/prValidationScope.ts',
+        'scripts/vitestCollectionPatterns.ts',
+    ];
+    const copyControl = () => {
+        for (const path of controlPaths) {
+            const destination = join(repository, path);
+            mkdirSync(resolve(destination, '..'), { recursive: true });
+            copyFileSync(path, destination);
+        }
+    };
+    try {
+        mkdirSync(repository);
+        git('init', '-q', '-b', 'main');
+        git('config', 'core.hooksPath', '/dev/null');
+        mkdirSync(join(repository, 'tests/e2e'), { recursive: true });
+        writeFileSync(join(repository, SMOKE_SPEC), 'smoke\n');
+        writeFileSync(join(repository, 'tests/e2e/example.spec.ts'), 'example\n');
+        if (!['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
+            copyControl();
+        }
+        commit('base');
+        git('checkout', '-q', '-b', 'candidate');
+        mkdirSync(join(repository, 'src'));
+        writeFileSync(join(repository, 'src/feature.ts'), 'export const feature = true;\n');
+        if (capability === 'malformed') {
+            writeFileSync(join(repository, 'scripts/e2eSelectionShadowCertificate.json'), '{ invalid json\n');
+        }
+        if (capability === 'zero-byte' || capability === 'comments-only') {
+            writeFileSync(
+                join(repository, 'scripts/e2eSelectionShadow.ts'),
+                capability === 'zero-byte' ? '' : '// A declared capability with no TypeScript statements.\n'
+            );
+        }
+        if (capability === 'partial' || capability === 'deleted') {
+            const removed = ['scripts/e2eSelectionShadowCertificate.json'];
+            if (capability === 'deleted') {
+                removed.push('scripts/e2eSelectionShadow.ts', 'scripts/e2eSelectionShadowIntegration.ts');
+            }
+            for (const path of removed) {
+                unlinkSync(join(repository, path));
+            }
+        }
+        commit('candidate');
+        if (capability === 'merge-deleted') {
+            git('checkout', '-q', '-b', 'declared', 'main');
+            copyControl();
+            commit('declared second parent');
+            git('checkout', '-q', 'candidate');
+            git(
+                '-c',
+                'user.name=Shadow Test',
+                '-c',
+                'user.email=shadow@example.invalid',
+                'merge',
+                '-q',
+                '--no-ff',
+                '-s',
+                'ours',
+                '-m',
+                'candidate merge omits declared capability',
+                'declared'
+            );
+        }
+        const head = git('rev-parse', 'HEAD');
+        git('checkout', '-q', 'main');
+        if (['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
+            copyControl();
+        }
+        writeFileSync(join(repository, 'integration.txt'), 'integration\n');
+        const control = commit('control');
+        if (capability === 'integration-matcher') {
+            const config = join(repository, 'playwright.config.ts');
+            const source = readFileSync(config, 'utf8');
+            writeFileSync(
+                config,
+                source.replace("testDir: './tests/e2e',", "testDir: './tests/e2e',\n    testMatch: '**/*.check.ts',")
+            );
+            writeFileSync(join(repository, 'tests/e2e/integration-required.check.ts'), 'integration policy spec\n');
+            commit('integration collection policy');
+        }
+        git(
+            '-c',
+            'user.name=Shadow Test',
+            '-c',
+            'user.email=shadow@example.invalid',
+            'merge',
+            '-q',
+            '--no-ff',
+            '-m',
+            'integration',
+            'candidate'
+        );
+        const integration = git('rev-parse', 'HEAD');
+        git('worktree', 'add', '-q', '--detach', candidateRoot, head);
+        git('worktree', 'add', '-q', '--detach', integrationRoot, integration);
+        git('worktree', 'add', '-q', '--detach', controlRoot, control);
+        if (advertiseCleanControl) {
+            git('worktree', 'add', '-q', '--detach', cleanControlRoot, control);
+        }
+        if (dirtyControlPath) {
+            const file = join(controlRoot, dirtyControlPath);
+            writeFileSync(file, `${readFileSync(file, 'utf8')}\n// Dirty executing control source.\n`);
+        }
+        const changed = git('diff', '--name-only', `${control}...${head}`).split('\n');
+        const plan = selectValidationPlan(changed, [SMOKE_SPEC, 'tests/e2e/example.spec.ts']);
+        mkdirSync(join(candidateRoot, 'shadow-scope'));
+        const scopeText = JSON.stringify(capability === 'invalid-scope' ? { ...plan, browser: false } : plan);
+        writeFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), scopeText);
+        writeFileSync(join(candidateRoot, 'github-output.txt'), 'preserved\n');
+        const cliArgs = [join(controlRoot, 'scripts/e2eSelectionShadow.ts'), 'shadow-scope/pr-validation-scope.json'];
+        const result = spawnSync(process.execPath, cliArgs, {
+            cwd: candidateRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                BASE_SHA: control,
+                HEAD_SHA: head,
+                INTEGRATION_SHA: integration,
+                INTEGRATION_ROOT: integrationRoot,
+                CONTROL_ROOT: advertiseCleanControl ? cleanControlRoot : controlRoot,
+                GITHUB_OUTPUT: join(candidateRoot, 'github-output.txt'),
+            },
+        });
+        const reportPath = join(candidateRoot, 'e2e-selection-shadow.json');
+        if (!existsSync(reportPath)) {
+            throw new Error(`Shadow CLI emitted no report: ${result.stderr}`);
+        }
+        const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+        const evidenceDir = process.env.SOURDAW_SHADOW_CLI_EVIDENCE_DIR;
+        if (evidenceDir) {
+            let variant = dirtyControlPath?.split('/').at(-1) ?? 'clean';
+            if (advertiseCleanControl) {
+                variant = 'redirected-control';
+            }
+            writeFileSync(
+                join(evidenceDir, `${capability}-${variant}.json`),
+                `${JSON.stringify(
+                    {
+                        utc: new Date().toISOString(),
+                        cwd: candidateRoot,
+                        argv: [process.execPath, ...cliArgs],
+                        executingControlRoot: controlRoot,
+                        advertisedControlRoot: advertiseCleanControl ? cleanControlRoot : controlRoot,
+                        base: control,
+                        head,
+                        integration,
+                        exitCode: result.status,
+                        stdout: result.stdout,
+                        stderr: result.stderr,
+                        report,
+                        scopeBytes: readFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), 'utf8'),
+                        githubOutputBytes: readFileSync(join(candidateRoot, 'github-output.txt'), 'utf8'),
+                    },
+                    null,
+                    2
+                )}\n`
+            );
+        }
+        run(result, report, control, head, integration);
+        expect(readFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), 'utf8')).toBe(scopeText);
+        expect(readFileSync(join(candidateRoot, 'github-output.txt'), 'utf8')).toBe('preserved\n');
+    } finally {
+        for (const path of [candidateRoot, integrationRoot, controlRoot, cleanControlRoot]) {
+            if (existsSync(path)) {
+                git('worktree', 'remove', '--force', path);
+            }
+        }
+        rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    }
+}
+
 function fixture(
     overrides: Record<string, unknown> & {
         sourceHashes?: Record<string, string>;
@@ -170,6 +390,141 @@ function fixture(
 }
 
 describe('E2E selection shadow', () => {
+    it.each(['absent', 'present'] as const)(
+        'fails when the %s candidate executes a modified control compatibility helper',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.measurementStatus).toBe('failed');
+                    expect(report.failureReason).toMatch(
+                        /Shadow rule in checkout disagrees with the immutable head: scripts\/e2eSelectionShadowCompatibility\.ts/
+                    );
+                },
+                'scripts/e2eSelectionShadowCompatibility.ts'
+            );
+        },
+        30_000
+    );
+
+    it('fails when an imported control selector changes on the supported route', () => {
+        withShadowCliCheckouts(
+            'present',
+            (result, report) => {
+                expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                expect(report.measurementStatus).toBe('failed');
+                expect(report.failureReason).toMatch(/scripts\/prValidationScope\.ts/);
+            },
+            'scripts/prValidationScope.ts'
+        );
+    }, 30_000);
+
+    it.each(['absent', 'present'] as const)(
+        'fails when the %s candidate advertises a clean control root while executing dirty control source',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.measurementStatus).toBe('failed');
+                    expect(report.failureReason).toMatch(/executing shadow source differs from the control checkout/i);
+                },
+                'scripts/e2eSelectionShadowCompatibility.ts',
+                true
+            );
+        },
+        30_000
+    );
+
+    it('reports an older head without shadow capability as unsupported full coverage', () => {
+        withShadowCliCheckouts('absent', (result, report, base, head, integration) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report).toMatchObject({
+                measurementStatus: 'unsupported',
+                base,
+                head,
+                integrationSha: integration,
+                controlSha: base,
+                candidateSpecs: null,
+                excludedSpecs: 0,
+                measuredReduction: 0,
+                counts: { inventory: 1, candidate: null, liveSelected: 1 },
+            });
+            expect(report.authoritativeScopeSha256).toMatch(/^[0-9a-f]{64}$/);
+        });
+    }, 30_000);
+
+    it('keeps the current supported head on the complete measurement route', () => {
+        withShadowCliCheckouts('present', (result, report) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report.measurementStatus).toBe('complete');
+            expect(report.candidateSpecs).toEqual(['tests/e2e/example.spec.ts']);
+        });
+    }, 30_000);
+
+    it('fails a malformed declared certificate instead of calling it unsupported', () => {
+        withShadowCliCheckouts('malformed', (result, report) => {
+            expect(result.status).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(/certificate/i);
+        });
+    }, 30_000);
+
+    it.each(['zero-byte', 'comments-only'] as const)(
+        'fails when a %s shadow TypeScript capability is declared',
+        (capability) => {
+            withShadowCliCheckouts(capability, (result, report) => {
+                expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                expect(report.measurementStatus).toBe('failed');
+                expect(report.failureReason).toMatch(
+                    /Declared shadow capability is code-free: scripts\/e2eSelectionShadow\.ts/
+                );
+            });
+        },
+        30_000
+    );
+
+    it('fails when a declared shadow capability is only partly present', () => {
+        withShadowCliCheckouts('partial', (result, report) => {
+            expect(result.status).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(/Declared shadow capability is missing or nonregular/);
+        });
+    }, 30_000);
+
+    it('fails when a branch deletes a capability it previously declared', () => {
+        withShadowCliCheckouts('deleted', (result, report) => {
+            expect(result.status).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(/Declared shadow capability is missing or nonregular/);
+        });
+    }, 30_000);
+
+    it('fails when a candidate merge deletes capability declared by its second parent', () => {
+        withShadowCliCheckouts('merge-deleted', (result, report) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(/Declared shadow capability is missing or nonregular/);
+        });
+    }, 30_000);
+
+    it('fails when integration changes Playwright collection policy for an older head', () => {
+        withShadowCliCheckouts('integration-matcher', (result, report) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(/playwright\.config\.ts/);
+        });
+    }, 30_000);
+
+    it('fails an older head when its authoritative scope is malformed', () => {
+        withShadowCliCheckouts('invalid-scope', (result, report) => {
+            expect(result.status).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(/Authoritative scope artifact disagrees/);
+        });
+    }, 30_000);
+
     function hostedInput(durationText = durationTableText) {
         const changed = [
             ['M', '.github/workflows/health-gates.yml'],

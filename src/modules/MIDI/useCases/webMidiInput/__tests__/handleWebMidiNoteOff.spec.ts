@@ -19,6 +19,9 @@ const ensure_track_strip = vi.hoisted(() =>
     vi.fn(() => ({ gainNode: {}, deviceNodes: [] as Array<Record<string, unknown>> }))
 );
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
+const schedule_device_key_on = vi.hoisted(() => vi.fn());
+/** Stand-in for the PluginHost Faust registry: which device types are Faust instruments. */
+const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
 
 type TestMidiEvent = {
     timeSamples: number;
@@ -35,6 +38,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         context: audio_clock,
         getTrackStrip: get_track_strip,
         ensureTrackStrip: ensure_track_strip,
+        scheduleDeviceKeyOn: schedule_device_key_on,
+        scheduleDeviceKeyOff: vi.fn(),
     },
     applyNoteExpression: () => {},
     getCompensationDelay: () => 0,
@@ -45,6 +50,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: async () => true,
     soundsNativeNotes: () => false,
     startFaustNote: vi.fn(() => () => {}),
+}));
+
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    registerFaustDSP: vi.fn(),
+    isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
 }));
 
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
@@ -187,6 +197,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
             yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
@@ -230,6 +241,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
             yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
@@ -282,6 +294,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
             yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
@@ -333,6 +346,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
         });
 
         await fn(0, 60);
@@ -351,6 +365,107 @@ describe('handleWebMidiNoteOff', () => {
             100,
             expect.anything()
         );
+    });
+
+    it('retires the release-triggered idle pump once its Yeast is removed from the chain (#5222)', async () => {
+        let drainEvents: ((events: readonly RealtimeMidiEvent[]) => boolean | void) | undefined;
+        const schedule_note = vi.fn(() => null);
+        let devices = [{ id: 'yeast-1', type: 'yeast' }];
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices }],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                scheduleNote: schedule_note,
+                processRealtimeMidiInput: async (input: RealtimeMidiInput) => {
+                    drainEvents = input.onDrainedEvents;
+                    return [];
+                },
+            })
+        );
+        get_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+            yeastDeviceId: 'yeast-1',
+        });
+
+        await fn(0, 60);
+        devices = [];
+        const retired = drainEvents?.([
+            {
+                timeSamples: 129_840,
+                noteInstanceId: 'arp-1:generated:1',
+                durationSamples: 33_600,
+                kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+            },
+        ]);
+
+        expect(retired).toBe(false);
+        expect(schedule_note).not.toHaveBeenCalled();
+    });
+
+    // The key is already up when its release block starts a voice with no
+    // note instance, so the voice has no held note to live on; the release
+    // session keeps it, and the session's own source-pitch note-off ends it.
+    it('releases a voice the release block started with no note instance of its own', async () => {
+        let drainEvents: ((events: readonly RealtimeMidiEvent[]) => boolean | void) | undefined;
+        const fermenter_note_on =
+            vi.fn<(note: number, velocity: number, sampleFrame?: number, channel?: number) => void>();
+        const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number, channel?: number) => void>();
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'ferm-1', type: 'fermenter' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                processRealtimeMidiInput: async (input: RealtimeMidiInput): Promise<RealtimeMidiEvent[]> => {
+                    drainEvents = input.onDrainedEvents;
+                    return [{ timeSamples: 96_480, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } }];
+                },
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [
+                {
+                    type: 'fermenter',
+                    deviceId: 'ferm-1',
+                    fermenterControls: { noteOn: fermenter_note_on, noteOff: fermenter_note_off },
+                },
+            ],
+        });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+            yeastDeviceId: 'yeast-1',
+        });
+
+        await fn(0, 60);
+
+        expect(fermenter_note_on).toHaveBeenCalledExactlyOnceWith(67, 100, 96_480, 0);
+
+        drainEvents?.([{ timeSamples: 129_840, kind: { type: 'noteOff', channel: 0, note: 67 } }]);
+
+        expect(fermenter_note_off).toHaveBeenCalledExactlyOnceWith(67, 129_840, 0);
     });
 
     it('voices the ingress generated note of a release block and its drained note-off releases it (#4870)', async () => {
@@ -403,6 +518,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
         });
 
         await fn(0, 60);
@@ -542,6 +658,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
         });
 
         await fn(0, 60);
@@ -597,6 +714,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-a',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-a',
             yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
@@ -1163,6 +1281,140 @@ describe('handleWebMidiNoteOff', () => {
             expect(send_native_live_midi_note).not.toHaveBeenCalled();
         });
     });
+
+    // A note Yeast first emits at the key-up's own block reaches the track's
+    // receiving instrument, the first in chain order, as the key itself does.
+    describe('a generated note in the release block', () => {
+        function instrument_strip() {
+            const voice = () => ({ ready: true, noteOn: vi.fn(), noteOff: vi.fn() });
+            const levain = { type: 'levain', deviceId: 'lev-1', levainControls: voice() };
+            const toaster = { type: 'toaster', deviceId: 'toaster-1', toasterControls: voice() };
+            get_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [levain, toaster] });
+            return { levain, toaster };
+        }
+
+        /** The release block answers with one generated note-on. */
+        const release_block_note_on = (note: number) => async (): Promise<RealtimeMidiEvent[]> => [
+            {
+                timeSamples: 96_480,
+                noteInstanceId: 'arp-1:generated:1',
+                kind: { type: 'noteOn', channel: 0, note, velocity: 100 },
+            },
+        ];
+
+        function hold_through_yeast(trackId: string, instrumentTrackId: string): void {
+            activeNotes.set(createWebMidiNoteKey(0, 60), {
+                channel: 0,
+                note: 60,
+                trackId,
+                instrumentTrackId,
+                startTime: 0,
+                startBeat: 0,
+                yeastDeviceId: 'y',
+            });
+        }
+
+        function single_track(devices: Array<Record<string, unknown>>) {
+            return () => ({ tracks: [{ id: 'track-1', devices }], selectedTrackId: 'track-1' });
+        }
+
+        it('voices it on a drum kit ahead of a levain, never on the levain', async () => {
+            const nodes = instrument_strip();
+            const schedule_drum_kit_note = vi.fn();
+            const fn = handleWebMidiNoteOff._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 0 } },
+                        { id: 'lev-1', type: 'levain' },
+                        { id: 'y', type: 'yeast' },
+                    ]),
+                    getTransportStoreValue: () => ({ isRecording: false }),
+                    processRealtimeMidiInput: release_block_note_on(67),
+                    getDrumKitDefByIndex: (index: number) => ({ id: `kit-def-${index}` }),
+                    scheduleDrumKitNote: schedule_drum_kit_note,
+                })
+            );
+            hold_through_yeast('track-1', 'track-1');
+
+            await fn(0, 60);
+
+            expect(schedule_drum_kit_note).toHaveBeenCalledExactlyOnceWith(
+                audio_clock,
+                expect.anything(),
+                { id: 'kit-def-0' },
+                67,
+                96_480 / 48_000,
+                100
+            );
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
+        it('keys it on a Faust instrument ahead of a levain, never on the levain', async () => {
+            faust_instrument_types.value = new Set(['faust-epiano']);
+            schedule_device_key_on.mockClear();
+            const nodes = instrument_strip();
+            const fn = handleWebMidiNoteOff._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'faust-1', type: 'faust-epiano' },
+                        { id: 'lev-1', type: 'levain' },
+                        { id: 'y', type: 'yeast' },
+                    ]),
+                    getTransportStoreValue: () => ({ isRecording: false }),
+                    processRealtimeMidiInput: release_block_note_on(67),
+                })
+            );
+            hold_through_yeast('track-1', 'track-1');
+
+            try {
+                await fn(0, 60);
+            } finally {
+                faust_instrument_types.value = new Set();
+            }
+
+            expect(schedule_device_key_on).toHaveBeenCalledExactlyOnceWith(
+                'track-1',
+                'faust-1',
+                67,
+                100,
+                96_480 / 48_000
+            );
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
+        // A Toaster child's key is a pad of its parent's kit, whatever sits
+        // ahead of the Toaster in the parent's chain.
+        it('voices it on a Toaster child’s pad, never on the instrument ahead of the Toaster', async () => {
+            const nodes = instrument_strip();
+            const fn = handleWebMidiNoteOff._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [
+                            {
+                                id: 'parent',
+                                devices: [
+                                    { id: 'y', type: 'yeast' },
+                                    { id: 'lev-1', type: 'levain' },
+                                    { id: 'toaster-1', type: 'toaster' },
+                                ],
+                            },
+                            { id: 'child-0', parentId: 'parent', devices: [] },
+                            { id: 'child-1', parentId: 'parent', devices: [] },
+                        ],
+                        selectedTrackId: 'child-1',
+                    }),
+                    getTransportStoreValue: () => ({ isRecording: false }),
+                    processRealtimeMidiInput: release_block_note_on(62),
+                })
+            );
+            hold_through_yeast('child-1', 'parent');
+
+            await fn(0, 60);
+
+            expect(nodes.toaster.toasterControls.noteOn).toHaveBeenCalledExactlyOnceWith(1, 100, 62, 96_480);
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+    });
 });
 
 describe('handleWebMidiNoteOff recording held MPE expression', () => {
@@ -1726,6 +1978,7 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
                 instrumentTrackId: 'track-1',
                 startTime: 0,
                 startBeat: 0,
+                yeastDeviceId: 'yeast-1',
             });
             channelToNote.set(MEMBER_CHANNEL, olderKey);
             at(1);

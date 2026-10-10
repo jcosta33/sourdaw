@@ -64,6 +64,11 @@ function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput)
         findDeviceNode(strip, noteData.levainDeviceId)?.levainControls?.noteOff(noteData.note);
     }
 
+    if (noteData.crumbsDeviceId) {
+        const strip = input.getTrackStrip(noteData.instrumentTrackId);
+        findDeviceNode(strip, noteData.crumbsDeviceId)?.crumbsControls?.noteOff(noteData.note);
+    }
+
     if (noteData.faustRelease) {
         noteData.faustRelease();
     }

@@ -43,6 +43,13 @@ export function createWebMidiNoteKey(channel: number, note: number): WebMidiNote
     return `${channel}:${note}`;
 }
 
+/** The registry identity of one voice Yeast generated from a held key. */
+export type YeastGeneratedVoice = Readonly<{
+    channel: number;
+    noteInstanceId: string;
+    pitch: number;
+}>;
+
 export type ToasterNoteRoute = {
     deviceId: string;
     pad: number;
@@ -86,8 +93,25 @@ export type ActiveNoteData = {
     instrumentTrackId: string;
     /** Stable runtime identity carried through the Yeast note-on/note-off pair. */
     noteInstanceId?: string;
+    /**
+     * The Yeast device the note-on was sent through. The key-up sends its
+     * release through the same device, and when the chain no longer holds it,
+     * releases every voice the note-on started directly.
+     */
+    yeastDeviceId?: string;
+    /**
+     * Set once the chain no longer holds `yeastDeviceId`: the note's idle
+     * pump voices nothing from then on, even if that Yeast comes back (an
+     * undone removal), because no rack drives this note's session any more.
+     */
+    yeastSessionEnded?: boolean;
     /** Release closures bound to the exact controls that voiced transformed pitches. */
     yeastVoiceReleases?: Map<number, (sampleFrame?: number, releaseVelocity?: number) => void>;
+    /**
+     * Generated voices the note-on started, which live in the shared Yeast
+     * release registry rather than in `yeastVoiceReleases`.
+     */
+    yeastGeneratedVoices?: YeastGeneratedVoice[];
     pressure?: number;
     slide?: number;
     pitchBend?: number;
@@ -108,6 +132,8 @@ export type ActiveNoteData = {
     grandBouleDeviceId?: string;
     /** When the note was sent to a Levain instance, stores the device ID for noteOff routing */
     levainDeviceId?: string;
+    /** When the note was sent to a Crumbs instance, stores the device ID for noteOff routing */
+    crumbsDeviceId?: string;
     /** The device a native session voiced this note on, so the release goes to the same body. */
     nativeDeviceId?: string;
     /**

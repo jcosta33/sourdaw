@@ -44,6 +44,10 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 describe('handleSetDeviceParameter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.captureAutomationRecordingRollback.mockReset();
+        mocks.setDeviceParameter.mockReset();
+        mocks.updateDeviceParam.mockReset();
+        mocks.getTrackStoreState.mockReset();
         mocks.captureAutomationRecordingRollback.mockReturnValue(vi.fn());
         mocks.getTrackStoreState.mockReturnValue(null);
     });
@@ -415,6 +419,29 @@ describe('handleSetDeviceParameter', () => {
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.8);
         expect(rollbackAutomationRecording).toHaveBeenCalledOnce();
         expect(handleSetDeviceParameter.requiresAbortCompensation).toBe(false);
+    });
+
+    // A Bacteria band body is not a declared parameter, so a band that has
+    // never had one stores no value; an aborted first pick has to stop the
+    // body in the engine by sending its undeclared default, no body (-1).
+    it('rolls an aborted first body pick back to no body in the engine', () => {
+        mocks.updateDeviceParam.mockImplementation(() => undefined);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    devices: [{ id: 'd1', type: 'bacteria', parameterValues: { band0_convolutionEnabled: 1 } }],
+                },
+            ],
+        });
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'band0_convolutionIr', value: 2 },
+        };
+
+        handleSetDeviceParameter.prepareAbort?.(action)();
+
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([['t1', 'd1', 'band0_convolutionIr', -1]]);
     });
 
     it('still restores automation-recording state when runtime rollback fails', () => {

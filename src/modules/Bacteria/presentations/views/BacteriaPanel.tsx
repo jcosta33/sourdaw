@@ -10,7 +10,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
 import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
-import { type BacteriaPatch } from '../../models/BacteriaPatch';
+import { type BacteriaConvolutionIr, type BacteriaPatch } from '../../models/BacteriaPatch';
 import {
     bacteriaStore,
     type BacteriaState,
@@ -22,6 +22,7 @@ import {
 } from '../../stores/bacteriaStore';
 import { applyBacteriaMorphWithAudio } from '../../useCases/bacteriaParamBridge/applyBacteriaMorph';
 import { captureBacteriaSnapshot } from '../../useCases/bacteriaParamBridge/captureBacteriaSnapshot';
+import { chooseBacteriaBodyWithAudio } from '../../useCases/bacteriaParamBridge/chooseBacteriaBodyWithAudio';
 import { loadBacteriaPatchWithAudio } from '../../useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio';
 import { setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio';
 import { setBacteriaModAssignmentsWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaModAssignmentsWithAudio';
@@ -71,6 +72,13 @@ const DISTORTION_MODES = [
     'custom',
 ] as const;
 const FILTER_MODES = ['lowpass', 'highpass', 'bandpass', 'notch', 'formant', 'comb'] as const;
+const BODY_CHOICES = [
+    { id: '', label: 'None' },
+    { id: 'ceramic', label: 'Ceramic' },
+    { id: 'wood', label: 'Wood' },
+    { id: 'metal', label: 'Metal' },
+    { id: 'spring', label: 'Spring' },
+] as const satisfies ReadonlyArray<{ id: BacteriaConvolutionIr; label: string }>;
 const ROUTING_MODES = ['serial', 'parallel', 'mid-side'] as const;
 
 function formatValue(v: number, unit: string): string {
@@ -1368,12 +1376,27 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 
                 {activeModule === 'convolution' ? (
                     <Stack gap={3}>
-                        <BChip
-                            active={Boolean(band.convolutionEnabled)}
-                            onClick={() => setBandParam('convolutionEnabled', !band.convolutionEnabled)}
-                        >
-                            Enabled
-                        </BChip>
+                        <Row gap={2}>
+                            <BChip
+                                active={Boolean(band.convolutionEnabled)}
+                                onClick={() => setBandParam('convolutionEnabled', !band.convolutionEnabled)}
+                            >
+                                Enabled
+                            </BChip>
+                            <Row wrap gap={1} role="group" aria-label="Body">
+                                {BODY_CHOICES.map((choice) => (
+                                    <BChip
+                                        key={choice.id}
+                                        active={band.convolutionIr === choice.id}
+                                        onClick={() =>
+                                            chooseBacteriaBodyWithAudio(deviceId, state.activeBand, choice.id)
+                                        }
+                                    >
+                                        {choice.label}
+                                    </BChip>
+                                ))}
+                            </Row>
+                        </Row>
                         <Row wrap gap={4}>
                             <K
                                 v={band.convolutionMix}

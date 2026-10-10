@@ -10,11 +10,13 @@ import { NO_SOURCE_SPECIFIC_MODULATION } from './GuidanceProfiles';
  *
  * Every stage here starts switched off per band and has no descriptor enable
  * parameter, so each entry is inaudible until the stage is switched on in the
- * Bacteria panel; the convolution stage additionally needs a body impulse
- * response chosen there, and passes audio through unchanged until one is
- * loaded. Stages run in this order inside a band: distortion, filter, chorus,
- * phaser, granular, spectral, frequency shifter, lo-fi, convolution, then the
- * band gain.
+ * Bacteria panel; the convolution stage additionally needs a body chosen in the
+ * panel's Body module — Ceramic, Wood, Metal or Spring, where Spring shares
+ * Metal's response — and passes audio through unchanged while the choice is
+ * None, which every band starts with. The body is a panel choice per band, not
+ * a descriptor parameter. Stages run in this order inside a band: distortion,
+ * filter, chorus, phaser, granular, spectral, frequency shifter, lo-fi,
+ * convolution, then the band gain.
  */
 
 const noExternalModulation = NO_SOURCE_SPECIFIC_MODULATION;

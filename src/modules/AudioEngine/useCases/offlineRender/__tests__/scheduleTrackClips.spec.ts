@@ -23,15 +23,24 @@ import { exportCancellationState } from '../exportCancellationState';
 import { isCancelRequested } from '../isCancelRequested';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { scheduleTrackClips } from '../scheduleTrackClips';
-import { type PendingNoteWorkletEvent, type PendingWorkletEvent } from '../types';
+import { type PendingControlWorkletEvent, type PendingNoteWorkletEvent, type PendingWorkletEvent } from '../types';
 
 function isPendingNoteWorkletEvent(event: PendingWorkletEvent): event is PendingNoteWorkletEvent {
     return event.type === 'on' || event.type === 'off';
 }
 
+function isPendingControlWorkletEvent(event: PendingWorkletEvent): event is PendingControlWorkletEvent {
+    return event.type === 'control' || event.type === 'closing-control';
+}
+
 /** The events that address a voice (notes and their expression), which carry a pitch; a controller does not. */
-function voiceEvents(events: readonly PendingWorkletEvent[]): Exclude<PendingWorkletEvent, { type: 'control' }>[] {
-    return events.filter((event) => event.type !== 'control');
+function voiceEvents(
+    events: readonly PendingWorkletEvent[]
+): Exclude<PendingWorkletEvent, PendingControlWorkletEvent>[] {
+    return events.filter(
+        (event): event is Exclude<PendingWorkletEvent, PendingControlWorkletEvent> =>
+            !isPendingControlWorkletEvent(event)
+    );
 }
 
 // Local, field-identical replica of Arrangement's TrackDummy fixture — foreign
@@ -541,7 +550,7 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
         const drumKit = { name: 'Acoustic' };
         mocks.resolveDrumKit.mockReturnValue(drumKit);
 
-        await runSchedule({ useLegacyScheduler: true, clipGain: 0.35 });
+        await runSchedule({ useLegacyScheduler: true, trackDeviceType: 'builtin-drum-machine-analog', clipGain: 0.35 });
 
         expect(mocks.scheduleKitNote).toHaveBeenCalledWith(
             expect.anything(),
@@ -848,6 +857,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             ])
         );
         const entry = makeInstrumentEntry();
+        entry.deviceId = 'toaster-1';
         entry.deviceType = 'toaster';
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -1659,7 +1669,7 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         // must not manufacture one for it.
         const arrivals = await dispatchOneNote(
             { pressure: 127, slide: 1, pitchBend: 4_096 },
-            { deviceType: 'crumbs', withExpressionSurface: false }
+            { deviceType: 'builtin-crumbs', withExpressionSurface: false }
         );
 
         expect({ order: arrivals.order, expression: arrivals.expression }).toEqual({
@@ -1784,7 +1794,7 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
 
         expect(
             events
-                .filter((event) => event.type === 'control')
+                .filter(isPendingControlWorkletEvent)
                 .map(({ time, controller, value }) => ({ time, controller, value }))
         ).toEqual([
             { time: 0.5, controller: 64, value: 127 },
@@ -1864,6 +1874,106 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
         ]);
     });
 
+    describe('with a sustain lift stored on the closing line of a clip', () => {
+        // Clip A sounds a note under the pedal and lifts it on its own end; clip B follows it.
+        function abuttingClips(
+            aFirst: boolean,
+            clipBRows: ReturnType<typeof storedController>[],
+            clipARows = [storedController('down', 64, 127, 0), storedController('lift', 64, 0, 2)]
+        ) {
+            return ({ track, midi }: { track: Track; midi: NonNullable<MidiStoreState> }) => {
+                const first = { ...track.clips[0]!, id: 'clip-a', endBeat: 2 };
+                const second = { ...track.clips[0]!, id: 'clip-b', startBeat: 2, endBeat: 4 };
+                track.clips = aFirst ? [first, second] : [second, first];
+                midi.notesByClipId = {
+                    'clip-a': [{ id: 'note-a', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+                    'clip-b': [{ id: 'note-b', pitch: 62, startBeat: 0, duration: 1, velocity: 100 }],
+                };
+                midi.ccByClipId = { 'clip-a': clipARows, 'clip-b': clipBRows };
+            };
+        }
+
+        it('lifts the pedal on the clip end, after the release there and before the next clip strikes', async () => {
+            const { arrivals } = await scheduleWithPedalLane({ shape: abuttingClips(true, []) });
+
+            expect(arrivals).toEqual([
+                `control 64=127 @0`,
+                `noteOn @${BEAT_FRAMES}`,
+                `noteOff @${2 * BEAT_FRAMES}`,
+                `control 64=0 @${2 * BEAT_FRAMES}`,
+                `noteOn @${2 * BEAT_FRAMES}`,
+                `noteOff @${3 * BEAT_FRAMES}`,
+            ]);
+        });
+
+        it.each([
+            ['the ending clip listed first', true],
+            ['the starting clip listed first', false],
+        ])('lets the next clip pedal press on that frame have the last word (%s)', async (_order, aFirst) => {
+            const { arrivals } = await scheduleWithPedalLane({
+                shape: abuttingClips(aFirst, [storedController('press', 64, 127, 0)]),
+            });
+
+            expect(arrivals.filter((arrival) => arrival.endsWith(`@${2 * BEAT_FRAMES}`))).toEqual([
+                `noteOff @${2 * BEAT_FRAMES}`,
+                `control 64=0 @${2 * BEAT_FRAMES}`,
+                `control 64=127 @${2 * BEAT_FRAMES}`,
+                `noteOn @${2 * BEAT_FRAMES}`,
+            ]);
+        });
+
+        // Clip A presses a rounding step before its end and lifts on its closing line: both land
+        // on one frame, and the export writes them in beat order, so the pedal ends up.
+        const pressThenClosingLift = [storedController('press', 64, 127, 2 - 1e-6), storedController('lift', 64, 0, 2)];
+
+        it('keeps the clip own press a step before its closing-line lift ahead of it, so the pedal ends up', async () => {
+            const { arrivals } = await scheduleWithPedalLane({
+                shape: abuttingClips(true, [], pressThenClosingLift),
+            });
+
+            expect(
+                arrivals.filter((arrival) => arrival.startsWith('control') && arrival.endsWith(`@${2 * BEAT_FRAMES}`))
+            ).toEqual([`control 64=127 @${2 * BEAT_FRAMES}`, `control 64=0 @${2 * BEAT_FRAMES}`]);
+        });
+
+        it.each([
+            ['the ending clip listed first', true],
+            ['the starting clip listed first', false],
+        ])('still lets the next clip press on that frame have the last word over both (%s)', async (_order, aFirst) => {
+            const { arrivals } = await scheduleWithPedalLane({
+                shape: abuttingClips(aFirst, [storedController('head-press', 64, 127, 0)], pressThenClosingLift),
+            });
+
+            expect(
+                arrivals.filter((arrival) => arrival.startsWith('control') && arrival.endsWith(`@${2 * BEAT_FRAMES}`))
+            ).toEqual([
+                `control 64=127 @${2 * BEAT_FRAMES}`,
+                `control 64=0 @${2 * BEAT_FRAMES}`,
+                `control 64=127 @${2 * BEAT_FRAMES}`,
+            ]);
+        });
+
+        it('plays no mod-wheel row or pedal press stored on the closing line', async () => {
+            const { arrivals } = await scheduleWithPedalLane({
+                shape: abuttingClips(
+                    true,
+                    [],
+                    [
+                        storedController('down', 64, 127, 0),
+                        storedController('lift', 64, 0, 1.5),
+                        storedController('mod', 1, 90, 2),
+                        storedController('re-press', 64, 127, 2),
+                    ]
+                ),
+            });
+
+            expect(arrivals.filter((arrival) => arrival.startsWith('control'))).toEqual([
+                'control 64=127 @0',
+                `control 64=0 @${1.5 * BEAT_FRAMES}`,
+            ]);
+        });
+    });
+
     it('opens each loop pass with the value carried into it, through the real projection', async () => {
         const { arrivals } = await scheduleWithPedalLane({
             controlChanges: [storedController('held', 64, 127, 0.5)],
@@ -1939,7 +2049,7 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
             deviceEntriesByTrack: new Map([[track.id, [entry]]]),
         });
 
-        expect(events.filter((event) => event.type === 'control')).toEqual([]);
+        expect(events.filter(isPendingControlWorkletEvent)).toEqual([]);
     });
 });
 
@@ -2000,5 +2110,123 @@ describe('scheduleTrackClips — export cancellation is caller-owned', () => {
             runSchedule({ useLegacyScheduler: true, includeSecondNote: true, abortSignal: controller.signal })
         ).rejects.toThrow('Render aborted');
         expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('scheduleTrackClips — the receiving instrument', () => {
+    type ChainDevice = { id: string; type: string; bypassed?: boolean };
+
+    function chainEntry(device: ChainDevice): DeviceNodeEntry {
+        const entry = makeInstrumentEntry();
+        entry.deviceId = device.id;
+        entry.deviceType = device.type;
+        return entry;
+    }
+
+    /**
+     * Render one note on a track holding `devices`, with a chain entry for each of
+     * `builtDevices` — the node-backed devices `buildDeviceChain` built, in chain
+     * order. A drum kit, a bypassed device or one that failed to load has none.
+     */
+    async function renderNote(
+        devices: readonly ChainDevice[],
+        builtDevices: readonly ChainDevice[]
+    ): Promise<PendingWorkletEvent[]> {
+        const track = makeMidiTrack();
+        track.devices = devices.map((device): Track['devices'][number] => ({
+            id: device.id,
+            name: device.type,
+            type: device.type,
+            bypassed: device.bypassed ?? false,
+            parameterValues: { kit: 0 },
+        }));
+        const entries = builtDevices.map(chainEntry);
+        const events: PendingWorkletEvent[] = [];
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track,
+            midi: makeMidi(),
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+            },
+            pendingWorkletEvents: events,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, entries]]),
+        });
+        return events;
+    }
+
+    const levain = { id: 'levain-1', type: 'levain' };
+    const fermenter = { id: 'fermenter-1', type: 'fermenter' };
+    const drum808 = { id: 'drum-1', type: 'builtin-drum-machine-808' };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getDrumKitDefByIndex.mockReturnValue({ name: '808' });
+        mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
+        mocks.resolveDrumKit.mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+    });
+
+    // The kit is the first instrument, so it takes the notes even though the
+    // chain built a note surface for the Levain behind it.
+    it('renders an 808 ahead of a levain on the kit, never on the levain', async () => {
+        const events = await renderNote([drum808, levain], [levain]);
+
+        expect(mocks.scheduleDrumKitNote).toHaveBeenCalledTimes(1);
+        expect(events).toEqual([]);
+        expect(mocks.scheduleNoteOffline).not.toHaveBeenCalled();
+    });
+
+    // Live playback, live input and audition send nothing to a bypassed
+    // instrument's node and nothing past it; the render must not hand the part
+    // to the default synth because the chain built no node for it.
+    it('renders nothing for a bypassed first instrument', async () => {
+        const events = await renderNote([{ ...levain, bypassed: true }, fermenter], [fermenter]);
+
+        expect(events).toEqual([]);
+        expect(mocks.scheduleNoteOffline).not.toHaveBeenCalled();
+        expect(mocks.scheduleDrumKitNote).not.toHaveBeenCalled();
+    });
+
+    // The receiver is matched to its chain entry by id. A receiver that failed
+    // to load has no entry, and the track then plays the fallback synth, as a
+    // chain with no instrument does and as live playback does for a missing
+    // node; the instrument behind the receiver never takes its notes.
+    it('renders a receiver that failed to load on the fallback synth, never on the instrument behind it', async () => {
+        const events = await renderNote([levain, fermenter], [fermenter]);
+
+        expect(events).toEqual([]);
+        expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
+        expect(mocks.scheduleNoteOffline.mock.calls[0]?.[2]).toBe(60);
+    });
+
+    // A second instrument of the receiver's own kind is still not the
+    // receiver: its entry must not stand in for the one that failed to load.
+    it('renders a receiver that failed to load on the fallback synth, never on a same-kind instrument behind it', async () => {
+        const levainB = { id: 'levain-2', type: 'levain' };
+
+        const events = await renderNote([levain, levainB], [levainB]);
+
+        expect(events).toEqual([]);
+        expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
+        expect(mocks.scheduleNoteOffline.mock.calls[0]?.[2]).toBe(60);
     });
 });

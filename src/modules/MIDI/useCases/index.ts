@@ -178,6 +178,7 @@ export { getMidiInputTrackRevision } from './webMidiInput/getMidiInputTrackRevis
 export { selectMidiInput } from './webMidiInput/selectMidiInput';
 export { destroyWebMidi } from './webMidiInput/destroyWebMidi';
 export { resetMidiState } from './webMidiInput/resetMidiState';
+export { resolveLiveInputNoteReceiver } from './webMidiInput/resolveLiveInputNoteReceiver';
 export { panicLiveNotes } from './webMidiInput/panicLiveNotes';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
 export { triggerLiveNoteOff } from './triggerLiveNoteOff';
