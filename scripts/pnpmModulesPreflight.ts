@@ -1,14 +1,20 @@
 /**
- * Shared pnpm install-metadata preflight (issue #4118).
+ * Shared pnpm install-metadata preflight (issues #4118, #4505).
  *
  * pnpm records the owning project inside the install itself: `node_modules/.pnpm-workspace-state-v1.json`
  * keeps a `projects` map keyed by absolute project path, and `node_modules/.modules.yaml` keeps the
  * install manifest (older releases record a `projectDir` there; pnpm 11 writes a JSON-shaped document
- * without one). When a lane's `node_modules` is a symlink into another checkout, every pnpm run through
- * the link resolves into the other checkout's install and rewrites both records with the lane's path.
- * The next pnpm run in the real owner then wants to remove `node_modules` and aborts without a TTY:
- * `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` — observed three times in production, each time killing
- * every trusted delivery script.
+ * without one, recording a `virtualStoreDir` instead). When a lane's `node_modules` is a symlink into
+ * another checkout, every pnpm run through the link resolves into the other checkout's install and
+ * rewrites both records with the lane's path. The next pnpm run in the real owner then wants to remove
+ * `node_modules` and aborts without a TTY: `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` — observed
+ * three times in production, each time killing every trusted delivery script.
+ *
+ * Issue #4505 is the same damage class from the clone side: a scratch review clone ran pnpm against a
+ * modules dir the primary owns, and the primary's `.modules.yaml` ended up naming the clone's
+ * `virtualStoreDir` — a pnpm 11 JSON manifest with no `projectDir`, so the project records above read
+ * clean and only the virtual store gives the corruption away. A recorded virtual store outside this
+ * checkout's own `node_modules` is refused below with the restore step pnpm's raw abort never prints.
  *
  * Who runs this preflight, and why:
  * - `resourceGuard.ts` (`pnpm guard`): every local verification flows through the guard, so this is
@@ -36,6 +42,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 export const PNPM_MODULES_DIR = 'node_modules';
 export const PNPM_MODULES_MANIFEST = '.modules.yaml';
 export const PNPM_WORKSPACE_STATE = '.pnpm-workspace-state-v1.json';
+export const PNPM_VIRTUAL_STORE = '.pnpm';
 
 const MODULES_DIR_ABORT = 'ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY';
 const LANE_INSTALL_ROUTE =
@@ -59,6 +66,32 @@ export function modulesManifestProjectDir(source: string): string | undefined {
         // Not JSON: fall through to the YAML mapping form.
     }
     const match = /^["']?projectDir["']?\s*:\s*(.+)$/m.exec(source);
+    if (match?.[1] === undefined) {
+        return undefined;
+    }
+    const value = match[1].trim().replaceAll(/^['"]|['"]$/g, '');
+    return value === '' ? undefined : value;
+}
+
+/**
+ * The virtual store directory recorded in `.modules.yaml`, when the record has one. pnpm 11 writes
+ * the manifest as a JSON document; older releases wrote a plain YAML mapping. The healthy record
+ * names this install's own `node_modules/.pnpm`, relative or absolute, because the virtual store is
+ * where this project's dependency tree physically lives. `storeDir` is deliberately never read: the
+ * shared content-addressable store legitimately lives outside every checkout.
+ */
+export function modulesManifestVirtualStoreDir(source: string): string | undefined {
+    try {
+        const parsed: unknown = JSON.parse(source);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            const virtualStoreDir = (parsed as Record<string, unknown>).virtualStoreDir;
+            return typeof virtualStoreDir === 'string' && virtualStoreDir !== '' ? virtualStoreDir : undefined;
+        }
+        return undefined;
+    } catch {
+        // Not JSON: fall through to the YAML mapping form.
+    }
+    const match = /^["']?virtualStoreDir["']?\s*:\s*(.+)$/m.exec(source);
     if (match?.[1] === undefined) {
         return undefined;
     }
@@ -131,6 +164,19 @@ export function checkoutModulesRefusal(input: {
                 recordedProject: projectDir,
                 installOwner,
             });
+        }
+        const virtualStoreDir = modulesManifestVirtualStoreDir(manifest);
+        if (virtualStoreDir !== undefined) {
+            const expectedStore = join(nodeModules, PNPM_VIRTUAL_STORE);
+            if (!sameDirectory(virtualStoreDir, expectedStore, resolveExisting, nodeModules)) {
+                return foreignVirtualStoreMessage({
+                    file: join(nodeModules, PNPM_MODULES_MANIFEST),
+                    checkoutRoot: input.checkoutRoot,
+                    recordedStore: virtualStoreDir,
+                    expectedStore,
+                    installOwner,
+                });
+            }
         }
     }
     return undefined;
@@ -206,18 +252,32 @@ function foreignProjectMessage(input: {
     ].join('\n');
 }
 
+function foreignVirtualStoreMessage(input: {
+    file: string;
+    checkoutRoot: string;
+    recordedStore: string;
+    expectedStore: string;
+    installOwner: string;
+}): string {
+    return [
+        `${input.file} records virtual store ${input.recordedStore}, not this checkout's own ${input.expectedStore}.`,
+        `An install from another checkout wrote this record — for example a scratch clone whose pnpm runs resolved into ${input.checkoutRoot} — and the next pnpm run here aborts with ${MODULES_DIR_ABORT}.`,
+        `Restore: run \`CI=true pnpm install --frozen-lockfile\` in ${input.installOwner} to rewrite the install metadata for the checkout that physically owns it. Isolate every clone's install so its metadata cannot land here again.`,
+    ].join('\n');
+}
+
 /**
  * Relative recorded paths resolve against the `node_modules` directory they live in, the same
  * base pnpm uses for relative records like `virtualStoreDir: .pnpm`.
  */
 function sameDirectory(
     recorded: string,
-    checkoutRoot: string,
+    expected: string,
     resolveExisting: (path: string) => string,
     recordBase: string
 ): boolean {
     const absolute = isAbsolute(recorded) ? recorded : resolve(recordBase, recorded);
-    return canonicalPath(absolute, resolveExisting) === canonicalPath(checkoutRoot, resolveExisting);
+    return canonicalPath(absolute, resolveExisting) === canonicalPath(expected, resolveExisting);
 }
 
 function resolvesInside(root: string, target: string): boolean {

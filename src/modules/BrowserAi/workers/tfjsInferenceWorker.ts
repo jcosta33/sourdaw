@@ -8,8 +8,6 @@ import {
     type TfjsWorkerTensor,
 } from './tfjsInferenceWorkerRuntime';
 
-import type { NamedTensorMap, Tensor } from '@tensorflow/tfjs-core';
-
 let rollRegistered = false;
 let fatalReported = false;
 const observedDevices = new WeakSet<GPUDevice>();
@@ -58,6 +56,14 @@ async function initializeTfjs(): Promise<TfjsWorkerRuntime> {
         throw new Error(`DDSP requires WebGPU; TF.js selected ${tf.getBackend() || 'no backend'}`);
     }
 
+    // This file's only tfjs-core type route is the dynamic import above (#4466):
+    // every tfjs-core type here derives from that import's value, so the file
+    // holds one tfjs-core type identity even while @spotify/basic-pitch's own
+    // internally consistent 3.21 stack coexists in the tree. Module edges carry
+    // only the structural TfjsWorker* types.
+    type TfjsTensor = InstanceType<(typeof tf)['Tensor']>;
+    type TfjsNamedTensorMap = Record<string, TfjsTensor>;
+
     if (!rollRegistered) {
         // Adapted from Magenta.js DDSP model.ts at immutable revision
         // 0692eb2b79681f062c6b6dd53a0361967f298caa (Apache-2.0).
@@ -85,8 +91,8 @@ async function initializeTfjs(): Promise<TfjsWorkerRuntime> {
         rollRegistered = true;
     }
 
-    const rawTensors = new WeakMap<TfjsWorkerTensor, Tensor>();
-    const wrapTensor = (tensor: Tensor): TfjsWorkerTensor => {
+    const rawTensors = new WeakMap<TfjsWorkerTensor, TfjsTensor>();
+    const wrapTensor = (tensor: TfjsTensor): TfjsWorkerTensor => {
         const wrapped: TfjsWorkerTensor = {
             data: async () => {
                 const raw = await tensor.data();
@@ -99,7 +105,9 @@ async function initializeTfjs(): Promise<TfjsWorkerRuntime> {
         rawTensors.set(wrapped, tensor);
         return wrapped;
     };
-    const wrapPrediction = (output: Tensor | Tensor[] | NamedTensorMap): ReturnType<TfjsWorkerModel['predict']> => {
+    const wrapPrediction = (
+        output: TfjsTensor | TfjsTensor[] | TfjsNamedTensorMap
+    ): ReturnType<TfjsWorkerModel['predict']> => {
         if (Array.isArray(output)) {
             return output.map(wrapTensor);
         }
@@ -116,7 +124,7 @@ async function initializeTfjs(): Promise<TfjsWorkerRuntime> {
             return {
                 dispose: () => model.dispose(),
                 predict: (feeds) => {
-                    const namedFeeds: NamedTensorMap = {};
+                    const namedFeeds: TfjsNamedTensorMap = {};
                     for (const [name, tensor] of Object.entries(feeds)) {
                         const raw = rawTensors.get(tensor);
                         if (raw === undefined) {

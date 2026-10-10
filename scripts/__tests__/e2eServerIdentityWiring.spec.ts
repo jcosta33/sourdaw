@@ -12,6 +12,7 @@ const warmupMocks = vi.hoisted(() => ({
     launch: vi.fn(),
     newPage: vi.fn(),
     addInitScript: vi.fn(),
+    on: vi.fn(),
     goto: vi.fn(),
     getByLabel: vi.fn(),
     waitFor: vi.fn(),
@@ -190,8 +191,14 @@ describe('cold first-paint warmup', () => {
         warmupMocks.launch.mockResolvedValue({ newPage: warmupMocks.newPage, close: warmupMocks.close });
         warmupMocks.newPage.mockResolvedValue({
             addInitScript: warmupMocks.addInitScript,
+            on: warmupMocks.on,
             goto: warmupMocks.goto,
             getByLabel: warmupMocks.getByLabel,
+        });
+        // A healthy boot logs the [capabilities] marker right after the warmup
+        // subscribes to the console; deliver it so the readiness gate passes.
+        warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
+            queueMicrotask(() => handler({ text: () => '[DEV][INFO] [capabilities] {"isDesktopRuntime":false}' }));
         });
         warmupMocks.getByLabel.mockReturnValue({ waitFor: warmupMocks.waitFor });
         warmupMocks.goto.mockResolvedValue(null);
@@ -208,6 +215,7 @@ describe('cold first-paint warmup', () => {
             clock.now += 35_000;
             return null;
         });
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
 
         await warmFirstPaint(config);
 
@@ -224,6 +232,13 @@ describe('cold first-paint warmup', () => {
         expect(warmupMocks.getByLabel).toHaveBeenCalledWith('Sourdaw — start a project');
         expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
         expect(warmupMocks.close).toHaveBeenCalledOnce();
+        // The cold cost is reported so a slow warmup is visible in the CI log
+        // instead of surfacing inside the first test's timed allowance (#4781).
+        expect(warmupLog).toHaveBeenCalledWith(
+            expect.stringMatching(
+                /\[first-paint warmup\] launch overlay after 35\.0s, boot capabilities after 35\.0s; 145\.0s of the 180s cold allowance remains/
+            )
+        );
     });
 
     it('bounds a hung navigation by the shared deadline and closes the browser', async () => {
@@ -266,6 +281,33 @@ describe('cold first-paint warmup', () => {
         await expect(warmFirstPaint(config)).rejects.toThrow(/warmup.*deadline/i);
 
         expect(warmupMocks.waitFor).not.toHaveBeenCalled();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('refuses to hand a cold server to the timed waits when boot never completes', async () => {
+        // The warmup page never logs [capabilities]: the launch path's boot
+        // did not finish, so finishing global setup would start the timed
+        // first-paint waits against a cold server (#4781).
+        warmupMocks.on.mockImplementation(() => {});
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 1_000;
+            return null;
+        });
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const warming = warmFirstPaint(config);
+            // Flush the navigation and overlay microtasks so the readiness
+            // wait is polling, then let its deadline pass. The rejection
+            // expectation attaches before the rejection fires so the failure
+            // is never unhandled.
+            await vi.advanceTimersByTimeAsync(0);
+            clock.now = 400_000;
+            const refusal = expect(warming).rejects.toThrow('never logged "[capabilities]"');
+            await vi.advanceTimersByTimeAsync(100);
+            await refusal;
+        } finally {
+            vi.useRealTimers();
+        }
         expect(warmupMocks.close).toHaveBeenCalledOnce();
     });
 
