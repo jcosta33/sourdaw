@@ -1,6 +1,8 @@
+import { change, clone } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { initInputMonitoringProjectAccess } from '#/app/initInputMonitoringProjectAccess';
+import { logger } from '#/infra/logger/appLogger';
 import {
     configureAutomergeStoragePort,
     createAutomergeStoragePreview,
@@ -22,7 +24,15 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
-import { createCrdtDoc, getCrdtDoc, mutateCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectRootIdentity,
+    createCrdtDoc,
+    getCrdtDoc,
+    mutateCrdtDoc,
+    removeCrdtDoc,
+    replaceCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { inputMonitoringSession } from '../inputMonitoringSession';
 
@@ -79,6 +89,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
     const commitRefusal = new Error('Refused track transaction');
     let refuseCommit: boolean;
     let failAfterPublication: boolean;
+    let afterPublication: (() => void) | undefined;
     let docTrackIdsAtConnect: string[][];
     let docTrackIdsAtStop: string[];
     let docTrackIdsAtDisconnect: string[][];
@@ -125,15 +136,21 @@ describe('track deletion releases the input monitor at Command commit', () => {
         createCrdtDoc('root');
         refuseCommit = false;
         failAfterPublication = false;
+        afterPublication = undefined;
+        transportStore.set(defaultTransportState);
         docTrackIdsAtConnect = [];
         docTrackIdsAtStop = [];
         docTrackIdsAtDisconnect = [];
         connectedGains.clear();
+        gains.set('a', { id: 'gain-a' });
+        gains.set('b', { id: 'gain-b' });
         clearHandlerRegistry();
         const handlers = getArrangementHandlers();
         registerHandlerMap({
             removeTrack: handlers.removeTrack,
             removeAllTracks: handlers.removeAllTracks,
+            discardCreatedTrack: handlers.discardCreatedTrack,
+            discardCreatedTracks: handlers.discardCreatedTracks,
             restoreTrack: handlers.restoreTrack,
             restoreTracks: handlers.restoreTracks,
             setTrackInput: handlers.setTrackInput,
@@ -150,6 +167,7 @@ describe('track deletion releases the input monitor at Command commit', () => {
                     throw commitRefusal;
                 }
                 mutateCrdtDoc({ id: docId, changeFn, message, snapshotTransaction, localSlots: changedKeys });
+                afterPublication?.();
                 if (failAfterPublication) {
                     throw commitRefusal;
                 }
@@ -378,6 +396,153 @@ describe('track deletion releases the input monitor at Command commit', () => {
             subscription.restore();
         }
     });
+
+    it.each([
+        ['removeTrack', false],
+        ['removeTrack', true],
+        ['removeAllTracks', false],
+        ['removeAllTracks', true],
+        ['discardCreatedTrack', false],
+        ['discardCreatedTrack', true],
+        ['discardCreatedTracks', false],
+        ['discardCreatedTracks', true],
+    ] as const)('keeps successor root runtime after %s cleanup, ambiguous=%s', async (actionType, ambiguous) => {
+        const isBulk = actionType === 'removeAllTracks' || actionType === 'discardCreatedTracks';
+        await startInputMonitoring('b', null);
+        source.connect.mockClear();
+        const outgoingRootIdentity = captureProjectRootIdentity();
+        const successorGainA = { id: 'successor-gain-a' };
+        const successorGainB = { id: 'successor-gain-b' };
+        const successorStop = vi.fn();
+        const successorStream = { getTracks: () => [{ stop: successorStop }] };
+        const successorSource = { connect: vi.fn(), disconnect: vi.fn() };
+        const removedEvent = vi.fn(async () => undefined);
+        let successorOpenings: Promise<boolean>[] = [];
+        let currentSource = source;
+        const installSuccessor = () => {
+            afterPublication = undefined;
+            const committed = getCrdtDoc<Record<string, unknown>>('root');
+            if (!committed) {
+                throw new Error('Expected outgoing committed root');
+            }
+            const successorTracks = ['a', 'b'].map((id) => ({
+                ...createTrack({ id, name: `Successor ${id}`, kind: 'audio', withoutDefaultDevice: true }),
+                inputMonitoring: 'on' as const,
+            }));
+            const successor = change(clone(committed), (document) => {
+                document.tracks = { tracks: successorTracks };
+            });
+            gains.set('a', successorGainA);
+            gains.set('b', successorGainB);
+            replaceCrdtDoc({ id: 'root', doc: successor });
+            expect(captureProjectRootIdentity()).not.toBe(outgoingRootIdentity);
+            const projected = trackStore.value;
+            if (!projected) {
+                throw new Error('Expected successor projection');
+            }
+            trackStore.set({ ...projected, tracks: successorTracks });
+            if (isBulk) {
+                getUserMedia.mockResolvedValueOnce(successorStream);
+                engine.createMediaStreamSource.mockReturnValueOnce(successorSource);
+                currentSource = successorSource;
+            }
+            engine.removeTrackStrip.mockClear();
+            engine.initializeTrackStripFromSnapshot.mockClear();
+            setArrangementEventBus({ emit: removedEvent });
+            successorOpenings = successorTracks.map((track) => startInputMonitoring(track.id, null));
+        };
+        function removalAction() {
+            if (actionType === 'removeTrack') {
+                return { type: 'removeTrack' as const, payload: { trackId: 'a' } };
+            }
+            if (actionType === 'removeAllTracks') {
+                return { type: 'removeAllTracks' as const, payload: undefined };
+            }
+            if (actionType === 'discardCreatedTrack') {
+                return { type: 'discardCreatedTrack' as const, payload: { trackId: 'a' } };
+            }
+            return { type: 'discardCreatedTracks' as const, payload: { trackIds: ['a', 'b'] } };
+        }
+        const action = removalAction();
+        if (ambiguous) {
+            afterPublication = installSuccessor;
+            failAfterPublication = true;
+            await expect(executeAppAction(action)).rejects.toMatchObject({ name: 'AppActionCommittedError' });
+            failAfterPublication = false;
+        } else {
+            await executeAppAction(action, { onCommitted: installSuccessor });
+        }
+        expect(await Promise.all(successorOpenings)).toEqual([true, true]);
+        expect(docTrackIds()).toEqual(['a', 'b']);
+        expect(monitorOwners()).toEqual(['a', 'b']);
+        expect(currentSource.connect).toHaveBeenCalledWith(successorGainA);
+        expect(currentSource.connect).toHaveBeenCalledWith(successorGainB);
+        expect(currentSource.disconnect).not.toHaveBeenCalledWith(successorGainA);
+        expect(currentSource.disconnect).not.toHaveBeenCalledWith(successorGainB);
+        expect(engine.removeTrackStrip).not.toHaveBeenCalled();
+        expect(engine.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+        expect(removedEvent).not.toHaveBeenCalled();
+        expect(successorStop).not.toHaveBeenCalled();
+        expect(inputTrack.stop).toHaveBeenCalledTimes(isBulk ? 1 : 0);
+    });
+
+    it.each(['synchronous-disconnect', 'between-async-effects'] as const)(
+        'retires every remaining removal effect after replacement during %s',
+        async (boundary) => {
+            await startInputMonitoring('a', null);
+            await startInputMonitoring('b', null);
+            const successorGain = { id: 'successor-a' };
+            const removedEvent = vi.fn(async () => undefined);
+            let successorOpening: Promise<boolean> | undefined;
+            const outgoingGain = gains.get('a');
+            const installSuccessor = () => {
+                const committed = getCrdtDoc<Record<string, unknown>>('root');
+                if (!committed) {
+                    throw new Error('Expected committed root');
+                }
+                const successorTrack = {
+                    ...createTrack({ id: 'a', name: 'Incoming A', kind: 'audio', withoutDefaultDevice: true }),
+                    inputMonitoring: 'on' as const,
+                };
+                const successor = change(clone(committed), (document) => {
+                    const slot = document.tracks;
+                    if (!slot || typeof slot !== 'object' || !('tracks' in slot) || !Array.isArray(slot.tracks)) {
+                        throw new Error('Expected committed tracks');
+                    }
+                    slot.tracks.unshift(successorTrack);
+                });
+                gains.set('a', successorGain);
+                replaceCrdtDoc({ id: 'root', doc: successor });
+                const projected = trackStore.value;
+                if (!projected) {
+                    throw new Error('Expected incoming projection');
+                }
+                trackStore.set({ ...projected, tracks: [successorTrack, ...projected.tracks] });
+                engine.removeTrackStrip.mockClear();
+                setArrangementEventBus({ emit: removedEvent });
+                successorOpening = startInputMonitoring('a', null);
+            };
+            if (boundary === 'synchronous-disconnect') {
+                source.disconnect.mockImplementation((destination?: unknown) => {
+                    connectedGains.delete(destination);
+                    if (destination === outgoingGain) {
+                        installSuccessor();
+                    }
+                });
+            } else {
+                engine.removeTrackStrip.mockImplementationOnce(() => queueMicrotask(installSuccessor));
+            }
+            await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+            expect(await successorOpening).toBe(true);
+            expect(docTrackIds()).toEqual(['a', 'b']);
+            expect(monitorOwners()).toEqual(['a', 'b']);
+            expect(source.connect).toHaveBeenCalledWith(successorGain);
+            expect(source.disconnect).not.toHaveBeenCalledWith(successorGain);
+            expect(engine.removeTrackStrip).not.toHaveBeenCalled();
+            expect(removedEvent).not.toHaveBeenCalled();
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+        }
+    );
 
     it('retains both owners after a refused bulk delete and releases both after commit', async () => {
         await startInputMonitoring('a', null);
@@ -1074,6 +1239,121 @@ describe('track deletion releases the input monitor at Command commit', () => {
         }
     );
 
+    it('keeps a pending Auto capture after an optimistic removal aborts', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before Auto admission');
+        }
+        const pending = deferredGrant();
+        getUserMedia.mockReturnValueOnce(pending.request);
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                armed: track.id === 'a',
+                inputMonitoring: track.id === 'a' ? 'auto' : 'off',
+            })),
+        });
+        flushAutomergeStorageWrites();
+        await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
+        expect(monitorOwners()).toEqual(['a']);
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            getArrangementHandlers().removeTrack.execute({ type: 'removeTrack', payload: { trackId: 'a' } })
+        );
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            expect(liveTrackIds()).toEqual(['b']);
+            expect(docTrackIds()).toEqual(['a', 'b']);
+            pending.grant(stream);
+            await vi.waitFor(() => expect(inputMonitoringSession.pendingRequests.size).toBe(0));
+            expect(monitorOwners()).toEqual(['a']);
+            expect(engine.ensureTrackStrip).not.toHaveBeenCalledWith('a');
+            expect(source.connect).not.toHaveBeenCalled();
+        } finally {
+            transaction.abort();
+        }
+
+        await vi.waitFor(() => expect(monitorOwners()).toEqual(['a']));
+        await vi.waitFor(() => expect(source.connect).toHaveBeenCalledWith(gains.get('a')));
+        expect(inputTrack.stop).not.toHaveBeenCalled();
+        expect(getUserMedia).toHaveBeenCalledOnce();
+    });
+
+    it.each(['delete', 'off', 'input', 'disarm', 'kind', 'playing'] as const)(
+        'fences a pending Auto grant when committed %s authority changes during absence',
+        async (changeKind) => {
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected tracks');
+            }
+            const pending = deferredGrant();
+            getUserMedia.mockReturnValueOnce(pending.request);
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => ({
+                    ...track,
+                    armed: track.id === 'a',
+                    inputMonitoring: track.id === 'a' ? 'auto' : 'off',
+                })),
+            });
+            flushAutomergeStorageWrites();
+            await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
+            const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+                getArrangementHandlers().removeTrack.execute({ type: 'removeTrack', payload: { trackId: 'a' } })
+            );
+            if (transaction.status === 'threw') {
+                throw transaction.error;
+            }
+            try {
+                expect(liveTrackIds()).toEqual(['b']);
+                if (changeKind === 'playing') {
+                    transportStore.set({ ...defaultTransportState, isPlaying: true });
+                } else {
+                    mutateCrdtDoc<{
+                        tracks: {
+                            tracks: Array<{
+                                id: string;
+                                inputMonitoring: string;
+                                inputId: string | null;
+                                armed: boolean;
+                                kind: string;
+                            }>;
+                        };
+                    }>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            const track = document.tracks.tracks[0];
+                            if (changeKind === 'delete') {
+                                document.tracks.tracks.splice(0, 1);
+                            } else if (changeKind === 'off') {
+                                track.inputMonitoring = 'off';
+                            } else if (changeKind === 'input') {
+                                track.inputId = 'other-input';
+                            } else if (changeKind === 'disarm') {
+                                track.armed = false;
+                            } else {
+                                track.kind = 'midi';
+                            }
+                        },
+                    });
+                }
+                pending.grant(stream);
+                await vi.waitFor(() => expect(inputMonitoringSession.pendingRequests.size).toBe(0));
+                expect(monitorOwners()).toEqual([]);
+                expect(inputTrack.stop).toHaveBeenCalledOnce();
+                expect(engine.ensureTrackStrip).not.toHaveBeenCalledWith('a');
+                expect(source.connect).not.toHaveBeenCalled();
+                // A later eligible rollback may acquire the newly selected input, using a distinct stream.
+                getUserMedia.mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] });
+            } finally {
+                transaction.abort();
+            }
+        }
+    );
+
     it('preserves an unflushed direct On through an unrelated owned track publication', async () => {
         const state = trackStore.value;
         if (!state) {
@@ -1157,4 +1437,46 @@ describe('track deletion releases the input monitor at Command commit', () => {
             expect(getUserMedia).toHaveBeenCalledTimes(1);
         }
     );
+
+    it('reclaims all deleted owners when first edge disconnect refuses', async () => {
+        await startInputMonitoring('a', null);
+        await startInputMonitoring('b', null);
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({ ...state, tracks: [] });
+        expect(docTrackIds()).toEqual(['a', 'b']);
+        expect(monitorOwners()).toEqual(['a', 'b']);
+        source.disconnect.mockImplementation((destination?: unknown) => {
+            if (destination === gains.get('a')) {
+                throw new Error('First owner edge disconnect refused');
+            }
+            if (destination === undefined) {
+                connectedGains.clear();
+            } else {
+                connectedGains.delete(destination);
+            }
+        });
+        const warnings = vi.spyOn(logger, 'warn');
+        try {
+            mutateCrdtDoc<{ tracks: { tracks: Array<{ id: string }> } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks.tracks.splice(0, 2);
+                },
+            });
+            expect(docTrackIds()).toEqual([]);
+            expect(monitorOwners()).toEqual([]);
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            expect(inputTrack.stop).toHaveBeenCalledOnce();
+            expect(warnings).toHaveBeenCalledWith(
+                '[AutomergeRepository] Listener error:',
+                expect.objectContaining({ message: 'First owner edge disconnect refused' })
+            );
+        } finally {
+            warnings.mockRestore();
+            source.disconnect.mockImplementation(() => connectedGains.clear());
+        }
+    });
 });

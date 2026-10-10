@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+
+import { createCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { removeTrackModulationReferences } from '../removeTrackModulationReferences';
 
@@ -38,6 +40,8 @@ vi.mock('#/modules/Automation/useCases', () => ({
 describe('removeTrackModulationReferences', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
         mocks.removeModulator.mockReturnValue(mocks.finalizeOwnedModulator);
         mocks.removeMapping.mockReturnValue(mocks.finalizeTargetMapping);
         mocks.modulationStoreValue.value = {
@@ -123,4 +127,20 @@ describe('removeTrackModulationReferences', () => {
         expect(mocks.finalizeOwnedModulator).toHaveBeenCalledOnce();
         expect(mocks.finalizeTargetMapping).toHaveBeenCalledOnce();
     });
+    afterEach(() => removeCrdtDoc('root'));
+
+    it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
+        'retires remaining modulation runtime effects when its first cleanup replaces the root, phase=%s',
+        (phase) => {
+            const effects = removeTrackModulationReferences({ trackId: 'removed', deferRuntimeEffects: true });
+            mocks.modulationStoreValue.value = { modulators: [] };
+            mocks.finalizeOwnedModulator.mockImplementationOnce(() => {
+                removeCrdtDoc('root');
+                createCrdtDoc('root');
+            });
+            effects[phase]();
+            expect(mocks.finalizeOwnedModulator).toHaveBeenCalledOnce();
+            expect(mocks.finalizeTargetMapping).not.toHaveBeenCalled();
+        }
+    );
 });

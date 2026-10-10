@@ -601,4 +601,36 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
         expect(granted.stopTrack).toHaveBeenCalledTimes(1);
         expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
     });
+    it.each(['off', 'auto-disarm', 'ineligible-kind'] as const)(
+        'closes every affected owner after one disconnect fails during %s',
+        async (transition) => {
+            const granted = liveStream();
+            harness.getUserMedia.mockResolvedValue(granted.stream);
+            publishTracks([track('on'), track('on', { id: 'track-2' })]);
+            await startInputMonitoring('track-1', 'input-1');
+            await startInputMonitoring('track-2', 'input-1');
+            const failure = new Error('First monitor disconnect failed');
+            source.disconnect.mockImplementation((destination?: unknown) => {
+                if (destination === GAIN_NODE) {
+                    throw failure;
+                }
+            });
+            const changed = ['track-1', 'track-2'].map((id) => {
+                if (transition === 'ineligible-kind') {
+                    return track('on', { id, kind: 'vca' });
+                }
+                return track(transition === 'off' ? 'off' : 'auto', { id, armed: false });
+            });
+            publishTracks(changed);
+            try {
+                expect(() => reconcileAutoInputMonitoring()).toThrow(failure);
+                expect(isTrackInputMonitored('track-1', 'input-1')).toBe(false);
+                expect(isTrackInputMonitored('track-2', 'input-1')).toBe(false);
+                expect(source.disconnect).toHaveBeenCalledWith(SECOND_GAIN_NODE);
+                expect(granted.stopTrack).toHaveBeenCalledOnce();
+            } finally {
+                source.disconnect.mockReset();
+            }
+        }
+    );
 });

@@ -268,3 +268,16 @@ history route. For an unscoped refused write, assert that committed owners survi
 remains pending, then that a successful retry finalizes only its removed owner. Abort and replace
 the project root with a reused track ID: observe observer retirement and publish a later removal
 to prove the outgoing finalizer cannot tear down the recreated strip.
+
+PR #5091's follow-up head `1297f963` retained optimistic absence but missed two owner transitions.
+Delete two shared owners after an empty optimistic projection and throw from the first targeted
+disconnect: every removed owner must still release, the final stream must stop, and the error
+must remain reported. Repeat the fault with visible Off, disarm and ineligible-kind transitions;
+isolating each repository release does not isolate the surrounding reconciliation sweep.
+
+Settle a pending armed, stopped Auto grant while a real removal transaction hides its row, then
+abort. Raw committed kind, arm, mode and input must retain that device without recreating the
+missing strip; rollback attaches the original grant without another permission request. Disarm,
+Off, input change, committed deletion, non-audio Auto and playback without recording still reject
+the old grant. A monitoring hold keeps an eligible retained grant detached until resume. On-only
+absence probes and already-granted Auto probes miss this settlement boundary.

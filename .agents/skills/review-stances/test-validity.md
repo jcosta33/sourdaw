@@ -740,3 +740,16 @@ Derive the fixture's admitted range from the complete multiline binding; preserv
 independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
 only the committed recognizer is reverted. A full-source screen assertion does not prove
 which region the real scan caller admitted.
+
+PR #5091's head `1297f963` had green single-owner disconnect and direct-root retirement checks,
+but the surrounding sweep could abandon a second deleted owner and the Command tail could reach
+a replacement root. Use two owners for failure isolation and the real Command commit callbacks
+for continuation authority. Assert raw membership, actual owner maps, distinct source edges,
+stream stops and strip effects, including replacement between effects. A green owner-key check
+alone does not prove terminal release or incoming graph preservation.
+
+An already-granted Auto deletion refusal and an absent-row On permission case do not prove
+pending Auto ownership. Settle permission before aborting the real removal transaction; inspect
+retained capture and absent strip before rollback, then the original edge after rollback without
+reacquisition. Genuine denial and committed ineligibility remain separate controls. Controlled
+media and graph ports prove ownership and control flow, not audible input or physical device stop.

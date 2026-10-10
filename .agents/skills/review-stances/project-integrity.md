@@ -226,3 +226,15 @@ entry through registered removal and Undo: a refused write preserves raw and vis
 selection, history and capture, while committed removal retires only its owner and the inverse
 rearms the restored one. A direct helper invocation or a snapshot-only inverse misses the caller
 and independent runtime authority; see the paired lifecycle probes in `session-lifecycle.md`.
+
+PR #867 introduced deferrable track teardown; PR #5091's head `1297f963` fenced the direct
+removal observer while its normal and ambiguous Command continuations still held only track IDs.
+Capture the installed root before optimistic publication and replace it through the real
+`onCommitted` callback, reusing the removed identity. Repeat with publication followed by a
+storage error. The outgoing continuation must leave the incoming owner, source edge, stream and
+strip intact, including modulation cleanup, sidechain rewiring and removed-event publication.
+Attack remove, remove-all, created-track discard, delegated bulk discard and imported-stem
+discard at their actual continuation routes. Replace the root between awaited effects and inside
+a synchronous teardown callback: entry-only fencing cannot authorize the remaining effects.
+A missing captured root also retires cleanup; same-root genuine removal still completes, and
+refusal preserves its graph. The direct observer's replacement test alone misses these routes.

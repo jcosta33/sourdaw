@@ -71,7 +71,7 @@ describe('initInputMonitoringProjectAccess', () => {
         expect(access.readTrack('a')).toBeNull();
         publishCommittedTrack('a');
         expect(access.hasTrack('a')).toBe(true);
-        expect(access.readTrack('a')).toEqual({ inputMonitoring: 'auto', inputId: null });
+        expect(access.readTrack('a')).toEqual({ inputMonitoring: 'auto', inputId: null, kind: 'audio', armed: false });
         mutateCrdtDoc({
             id: 'root',
             changeFn: (document) => {
@@ -83,7 +83,12 @@ describe('initInputMonitoringProjectAccess', () => {
                 slot.tracks[0].inputId = 'chosen-input';
             },
         });
-        expect(access.readTrack('a')).toEqual({ inputMonitoring: 'on', inputId: 'chosen-input' });
+        expect(access.readTrack('a')).toEqual({
+            inputMonitoring: 'on',
+            inputId: 'chosen-input',
+            kind: 'audio',
+            armed: false,
+        });
         publishCommittedTrack('b');
         expect(access.hasTrack('a')).toBe(false);
         expect(access.hasTrack('b')).toBe(true);

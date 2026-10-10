@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
@@ -19,6 +20,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
         if (!state || state.tracks.length === 0) {
             return { status: 'no-write' };
         }
+        const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const removals: Array<{ trackId: string; finalizeRuntimeRemoval: () => void }> = [];
         for (const track of state.tracks) {
             const result = removeTrack(track.id, {
@@ -36,12 +38,17 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
             status: 'written',
             afterCommit: () =>
                 runAllAsyncEffects(
-                    removals.flatMap(({ trackId, finalizeRuntimeRemoval }) => [
-                        finalizeRuntimeRemoval,
-                        () => publishTrackRemoved({ trackId }),
-                    ])
+                    removals
+                        .flatMap(({ trackId, finalizeRuntimeRemoval }) => [
+                            finalizeRuntimeRemoval,
+                            () => publishTrackRemoved({ trackId }),
+                        ])
+                        .map(runtimeAuthority.guard)
                 ),
             afterAmbiguousCommit: () => {
+                if (!runtimeAuthority.isCurrent()) {
+                    return undefined;
+                }
                 const committedState = getTrackStoreState();
                 if (!committedState) {
                     throw new Error('Committed track state is unavailable; manual repair required');
@@ -58,7 +65,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
                     }
                 }
                 effects.push(() => wireSidechainRoutes());
-                return runAllAsyncEffects(effects);
+                return runAllAsyncEffects(effects.map(runtimeAuthority.guard));
             },
             postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
         };

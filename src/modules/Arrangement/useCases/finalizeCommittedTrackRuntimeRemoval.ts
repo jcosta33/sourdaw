@@ -8,7 +8,14 @@ import {
 import { sanitizeTrackSnapshot, trackStore } from '../stores/trackStore';
 
 /** Direct removals share Command's committed-absence fence without changing their history route. */
-export function finalizeCommittedTrackRuntimeRemoval(trackId: string, finalizeRuntimeRemoval: () => void): void {
+export function finalizeCommittedTrackRuntimeRemoval(
+    trackId: string,
+    finalizeRuntimeRemoval: () => void,
+    isCurrent: () => boolean
+): void {
+    if (!isCurrent()) {
+        return;
+    }
     const document = getCrdtDoc(DOC_PREFIX_ROOT);
     if (!document || !sanitizeTrackSnapshot(document.tracks).tracks.some((track) => track.id === trackId)) {
         finalizeRuntimeRemoval();
@@ -28,7 +35,7 @@ export function finalizeCommittedTrackRuntimeRemoval(trackId: string, finalizeRu
             return;
         }
         const current = getCrdtDoc(DOC_PREFIX_ROOT);
-        if (!current || captureProjectRootIdentity() !== rootIdentity) {
+        if (!isCurrent() || !current || captureProjectRootIdentity() !== rootIdentity) {
             retire();
             return;
         }

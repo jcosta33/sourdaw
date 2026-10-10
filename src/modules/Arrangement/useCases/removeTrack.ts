@@ -19,6 +19,7 @@ import { takeLaneStore } from '../stores/takeLaneStore';
 import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 
 import { ArrangementEventBus } from './arrangementEventBus';
+import { captureTrackRemovalRuntimeAuthority } from './captureTrackRemovalRuntimeAuthority';
 import { removeClipSatelliteData } from './clip/removeClipSatelliteData';
 import { finalizeCommittedTrackRuntimeRemoval } from './finalizeCommittedTrackRuntimeRemoval';
 import { refreshToasterPadBindings } from './refreshToasterPadBindings';
@@ -48,6 +49,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 return { removed: false };
             }
             const removedTrack = track;
+            const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
 
             const clipIds = collectTrackClipIds(track);
 
@@ -109,7 +111,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             // when the node is absent.
             let runtimeRemovalFinalized = false;
             function finalizeRuntimeRemoval(): void {
-                if (runtimeRemovalFinalized) {
+                if (runtimeRemovalFinalized || !runtimeAuthority.isCurrent()) {
                     return;
                 }
                 const effects: Array<() => void> = [...deferredSidechainRuntimeEffects];
@@ -130,13 +132,13 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                     effects.push(() => setTrackOutput(repointed.trackId, repointed.outputId));
                 }
                 effects.push(() => refreshToasterPadBindings(tracks, removedTrack.parentId));
-                runAllEffects(effects);
+                runAllEffects(effects.map(runtimeAuthority.guard));
                 runtimeRemovalFinalized = true;
             }
             if (!options.deferRuntimeEffects) {
-                finalizeCommittedTrackRuntimeRemoval(trackId, finalizeRuntimeRemoval);
+                finalizeCommittedTrackRuntimeRemoval(trackId, finalizeRuntimeRemoval, runtimeAuthority.isCurrent);
             }
-            if (!options.suppressRemovedEvent) {
+            if (!options.suppressRemovedEvent && runtimeAuthority.isCurrent()) {
                 void eventBus.emit('track.removed', { trackId });
             }
             return { removed: true, finalizeRuntimeRemoval };

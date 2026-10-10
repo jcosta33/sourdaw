@@ -1,7 +1,9 @@
+import { type Track } from '#/modules/Arrangement/stores';
+
 /** Committed-project access supplied by the composition root; this port stores no project data. */
 export type InputMonitoringProjectAccess = {
     hasTrack: (trackId: string) => boolean;
-    readTrack: (trackId: string) => { inputMonitoring: 'auto' | 'on' | 'off'; inputId: string | null } | null;
+    readTrack: (trackId: string) => Pick<Track, 'inputMonitoring' | 'inputId' | 'kind' | 'armed'> | null;
     subscribe: (listener: () => void) => () => void;
 };
 

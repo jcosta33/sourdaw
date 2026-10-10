@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { getVcaGroupsState } from '../../stores/vcaGroupStore';
+import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
@@ -81,6 +82,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         if (!currentStateMatches(action)) {
             return { status: 'conflict' };
         }
+        const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,
@@ -95,12 +97,17 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         return {
             status: 'written',
             afterCommit: () =>
-                runAllAsyncEffects([
-                    result.finalizeRuntimeRemoval,
-                    finalizeModulationRemoval.afterCommit,
-                    () => publishTrackRemoved({ trackId: action.payload.trackId }),
-                ]),
+                runAllAsyncEffects(
+                    [
+                        result.finalizeRuntimeRemoval,
+                        finalizeModulationRemoval.afterCommit,
+                        () => publishTrackRemoved({ trackId: action.payload.trackId }),
+                    ].map(runtimeAuthority.guard)
+                ),
             afterAmbiguousCommit: async () => {
+                if (!runtimeAuthority.isCurrent()) {
+                    return;
+                }
                 const committedTrack = getTrackStoreState()?.tracks.find(
                     (candidate) => candidate.id === action.payload.trackId
                 );
@@ -121,7 +128,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                     );
                 }
                 try {
-                    await runAllAsyncEffects(effects);
+                    await runAllAsyncEffects(effects.map(runtimeAuthority.guard));
                 } catch (error) {
                     const reason = error instanceof Error ? error.message : String(error);
                     throw new Error(`Track runtime reconciliation failed; manual repair required: ${reason}`, {

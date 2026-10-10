@@ -1,12 +1,13 @@
 import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { runAllEffects } from '#/utils/runEffects';
 
 import { hasDeferredInputMonitoringEdge } from '../../repositories/audioRecorder/hasDeferredInputMonitoringEdge';
 import { isTrackInputMonitored } from '../../repositories/audioRecorder/isTrackInputMonitored';
 import { readInputMonitoringTrackIds } from '../../repositories/audioRecorder/readInputMonitoringTrackIds';
 import { readMonitorTeardownEpoch } from '../../repositories/audioRecorder/readMonitorTeardownEpoch';
 import { isAutoInputMonitoringHeld } from '../../services/autoInputMonitoringSuspension';
-import { hasCommittedInputMonitoringTrack } from '../../stores/inputMonitoringProjectAccess';
+import { readCommittedInputMonitoringTrack } from '../../stores/inputMonitoringProjectAccess';
 
 import { admitInputMonitoring } from './admitInputMonitoring';
 import { deriveAutoMonitorEdge } from './deriveAutoInputMonitoring';
@@ -133,7 +134,7 @@ export function reconcileAutoInputMonitoring(): void {
     const opensSuppressed = isAutoInputMonitoringHeld();
     const tracks = trackStore.value?.tracks ?? [];
     const transport = transportStore.value ?? defaultTransportState;
-    const presentIds = new Set<string>();
+    const presentIds = new Set(tracks.map((track) => track.id));
     const interestedIds = new Set([
         ...openRequests.keys(),
         ...readInputMonitoringTrackIds(),
@@ -141,11 +142,10 @@ export function reconcileAutoInputMonitoring(): void {
     ]);
     forgiveRefusalsAtRecordStartOrStop(transport);
 
-    for (const track of tracks) {
-        presentIds.add(track.id);
+    const reconcileTrack = (track: (typeof tracks)[number]): void => {
         if (track.kind !== 'audio') {
             reconcileNonAudioTrack(track, interestedIds, opensSuppressed);
-            continue;
+            return;
         }
         const edge = deriveAutoMonitorEdge({
             inputMonitoring: track.inputMonitoring,
@@ -166,19 +166,39 @@ export function reconcileAutoInputMonitoring(): void {
         } else if (track.inputMonitoring === 'on') {
             followAdmittedOnInput(track.id, interestedIds, opensSuppressed);
             if (!openRequests.get(track.id)?.refused) {
-                continue;
+                return;
             }
             // On keeps whatever edge this owner holds, so a later Off can still
             // release it. Only a refusal is forgiven: the user now asks for input.
             openRequests.delete(track.id);
         }
-    }
+    };
 
-    for (const trackId of interestedIds) {
-        // The visible store can publish optimistic removal before Command
-        // commits. A refused deletion must retain its committed capture owner.
-        if (!presentIds.has(trackId) && !hasCommittedInputMonitoringTrack(trackId)) {
+    // One refused disconnect must not strand another owner's terminal cleanup.
+    runAllEffects([
+        ...tracks.map((track) => () => reconcileTrack(track)),
+        ...Array.from(interestedIds, (trackId) => () => {
+            if (presentIds.has(trackId)) {
+                return;
+            }
+            const committed = readCommittedInputMonitoringTrack(trackId);
+            if (committed && getTrackEligibility(committed.kind).acceptsMonitoring) {
+                if (committed.inputMonitoring === 'on') {
+                    return;
+                }
+                if (
+                    committed.kind === 'audio' &&
+                    deriveAutoMonitorEdge({
+                        inputMonitoring: committed.inputMonitoring,
+                        armed: committed.armed,
+                        isPlaying: transport.isPlaying,
+                        isRecording: transport.isRecording,
+                    }) === 'open'
+                ) {
+                    return;
+                }
+            }
             closeEdge(trackId);
-        }
-    }
+        }),
+    ]);
 }

@@ -30,6 +30,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
+import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { createImportedStemTracks } from '../../../useCases/stemImport/createImportedStemTracks';
 import { handleDiscardImportedStemSet, handleImportStemSet } from '../handleImportStemSet';
 
@@ -361,6 +362,25 @@ describe('handleImportStemSet', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
+
+    it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
+        'retires imported-stem removal strips and events after root removal, phase=%s',
+        async (phase) => {
+            seedUnrelatedProjectTruth();
+            const inverse = await applyStemImport(createStemImportAction());
+            const result = await handleDiscardImportedStemSet.execute(inverse);
+            expect(result?.status).toBe('written');
+            const emitted = vi.fn(async () => undefined);
+            setArrangementEventBus({ emit: emitted });
+            mocks.removeTrackStrip.mockClear();
+            mocks.removeBusStrip.mockClear();
+            removeCrdtDoc('root');
+            await result?.[phase]?.();
+            expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+            expect(mocks.removeBusStrip).not.toHaveBeenCalled();
+            expect(emitted).not.toHaveBeenCalled();
+        }
+    );
 
     it('admits a guarded stem import into an atomic batch and undo executes the inverse exactly', async () => {
         seedUnrelatedProjectTruth();

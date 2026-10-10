@@ -1,11 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { startInputMonitoring as startInputMonitoringRepo } from '../../../repositories/audioRecorder/inputMonitoring';
+import { setInputMonitoringProjectAccess } from '../../../stores/inputMonitoringProjectAccess';
 import { getSelectedInputId } from '../../audioDeviceSelection/getSelectedInputId';
+import { inputMonitoringAdmissions } from '../inputMonitoringAdmission';
 import { startInputMonitoring } from '../startInputMonitoring';
+import { suspendAutoInputMonitoring } from '../suspendAutoInputMonitoring';
 
 vi.mock('../../../repositories/audioRecorder/inputMonitoring', () => ({
     startInputMonitoring: vi.fn(),
@@ -18,6 +22,9 @@ vi.mock('../../audioDeviceSelection/getSelectedInputId', () => ({
 describe('startInputMonitoring', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        transportStore.set(defaultTransportState);
+        setInputMonitoringProjectAccess(null);
+        inputMonitoringAdmissions.clear();
         vi.mocked(startInputMonitoringRepo).mockResolvedValue(true);
         vi.mocked(getSelectedInputId).mockReturnValue('selected-input');
         trackStore.set({
@@ -58,5 +65,55 @@ describe('startInputMonitoring', () => {
 
         expect(getSelectedInputId).toHaveBeenCalledTimes(1);
         expect(startInputMonitoringRepo).toHaveBeenCalledWith('track-1', 'selected-input', expect.any(Function));
+    });
+    afterEach(() => {
+        setInputMonitoringProjectAccess(null);
+        inputMonitoringAdmissions.clear();
+    });
+
+    it('retains committed eligible Auto intent without attaching an absent optimistic row', async () => {
+        const committed = {
+            ...createTrack({ id: 'track-1', name: 'Input', kind: 'audio', withoutDefaultDevice: true }),
+            armed: true,
+            inputMonitoring: 'auto' as const,
+        };
+        setInputMonitoringProjectAccess({
+            hasTrack: () => true,
+            readTrack: () => committed,
+            subscribe: () => () => undefined,
+        });
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        await expect(startInputMonitoring('track-1', null)).resolves.toBe(true);
+        const isCurrent = vi.mocked(startInputMonitoringRepo).mock.calls.at(-1)?.[2];
+        expect(isCurrent?.()).toBe('retain');
+        committed.armed = false;
+        expect(isCurrent?.()).toBe(false);
+        committed.armed = true;
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        expect(isCurrent?.()).toBe(false);
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true });
+        expect(isCurrent?.()).toBe('retain');
+    });
+
+    it('keeps an eligible Auto grant detached during a monitoring hold until resume', async () => {
+        const track = trackStore.value?.tracks[0];
+        if (!track) {
+            throw new Error('Expected input track');
+        }
+        trackStore.set({
+            tracks: [{ ...track, armed: true, inputMonitoring: 'auto' }],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const hold = suspendAutoInputMonitoring();
+        try {
+            await startInputMonitoring('track-1', null);
+            const isCurrent = vi.mocked(startInputMonitoringRepo).mock.calls.at(-1)?.[2];
+            expect(isCurrent?.()).toBe('retain');
+            hold();
+            expect(isCurrent?.()).toBe(true);
+        } finally {
+            hold();
+        }
     });
 });

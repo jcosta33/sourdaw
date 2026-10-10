@@ -19,7 +19,15 @@ export function initInputMonitoringProjectAccess(): void {
                 return null;
             }
             const track = sanitizeTrackSnapshot(document.tracks).tracks.find((candidate) => candidate.id === trackId);
-            return track ? { inputMonitoring: track.inputMonitoring, inputId: track.inputId } : null;
+            if (!track) {
+                return null;
+            }
+            return {
+                inputMonitoring: track.inputMonitoring,
+                inputId: track.inputId,
+                kind: track.kind,
+                armed: track.armed,
+            };
         },
         subscribe: (listener) =>
             subscribeToCrdtChanges((docId) => {

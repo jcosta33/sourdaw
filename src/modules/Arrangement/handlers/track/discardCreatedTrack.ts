@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
@@ -40,6 +41,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
         ) {
             return { status: 'conflict' };
         }
+        const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,
@@ -54,12 +56,17 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
         return {
             status: 'written',
             afterCommit: () =>
-                runAllAsyncEffects([
-                    result.finalizeRuntimeRemoval,
-                    finalizeModulationRemoval.afterCommit,
-                    () => publishTrackRemoved({ trackId: action.payload.trackId }),
-                ]),
+                runAllAsyncEffects(
+                    [
+                        result.finalizeRuntimeRemoval,
+                        finalizeModulationRemoval.afterCommit,
+                        () => publishTrackRemoved({ trackId: action.payload.trackId }),
+                    ].map(runtimeAuthority.guard)
+                ),
             afterAmbiguousCommit: () => {
+                if (!runtimeAuthority.isCurrent()) {
+                    return undefined;
+                }
                 const committedTrack = getTrackStoreState()?.tracks.find(
                     (candidate) => candidate.id === action.payload.trackId
                 );
@@ -79,7 +86,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
                         publishTrackRemoved({ trackId: action.payload.trackId })
                     );
                 }
-                return runAllAsyncEffects(effects);
+                return runAllAsyncEffects(effects.map(runtimeAuthority.guard));
             },
         };
     },
