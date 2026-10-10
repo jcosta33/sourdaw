@@ -1,0 +1,43 @@
+src/modules/Transport/useCases/transportControls/createRecordingCaptureClocks.ts
+  s_1f0dcd815e8946::t_6d1bb2d0f0c4a1 17-27,119-120,127,167
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_1f0dcd815e8946::t_6d1bb2d0f0c4a1 2,98-103,106,110,121-122,126,129,131-132,138
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_1f0dcd815e8946::t_28cfa4ec63af05 72-87,330
+  s_1f0dcd815e8946::t_839f7a6d1b1956 88-105,400
+  s_1f0dcd815e8946::t_6d1bb2d0f0c4a1 57-71,325,332-342
+.agents/skills/review-stances/audio-source-time.md
+  s_1f0dcd815e8946::t_641ddda65e6d09 225-255
+.agents/skills/review-stances/session-lifecycle.md
+  s_1f0dcd815e8946::t_e019bd835bb3cd 154-163
+src/modules/Arrangement/useCases/resolveTakeMedia.ts
+  s_1f0dcd815e8946::t_0657c37ef4ac9b 1-2,57-58,60-65,68,72,78-79,88-89,94,97,99-100,106
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_cfa199cf4d8931 167-168,171,273,276,281-282,308,350-436
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_1f0dcd815e8946::t_84b01d4b3f5039 327-363,367-394,423-443
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_9993709ad7c341 34,327,436-490
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_1f0dcd815e8946::t_6d7d9cbde7a713 126-127
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_1f0dcd815e8946::t_0920f8b8a7f023 192-195,365-371,429-430,691,825-831,836-843
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_1f0dcd815e8946::t_b835bfc800961e 5-6,102,104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "698f106421ea4ee89407167bba92d55c9c1ca480",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
