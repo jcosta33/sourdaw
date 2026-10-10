@@ -104,7 +104,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                         runtimeAuthority.guardAbsent(action.payload.trackId, () =>
                             publishTrackRemoved({ trackId: action.payload.trackId })
                         ),
-                    ].map((effect) => runtimeAuthority.guard(effect))
+                    ].map((effect) => runtimeAuthority.guard<void | Promise<void>>(effect))
                 ),
             afterAmbiguousCommit: async () => {
                 if (!runtimeAuthority.isCurrent()) {

@@ -55,7 +55,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
                             runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval),
                             modulationRemoval.afterCommit,
                             runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId })),
-                        ].map((effect) => runtimeAuthority.guard(effect))
+                        ].map((effect) => runtimeAuthority.guard<void | Promise<void>>(effect))
                     )
                 ),
             afterAmbiguousCommit: () => {
