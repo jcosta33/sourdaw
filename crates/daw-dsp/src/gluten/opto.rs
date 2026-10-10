@@ -28,6 +28,9 @@ pub struct OptoCompressor {
     detector: StereoDetector,
     last_output_l: f32,
     last_output_r: f32,
+    /// Gain reduction (positive dB) each cell applied on the last sample.
+    applied_gr_db_l: f32,
+    applied_gr_db_r: f32,
     /// ~10ms fixed attack (EL panel rise time)
     tau_attack: f32,
     /// ~60ms fast release
@@ -52,6 +55,8 @@ impl OptoCompressor {
             detector: StereoDetector::new(sample_rate),
             last_output_l: 0.0,
             last_output_r: 0.0,
+            applied_gr_db_l: 0.0,
+            applied_gr_db_r: 0.0,
             tau_attack: 0.010,
             tau_release_fast: 0.060,
             tau_memory_charge: 0.200,
@@ -179,6 +184,16 @@ impl OptoCompressor {
         (self.last_output_l, self.last_output_r)
     }
 
+    /// `left`/`right` through the gain these cells applied last. This is also
+    /// the detector source under lookahead: the LA-2A is a feedback design, and
+    /// its own output can never run ahead of the delayed audio.
+    pub(crate) fn ahead_output(&self, left: f32, right: f32) -> (f32, f32) {
+        (
+            left * db_to_linear(-self.applied_gr_db_l),
+            right * db_to_linear(-self.applied_gr_db_r),
+        )
+    }
+
     #[inline]
     pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
         let detector = self.detector_source();
@@ -206,6 +221,8 @@ impl OptoCompressor {
         let out_r = right * db_to_linear(-gr_r);
         self.last_output_l = out_l;
         self.last_output_r = out_r;
+        self.applied_gr_db_l = gr_l;
+        self.applied_gr_db_r = gr_r;
 
         (out_l, out_r, -gr_l.max(gr_r))
     }
@@ -216,5 +233,7 @@ impl OptoCompressor {
         self.detector.reset();
         self.last_output_l = 0.0;
         self.last_output_r = 0.0;
+        self.applied_gr_db_l = 0.0;
+        self.applied_gr_db_r = 0.0;
     }
 }

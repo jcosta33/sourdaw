@@ -10,7 +10,7 @@ import {
 import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
-import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
+import { clampDeviceParameterValue, findDeviceParameterDefault } from '../../models/DeviceParameterLaw';
 import { setDeviceParameter } from '../../useCases/device/setDeviceParameter/setDeviceParameter';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { sessionEntryAgreesOnAutomationRecordingPolicy } from '../automationRecordingPolicy';
@@ -223,10 +223,9 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         const previousValue = owner?.devices.find((device) => device.id === action.payload.deviceId)?.parameterValues[
             action.payload.paramId
         ];
-        const parameter = owner?.devices.find((device) => device.id === action.payload.deviceId)?.type;
-        const defaultValue = parameter
-            ? getPluginById(parameter)?.parameters.find((candidate) => candidate.id === action.payload.paramId)
-                  ?.defaultValue
+        const deviceType = owner?.devices.find((device) => device.id === action.payload.deviceId)?.type;
+        const defaultValue = deviceType
+            ? findDeviceParameterDefault({ deviceType, paramId: action.payload.paramId })
             : undefined;
         return () => {
             const effects: Array<() => void> = rollbackAutomationRecording ? [rollbackAutomationRecording] : [];
@@ -276,11 +275,11 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         const prev = owner?.devices.find((device) => device.id === alpha.payload.deviceId);
         const previousValue = prev?.parameterValues[alpha.payload.paramId];
         const previousValuePresent = prev ? Object.hasOwn(prev.parameterValues, alpha.payload.paramId) : false;
-        const parameter = prev
-            ? getPluginById(prev.type)?.parameters.find((candidate) => candidate.id === alpha.payload.paramId)
+        const defaultValue = prev
+            ? findDeviceParameterDefault({ deviceType: prev.type, paramId: alpha.payload.paramId })
             : undefined;
         const exactLabel = describeParameterOutcome(alpha.payload);
-        const expectedPreviousValue = alpha.payload.expectedValue ?? previousValue ?? parameter?.defaultValue;
+        const expectedPreviousValue = alpha.payload.expectedValue ?? previousValue ?? defaultValue;
         const expectedPreviousValuePresent =
             alpha.payload.expectedValuePresent ??
             (alpha.payload.expectedValue === undefined ? previousValuePresent : true);

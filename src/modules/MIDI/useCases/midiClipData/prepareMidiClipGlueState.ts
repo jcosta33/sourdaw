@@ -43,6 +43,20 @@ function compareCodeUnits(left: string, right: string): number {
     return 0;
 }
 
+/**
+ * Where a source's closing-line pedal releases land in the glued clip, so the glued clip
+ * plays what the sources played: a source's closing line plays on its end, ahead of the
+ * next source's head (the sources abut, and its end and that head differ by a rounding
+ * step at most, so the earlier of the two keeps the closing row first in beat order and
+ * the head row the last word), and the last source's closing line is the glued clip's.
+ */
+function closingLineBeatOf(sources: readonly MidiGlueSource[], index: number): number {
+    const source = sources[index]!;
+    const ownEnd = source.visibleEndBeat + source.beatOffset;
+    const next = sources[index + 1];
+    return next ? Math.min(ownEnd, next.visibleStartBeat + next.beatOffset) : ownEnd;
+}
+
 function hasIdentityDependentProbability(note: MidiNote): boolean {
     const probability = note.probability ?? DEFAULT_NOTE_PROBABILITY;
     return probability > 0 && probability < 100;
@@ -88,7 +102,7 @@ export function prepareMidiClipGlueState({
     const mergedNotes: MidiNote[] = [];
     const mergedControlChanges: MidiCC[] = [];
     const mergedPitchBends: MidiPitchBend[] = [];
-    for (const source of sources) {
+    for (const [sourceIndex, source] of sources.entries()) {
         const sourceNotes = state.notesByClipId[source.clipId] ?? [];
         if (
             sourceNotes.some(
@@ -113,10 +127,10 @@ export function prepareMidiClipGlueState({
             notes: sourceNotes,
             controlChanges,
             pitchBends,
-            window: source,
+            window: { ...source, closingLineBeat: closingLineBeatOf(sources, sourceIndex) },
         });
         mergedNotes.push(...projected.notes);
-        mergedControlChanges.push(...projected.controlChanges);
+        mergedControlChanges.push(...projected.controlChanges, ...projected.closingControlChanges);
         mergedPitchBends.push(...projected.pitchBends);
     }
     if (
