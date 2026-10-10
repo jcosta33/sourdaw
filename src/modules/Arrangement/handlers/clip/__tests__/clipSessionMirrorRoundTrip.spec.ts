@@ -684,6 +684,237 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         Container.clear();
     });
 
+    it('atomic ripple repair: captures adjacent removals at their actual prefix and replays every owner', async () => {
+        const firstLane = automationLane('atomic-a', 'clip-a');
+        firstLane.points[0]!.beat = 1;
+        const secondLane = automationLane('atomic-b', 'clip-b');
+        secondLane.points[0]!.beat = 5;
+        automationStore.set({ lanes: [firstLane, secondLane] });
+        for (const clipId of ['clip-a', 'clip-b']) {
+            setEnvelope(clipId, {
+                clipId,
+                enabled: true,
+                points: [{ id: 'clip-local-gain', beatOffset: 1, gainDb: -3 }],
+            });
+            setWarpState(clipId, {
+                enabled: true,
+                stretchMode: 'repitch',
+                originalTempo: 120,
+                markers: [{ id: `warp-${clipId}`, originalBeat: 1, warpedBeat: 1.5 }],
+            });
+        }
+        const firstTake = createTake('clip-a', 'First pass', 0, 4);
+        const secondTake = createTake('clip-b', 'Second pass', 4, 8);
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...createTakeLane(TRACK_ID),
+                    id: 'atomic-take-lane',
+                    takes: [firstTake, secondTake],
+                    activeCompRegions: [
+                        { startBeat: 0, endBeat: 4, takeId: firstTake.id },
+                        { startBeat: 4, endBeat: 8, takeId: secondTake.id },
+                    ],
+                },
+            ],
+        });
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: {
+                'clip-a': [{ id: 'atomic-note-a', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                'clip-b': [{ id: 'atomic-note-b', pitch: 72, startBeat: 0, duration: 1, velocity: 80 }],
+            },
+            ccByClipId: {
+                'clip-a': [{ id: 'atomic-cc-a', controller: 64, value: 127, beat: 1, channel: 1 }],
+                'clip-b': [{ id: 'atomic-cc-b', controller: 1, value: 64, beat: 1, channel: 2 }],
+            },
+            pitchBendByClipId: {
+                'clip-a': [{ id: 'atomic-pb-a', value: 200, beat: 1, channel: 1 }],
+                'clip-b': [{ id: 'atomic-pb-b', value: -200, beat: 1, channel: 2 }],
+            },
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        const originalOwners = ownerProjections();
+        expect(originalOwners.gain!.envelopes['clip-a']).toBeDefined();
+        expect(originalOwners.gain!.envelopes['clip-b']).toBeDefined();
+        const result = await executeAppActionBatch(
+            [
+                { type: 'removeClip', payload: { clipId: 'clip-a' } },
+                { type: 'removeClip', payload: { clipId: 'clip-b' } },
+            ],
+            { source: 'manual', groupId: 'atomic-ripple-repair' }
+        );
+        expect(result.status).toBe('committed');
+        expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+        );
+        expect(persistedInverse(0).payload.ripplePlan).toMatchObject({
+            shiftedClips: [{ clipId: 'clip-b', origStartBeat: 4, origEndBeat: 8, automationDelta: -4 }],
+        });
+        // The second removal actually sees clip-b and its automation at beat 0,
+        // and a shared take lane from which the first pass has already retired.
+        expect.soft(persistedInverse(1).payload.clipSnapshot).toMatchObject({ startBeat: 0, endBeat: 4 });
+        expect.soft(persistedInverse(1).payload.ripplePlan).toMatchObject({
+            clipAutomationLanes: [{ id: 'atomic-b', points: [{ beat: 1 }] }],
+        });
+        expect
+            .soft(persistedInverse(1).payload.retiredTakeLanes)
+            .toMatchObject([{ lane: { takes: [{ id: secondTake.id }] }, retiredTakeIds: [secondTake.id] }]);
+        const removedRaw = structuredClone(getCrdtDoc('root'));
+        reloadSavedProject();
+        const removedOwners = ownerProjections();
+        for (let cycle = 0; cycle < 2; cycle += 1) {
+            expect((await undo()).headConsumed).toBe(true);
+            const restoredOwners = ownerProjections();
+            expect(restoredOwners.tracks!.tracks[0]!.clips).toEqual(
+                expect.arrayContaining(originalOwners.tracks!.tracks[0]!.clips)
+            );
+            expect(restoredOwners.tracks!.tracks[0]!.clips).toHaveLength(2);
+            // Restore appends lanes in inverse order; each identified lane's
+            // complete material, including its point order, must be exact.
+            expect(restoredOwners.automation!.lanes).toHaveLength(originalOwners.automation!.lanes.length);
+            for (const lane of originalOwners.automation!.lanes) {
+                expect(restoredOwners.automation!.lanes.find((restored) => restored.id === lane.id)).toEqual(lane);
+            }
+            expect({ ...restoredOwners, tracks: undefined, automation: undefined }).toEqual({
+                ...originalOwners,
+                tracks: undefined,
+                automation: undefined,
+            });
+            const raw = getCrdtDoc<PeerProject>('root')!;
+            expect(raw.tracks.tracks[0]!.clips).toEqual(restoredOwners.tracks!.tracks[0]!.clips);
+            expect(raw.midi).toEqual(restoredOwners.midi);
+            expect(raw.automation).toEqual(restoredOwners.automation);
+            expect(raw.takeLanes).toEqual(restoredOwners.takes);
+            expect(raw.gainEnvelopes).toEqual(restoredOwners.gain);
+            expect(raw.warpStates).toEqual(restoredOwners.warp);
+            expect(
+                captureAgentProjectInspectionState({ projectDocument: raw, targetIds: [] }).projectInvariantsValid
+            ).toBe(true);
+            expect(undoHistoryStore.value!.past).toHaveLength(0);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(2)
+            );
+            reloadSavedProject();
+            await redo();
+            expect(getCrdtDoc('root')).toEqual(removedRaw);
+            expect(ownerProjections()).toEqual(removedOwners);
+            expect(undoHistoryStore.value!.past).toHaveLength(2);
+            expect(undoHistoryStore.value!.future).toHaveLength(0);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+            reloadSavedProject();
+        }
+    });
+
+    describe.each([false, true])('MIDI identity repair grouped=%s', (grouped) => {
+        async function persistMidiRemoval(): Promise<void> {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            const otherTrack = createTrack({ id: 'identity-track', name: 'Identity track', kind: 'midi' });
+            otherTrack.clips = [{ ...createClipFixture('clip-c', 8, 12), trackId: otherTrack.id }];
+            trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, otherTrack] });
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: {
+                    'clip-a': [{ id: 'captured-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                },
+                ccByClipId: { 'clip-a': [{ id: 'captured-cc', controller: 64, value: 127, beat: 1, channel: 1 }] },
+                pitchBendByClipId: { 'clip-a': [{ id: 'captured-pb', value: 200, beat: 1, channel: 1 }] },
+            });
+            setEnvelope('clip-b', { clipId: 'clip-b', enabled: true, points: [] });
+            flushAutomergeStorageWrites();
+            const actions = [{ type: 'removeClip' as const, payload: { clipId: 'clip-a' } }];
+            if (grouped) {
+                actions.push({ type: 'removeClip', payload: { clipId: 'clip-c' } });
+                expect(
+                    (await executeAppActionBatch(actions, { source: 'manual', groupId: 'midi-identity-repair' })).status
+                ).toBe('committed');
+            } else {
+                await executeAppAction(actions[0]!, { source: 'manual' });
+            }
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(
+                    grouped ? 2 : 1
+                )
+            );
+            reloadSavedProject();
+        }
+
+        describe.each(['note', 'cc', 'pb'] as const)('peer %s row', (row) => {
+            it.each(['captured-note', 'captured-cc', 'captured-pb'])(
+                'refuses reuse of %s before any replay write',
+                async (id) => {
+                    await persistMidiRemoval();
+                    syncPeerProject((project) => {
+                        project.midi.notesByClipId['clip-b'] =
+                            row === 'note' ? [{ id, pitch: 72, startBeat: 0, duration: 1, velocity: 80 }] : [];
+                        project.midi.ccByClipId['clip-b'] =
+                            row === 'cc' ? [{ id, controller: 1, value: 64, beat: 1, channel: 2 }] : [];
+                        project.midi.pitchBendByClipId['clip-b'] =
+                            row === 'pb' ? [{ id, value: -200, beat: 1, channel: 2 }] : [];
+                    });
+                    expect(
+                        captureAgentProjectInspectionState({ projectDocument: getCrdtDoc('root')!, targetIds: [] })
+                            .projectInvariantsValid
+                    ).toBe(true);
+                    await expectReplayRefused('undo');
+                    expect(
+                        captureAgentProjectInspectionState({ projectDocument: getCrdtDoc('root')!, targetIds: [] })
+                            .projectInvariantsValid
+                    ).toBe(true);
+                }
+            );
+        });
+
+        it('preserves unrelated peer rows and clip-local gain identities through saved Undo and Redo', async () => {
+            await persistMidiRemoval();
+            syncPeerProject((project) => {
+                project.midi.notesByClipId['clip-b'] = [
+                    { id: 'peer-note', pitch: 72, startBeat: 0, duration: 1, velocity: 80 },
+                ];
+                project.midi.ccByClipId['clip-b'] = [{ id: 'peer-cc', controller: 1, value: 64, beat: 1, channel: 2 }];
+                project.midi.pitchBendByClipId['clip-b'] = [{ id: 'peer-pb', value: -200, beat: 1, channel: 2 }];
+                project.gainEnvelopes.envelopes['clip-b'] = {
+                    clipId: 'clip-b',
+                    enabled: true,
+                    points: [{ id: 'captured-note', beatOffset: 1, gainDb: -3 }],
+                };
+            });
+            const peerOwners = ownerProjections();
+            expect(
+                captureAgentProjectInspectionState({ projectDocument: getCrdtDoc('root')!, targetIds: [] })
+                    .projectInvariantsValid
+            ).toBe(true);
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeDefined();
+            expect(midiStore.value!.notesByClipId['clip-a']![0]!.id).toBe('captured-note');
+            expect(midiStore.value!.ccByClipId['clip-a']![0]!.id).toBe('captured-cc');
+            expect(midiStore.value!.pitchBendByClipId['clip-a']![0]!.id).toBe('captured-pb');
+            expect(
+                captureAgentProjectInspectionState({ projectDocument: getCrdtDoc('root')!, targetIds: [] })
+                    .projectInvariantsValid
+            ).toBe(true);
+            for (const slot of ['notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const) {
+                expect(midiStore.value![slot]['clip-b']).toEqual(peerOwners.midi![slot]['clip-b']);
+            }
+            expect(gainEnvelopeStore.value).toEqual(peerOwners.gain);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(
+                    grouped ? 2 : 1
+                )
+            );
+            reloadSavedProject();
+            await redo();
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+            expect(ownerProjections()).toEqual(peerOwners);
+            expect(getCrdtDoc<PeerProject>('root')!.midi).toEqual(peerOwners.midi);
+        });
+    });
+
     it.each(['satellite', 'automation'] as const)(
         'rejects a saved removeClip with a foreign %s owner before hydration and Undo',
         async (owner) => {

@@ -26,6 +26,11 @@ import { isRemoveClipSessionEntry } from './validateClipEditSessionEntries';
 type MinimalClipShape = { id: string; trackId: string; name: string; startBeat: number; endBeat: number };
 
 type RemoveClipAction = Extract<AppAction, { type: 'removeClip' }>;
+type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
+
+// Batch descriptions precede every write. Keep the admitted inverse object,
+// then fill it from the actual prefix when this member enters its transaction.
+const pendingInverseCaptures = new WeakMap<object, RestoreClipAction>();
 
 function findOwningTrackId(clipId: string): string | undefined {
     return getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId))?.id;
@@ -73,6 +78,14 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             false) &&
         batchMembersAreIndependent(action, context),
     execute: (alpha) => {
+        const pendingInverse = pendingInverseCaptures.get(alpha);
+        pendingInverseCaptures.delete(alpha);
+        if (pendingInverse) {
+            const fresh = handleRemoveClip.describe(alpha).inverseAction;
+            if (fresh?.type === 'restoreClip') {
+                pendingInverse.payload = fresh.payload;
+            }
+        }
         // Redo runs with skipUndo. Retain its actual producer capture so the
         // following Undo authenticates the shifted owners this replay wrote,
         // and restores exactly the material this replay retired.
@@ -128,7 +141,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         removeMidiClipData(rippleResult.removedClips.map((clip) => clip.id));
         return committedResult();
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         const state = getTrackStoreState();
         let clipSnapshot: MinimalClipShape | null = null;
         let trackId: string | null = null;
@@ -177,22 +190,23 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         const cc = midiState?.ccByClipId[alpha.payload.clipId];
         const pb = midiState?.pitchBendByClipId[alpha.payload.clipId];
 
-        return {
-            label: `Remove clip "${clipSnapshot.name}"`,
-            inverseAction: {
-                type: 'restoreClip',
-                payload: {
-                    clipId: alpha.payload.clipId,
-                    trackId,
-                    clipSnapshot,
-                    ripplePlan,
-                    midiNotesSnapshot: notes ? structuredClone(notes) : null,
-                    midiCcSnapshot: cc ? structuredClone(cc) : null,
-                    midiPitchBendSnapshot: pb ? structuredClone(pb) : null,
-                    retiredTakeLanes,
-                },
+        const inverseAction: RestoreClipAction = {
+            type: 'restoreClip',
+            payload: {
+                clipId: alpha.payload.clipId,
+                trackId,
+                clipSnapshot,
+                ripplePlan,
+                midiNotesSnapshot: notes ? structuredClone(notes) : null,
+                midiCcSnapshot: cc ? structuredClone(cc) : null,
+                midiPitchBendSnapshot: pb ? structuredClone(pb) : null,
+                retiredTakeLanes,
             },
         };
+        if (context && context.actionIndex > 0) {
+            pendingInverseCaptures.set(alpha, inverseAction);
+        }
+        return { label: `Remove clip "${clipSnapshot.name}"`, inverseAction };
     },
     undoable: true,
 });
