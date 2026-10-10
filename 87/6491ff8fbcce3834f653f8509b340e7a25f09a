@@ -1,0 +1,25 @@
+src/modules/Transport/useCases/transportControls/createRecordingCaptureClocks.ts
+  s_1f0dcd815e8946::t_d45741370ca02e 34,91-93
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_9d7e05830a99fb 578-671
+  s_1f0dcd815e8946::t_2bbd7e3e8703f7 672-673
+src/modules/Transport/useCases/transportControls/__tests__/createRecordingCaptureClocks.spec.ts
+  s_1f0dcd815e8946::t_d45741370ca02e 1-112,128
+  s_1f0dcd815e8946::t_9d7e05830a99fb 113-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "876491ff8fbcce3834f653f8509b340e7a25f09a",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
