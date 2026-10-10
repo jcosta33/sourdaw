@@ -36,8 +36,21 @@ type StorageOwner = {
 
 export type StorageRecoveryPorts = {
     identityState: (identity: StorageProcessIdentity) => 'alive' | 'dead' | 'unknown';
-    sessionState: (owner: StorageOwner) => 'alive' | 'dead' | 'unknown';
+    sessionState: (owner: StorageOwner, tempDirectory: string) => 'alive' | 'dead' | 'unknown';
+    localReleaseAllowed?: (owner: StorageOwner, tempDirectory: string) => boolean;
 };
+
+export function storageReferenceState(
+    processOutput: string | undefined,
+    tempDirectory: string
+): 'alive' | 'dead' | 'unknown' {
+    if (processOutput === undefined) {
+        return 'unknown';
+    }
+    // Command/environment output can contain continuation lines without a PID header.
+    // A reference vetoes deletion but conveys no process identity or signal authority.
+    return processOutput.includes(tempDirectory) ? 'alive' : 'dead';
+}
 
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
@@ -312,7 +325,8 @@ export function recoverGuardStorage(
 ): void {
     ensureStorageRoot(root);
     const isDead = (owner: StorageOwner) =>
-        ports.identityState(owner.owner) === 'dead' && ports.sessionState(owner) === 'dead';
+        ports.identityState(owner.owner) === 'dead' &&
+        ports.sessionState(owner, join(root, owner.token, 'tmp')) === 'dead';
     for (const token of readdirSync(root)) {
         if (!uuidPattern.test(token)) {
             continue;
@@ -385,6 +399,12 @@ export function createGuardStorage(input: {
         tracked: [],
     };
     writeStorageOwner(path, owner);
+    const localReleaseAllowed = () => {
+        if (input.ports.localReleaseAllowed !== undefined) {
+            return input.ports.localReleaseAllowed(owner, tempDirectory);
+        }
+        return input.ports.sessionState(owner, tempDirectory) === 'dead';
+    };
     return {
         tempDirectory,
         markSpawning: () => {
@@ -411,7 +431,7 @@ export function createGuardStorage(input: {
                 root: input.root,
                 owner,
                 reclaimer: input.owner,
-                canRemove: () => treeStopped,
+                canRemove: () => treeStopped && localReleaseAllowed(),
             });
         },
     };

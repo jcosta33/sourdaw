@@ -34,6 +34,7 @@ import {
     createGuardStorage,
     diskStorageFailure,
     resolveGuardStorageRoot,
+    storageReferenceState,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
     type StorageProcessIdentity,
@@ -793,7 +794,7 @@ export function psSamplingArgs(hostPlatform: NodeJS.Platform, sessionToken: stri
     return ['eww', 'axo', psColumns];
 }
 
-function processTable(sessionToken?: string): ProcessRow[] | undefined {
+function processCensus(sessionToken?: string): { rows: ProcessRow[]; rawOutput?: string } | undefined {
     if (platform() === 'win32') {
         const result = spawnSync(
             'powershell.exe',
@@ -812,14 +813,16 @@ function processTable(sessionToken?: string): ProcessRow[] | undefined {
             const parsed = JSON.parse(result.stdout) as
                 | { ProcessId: number; ParentProcessId: number; WorkingSetSize: number }[]
                 | { ProcessId: number; ParentProcessId: number; WorkingSetSize: number };
-            return (Array.isArray(parsed) ? parsed : [parsed]).map((row) => ({
-                pid: row.ProcessId,
-                parentPid: row.ParentProcessId,
-                processGroupId: row.ProcessId,
-                rssBytes: row.WorkingSetSize,
-                sessionOwned: false,
-                command: '',
-            }));
+            return {
+                rows: (Array.isArray(parsed) ? parsed : [parsed]).map((row) => ({
+                    pid: row.ProcessId,
+                    parentPid: row.ParentProcessId,
+                    processGroupId: row.ProcessId,
+                    rssBytes: row.WorkingSetSize,
+                    sessionOwned: false,
+                    command: '',
+                })),
+            };
         } catch {
             return undefined;
         }
@@ -829,7 +832,7 @@ function processTable(sessionToken?: string): ProcessRow[] | undefined {
     if (result.status !== 0) {
         return undefined;
     }
-    return result.stdout
+    const rows = result.stdout
         .split('\n')
         .map((line) => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line))
         .filter((match): match is RegExpExecArray => match !== null)
@@ -842,6 +845,11 @@ function processTable(sessionToken?: string): ProcessRow[] | undefined {
                 sessionToken !== undefined && match[5]?.includes(`${PROCESS_SESSION_ENV}=${sessionToken}`) === true,
             command: match[5] ?? '',
         }));
+    return { rows, rawOutput: result.stdout };
+}
+
+function processTable(sessionToken?: string): ProcessRow[] | undefined {
+    return processCensus(sessionToken)?.rows;
 }
 
 function sessionProcessSummary(sessionToken: string): string {
@@ -1007,16 +1015,22 @@ function storageIdentityState(identity: StorageProcessIdentity): 'alive' | 'dead
 
 const storageRecoveryPorts: StorageRecoveryPorts = {
     identityState: storageIdentityState,
-    sessionState: (owner) => {
+    sessionState: (owner, tempDirectory) => {
         if (platform() === 'win32' && owner.phase !== 'ready') {
             return 'unknown';
         }
-        const rows = processTable(owner.token);
-        if (rows === undefined) {
+        const census = processCensus(owner.token);
+        if (census === undefined) {
             return 'unknown';
         }
+        if (platform() !== 'win32') {
+            const references = storageReferenceState(census.rawOutput, tempDirectory);
+            if (references !== 'dead') {
+                return references;
+            }
+        }
         if (
-            rows.some(
+            census.rows.some(
                 (row) => row.sessionOwned || (owner.child !== undefined && row.processGroupId === owner.child.pid)
             )
         ) {
@@ -1029,6 +1043,14 @@ const storageRecoveryPorts: StorageRecoveryPorts = {
             }
         }
         return 'dead';
+    },
+    localReleaseAllowed: (owner, tempDirectory) => {
+        // Windows normal cleanup keeps its tracked-tree contract. Its unavailable
+        // environment census remains unknown for crash recovery, never reported dead.
+        if (platform() === 'win32') {
+            return true;
+        }
+        return storageRecoveryPorts.sessionState(owner, tempDirectory) === 'dead';
     },
 };
 

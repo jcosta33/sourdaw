@@ -35,6 +35,9 @@ scavengers. Only a proven-dead owned payload may disappear. Keep claim metadata 
 deletion and kill its reclaimer twice; a later owner must recover it without deleting live or
 uncertain state. Inject low and unavailable disk samples on each monitored volume and require
 admission refusal or contained runtime termination with an explicit nonzero failure reason.
+A session token is not a complete storage-user census: repeat lifecycle probes with a detached
+child retaining only `TMPDIR`/`TMP`/`TEMP`, whose parent exits between samples, and with a supervisor
+crash before descendant tracking publication. Unix temp-path references must veto deletion.
 
 ### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 

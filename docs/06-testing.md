@@ -725,14 +725,20 @@ volume. Nested guards use separate directories and retain the shared memory admi
 Normal exits, spawn errors, signals, and forced termination release storage only after the entire
 tracked process tree is proven stopped. A surviving process or unavailable process census retains
 the ownership record and reports failure; the guard never deletes old unowned system-temp caches.
+Before claiming or deleting storage, Unix command/environment census also vetoes removal when a
+process references its original temp path. This protects detached descendants that replace their
+environment and drop the session token. Argument references conservatively retain files too;
+they never grant authority to signal the matching process.
 
 New guard starts recover storage only after the supervisor and its descendants are proven dead.
 Records bind UUIDs, process start identities, and directory identities. Atomic rename claims let
 concurrent scavengers serialize one payload, and a claim retains its reclamation owner's identity
 outside that payload until deletion finishes, so a second supervisor crash remains recoverable.
 Live owners, reused or uncertain PID identities, malformed records, and symlinked ownership paths
-are retained. Windows cannot establish a complete inherited-token census after supervisor death;
-crashed spawned runs there retain their storage for explicit inspection.
+are retained. Windows normal cleanup uses its tracked-tree proof; detached, reparented descendants
+that drop the session token while retaining temp paths remain outside that platform's detection.
+Windows cannot establish a complete command/environment census after supervisor death, so crashed
+spawned runs there retain their storage for explicit inspection.
 
 The guard samples available disk space on the temporary-storage volume, the command's working
 volume, and the system volume without walking their directory trees. It requires a 20 GiB free

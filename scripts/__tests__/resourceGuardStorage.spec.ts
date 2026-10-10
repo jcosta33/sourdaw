@@ -23,6 +23,7 @@ import {
     reclaimGuardStorage,
     recoverGuardStorage,
     resolveGuardStorageRoot,
+    storageReferenceState,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
     type StorageRecoveryPorts,
@@ -372,6 +373,84 @@ describe('guard-owned temporary storage', () => {
         expect(existsSync(started.tmp)).toBe(false);
     }, 30_000);
 
+    it.each([
+        { scenario: 'parent exit', program: 'single-line program' },
+        { scenario: 'supervisor crash', program: 'single-line program' },
+        { scenario: 'parent exit', program: 'multiline program' },
+        { scenario: 'supervisor crash', program: 'multiline program' },
+    ] as const)(
+        'retains storage for a detached descendant that replaces its environment: $scenario ($program)',
+        async ({ scenario, program }) => {
+            const root = fixture();
+            const marker = join(root, 'escaped.json');
+            const rootMarker = join(root, 'root.pid');
+            const resultPath = join(root, 'result.json');
+            const descendant = [
+                "const fs = require('node:fs');",
+                `fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() }));`,
+                'setInterval(() => {}, 1000);',
+            ].join(program === 'multiline program' ? '\n' : ' ');
+            const parent = `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(rootMarker)}, String(process.pid)); setTimeout(() => { const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore', env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 375); const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(marker)}) && ${JSON.stringify(scenario === 'parent exit')}) { clearInterval(timer); process.exit(0); } }, 5);`;
+            const options = {
+                command: process.execPath,
+                args: ['-e', parent],
+                profile: 'focused',
+                availableMemoryBytes: abundantMemoryBytes,
+                maxRssBytes: 512 * 1024 ** 2,
+                admissionRoot: root,
+                storageRoot: join(root, 'storage'),
+                diskReserveBytes: 1,
+            };
+            const supervisor = spawn(
+                process.execPath,
+                [
+                    '--input-type=module',
+                    '-e',
+                    `const { writeFileSync } = await import('node:fs'); const { runGuardedCommand } = await import(${JSON.stringify(guardPath)}); const result = await runGuardedCommand(${JSON.stringify(options)}); writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));`,
+                ],
+                { stdio: 'ignore' }
+            );
+            const supervisorPid = supervisor.pid;
+            expect(supervisorPid).toBeDefined();
+            if (supervisorPid === undefined) {
+                throw new Error('storage fixture supervisor did not start');
+            }
+            childPids.add(supervisorPid);
+            await waitUntil(() => existsSync(marker));
+            const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+            const rootPid = Number(readFileSync(rootMarker, 'utf8'));
+            childPids.add(started.pid);
+            childPids.add(rootPid);
+            const startedAt = execFileSync('ps', ['-p', String(started.pid), '-o', 'lstart='], {
+                encoding: 'utf8',
+            }).trim();
+            expect(startedAt).not.toBe('');
+            if (scenario === 'supervisor crash') {
+                expect(readOwner(started.tmp).tracked.some((identity) => identity.pid === started.pid)).toBe(false);
+                await kill(supervisorPid);
+                await kill(rootPid);
+            } else {
+                await waitUntil(() => existsSync(resultPath) && !isAlive(supervisorPid));
+            }
+            const alive = isAlive(started.pid);
+            const tempExists = existsSync(started.tmp);
+            console.log(JSON.stringify({ scenario, program, pid: started.pid, startedAt, alive, tempExists }));
+            expect(alive && !tempExists).toBe(false);
+            if (alive) {
+                if (scenario === 'parent exit') {
+                    expect(JSON.parse(readFileSync(resultPath, 'utf8')).reason).toBe('leak');
+                }
+                expect((await guarded(root)).code).toBe(0);
+                expect(existsSync(started.tmp)).toBe(true);
+                await kill(started.pid);
+            }
+            expect((await guarded(root)).code).toBe(0);
+            expect(isAlive(started.pid)).toBe(false);
+            expect(existsSync(started.tmp)).toBe(false);
+        },
+        15_000
+    );
+
     it('gives a nested guard its own temp and reserve without cleaning the live parents temp', async () => {
         const root = fixture();
         const nestedOptions = {
@@ -411,6 +490,49 @@ describe('guard-owned temporary storage', () => {
 });
 
 describe('storage ownership recovery', () => {
+    it('vetoes local deletion and crash recovery for temp references on raw census continuation lines', async () => {
+        const root = fixture();
+        let processOutput: string | undefined;
+        const ports: StorageRecoveryPorts = {
+            identityState: () => 'dead',
+            sessionState: (_owner, tempDirectory) => storageReferenceState(processOutput, tempDirectory),
+        };
+        const storage = ownedStorage(root, ports);
+        processOutput = `123 1 123 4096 node -e firstLine\nsecondLine TMPDIR=${storage.tempDirectory}`;
+        expect(processOutput.split('\n')[0]).not.toContain(storage.tempDirectory);
+        expect(await storage.release(true)).toBe(false);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+        recoverGuardStorage(root, ports, fakeReclaimer);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+
+        processOutput = undefined;
+        recoverGuardStorage(root, ports, fakeReclaimer);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+        processOutput = '123 1 123 4096 node -e completed';
+        recoverGuardStorage(root, ports, fakeReclaimer);
+        expect(existsSync(storage.tempDirectory)).toBe(false);
+    });
+
+    it('keeps crash recovery unknown while allowing local tracked-tree cleanup under explicit platform policy', async () => {
+        const root = fixture();
+        const ports: StorageRecoveryPorts = {
+            identityState: () => 'dead',
+            sessionState: () => 'unknown',
+            localReleaseAllowed: () => true,
+        };
+        const storage = ownedStorage(root, ports);
+        storage.recordProcesses(fakeReclaimer, new Map());
+        const record = readOwner(storage.tempDirectory);
+
+        recoverGuardStorage(root, ports, fakeReclaimer);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+        expect(await storage.release(false)).toBe(false);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+        expect(await storage.release(true)).toBe(true);
+        expect(existsSync(storage.tempDirectory)).toBe(false);
+        expect(ports.sessionState(record, storage.tempDirectory)).toBe('unknown');
+    });
+
     it('preserves live owners, live descendants and unavailable census, then reclaims a proven dead run', () => {
         const root = fixture();
         const storage = ownedStorage(root);
