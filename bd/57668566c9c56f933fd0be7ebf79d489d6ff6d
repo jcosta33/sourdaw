@@ -1,0 +1,35 @@
+src/modules/Grinder/models/__tests__/GrinderNeuralProfileParams.spec.ts
+  s_893120061bb856::t_6d2e5612c4fc9e 201-204
+src/modules/MIDI/repositories/webMidi/releaseCapturedYeastVoices.ts
+  s_1f0dcd815e8946::t_025357e8884424 2
+src/modules/MIDI/repositories/webMidi/releaseHeldYeastVoices.ts
+  s_1f0dcd815e8946::t_bfb4f0feba0f7f 1-28
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_1f0dcd815e8946::t_621f917471cd72 110-113
+src/modules/MIDI/useCases/webMidiInput/initWebMidi.ts
+  s_1f0dcd815e8946::t_c4db4aff861075 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd57668566c9c56f933fd0be7ebf79d489d6ff6d",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_893120061bb856": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1256e-9c67-7563-9585-8e8c8ddee529",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
