@@ -9,6 +9,12 @@ Use this lesson when a change selects browser files, partitions their execution,
 - For explicit Node-only tooling exemptions, classify the complete actual diff, including root and nested specs, helpers, and corpus inputs. Known tooling must keep static and security checks with an empty browser matrix; mixed product, config, and unknown paths must retain broad browser coverage. PRs #4484 (`4504a698`), #4932 (`33c27947`), and #4933 (`d03336ec`) added Node-only files without completing those opt-ins; the historical reviewer stance and tier are unavailable.
 - Apply the standard mechanical regression probe: revert the admission change and run the named planner spec. A green result means the spec does not guard this boundary.
 
+## Escape lesson from PR #5284
+
+The installed affected-E2E graph loader supplied a fixture's config filename but omitted the direct cruise API's parsed TypeScript configuration. Its resolver substituted the checkout's working directory for the alias base, traversing checkout modules despite root-bound initial enumeration. The published missing-consumer-or-opaque-edge probe asserted the opaque selection result; it did not inspect resolved graph scope. The missing stance was requested-root scope isolation.
+
+Run the actual installed producer against a distinct fixture root with aliased imports. Require the returned graph to contain exactly the fixture sources and the alias edges to resolve to those sources, for explicit, absent, and inherited `baseUrl`. Keep malformed configuration fail-closed. A correct full-selection result alone cannot prove the graph stayed inside its requested root.
+
 ## Escape lesson from PR #4854
 
 PR #4854 introduced `scripts/prValidationScope.ts` with a `.spec.ts`/`.spec.tsx` predicate in both `listSpecs` and selected argument validation. `playwright.config.ts` left Playwright's default `testMatch` in force, which also admits `.test.*` and JS/TS variants. A new `tests/e2e/new-default.test.ts` therefore reached Playwright but did not enter the required PR matrix. The missing review probe was a filename-admission comparison from Playwright's collector through planning to execution arguments; existing planner fixtures used only `.spec.ts` names. A disposable Git fixture adding `.test.ts` and invoking `plan` exposes the omission before browser launch.

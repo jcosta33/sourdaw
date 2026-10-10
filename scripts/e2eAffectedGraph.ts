@@ -476,15 +476,39 @@ export async function loadAffectedE2e(
 ): Promise<AffectedSelection> {
     try {
         const manifest: unknown = JSON.parse(readFileSync(resolve(root, 'scripts/e2eSuiteOwners.json'), 'utf8'));
+        const configPath = resolve(root, 'tsconfig.json');
+        const config = ts.getParsedCommandLineOfConfigFile(
+            configPath,
+            {},
+            {
+                ...ts.sys,
+                onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+                    throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
+                },
+            }
+        );
+        if (config === undefined || config.errors.length > 0) {
+            throw new Error('invalid dependency graph TypeScript configuration');
+        }
+        // The resolver reads aliases from configPath, but otherwise substitutes cwd for an implicit base.
+        const graphConfig = {
+            ...config,
+            options: { ...config.options, baseUrl: config.options.baseUrl ?? resolve(root) },
+        };
         const { cruise } = await import('dependency-cruiser');
-        const result = await cruise(['src', 'public'], {
-            baseDir: root,
-            outputType: 'json',
-            doNotFollow: { path: 'node_modules' },
-            exclude: { path: '(?:^|/)__tests__/|\\.(spec|test)\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$' },
-            tsConfig: { fileName: resolve(root, 'tsconfig.json') },
-            tsPreCompilationDeps: 'specify',
-        });
+        const result = await cruise(
+            ['src', 'public'],
+            {
+                baseDir: root,
+                outputType: 'json',
+                doNotFollow: { path: 'node_modules' },
+                exclude: { path: '(?:^|/)__tests__/|\\.(spec|test)\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$' },
+                tsConfig: { fileName: configPath },
+                tsPreCompilationDeps: 'specify',
+            },
+            undefined,
+            { tsConfig: graphConfig }
+        );
         if (result.exitCode !== 0 || typeof result.output !== 'string') {
             return { kind: 'full', reason: 'dependency graph did not complete' };
         }

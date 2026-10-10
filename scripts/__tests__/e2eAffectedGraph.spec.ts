@@ -2,9 +2,70 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { completeRuntimeGraph, loadAffectedE2e, selectAffectedE2e, type SourceNode } from '../e2eAffectedGraph';
+
+const observedGraphs = vi.hoisted(() => new Array<string>());
+
+vi.mock('dependency-cruiser', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('dependency-cruiser')>();
+    return {
+        ...actual,
+        cruise: async (...args: Parameters<typeof actual.cruise>) => {
+            const result = await actual.cruise(...args);
+            if (typeof result.output === 'string') {
+                observedGraphs.push(result.output);
+            }
+            return result;
+        },
+    };
+});
+
+function observedModules(): unknown[] {
+    const output = observedGraphs.at(-1);
+    if (output === undefined) {
+        throw new Error('installed cruise did not emit a graph');
+    }
+    const parsed: unknown = JSON.parse(output);
+    if (typeof parsed !== 'object' || parsed === null || !('modules' in parsed) || !Array.isArray(parsed.modules)) {
+        throw new Error('installed cruise emitted an invalid graph');
+    }
+    return parsed.modules;
+}
+
+function observedSources(): string[] {
+    return observedModules()
+        .map((node: unknown) => {
+            if (typeof node !== 'object' || node === null || !('source' in node) || typeof node.source !== 'string') {
+                throw new Error('installed cruise emitted an invalid source');
+            }
+            return node.source;
+        })
+        .sort();
+}
+
+function observedDependencies(source: string): string[] {
+    const node = observedModules().find(
+        (node) => typeof node === 'object' && node !== null && 'source' in node && node.source === source
+    );
+    if (typeof node !== 'object' || node === null || !('dependencies' in node) || !Array.isArray(node.dependencies)) {
+        throw new Error('installed cruise did not emit source dependencies');
+    }
+    return node.dependencies
+        .map((dependency: unknown) => {
+            if (
+                typeof dependency !== 'object' ||
+                dependency === null ||
+                !('resolved' in dependency) ||
+                typeof dependency.resolved !== 'string'
+            ) {
+                throw new Error('installed cruise emitted an invalid dependency');
+            }
+            return dependency.resolved;
+        })
+        .sort();
+}
 
 const TUNER = 'src/modules/Tuner/presentations/components/TunerDisplay.tsx';
 const PANEL = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
@@ -175,53 +236,107 @@ describe('affected E2E graph', () => {
         );
     });
 
-    it('rejects shadowed imports and qualified Workers in the installed graph loader', async () => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-shadowed-runtime-'));
-        const sharedLoader = 'src/components/SharedRuntimeLoader.ts';
-        const sources: Record<string, string> = {
-            [TUNER]: 'export const tuner = 1;',
-            [PANEL]: "import { tuner } from '../components/TunerDisplay'; export const panel = tuner;",
-            [BARREL]: "export * from './TunerPanel';",
-            [CRUST]: `import { load } from '../../../../components/SharedRuntimeLoader';
+    it.each(['explicit', 'implicit', 'inherited'])(
+        'rejects shadowed imports and qualified Workers in the installed graph loader (%s baseUrl)',
+        async (baseUrl) => {
+            observedGraphs.length = 0;
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-shadowed-runtime-'));
+            const sharedLoader = 'src/components/SharedRuntimeLoader.ts';
+            const sources: Record<string, string> = {
+                [TUNER]: 'export const tuner = 1;',
+                [PANEL]: "import { tuner } from '../components/TunerDisplay'; export const panel = tuner;",
+                [BARREL]: "export * from './TunerPanel';",
+                [CRUST]: `import { load } from '../../../../components/SharedRuntimeLoader';
                 export const crust = load('/src/modules/Tuner/presentations/components/TunerDisplay.tsx');`,
-            [CRUST_BARREL]: "export * from './CrustPanel';",
-            [SHELL]: "import '#/modules/Tuner/presentations/views'; import '#/modules/Crust/presentations/views';",
-            [sharedLoader]: `export async function load(template: string) {
+                [CRUST_BARREL]: "export * from './CrustPanel';",
+                [SHELL]: "import '#/modules/Tuner/presentations/views'; import '#/modules/Crust/presentations/views';",
+                [sharedLoader]: `export async function load(template: string) {
                 const decoderUrl = new URL('wasm/decoder.js', globalThis.location.href).href;
                 return ((decoderUrl: string) => import(decoderUrl))(template);
             }`,
-            'public/wasm/decoder.js': 'export const decoder = true;',
-        };
-        try {
-            for (const [path, content] of Object.entries(sources)) {
-                const file = join(root, path);
-                mkdirSync(dirname(file), { recursive: true });
-                writeFileSync(file, content);
-            }
-            mkdirSync(join(root, 'scripts'), { recursive: true });
-            writeFileSync(join(root, 'scripts/e2eSuiteOwners.json'), JSON.stringify(manifest));
-            writeFileSync(
-                join(root, 'tsconfig.json'),
-                JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
-            );
-            expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
-                kind: 'full',
-                reason: `opaque runtime dependency: ${sharedLoader}`,
-            });
-            writeFileSync(
-                join(root, sharedLoader),
-                `export function load(template: string) {
+                'public/wasm/decoder.js': 'export const decoder = true;',
+            };
+            try {
+                for (const [path, content] of Object.entries(sources)) {
+                    const file = join(root, path);
+                    mkdirSync(dirname(file), { recursive: true });
+                    writeFileSync(file, content);
+                }
+                mkdirSync(join(root, 'scripts'), { recursive: true });
+                writeFileSync(join(root, 'scripts/e2eSuiteOwners.json'), JSON.stringify(manifest));
+                const aliases = { '#/*': ['./src/*'] };
+                if (baseUrl === 'inherited') {
+                    mkdirSync(join(root, 'config'));
+                    writeFileSync(
+                        join(root, 'config/base.json'),
+                        JSON.stringify({
+                            compilerOptions: { baseUrl: '..', paths: aliases },
+                        })
+                    );
+                    writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ extends: './config/base.json' }));
+                } else {
+                    writeFileSync(
+                        join(root, 'tsconfig.json'),
+                        JSON.stringify({
+                            compilerOptions:
+                                baseUrl === 'explicit' ? { baseUrl: '.', paths: aliases } : { paths: aliases },
+                        })
+                    );
+                }
+                expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
+                    kind: 'full',
+                    reason: `opaque runtime dependency: ${sharedLoader}`,
+                });
+                expect(observedGraphs).toHaveLength(1);
+                expect(observedSources()).toEqual(Object.keys(sources).sort());
+                expect(observedDependencies(SHELL)).toEqual([BARREL, CRUST_BARREL].sort());
+                writeFileSync(
+                    join(root, sharedLoader),
+                    `export function load(template: string) {
                     return new globalThis.Worker(template, { type: 'module' });
                 }`
-            );
-            expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
-                kind: 'full',
-                reason: `opaque runtime dependency: ${sharedLoader}`,
-            });
-        } finally {
-            rmSync(root, { recursive: true, force: true });
+                );
+                expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
+                    kind: 'full',
+                    reason: `opaque runtime dependency: ${sharedLoader}`,
+                });
+                expect(observedGraphs).toHaveLength(2);
+                expect(observedSources()).toEqual(Object.keys(sources).sort());
+                expect(observedDependencies(SHELL)).toEqual([BARREL, CRUST_BARREL].sort());
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        },
+        30_000
+    );
+
+    it.each(['missing', 'malformed', 'invalid', 'missing-extends'])(
+        'fails closed before graph traversal for %s TypeScript configuration',
+        async (configuration) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-invalid-graph-config-'));
+            observedGraphs.length = 0;
+            try {
+                mkdirSync(join(root, 'scripts'));
+                mkdirSync(join(root, 'src'));
+                mkdirSync(join(root, 'public'));
+                writeFileSync(join(root, 'src/entry.ts'), 'export const entry = true;');
+                writeFileSync(join(root, 'scripts/e2eSuiteOwners.json'), JSON.stringify(manifest));
+                if (configuration !== 'missing') {
+                    let config = '{';
+                    if (configuration === 'invalid') {
+                        config = JSON.stringify({ compilerOptions: { module: 'invalid-module' } });
+                    } else if (configuration === 'missing-extends') {
+                        config = JSON.stringify({ extends: './missing.json' });
+                    }
+                    writeFileSync(join(root, 'tsconfig.json'), config);
+                }
+                expect(await loadAffectedE2e(root, [TUNER], inventory)).toMatchObject({ kind: 'full' });
+                expect(observedGraphs).toEqual([]);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
         }
-    }, 30_000);
+    );
 
     it('widens unknown shared Worker targets but retains graph-represented literal targets', () => {
         const sharedWorker = 'src/components/SharedWorkerLoader.ts';
