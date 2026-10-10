@@ -281,3 +281,10 @@ missing strip; rollback attaches the original grant without another permission r
 Off, input change, committed deletion, non-audio Auto and playback without recording still reject
 the old grant. A monitoring hold keeps an eligible retained grant detached until resume. On-only
 absence probes and already-granted Auto probes miss this settlement boundary.
+
+PR #5091's head `b2e7491d` allowed a pre-commit On gesture over committed disarmed Auto,
+but its pending grant still trusted the optimistic row after committed deletion. Begin that
+gesture in a real storage transaction, delete the authoritative owner while the On row stays
+projected, then grant permission before abort: no strip or edge may be created, and the unused
+stream stops once. Pair it with the still-present owner and a shared pending survivor. An
+isolated runtime without a committed provider remains a separate positive control.

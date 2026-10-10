@@ -484,6 +484,124 @@ describe('track deletion releases the input monitor at Command commit', () => {
         }
     });
 
+    it('rejects a pending optimistic On grant after committed deletion removes the track identity', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before gesture');
+        }
+        restoreTrackSnapshot({
+            ...state,
+            tracks: state.tracks.map((track) => ({ ...track, armed: false, inputMonitoring: 'auto' })),
+        });
+        flushAutomergeStorageWrites();
+        const pending = deferredGrant();
+        getUserMedia.mockReturnValueOnce(pending.request);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => toggleInputMonitoring('a'));
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            expect(committedInputMonitoring('a')).toBe('auto');
+            expect(trackStore.value?.tracks.find((track) => track.id === 'a')?.inputMonitoring).toBe('on');
+            mutateCrdtDoc<{ tracks: { tracks: Array<{ id: string }> } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    const index = document.tracks.tracks.findIndex((track) => track.id === 'a');
+                    document.tracks.tracks.splice(index, 1);
+                },
+            });
+            expect(docTrackIds()).toEqual(['b']);
+            expect(trackStore.value?.tracks.find((track) => track.id === 'a')?.inputMonitoring).toBe('on');
+            pending.grant(stream);
+            await vi.waitFor(() => expect(inputMonitoringSession.pendingRequests.size).toBe(0));
+            expect(engine.ensureTrackStrip).not.toHaveBeenCalledWith('a');
+            expect(source.connect).not.toHaveBeenCalledWith(gains.get('a'));
+            expect(inputTrack.stop).toHaveBeenCalledOnce();
+            expect(monitorOwners()).toEqual([]);
+            expect(inputMonitoringSession.captures.has(null)).toBe(false);
+            expect(connectedGains.size).toBe(0);
+        } finally {
+            transaction.abort();
+        }
+    });
+
+    it('admits a pending optimistic On grant while its committed Auto owner still exists', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before gesture');
+        }
+        restoreTrackSnapshot({
+            ...state,
+            tracks: state.tracks.map((track) => ({ ...track, armed: false, inputMonitoring: 'auto' })),
+        });
+        flushAutomergeStorageWrites();
+        const pending = deferredGrant();
+        getUserMedia.mockReturnValueOnce(pending.request);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => toggleInputMonitoring('a'));
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            expect(committedInputMonitoring('a')).toBe('auto');
+            expect(monitorOwners()).toEqual(['a']);
+            pending.grant(stream);
+            await vi.waitFor(() => expect(connectedGains.has(gains.get('a'))).toBe(true));
+            expect(source.connect).toHaveBeenCalledExactlyOnceWith(gains.get('a'));
+            expect(inputMonitoringSession.captures.has(null)).toBe(true);
+            transaction.commit();
+            expect(committedInputMonitoring('a')).toBe('on');
+            expect(trackStore.value?.tracks.find((track) => track.id === 'a')?.inputMonitoring).toBe('on');
+            expect(monitorOwners()).toEqual(['a']);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            expect(getUserMedia).toHaveBeenCalledOnce();
+        } finally {
+            transaction.abort();
+        }
+    });
+
+    it('settles a shared grant only for the survivor after an optimistic On owner is committed deleted', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before gesture');
+        }
+        restoreTrackSnapshot({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'a' ? { ...track, armed: false, inputMonitoring: 'auto' } : track
+            ),
+        });
+        flushAutomergeStorageWrites();
+        const pending = deferredGrant();
+        getUserMedia.mockReturnValueOnce(pending.request);
+        const survivorOpening = startInputMonitoring('b', null);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => toggleInputMonitoring('a'));
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            mutateCrdtDoc<{ tracks: { tracks: Array<{ id: string }> } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    const index = document.tracks.tracks.findIndex((track) => track.id === 'a');
+                    document.tracks.tracks.splice(index, 1);
+                },
+            });
+            expect(docTrackIds()).toEqual(['b']);
+            expect(trackStore.value?.tracks.find((track) => track.id === 'a')?.inputMonitoring).toBe('on');
+            pending.grant(stream);
+            expect(await survivorOpening).toBe(true);
+            expect(monitorOwners()).toEqual(['b']);
+            expect(engine.ensureTrackStrip).not.toHaveBeenCalledWith('a');
+            expect(source.connect).toHaveBeenCalledExactlyOnceWith(gains.get('b'));
+            expect(connectedGains.has(gains.get('b'))).toBe(true);
+            expect(inputMonitoringSession.captures.has(null)).toBe(true);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            expect(getUserMedia).toHaveBeenCalledOnce();
+        } finally {
+            transaction.abort();
+        }
+    });
+
     it.each([
         ['off', 'abort'],
         ['off', 'commit'],

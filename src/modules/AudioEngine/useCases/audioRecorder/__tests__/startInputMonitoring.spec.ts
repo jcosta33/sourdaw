@@ -138,6 +138,25 @@ describe('startInputMonitoring', () => {
         expect(isCurrent?.()).toBe(false);
     });
 
+    it('rejects optimistic On intent when its existing committed owner disappears before On commits', async () => {
+        const projected = trackStore.value?.tracks[0];
+        if (!projected) {
+            throw new Error('Expected monitoring track');
+        }
+        let committed: typeof projected | null = { ...projected, inputMonitoring: 'auto', armed: false };
+        setInputMonitoringProjectAccess({
+            hasTrack: () => committed !== null,
+            readTrack: () => committed,
+            subscribe: () => () => undefined,
+        });
+        await startInputMonitoring('track-1', null);
+        const isCurrent = vi.mocked(startInputMonitoringRepo).mock.calls.at(-1)?.[2];
+        expect(isCurrent?.()).toBe(true);
+        committed = null;
+        expect(trackStore.value?.tracks[0]?.inputMonitoring).toBe('on');
+        expect(isCurrent?.()).toBe(false);
+    });
+
     it('keeps an eligible Auto grant detached during a monitoring hold until resume', async () => {
         const track = trackStore.value?.tracks[0];
         if (!track) {

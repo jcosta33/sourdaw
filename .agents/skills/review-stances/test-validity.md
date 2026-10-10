@@ -753,3 +753,10 @@ pending Auto ownership. Settle permission before aborting the real removal trans
 retained capture and absent strip before rollback, then the original edge after rollback without
 reacquisition. Genuine denial and committed ineligibility remain separate controls. Controlled
 media and graph ports prove ownership and control flow, not audible input or physical device stop.
+
+PR #5091's head `b2e7491d` covered committed On deletion and pre-commit On admission separately,
+but missed a disarmed Auto owner deleted before the optimistic On gesture committed. Keep the
+stale On projection visible while actual CRDT truth removes that owner, settle the pending grant,
+and assert strip creation, connected edges, capture ownership and exact stream stop count. Pair
+the negative with an existing committed owner and a shared survivor; a projected-row removal
+or a gesture whose On already committed does not exercise the same admission reader.

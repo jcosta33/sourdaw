@@ -11,10 +11,15 @@ import { type ReadIntent } from './inputMonitoringAdmission';
 
 export function startInputMonitoring(trackId: string, inputId?: string | null): Promise<boolean> {
     const selectedInputId = inputId === undefined ? getSelectedInputId() : inputId;
+    const hadCommittedTrack = readCommittedInputMonitoringTrack(trackId) !== null;
     let followsCommittedTrack = false;
     const readIntent: ReadIntent = () => {
         const projected = trackStore.value?.tracks.find((track) => track.id === trackId);
         const committed = readCommittedInputMonitoringTrack(trackId);
+        // An uncommitted On gesture may outlive its projection, but not its committed owner.
+        if (hadCommittedTrack && !committed) {
+            return null;
+        }
         // A gesture can admit On before its write commits. Once committed truth
         // owns that admission, optimistic restore publications cannot revoke it.
         if (
