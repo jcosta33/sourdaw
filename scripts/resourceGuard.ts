@@ -1119,6 +1119,40 @@ function processFileSnapshot(pid: number, timeout: number): { uid: number; state
     return { uid: Number(match[1]), state: match[2] };
 }
 
+export function readStorageDescriptor(
+    path: string,
+    ports: {
+        readLink: (path: string) => string;
+        inspectLink: (path: string) => void;
+    } = {
+        readLink: readlinkSync,
+        inspectLink: (path) => {
+            lstatSync(path);
+        },
+    }
+): string | undefined {
+    try {
+        return ports.readLink(path);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            throw error;
+        }
+        try {
+            ports.inspectLink(path);
+        } catch (inspectionError) {
+            if ((inspectionError as NodeJS.ErrnoException).code !== 'ENOENT') {
+                throw inspectionError;
+            }
+            // Enumerating /proc/self/fd would reopen the enumerator's own slot.
+            // Metadata checks distinguish a closed slot from a lost FD directory.
+            ports.inspectLink(dirname(path));
+            return undefined;
+        }
+        // A recreated or still-present slot cannot grant proof of no file use.
+        throw error;
+    }
+}
+
 export function storageFileState(
     tempDirectories: string[],
     ownedPids: number[],
@@ -1247,15 +1281,9 @@ export function storageFileState(
                     if (Date.now() > deadline || ++descriptors > 65_536 || !/^\d+$/.test(fd)) {
                         return unknown('proc-descriptor-bound');
                     }
-                    try {
-                        if (referencesStoragePath(readlinkSync(join(fdRoot, fd)), tempDirectories)) {
-                            return 'alive';
-                        }
-                    } catch (error) {
-                        // A concurrently closed descriptor is no longer a storage user.
-                        if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || readdirSync(fdRoot).includes(fd)) {
-                            throw error;
-                        }
+                    const path = readStorageDescriptor(join(fdRoot, fd));
+                    if (path !== undefined && referencesStoragePath(path, tempDirectories)) {
+                        return 'alive';
                     }
                 }
             } catch {

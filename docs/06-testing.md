@@ -734,6 +734,9 @@ Absence of those strings alone cannot prove storage abandoned. On macOS the guar
 Both the original temp path and any moved claim payload path veto reclamation while a process holds
 a working directory or open file there. An empty/unusable process census is unavailable monitoring
 evidence, and denied, malformed, truncated, or incomplete file evidence retains storage.
+On Linux, a descriptor that closes during inspection is checked with link and directory metadata.
+Reopening the descriptor directory can recreate the scanner's own closed slot and cannot prove
+that it remains open. A present slot or unavailable directory still retains storage.
 On macOS, an unreaped same-UID process positively sampled in zombie state has already released
 its file table; this exception never releases process-identity or signaling fences.
 If an otherwise valid macOS file catalog lacks only a descriptor type, the guard discards it and

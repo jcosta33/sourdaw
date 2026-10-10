@@ -17,7 +17,7 @@ import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { main, parseCliArgs, runGuardedCommand, storageFileState } from '../resourceGuard';
+import { main, parseCliArgs, runGuardedCommand, storageFileState, readStorageDescriptor } from '../resourceGuard';
 import {
     createGuardStorage,
     diskStorageFailure,
@@ -673,6 +673,78 @@ describe('guard-owned temporary storage', () => {
 });
 
 describe('storage ownership recovery', () => {
+    it.each([
+        {
+            scenario: 'closed enumeration descriptor',
+            recreated: false,
+            removed: true,
+            rootMissing: false,
+            denied: false,
+        },
+        {
+            scenario: 'genuinely recreated live descriptor',
+            recreated: true,
+            removed: false,
+            rootMissing: false,
+            denied: false,
+        },
+        {
+            scenario: 'unavailable descriptor directory',
+            recreated: false,
+            removed: false,
+            rootMissing: true,
+            denied: false,
+        },
+        {
+            scenario: 'permission-denied descriptor',
+            recreated: false,
+            removed: false,
+            rootMissing: false,
+            denied: true,
+        },
+    ])('uses current file evidence for a $scenario', async ({ recreated, removed, rootMissing, denied }) => {
+        const root = fixture();
+        const missing = Object.assign(new Error('descriptor closed'), { code: 'ENOENT' });
+        const permission = Object.assign(new Error('inspection denied'), { code: 'EPERM' });
+        const inspections: string[] = [];
+        const ports: StorageRecoveryPorts = {
+            identityState: () => 'dead',
+            sessionState: () => {
+                try {
+                    const path = readStorageDescriptor('/proc/123/fd/27', {
+                        readLink: () => {
+                            throw denied ? permission : missing;
+                        },
+                        inspectLink: (path) => {
+                            inspections.push(path);
+                            if (path === '/proc/123/fd' && rootMissing) {
+                                throw missing;
+                            }
+                            if (path.endsWith('/27') && !recreated) {
+                                throw missing;
+                            }
+                        },
+                    });
+                    return path === undefined ? 'dead' : 'alive';
+                } catch {
+                    return 'unknown';
+                }
+            },
+        };
+        const storage = ownedStorage(root, ports);
+        expect(await storage.release(true)).toBe(removed);
+        expect(existsSync(storage.tempDirectory)).toBe(!removed);
+        let expectedInspections: string[] = [];
+        if (removed) {
+            expectedInspections = ['/proc/123/fd/27', '/proc/123/fd', '/proc/123/fd/27', '/proc/123/fd'];
+        } else if (rootMissing) {
+            expectedInspections = ['/proc/123/fd/27', '/proc/123/fd'];
+        } else if (!denied) {
+            expectedInspections = ['/proc/123/fd/27'];
+        }
+        expect(inspections).toEqual(expectedInspections);
+    });
+
     it.skipIf(process.platform !== 'darwin').each([
         { scenario: 'valid replacement reclaims', persistent: false, consumer: false, released: true },
         { scenario: 'live consumer replacement retains', persistent: false, consumer: true, released: false },

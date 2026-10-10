@@ -41,6 +41,8 @@ crash before descendant tracking publication. Unix temp-path references must vet
 Repeat with no temp variables or token and only cwd or an open file under owned storage, including
 after the payload moves into a claim. Require OS file-use evidence, complete same-UID coverage,
 and uncertainty retention for empty process output, missing utilities, denied or partial fields.
+For Linux descriptor closure, include the scanner's own enumeration descriptor and a genuinely
+recreated slot. Check presence without re-enumerating the directory; unavailable metadata retains.
 
 ### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 
