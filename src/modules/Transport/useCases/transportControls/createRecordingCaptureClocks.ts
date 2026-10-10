@@ -31,7 +31,7 @@ function freezeCaptureClock(clock: CaptureClock, sampleZeroContextSeconds: numbe
 
 /** Retain only the sounded occurrences that can contain each producer's first frame. */
 export function createRecordingCaptureClocks(
-    context: AudioContext,
+    context: Pick<AudioContext, 'currentTime'>,
     songSecondsAtBeat: (beat: number) => number,
     onEnding?: () => void
 ) {
@@ -88,8 +88,9 @@ export function createRecordingCaptureClocks(
                     clock.relocation = relocation;
                 }
                 clock.freeze(start.contextSeconds);
-            } else if (start?.status === 'pending' && relocation) {
-                // Stable empty publication proves sample zero is still ahead.
+            } else if ((!clock.readStart || start?.status === 'pending') && relocation) {
+                // Before reader admission, as with a stable empty publication,
+                // sample zero is still ahead of this sounded occurrence.
                 clock.relocation = relocation;
                 clock.pendingRelocation = null;
             } else if (start?.status === 'retry' && relocation) {

@@ -575,6 +575,102 @@ describe('real recorder first-frame capture placement', () => {
         }
     );
 
+    it('keeps automatic punch sample zero on a seam sounded before recorder admission settles', async () => {
+        let admitMedia!: () => void;
+        const mediaStream = { getTracks: () => [{ stop: vi.fn() }] };
+        const mediaAdmission = new Promise<typeof mediaStream>((resolve) => {
+            admitMedia = () => resolve(mediaStream);
+        });
+        Object.defineProperty(navigator, 'mediaDevices', {
+            configurable: true,
+            value: { getUserMedia: vi.fn(() => mediaAdmission) },
+        });
+        transportStore.set({
+            ...transportStore.value!,
+            playheadPosition: 9.8,
+            loopStart: 8,
+            loopEnd: 12,
+            isLooping: true,
+        });
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+        setPlayback(true);
+        await vi.waitFor(() => expect(playheadClockRef).toEqual({ beat: 9.8, audioTimeSeconds: 50 }), {
+            interval: 1,
+        });
+
+        await schedulerTick(50.05);
+        await schedulerTick(50.1);
+        expect(activeRecordingRef.current).toHaveLength(1);
+        expect(activeSessions.size).toBe(0);
+        expect(playheadClockRef.beat).toBeCloseTo(10, 10);
+
+        for (const seconds of [
+            50.15, 50.2, 50.25, 50.3, 50.35, 50.4, 50.45, 50.5, 50.55, 50.6, 50.65, 50.7, 50.75, 50.8, 50.85, 50.9,
+            50.95, 51, 51.05, 51.1, 51.15,
+        ]) {
+            await schedulerTick(seconds);
+        }
+        expect(playheadClockRef.beat).toBeCloseTo(8.1, 10);
+        expect(playheadClockRef.audioTimeSeconds).toBe(51.15);
+        expect(activeSessions.size).toBe(0);
+
+        admitMedia();
+        await vi.waitFor(() => expect(activeSessions.get(TRACK_ID)?.status).toBe('starting'), { interval: 1 });
+        expect(worker.messages).toEqual(['init']);
+        expect(publication()).toMatchObject({
+            status: 'stable',
+            sampleCount: 0,
+            sampleZeroContextFrame: null,
+        });
+        expect(audioRecordingStore.value?.isRecording).toBe(false);
+
+        worker.onmessage?.({ data: { type: 'ready' } });
+        expect(activeSessions.get(TRACK_ID)?.status).toBe('recording');
+        expect(worker.messages).toEqual(['init', 'start']);
+        expect(audioRecordingStore.value?.isRecording).toBe(true);
+        processor.process([[]]);
+        expect(publication()).toMatchObject({ sampleCount: 0, sampleZeroContextFrame: null });
+
+        await schedulerTick(51.2);
+        expect(playheadClockRef.beat).toBeCloseTo(8.2, 10);
+        expect(playheadClockRef.audioTimeSeconds).toBe(51.2);
+        const sampleZeroContextFrame = 2_457_600;
+        vi.stubGlobal('currentFrame', sampleZeroContextFrame);
+        processor.process([[Float32Array.from({ length: 128 }, (_value, index) => index)]]);
+        expect(publication()).toMatchObject({
+            status: 'stable',
+            sampleCount: 128,
+            sampleZeroContextFrame,
+        });
+
+        await schedulerTick(51.25);
+        hardware.now = 51.3;
+        await stopPlayback();
+        const [clip] = trackStore.value!.tracks[0]!.clips;
+        expect(clip).toBeDefined();
+        expect(clip!.startBeat - (clip!.audioOffsetBeats ?? 0)).toBeCloseTo(8, 10);
+        const media = audioBufferCache.get(clip!.audioBufferId!);
+        expect(media?.length).toBe(128);
+        expect(media?.duration).toBe(128 / context.sampleRate);
+        expect(media?.getChannelData(0)[0]).toBe(0);
+        expect(media?.getChannelData(0)[127]).toBe(127);
+        expect(media?.getChannelData(0)[128]).toBeUndefined();
+        expectProjection();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        const committedClips = structuredClone(trackStore.value!.tracks[0]!.clips);
+        const committedLanes = structuredClone(takeLaneStore.value!.lanes);
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
+        expect(takeLaneStore.value!.lanes).toEqual([]);
+        expectProjection();
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(committedClips);
+        expect(takeLaneStore.value!.lanes).toEqual(committedLanes);
+        expectProjection();
+    });
+
     it('retires a producer clock when its captured session ends without adopting successor PCM', async () => {
         let readFirst: Parameters<NonNullable<Parameters<typeof startAudioRecording>[3]>>[0] | undefined;
         expect(
