@@ -68,6 +68,7 @@ import {
     SPENT_CREATION_BUDGET_INFIX,
     SPENT_CREATION_BUDGET_PREFIX,
 } from './creativeAuthorityReasons';
+import { type CoordinatedTrackList, findCoordinatedTrackLists } from './findCoordinatedTrackLists';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
@@ -132,7 +133,7 @@ import { groundPostTargetScopeAdmission } from './groundingStrategies/postTarget
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
-import { splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
+import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
 import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
@@ -1246,6 +1247,138 @@ function mergeLevelContinuation(
     };
 }
 
+/** A word that keeps the tracks a clause names out of a change stated elsewhere: "but not the Bass". */
+const COORDINATED_TARGET_PROTECTION_CUE =
+    /\b(?:not|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|alone|unchanged)\b/iu;
+
+/** A coordinated track list that states this action's level change, and the scope it grounds, if any. */
+type CoordinatedLevelList = {
+    firstClauseIndex: number;
+    lastClauseIndex: number;
+    /** Null when a member is unresolved or every member is protected: the list then grounds nothing. */
+    scope: PromptClauseScope | null;
+};
+
+/** The one track target a level action's coordinated list may fill, when the action has one. */
+function getCoordinatedListTargetRule(
+    groundingRules: GroundingRules,
+    decibelLevelForms: readonly string[]
+): GroundingRules['targetRules'][number] | undefined {
+    const [targetRule, ...otherRules] = groundingRules.targetRules;
+    if (
+        decibelLevelForms.length === 0 ||
+        targetRule === undefined ||
+        otherRules.length > 0 ||
+        targetRule.capability !== 'track' ||
+        targetRule.promptRole !== undefined ||
+        targetRule.cardinality === 'many'
+    ) {
+        return undefined;
+    }
+    return targetRule;
+}
+
+/**
+ * The list members any clause outside the list keeps out of the change. Every protected member is
+ * removed, whichever clause states it, so an exclusion never reaches a list it was not split from.
+ */
+function getProtectedListMemberIds(
+    list: CoordinatedTrackList,
+    clauses: readonly PromptClause[],
+    context: ProjectContext
+): ReadonlySet<string> {
+    const memberIds = list.memberIds ?? [];
+    return new Set(
+        clauses.flatMap((clause, index) => {
+            if (index >= list.firstClauseIndex && index <= list.lastClauseIndex) {
+                return [];
+            }
+            if (!COORDINATED_TARGET_PROTECTION_CUE.test(clause.masked)) {
+                return [];
+            }
+            return collectNamedProjectTracks(clause.text, context.tracks).filter((id) => memberIds.includes(id));
+        })
+    );
+}
+
+/**
+ * Coordinated track lists that state this action's level change: read with the list as one member,
+ * the clauses must name the action exactly as a single-target clause does, so a list adds no grammar
+ * a single track lacks. Each list grounds one slot per member the request leaves it to change.
+ */
+function getCoordinatedLevelLists(input: {
+    actionName: string;
+    catalog: GroundingCatalog;
+    clauses: readonly PromptClauseSpan[];
+    context: ProjectContext;
+    decibelLevelForms: readonly string[];
+    groundingRules: GroundingRules;
+    maskedPrompt: string;
+    prompt: string;
+}): CoordinatedLevelList[] {
+    const targetRule = getCoordinatedListTargetRule(input.groundingRules, input.decibelLevelForms);
+    if (targetRule === undefined) {
+        return [];
+    }
+    const lists = findCoordinatedTrackLists({
+        capability: targetRule.capability,
+        clauses: input.clauses,
+        context: input.context,
+        prompt: input.prompt,
+        risk: getAppActionExecutionPolicy(input.actionName).risk,
+    });
+    return lists.flatMap((list) => {
+        const clause = {
+            masked: input.maskedPrompt.slice(list.start, list.end),
+            text: input.prompt.slice(list.start, list.end),
+        };
+        const intent = resolveClauseActionIntent(list.collapsedMasked, input.catalog, input.actionName);
+        if (
+            intent?.actionType !== input.actionName ||
+            namesLevelOutsideActionFader(input.actionName, clause, input.context)
+        ) {
+            return [];
+        }
+        const protectedIds = getProtectedListMemberIds(list, input.clauses, input.context);
+        const targetIds = list.memberIds?.filter((id) => !protectedIds.has(id)) ?? [];
+        const scope: PromptClauseScope | null =
+            list.memberIds === null || targetIds.length === 0
+                ? null
+                : {
+                      ...clause,
+                      start: list.start,
+                      end: list.end,
+                      directional: false,
+                      matchedIntentPhrase: intent.phrase,
+                      referenceSlots: targetIds.length,
+                      coordinatedTargets: { memberIds: list.memberIds, targetIds },
+                  };
+        return [{ firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex, scope }];
+    });
+}
+
+/**
+ * Whether the calls a coordinated scope grounds are exactly its targets, one call each, all making
+ * the same change: a list states one figure, so a call that differs from its siblings, a call for a
+ * track the list does not name, or a listed track left out refuses the whole list.
+ */
+function matchesCoordinatedTargets(input: {
+    assignedArguments: readonly Readonly<Record<string, unknown>>[];
+    targetArgument: string;
+    targetIds: readonly string[];
+}): boolean {
+    const assertedIds = input.assignedArguments.map((arguments_) => arguments_[input.targetArgument]);
+    const [first, ...siblings] = input.assignedArguments.map((arguments_) =>
+        canonicalJson({ ...arguments_, [input.targetArgument]: null })
+    );
+    return (
+        assertedIds.length === input.targetIds.length &&
+        new Set(assertedIds).size === assertedIds.length &&
+        assertedIds.every((id) => typeof id === 'string' && input.targetIds.includes(id)) &&
+        siblings.every((change) => change === first)
+    );
+}
+
 /** The scope grounding the call at `actionOrdinal`, counting each scope once per reference slot. */
 function getScopeAtOrdinal(scopes: readonly PromptClauseScope[], actionOrdinal: number): PromptClauseScope | undefined {
     let firstOrdinal = 0;
@@ -1400,11 +1533,31 @@ function resolveActionPromptScope({
     }
     const proposedNames = getProposedCreationNames(actionName, sameActionAssertedArguments);
     const decibelLevelForms = catalog.find((entry) => entry.actionType === actionName)?.decibelLevelForms ?? [];
+    const clauses = splitAttachedSourceClauses(getPromptClauses(prompt, maskedPrompt), catalog);
+    const coordinatedLevelLists = getCoordinatedLevelLists({
+        actionName,
+        catalog,
+        clauses,
+        context,
+        decibelLevelForms,
+        groundingRules,
+        maskedPrompt,
+        prompt,
+    });
     const matchingScopes: PromptClauseScope[] = [];
     let takesContinuation = false;
-    for (const clause of splitAttachedSourceClauses(getPromptClauses(prompt, maskedPrompt), catalog)) {
+    for (const [clauseIndex, clause] of clauses.entries()) {
         const continuesScope = takesContinuation;
         takesContinuation = false;
+        const coordinatedList = coordinatedLevelLists.find(
+            (list) => clauseIndex >= list.firstClauseIndex && clauseIndex <= list.lastClauseIndex
+        );
+        if (coordinatedList) {
+            if (clauseIndex === coordinatedList.firstClauseIndex && coordinatedList.scope) {
+                matchingScopes.push(coordinatedList.scope);
+            }
+            continue;
+        }
         const controlTargetReferences = getAssertedControlTargetReferences(
             groundingRules,
             sameActionAssertedArguments,
@@ -1489,6 +1642,26 @@ function resolveActionPromptScope({
             : getScopeAtOrdinal(matchingScopes, actionOrdinal));
     if (!selectedScope) {
         return null;
+    }
+    const coordinatedTargets = selectedScope.coordinatedTargets;
+    if (coordinatedTargets) {
+        const scopeIndex = matchingScopes.indexOf(selectedScope);
+        const firstOrdinal = matchingScopes
+            .slice(0, scopeIndex)
+            .reduce((count, scope) => count + (scope.referenceSlots ?? 1), 0);
+        const assignedArguments = appliesOneExplicitScopeToCompilerExpansion
+            ? sameActionAssertedArguments
+            : sameActionAssertedArguments.slice(firstOrdinal, firstOrdinal + coordinatedTargets.targetIds.length);
+        if (
+            scopeIndex < 0 ||
+            !matchesCoordinatedTargets({
+                assignedArguments,
+                targetArgument: groundingRules.targetRules[0]!.argument,
+                targetIds: coordinatedTargets.targetIds,
+            })
+        ) {
+            return null;
+        }
     }
     if (compilerExpandedTargets) {
         selectedScope = extendCompiledTargetListScope({
@@ -4542,13 +4715,21 @@ function groundToolCall({
                   return [siblingId];
               })
             : [];
+        // A coordinated list names every member in one scope, protected ones included, so each call
+        // resolves against its own member with the others set aside.
+        const coordinatedSiblingIds =
+            actionScope.coordinatedTargets?.memberIds.filter((memberId) => memberId !== assertedValue) ?? [];
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
             capability: targetRule.capability,
             context,
             dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
-            excludedIds: [...(typeof distinctValue === 'string' ? [distinctValue] : []), ...bulkSiblingTargetIds],
+            excludedIds: [
+                ...(typeof distinctValue === 'string' ? [distinctValue] : []),
+                ...bulkSiblingTargetIds,
+                ...coordinatedSiblingIds,
+            ],
             risk: getAppActionExecutionPolicy(call.name).risk,
         });
         if (result.status === 'rejected') {
