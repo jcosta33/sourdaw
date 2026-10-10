@@ -277,6 +277,7 @@ export function prepareUnitIsolation(ports: UnitIsolationPorts = nativePorts()):
             ports,
             '/usr/sbin/useradd',
             [
+                '--system',
                 '--uid',
                 String(uid),
                 '--gid',
@@ -284,7 +285,7 @@ export function prepareUnitIsolation(ports: UnitIsolationPorts = nativePorts()):
                 '--no-create-home',
                 '--no-log-init',
                 '-K',
-                'CREATE_MAIL_SPOOL=no',
+                `SYS_UID_MAX=${uid}`,
                 '--password',
                 '!',
                 '--home-dir',

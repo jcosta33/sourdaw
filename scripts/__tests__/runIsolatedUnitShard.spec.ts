@@ -118,6 +118,53 @@ function runtimePorts() {
 }
 
 describe('required unit account isolation', () => {
+    it('allocates the fresh no-mail account with supported shadow options', () => {
+        const { ports, run } = setupPorts();
+        const original = run.getMockImplementation();
+        let mailCreated = false;
+        run.mockImplementation((file, args, options) => {
+            if (args.includes('/usr/sbin/useradd')) {
+                // shadow useradd -K accepts login.defs keys, not /etc/default/useradd keys.
+                if (args.includes('CREATE_MAIL_SPOOL=no')) {
+                    return {
+                        status: 3,
+                        stdout: '',
+                        stderr: "configuration error - unknown item 'CREATE_MAIL_SPOOL' (notify administrator)\n",
+                    };
+                }
+                mailCreated = !args.includes('--system');
+                const maximum = args.find((arg) => arg.startsWith('SYS_UID_MAX='));
+                if (args.includes('--system') && Number(maximum?.split('=')[1] ?? 999) < context.uid) {
+                    return {
+                        status: 0,
+                        stdout: '',
+                        stderr: 'useradd warning: selected uid is greater than SYS_UID_MAX\n',
+                    };
+                }
+                expect(args).toEqual(
+                    expect.arrayContaining([
+                        '--uid',
+                        '20000',
+                        '--gid',
+                        '--no-create-home',
+                        '--no-log-init',
+                        '--password',
+                        '!',
+                        '--home-dir',
+                        context.home,
+                        '--shell',
+                        '/usr/sbin/nologin',
+                    ])
+                );
+            }
+            return original?.(file, args, options) ?? { status: 1, stdout: '', stderr: '' };
+        });
+        expect(() => prepareUnitIsolation(ports)).not.toThrow();
+        expect(mailCreated).toBe(false);
+        expect(run.mock.calls.some(([, args]) => args.includes('verify'))).toBe(true);
+        expect(run.mock.calls.some(([, args]) => args.includes('install'))).toBe(false);
+    });
+
     it('admits an unused UID before account setup, creates private storage, and drops privilege before executable verification', () => {
         const { ports, run, write } = setupPorts();
         const path = prepareUnitIsolation(ports);
