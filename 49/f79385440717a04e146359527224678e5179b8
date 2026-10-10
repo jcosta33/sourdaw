@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  s_1f0dcd815e8946::t_7f299c8921d162 136-143,173,194,205,215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49f79385440717a04e146359527224678e5179b8",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
