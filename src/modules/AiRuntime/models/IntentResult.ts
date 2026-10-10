@@ -59,6 +59,12 @@ export type IntentResult = {
      * interaction mode and trust ceiling are bound to it when the plan is recorded.
      */
     batchSchedule?: Omit<AgentRunBatchSchedule, 'interactionMode' | 'trustCeiling'>;
+    /**
+     * The confirmation id of the thread's pending proposal this batch replaces, admitted against the
+     * thread the request was planned in. Present only on a refinement, which always asks for
+     * confirmation; whether that card is still pending is checked again where the replacement persists.
+     */
+    refines?: string;
 };
 
 /** A result produced by the planner itself, which always classifies its own outcome. */

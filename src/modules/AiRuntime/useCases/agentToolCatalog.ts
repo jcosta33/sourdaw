@@ -47,6 +47,7 @@ import {
     RECIPE_EXPANSION_MAX_VALUES,
 } from '../models/RecipeExpansionLimits';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
+import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
 export {
@@ -383,6 +384,13 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     maxItems: MAX_LLM_ACTIONS_PER_BATCH,
                     uniqueItems: true,
                     items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
+                refines: {
+                    type: 'string',
+                    minLength: 1,
+                    maxLength: PROPOSAL_REFINES_MAX_LENGTH,
+                    description:
+                        'Only when this request refines the pending proposal in thread_context: the confirmation id that pending proposal carries. This batch then replaces it whole, so it holds every pending command with only the requested change. Omit for any other request.',
                 },
                 plan: {
                     type: 'object',

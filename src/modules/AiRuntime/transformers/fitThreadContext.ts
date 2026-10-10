@@ -39,6 +39,7 @@ function serializePendingProposal(pending: ThreadContext['pendingProposal'], fit
     return {
         trust: 'untrusted_project_data' as const,
         runId: pending.runId,
+        confirmationId: pending.confirmationId,
         commands: fitted.pendingCommands,
         omittedCommandCount: pending.commands.length - fitted.pendingCommands.length,
     };

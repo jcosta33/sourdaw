@@ -40,6 +40,7 @@ import {
     tryCompoundFastPath,
 } from '../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../transformers/toolCallParser';
+import { admitProposalRefinement } from '../validators/admitProposalRefinement';
 
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
@@ -837,6 +838,29 @@ const planPromptIntent = inject({ logger })(
                 const proposedBatch = planningOutcome.toolCalls.find(
                     (call) => call.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
                 );
+                const refinement = admitProposalRefinement(proposedBatch?.arguments.refines, thread);
+                if (refinement.status === 'refused') {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
+                        rejectionReason: `Provider action rejected: ${refinement.reason}`,
+                        rejectionEvidence: {
+                            kind: 'constraint',
+                            argumentPath: 'refines',
+                            reason: refinement.reason,
+                            rejectedFragment: boundedProviderFragment(proposedBatch?.arguments.refines),
+                        },
+                    };
+                }
+                // A refinement replaces the pending card, so it is always put to the user, whatever the
+                // risk policy would let a fresh batch of the same commands do on its own.
+                const refinementFields =
+                    refinement.status === 'refines'
+                        ? { refines: refinement.confirmationId, requiresConfirmation: true }
+                        : {};
                 const selectedIds = proposedBatch?.arguments.compiledCallIds;
                 const selectedCompilations = Array.isArray(selectedIds)
                     ? selectedIds.flatMap((callId) =>
@@ -847,12 +871,14 @@ const planPromptIntent = inject({ logger })(
                     compiled.kind === 'recipe' ? [compiled.recipe] : []
                 );
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
+                // The adopted compilations and the refined proposal are both read above, so the
+                // compiler sees only the commands the batch states.
                 const ordinaryProposalCalls = planningOutcome.toolCalls.map((call) => {
-                    if (call !== proposedBatch || !Array.isArray(selectedIds)) {
+                    if (call !== proposedBatch) {
                         return call;
                     }
                     const argumentsWithoutReferences = Object.fromEntries(
-                        Object.entries(call.arguments).filter(([key]) => key !== 'compiledCallIds')
+                        Object.entries(call.arguments).filter(([key]) => key !== 'compiledCallIds' && key !== 'refines')
                     );
                     return { ...call, arguments: argumentsWithoutReferences };
                 });
@@ -1026,6 +1052,7 @@ const planPromptIntent = inject({ logger })(
                         actions: [stemImport.action],
                         rawText: prompt,
                         requiresConfirmation: true,
+                        ...refinementFields,
                         ...applicationToolReceiptFields,
                         ...creativeAuthorityFields,
                         executionMode: 'atomic',
@@ -1077,6 +1104,7 @@ const planPromptIntent = inject({ logger })(
                             : { actionCommandGraph: grounded.actionCommandGraph }),
                         rawText: prompt,
                         requiresConfirmation: grounded.requiresConfirmation,
+                        ...refinementFields,
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
