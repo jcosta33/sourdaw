@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { completeRuntimeGraph, selectAffectedE2e, type SourceNode } from '../e2eAffectedGraph';
+import { completeRuntimeGraph, loadAffectedE2e, selectAffectedE2e, type SourceNode } from '../e2eAffectedGraph';
 
 const TUNER = 'src/modules/Tuner/presentations/components/TunerDisplay.tsx';
 const PANEL = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
@@ -162,7 +162,55 @@ describe('affected E2E graph', () => {
         withRuntimeSources(nodes, { [loader]: source, [asset]: 'export const decoder = import(template);' }, (root) => {
             expect(selectCompleted(root, nodes)).toMatchObject({ kind: 'full' });
         });
+        withRuntimeSources(
+            nodes,
+            {
+                [loader]: `const URL = class {};
+                ${source}`,
+                [asset]: 'export const decoder = true;',
+            },
+            (root) => {
+                expect(selectCompleted(root, nodes)).toMatchObject({ kind: 'full' });
+            }
+        );
     });
+
+    it('rejects a shadowed fixed URL in the installed graph loader', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-shadowed-runtime-'));
+        const sharedLoader = 'src/components/SharedRuntimeLoader.ts';
+        const sources: Record<string, string> = {
+            [TUNER]: 'export const tuner = 1;',
+            [PANEL]: "import { tuner } from '../components/TunerDisplay'; export const panel = tuner;",
+            [BARREL]: "export * from './TunerPanel';",
+            [CRUST]: "import { load } from '../../../../components/SharedRuntimeLoader'; export const crust = load;",
+            [CRUST_BARREL]: "export * from './CrustPanel';",
+            [SHELL]: "import '#/modules/Tuner/presentations/views'; import '#/modules/Crust/presentations/views';",
+            [sharedLoader]: `export async function load(template: string) {
+                const decoderUrl = new URL('wasm/decoder.js', globalThis.location.href).href;
+                return ((decoderUrl: string) => import(decoderUrl))(template);
+            }`,
+            'public/wasm/decoder.js': 'export const decoder = true;',
+        };
+        try {
+            for (const [path, content] of Object.entries(sources)) {
+                const file = join(root, path);
+                mkdirSync(dirname(file), { recursive: true });
+                writeFileSync(file, content);
+            }
+            mkdirSync(join(root, 'scripts'), { recursive: true });
+            writeFileSync(join(root, 'scripts/e2eSuiteOwners.json'), JSON.stringify(manifest));
+            writeFileSync(
+                join(root, 'tsconfig.json'),
+                JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
+            );
+            expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
+                kind: 'full',
+                reason: `opaque runtime dependency: ${sharedLoader}`,
+            });
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 30_000);
 
     it('widens unknown shared Worker targets but retains graph-represented literal targets', () => {
         const sharedWorker = 'src/components/SharedWorkerLoader.ts';
@@ -192,6 +240,31 @@ describe('affected E2E graph', () => {
                 expect(completed.graph.find((node) => node.source === host)?.dependencies).toContainEqual({
                     resolved: worker,
                 });
+            }
+        );
+        withRuntimeSources(
+            known,
+            {
+                [host]: `const Worker = class {};
+                    new Worker(new URL('./crustWorker.ts', import.meta.url));`,
+                [worker]: 'export const ready = true;',
+            },
+            (root) => {
+                expect(selectCompleted(root, known)).toEqual({
+                    kind: 'full',
+                    reason: `opaque runtime dependency: ${host}`,
+                });
+            }
+        );
+        withRuntimeSources(
+            known,
+            {
+                [host]: `const URL = class {};
+                    new Worker(new URL('./crustWorker.ts', import.meta.url));`,
+                [worker]: 'export const ready = true;',
+            },
+            (root) => {
+                expect(selectCompleted(root, known).kind).toBe('full');
             }
         );
         const queryWorker = `${worker}?mode=live`;

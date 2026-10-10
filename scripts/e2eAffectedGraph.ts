@@ -174,7 +174,8 @@ function publicAssetFromInitializer(initializer: ts.Expression | undefined, sour
         !asset ||
         !ts.isStringLiteralLike(asset) ||
         !base ||
-        base.getText(source) !== 'globalThis.location.href'
+        !isGlobalLocationHref(base) ||
+        !usesPlatformBindings(source, ['URL', 'globalThis'])
     ) {
         return undefined;
     }
@@ -188,20 +189,58 @@ function publicAssetFromInitializer(initializer: ts.Expression | undefined, sour
     return `public/${name}`;
 }
 
+function isGlobalLocationHref(base: ts.Expression): boolean {
+    return (
+        ts.isPropertyAccessExpression(base) &&
+        base.name.text === 'href' &&
+        ts.isPropertyAccessExpression(base.expression) &&
+        base.expression.name.text === 'location' &&
+        ts.isIdentifier(base.expression.expression) &&
+        base.expression.expression.text === 'globalThis'
+    );
+}
+
+function usesPlatformBindings(source: ts.SourceFile, names: readonly string[]): boolean {
+    let unproven = false;
+    const visit = (node: ts.Node): void => {
+        if (ts.isIdentifier(node) && names.includes(node.text)) {
+            const parent = node.parent;
+            const constructor = ts.isNewExpression(parent) && parent.expression === node;
+            const type = ts.isTypeReferenceNode(parent) && parent.typeName === node;
+            const location =
+                node.text === 'globalThis' &&
+                ts.isPropertyAccessExpression(parent) &&
+                parent.expression === node &&
+                parent.name.text === 'location';
+            if (!constructor && !type && !location) {
+                unproven = true;
+            }
+        }
+        if (!unproven) {
+            ts.forEachChild(node, visit);
+        }
+    };
+    visit(source);
+    return !unproven;
+}
+
 function sameBlockConstUrl(importCall: ts.CallExpression, source: ts.SourceFile): string | undefined {
     const argument = importCall.arguments[0];
     if (importCall.arguments.length !== 1 || !argument || !ts.isIdentifier(argument)) {
         return undefined;
     }
     let enclosing: ts.Node | undefined = importCall.parent;
-    while (enclosing && !ts.isBlock(enclosing)) {
+    while (enclosing && !ts.isReturnStatement(enclosing)) {
+        if (ts.isBlock(enclosing) || ts.isFunctionLike(enclosing)) {
+            return undefined;
+        }
         enclosing = enclosing.parent;
     }
-    if (!enclosing || !ts.isBlock(enclosing)) {
+    if (!enclosing || !ts.isReturnStatement(enclosing) || !ts.isBlock(enclosing.parent)) {
         return undefined;
     }
-    for (const statement of enclosing.statements) {
-        if (statement.pos >= importCall.pos || !ts.isVariableStatement(statement)) {
+    for (const statement of enclosing.parent.statements) {
+        if (statement.pos >= enclosing.pos || !ts.isVariableStatement(statement)) {
             continue;
         }
         if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) {
@@ -228,7 +267,8 @@ function staticWorkerTarget(worker: ts.NewExpression, source: ts.SourceFile, sou
         !target ||
         !ts.isStringLiteralLike(target) ||
         !base ||
-        base.getText(source) !== 'import.meta.url'
+        base.getText(source) !== 'import.meta.url' ||
+        !usesPlatformBindings(source, ['URL', 'Worker'])
     ) {
         return undefined;
     }

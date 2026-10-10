@@ -231,6 +231,28 @@ describe('graph-backed browser selection', () => {
         >;
         expect(allSelected(movedPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
         expect(movedPlan.browserAi).toBe(true);
+
+        writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerDisplayPanel';\n");
+        writeFileSync(join(root, 'public/fixture.js'), `import '../${renamed}';\n`);
+        git(['add', barrel, 'public/fixture.js']);
+        git(['commit', '--quiet', '-m', 'add public runtime consumer']);
+        const publicBase = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, renamed), 'export const TunerPanel = "public dirty";\n');
+        git(['add', renamed]);
+        git(['commit', '--quiet', '-m', 'change tuner with public runtime consumer']);
+        const publicHead = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+        const dirtyPublic = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: publicBase, HEAD_SHA: publicHead, GITHUB_OUTPUT: output },
+        });
+        expect(dirtyPublic.status, dirtyPublic.stderr).toBe(0);
+        const dirtyPublicPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+            typeof selectValidationPlan
+        >;
+        expect(allSelected(dirtyPublicPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+        expect(dirtyPublicPlan.browserAi).toBe(true);
     });
 });
 const PR_4890_PATHS = [

@@ -507,6 +507,7 @@ async function affectedFromCheckout(
             '--untracked-files=all',
             '--',
             'src',
+            'public',
             'scripts/e2eSuiteOwners.json',
             'scripts/e2eAffectedGraph.ts',
             'tsconfig.json',
