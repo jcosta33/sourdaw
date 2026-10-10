@@ -1,0 +1,27 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeDeletionLoopOrigin.spec.ts
+  s_1f0dcd815e8946::t_abb7d2d347d2da 14,28-34,48-49,118-146,163-169,180-197,262-315
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_1f0dcd815e8946::t_1c022a1c656d3d 650-663,675,708-719,728
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_1f0dcd815e8946::t_44b726b79b93bf 3-4,624-642,736-765
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_1f0dcd815e8946::t_888569f608b6ac 164-175,185,220-227,234
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_1f0dcd815e8946::t_faba21cad4295c 970-989,1000,1032-1045,1053
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b8bca8e096f96334a68128995bcc9967c74f6447",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
