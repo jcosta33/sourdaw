@@ -1,0 +1,41 @@
+src/modules/Yeast/workers/MidiRack.ts
+  s_2bfd55a4393d7c::t_4e3fd687e2ea55 445
+src/modules/Yeast/workers/__tests__/MidiRack.spec.ts
+  s_2bfd55a4393d7c::t_1eca6ac3462319 1165-1205
+  s_2bfd55a4393d7c::t_00d0819123db20 11
+src/modules/Yeast/engine/yeastRuntime.ts
+  s_2bfd55a4393d7c::t_e03c1ebfed7728 4-5
+  s_2bfd55a4393d7c::t_7c48266595afc2 34-37
+  s_2bfd55a4393d7c::t_16d4c8af127483 230-233,237
+src/modules/Yeast/workers/__tests__/removedYeastHeldKey.spec.ts
+  s_2bfd55a4393d7c::t_0c83c353a7c510 531-581
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_2bfd55a4393d7c::t_bca1ee2ed7ea68 1970-1996
+  s_97ab82e0b4f10c::t_a62e3a825dd0ad 1968-1969
+src/modules/Yeast/models/YeastProcessorProjection.ts
+  s_2bfd55a4393d7c::t_651024356bb0bd 12-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8d644d19994a4ac86a5bf9852997ce0e1491e8c",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
