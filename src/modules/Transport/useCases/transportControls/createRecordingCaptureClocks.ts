@@ -9,7 +9,7 @@ type CaptureRelocation = { contextSeconds: number; songSeconds: number; effectiv
 type CaptureClock = {
     readStart: Parameters<NonNullable<Parameters<typeof startAudioRecording>[3]>>[0] | null;
     relocation: CaptureRelocation | null;
-    pendingRelocation: CaptureRelocation | null;
+    pendingRelocations: CaptureRelocation[];
     frozen: boolean;
     freeze: (sampleZeroContextSeconds: number) => void;
     setReader: (readStart: NonNullable<CaptureClock['readStart']>) => void;
@@ -27,15 +27,15 @@ function observeSoundedTerminalSeam(context: Pick<AudioContext, 'currentTime'>, 
 }
 
 function freezeCaptureClock(clock: CaptureClock, sampleZeroContextSeconds: number): void {
-    const pending = clock.pendingRelocation;
-    if (
-        pending &&
-        (pending.effectiveFromContextSeconds ?? pending.contextSeconds) <= sampleZeroContextSeconds &&
-        (!clock.relocation || pending.contextSeconds > clock.relocation.contextSeconds)
-    ) {
-        clock.relocation = pending;
+    for (const pending of clock.pendingRelocations) {
+        if (
+            (pending.effectiveFromContextSeconds ?? pending.contextSeconds) <= sampleZeroContextSeconds &&
+            (!clock.relocation || pending.contextSeconds > clock.relocation.contextSeconds)
+        ) {
+            clock.relocation = pending;
+        }
     }
-    clock.pendingRelocation = null;
+    clock.pendingRelocations.length = 0;
     clock.readStart = null;
     clock.frozen = true;
 }
@@ -58,14 +58,19 @@ function retainCaptureRelocation(clock: CaptureClock, relocation: CaptureRelocat
     if (start?.status === 'retry' || (!clock.readStart && relocation.effectiveFromContextSeconds !== undefined)) {
         // An unread frame may precede the edit even when its placement
         // anchor is earlier. Admit the epoch only against sample zero.
-        clock.pendingRelocation ??= relocation;
+        // A torn first publication can span several sounded seams and edits.
+        // Keep every candidate until sample zero selects its own latest epoch.
+        const latest = clock.pendingRelocations.at(-1);
+        if (!latest || relocation.contextSeconds > latest.contextSeconds) {
+            clock.pendingRelocations.push(relocation);
+        }
         return;
     }
     if (!clock.readStart || start?.status === 'pending') {
         // Before reader admission, as with a stable empty publication,
         // sample zero is still ahead of this sounded occurrence.
         clock.relocation = relocation;
-        clock.pendingRelocation = null;
+        clock.pendingRelocations.length = 0;
     }
 }
 
@@ -97,10 +102,10 @@ export function createRecordingCaptureClocks(
         const clock: CaptureClock = {
             readStart: null,
             relocation: null,
-            pendingRelocation: null,
+            pendingRelocations: [],
             frozen: false,
             setReader: (readStart) => {
-                if (!ended && clocks.get(trackId) === clock) {
+                if (!ended && !clock.frozen && clocks.get(trackId) === clock) {
                     clock.readStart = readStart;
                 }
             },

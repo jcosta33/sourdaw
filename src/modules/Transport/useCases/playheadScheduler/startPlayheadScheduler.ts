@@ -418,16 +418,29 @@ export function startPlayheadScheduler(): void {
         // like a jump's it must restore the stored controllers in force there.
         let reemitAfterEdit = false;
         const baseTempoChanged = current.tempo !== priorTempo && changes.length === 0;
+        let soundedTempoAdoptionBeat: number | null = null;
         if (tempoMapChanged || baseTempoChanged || loopChanged) {
-            if ((tempoMapChanged || baseTempoChanged) && (!soundedSeam || now < soundedSeam.seamAudioTime)) {
+            if (tempoMapChanged || baseTempoChanged) {
                 // Pending input follows the effective beat/time epoch. Owners
                 // whose first frame already sounded keep their frozen epoch.
+                // After a sounded seam, the old map carries its incoming pass
+                // up to this tick's teardown. The new browser tempo is adopted
+                // here, not when its optimistic store publication first appears.
+                if (soundedSeam && now >= soundedSeam.seamAudioTime) {
+                    soundedTempoAdoptionBeat = beatAtSecondsFromAnchor(
+                        priorChanges,
+                        soundedSeam.destinationBeat,
+                        now - soundedSeam.seamAudioTime,
+                        priorTempo
+                    );
+                }
+                const epochBeat = soundedTempoAdoptionBeat ?? playheadClockRef.beat;
                 recordingLifecycle.observeCaptureClock(
-                    playheadClockRef.beat,
-                    playheadClockRef.audioTimeSeconds,
+                    epochBeat,
+                    soundedTempoAdoptionBeat === null ? playheadClockRef.audioTimeSeconds : now,
                     true,
                     now,
-                    secondsBetweenBeats(changes, 0, playheadClockRef.beat, current.tempo)
+                    secondsBetweenBeats(changes, 0, epochBeat, current.tempo)
                 );
             }
             schedulerSession.lastLoopSignature = loopSignature;
@@ -479,7 +492,20 @@ export function startPlayheadScheduler(): void {
             // [loopStart, loopEnd]. An edit that lands after the stale seam
             // instant has already carried the pass boundary — fall through to
             // an ordinary wrap.
-            if (schedulerSession.pendingSeam !== null) {
+            if (schedulerSession.pendingSeam !== null && soundedTempoAdoptionBeat !== null) {
+                // A completed seam cannot be cancelled into the dying pass.
+                // Re-anchor backwards by the span the main integration below
+                // will advance, so the adopted epoch lands exactly on `now`.
+                schedulerSession.pendingSeam = null;
+                playheadWrapCountRef.current += 1;
+                schedulerSession.accumulatedPosition = beatAtSecondsFromAnchor(
+                    changes,
+                    soundedTempoAdoptionBeat,
+                    -deltaSec,
+                    current.tempo
+                );
+                schedulerSession.lastScheduledBeat = soundedTempoAdoptionBeat - REEMIT_EPSILON_BEATS;
+            } else if (schedulerSession.pendingSeam !== null) {
                 const { anchorAudioTime, anchorPosition } = schedulerSession.pendingSeam;
                 const audiblePositionAtEdit = beatAtSecondsFromAnchor(
                     priorChanges,

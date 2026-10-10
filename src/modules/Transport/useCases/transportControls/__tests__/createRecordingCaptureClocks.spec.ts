@@ -48,10 +48,10 @@ describe('recording capture occurrence clocks', () => {
         clock.setReader(() => ({ status: 'retry' }));
         recordingLifecycle.observeCaptureClock(8, 53.1, true);
         expect(clock.relocation?.contextSeconds).toBe(51.1);
-        expect(clock.pendingRelocation?.contextSeconds).toBe(53.1);
+        expect(clock.pendingRelocations.map((epoch) => epoch.contextSeconds)).toEqual([53.1]);
         clock.freeze(firstFrame);
         expect(clock.relocation?.contextSeconds).toBe(occurrence);
-        expect(clock.pendingRelocation).toBeNull();
+        expect(clock.pendingRelocations).toEqual([]);
     });
 
     it('keeps sample zero before a seam in its original occurrence', () => {
@@ -97,6 +97,24 @@ describe('recording capture occurrence clocks', () => {
     });
 
     it.each([
+        { firstFrame: 51.125, contextSeconds: 51.1, songSeconds: 4 },
+        { firstFrame: 51.2, contextSeconds: 51.16, songSeconds: 8.12 },
+        { firstFrame: 51.4, contextSeconds: 51.3, songSeconds: 4.13 },
+    ])(
+        'selects the latest eligible sounded epoch from a torn publication at $firstFrame',
+        ({ firstFrame, contextSeconds, songSeconds }) => {
+            const clock = clocks.create('track');
+            recordingLifecycle.observeCaptureClock(11.8, 51, true);
+            clock.setReader(() => ({ status: 'retry' }));
+            recordingLifecycle.observeCaptureClock(8, 51.1, true, undefined, 4);
+            recordingLifecycle.observeCaptureClock(8.12, 51.16, true, 51.16, 8.12);
+            recordingLifecycle.observeCaptureClock(8.26, 51.3, true, 51.3, 4.13);
+            clock.freeze(firstFrame);
+            expect(clock.relocation).toMatchObject({ contextSeconds, songSeconds });
+        }
+    );
+
+    it.each([
         { stopTime: 51, occurrence: null },
         { stopTime: 51.1, occurrence: { songSeconds: 4, contextSeconds: 51.1 } },
     ])('admits only a seam already sounded when Stop occurs at $stopTime', ({ stopTime, occurrence }) => {
@@ -134,6 +152,16 @@ describe('recording capture occurrence clocks', () => {
         expect(oldClock.readStart).toBeNull();
         expect(oldClock.relocation?.contextSeconds).toBe(51.1);
         expect(successor.relocation?.contextSeconds).toBe(53.1);
+    });
+
+    it('does not reattach a late producer reader after its sample-zero epoch freezes', () => {
+        const clock = clocks.create('track');
+        clock.freeze(50.2);
+        const lateReader = vi.fn(() => ({ status: 'pending' as const }));
+        clock.setReader(lateReader);
+        expect(clock.readStart).toBeNull();
+        recordingLifecycle.observeCaptureClock(8, 51.1, true);
+        expect(lateReader).not.toHaveBeenCalled();
     });
 
     it('does not adopt a cancelled seam even after its former sounding time', () => {

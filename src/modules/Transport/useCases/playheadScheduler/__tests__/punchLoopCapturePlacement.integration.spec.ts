@@ -59,6 +59,7 @@ const hardware = vi.hoisted(() => ({
     terminal: null as ((result: RecordingResult) => void) | null,
     zeroFrame: 0,
     deferFirstFrame: false,
+    tornFirstFrame: false,
     starts: 0,
     buffer: null as AudioBuffer | null,
     correlation: null as { beat: number; contextSeconds: number } | null,
@@ -129,7 +130,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
             }
             onCaptureClock?.(() => {
                 if (hardware.zeroFrame === 0) {
-                    return { status: 'pending' };
+                    return { status: hardware.tornFirstFrame ? 'retry' : 'pending' };
                 }
                 return {
                     status: 'captured',
@@ -331,6 +332,7 @@ describe('punch audio capture loop placement', () => {
         hardware.captureEndSeconds = null;
         hardware.starts = 0;
         hardware.deferFirstFrame = false;
+        hardware.tornFirstFrame = false;
         hardware.zeroFrame = 0;
         hardware.correlation = null;
         hardware.flushGate = null;
@@ -487,6 +489,111 @@ describe('punch audio capture loop placement', () => {
             expectProjectProjection();
         }
     );
+
+    it.each([
+        { route: 'manual', publication: 'pending', firstFrame: 51.2, origin: 8.06 },
+        { route: 'punch', publication: 'pending', firstFrame: 51.2, origin: 8.06 },
+        { route: 'manual', publication: 'torn', firstFrame: 51.2, origin: 8.06 },
+        { route: 'punch', publication: 'torn', firstFrame: 51.2, origin: 8.06 },
+        { route: 'manual', publication: 'pending', firstFrame: 51.155, origin: 3.955 },
+        { route: 'punch', publication: 'torn', firstFrame: 51.155, origin: 3.955 },
+    ] as const)(
+        '$route places $publication PCM at $firstFrame across a sounded seam and tempo adoption',
+        async ({ route, publication, firstFrame, origin }) => {
+            hardware.now = 51;
+            hardware.deferFirstFrame = true;
+            hardware.tornFirstFrame = publication === 'torn';
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.8 });
+            if (route === 'punch') {
+                transportStore.set({ ...transportStore.value!, isPlaying: false });
+                await executeAppAction({ type: 'setPunchIn', payload: { beat: 11.8 } }, { skipUndo: true });
+                await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+                await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+                transportStore.set({ ...transportStore.value!, isPlaying: true });
+            }
+            startPlayheadScheduler();
+            if (route === 'manual') {
+                toggleRecording();
+            }
+            await tick(0.01);
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1), { interval: 1 });
+            expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(51.1, 10);
+            hardware.now = 51.15;
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+            if (firstFrame < 51.16) {
+                hardware.zeroFrame = Math.round(firstFrame * hardware.sampleRate);
+            }
+            await tick(0.01);
+            hardware.zeroFrame = Math.round(firstFrame * hardware.sampleRate);
+            await tick(0.05);
+            hardware.now = 51.4;
+            await stopPlayback();
+            const clip = recordedClips()[0]!;
+            const mediaOrigin =
+                secondsBetweenBeats(tempoMapStore.value!.changes, 0, clip.startBeat, 60) - (clip.audioOffsetBeats ?? 0);
+            // The browser adopts tempo when its scheduler cuts the old look-ahead
+            // at 51.16. Beat 8.12 then advances at 60 BPM to 8.16 at sample zero;
+            // captured 100 ms latency puts media at 8.06. Earlier PCM keeps its map.
+            expect(mediaOrigin).toBeCloseTo(origin, 10);
+            expect(clip.startBeat).toBeCloseTo(route === 'punch' ? 8 : origin, 10);
+            expect(clip.audioOffsetBeats ?? 0).toBeCloseTo(route === 'punch' ? 8 - origin : 0, 10);
+            expect(hardware.buffer!.duration).toBeCloseTo(51.4 - firstFrame, 10);
+            expectProjectProjection();
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            const clips = structuredClone(recordedClips());
+            const takes = structuredClone(lane().takes);
+            await undo();
+            expect(recordedClips()).toEqual([]);
+            expectProjectProjection();
+            await redo();
+            expect(recordedClips()).toEqual(clips);
+            expect(lane().takes).toEqual(takes);
+            expectProjectProjection();
+        }
+    );
+
+    it('keeps pending PCM on the sounded seam when an optimistic tempo command aborts before adoption', async () => {
+        hardware.now = 51;
+        hardware.deferFirstFrame = true;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.8 });
+        startPlayheadScheduler();
+        toggleRecording();
+        await tick(0.01);
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1), { interval: 1 });
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(51.1, 10);
+        const handlers = getTransportHandlers();
+        const setTempoHandler = handlers.setTempo;
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap({
+            ...handlers,
+            setTempo: {
+                ...setTempoHandler,
+                execute: (action) => {
+                    setTempoHandler.execute(action);
+                    expect(transportStore.value?.tempo).toBe(60);
+                    throw new Error('Refuse optimistic tempo before commit');
+                },
+            },
+        });
+        hardware.now = 51.15;
+        await expect(executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true })).rejects.toThrow(
+            'Refuse optimistic tempo before commit'
+        );
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(handlers);
+        expect(transportStore.value?.tempo).toBe(120);
+        await tick(0.01);
+        hardware.zeroFrame = Math.round(51.2 * hardware.sampleRate);
+        await tick(0.05);
+        hardware.now = 51.4;
+        await stopPlayback();
+        const clip = recordedClips()[0]!;
+        expect(clip.startBeat - (clip.audioOffsetBeats ?? 0)).toBeCloseTo(8, 10);
+        expectProjectProjection();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+    });
 
     it.each([1, 3])('places manual PCM whose first frame arrives after %s rolling loop wraps', async (wraps) => {
         hardware.now = 51;
