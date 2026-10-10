@@ -1,0 +1,70 @@
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_1f0dcd815e8946::t_5a9aabff91feb4 12-13,32,88-96,98
+  s_1f0dcd815e8946::t_e971b909619fb4 97
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_84c76b64d997d1 97-102,118
+  s_1f0dcd815e8946::t_c2799cc575ae13 349,353-365,370-398,713-723
+  s_1f0dcd815e8946::t_7050106e7a7953 110-117,350-352,366-369,733-736
+  s_1f0dcd815e8946::t_feabcc626f26d0 288,328,338,341
+  s_1f0dcd815e8946::t_acd4b4acd23df4 60,107-109,287,329-337,339-340,342-348,711-712,732,737-744
+  s_1f0dcd815e8946::t_7a7ddffc3feaf1 399
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_1f0dcd815e8946::t_e66d47a81b22ce 339
+  s_1f0dcd815e8946::t_88315505e586a7 340-344
+src/modules/Arrangement/useCases/recording/placeRecordingTakes.ts
+  s_1f0dcd815e8946::t_feabcc626f26d0 53-66,71,76,78-79
+src/modules/Arrangement/useCases/recording/__tests__/recordingPassTiming.spec.ts
+  s_1f0dcd815e8946::t_e66d47a81b22ce 136-138,140
+.agents/skills/review-stances/audio-source-time.md
+  s_1f0dcd815e8946::t_d3e46ea6247f5e 110-130
+src/modules/AudioEngine/useCases/audioRecorder/startAudioRecording.ts
+  s_1f0dcd815e8946::t_0262cbb2e97bd5 15-20
+  s_1f0dcd815e8946::t_b70f7c1c7375b2 11-12
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_1f0dcd815e8946::t_790b7a3aabbe0a 1531
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_1f0dcd815e8946::t_5a9aabff91feb4 125
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_1f0dcd815e8946::t_b70f7c1c7375b2 22-26,52-56,64-65,155-174
+src/modules/Arrangement/useCases/recording/recordingPassTiming.ts
+  s_1f0dcd815e8946::t_0262cbb2e97bd5 12-13,31,40-41,57-58,94-95,137-141,145-146,148,152,154-155,177
+  s_1f0dcd815e8946::t_3c8372f05fd8fc 15,62-65,68-73,76,92-93,129,134,143-144,166,189
+  s_1f0dcd815e8946::t_eefd47c06d6256 96-97
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_9613429852e3ae 43,45,425-426
+  s_1f0dcd815e8946::t_f1a42d2d266408 291-292,295-298,304-306,333,354,384,386,399-406,427
+  s_1f0dcd815e8946::t_44be2df5f082e2 293-294,431-432,447-450
+  s_1f0dcd815e8946::t_feabcc626f26d0 30,370,375-378
+  s_1f0dcd815e8946::t_84c76b64d997d1 31,56-60,192,232-233,237,239-242,303,307-313,330-332,371-374,379-381,383
+  s_1f0dcd815e8946::t_cb86d2a8e93120 357,385
+  s_1f0dcd815e8946::t_663ad6ad710477 299-302,314-316,319,324-329,387-398,407-411,451-453,456-485
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_1f0dcd815e8946::t_5a9aabff91feb4 339-342,647,780-787
+  s_1f0dcd815e8946::t_3abe3871c34694 788-789
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_1f0dcd815e8946::t_8589016dddda15 95-139,288-289,373-374,378,422,427,437,465-466
+  s_1f0dcd815e8946::t_bffedead7797bf 140-145,456,462-464
+  s_1f0dcd815e8946::t_18a0cd47c1ea93 48,450,480,497,501
+  s_1f0dcd815e8946::t_0262cbb2e97bd5 62-63,230-236,286-287,290
+  s_1f0dcd815e8946::t_7825c4133be7f6 375-377,393,412-414,423,428,438,461
+  s_1f0dcd815e8946::t_feabcc626f26d0 61,64-65,79,87
+  s_1f0dcd815e8946::t_5a9aabff91feb4 25,279-281,371,397
+  s_1f0dcd815e8946::t_4599bf04125ba8 395
+  s_1f0dcd815e8946::t_8f1db44c1c35b4 51-60,66-78,80-86,88-94,222,229,237-238,282-285,372,382-388,394,404,410-411,415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c40c02ac255c0277bc87ddb47c85ac90819bc1ea",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
