@@ -1891,7 +1891,7 @@ describe('handleWebMidiNoteOn', () => {
             }
         });
 
-        it('releases the voices of a Yeast swapped for another mid-hold, leaving the new rack untouched', async () => {
+        it('releases the voices of a Yeast swapped for another mid-hold and sends its key-up only to the swapped-out rack', async () => {
             const nodes = keyboard_strip();
             const live = live_chain(
                 [
@@ -1910,9 +1910,16 @@ describe('handleWebMidiNoteOn', () => {
 
             expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(67, 100, 96_240, 0);
             expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
-            // The key-up reaches the rack the key went into, never the new one.
+            // The key-up goes to the rack the key went into, and only while the
+            // worker still runs it; whether the new rack stays untouched is the
+            // real runtime's to show (removedYeastHeldKey.spec.ts).
             expect(live.processNoteOff).toHaveBeenCalledExactlyOnceWith(
-                expect.objectContaining({ rackId: 'yeast-a', isNoteOn: false, note: 60 })
+                expect.objectContaining({
+                    rackId: 'yeast-a',
+                    isNoteOn: false,
+                    note: 60,
+                    onlyWhileRackCurrent: true,
+                })
             );
         });
 
@@ -1954,6 +1961,7 @@ describe('handleWebMidiNoteOn', () => {
                     note: 60,
                     channel: 0,
                     noteInstanceId,
+                    onlyWhileRackCurrent: true,
                 })
             );
             expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();

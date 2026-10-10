@@ -20,10 +20,15 @@ type ReleaseKeyInRemovedYeastRackInput = Readonly<{
  *
  * Removing a Yeast edits only the track store: the rack it owns survives with
  * the key still held, and an undone removal restores the same rack with an
- * unchanged projection, so nothing would ever settle that key. The key-up is
- * delivered to the persisted rack like any other, and its answer is dropped:
- * the Yeast is no longer the musician's to hear, and the voices it started are
- * ended directly by the caller.
+ * unchanged projection, so nothing would ever settle that key. While the
+ * worker still runs that rack, the key-up is delivered to it like any other
+ * and its answer is dropped: the Yeast is no longer the musician's to hear,
+ * and the voices it started are ended directly by the caller.
+ *
+ * The worker holds one rack, and installing another settles the one it left.
+ * A rack the worker has moved on from has already lost the held key that way,
+ * so the key-up is withheld rather than switching the worker back, which would
+ * rebuild the rack that replaced it and cut its sounding notes.
  */
 export async function releaseKeyInRemovedYeastRack(input: ReleaseKeyInRemovedYeastRackInput): Promise<void> {
     try {
@@ -39,6 +44,7 @@ export async function releaseKeyInRemovedYeastRack(input: ReleaseKeyInRemovedYea
             sampleTime: input.sampleFrame,
             sampleRate: input.context.sampleRate,
             noteInstanceId: input.noteInstanceId,
+            onlyWhileRackCurrent: true,
         });
     } catch (error: unknown) {
         logger.warn('[MIDI] Removed Yeast key release failed:', error);

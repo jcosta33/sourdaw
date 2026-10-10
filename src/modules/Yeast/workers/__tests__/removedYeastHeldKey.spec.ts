@@ -1,17 +1,30 @@
+import { change, from, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import {
+    destroyWebMidi,
+    initWebMidi,
     resetMidiState,
     setMidiInputTrack,
     setWebMidiRealtimeProcessor,
+    setWebMidiRuntimeEventBus,
     triggerLiveNoteOff,
     triggerLiveNoteOn,
 } from '#/modules/MIDI/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
+import { destroyYeastRuntime } from '../../engine/yeastRuntime';
+import { type YeastNotesOffPayload } from '../../events';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { type YeastProcessorProjectionItem } from '../../models/YeastProcessorProjection';
+import { setYeastEventBus, yeastStore, type YeastProcessorInfo } from '../../stores';
+import { configureYeastRuntime, hydrateYeastState, processRealtimeMidiInput, processYeastMidi } from '../../useCases';
 import { MidiRack } from '../MidiRack';
 import { createProcessor } from '../processorFactory';
 
@@ -23,6 +36,18 @@ const LEVAIN_ID = 'lev-1';
 
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48_000, baseLatency: 0, outputLatency: 0 }));
 const levain_controls = vi.hoisted(() => ({ ready: true, noteOn: vi.fn(), noteOff: vi.fn() }));
+const worker_hook = vi.hoisted(() => ({
+    create: undefined as ((context: BaseAudioContext) => Promise<unknown>) | undefined,
+}));
+
+vi.mock('../../engine/YeastWorkerClient', () => ({
+    createYeastWorker: (context: BaseAudioContext) => {
+        if (!worker_hook.create) {
+            throw new Error('No Yeast worker is wired for this spec');
+        }
+        return worker_hook.create(context);
+    },
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
@@ -212,5 +237,228 @@ describe('a key released after its Yeast left the chain', () => {
 
         expect(harness.deliveredRackIds.slice(rackIdsBeforeKeyUp)).toEqual([YEAST_ID]);
         expect(levain_controls.noteOn.mock.calls).toHaveLength(noteOnsBeforeRemoval);
+    });
+});
+
+const REPLACEMENT_YEAST_ID = 'yeast-c';
+
+const ARPEGGIATOR_RACK: YeastProcessorInfo[] = [
+    { id: 'arp-1', type: 'arpeggiator', name: 'Arpeggiator', bypassed: false, params: {} },
+];
+const TRANSPOSER_RACK: YeastProcessorInfo[] = [
+    { id: 'tr-c', type: 'transposer', name: 'Transposer', bypassed: false, params: {} },
+];
+
+/**
+ * The Yeast worker holds one rack that every delivery installs. This fake
+ * worker node is that rack, a real `MidiRack`, behind the node interface the
+ * runtime drives, and forwards the notes a projection change settles the way
+ * the worker's acknowledgement does.
+ */
+function createRackBackedWorker(context: BaseAudioContext) {
+    const rack = new MidiRack();
+    const installedProjections: string[][] = [];
+    const blockEnds: number[] = [];
+    const createdProcessorIds: string[] = [];
+    const notesOffHandlers = new Set<(notesOff: YeastNotesOffPayload[]) => void>();
+    const node = {
+        context,
+        processBlock: (
+            events: readonly MidiEvent[],
+            blockStart: number,
+            blockEnd: number,
+            transport: TransportInfo,
+            trackId: string,
+            previewEnabled?: boolean,
+            rackId?: string,
+            routeId?: string,
+            captureEpoch?: number,
+            preserveInputTrackIds?: boolean
+        ): Promise<MidiEvent[]> => {
+            blockEnds.push(blockEnd);
+            return Promise.resolve([
+                ...rack.processBlock(
+                    events,
+                    blockStart,
+                    blockEnd,
+                    transport,
+                    trackId,
+                    previewEnabled,
+                    rackId,
+                    routeId,
+                    captureEpoch,
+                    preserveInputTrackIds
+                ),
+            ]);
+        },
+        setProjection: (projection: readonly YeastProcessorProjectionItem[]): Promise<void> => {
+            installedProjections.push(projection.map((processor) => processor.id));
+            const settled = rack.replaceProjection(projection, (type, id) => {
+                createdProcessorIds.push(id);
+                return createProcessor(type, id);
+            });
+            const noteOffsByTrack = new Map<string, YeastNotesOffPayload['noteOffs']>();
+            for (const event of settled) {
+                if (event.kind.type !== 'noteOff' || event.trackId === undefined) {
+                    continue;
+                }
+                const noteOffs = noteOffsByTrack.get(event.trackId) ?? [];
+                noteOffs.push({ channel: event.kind.channel, note: event.kind.note });
+                noteOffsByTrack.set(event.trackId, noteOffs);
+            }
+            const payloads = Array.from(noteOffsByTrack, ([trackId, noteOffs]) => ({ trackId, noteOffs }));
+            if (payloads.length > 0) {
+                for (const handler of notesOffHandlers) {
+                    handler(payloads);
+                }
+            }
+            return Promise.resolve();
+        },
+        sendCommand: () => Promise.resolve({ accepted: true }),
+        allNotesOff: () => Promise.resolve(),
+        releasePreview: () => {},
+        onNotesOff: (handler: (notesOff: YeastNotesOffPayload[]) => void) => {
+            notesOffHandlers.add(handler);
+            return () => notesOffHandlers.delete(handler);
+        },
+        onPreview: () => () => {},
+        onTerminalError: () => () => {},
+        destroy: () => {},
+    };
+    return { node, installedProjections, createdProcessorIds, blockEnds };
+}
+
+function createSynchronousEventBus() {
+    const handlers = new Map<string, Set<(payload: never) => void>>();
+    return {
+        emit: (event: string, payload: unknown): Promise<void> => {
+            for (const handler of handlers.get(event) ?? []) {
+                (handler as (payload: unknown) => void)(payload);
+            }
+            return Promise.resolve();
+        },
+        on: (event: string, handler: (payload: never) => void) => {
+            const registered = handlers.get(event) ?? new Set();
+            registered.add(handler);
+            handlers.set(event, registered);
+            return () => registered.delete(handler);
+        },
+    };
+}
+
+describe('a key released after its Yeast left the chain, through the real Yeast runtime', () => {
+    let worker: ReturnType<typeof createRackBackedWorker>;
+    let disposeProcessor: () => void;
+    let document: Doc<Record<string, unknown>>;
+
+    /** Pitches the worker's rack generates over the next `seconds` of empty blocks on `rackId`, after the last block it processed. */
+    async function generatedPitches(rackId: string, seconds: number): Promise<number[]> {
+        const pitches: number[] = [];
+        let cursorSamples = worker.blockEnds.at(-1) ?? 0;
+        const endSamples = cursorSamples + seconds * SAMPLE_RATE;
+        while (cursorSamples < endSamples) {
+            const start = cursorSamples;
+            const output = await processYeastMidi({
+                context: audio_clock as unknown as BaseAudioContext,
+                rackId,
+                trackId: TRACK_ID,
+                events: [],
+                blockStartSamples: start,
+                blockEndSamples: start + 1024,
+                transport: { ...TRANSPORT, ppqPosition: (start / SAMPLE_RATE) * 2 },
+            });
+            for (const event of output) {
+                if (event.kind.type === 'noteOn') {
+                    pitches.push(event.kind.note);
+                }
+            }
+            cursorSamples = start + 1024;
+        }
+        return pitches;
+    }
+
+    function levainPitchesOn(): number[] {
+        return levain_controls.noteOn.mock.calls.map((call) => call[0] as number);
+    }
+
+    function levainPitchesOff(): number[] {
+        return levain_controls.noteOff.mock.calls.map((call) => call[0] as number);
+    }
+
+    beforeEach(async () => {
+        audio_clock.currentTime = 2;
+        levain_controls.noteOn.mockClear();
+        levain_controls.noteOff.mockClear();
+        transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+        document = from({});
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                document = change(document, (draft) => changeFn(draft));
+            },
+        });
+        yeastStore.hydrate();
+        setChain([YEAST_DEVICE, device(REPLACEMENT_YEAST_ID, 'yeast'), LEVAIN_DEVICE]);
+        hydrateYeastState({
+            racks: {
+                [YEAST_ID]: { processors: ARPEGGIATOR_RACK },
+                [REPLACEMENT_YEAST_ID]: { processors: TRANSPOSER_RACK },
+            },
+        });
+        setChain([YEAST_DEVICE, LEVAIN_DEVICE]);
+        setMidiInputTrack(TRACK_ID);
+
+        worker = createRackBackedWorker(audio_clock as unknown as BaseAudioContext);
+        worker_hook.create = () => Promise.resolve(worker.node);
+        const bus = createSynchronousEventBus();
+        setYeastEventBus(bus);
+        setWebMidiRuntimeEventBus({ eventBus: bus });
+        configureYeastRuntime({ panicOutputNotes: () => {} });
+        await initWebMidi();
+        disposeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
+    });
+
+    afterEach(() => {
+        disposeProcessor();
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        destroyWebMidi();
+        destroyYeastRuntime();
+        worker_hook.create = undefined;
+        resetMidiState();
+        setMidiInputTrack(null);
+        trackStore.set(defaultTrackState);
+        transportStore.set(defaultTransportState);
+    });
+
+    it('leaves the replacement Yeast’s held key and processor state alone when the removed Yeast’s key comes up', async () => {
+        await triggerLiveNoteOn(0, 60, 100);
+        setChain([device(REPLACEMENT_YEAST_ID, 'yeast'), LEVAIN_DEVICE]);
+        await triggerLiveNoteOn(0, 64, 100);
+        expect(levainPitchesOn()).toContain(64);
+        const projectionsBeforeKeyUp = worker.installedProjections.length;
+
+        await triggerLiveNoteOff(0, 60);
+
+        expect(levainPitchesOff()).not.toContain(64);
+        expect(worker.installedProjections.slice(projectionsBeforeKeyUp)).toEqual([]);
+        expect(worker.createdProcessorIds).toEqual(['arp-1', 'tr-c']);
+
+        await triggerLiveNoteOff(0, 64);
+
+        expect(levainPitchesOff().filter((pitch) => pitch === 64)).toHaveLength(1);
+    });
+
+    it('delivers the key-up to the rack the worker still runs, so an undone removal replays no key', async () => {
+        await triggerLiveNoteOn(0, 60, 100);
+        expect(new Set(await generatedPitches(YEAST_ID, 1))).toEqual(new Set([60]));
+
+        setChain([LEVAIN_DEVICE]);
+        await triggerLiveNoteOff(0, 60);
+        setChain([YEAST_DEVICE, LEVAIN_DEVICE]);
+
+        expect(await generatedPitches(YEAST_ID, 1)).toEqual([]);
     });
 });

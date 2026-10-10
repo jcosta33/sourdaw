@@ -27,6 +27,12 @@ type ProcessYeastRuntimeBlockInput = {
 
 type ProcessYeastRuntimeTransactionInput = ProcessYeastRuntimeBlockInput & {
     projection: readonly YeastProcessorProjectionItem[];
+    /**
+     * Skip the transaction, returning `null`, unless `projection` is already
+     * the runtime's latest: the worker holds one rack, so installing another
+     * settles the rack it runs and loses that rack's processor state.
+     */
+    onlyWhileProjectionCurrent?: boolean;
 };
 
 type YeastRuntimeSession = {
@@ -785,6 +791,9 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
 export async function processYeastRuntimeTransaction(
     input: ProcessYeastRuntimeTransactionInput
 ): Promise<MidiEvent[] | null> {
+    if (input.onlyWhileProjectionCurrent && !projectionsEqual(session.projection, input.projection)) {
+        return null;
+    }
     const record = recordProjection(input.projection);
     const rackId = input.rackId ?? input.trackId;
     const routeId = input.routeId ?? input.trackId;
