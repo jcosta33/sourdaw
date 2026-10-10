@@ -288,3 +288,11 @@ gesture in a real storage transaction, delete the authoritative owner while the 
 projected, then grant permission before abort: no strip or edge may be created, and the unused
 stream stops once. Pair it with the still-present owner and a shared pending survivor. An
 isolated runtime without a committed provider remains a separate positive control.
+
+The same admission window at `3b1c0ad9` still accepted stale On after committed Off or an input
+replacement: presence alone did not protect current intent. Hold the optimistic gesture over
+committed Auto, commit each supersession, then grant the old request before abort. Inspect zero
+strip creation, edges, owners and captures plus one orphan-stream stop. A relevant committed
+mode, input, kind or arm change must take authority; unchanged Auto/Off and an unrelated commit
+must still permit the gesture. Pair shared survivors and an already-admitted selected-input
+replacement so rejecting the old grant cannot retire current permission authority.

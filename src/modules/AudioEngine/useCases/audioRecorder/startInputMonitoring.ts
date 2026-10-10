@@ -9,26 +9,48 @@ import { admitInputMonitoring } from './admitInputMonitoring';
 import { deriveAutoMonitorEdge } from './deriveAutoInputMonitoring';
 import { type ReadIntent } from './inputMonitoringAdmission';
 
+type CommittedMonitoringTrack = NonNullable<ReturnType<typeof readCommittedInputMonitoringTrack>>;
+
+function captureCommittedMonitoringIntent(trackId: string): CommittedMonitoringTrack | null {
+    const committed = readCommittedInputMonitoringTrack(trackId);
+    if (!committed) {
+        return null;
+    }
+    return {
+        inputMonitoring: committed.inputMonitoring,
+        inputId: committed.inputId,
+        kind: committed.kind,
+        armed: committed.armed,
+    };
+}
+
+function hasSameMonitoringIntent(left: CommittedMonitoringTrack, right: CommittedMonitoringTrack): boolean {
+    return (
+        left.inputMonitoring === right.inputMonitoring &&
+        left.inputId === right.inputId &&
+        left.kind === right.kind &&
+        left.armed === right.armed
+    );
+}
+
 export function startInputMonitoring(trackId: string, inputId?: string | null): Promise<boolean> {
     const selectedInputId = inputId === undefined ? getSelectedInputId() : inputId;
-    const hadCommittedTrack = readCommittedInputMonitoringTrack(trackId) !== null;
+    const initialCommittedIntent = captureCommittedMonitoringIntent(trackId);
     let followsCommittedTrack = false;
     const readIntent: ReadIntent = () => {
         const projected = trackStore.value?.tracks.find((track) => track.id === trackId);
         const committed = readCommittedInputMonitoringTrack(trackId);
         // An uncommitted On gesture may outlive its projection, but not its committed owner.
-        if (hadCommittedTrack && !committed) {
+        if (initialCommittedIntent && !committed) {
             return null;
         }
-        // A gesture can admit On before its write commits. Once committed truth
-        // owns that admission, optimistic restore publications cannot revoke it.
+        // Only unchanged committed intent can precede the gesture's write.
+        // Matching or superseding commits own every later eligibility read.
         if (
             committed &&
-            (!projected ||
-                (committed.inputMonitoring === projected.inputMonitoring &&
-                    committed.inputId === projected.inputId &&
-                    committed.kind === projected.kind &&
-                    committed.armed === projected.armed))
+            ((initialCommittedIntent && !hasSameMonitoringIntent(committed, initialCommittedIntent)) ||
+                !projected ||
+                hasSameMonitoringIntent(committed, projected))
         ) {
             followsCommittedTrack = true;
         }

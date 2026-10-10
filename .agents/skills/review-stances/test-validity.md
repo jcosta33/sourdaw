@@ -760,3 +760,11 @@ stale On projection visible while actual CRDT truth removes that owner, settle t
 and assert strip creation, connected edges, capture ownership and exact stream stop count. Pair
 the negative with an existing committed owner and a shared survivor; a projected-row removal
 or a gesture whose On already committed does not exercise the same admission reader.
+
+The follow-up `3b1c0ad9` deletion check covered absence but left a present owner's committed Off
+or input replacement invisible to pre-commit On settlement. Drive these separately through an
+initialized committed provider and actual CRDT mutation while the projected On selector remains
+unchanged. Require no strip/edge/capture/owner and exactly one stop, then pair unchanged committed
+Auto/Off, an unrelated committed rename, shared permission and a current selected-input owner.
+A global document revision check rejects the valid rename control; a presence-only check misses
+both supersessions. Preserve the committed On latch and actual abort controls independently.

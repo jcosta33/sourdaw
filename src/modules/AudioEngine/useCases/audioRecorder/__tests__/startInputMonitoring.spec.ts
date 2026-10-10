@@ -157,6 +157,58 @@ describe('startInputMonitoring', () => {
         expect(isCurrent?.()).toBe(false);
     });
 
+    it.each(['mode', 'input', 'kind', 'arm'] as const)(
+        'follows committed %s supersession before optimistic On matches committed truth',
+        async (changeKind) => {
+            const projected = trackStore.value?.tracks[0];
+            if (!projected) {
+                throw new Error('Expected monitoring track');
+            }
+            const committed: typeof projected = { ...projected, inputMonitoring: 'auto', armed: true };
+            setInputMonitoringProjectAccess({
+                hasTrack: () => true,
+                readTrack: () => committed,
+                subscribe: () => () => undefined,
+            });
+            await startInputMonitoring('track-1', null);
+            const isCurrent = vi.mocked(startInputMonitoringRepo).mock.calls.at(-1)?.[2];
+            expect(isCurrent?.()).toBe(true);
+            // Reusing the provider object must not rewrite the admission's initial intent.
+            if (changeKind === 'mode') {
+                committed.inputMonitoring = 'off';
+            } else if (changeKind === 'input') {
+                committed.inputId = 'new-input';
+            } else if (changeKind === 'kind') {
+                committed.kind = 'vca';
+            } else {
+                committed.armed = false;
+            }
+            expect(isCurrent?.()).toBe(false);
+            expect(trackStore.value?.tracks[0]?.inputMonitoring).toBe('on');
+        }
+    );
+
+    it('keeps current committed On through arm changes and playback after an optimistic gesture', async () => {
+        const projected = trackStore.value?.tracks[0];
+        if (!projected) {
+            throw new Error('Expected monitoring track');
+        }
+        let committed: typeof projected = { ...projected, inputMonitoring: 'auto', armed: false };
+        setInputMonitoringProjectAccess({
+            hasTrack: () => true,
+            readTrack: () => committed,
+            subscribe: () => () => undefined,
+        });
+        await startInputMonitoring('track-1', null);
+        const isCurrent = vi.mocked(startInputMonitoringRepo).mock.calls.at(-1)?.[2];
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        expect(isCurrent?.()).toBe(true);
+        committed = { ...committed, inputMonitoring: 'on', armed: true };
+        expect(isCurrent?.()).toBe(true);
+        committed = { ...committed, armed: false };
+        expect(isCurrent?.()).toBe(true);
+    });
+
     it('keeps an eligible Auto grant detached during a monitoring hold until resume', async () => {
         const track = trackStore.value?.tracks[0];
         if (!track) {
