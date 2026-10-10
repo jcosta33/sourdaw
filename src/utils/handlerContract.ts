@@ -2089,6 +2089,8 @@ export type AppAction =
               fadeOutBeats?: number;
               /** Offset the restore puts back; optional so older undo entries still decode. */
               audioOffsetBeats?: number;
+              /** Loop anchor the restore puts back; optional so older undo entries still decode. */
+              loopOriginBeat?: number;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };

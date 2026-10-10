@@ -211,6 +211,10 @@ export function projectOfflineAudioClipPlaybacks(
     }
 
     const playbacks: OfflineAudioClipPlaybackProjection[] = [];
+    // Whether a playback has been emitted yet: the fade-in gate reads it so
+    // the drawn fade lands on the first segment that actually sounds, never
+    // on a segment index that may have emitted nothing.
+    let emittedPlayback = false;
     for (let iter = 0; iter < maxIterations; iter++) {
         const iterStartBeat = clip.startBeat + iter * loopLen;
         if (iterStartBeat >= clip.endBeat) {
@@ -295,17 +299,22 @@ export function projectOfflineAudioClipPlaybacks(
                 continue;
             }
 
-            // The fade in lives on the pass's first segment (the one carrying
-            // the pass head) and the fade out on its last: a later loop
-            // iteration, or one entered part-way by the region trim, continues
-            // an unbroken sound and must not dip at the seam. Within a fade
-            // that is present, a zero-length user fade leaves
+            // The fade in lives on the pass's first *emitted* playback — the
+            // first segment that actually sounds — and the fade out on the
+            // last: a later loop iteration, or one entered part-way by the
+            // region trim, continues an unbroken sound and must not dip at
+            // the seam. A head segment whose read starts at or past the
+            // buffer's end emits nothing, so the pass's first sound is its
+            // wrapped tail and the drawn fade rides it — the same law the
+            // live scheduler holds, anchoring the fade at the pass's first
+            // sound (`startedSegments[0]`). Within a fade that is present, a
+            // zero-length user fade leaves
             // `userEndSec`/`userStartSec` absent, which the scheduler reads as
             // the anti-click micro-fade.
-            const isHeadSegment = segmentIndex === 0;
+            const isFirstEmittedPlayback = isFirstIter && !emittedPlayback;
             const isTailSegment = segmentIndex === passSegments.length - 1;
             const fadeIn =
-                isFirstIter && isHeadSegment && trimBeforeSec === 0
+                isFirstEmittedPlayback && trimBeforeSec === 0
                     ? {
                           userEndSec:
                               clip.fadeInBeats > 0
@@ -338,6 +347,7 @@ export function projectOfflineAudioClipPlaybacks(
                 ...(fadeOut ? { fadeOut } : {}),
                 rawIterEndSec: rawSegmentEndSec,
             });
+            emittedPlayback = true;
         }
     }
     return playbacks;

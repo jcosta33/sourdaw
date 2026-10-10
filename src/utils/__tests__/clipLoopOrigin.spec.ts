@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance } from '../clipLoopOrigin';
+import {
+    CLIP_LOOP_WINDOW_BEAT_TOLERANCE,
+    isBeatInClipLoopWindow,
+    resolveClipLoopOriginAdvance,
+} from '../clipLoopOrigin';
 
 /**
  * The loop-window membership law behind #4988: the window is the half-open
@@ -12,6 +16,12 @@ import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance } from '../clipLoo
  * exactly the pre-anchor law — and so does a clip whose stale anchor dates
  * from a past loop enable, because `setClipLoop` keeps the anchor while the
  * loop is off and the readers must treat it as absent there.
+ *
+ * Boundary reads carry `CLIP_LOOP_WINDOW_BEAT_TOLERANCE` (#5198): the stored
+ * note figure (`note.startBeat - midiOffsetBeats`) and the window bounds
+ * (`startBeat - loopOriginBeat`) descend from different rounding chains and
+ * can disagree by an ulp, so the inclusive floor also admits within tolerance
+ * below it and the exclusive ceiling also excludes within tolerance below it.
  */
 
 const ANCHORED_CLIP = { startBeat: 1, loopOriginBeat: 0, loopLengthBeats: 4, loopEnabled: true } as const;
@@ -53,6 +63,39 @@ describe('isBeatInClipLoopWindow', () => {
     it('admits the region head inclusively and refuses the region end exclusively', () => {
         expect(isBeatInClipLoopWindow({ ...ANCHORED_CLIP, relativeBeat: -1 })).toBe(true);
         expect(isBeatInClipLoopWindow({ ...ANCHORED_CLIP, relativeBeat: 3 })).toBe(false);
+    });
+
+    it('admits a head note that drifts within tolerance below the floor', () => {
+        // #5198's deep-trim chain puts the loop head an ulp strictly below the
+        // naive floor; the tolerance is what keeps the downbeat sounding.
+        expect(
+            isBeatInClipLoopWindow({ ...ANCHORED_CLIP, relativeBeat: -1 - CLIP_LOOP_WINDOW_BEAT_TOLERANCE / 10 })
+        ).toBe(true);
+    });
+
+    it('excludes a note beyond tolerance below the floor', () => {
+        expect(
+            isBeatInClipLoopWindow({ ...ANCHORED_CLIP, relativeBeat: -1 - CLIP_LOOP_WINDOW_BEAT_TOLERANCE * 2 })
+        ).toBe(false);
+    });
+
+    it('excludes the loop-end note that drifts to one ulp below the ceiling', () => {
+        // #5198's triplet-grid trim chain (start 0 → 1/6 → 1/6 + 1/4, L=4):
+        // the offset wraps to 0.41666666666666696 while the advance reads
+        // 0.41666666666666663, so the source-4 note lands at relative
+        // 3.583333333333333 — one ulp inside the strict ceiling
+        // 3.5833333333333335 — and must still stay out of every pass.
+        const drifted = {
+            startBeat: 0.41666666666666663,
+            loopOriginBeat: 0,
+            loopLengthBeats: 4,
+            loopEnabled: true,
+        } as const;
+        expect(isBeatInClipLoopWindow({ ...drifted, relativeBeat: 4 - 0.41666666666666696 })).toBe(false);
+    });
+
+    it('keeps a note well inside the ceiling admitted despite the inward ceiling shift', () => {
+        expect(isBeatInClipLoopWindow({ ...ANCHORED_CLIP, relativeBeat: 3 - 1e-3 })).toBe(true);
     });
 
     it('admits everything below the loop length for a clip without an anchor', () => {

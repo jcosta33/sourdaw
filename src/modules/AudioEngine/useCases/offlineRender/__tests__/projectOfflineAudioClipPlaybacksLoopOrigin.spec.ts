@@ -135,3 +135,90 @@ describe('projectOfflineAudioClipPlaybacks with a stale anchor while the loop is
         expect(playbacks[0]).toMatchObject({ startSec: 0.5, bufferOffsetSec: 0.5, playDuration: 3.5 });
     });
 });
+
+describe('projectOfflineAudioClipPlaybacks fade parity on a dead head segment', () => {
+    it('carries the drawn fade in on the first playback it emits — the wrapped tail', () => {
+        // The two-segment split's parity case: loop 4, start 8/end 20, offset
+        // 5, anchor 5 — advance 3, entry 3, region [2, 6) — with a 4-beat
+        // buffer (2 s at 120 BPM) and fadeInBeats 4. Each pass's head segment
+        // reads from source beat 5 (2.5 s), at or past the buffer's end, so it
+        // emits nothing; the pass's first sounding material is its wrapped
+        // tail (source [2, 4)). The fade belongs to the first playback that
+        // actually emits — the tail — not to the head's index: a playback
+        // whose predecessor emitted no sound continues no unbroken sound, so
+        // `scheduleOfflineClipSource`'s absence rule does not cover it. The
+        // live scheduler already holds this law (the fade anchors at the
+        // pass's first sound, `startedSegments[0]`, ramping 0 → 1 over 0.5 s
+        // from 4.5 s); emitting `fadeIn: { userEndSec: 6 }` on this playback
+        // prints the identical ramp after the shared #2867 clamp
+        // (`6 − 4.5 = 1.5 s` held to half the 1 s play duration).
+        const playbacks = projectOfflineAudioClipPlaybacks({
+            clip: {
+                ...CLIP_BASE,
+                startBeat: 8,
+                endBeat: 20,
+                loopLength: 4,
+                loopOriginBeat: 5,
+                audioOffsetBeats: 5,
+                fadeInBeats: 4,
+            },
+            bufferDurationSeconds: 2,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 40,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => beat * 0.5,
+            resolveTempoAtBeat: () => 120,
+        });
+
+        // Three passes; every head segment is dead, so one playback per pass.
+        expect(playbacks).toHaveLength(3);
+        // The wrapped tail is the first emitted playback and carries the fade.
+        expect(playbacks[0]).toMatchObject({
+            startSec: 4.5,
+            bufferOffsetSec: 1,
+            playDuration: 1,
+            fadeIn: { userEndSec: 6 },
+        });
+        // Later passes continue the (now unbroken) sound: no re-fade.
+        expect(playbacks[1]!.fadeIn).toBeUndefined();
+        expect(playbacks[2]!.fadeIn).toBeUndefined();
+        // The last playback still carries the pass's fade out.
+        expect(playbacks[2]!.fadeOut).toBeDefined();
+    });
+
+    it('keeps the fade on the head segment when the head actually sounds', () => {
+        // Head-alive control for the same figures: a 16-beat buffer (8 s)
+        // keeps the head's read (source beat 5) inside the material, so the
+        // first emitted playback is the head and the fade stays there.
+        const playbacks = projectOfflineAudioClipPlaybacks({
+            clip: {
+                ...CLIP_BASE,
+                startBeat: 8,
+                endBeat: 20,
+                loopLength: 4,
+                loopOriginBeat: 5,
+                audioOffsetBeats: 5,
+                fadeInBeats: 4,
+            },
+            bufferDurationSeconds: 8,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 40,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => beat * 0.5,
+            resolveTempoAtBeat: () => 120,
+        });
+
+        // Both segments per pass: head (source [5, 6)) then tail ([2, 4)).
+        expect(playbacks).toHaveLength(6);
+        expect(playbacks[0]).toMatchObject({
+            startSec: 4,
+            bufferOffsetSec: 2.5,
+            playDuration: 0.5,
+            fadeIn: { userEndSec: 6 },
+        });
+        // The wrapped tail follows a sounding head: unbroken, no re-fade.
+        expect(playbacks[1]!.fadeIn).toBeUndefined();
+    });
+});

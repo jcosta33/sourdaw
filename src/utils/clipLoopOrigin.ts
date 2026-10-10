@@ -106,6 +106,15 @@ export function restampLoopOriginEntry(
     return loopOriginEntry(clip.loopOriginBeat === undefined ? undefined : anchoredStartBeat);
 }
 
+/**
+ * Beats closer than this are one instant — the same tolerance
+ * `src/modules/MIDI/models/SameBeatTolerance.ts` gives the loop, groove, and
+ * export machinery (`src/utils` never imports domain modules, so the value is
+ * restated here). Projected beats on non-dyadic grids miss the exact figure by
+ * about 1e-16 per beat, six orders below any length a musician places.
+ */
+export const CLIP_LOOP_WINDOW_BEAT_TOLERANCE = 1e-9;
+
 type ClipLoopWindowMembershipInput = Readonly<{
     /**
      * The candidate's position in the coordinate the loop window reads — for a
@@ -127,7 +136,10 @@ type ClipLoopWindowMembershipInput = Readonly<{
  * never covered. The anchored law is the half-open region the clip was looped
  * with, carried backwards by the trim advance in the offset-relative
  * coordinate: `[−advance, loopLength − advance)`. Notes at or past the region
- * end stay out of every pass however far the clip is trimmed.
+ * end stay out of every pass however far the clip is trimmed. Boundary reads
+ * carry `CLIP_LOOP_WINDOW_BEAT_TOLERANCE` because the two coordinate chains
+ * behind the comparison can disagree by an ulp; the tolerance keeps that drift
+ * from flipping admission.
  *
  * Without an anchor — absent, or present-but-stale while the loop is off —
  * the window falls back to the pre-anchor law.
@@ -143,5 +155,22 @@ export function isBeatInClipLoopWindow({
         return relativeBeat < loopLengthBeats;
     }
     const windowFloorBeat = -resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat, loopEnabled });
-    return relativeBeat >= windowFloorBeat && relativeBeat < windowFloorBeat + loopLengthBeats;
+    // The stored note figure (`note.startBeat - midiOffsetBeats`) and the
+    // window bounds (`startBeat - loopOriginBeat`) descend from different
+    // rounding chains — the offset wraps through `loopedMidiOffsetBeats`'
+    // positive modulo while `shiftNotesWithOffsetWrap` shifts stored notes by
+    // `wrapped - raw` — so a boundary note can land an ulp on the wrong side
+    // of a strict comparison (#5198: a triplet-grid trim chain admitted the
+    // loop-end note a second time, a deep trim silenced the loop head). The
+    // exact predicate is
+    // `relativeBeat >= windowFloorBeat - CLIP_LOOP_WINDOW_BEAT_TOLERANCE &&
+    // relativeBeat < windowFloorBeat + loopLengthBeats - CLIP_LOOP_WINDOW_BEAT_TOLERANCE`:
+    // the inclusive floor also admits within tolerance below it, and the
+    // exclusive ceiling also excludes within tolerance below it, so drift
+    // lands on the musical side — the head sounds, the region end never
+    // doubles.
+    return (
+        relativeBeat >= windowFloorBeat - CLIP_LOOP_WINDOW_BEAT_TOLERANCE &&
+        relativeBeat < windowFloorBeat + loopLengthBeats - CLIP_LOOP_WINDOW_BEAT_TOLERANCE
+    );
 }

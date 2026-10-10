@@ -26,6 +26,14 @@ import { scheduleAudioClips } from '../scheduleAudioClips';
  */
 
 const trackStoreState: { value: { tracks: unknown[] } } = { value: { tracks: [] } };
+const { createdGains } = vi.hoisted(() => ({
+    createdGains: [] as Array<{
+        gain: {
+            setValueAtTime: ReturnType<typeof vi.fn>;
+            linearRampToValueAtTime: ReturnType<typeof vi.fn>;
+        };
+    }>,
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
         get value() {
@@ -45,17 +53,21 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: vi.fn(),
     getAudioContext: vi.fn(() => ({
         currentTime: 0,
-        createGain: vi.fn(() => ({
-            gain: {
-                value: 1,
-                cancelScheduledValues: vi.fn(),
-                setValueAtTime: vi.fn(),
-                linearRampToValueAtTime: vi.fn(),
-                exponentialRampToValueAtTime: vi.fn(),
-            },
-            connect: vi.fn(),
-            disconnect: vi.fn(),
-        })),
+        createGain: vi.fn(() => {
+            const node = {
+                gain: {
+                    value: 1,
+                    cancelScheduledValues: vi.fn(),
+                    setValueAtTime: vi.fn(),
+                    linearRampToValueAtTime: vi.fn(),
+                    exponentialRampToValueAtTime: vi.fn(),
+                },
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+            };
+            createdGains.push(node);
+            return node;
+        }),
     })),
     getCompensationDelay: vi.fn(() => 0),
 }));
@@ -154,6 +166,7 @@ describe('scheduleAudioClips loop-origin anchored passes', () => {
         schedulerSession.pendingSeam = null;
         schedulerSession.lastLoopSeamAudioTime = null;
         disposeAudioClipScheduling();
+        createdGains.length = 0;
     });
 
     it('starts the region tail and its wrapped head as two contiguous sources per pass', () => {
@@ -237,5 +250,63 @@ describe('scheduleAudioClips loop-origin anchored passes', () => {
         // offset [1, 5) and stopping at the buffer end.
         expect(sources).toHaveLength(1);
         expect(sources[0]!.start).toHaveBeenCalledWith(0.5, 0.5, 3.5);
+    });
+
+    it('rides the drawn fade in on the wrapped tail when the head read is dead', () => {
+        // Parity twin of the offline projector's dead-head pin: loop 4, start
+        // 8/end 20, offset 5, anchor 5 — advance 3, entry 3, region [2, 6) —
+        // with a 4-beat buffer (2 s). Each pass's head segment reads from
+        // source beat 5 (2.5 s), at or past the buffer's end, and emits
+        // nothing, so the pass's first sounding material is its wrapped tail
+        // (source [2, 4)). The fade in anchors at the pass's first sound —
+        // `startedSegments[0]`, the tail — and ramps 0 → 1 over the shared
+        // #2867 clamp's span: `userFadeEndTime − soundStartTime = 1.5 s`,
+        // held to half the 1 s play duration. The offline twin prints the
+        // identical ramp from `fadeIn: { userEndSec: 6 }` on the first
+        // playback it emits; a tail whose head emitted nothing continues no
+        // unbroken sound, so the fade-absence rule does not cover it.
+        const sources: Array<ReturnType<typeof makeFakeSource>> = [];
+        mockCreateBufferSource.mockImplementation(() => {
+            const fake = makeFakeSource();
+            sources.push(fake);
+            return fake as unknown as AudioBufferSourceNode;
+        });
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 2 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            trimmedLoopedClip({
+                startBeat: 8,
+                endBeat: 20,
+                regionStartBeat: 8,
+                regionEndBeat: 20,
+                loopLength: 4,
+                loopOriginBeat: 5,
+                audioOffsetBeats: 5,
+                fadeInBeats: 4,
+            }),
+        ] as never);
+        trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    kind: 'audio',
+                    muted: false,
+                    clips: [],
+                    freezeState: { status: 'active', frozenBufferId: null },
+                },
+            ],
+        };
+
+        scheduleAudioClips(0, 32, 0, new Set(), new Set(), [], defaultTransportState);
+
+        // One source per pass — the dead head emitted none — and the first
+        // one is the wrapped tail, reading source [2, 4) for its 1 s of
+        // material from 4.5 s.
+        expect(sources).toHaveLength(3);
+        expect(sources[0]!.start).toHaveBeenCalledWith(4.5, 1, 1);
+        // The drawn fade rides that tail: 0 at its sound start, plateau at
+        // 4.5 s + 0.5 s — exactly what the offline playback emits.
+        const fadeGain = createdGains[0]!;
+        expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, 4.5);
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, 5);
     });
 });

@@ -87,6 +87,19 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
             // lawful — the window still opens at the head — where a cleared
             // anchor silently reverts those trims to the pre-anchor slide.
             // Key absent for an unanchored source, per the entry law.
+            //
+            // Composition: the offset remap is an involution (`o → S − o − c →
+            // o`), so a second reverse restores buffer, fades and offset
+            // exactly — but this restamp cannot compose to identity. It is
+            // forced (advance must be zero for the loop window to open at the
+            // mirrored head) and it is not injective in the anchor: pre-states
+            // differing only in the anchor share one offset, so both map to
+            // the same mirrored state and the pre-reverse advance is
+            // unrecoverable from the mirrored clip alone. A direct second
+            // reverse therefore re-restamps at the start and collapses a
+            // nonzero advance to zero; the inverse payloads carry the
+            // pre-reverse anchor (`handleReverseClip`), so undo/redo
+            // round-trips it exactly and recovers the original read.
             ...restampLoopOriginEntry(candidate, candidate.startBeat),
         };
         if (remappedAudioOffsetBeats === undefined) {
