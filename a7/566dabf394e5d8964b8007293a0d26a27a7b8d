@@ -1,0 +1,27 @@
+.agents/skills/review-stances/audio-source-time.md
+  s_1f0dcd815e8946::t_9b66b8b7d422d3 103-109
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_7d86fcc17d5fe5 274-285,315-346
+  s_1f0dcd815e8946::t_988b6bd64b170a 26,286-307,362
+  s_1f0dcd815e8946::t_767bd1a6c2f904 308-314,347-360
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_1f0dcd815e8946::t_afa0d4c7748073 19,36-38,54,308-317
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_1f0dcd815e8946::t_70d6fb6dd1dbfd 9,151-156,192,377,503,607,710,1078
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a7566dabf394e5d8964b8007293a0d26a27a7b8d",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
