@@ -82,7 +82,10 @@ describe('glueClips MIDI state integration', () => {
                 'clip-b': [{ id: 'note-b', pitch: 64, startBeat: 2, duration: 1, velocity: 100 }],
             },
             ccByClipId: {
-                'clip-a': [{ id: 'cc-a-hidden', controller: 1, value: 0.25, beat: 6, channel: 0 }],
+                'clip-a': [
+                    { id: 'cc-a-closing', controller: 1, value: 0.75, beat: 6, channel: 0 },
+                    { id: 'cc-a-hidden', controller: 1, value: 0.25, beat: 7, channel: 0 },
+                ],
                 'clip-b': [{ id: 'cc-b', controller: 1, value: 0.5, beat: 2, channel: 0 }],
             },
             pitchBendByClipId: {
@@ -256,7 +259,12 @@ describe('glueClips MIDI state integration', () => {
             { id: 'note-a', startBeat: 1 },
             { id: 'note-b', startBeat: 5 },
         ]);
-        expect(midiStore.value!.ccByClipId[glued.id]).toMatchObject([{ id: 'cc-b', beat: 5 }]);
+        const gluedCCRows = midiStore.value!.ccByClipId[glued.id];
+        expect(gluedCCRows).toMatchObject([
+            { id: 'cc-a-closing', beat: 4 },
+            { id: 'cc-b', beat: 5 },
+        ]);
+        expect(gluedCCRows).not.toContainEqual(expect.objectContaining({ id: 'cc-a-hidden' }));
         expect(midiStore.value!.pitchBendByClipId[glued.id]).toMatchObject([{ id: 'bend-b', beat: 6 }]);
         expect(midiStore.value!.migratedAbsoluteNoteClipIds).toEqual([glued.id]);
     });
