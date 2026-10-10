@@ -1,0 +1,96 @@
+src/modules/Arrangement/models/TakeLane.ts
+  s_1f0dcd815e8946::t_277e09f84f9e89 44-45
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_1f0dcd815e8946::t_b71f4042ba21ed 14-19,112,117,128-133,147,220
+src/utils/handlerContract.ts
+  s_1f0dcd815e8946::t_277e09f84f9e89 533
+src/modules/Transport/useCases/transportControls/__tests__/createRecordingCaptureClocks.spec.ts
+  s_1f0dcd815e8946::t_2913939abad2b1 65-89
+src/modules/Arrangement/useCases/resolveTakeMedia.ts
+  s_1f0dcd815e8946::t_b71f4042ba21ed 10,73-79,83,94-99,117,131
+src/modules/Arrangement/useCases/recording/placeRecordingTakes.ts
+  s_1f0dcd815e8946::t_4a242e10cbf01f 68-75
+  s_1f0dcd815e8946::t_f19a1c7ef1742f 76-83,96
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineWithNativeEngine.spec.ts
+  s_1f0dcd815e8946::t_606feeefc942d2 11,24,669-756
+  s_1f0dcd815e8946::t_f275462562f0d8 757-758
+src/modules/Arrangement/useCases/recording/recordingPassTiming.ts
+  s_1f0dcd815e8946::t_42857ffe23f359 120
+  s_1f0dcd815e8946::t_277e09f84f9e89 8-9,17,64-68,91-97,118-119,121-122,135,223
+  s_1f0dcd815e8946::t_7773dd04333335 123-134,136,222,224-225,227,284
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_1f0dcd815e8946::t_eef06ce4721bfc 412-416,423,914-919
+  s_1f0dcd815e8946::t_8b241a33699701 417-422
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_1f0dcd815e8946::t_8b241a33699701 1-7,19-20,39,101,103
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_1f0dcd815e8946::t_9f0f626f61f569 7,320-360
+  s_1f0dcd815e8946::t_ab6d14e0d95ef1 361
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_102400cbed8988 58,154-155,330,485-755,1388-1392,1397-1399,1402,1404-1405,1409-1411
+  s_1f0dcd815e8946::t_c91a0103e4f44d 1400-1401,1403,1406-1408,1412-1413
+src/modules/Transport/useCases/transportControls/createRecordingCaptureClocks.ts
+  s_1f0dcd815e8946::t_606feeefc942d2 32-60,125
+  s_1f0dcd815e8946::t_8b241a33699701 8,22,104-109
+  s_1f0dcd815e8946::t_b71f4042ba21ed 113-119
+.agents/skills/review-stances/audio-source-time.md
+  s_1f0dcd815e8946::t_6d2bb9d82b5ff4 191-224
+.agents/skills/review-stances/correctness.md
+  s_1f0dcd815e8946::t_5a9202a8cdc487 513-522
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_e96947b6fbe03f 820-840
+src/modules/Arrangement/stores/__tests__/takeLaneStore.spec.ts
+  s_1f0dcd815e8946::t_b8869dfa3385d0 489,510-515,525-537,597-610
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  s_2bfd55a4393d7c::t_693279a36b3e9b 88,128
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_1f0dcd815e8946::t_071fe9af38c52b 28-33,111,118-121,146-148
+src/modules/Arrangement/stores/takeLaneWriteJournal.ts
+  s_1f0dcd815e8946::t_01271eaf2e847a 20,189-194
+src/modules/Arrangement/useCases/comping/__tests__/writeTakeReKeyTransitions.spec.ts
+  s_1f0dcd815e8946::t_2691c291d671b0 180,185-190
+src/modules/Arrangement/useCases/comping/writeTakeReKeyTransitions.ts
+  s_1f0dcd815e8946::t_cdc4d2561be713 23-24,185-186
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_1f0dcd815e8946::t_12bf468efa25f2 51
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_1f0dcd815e8946::t_47298896c53fa7 748-778
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_1f0dcd815e8946::t_fa225cd9c62b6a 197-240
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_4c8cd08893b364::t_db3b06b63182ac 823
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_1f0dcd815e8946::t_2db74ea73f6cb7 285-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99285d272a7fe0c74562268c57312b81b81275d1",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
