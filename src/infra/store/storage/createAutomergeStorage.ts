@@ -1287,8 +1287,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         baseDocumentPresence: CrdtSlotPresence | undefined;
         baseValue: TData | null;
         /**
-         * Whether a port swap has invalidated the base as a description of
-         * the document this write will flush against. The flush then claims
+         * Whether the base fails to describe the document this write will
+         * flush against — a port swap invalidated it, or it was derived from a
+         * retained deferred baseline no document ever held. The flush then claims
          * `baseValue: null` — every field is its delta and no absence is
          * decided — while the pending's own `baseValue` stands untouched: it
          * is the provenance the three-way rebase attributes this writer's
@@ -1310,6 +1311,12 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     };
     let cachedValue: TData | null = null;
     let committedCacheValue: TData | null = null;
+    /**
+     * Whether `committedCacheValue` is a retained deferred baseline (#4109) —
+     * a value no document ever received — rather than committed or hydrated
+     * authority. Cleared wherever genuine authority replaces the baseline.
+     */
+    let committedCacheIsDeferred = false;
     let committedCacheRevision = 0;
     let absencePresentation: 'null' | 'default' = 'null';
     let projectionGeneration = 0;
@@ -1758,6 +1765,10 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
      *   never be written through the port; it lives solely where
      *   `recomputeCachedValue` can fall back to it. Only a later genuine store
      *   write may persist it.
+     * - Never a write's base. A genuine write derived from the retained
+     *   baseline flushes with an unknown base, so every field is its delta: the
+     *   document never held the baseline, and diffing against it would read a
+     *   re-set of the same value as "no change" and never persist it (#5268).
      * - Superseded wholesale. A genuine committed write
      *   (`recordCommittedWrite`), a hydrate, and a projection reset each
      *   replace `committedCacheValue` entirely, so once real authority lands
@@ -1774,6 +1785,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             return;
         }
         committedCacheValue = pending.value;
+        committedCacheIsDeferred = true;
         committedCacheRevision = pending.revision;
     };
 
@@ -1901,6 +1913,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         }
         hasObservedDocumentAuthority = true;
         committedCacheValue = projected;
+        committedCacheIsDeferred = false;
         // The claim was refused, so it advances the visible authority baseline
         // only through the value it had captured. It did not publish a local
         // set and therefore cannot supersede owners authored after that set.
@@ -1975,6 +1988,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
 
         hasObservedDocumentAuthority = true;
         committedCacheValue = projected;
+        committedCacheIsDeferred = false;
         committedCacheRevision = Math.max(committedCacheRevision, claimRevision);
         committedSetRevision = Math.max(committedSetRevision, claimRevision);
         if (decoded !== undefined) {
@@ -2075,7 +2089,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         pending = {
             baseDocumentPresence: captureBaseDocumentPresence(),
             baseValue: cachedValue,
-            flushBaseUnknown: false,
+            // A base derived from a retained deferred baseline describes no
+            // document (#4109, #5268).
+            flushBaseUnknown: committedCacheIsDeferred,
             metadata: initialMetadata,
             message: getSemanticMessage(),
             rafId: null,
@@ -2255,6 +2271,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
 
         hasObservedDocumentAuthority = true;
         committedCacheValue = defaultValue;
+        committedCacheIsDeferred = false;
         committedCacheRevision = ++nextRevision;
         committedSetRevision = committedCacheRevision;
         absencePresentation = 'default';
@@ -2503,6 +2520,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     }
                     const authorityRevision = ++nextRevision;
                     committedCacheValue = acceptedBaseline;
+                    committedCacheIsDeferred = false;
                     committedCacheRevision = authorityRevision;
                     committedSetRevision = committedCacheRevision;
                     absencePresentation = 'default';
@@ -2576,6 +2594,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     const authorityRevision = ++nextRevision;
                     cachedValue = acceptedValue;
                     committedCacheValue = acceptedValue;
+                    committedCacheIsDeferred = false;
                     committedCacheRevision = authorityRevision;
                     committedSetRevision = committedCacheRevision;
                     recomputeCachedValue();
@@ -2604,6 +2623,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 }
                 cachedValue = missingValue;
                 committedCacheValue = missingValue;
+                committedCacheIsDeferred = false;
                 committedCacheRevision = ++nextRevision;
                 committedSetRevision = committedCacheRevision;
                 cachedRevision = committedCacheRevision;

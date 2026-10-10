@@ -5,6 +5,7 @@ import {
     countPendingAutomergeStorageWrites,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
+    resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
 } from '../createAutomergeStorage';
 
@@ -152,5 +153,152 @@ describe('createAutomergeStorage deferred pending baseline', () => {
 
         expect(doc.state).toEqual({ a: 1, x: 2 });
         expect(storage.get()).toEqual({ a: 1, x: 2 });
+    });
+
+    // Issue #5268 — a genuine write equal to the retained baseline used to diff
+    // empty against it, so the document never received the value and the next
+    // hydrate or reload fell back to the document's own value.
+    it('persists a genuine write equal to the retained baseline over a document holding another value', () => {
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: 0 }),
+        });
+
+        storage.set({ count: 7 });
+        frameCallback?.(100);
+
+        const { doc, port } = createTestPort({ state: { count: 0 } });
+        configureAutomergeStoragePort(port);
+        storage.set({ count: 7 });
+        flushAutomergeStorageWrites();
+
+        expect(doc.state).toEqual({ count: 7 });
+        storage.hydrate?.();
+        expect(storage.get()).toEqual({ count: 7 });
+    });
+
+    it('persists a write buffered before wiring that equals the retained baseline', () => {
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: 0 }),
+        });
+
+        storage.set({ count: 7 });
+        frameCallback?.(100);
+        // Buffered with no port, so no document presence could be captured;
+        // it reaches the document only after wiring.
+        storage.set({ count: 7 });
+
+        const { doc, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        flushAutomergeStorageWrites();
+
+        expect(doc.state).toEqual({ count: 7 });
+    });
+
+    it('hands a custom slot mutation an unknown base for a write derived from the retained baseline', () => {
+        const receivedBases: unknown[] = [];
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            mutateCrdt: ({ doc, key, baseValue, value }) => {
+                receivedBases.push(baseValue);
+                if (JSON.stringify(baseValue) === JSON.stringify(value)) {
+                    return;
+                }
+                doc[key] = value;
+            },
+        });
+
+        storage.set({ count: 7 });
+        frameCallback?.(100);
+
+        const { doc, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        storage.set({ count: 7 });
+        flushAutomergeStorageWrites();
+
+        expect(receivedBases).toEqual([null]);
+        expect(doc.state).toEqual({ count: 7 });
+    });
+
+    it('falls back to the retained baseline when the post-wiring write aborts, and still persists a later re-set', () => {
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: 0 }),
+        });
+
+        storage.set({ count: 7 });
+        frameCallback?.(100);
+
+        const { doc, port } = createTestPort({ state: { count: 0 } });
+        configureAutomergeStoragePort(port);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 99 });
+        });
+        transaction.abort();
+
+        expect(storage.get()).toEqual({ count: 7 });
+        expect(doc.state).toEqual({ count: 0 });
+
+        storage.set({ count: 7 });
+        flushAutomergeStorageWrites();
+
+        expect(doc.state).toEqual({ count: 7 });
+    });
+
+    it('diffs against hydrated authority once a hydrate supersedes the retained baseline', () => {
+        const storage = createAutomergeStorage<Record<string, number>>('root', 'state');
+
+        storage.set({ a: 1 });
+        frameCallback?.(100);
+
+        const { doc, port } = createTestPort({ state: { a: 1, b: 2 } });
+        configureAutomergeStoragePort(port);
+        expect(storage.hydrate?.()).toBe(true);
+        expect(storage.get()).toEqual({ a: 1, b: 2 });
+
+        // Only a base the hydrate supplied can carry this deletion of `b`.
+        storage.set({ a: 1 });
+        flushAutomergeStorageWrites();
+
+        expect(doc.state).toEqual({ a: 1 });
+    });
+
+    it('diffs against the reset default once a projection reset supersedes the retained baseline', () => {
+        const storage = createAutomergeStorage<Record<string, number>>('root', 'state', {
+            hydrateMissing: () => ({ a: 0, b: 0 }),
+        });
+
+        storage.set({ a: 5 });
+        frameCallback?.(100);
+
+        const { doc, port } = createTestPort({ state: { a: 0, b: 0 } });
+        configureAutomergeStoragePort(port);
+        resetAutomergeStorageProjections('root');
+        expect(storage.get()).toEqual({ a: 0, b: 0 });
+
+        storage.set({ a: 0 });
+        flushAutomergeStorageWrites();
+
+        expect(doc.state).toEqual({ a: 0 });
+    });
+
+    it('diffs against the committed value once a genuine commit supersedes the retained baseline', () => {
+        const storage = createAutomergeStorage<Record<string, number>>('root', 'state');
+
+        storage.set({ a: 1 });
+        frameCallback?.(100);
+
+        const { doc, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ a: 1, b: 2 });
+        });
+        transaction.commit();
+        expect(doc.state).toEqual({ a: 1, b: 2 });
+
+        doc.state = { a: 1, b: 2, c: 3 };
+        storage.set({ a: 1 });
+        flushAutomergeStorageWrites();
+
+        // The committed base saw `b` but never `c`: only `b` is this writer's
+        // deletion, and `c` stands.
+        expect(doc.state).toEqual({ a: 1, c: 3 });
     });
 });
