@@ -324,6 +324,7 @@ describe('clip gesture undo grouping (issue #3622)', () => {
                         midiNotesSnapshot: null,
                         midiCcSnapshot: null,
                         midiPitchBendSnapshot: null,
+                        retiredTakeLanes: [],
                     },
                 },
                 {
@@ -336,6 +337,7 @@ describe('clip gesture undo grouping (issue #3622)', () => {
                         midiNotesSnapshot: null,
                         midiCcSnapshot: null,
                         midiPitchBendSnapshot: null,
+                        retiredTakeLanes: [],
                     },
                 },
             ]);
@@ -346,6 +348,29 @@ describe('clip gesture undo grouping (issue #3622)', () => {
                     .map((clip) => clip.id)
                     .sort()
             ).toEqual(['clip-a', 'clip-b']);
+            expect(undoStore.value?.past).toEqual([]);
+        });
+
+        it('refuses a restoreClip batch action without its take-retirement capture', async () => {
+            await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { skipUndo: true });
+
+            const result = await executeAppActionBatch([
+                {
+                    type: 'restoreClip',
+                    payload: {
+                        clipId: 'clip-a',
+                        trackId: TRACK_ID,
+                        clipSnapshot: createClipFixture('clip-a', 0, 4),
+                        ripplePlan: null,
+                        midiNotesSnapshot: null,
+                        midiCcSnapshot: null,
+                        midiPitchBendSnapshot: null,
+                    },
+                },
+            ]);
+
+            expect(result).toMatchObject({ status: 'conflicted' });
+            expect(trackClips().map((clip) => clip.id)).toEqual(['clip-b']);
             expect(undoStore.value?.past).toEqual([]);
         });
     });
