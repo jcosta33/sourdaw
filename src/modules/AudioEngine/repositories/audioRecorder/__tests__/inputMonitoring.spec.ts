@@ -430,7 +430,9 @@ describe('pending monitor capture ownership', () => {
 
             const successor = streamWithStoppedTrack();
             const source = createMockSourceNode();
-            const gains = new Map(owners.map((trackId) => [trackId, { id: `gain-${trackId}` }]));
+            const gains = new Map<string, { id: string }>(
+                owners.map((trackId): [string, { id: string }] => [trackId, { id: `gain-${trackId}` }])
+            );
             getUserMedia.mockResolvedValueOnce(successor.stream);
             createMediaStreamSource.mockReturnValue(source);
             ensureTrackStrip.mockImplementation((trackId) => createMockStrip(gains.get(trackId)));
