@@ -1,3 +1,7 @@
+src/modules/Arrangement/useCases/__tests__/exportMidiClipPlayback.spec.ts
+  s_2bfd55a4393d7c::t_1452a50701e4be 515-516
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerRestore.spec.ts
+  s_2bfd55a4393d7c::t_4c8962f9d60fb0 38-41
 ---
 {
   "schema_version": "authorship/3.0.0",

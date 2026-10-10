@@ -1,0 +1,59 @@
+src/modules/MIDI/useCases/midiClipData/__tests__/projectMidiClipPlayback.spec.ts
+  s_2bfd55a4393d7c::t_860f14d3593fc9 12-28
+src/modules/AudioEngine/useCases/offlineRender/comparePendingWorkletEvents.ts
+  s_2bfd55a4393d7c::t_d83a9175016608 8
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerEvents.spec.ts
+  s_2bfd55a4393d7c::t_a72ded186bdfc5 107,124,134,146,296,298,322-323,359,450-471
+  s_2bfd55a4393d7c::t_7fbd41159f9126 101-106,108-123,125-133,135-145,147-148,248,251,256,290-295,297,299,301,303,312,314-321,331,339-358,360-361,394,472-474
+src/utils/sameFrameEventOrder.ts
+  s_2bfd55a4393d7c::t_03bbbdf38cd3c9 24,28-31
+src/modules/Arrangement/useCases/__tests__/exportMidiClipPlayback.spec.ts
+  s_2bfd55a4393d7c::t_da2f6a10409481 504,512-522,524-530
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_2bfd55a4393d7c::t_07843970d19900 72-74,87
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_2bfd55a4393d7c::t_0ecec8d6b99879 26,32-35,37-43,1797,1877-1878,1884-1891,1893-1923,1975-1976,2052
+src/modules/AudioEngine/useCases/offlineRender/schedulePendingSuspends.ts
+  s_2bfd55a4393d7c::t_cccedbfac10765 9,19-22,60
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_2bfd55a4393d7c::t_5e76265a9f2e8e 941,943-945
+src/modules/AudioEngine/useCases/offlineRender/types.ts
+  s_2bfd55a4393d7c::t_efe62265d7ead3 69
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts
+  s_2bfd55a4393d7c::t_bff117654bc962 271-299
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerRestore.spec.ts
+  s_2bfd55a4393d7c::t_97059446ec47a1 44,83,105-106,108-110,116-118,297-328,354-355,552,556-559,563-564,566-567,571,589,591-595
+src/modules/MIDI/useCases/midiClipData/__tests__/projectMidiClipWindow.spec.ts
+  s_2bfd55a4393d7c::t_7b9eb0f60cf354 38-54
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipGlueState.ts
+  s_2bfd55a4393d7c::t_e0bf4699c89a8f 46,48-59,105,130,133
+src/modules/MIDI/useCases/midiClipData/projectClipControllerEvents.ts
+  s_2bfd55a4393d7c::t_52e3ceed4a2b93 26-28,34-37,81-87,107,115-118,125,136-137,150,153-159
+src/modules/MIDI/useCases/midiClipData/projectClipControllerRestore.ts
+  s_2bfd55a4393d7c::t_5b180378fa06c3 3,29,32,43,84-85,114-116,118-121,134-135
+src/modules/MIDI/useCases/midiClipData/projectMidiClipPlayback.ts
+  s_2bfd55a4393d7c::t_c1cf170ca93ac7 40-41,91-97
+src/modules/MIDI/useCases/midiClipData/projectMidiClipWindow.ts
+  s_2bfd55a4393d7c::t_b7ad054da13bdb 13,17-18,56-60,66-76,86-88,92,106-108,124,137-138,141,145,148-153,156,158
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_27d44d782cb6fc 229-233,2975-2976,2982-2985,2987-3056,3139-3140
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_2bfd55a4393d7c::t_1c4612257548db 85,88-89
+  s_2bfd55a4393d7c::t_6e6cae498d69ee 263,265,267-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "205e1a746f7d175fb45375454bf26f82e43ec0e9",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
