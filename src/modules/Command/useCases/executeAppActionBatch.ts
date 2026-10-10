@@ -24,8 +24,10 @@ import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../
 import { registerActionReplayCapabilities, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
+import { appendAbortFailures } from './appendAbortFailures';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commitUndoEntries } from './commitUndoEntries';
+import { compensateAbortedActions } from './compensateAbortedActions';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
 import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
@@ -38,6 +40,7 @@ import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
+import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
 
 type ExecutedBatchAction = {
@@ -417,38 +420,14 @@ async function executePreparedBatch(
     return executedActions;
 }
 
-async function rollbackAttemptedBatch(
+function rollbackAttemptedBatch(
     attemptedActions: readonly PreparedBatchAction[],
     scope: AutomergeStorageTransactionScope
 ): Promise<string | null> {
-    const failures: string[] = [];
-    for (const prepared of [...attemptedActions].reverse()) {
-        const rollback = prepared.afterAbort;
-        if (!rollback) {
-            continue;
-        }
-        try {
-            await scope(rollback);
-        } catch (error) {
-            failures.push(`${prepared.action.type}: ${failureReason(error)}`);
-        }
-    }
-    return failures.length > 0 ? failures.join('; ') : null;
-}
-
-function appendAbortFailures(
-    reason: string,
-    compensationFailure: string | null,
-    rollbackFailure: string | null
-): string {
-    let result = reason;
-    if (compensationFailure) {
-        result = `${result}; runtime compensation failed: ${compensationFailure}`;
-    }
-    if (rollbackFailure) {
-        result = `${result}; abort rollback failed: ${rollbackFailure}`;
-    }
-    return result;
+    return rollbackAbortedActions(
+        attemptedActions.map((prepared) => ({ actionType: prepared.action.type, rollback: prepared.afterAbort })),
+        scope
+    );
 }
 
 function describeValidationConflict(prepared: PreparedBatchAction, context: HandlerValidationContext): string {
@@ -457,42 +436,20 @@ function describeValidationConflict(prepared: PreparedBatchAction, context: Hand
     return refusal ? `${conflict}: ${refusal}` : conflict;
 }
 
-async function compensateAttemptedBatch(
+function compensateAttemptedBatch(
     attemptedActions: readonly PreparedBatchAction[],
     scope: AutomergeStorageTransactionScope
 ): Promise<string | null> {
-    const compensableActions = attemptedActions.filter((action) => action.requiresAbortCompensation);
-    if (compensableActions.length === 0) {
-        return null;
-    }
-
-    try {
-        for (const prepared of [...compensableActions].reverse()) {
-            const inverseAction = prepared.description?.inverseAction;
-            if (!inverseAction) {
-                throw new Error(`No inverse action available for ${prepared.action.type}`);
-            }
-            const inverseHandler = getCommandHandler(inverseAction);
-            if (!inverseHandler) {
-                throw new Error(`No registered handler for inverse action: ${inverseAction.type}`);
-            }
-            const compensation = createExecutionCommandEnvelope({
-                action: inverseAction,
-                dependencyIds: [prepared.envelope.commandId],
-                expectedEffect: inverseHandler.describe(inverseAction).label,
-                options: { groupId: prepared.envelope.groupId, source: 'ai' },
-            });
-            const result: HandlerExecutionResult | void = await scope(() =>
-                inverseHandler.execute(compensation.action)
-            );
-            if (result?.status === 'conflict' || result?.status === 'no-write') {
-                throw new Error(`Runtime compensation did not apply for ${inverseAction.type}`);
-            }
-        }
-        return null;
-    } catch (error) {
-        return failureReason(error);
-    }
+    return compensateAbortedActions(
+        attemptedActions.map((prepared) => ({
+            actionType: prepared.action.type,
+            requiresAbortCompensation: prepared.requiresAbortCompensation,
+            inverseAction: prepared.description?.inverseAction,
+            commandId: prepared.envelope.commandId,
+            groupId: prepared.envelope.groupId,
+        })),
+        scope
+    );
 }
 
 function recordCommittedBatch(
