@@ -99,6 +99,12 @@ export type ActiveNoteData = {
      * releases every voice the note-on started directly.
      */
     yeastDeviceId?: string;
+    /**
+     * Set once the chain no longer holds `yeastDeviceId`: the note's idle
+     * pump voices nothing from then on, even if that Yeast comes back (an
+     * undone removal), because no rack drives this note's session any more.
+     */
+    yeastSessionEnded?: boolean;
     /** Release closures bound to the exact controls that voiced transformed pitches. */
     yeastVoiceReleases?: Map<number, (sampleFrame?: number, releaseVelocity?: number) => void>;
     /**

@@ -274,6 +274,52 @@ function reloadSavedProject(): void {
     hydrateProductionContracts();
 }
 
+async function persistCompedSplit(): Promise<void> {
+    const source = { ...createClipFixture('clip-a', 8, 16), type: 'audio' as const, audioBufferId: 'source-buffer' };
+    const unrelated = {
+        ...createClipFixture('unrelated-clip', 20, 24),
+        trackId: 'other-track',
+        type: 'audio' as const,
+        audioBufferId: 'other-buffer',
+    };
+    trackStore.set({
+        tracks: [
+            TrackDummy.create({ id: TRACK_ID, kind: 'audio', clips: [source] }),
+            TrackDummy.create({ id: 'other-track', kind: 'audio', clips: [unrelated] }),
+        ],
+        selectedTrackId: TRACK_ID,
+        ghostClips: [],
+    });
+    const selectedTake = createTake('clip-a', 'Selected pass', 8, 16);
+    const unrelatedTake = createTake('unrelated-clip', 'Other pass', 20, 24);
+    takeLaneStore.set({
+        lanes: [
+            {
+                ...createTakeLane(TRACK_ID),
+                id: 'comp-lane',
+                takes: [selectedTake],
+                activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: selectedTake.id }],
+            },
+            {
+                ...createTakeLane('other-track'),
+                id: 'other-lane',
+                takes: [unrelatedTake],
+                activeCompRegions: [{ startBeat: 20, endBeat: 24, takeId: unrelatedTake.id }],
+            },
+        ],
+    });
+    flushAutomergeStorageWrites();
+    stopProjectionBridge = setupProjectionBridge();
+    projectCrdtToStores();
+    await executeAppAction(
+        { type: 'splitClip', payload: { clipId: 'clip-a', beat: 14, rightClipId: 'clip-right' } },
+        { source: 'manual' }
+    );
+    await vi.waitFor(() =>
+        expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+    );
+}
+
 async function expectReplayRefused(replay: 'undo' | 'redo'): Promise<void> {
     const raw = structuredClone(getCrdtDoc('root'));
     const heads = Automerge.getHeads(getCrdtDoc('root')!);
@@ -765,6 +811,88 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(ownerProjections()).toEqual(removedOwners);
         expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ endBeat: 2 });
         expect(clipOnTrack(TRACK_ID, 'clip-right')).toBeUndefined();
+    });
+
+    it('replays a saved comped split through binary reload while preserving a peer selection and unrelated lane', async () => {
+        await persistCompedSplit();
+        const splitLane = takeLaneStore.value!.lanes.find((lane) => lane.id === 'comp-lane')!;
+        expect(splitLane.takes.some((take) => take.clipId === 'clip-right')).toBe(true);
+        expect(splitLane.activeCompRegions).toHaveLength(2);
+        syncPeerProject((project) => {
+            const take = project.takeLanes.lanes
+                .find((lane) => lane.id === 'comp-lane')!
+                .takes.find((row) => row.clipId === 'clip-a')!;
+            take.selected = true;
+            project.takeLanes.lanes.find((lane) => lane.id === 'other-lane')!.takes[0]!.selected = true;
+        });
+        reloadSavedProject();
+        const splitOwners = ownerProjections();
+        const splitRaw = structuredClone(getCrdtDoc('root'));
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 8, endBeat: 16 });
+        expect(clipOnTrack(TRACK_ID, 'clip-right')).toBeUndefined();
+        const restoredLane = takeLaneStore.value!.lanes.find((lane) => lane.id === 'comp-lane')!;
+        expect(restoredLane.takes).toHaveLength(1);
+        expect(restoredLane.takes[0]).toMatchObject({ clipId: 'clip-a', startBeat: 8, endBeat: 16, selected: true });
+        expect(restoredLane.activeCompRegions).toEqual([
+            { startBeat: 8, endBeat: 16, takeId: restoredLane.takes[0]!.id },
+        ]);
+        expect(takeLaneStore.value!.lanes.find((lane) => lane.id === 'other-lane')).toEqual(
+            splitOwners.takes!.lanes.find((lane) => lane.id === 'other-lane')
+        );
+        expect(getCrdtDoc<{ takeLanes: NonNullable<typeof takeLaneStore.value> }>('root')!.takeLanes.lanes).toEqual(
+            takeLaneStore.value!.lanes
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        reloadSavedProject();
+        await redo();
+        expect(ownerProjections()).toEqual(splitOwners);
+        expect(getCrdtDoc('root')).toEqual(splitRaw);
+    });
+
+    it.each(['foreign-lane', 'unpaired-capture'] as const)(
+        'rejects a saved comped split with %s before hydration or replay writes',
+        async (corruption) => {
+            await persistCompedSplit();
+            const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            const entry = (saved.past as Record<string, unknown>[])[0]!;
+            const inverse = (
+                entry.inverseAction as { payload: { reKeyedTakeLanes: { laneId: string; trackId: string }[] } }
+            ).payload;
+            const redo = (entry.redoAction as { payload: { reKeyedTakeLanes: { laneId: string; trackId: string }[] } })
+                .payload;
+            expect(inverse.reKeyedTakeLanes).toHaveLength(1);
+            if (corruption === 'foreign-lane') {
+                inverse.reKeyedTakeLanes[0]!.laneId = 'other-lane';
+                inverse.reKeyedTakeLanes[0]!.trackId = 'other-track';
+                redo.reKeyedTakeLanes[0]!.laneId = 'other-lane';
+                redo.reKeyedTakeLanes[0]!.trackId = 'other-track';
+            } else {
+                redo.reKeyedTakeLanes = [];
+            }
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+            const raw = structuredClone(getCrdtDoc('root'));
+            reloadSavedProject();
+            const owners = ownerProjections();
+            expect(undoHistoryStore.value?.past).toEqual([]);
+            expect((await undo()).headConsumed).toBe(false);
+            expect(getCrdtDoc('root')).toEqual(raw);
+            expect(ownerProjections()).toEqual(owners);
+        }
+    );
+
+    it('keeps a saved comped split pending when a peer reuses its captured lane id on another track', async () => {
+        await persistCompedSplit();
+        syncPeerProject((project) => {
+            project.takeLanes.lanes.find((lane) => lane.id === 'comp-lane')!.id = 'replacement-comp-lane';
+            project.takeLanes.lanes.find((lane) => lane.id === 'other-lane')!.id = 'comp-lane';
+        });
+        reloadSavedProject();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        await expectReplayRefused('undo');
     });
 
     it.each(['clipSatellites', 'clipAutomationLanes'] as const)(

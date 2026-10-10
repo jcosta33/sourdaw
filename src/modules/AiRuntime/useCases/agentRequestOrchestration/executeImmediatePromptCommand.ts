@@ -247,10 +247,14 @@ export async function executeImmediatePromptCommand(
         const content = warningSummary
             ? `Applied:\n\n${actionSummary}\n\n${warningSummary} The project change committed. Do not retry automatically; inspect the current project state.`
             : `Executed:\n\n${actionSummary}`;
+        // Only a batch that committed a project change names its batch on the message: a
+        // runtime-only batch changed nothing the thread can report as its last commit.
         updateChatMessage(assistantMessageId, {
             isStreaming: false,
             error: warningSummary || undefined,
             content,
+            agentRunId: runId,
+            agentBatchId: parsedCommandBatch.envelope.batchId,
         });
         return execution.receipt;
     }

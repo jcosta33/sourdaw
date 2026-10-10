@@ -5,6 +5,8 @@ import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../mode
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
+import { type ThreadContext } from '../models/ThreadContext';
+import { fitThreadContext } from '../transformers/fitThreadContext';
 import {
     buildLlmActionUserMessage,
     type LlmActionCapabilityData,
@@ -157,6 +159,8 @@ type BuildAgentContextInput = {
     rejectionEvidence?: PlanningRejectionEvidence;
     measurements?: Array<{ name: string; value: number; unit: string }>;
     priorEvidence?: AgentContextEvidence | null;
+    /** The chat thread's earlier turns; absent or `null`, the message carries no `thread_context` section. */
+    thread?: ThreadContext | null;
 };
 
 function stableJson(value: unknown): string {
@@ -444,6 +448,8 @@ export function buildAgentContext(input: BuildAgentContextInput): {
     message: string;
     localMessage: string;
     evidence: AgentContextEvidence;
+    /** Whether the hosted message's thread context carries measured figures, the `measurement` category. */
+    hostedThreadCarriesMeasurement: boolean;
 } {
     const revision = input.projectRevision ?? null;
     const projectData = buildProjectData(input.context);
@@ -474,6 +480,8 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         value: measurement.value,
         unit: boundedString(measurement.unit).value,
     }));
+    const hostedThread = input.thread ? fitThreadContext(input.thread, 'hosted') : null;
+    const localThread = input.thread ? fitThreadContext(input.thread, 'local') : null;
     const validationFailureEvidence = {
         total: input.validationFailures?.length ?? 0,
         retained: validationFailures.length,
@@ -535,6 +543,9 @@ export function buildAgentContext(input: BuildAgentContextInput): {
             validationFailures: validationFailureEvidence,
             measurementCount: measurements.length,
             trackCount: input.context.tracks.length,
+            ...(hostedThread === null || localThread === null
+                ? {}
+                : { thread: { hosted: hostedThread.evidence, local: localThread.evidence } }),
         },
         snapshot,
         delta: revisionPayload.delta,
@@ -562,9 +573,12 @@ export function buildAgentContext(input: BuildAgentContextInput): {
           }
         : null;
 
-    const leadingSections = [
+    // The thread context follows the request it frames, sized to each profile's own cap; a request
+    // with no thread state carries no section, so its message is exactly what it was without one.
+    const leadingSections = (thread: ReturnType<typeof fitThreadContext> | null) => [
         `run_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}`,
         `user_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}`,
+        ...(thread === null ? [] : [thread.section]),
         `production_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}`,
         `revision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}`,
         `relevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}`,
@@ -574,7 +588,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         `measurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}`,
     ];
     const hostedSections = [
-        ...leadingSections,
+        ...leadingSections(hostedThread),
         `capability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: hostedCapabilities.value, ...(hostedCapabilities.omittedCapabilityNames.length === 0 ? {} : { omittedCapabilityNames: hostedCapabilities.omittedCapabilityNames }) })}`,
         ...trailingSections,
         `untrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}`,
@@ -592,7 +606,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         localCapabilities.omitted.length === 0 ? null : describeOmittedCapabilities(localCapabilities.omitted),
     ].filter((omission) => omission !== null);
     const localSections = [
-        ...leadingSections,
+        ...leadingSections(localThread),
         `capability_schemas:\n${stableJson({ trust: 'untrusted_project_data', availableCapabilities: localCapabilities.serialized })}`,
         ...trailingSections,
         `untrusted_project_data:\n${stableJson({
@@ -625,5 +639,6 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         evidence,
         message: `fixed_policy:\n${input.fixedPolicy}\n\n${hostedSections}${projectContextMessage('hosted')}`,
         localMessage: `${localSections}${projectContextMessage('local')}`,
+        hostedThreadCarriesMeasurement: hostedThread?.carriesMeasurement === true,
     };
 }

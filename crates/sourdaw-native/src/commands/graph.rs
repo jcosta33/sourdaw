@@ -2624,11 +2624,11 @@ fn map_device(
     // instance on this thread; knead's handful travel as commands behind the
     // registration.
     //
-    // For bacteria the thread is not only a budget: two of its names allocate
-    // when they land (`BACTERIA_CONTROL_THREAD_ONLY`,
+    // For bacteria the thread is not only a budget: one of its names allocates
+    // when it lands (`BACTERIA_CONTROL_THREAD_ONLY`,
     // `crates/daw-engine/src/scheduler.rs`), and `BacteriaBody::load_patch`
-    // here is the only door that applies them — its audio-thread `set_param`
-    // drops them.
+    // here is the only door that applies it — its audio-thread `set_param`
+    // drops it.
     //
     // For proof the record carries something no `SetParam` behind it could
     // stand in for either: the five `chain_order_{n}` keys spelling the module
@@ -14087,8 +14087,8 @@ mod tests {
     /// The same law the instruments, crust and grinder are held to above, and
     /// for the same reason: the command ring is finite, and a multi-effect's
     /// record is its globals plus six bands' worth of band-prefixed names. It
-    /// carries one more reason of its own — two of the engine's names allocate
-    /// when they land, and this thread is the only one allowed to run them
+    /// carries one more reason of its own — one of the engine's names allocates
+    /// when it lands, and this thread is the only one allowed to run it
     /// (`BACTERIA_CONTROL_THREAD_ONLY`, `crates/daw-engine/src/scheduler.rs`).
     ///
     /// The render is what says the patch was applied rather than merely not

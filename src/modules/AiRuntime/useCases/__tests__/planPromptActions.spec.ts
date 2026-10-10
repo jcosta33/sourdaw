@@ -181,19 +181,74 @@ describe('planPromptActions', () => {
 
         await planPromptActions({ prompt: 'make it warmer', providerPlanning: 'disabled' });
 
-        expect(mocks.parsePromptToActions).toHaveBeenCalledWith(
-            'make it warmer',
-            { tracks: [] },
-            undefined,
-            'rev-1',
-            undefined,
-            undefined,
-            expect.any(Object),
-            expect.any(Function),
-            undefined,
-            'disabled',
-            expect.any(Function)
-        );
+        expect(mocks.parsePromptToActions).toHaveBeenCalledWith({
+            prompt: 'make it warmer',
+            context: { tracks: [] },
+            signal: undefined,
+            projectRevision: 'rev-1',
+            onProviderResult: undefined,
+            streamIdentity: expect.any(Object),
+            onProviderAttempt: expect.any(Function),
+            providerPlanning: 'disabled',
+            onMeasurementAttempt: expect.any(Function),
+            thread: undefined,
+        });
+    });
+
+    it('hands the thread context to the first parse and to its correction', async () => {
+        const thread = {
+            requests: ['make the bass louder'],
+            pendingProposal: {
+                runId: 'agent-run-pending',
+                commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
+            },
+            lastCommit: null,
+        };
+        mocks.parsePromptToActions
+            .mockResolvedValueOnce({
+                actions: [],
+                raw: 'rejected',
+                rejectionReason: 'The proposed action schema is invalid.',
+            })
+            .mockResolvedValueOnce({ actions: [{ type: 'testAction' }], raw: 'corrected' });
+
+        await planPromptActions({
+            prompt: 'a bit less',
+            onProviderAttempt: () => ({ status: 'admitted' }),
+            thread,
+        });
+
+        expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(2);
+        expect(mocks.parsePromptToActions.mock.calls.map(([input]) => input.thread)).toEqual([thread, thread]);
+    });
+
+    it('hands the thread context to the re-parse that plans a prepared stem import', async () => {
+        seedAdmittedRun();
+        const thread = {
+            requests: ['import the stems from the session folder'],
+            pendingProposal: null,
+            lastCommit: {
+                runId: 'agent-run-committed',
+                receiptIds: ['command:agent-run-committed:batch-1'],
+                standing: 'standing' as const,
+                commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
+                measuredDeltas: [],
+            },
+        };
+        mocks.parsePromptToActions
+            .mockResolvedValueOnce({ actions: [], preparationRequest: 'stem-import' })
+            .mockResolvedValueOnce({ actions: [{ type: 'importStemSet', payload: stemImportScope.actionSeed }] });
+
+        await planPromptActions({
+            prompt: 'Import stems',
+            streamIdentity: { runId: 'stem-run', requestId: 'request-1', cancellationGeneration: 0 },
+            thread,
+        });
+
+        expect(mocks.prepareStemImport).toHaveBeenCalledOnce();
+        expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(2);
+        expect(mocks.parsePromptToActions.mock.calls[1]?.[0]).toMatchObject({ stemImportScope });
+        expect(mocks.parsePromptToActions.mock.calls.map(([input]) => input.thread)).toEqual([thread, thread]);
     });
 
     it('runs one admitted correction and retains the validation failure as durable run evidence', async () => {
@@ -423,7 +478,9 @@ describe('planPromptActions', () => {
 
             expect(result.result.actions).toHaveLength(1);
             expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(2);
-            expect(mocks.parsePromptToActions.mock.calls[1]?.[8]).toEqual({ creativeAuthority: authority });
+            expect(mocks.parsePromptToActions.mock.calls[1]?.[0]?.correction).toEqual({
+                creativeAuthority: authority,
+            });
         });
 
         it('refuses the correction when the selection moved after the authority was captured', async () => {
@@ -433,8 +490,8 @@ describe('planPromptActions', () => {
             let admission: unknown;
             mocks.parsePromptToActions
                 .mockResolvedValueOnce(correctableRejection)
-                .mockImplementationOnce(async (...args: unknown[]) => {
-                    admission = (args[7] as (input: unknown) => unknown)(attempt);
+                .mockImplementationOnce(async (input: { onProviderAttempt: (attempt: unknown) => unknown }) => {
+                    admission = input.onProviderAttempt(attempt);
                     return { actions: [], raw: 'corrected' };
                 });
 
@@ -466,8 +523,8 @@ describe('planPromptActions', () => {
             let admission: unknown;
             mocks.parsePromptToActions
                 .mockResolvedValueOnce(correctableRejection)
-                .mockImplementationOnce(async (...args: unknown[]) => {
-                    admission = (args[7] as (input: unknown) => unknown)(attempt);
+                .mockImplementationOnce(async (input: { onProviderAttempt: (attempt: unknown) => unknown }) => {
+                    admission = input.onProviderAttempt(attempt);
                     return { actions: [], raw: 'corrected' };
                 });
 

@@ -1,5 +1,10 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type HandlerValidationContext,
+    type RetiredTakeLaneSnapshot,
+    type TakeReKeyLaneTransitionSnapshot,
+} from '#/utils/handlerContract';
 
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
 import { prepareClipSplit } from '../../useCases/clipEditing/prepareClipSplit';
@@ -9,6 +14,20 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isSplitClipSessionEntry } from './validateClipEditSessionEntries';
 
 type SplitClipAction = Extract<AppAction, { type: 'splitClip' }>;
+
+type PendingSplitDescription = {
+    /**
+     * The re-key capture the forward `execute()` fills in place (#5048) — read
+     * back into the inverse/redo payloads, which share the same array.
+     */
+    reKeyedTakeLanes: TakeReKeyLaneTransitionSnapshot[];
+};
+
+// Keyed by action so concurrent splits cannot cross, mirroring the Delete Time
+// handler: `execute()` mutates the very array `describe()` already put on the
+// undo entry, which is how `executeAppAction` — reading the description only
+// after execution completes — ends up with the real capture.
+const pendingDescriptions = new WeakMap<object, PendingSplitDescription>();
 
 function prepareAction(action: SplitClipAction, context?: HandlerValidationContext) {
     const rightClipId = action.payload.rightClipId ?? getNextAppActionClipId();
@@ -43,6 +62,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
             entry.redoAction?.type === 'restoreClipSplitState'
         ) {
             entry.redoAction.payload.retiredTakeLanes = entry.inverseAction.payload.retiredTakeLanes;
+            entry.redoAction.payload.reKeyedTakeLanes = entry.inverseAction.payload.reKeyedTakeLanes;
         }
         return true;
     },
@@ -65,7 +85,11 @@ export const handleSplitClip = createHandler<'splitClip'>({
                 action.payload.beat,
                 action.payload.rightClipId,
                 action.payload.targetNoteIds,
-                action.payload.resolvedBeat
+                action.payload.resolvedBeat,
+                // The capture rides the shared array `describe()` put on both
+                // undo payloads; without it the split still re-keys lanes, the
+                // entry just cannot replay the re-key on undo/redo.
+                { reKeyedTakeLanes: pendingDescriptions.get(action)?.reKeyedTakeLanes }
             ) !== null
         );
     },
@@ -83,6 +107,11 @@ export const handleSplitClip = createHandler<'splitClip'>({
         // a take naming the right half can land after the split, so only the
         // undo can capture what filtering the right clip out retires.
         const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
+        // Filled in place by the forward `execute()` and read by both legs: the
+        // split's inverse is a snapshot restore, so only this capture carries
+        // the pre-split take/comp-region facets the undo must put back (#5048).
+        const reKeyedTakeLanes: TakeReKeyLaneTransitionSnapshot[] = [];
+        pendingDescriptions.set(action, { reKeyedTakeLanes });
         return {
             label,
             inverseAction: {
@@ -93,6 +122,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
                     expected: plan.next,
                     replacement: plan.previous,
                     retiredTakeLanes,
+                    reKeyedTakeLanes,
                 },
             },
             redoAction: {
@@ -103,6 +133,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
                     expected: plan.previous,
                     replacement: plan.next,
                     retiredTakeLanes,
+                    reKeyedTakeLanes,
                 },
             },
         };

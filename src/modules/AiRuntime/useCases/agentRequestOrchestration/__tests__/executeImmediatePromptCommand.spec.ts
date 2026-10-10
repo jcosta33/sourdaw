@@ -210,6 +210,41 @@ describe('executeImmediatePromptCommand', () => {
         expect(mocks.captureProjectRevision).not.toHaveBeenCalled();
     });
 
+    // The thread reads a direct commit through the batch its message names, so only a batch that
+    // changed project state may name it; a runtime-only batch must leave the message unstamped.
+    it.each([
+        { status: 'committed', stamped: true },
+        { status: 'executed', stamped: false },
+    ] as const)('names the batch on its message only when it $status a project change', async ({ status, stamped }) => {
+        const { commandBatch, parsedCommandBatch, receipt } = await createFixture();
+        mocks.executePlannedActions.mockResolvedValue({
+            status,
+            actions: [{ actionType: 'setTempo', label: 'Set tempo' }],
+            receipt,
+        });
+
+        await executeImmediatePromptCommand({
+            runId: 'run-immediate',
+            prompt: 'Set tempo',
+            actions: [action],
+            assistantMessageId: 'assistant-immediate',
+            abortController: new AbortController(),
+            projectRevision: 'revision-R1',
+            executionMode: 'atomic',
+            group: generateGroupId('Set tempo'),
+            agentApproval: buildAgentApproval('revision-R1'),
+            commandBatch,
+            parsedCommandBatch,
+            onExecutionSettlementWarning: vi.fn(),
+        });
+
+        const batchStamps = mocks.updateChatMessage.mock.calls.flatMap(([, update]) =>
+            'agentBatchId' in update ? [update.agentBatchId] : []
+        );
+        expect(mocks.recordReceiptSaga).toHaveBeenCalledOnce();
+        expect(batchStamps).toEqual(stamped ? ['batch-immediate'] : []);
+    });
+
     it('does not project the ambient revision as provenance for an idempotent replay result', async () => {
         const { commandBatch, parsedCommandBatch, receipt } = await createFixture();
         mocks.captureProjectRevision.mockReturnValue('revision-R3');

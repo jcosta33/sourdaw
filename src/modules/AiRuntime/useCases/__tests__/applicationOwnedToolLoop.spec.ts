@@ -191,12 +191,11 @@ describe('application-owned tool loop', () => {
             };
         });
 
-        const result = await parsePromptToActions(
-            'inspect the project, then set tempo to 128',
+        const result = await parsePromptToActions({
+            prompt: 'inspect the project, then set tempo to 128',
             context,
-            undefined,
-            'revision-2'
-        );
+            projectRevision: 'revision-2',
+        });
 
         expect(querySemanticProject).toHaveBeenCalledWith({ type: 'project-summary' });
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
@@ -379,12 +378,12 @@ describe('application-owned tool loop', () => {
                 })
                 .mockImplementationOnce(() => Promise.reject(interrupt(controller)));
 
-            const result = await parsePromptToActions(
-                'inspect the project before planning',
+            const result = await parsePromptToActions({
+                prompt: 'inspect the project before planning',
                 context,
-                controller.signal,
-                'revision-2'
-            );
+                signal: controller.signal,
+                projectRevision: 'revision-2',
+            });
 
             expect(result).toMatchObject({
                 actions: [],
@@ -744,7 +743,11 @@ describe('application-owned tool loop', () => {
             toolCalls: [{ id: 'unavailable-1', name: 'internal.getStore', arguments: {} }],
         });
 
-        const result = await parsePromptToActions('inspect internal state', context, undefined, 'revision-2');
+        const result = await parsePromptToActions({
+            prompt: 'inspect internal state',
+            context,
+            projectRevision: 'revision-2',
+        });
 
         expect(result).toMatchObject({
             actions: [],

@@ -10,7 +10,10 @@ import { clipSplitStateRestorable } from '../../useCases/clipEditing/clipSplitSt
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
+import { applyTakeReKeyTransitions } from '../../useCases/comping/applyTakeReKeyTransitions';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
+import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
+import { restoreTakeReKeyTransitions } from '../../useCases/comping/restoreTakeReKeyTransitions';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -71,6 +74,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
     return (
         clipSplitCaptureOwnersMatch(action.payload) &&
         retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], priorActions) &&
+        reKeyedTakeLaneOwnersMatchStore(action.payload.reKeyedTakeLanes ?? [], priorActions) &&
         clipSplitStateRestorable(action.payload, { tracks }) &&
         midiClipSplitStateMatches(
             {
@@ -141,10 +145,15 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         if (!action.payload.replacement.rightClip) {
             const retired = removeTakesForClips([action.payload.rightClipId]);
             action.payload.retiredTakeLanes?.splice(0, action.payload.retiredTakeLanes.length, ...retired);
-        } else if (action.payload.retiredTakeLanes !== undefined) {
+            // The split's re-key (#5048) rides the shared payload array: with
+            // the clips back on the track, the pre-split take/comp-region
+            // facets go back over the fragmented ones.
+            restoreTakeReKeyTransitions(action.payload.reKeyedTakeLanes ?? []);
+        } else if (action.payload.retiredTakeLanes !== undefined || action.payload.reKeyedTakeLanes !== undefined) {
             // Redo leg: re-splice put the right clip back; reinstate the takes
-            // the undo retired from it.
-            restoreTakesForClip(action.payload.retiredTakeLanes);
+            // the undo retired from it and re-apply the split's re-key.
+            restoreTakesForClip(action.payload.retiredTakeLanes ?? []);
+            applyTakeReKeyTransitions(action.payload.reKeyedTakeLanes ?? []);
         }
         return { status: 'written' };
     },

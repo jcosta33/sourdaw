@@ -1,10 +1,15 @@
 import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
 import { decodeMidiClipDataSnapshots } from '#/modules/MIDI/useCases';
-import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type HandlerSessionActionEntry,
+    type TakeReKeyLaneTransitionSnapshot,
+} from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
+import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLaneTransition';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
@@ -385,8 +390,80 @@ export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
         (value.expected.clipSatellites === undefined) === (value.replacement.clipSatellites === undefined) &&
         (value.expected.clipAutomationLanes === undefined) === (value.replacement.clipAutomationLanes === undefined) &&
         splitSnapshotCaptureOwnersMatch(value.expected, value.clipId, value.rightClipId) &&
-        splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId)
+        splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId) &&
+        isSplitTakeReKeyCapture(value.reKeyedTakeLanes, value.expected.trackId, value.clipId, value.rightClipId)
     );
+}
+
+function foreignTakesUnchanged(
+    takes: TakeReKeyLaneTransitionSnapshot['takesBefore'],
+    otherTakes: TakeReKeyLaneTransitionSnapshot['takesAfter'],
+    clipId: string,
+    rightClipId: string
+): boolean {
+    return takes.every(
+        (take) =>
+            take.clipId === clipId ||
+            take.clipId === rightClipId ||
+            valuesEqual(
+                take,
+                otherTakes.find((other) => other.id === take.id)
+            )
+    );
+}
+
+function foreignRegionsUnchanged(
+    regions: TakeReKeyLaneTransitionSnapshot['regionsBefore'],
+    otherRegions: TakeReKeyLaneTransitionSnapshot['regionsAfter'],
+    takes: TakeReKeyLaneTransitionSnapshot['takesBefore'],
+    clipId: string,
+    rightClipId: string
+): boolean {
+    return regions.every((region) => {
+        const take = takes.find((candidate) => candidate.id === region.takeId);
+        return (
+            take?.clipId === clipId ||
+            take?.clipId === rightClipId ||
+            otherRegions.some((other) => valuesEqual(region, other))
+        );
+    });
+}
+
+function isSplitTakeReKeyCapture(value: unknown, trackId: string, clipId: string, rightClipId: string): boolean {
+    if (value === undefined) {
+        return true;
+    }
+    if (!Array.isArray(value) || !value.every(isReKeyLaneTransition)) {
+        return false;
+    }
+    const laneIds = new Set<string>();
+    for (const transition of value) {
+        if (transition.trackId !== trackId || laneIds.has(transition.laneId)) {
+            return false;
+        }
+        laneIds.add(transition.laneId);
+        if (
+            !foreignTakesUnchanged(transition.takesBefore, transition.takesAfter, clipId, rightClipId) ||
+            !foreignTakesUnchanged(transition.takesAfter, transition.takesBefore, clipId, rightClipId) ||
+            !foreignRegionsUnchanged(
+                transition.regionsBefore,
+                transition.regionsAfter,
+                transition.takesBefore,
+                clipId,
+                rightClipId
+            ) ||
+            !foreignRegionsUnchanged(
+                transition.regionsAfter,
+                transition.regionsBefore,
+                transition.takesAfter,
+                clipId,
+                rightClipId
+            )
+        ) {
+            return false;
+        }
+    }
+    return true;
 }
 
 export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
@@ -413,7 +490,8 @@ function splitReplaySnapshotsMatch(
     return (
         valuesEqual(inverse.expected, redo.replacement) &&
         valuesEqual(inverse.replacement, redo.expected) &&
-        valuesEqual(inverse.retiredTakeLanes, redo.retiredTakeLanes)
+        valuesEqual(inverse.retiredTakeLanes, redo.retiredTakeLanes) &&
+        valuesEqual(inverse.reKeyedTakeLanes, redo.reKeyedTakeLanes)
     );
 }
 

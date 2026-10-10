@@ -10,6 +10,17 @@ type CaptureTakeReKeyTransitionsInput = {
     removedClipIds: ReadonlySet<string>;
     deleteStartBeat: number;
     deleteEndBeat: number;
+    /**
+     * What the windows represent, and with it how regions on takes the windows
+     * do not fragment behave. `delete-time` (default): the timeline compressed
+     * around the span, so a stale-wide region's in-span body is gone and its
+     * tail survives only where nothing rehomed under it. `clip-transform`
+     * (#5048): the operation only split the clips the windows
+     * name — nothing was deleted and nothing rehomed under an untouched clip,
+     * so those regions ride both sides verbatim; trimming them at the span
+     * would edit a comp the operation never touched.
+     */
+    operationKind?: 'delete-time' | 'clip-transform';
 };
 
 type MappedPiece = {
@@ -125,6 +136,10 @@ function buildTakeFragments(
     for (const [pieceIndex, piece] of pieces.entries()) {
         let fragmentTakeId = take.id;
         if (pieceIndex !== 0) {
+            // For a delete-time operation the span is the deleted range; for a
+            // clip transform (#5048) it is the split beat on both sides. Either
+            // way the fields are the operation's exact edges, so a replayed redo
+            // re-mints the same id.
             fragmentTakeId = `${take.id}:time-delete-right:${deleteStartBeat}:${deleteEndBeat}`;
         }
         fragmentTakes.push({
@@ -236,6 +251,14 @@ function mapLaneRegions(
         }
         const fragments = take ? fragmentsBySourceTakeId.get(take.id) : undefined;
         if (!fragments) {
+            // Clip-transform semantics: nothing was deleted and nothing rehomed
+            // under an untouched clip, so its regions ride both sides verbatim —
+            // the transform must not edit a comp it never touched.
+            if (input.operationKind === 'clip-transform') {
+                mapping.regionsBefore.push(region);
+                mapping.regionsAfter.push(region);
+                continue;
+            }
             // The take's clip was untouched (or the region names a take the
             // lane does not hold, which only an unsanitized write can
             // produce), so the region rides the before side verbatim — the

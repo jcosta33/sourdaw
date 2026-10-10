@@ -26,6 +26,7 @@ import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInp
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveLiveInputNoteReceiver } from './resolveLiveInputNoteReceiver';
 import { resolveNativeNoteSink } from './resolveNativeNoteSink';
+import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 
 /**
@@ -168,6 +169,21 @@ export const handleWebMidiNoteOn = inject({
                             // A reset ended the input session that owns this
                             // note's voices; the pump retires with it (#4870).
                             if (generation !== memberExpressionGeneration.current) {
+                                return false;
+                            }
+                            // The Yeast left the chain: its rack is still
+                            // generating, but the notes are no longer the
+                            // musician's to hear (#5222).
+                            if (
+                                retireDrainOfRemovedYeast({
+                                    noteData,
+                                    yeastDeviceId: yeastDevice.id,
+                                    chainDevices: deps
+                                        .getTrackStoreState()
+                                        ?.tracks.find((track) => track.id === instrumentTrackId)?.devices,
+                                    sampleFrame: Math.round(engine.context.currentTime * engine.context.sampleRate),
+                                })
+                            ) {
                                 return false;
                             }
                             voiceYeastEvents(drainedEvents);

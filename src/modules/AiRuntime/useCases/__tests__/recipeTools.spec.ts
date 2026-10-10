@@ -1392,7 +1392,7 @@ describe('recipe.expand through provider planning', () => {
                 ],
             });
 
-        const planned = await parsePromptToActions(PROMPT, context, undefined, REVISION);
+        const planned = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
 
         expect(planned.rejectionReason).toBeUndefined();
         expect(planned.actions).toMatchObject([
@@ -1431,7 +1431,11 @@ describe('recipe.expand through provider planning', () => {
                 ],
             });
 
-        const planned = await parsePromptToActions('set the tempo to 100', context, undefined, REVISION);
+        const planned = await parsePromptToActions({
+            prompt: 'set the tempo to 100',
+            context,
+            projectRevision: REVISION,
+        });
 
         expect(planned.rejectionReason).toBeUndefined();
         expect(planned.actions).toMatchObject([{ type: 'setTempo', payload: { bpm: 100 } }]);
