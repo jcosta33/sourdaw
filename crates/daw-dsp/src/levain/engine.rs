@@ -1188,6 +1188,14 @@ impl LevainEngine {
         let voices_active = self.voice_pool.active_count() > 0 || self.fallback.active_count() > 0;
 
         let mics = self.loaded_mics();
+        // The fallback stands in for the sample content a load in flight will
+        // bring, so it rides the first enabled position — the path the
+        // selected layer sounded through before the per-mic mix. With every
+        // position disabled (or none loaded) it stays on mic 0, where the
+        // mixer keeps it silent with the rest of that chain.
+        let fallback_mic = (0..mics)
+            .find(|&mic| self.mic_mixer.is_enabled(mic))
+            .unwrap_or(0);
         for i in 0..len {
             let mut mic_sums = [0.0_f32; MAX_MIC_POSITIONS];
 
@@ -1202,9 +1210,9 @@ impl LevainEngine {
                 }
             }
 
-            // Add fallback tone (active when no samples loaded) to the first
-            // position's chain.
-            mic_sums[0] += self.fallback.tick();
+            // Add fallback tone (armed while a load is in flight) to the
+            // first enabled position's chain.
+            mic_sums[fallback_mic] += self.fallback.tick();
 
             let mut left_sample = 0.0_f32;
             let mut right_sample = 0.0_f32;
