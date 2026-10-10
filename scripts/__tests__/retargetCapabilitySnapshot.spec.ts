@@ -967,6 +967,38 @@ describe('bounded capability capture', () => {
         expect(disposed).toHaveBeenCalledOnce();
     });
 
+    it('keeps stable exact-main contexts without checks as incomplete inactive output', () => {
+        const { port } = fakePort();
+        const protection = {
+            ...EXACT_MAIN_PROTECTION,
+            required_status_checks: { contexts: ['Gate'] },
+        };
+        let exactReads = 0;
+        const capture = runStableClassicCli({
+            ...port,
+            exactMainProtection: () => {
+                exactReads += 1;
+                return protection;
+            },
+        });
+        expect(capture.run()).toBe(0);
+        expect(exactReads).toBe(2);
+        expect(capture.printed).toHaveLength(1);
+        const output = capture.printed[0];
+        if (output === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const emitted = requiredRecord(JSON.parse(output) as JsonValue, 'emitted capability plan');
+        expect(emitted).toMatchObject({
+            completeObservedInventory: false,
+            limitations: ['exact main classic protection is incomplete'],
+            activationEligible: false,
+        });
+        expect(requiredRecord(emitted.baseline, 'captured baseline').exactMainProtection).toEqual(protection);
+        expect(output).toBe(canonicalJson(emitted));
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
     it('prints incomplete exact-main classic binding after two stable CLI captures', () => {
         const { port } = fakePort();
         const disposed = vi.fn();

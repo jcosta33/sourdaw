@@ -275,6 +275,13 @@ describe('inactive retarget capability plan', () => {
             required_pull_request_reviews: {},
             restrictions: {},
         },
+        {
+            url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
+            required_status_checks: { contexts: ['Gate'] },
+            enforce_admins: { enabled: false },
+            required_pull_request_reviews: null,
+            restrictions: null,
+        },
     ];
     it.each(unreadableProtection)(
         'marks an unreadable exact-main protection response incomplete',
@@ -287,12 +294,12 @@ describe('inactive retarget capability plan', () => {
         }
     );
 
-    it('accepts a structured exact-main protection response with populated policy sections', () => {
+    it('accepts a structured exact-main protection response with present empty checks', () => {
         const input: CapabilityObservation = {
             ...observed(),
             exactMainProtection: {
                 url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
-                required_status_checks: { contexts: ['Gate'], enforcement_level: 'non_admins' },
+                required_status_checks: { contexts: [], checks: [], enforcement_level: 'non_admins' },
                 enforce_admins: { enabled: true },
                 required_pull_request_reviews: { required_approving_review_count: 1 },
                 restrictions: { users: [], teams: [], apps: [] },

@@ -125,9 +125,6 @@ function nullableRecord(value: JsonValue | undefined): value is RulesetDocument 
 }
 
 function classicCheckBindingsComplete(value: JsonValue | undefined): boolean {
-    if (value === undefined) {
-        return true;
-    }
     return (
         jsonArray(value) &&
         value.every(
