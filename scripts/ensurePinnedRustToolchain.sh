@@ -9,7 +9,7 @@ case "$cache_hit" in
   *) printf 'invalid Rust toolchain cache-hit value: %s\n' "$cache_hit" >&2; exit 1 ;;
 esac
 
-pin=$(python3 - "$toolchain_file" <<'PY'
+metadata=$(python3 - "$toolchain_file" <<'PY'
 import sys
 import tomllib
 import re
@@ -19,9 +19,13 @@ with open(sys.argv[1], 'rb') as file:
 channel = toolchain['channel']
 if not isinstance(channel, str) or not re.fullmatch(r'nightly-\d{4}-\d{2}-\d{2}', channel):
     raise ValueError('rust-toolchain.toml needs a date-pinned nightly channel')
-print(channel)
+profile = toolchain['profile']
+if not isinstance(profile, str) or profile not in ('minimal', 'default', 'complete'):
+    raise ValueError('rust-toolchain.toml needs a rustup profile')
+print(channel, profile, sep='\t')
 PY
 )
+IFS=$'\t' read -r pin profile <<< "$metadata"
 components=$(python3 - "$toolchain_file" <<'PY'
 import sys
 import tomllib
@@ -37,7 +41,11 @@ PY
 
 # Only a cache miss may ask rustup to install the TOML-declared toolchain.
 if [ "$cache_hit" = false ]; then
-  rustup show
+  component_flags=()
+  while IFS= read -r component; do
+    component_flags+=(--component "$component")
+  done <<< "$components"
+  rustup toolchain install "$pin" --profile "$profile" "${component_flags[@]}"
 fi
 
 export RUSTUP_AUTO_INSTALL=0

@@ -30,7 +30,8 @@ function runSetup(cacheHit: 'true' | 'false', installed: boolean, incomplete = f
         `#!/bin/sh
 printf '%s\\n' "$*" >> "$RUSTUP_TEST_LOG"
 case "$*" in
-  show) [ "$RUSTUP_TEST_INSTALLED" = 1 ] || exit 73; exit 0 ;;
+  'toolchain install nightly-2026-04-14 --profile minimal --component rustfmt --component clippy')
+    [ "$RUSTUP_TEST_INSTALLED" = 1 ] || exit 73; exit 0 ;;
   *) [ "$RUSTUP_AUTO_INSTALL" = 0 ] || exit 76 ;;
 esac
 case "$*" in
@@ -97,6 +98,8 @@ describe('pinned Rust setup', () => {
     it('propagates a cold installation failure before verification', () => {
         const { result, calls } = runSetup('false', false);
         expect(result.status).toBe(73);
-        expect(calls).toBe('show\n');
+        expect(calls).toBe(
+            'toolchain install nightly-2026-04-14 --profile minimal --component rustfmt --component clippy\n'
+        );
     });
 });
