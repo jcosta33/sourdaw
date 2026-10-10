@@ -1,5 +1,5 @@
 import { lstatSync, readFileSync } from 'node:fs';
-import { posix, resolve } from 'node:path';
+import { isAbsolute, posix, resolve } from 'node:path';
 
 import ts from 'typescript';
 
@@ -489,6 +489,24 @@ export async function loadAffectedE2e(
         );
         if (config === undefined || config.errors.length > 0) {
             throw new Error('invalid dependency graph TypeScript configuration');
+        }
+        if (
+            config.options.baseUrl === undefined &&
+            config.options.paths !== undefined &&
+            Object.keys(config.options.paths).length > 0
+        ) {
+            const declaringBase = config.options.pathsBasePath;
+            // The installed alias plugin rebases inherited baseUrl, but not inherited implicit paths.
+            if (
+                typeof declaringBase !== 'string' ||
+                !isAbsolute(declaringBase) ||
+                resolve(declaringBase) !== resolve(root)
+            ) {
+                return {
+                    kind: 'full',
+                    reason: 'TypeScript alias declaring base is not preserved by the dependency resolver',
+                };
+            }
         }
         // The resolver reads aliases from configPath, but otherwise substitutes cwd for an implicit base.
         const graphConfig = {

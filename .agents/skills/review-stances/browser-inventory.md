@@ -15,6 +15,8 @@ The installed affected-E2E graph loader supplied a fixture's config filename but
 
 Run the actual installed producer against a distinct fixture root with aliased imports. Require the returned graph to contain exactly the fixture sources and the alias edges to resolve to those sources, for explicit, absent, and inherited `baseUrl`. Keep malformed configuration fail-closed. A correct full-selection result alone cannot prove the graph stayed inside its requested root.
 
+PR #5291's first root-isolation repair still followed a root-level shadow when implicit `paths` were declared in a nested extended config. The review caught this before merge. Plant that shadow beside a real nested target importing a changed feature, keep surrounding imports valid, and require the actual producer to follow the declaring base or select full before traversal. Inherited explicit `baseUrl` coverage alone does not establish implicit alias inheritance.
+
 ## Escape lesson from PR #4854
 
 PR #4854 introduced `scripts/prValidationScope.ts` with a `.spec.ts`/`.spec.tsx` predicate in both `listSpecs` and selected argument validation. `playwright.config.ts` left Playwright's default `testMatch` in force, which also admits `.test.*` and JS/TS variants. A new `tests/e2e/new-default.test.ts` therefore reached Playwright but did not enter the required PR matrix. The missing review probe was a filename-admission comparison from Playwright's collector through planning to execution arguments; existing planner fixtures used only `.spec.ts` names. A disposable Git fixture adding `.test.ts` and invoking `plan` exposes the omission before browser launch.

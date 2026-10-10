@@ -310,6 +310,41 @@ describe('affected E2E graph', () => {
         30_000
     );
 
+    it('refuses inherited implicit alias bases before a shadow graph can narrow selection', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-inherited-alias-base-'));
+        observedGraphs.length = 0;
+        const sources = {
+            [TUNER]: 'export const tuner = true;',
+            [SHELL]: "import '../../../Tuner/presentations/components/TunerDisplay';",
+            'src/entry.ts': "import { target } from '#/target'; export const entry = target;",
+            'src/target.ts': 'export const target = false;',
+            'config/src/target.ts': `import { tuner } from '../../${TUNER}'; export const target = tuner;`,
+        };
+        try {
+            for (const [path, content] of Object.entries(sources)) {
+                mkdirSync(dirname(join(root, path)), { recursive: true });
+                writeFileSync(join(root, path), content);
+            }
+            mkdirSync(join(root, 'public'));
+            mkdirSync(join(root, 'scripts'));
+            writeFileSync(join(root, 'scripts/e2eSuiteOwners.json'), JSON.stringify(manifest));
+            writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ extends: './config/base.json' }));
+            writeFileSync(
+                join(root, 'config/base.json'),
+                JSON.stringify({
+                    compilerOptions: { paths: { '#/*': ['./src/*'] } },
+                })
+            );
+            expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
+                kind: 'full',
+                reason: 'TypeScript alias declaring base is not preserved by the dependency resolver',
+            });
+            expect(observedGraphs).toEqual([]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    }, 30_000);
+
     it.each(['missing', 'malformed', 'invalid', 'missing-extends'])(
         'fails closed before graph traversal for %s TypeScript configuration',
         async (configuration) => {

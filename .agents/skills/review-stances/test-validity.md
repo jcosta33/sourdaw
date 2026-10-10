@@ -12,6 +12,8 @@ The installed affected-E2E loader case asserted full selection for opaque runtim
 
 Delegate to the installed cruise implementation and inspect its returned graph, rather than substituting a successful graph. Assert the exact fixture source set and root-relative alias edges for explicit, absent, and inherited `baseUrl`, together with the existing opaque-selection assertions. Reverting parsed-config forwarding or implicit-base normalization must fail the graph oracle even when selection still returns full.
 
+The first PR #5291 repair's inherited fixture supplied an explicit `baseUrl`; it could not expose the resolver's implicit inherited-path rebase. The pre-merge regression must place the declaring config and real uncurated consumer in a nested directory, add an unrelated root shadow, and use valid relative imports for surrounding composition code. Require full admission before an unproved traversal or the actual declared graph; an unrelated unresolved alias would mask the omission by selecting full for another reason.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
