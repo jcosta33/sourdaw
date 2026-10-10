@@ -1,0 +1,24 @@
+scripts/e2eAffectedGraph.ts
+  s_97ab82e0b4f10c::t_33107effed42da 287-302,345-350
+  s_97ab82e0b4f10c::t_80483136d5d48b 351-353
+scripts/__tests__/e2eAffectedGraph.spec.ts
+  s_97ab82e0b4f10c::t_b34c01d6f96d8b 220,235-242
+  s_97ab82e0b4f10c::t_f59396943a353d 178,185-186,211-215
+  s_97ab82e0b4f10c::t_ec1c0fa8ae595e 216-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0eada2ceacd95da2659d6b6db0ea701305e08e52",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
