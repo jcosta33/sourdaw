@@ -1,0 +1,87 @@
+release/open-source-inventory.json
+  s_1f0dcd815e8946::t_1b2fc35f805c2e 1210
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_1f0dcd815e8946::t_65b1dfefa8dc13 11730-11764,11766-11777,11780,11785-11819,11821-11832,11835
+src/modules/AudioEngine/useCases/__tests__/audition.spec.ts
+  s_1f0dcd815e8946::t_939983cd2a3947 30-34,48,570-730
+src/modules/AudioEngine/useCases/__tests__/noteReceiverRouteParity.spec.ts
+  s_1f0dcd815e8946::t_aa7407c403a0c4 1-120
+src/modules/AudioEngine/useCases/audition.ts
+  s_1f0dcd815e8946::t_3ee636d2636066 9,15,25,41-48,50,52-57,103-104,115-116,126-127,142-143,156-157,167-180,186-187
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_1f0dcd815e8946::t_bed2530c6aaab8 1504-1507
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_1f0dcd815e8946::t_43a2532af5e91e 544,851,1663,2006-2123
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_1f0dcd815e8946::t_4aacbcc334c1ee 55,395-399,481-482,485-487,543-547
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineNoteReceiver.ts
+  s_1f0dcd815e8946::t_c3a527d9b3a3ae 1-50
+src/modules/AudioEngine/useCases/resolveAuditionNoteReceiver.ts
+  s_1f0dcd815e8946::t_aafb00b21ea23d 1-19
+src/modules/MIDI/AGENTS.md
+  s_1f0dcd815e8946::t_f2e2afeb5f6a4b 8
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_1f0dcd815e8946::t_d088ef42e5c486 46-52,96-101,104-108,129-130
+src/modules/MIDI/repositories/webMidi/__tests__/pendingYeastRelease.spec.ts
+  s_1f0dcd815e8946::t_340b676f77b306 1-48
+src/modules/MIDI/repositories/webMidi/__tests__/releaseAllActiveNotes.spec.ts
+  s_1f0dcd815e8946::t_f7246d78768b26 84-108
+src/modules/MIDI/repositories/webMidi/engineStripAccess.ts
+  s_1f0dcd815e8946::t_7d0834f049df9e 16
+src/modules/MIDI/repositories/webMidi/pendingYeastRelease.ts
+  s_1f0dcd815e8946::t_e70e299877a98b 185-235,273-275
+src/modules/MIDI/repositories/webMidi/releaseAllActiveNotes.ts
+  s_1f0dcd815e8946::t_a32278602ffbe9 67-71
+src/modules/MIDI/repositories/webMidi/releaseCapturedYeastVoices.ts
+  s_1f0dcd815e8946::t_874a18b9f7cc51 1-2,5-10,12,14-17,20-23,25-27,29-30
+src/modules/MIDI/useCases/index.ts
+  s_1f0dcd815e8946::t_f1bc3b379d547d 182
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_1f0dcd815e8946::t_75cab1378e57a6 22-24,41-42,55-59,200,244,297,349,370-426,477,617,673,1240-1373,1937
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_1f0dcd815e8946::t_f19753e70569d4 15-16,42-43,63-65,969,971-973,995-999,1342-2263
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_1f0dcd815e8946::t_5418cf79c9ad67 3-7,13,60-61,82,120-121,124-127,129-132,250
+src/modules/MIDI/useCases/webMidiInput/__tests__/resolveNativeNoteSink.spec.ts
+  s_1f0dcd815e8946::t_a12bbf0b6af103 117-134
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_1f0dcd815e8946::t_dea5a8852580c2 13,25-27,46-94,184-192,223-226,247-251,257-276,279,282-285,403-410
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_1f0dcd815e8946::t_6dec5124cba3f7 5,15,27,29,151,233-240,243-245,254-273,276,279-282,338-356,360,365-366,381,387-388,391-392,396,398,406-407,411,416-424,426-444,447,450,468-470,475-477
+src/modules/MIDI/useCases/webMidiInput/initWebMidi.ts
+  s_1f0dcd815e8946::t_ec36580270b54a 5,59-62,66-68
+src/modules/MIDI/useCases/webMidiInput/resolveLiveInputNoteReceiver.ts
+  s_1f0dcd815e8946::t_5ae64622b7ea18 1-19
+src/modules/MIDI/useCases/webMidiInput/resolveNativeNoteSink.ts
+  s_1f0dcd815e8946::t_75acecc9ab3569 1-2,23-34,42,47
+src/modules/MIDI/useCases/webMidiInput/voiceYeastNoteOn.ts
+  s_1f0dcd815e8946::t_b9b0f6bffe3818 1-8,10-11,13,15-16,18-19,21-37,40-71,73-77,79-99,101-123,125-236
+src/modules/Transport/AGENTS.md
+  s_1f0dcd815e8946::t_26aa0367a1289b 10
+src/modules/Transport/useCases/index.ts
+  s_1f0dcd815e8946::t_c55a92397176a0 9
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_1f0dcd815e8946::t_c28212757aa7d3 193-197,1607-1793
+src/modules/Transport/useCases/scheduling/resolvePlaybackNoteReceiver.ts
+  s_1f0dcd815e8946::t_f50fc3ca3f7454 1-13
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_1f0dcd815e8946::t_dbae9e818a0206 28,53,84-85,90-98,106-108,121,151,158,167,169-173,175-178,180-183,186-188,191-195,1005-1009,1234-1239,1241-1243,1264-1265,1269,1446-1448
+src/utils/deviceTypeMatching.ts
+  s_1f0dcd815e8946::t_1bd312a808e093 3-4,6-8,67-163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "70c73414fe5bf27d7c7fedc3b776273882087ddc",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
