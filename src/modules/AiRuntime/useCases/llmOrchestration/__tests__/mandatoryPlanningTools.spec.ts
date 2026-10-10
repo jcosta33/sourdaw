@@ -15,6 +15,7 @@ import {
 import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
 import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ProjectContext } from '../../../models/ProjectContext';
+import { THREAD_CONTEXT_MAX_BYTES, type ThreadContext } from '../../../models/ThreadContext';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../../models/WorkflowCapability';
 import { encodeWireToolName } from '../../../repositories/cloudLlm/cloudInference/encodeWireToolName';
@@ -35,6 +36,7 @@ import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSy
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { describeLocalContextWindowShortfall } from '../../../transformers/localContextWindowRefusal';
 import { createPlanningProject } from '../../__tests__/planningProjectFixture';
+import { createFullThreadContext, threadRequest } from '../../__tests__/threadContextFixture';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -402,7 +404,7 @@ describe('mandatory planning tools', () => {
                 );
             }
 
-            async function sendLocalRequest(context: ProjectContext, receiptSummary?: string) {
+            async function sendLocalRequest(context: ProjectContext, receiptSummary?: string, thread?: ThreadContext) {
                 const catalog = prepareCreativeInterpretationCatalog({
                     prompt: REQUEST,
                     context,
@@ -419,6 +421,7 @@ describe('mandatory planning tools', () => {
                         receiptSummary === undefined ? [] : [{ id: 'application-tool-loop', summary: receiptSummary }],
                     capabilitySchemas: tools.map((tool) => ({ name: tool.function.name, schemaVersion: 1 })),
                     capabilityData: { creativeInterpretationCatalog: catalog },
+                    thread,
                 });
                 const { generateWebLlmToolCalls } = await vi.importActual<
                     typeof import('../../../repositories/webLlm/toolCalling')
@@ -481,6 +484,43 @@ describe('mandatory planning tools', () => {
                     enableThinking: false,
                     estimatedPromptTokens: promptTokens,
                 });
+            });
+
+            it('fits a five-track receipt turn carrying a full thread context, its oldest requests dropped', async () => {
+                mocks.generateWebLlmCompletion.mockResolvedValue('[]');
+                const thread = createFullThreadContext();
+
+                const { built, outcome, sent } = await sendLocalRequest(fiveTrackProject(), receiptEvidence(), thread);
+
+                expect(outcome).toMatchObject({ status: 'complete' });
+                const [systemText, userText] = sent ?? [];
+                if (typeof systemText !== 'string' || typeof userText !== 'string') {
+                    throw new TypeError('Expected the local request to reach the engine.');
+                }
+                expect(userText).toBe(built.localMessage);
+                expect(userText).toContain('thread_context:');
+                const promptTokens =
+                    estimateConservativePromptTokens(systemText) +
+                    estimateConservativePromptTokens(userText) +
+                    LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS;
+                expect(promptTokens + LOCAL_PLANNING_REPLY_RESERVE_TOKENS).toBeLessThanOrEqual(
+                    getWebLlmContextWindowSize()
+                );
+                // The budget never charges more than a token a byte, so the request still fits with
+                // the section at its cap at that rate, however identifier-dense the thread is.
+                const local = built.evidence.included.thread?.local;
+                const section = `\n\nthread_context:\n${userText.split('\n\nthread_context:\n')[1]?.split('\n\n')[0] ?? ''}`;
+                const promptTokensWithoutThread =
+                    estimateConservativePromptTokens(systemText) +
+                    estimateConservativePromptTokens(userText.replace(section, '')) +
+                    LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS;
+                expect(
+                    promptTokensWithoutThread + THREAD_CONTEXT_MAX_BYTES.local + LOCAL_PLANNING_REPLY_RESERVE_TOKENS
+                ).toBeLessThanOrEqual(getWebLlmContextWindowSize());
+                expect(local?.omittedRequestCount).toBeGreaterThan(0);
+                expect(local?.pendingCommandCount).toBeGreaterThan(0);
+                expect(userText).toContain(threadRequest(thread.requests.length));
+                expect(userText).not.toContain(threadRequest(1));
             });
 
             it('refuses a 64-track project with the typed code, before the engine loads or runs', async () => {

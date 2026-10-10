@@ -162,7 +162,7 @@ describe('transform.compile Command approval', () => {
 
         const revision = captureProjectRevision();
         const context = getProjectContext();
-        const parsed = await parsePromptToActions(prompt, context, undefined, revision);
+        const parsed = await parsePromptToActions({ prompt, context, projectRevision: revision });
         expect(parsed.rejectionReason).toBeUndefined();
         expect(parsed.actions).toHaveLength(2);
         expect(parsed.actions[0]).toMatchObject({ type: 'muteTrack', payload: { trackId: 'track-keys', muted: true } });
@@ -266,7 +266,7 @@ describe('transform.compile Command approval', () => {
             'create a MIDI track named Lead and add a MIDI clip named Lead Take on that new track from beat 2 to beat 6';
         const revision = captureProjectRevision();
         const context = getProjectContext();
-        const parsed = await parsePromptToActions(creationPrompt, context, undefined, revision);
+        const parsed = await parsePromptToActions({ prompt: creationPrompt, context, projectRevision: revision });
         expect(parsed.rejectionReason).toBeUndefined();
         expect(parsed.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip']);
         expect(parsed.requiresConfirmation).toBe(true);

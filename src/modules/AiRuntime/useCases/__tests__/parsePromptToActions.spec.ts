@@ -434,7 +434,7 @@ describe('parsePromptToActions', () => {
             vi.mocked(tryPresetMatch).mockReturnValue([action]);
         }
 
-        const result = await parsePromptToActions(prompt, baseContext);
+        const result = await parsePromptToActions({ prompt, context: baseContext });
 
         expect(result.actions).toEqual([action]);
         expect(result.requiresConfirmation).toBe(true);
@@ -447,7 +447,10 @@ describe('parsePromptToActions', () => {
         ];
         vi.mocked(tryCompoundFastPath).mockReturnValue(actions);
 
-        const result = await parsePromptToActions('mute vocals and lower guitar', createMixerContext());
+        const result = await parsePromptToActions({
+            prompt: 'mute vocals and lower guitar',
+            context: createMixerContext(),
+        });
 
         expect(result.actions).toEqual([
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
@@ -493,7 +496,7 @@ describe('parsePromptToActions', () => {
         };
         vi.mocked(getProjectContext).mockReturnValue(context);
 
-        const result = await parsePromptToActions('rename clip to Verse', context);
+        const result = await parsePromptToActions({ prompt: 'rename clip to Verse', context });
 
         expect(result.actions).toEqual([
             {
@@ -503,7 +506,7 @@ describe('parsePromptToActions', () => {
         ]);
         expect(generateToolCalls).not.toHaveBeenCalled();
 
-        const upperResult = await parsePromptToActions('RENAME THE CLIP TO "Chorus 1"', context);
+        const upperResult = await parsePromptToActions({ prompt: 'RENAME THE CLIP TO "Chorus 1"', context });
 
         expect(upperResult.actions).toEqual([
             {
@@ -523,7 +526,7 @@ describe('parsePromptToActions', () => {
         };
         vi.mocked(getProjectContext).mockReturnValue(context);
 
-        const percentResult = await parsePromptToActions('volume 1%', context);
+        const percentResult = await parsePromptToActions({ prompt: 'volume 1%', context });
 
         expect(percentResult.actions).toHaveLength(1);
         expect(percentResult.actions[0]?.payload).toMatchObject({
@@ -532,7 +535,7 @@ describe('parsePromptToActions', () => {
         });
         expect(generateToolCalls).not.toHaveBeenCalled();
 
-        const bareResult = await parsePromptToActions('set volume to 1', context);
+        const bareResult = await parsePromptToActions({ prompt: 'set volume to 1', context });
 
         expect(bareResult.actions).toHaveLength(1);
         expect(bareResult.actions[0]?.payload).toMatchObject({
@@ -545,10 +548,10 @@ describe('parsePromptToActions', () => {
     it('preserves user text case for track names when creating multiple tracks through compound fast path', async () => {
         vi.mocked(tryCompoundFastPath).mockImplementation(actualParsing.tryCompoundFastPath);
 
-        const result = await parsePromptToActions(
-            'create 2 audio tracks named "Lead Vocals", "Backing Vocals"',
-            baseContext
-        );
+        const result = await parsePromptToActions({
+            prompt: 'create 2 audio tracks named "Lead Vocals", "Backing Vocals"',
+            context: baseContext,
+        });
 
         expect(result.actions).toEqual([
             {
@@ -562,10 +565,10 @@ describe('parsePromptToActions', () => {
         ]);
         expect(generateToolCalls).not.toHaveBeenCalled();
 
-        const upperResult = await parsePromptToActions(
-            'CREATE 2 AUDIO TRACKS NAMED "Lead Vocals", "Backing Vocals"',
-            baseContext
-        );
+        const upperResult = await parsePromptToActions({
+            prompt: 'CREATE 2 AUDIO TRACKS NAMED "Lead Vocals", "Backing Vocals"',
+            context: baseContext,
+        });
         expect(upperResult.actions).toEqual([
             {
                 type: 'addTrack',
@@ -658,7 +661,11 @@ describe('parsePromptToActions', () => {
                 ],
             });
 
-        const result = await parsePromptToActions(prompt, createMixerContext(), undefined, 'revision-1');
+        const result = await parsePromptToActions({
+            prompt,
+            context: createMixerContext(),
+            projectRevision: 'revision-1',
+        });
 
         expect(generateToolCalls).toHaveBeenCalledTimes(2);
         expect(result.actions).toEqual(expectedActions);
@@ -734,12 +741,11 @@ describe('parsePromptToActions', () => {
                 ],
             });
 
-        const result = await parsePromptToActions(
-            'mute all audio tracks',
-            createMixerContext(),
-            undefined,
-            'revision-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'mute all audio tracks',
+            context: createMixerContext(),
+            projectRevision: 'revision-1',
+        });
 
         expect(generateToolCalls).toHaveBeenCalledTimes(2);
         expect(result.actions).toEqual([
@@ -837,7 +843,11 @@ describe('parsePromptToActions', () => {
             });
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
 
-        const result = await parsePromptToActions(prompt, context, undefined, 'revision-bulk-protections');
+        const result = await parsePromptToActions({
+            prompt,
+            context,
+            projectRevision: 'revision-bulk-protections',
+        });
         const protectedTargetIds = ['track-bass-frozen', 'track-guitar'];
 
         expect(getExplicitClipProtection(prompt, context)).toEqual({ clips: [], complete: true });
@@ -881,7 +891,11 @@ describe('parsePromptToActions', () => {
             return bridged;
         });
 
-        const result = await parsePromptToActions(prompt, context, undefined, 'revision-workflow-protections');
+        const result = await parsePromptToActions({
+            prompt,
+            context,
+            projectRevision: 'revision-workflow-protections',
+        });
         const workflowTargetIds = ['bus-drums', 'track-kick', 'track-snare', 'track-hats', 'track-room'];
         const protectedTargetIds = ['track-bass', 'track-parallel'];
 
@@ -973,12 +987,11 @@ describe('parsePromptToActions', () => {
                 ],
             });
 
-        const result = await parsePromptToActions(
-            'Create a Drum Bus, then set its gain to 0.8.',
-            baseContext,
-            undefined,
-            'revision-binding'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'Create a Drum Bus, then set its gain to 0.8.',
+            context: baseContext,
+            projectRevision: 'revision-binding',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actionCommandGraph).toEqual({
@@ -1048,12 +1061,11 @@ describe('parsePromptToActions', () => {
                 ],
             });
 
-        const result = await parsePromptToActions(
-            'Enable the metronome while preparing shared vocal FX buses.',
-            baseContext,
-            undefined,
-            'revision-specialized-graph'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'Enable the metronome while preparing shared vocal FX buses.',
+            context: baseContext,
+            projectRevision: 'revision-specialized-graph',
+        });
 
         expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -1077,7 +1089,7 @@ describe('parsePromptToActions', () => {
         vi.mocked(tryParameterizedPath).mockReturnValue([{ type: 'setTempo', payload: { bpm: 128 } }]);
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(false);
 
-        const result = await parsePromptToActions('set tempo to 128', baseContext);
+        const result = await parsePromptToActions({ prompt: 'set tempo to 128', context: baseContext });
 
         expect(mockDoesProductionBriefAllowActionBatch).toHaveBeenCalledWith([
             { type: 'setTempo', payload: { bpm: 128 } },
@@ -1098,7 +1110,11 @@ describe('parsePromptToActions', () => {
         const controller = new AbortController();
         controller.abort();
 
-        const result = await parsePromptToActions('anything', baseContext, controller.signal);
+        const result = await parsePromptToActions({
+            prompt: 'anything',
+            context: baseContext,
+            signal: controller.signal,
+        });
 
         expect(result).toEqual({
             actions: [],
@@ -1111,18 +1127,11 @@ describe('parsePromptToActions', () => {
     it('keeps deterministic commands available when provider planning is disabled', async () => {
         vi.mocked(tryParameterizedPath).mockReturnValue([{ type: 'setTempo', payload: { bpm: 128 } }]);
 
-        const result = await parsePromptToActions(
-            'set tempo to 128',
-            baseContext,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            'disabled'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set tempo to 128',
+            context: baseContext,
+            providerPlanning: 'disabled',
+        });
 
         expect(result).toMatchObject({
             actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
@@ -1132,18 +1141,11 @@ describe('parsePromptToActions', () => {
     });
 
     it('returns actionable availability without invoking a provider when provider planning is disabled', async () => {
-        const result = await parsePromptToActions(
-            'make the chorus feel warmer',
-            baseContext,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            'disabled'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'make the chorus feel warmer',
+            context: baseContext,
+            providerPlanning: 'disabled',
+        });
 
         expect(result).toEqual({
             actions: [],
@@ -1165,7 +1167,7 @@ describe('parsePromptToActions', () => {
         { prompt: 'import midi', actionType: 'importMidiFile' },
         { prompt: 'leave session', actionType: 'leaveCollabSession' },
     ] as const)('recognizes denied intent $prompt without provider planning', async ({ prompt, actionType }) => {
-        const result = await parsePromptToActions(prompt, baseContext);
+        const result = await parsePromptToActions({ prompt, context: baseContext });
 
         expect(result).toEqual({
             actions: [],
@@ -1189,7 +1191,7 @@ describe('parsePromptToActions', () => {
             rejections: [],
         });
 
-        const result = await parsePromptToActions('make the project faster', baseContext);
+        const result = await parsePromptToActions({ prompt: 'make the project faster', context: baseContext });
 
         const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
         expect(firstProviderCall?.[0]).toContain('command system prompt');
@@ -1257,16 +1259,17 @@ describe('parsePromptToActions', () => {
             rejections: [],
         });
 
-        await parsePromptToActions(
-            'Mute vocals.',
-            baseContext,
-            undefined,
-            'revision-resume',
-            undefined,
-            undefined,
-            { runId: 'resumed-planning-attempt', requestId: 'request-resume', cancellationGeneration: 0 },
-            () => ({ status: 'admitted' })
-        );
+        await parsePromptToActions({
+            prompt: 'Mute vocals.',
+            context: baseContext,
+            projectRevision: 'revision-resume',
+            streamIdentity: {
+                runId: 'resumed-planning-attempt',
+                requestId: 'request-resume',
+                cancellationGeneration: 0,
+            },
+            onProviderAttempt: () => ({ status: 'admitted' }),
+        });
 
         const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
         expect(firstProviderCall?.[0]).toContain('Mute vocals only');
@@ -1282,7 +1285,7 @@ describe('parsePromptToActions', () => {
         });
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(false);
 
-        const result = await parsePromptToActions('make the project faster', baseContext);
+        const result = await parsePromptToActions({ prompt: 'make the project faster', context: baseContext });
 
         expect(mockDoesProductionBriefAllowActionBatch).toHaveBeenCalledWith([
             { type: 'setTempo', payload: { bpm: 128 } },
@@ -1322,10 +1325,10 @@ describe('parsePromptToActions', () => {
             batchLocalActionIdentities: [{ actionOrdinal: 0, actionType: 'addAutomationLane', laneId }],
         });
 
-        const result = await parsePromptToActions(
-            'Add automation lane for Distortion Drive on Vocals at -6 dB',
-            createMixerContext()
-        );
+        const result = await parsePromptToActions({
+            prompt: 'Add automation lane for Distortion Drive on Vocals at -6 dB',
+            context: createMixerContext(),
+        });
 
         expect(result).toMatchObject({
             actions: [],
@@ -1393,13 +1396,12 @@ describe('parsePromptToActions', () => {
                 ],
             });
 
-        const result = await parsePromptToActions(
-            'Import the prepared stems and build a starting mix',
-            baseContext,
-            undefined,
-            'revision-stem-import',
-            stemImportPromptScope
-        );
+        const result = await parsePromptToActions({
+            prompt: 'Import the prepared stems and build a starting mix',
+            context: baseContext,
+            projectRevision: 'revision-stem-import',
+            stemImportScope: stemImportPromptScope,
+        });
 
         expect(result.actions).toHaveLength(1);
         expect(result.actions[0]).toMatchObject({
@@ -1421,7 +1423,7 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }])
         );
 
-        const result = await parsePromptToActions('set time signature to 7/8', baseContext);
+        const result = await parsePromptToActions({ prompt: 'set time signature to 7/8', context: baseContext });
 
         expect(result.actions).toEqual([{ type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } }]);
         expect(result.requiresConfirmation).toBe(true);
@@ -1432,10 +1434,13 @@ describe('parsePromptToActions', () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'stopPlayback', arguments: {} }]));
 
-        const result = await parsePromptToActions('please stop the transport', {
-            ...baseContext,
-            isPlaying: false,
-            isRecording: false,
+        const result = await parsePromptToActions({
+            prompt: 'please stop the transport',
+            context: {
+                ...baseContext,
+                isPlaying: false,
+                isRecording: false,
+            },
         });
 
         expect(result.actions).toEqual([{ type: 'stopPlayback' }]);
@@ -1449,7 +1454,7 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'seekPlayhead', arguments: { beat: 8.5 } }])
         );
 
-        const result = await parsePromptToActions('seek the playhead to beat 8.5', baseContext);
+        const result = await parsePromptToActions({ prompt: 'seek the playhead to beat 8.5', context: baseContext });
 
         expect(result.actions).toEqual([{ type: 'seekPlayhead', payload: { beat: 8.5 } }]);
         expect(result.requiresConfirmation).toBe(true);
@@ -1463,10 +1468,13 @@ describe('parsePromptToActions', () => {
         );
         const providerContext = createGlueProviderContext();
 
-        const result = await parsePromptToActions('set the Intro clip loop length to 4 beats', {
-            ...providerContext,
-            selectedClipId: 'clip-intro',
-            selectedClipIds: ['clip-intro'],
+        const result = await parsePromptToActions({
+            prompt: 'set the Intro clip loop length to 4 beats',
+            context: {
+                ...providerContext,
+                selectedClipId: 'clip-intro',
+                selectedClipIds: ['clip-intro'],
+            },
         });
 
         expect(result.actions).toEqual([
@@ -1480,7 +1488,7 @@ describe('parsePromptToActions', () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setPunchIn', arguments: { beat: 20 } }]));
 
-        const result = await parsePromptToActions('set punch in at beat 20', baseContext);
+        const result = await parsePromptToActions({ prompt: 'set punch in at beat 20', context: baseContext });
 
         expect(result.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
         expect(result.requiresConfirmation).toBe(true);
@@ -1493,9 +1501,12 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'setPunchEnabled', arguments: { enabled: true } }])
         );
 
-        const result = await parsePromptToActions('enable punch in/out', {
-            ...baseContext,
-            punchInEnabled: false,
+        const result = await parsePromptToActions({
+            prompt: 'enable punch in/out',
+            context: {
+                ...baseContext,
+                punchInEnabled: false,
+            },
         });
 
         expect(result.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
@@ -1541,10 +1552,15 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'setPunchEnabled', arguments: { enabled: true } }])
         );
 
-        await parsePromptToActions('enable punch in/out', baseContext, undefined, 'revision-2', undefined, undefined, {
-            runId: 'run-with-failures',
-            requestId: 'request-1',
-            cancellationGeneration: 0,
+        await parsePromptToActions({
+            prompt: 'enable punch in/out',
+            context: baseContext,
+            projectRevision: 'revision-2',
+            streamIdentity: {
+                runId: 'run-with-failures',
+                requestId: 'request-1',
+                cancellationGeneration: 0,
+            },
         });
 
         const message = vi.mocked(generateToolCalls).mock.calls[0]?.[1];
@@ -1559,7 +1575,10 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }])
         );
 
-        const result = await parsePromptToActions('add a marker at beat 16 named Chorus', baseContext);
+        const result = await parsePromptToActions({
+            prompt: 'add a marker at beat 16 named Chorus',
+            context: baseContext,
+        });
 
         expect(result.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Chorus' } }]);
         expect(result.requiresConfirmation).toBe(false);
@@ -1577,7 +1596,7 @@ describe('parsePromptToActions', () => {
         );
 
         const prompt = 'add a marker at beat 16 named Chorus';
-        const result = await parsePromptToActions(prompt, baseContext);
+        const result = await parsePromptToActions({ prompt, context: baseContext });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toBe(
@@ -1596,7 +1615,7 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } }])
         );
 
-        const result = await parsePromptToActions('delete marker Chorus at beat 16', baseContext);
+        const result = await parsePromptToActions({ prompt: 'delete marker Chorus at beat 16', context: baseContext });
 
         expect(result.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-internal' } }]);
         expect(result.requiresConfirmation).toBe(true);
@@ -1614,7 +1633,7 @@ describe('parsePromptToActions', () => {
         );
 
         const prompt = 'set marker color for Chorus at beat 16 to amber';
-        const result = await parsePromptToActions(prompt, baseContext);
+        const result = await parsePromptToActions({ prompt, context: baseContext });
 
         expect(result.actions).toEqual([
             {
@@ -1637,7 +1656,7 @@ describe('parsePromptToActions', () => {
         );
 
         const prompt = 'remove the section named Verse from beat 8 to beat 16';
-        const result = await parsePromptToActions(prompt, baseContext);
+        const result = await parsePromptToActions({ prompt, context: baseContext });
 
         expect(result.actions).toEqual([{ type: 'removeSection', payload: { sectionId: 'section-internal' } }]);
         expect(result.requiresConfirmation).toBe(true);
@@ -1687,7 +1706,10 @@ describe('parsePromptToActions', () => {
             selectedClipIds: ['clip-intro'],
         };
 
-        const result = await parsePromptToActions('normalize the Intro clip to -14 LUFS', providerContext);
+        const result = await parsePromptToActions({
+            prompt: 'normalize the Intro clip to -14 LUFS',
+            context: providerContext,
+        });
 
         expect(result.actions).toEqual([
             { type: 'normalizeClip', payload: { clipId: 'clip-intro', mode: 'lufs', targetDb: -14 } },
@@ -1747,12 +1769,18 @@ describe('parsePromptToActions', () => {
             selectedClipIds: ['clip-intro'],
         };
 
-        const result = await parsePromptToActions('set the Intro clip stretch ratio to 1.5', providerContext);
-        const modeResult = await parsePromptToActions(
-            'set the Intro clip stretch mode to timestretch',
-            providerContext
-        );
-        const fitResult = await parsePromptToActions('fit the Intro clip duration to 4 beats', providerContext);
+        const result = await parsePromptToActions({
+            prompt: 'set the Intro clip stretch ratio to 1.5',
+            context: providerContext,
+        });
+        const modeResult = await parsePromptToActions({
+            prompt: 'set the Intro clip stretch mode to timestretch',
+            context: providerContext,
+        });
+        const fitResult = await parsePromptToActions({
+            prompt: 'fit the Intro clip duration to 4 beats',
+            context: providerContext,
+        });
 
         expect(result.actions).toEqual([
             { type: 'setClipStretchRatio', payload: { clipId: 'clip-intro', ratio: 1.5 } },
@@ -1818,7 +1846,10 @@ describe('parsePromptToActions', () => {
             selectedClipIds: ['clip-intro'],
         };
 
-        const result = await parsePromptToActions('move the Intro clip to Guitar at beat 16', providerContext);
+        const result = await parsePromptToActions({
+            prompt: 'move the Intro clip to Guitar at beat 16',
+            context: providerContext,
+        });
 
         expect(result.actions).toEqual([
             { type: 'moveClip', payload: { clipId: 'clip-intro', trackId: 'track-guitar', startBeat: 16 } },
@@ -1895,12 +1926,11 @@ describe('parsePromptToActions', () => {
             },
         });
 
-        const result = await parsePromptToActions(
-            'set the loop region from beat 8 to beat 16 and set the tempo to 130',
-            createMixerContext(),
-            undefined,
-            'revision-partial-measurement'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set the loop region from beat 8 to beat 16 and set the tempo to 130',
+            context: createMixerContext(),
+            projectRevision: 'revision-partial-measurement',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
@@ -1952,7 +1982,7 @@ describe('parsePromptToActions', () => {
             selectedClipIds: [clip.id],
         };
 
-        const result = await parsePromptToActions('crossfade Intro into Chorus', providerContext);
+        const result = await parsePromptToActions({ prompt: 'crossfade Intro into Chorus', context: providerContext });
 
         expect(result.actions).toEqual([
             { type: 'crossfadeClips', payload: { clipAId: 'clip-intro', clipBId: 'clip-chorus' } },
@@ -2006,7 +2036,10 @@ describe('parsePromptToActions', () => {
             selectedClipIds: [clip.id, 'clip-verse'],
         };
 
-        const result = await parsePromptToActions('glue the Intro and Verse clips', providerContext);
+        const result = await parsePromptToActions({
+            prompt: 'glue the Intro and Verse clips',
+            context: providerContext,
+        });
 
         expect(result.actions).toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-intro', 'clip-verse'] } }]);
         expect(result.requiresConfirmation).toBe(true);
@@ -2033,7 +2066,7 @@ describe('parsePromptToActions', () => {
             ])
         );
 
-        const result = await parsePromptToActions(prompt, createGlueProviderContext());
+        const result = await parsePromptToActions({ prompt, context: createGlueProviderContext() });
 
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
         expect(result.requiresConfirmation).toBe(true);
@@ -2050,10 +2083,10 @@ describe('parsePromptToActions', () => {
             ])
         );
 
-        const result = await parsePromptToActions(
-            'glue Intro and Verse clips, then glue Verse and Outro clips, then set tempo to 130',
-            createGlueProviderContext()
-        );
+        const result = await parsePromptToActions({
+            prompt: 'glue Intro and Verse clips, then glue Verse and Outro clips, then set tempo to 130',
+            context: createGlueProviderContext(),
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.requiresConfirmation).toBe(false);
@@ -2103,10 +2136,10 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-piano-midi', gridSize: 0.25 } }])
         );
 
-        const result = await parsePromptToActions(
-            'quantize note lengths in Piano MIDI to a 0.25 beat grid',
-            providerContext
-        );
+        const result = await parsePromptToActions({
+            prompt: 'quantize note lengths in Piano MIDI to a 0.25 beat grid',
+            context: providerContext,
+        });
 
         expect(result.actions).toEqual([
             { type: 'quantizeNoteLengths', payload: { clipId: 'clip-piano-midi', gridSize: 0.25 } },
@@ -2158,7 +2191,10 @@ describe('parsePromptToActions', () => {
         }));
 
         for (const context of contexts) {
-            const result = await parsePromptToActions('set all velocities in Selected Clip to 96', context);
+            const result = await parsePromptToActions({
+                prompt: 'set all velocities in Selected Clip to 96',
+                context,
+            });
 
             expect(result.actions).toEqual([]);
             expect(result.rejectionReason).toContain('not grounded');
@@ -2195,7 +2231,7 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'armTrack', arguments: { trackId: 'track-vocals', armed: true } }])
         );
 
-        const result = await parsePromptToActions('arm Vocals for recording', providerContext);
+        const result = await parsePromptToActions({ prompt: 'arm Vocals for recording', context: providerContext });
 
         expect(result.actions).toEqual([{ type: 'armTrack', payload: { trackId: 'track-vocals', armed: true } }]);
         expect(result.requiresConfirmation).toBe(true);
@@ -2208,7 +2244,10 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'createBus', arguments: { name: 'Parallel Reverb' } }])
         );
 
-        const result = await parsePromptToActions('create a bus called Parallel Reverb', baseContext);
+        const result = await parsePromptToActions({
+            prompt: 'create a bus called Parallel Reverb',
+            context: baseContext,
+        });
 
         expect(result.actions).toEqual([{ type: 'createBus', payload: { name: 'Parallel Reverb' } }]);
         expect(result.requiresConfirmation).toBe(false);
@@ -2252,10 +2291,10 @@ describe('parsePromptToActions', () => {
             ])
         );
 
-        const result = await parsePromptToActions(
-            'create a bus called Vocal Plate, add Reverb to it, and send Vocals to it at 25%',
-            providerContext
-        );
+        const result = await parsePromptToActions({
+            prompt: 'create a bus called Vocal Plate, add Reverb to it, and send Vocals to it at 25%',
+            context: providerContext,
+        });
 
         const createBus = result.actions[0];
         const addDevice = result.actions[1];
@@ -2300,7 +2339,7 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'removeTrack', arguments: { trackId: 'track-vocals' } }])
         );
 
-        const result = await parsePromptToActions('delete the Vocals track', providerContext);
+        const result = await parsePromptToActions({ prompt: 'delete the Vocals track', context: providerContext });
 
         expect(result.actions).toEqual([{ type: 'removeTrack', payload: { trackId: 'track-vocals' } }]);
         expect(result.requiresConfirmation).toBe(true);
@@ -2338,7 +2377,10 @@ describe('parsePromptToActions', () => {
         };
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
 
-        const result = await parsePromptToActions('make the selected track warmer', lockedContext);
+        const result = await parsePromptToActions({
+            prompt: 'make the selected track warmer',
+            context: lockedContext,
+        });
 
         expect(generateToolCalls).not.toHaveBeenCalled();
         expect(result).toMatchObject({ actions: [], requiresConfirmation: false });
@@ -2351,7 +2393,7 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4 } }])
         );
 
-        const result = await parsePromptToActions('set time signature to 7/8', baseContext);
+        const result = await parsePromptToActions({ prompt: 'set time signature to 7/8', context: baseContext });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('does not match the user request');
@@ -2367,7 +2409,10 @@ describe('parsePromptToActions', () => {
             ])
         );
 
-        const result = await parsePromptToActions('mute Vocals and lower Guitar', providerContext);
+        const result = await parsePromptToActions({
+            prompt: 'mute Vocals and lower Guitar',
+            context: providerContext,
+        });
 
         expect(result.actions).toEqual([
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
@@ -2401,7 +2446,7 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'setTrackGain', arguments: { trackId: 'track-guitar', gain: 1.5 } }])
         );
 
-        const result = await parsePromptToActions('raise Guitar gain to 150%', providerContext);
+        const result = await parsePromptToActions({ prompt: 'raise Guitar gain to 150%', context: providerContext });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
@@ -2424,7 +2469,7 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'setMasterGain', arguments: { gain: 1.5 } }])
         );
 
-        const result = await parsePromptToActions('set master gain to 1.5', baseContext);
+        const result = await parsePromptToActions({ prompt: 'set master gain to 1.5', context: baseContext });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { gain: 1.5 } }]);
@@ -2442,7 +2487,10 @@ describe('parsePromptToActions', () => {
             rejections: [{ index: 1, name: 'setTempo', reason: 'Action is not grounded in the request' }],
         });
 
-        const result = await parsePromptToActions('mute the vocals and save the project', baseContext);
+        const result = await parsePromptToActions({
+            prompt: 'mute the vocals and save the project',
+            context: baseContext,
+        });
 
         expect(result.actions).toEqual([]);
         expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -2455,7 +2503,7 @@ describe('parsePromptToActions', () => {
             status: 'complete',
             toolCalls: [{ name: 'saveProject', arguments: {} }],
         });
-        const result = await parsePromptToActions('save the project', baseContext);
+        const result = await parsePromptToActions({ prompt: 'save the project', context: baseContext });
 
         expect(result).toEqual({
             actions: [],
@@ -2477,7 +2525,7 @@ describe('parsePromptToActions', () => {
             rejections: [],
         });
 
-        const result = await parsePromptToActions('set tempo to 128', baseContext);
+        const result = await parsePromptToActions({ prompt: 'set tempo to 128', context: baseContext });
 
         expect(result).toMatchObject({
             actions: [],
@@ -2496,7 +2544,7 @@ describe('parsePromptToActions', () => {
             reason: 'Provider text tool planning did not complete (finish_reason: length)',
         });
 
-        const result = await parsePromptToActions('mute the vocals', baseContext);
+        const result = await parsePromptToActions({ prompt: 'mute the vocals', context: baseContext });
 
         expect(result).toEqual({
             actions: [],
@@ -2519,7 +2567,7 @@ describe('parsePromptToActions', () => {
     ])('returns provider planning failure %s without producing actions', async (reason) => {
         vi.mocked(generateToolCalls).mockRejectedValue(new Error(reason));
 
-        const result = await parsePromptToActions('mute the vocals', baseContext);
+        const result = await parsePromptToActions({ prompt: 'mute the vocals', context: baseContext });
 
         expect(result).toEqual({
             actions: [],
@@ -2536,7 +2584,7 @@ describe('parsePromptToActions', () => {
             vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
             mockBridgeGroundedLlmToolCalls.mockReturnValue({ actions: [], rejections: [] });
 
-            const result = await parsePromptToActions(prompt, baseContext);
+            const result = await parsePromptToActions({ prompt, context: baseContext });
 
             expect(result).toEqual({
                 actions: [],
@@ -2550,7 +2598,7 @@ describe('parsePromptToActions', () => {
     it('preserves configuration-change cancellation instead of reporting no actions', async () => {
         vi.mocked(generateToolCalls).mockRejectedValue(new AiRuntimeConfigurationChangedError());
 
-        await expect(parsePromptToActions('mute the vocals', baseContext)).rejects.toMatchObject({
+        await expect(parsePromptToActions({ prompt: 'mute the vocals', context: baseContext })).rejects.toMatchObject({
             name: 'AiRuntimeConfigurationChangedError',
         });
 
@@ -2572,7 +2620,10 @@ describe('parsePromptToActions', () => {
             rejections: [],
         });
 
-        const result = await parsePromptToActions('mute vocals and pan guitar left', createMixerContext());
+        const result = await parsePromptToActions({
+            prompt: 'mute vocals and pan guitar left',
+            context: createMixerContext(),
+        });
 
         expect(result.actions).toEqual([
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },

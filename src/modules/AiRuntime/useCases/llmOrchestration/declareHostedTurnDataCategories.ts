@@ -4,11 +4,15 @@ import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 
 /**
  * The categories one hosted planning request declares: the text every request carries, then the
- * evidence categories of each receipt the replayed history hands back, once each in first-seen order.
- * The request and its disclosure state this same list, so the disclosure names what was sent.
+ * evidence categories the first message itself carries, then those of each receipt the replayed
+ * history hands back, once each in first-seen order. The request and its disclosure state this
+ * same list, so the disclosure names what was sent.
  */
-export function declareHostedTurnDataCategories(history: HostedTurnHistory | undefined): AgentDataCategory[] {
-    const declared = new Set<AgentDataCategory>(REMOTE_TEXT_AGENT_DATA_CATEGORIES);
+export function declareHostedTurnDataCategories(
+    history: HostedTurnHistory | undefined,
+    messageDataCategories: readonly AgentDataCategory[] = []
+): AgentDataCategory[] {
+    const declared = new Set<AgentDataCategory>([...REMOTE_TEXT_AGENT_DATA_CATEGORIES, ...messageDataCategories]);
     for (const record of history ?? []) {
         for (const receipt of record.receipts) {
             for (const category of classifyApplicationToolReceiptData(receipt)) {

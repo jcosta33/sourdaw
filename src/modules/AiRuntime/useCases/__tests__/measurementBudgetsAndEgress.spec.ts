@@ -36,7 +36,11 @@ import {
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
-import { AGENT_DATA_CATEGORIES, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
+import {
+    AGENT_DATA_CATEGORIES,
+    type AgentDataCategory,
+    REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+} from '../../models/AgentDataPolicy';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
@@ -1193,7 +1197,10 @@ describe('a measurement is local numeric evidence for the data policy', () => {
         },
     ];
 
-    async function planHostedTurn(history: HostedTurnHistory): Promise<ProviderAttemptAdmission> {
+    async function planHostedTurn(
+        history: HostedTurnHistory,
+        messageDataCategories: readonly AgentDataCategory[] = []
+    ): Promise<ProviderAttemptAdmission> {
         backend.chain.value = ['cloud'];
         backend.getCloudProviderInfo.mockReturnValue({
             provider: 'anthropic',
@@ -1221,7 +1228,12 @@ describe('a measurement is local numeric evidence for the data policy', () => {
                 return { status: 'admitted' };
             },
             AUTO_TOOL_CHOICE,
-            { firstUserMessage: 'mute the drums', history, budgetNote: 'Budget remaining.' }
+            {
+                firstUserMessage: 'mute the drums',
+                history,
+                budgetNote: 'Budget remaining.',
+                messageDataCategories,
+            }
         );
         const [admission] = admissions;
         if (admission === undefined) {
@@ -1251,6 +1263,31 @@ describe('a measurement is local numeric evidence for the data policy', () => {
         const unrelated: ApplicationToolReceipt = { ...receipt, toolName: 'project.query', data: { kind: 'project' } };
 
         const admission = await planHostedTurn(historyOf(unrelated));
+
+        expect(admission.request.dataCategories).toEqual([...REMOTE_TEXT_AGENT_DATA_CATEGORIES]);
+        expect(getProviderRouteView({ runId: RUN_ID, candidates: [] })?.dataDisclosure?.categories).toEqual([
+            ...REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+        ]);
+    });
+
+    // Red when the categories the first message itself carries (a thread context's measured
+    // deltas) stop reaching what the request declares and what its disclosure names.
+    it('declares measurement on a hosted planning request whose own message carries figures, and discloses it', async () => {
+        createRun();
+
+        const admission = await planHostedTurn([], ['measurement']);
+
+        expect(admission.request.dataCategories).toEqual([...REMOTE_TEXT_AGENT_DATA_CATEGORIES, 'measurement']);
+        expect(getProviderRouteView({ runId: RUN_ID, candidates: [] })?.dataDisclosure?.categories).toEqual([
+            ...REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+            'measurement',
+        ]);
+    });
+
+    it('declares text categories only on a hosted planning request whose message carries none beyond text', async () => {
+        createRun();
+
+        const admission = await planHostedTurn([]);
 
         expect(admission.request.dataCategories).toEqual([...REMOTE_TEXT_AGENT_DATA_CATEGORIES]);
         expect(getProviderRouteView({ runId: RUN_ID, candidates: [] })?.dataDisclosure?.categories).toEqual([
