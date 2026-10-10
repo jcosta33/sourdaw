@@ -91,12 +91,8 @@ fn first_audible_output(render: &Render) -> usize {
         .expect("the burst reaches the output")
 }
 
-fn first_gain_reduction(render: &Render) -> usize {
-    render
-        .gr_db
-        .iter()
-        .position(|&gr| gr < 0.0)
-        .expect("the burst is far enough over threshold to be reduced")
+fn first_gain_reduction(render: &Render) -> Option<usize> {
+    render.gr_db.iter().position(|&gr| gr < 0.0)
 }
 
 fn settled_gr_db(render: &Render) -> f32 {
@@ -108,7 +104,11 @@ fn settled_gr_db(render: &Render) -> f32 {
 /// with gain reduction already under way — begun as the burst entered.
 fn late_detection(label: &str, render: &Render) -> Option<String> {
     let delayed_burst = first_audible_output(render);
-    let first_reduction = first_gain_reduction(render);
+    let Some(first_reduction) = first_gain_reduction(render) else {
+        return Some(format!(
+            "{label}: the burst, far over threshold, was never reduced"
+        ));
+    };
     if render.latency != LOOKAHEAD_SAMPLES || delayed_burst != ONSET + render.latency {
         return Some(format!(
             "{label}: reported latency {} with the burst reaching the output at sample \
@@ -135,21 +135,57 @@ fn assert_detects_ahead(cases: &[(String, Vec<(&str, f32)>)]) {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Stage two is an Opto at −30 dB behind a stage one that passes the burst
+/// without reducing it, so every bit of reduction comes from stage two and it
+/// can only detect ahead through stage one's output estimate. Each stage one is
+/// idled by a control only it reads, set before the Opto's own threshold.
+fn idle_into_opto(stage_one: f32, idling: (&'static str, f32)) -> Vec<(&'static str, f32)> {
+    vec![
+        ("topology", stage_one),
+        ("threshold", -30.0),
+        ("ratio", 4.0),
+        idling,
+        ("peak_reduction", 60.0),
+        ("blend_topology", OPTO),
+        ("blend_amount", 1.0),
+    ]
+}
+
 #[test]
 fn lookahead_reduces_gain_before_the_delayed_burst_reaches_the_output_on_every_topology() {
-    let cases: Vec<_> = TOPOLOGIES
+    let mut cases: Vec<_> = TOPOLOGIES
         .iter()
         .map(|&(label, topology)| (label.to_string(), single_stage(topology)))
         .collect();
+    let mut feed_forward = single_stage(VCA);
+    feed_forward.push(("feed_forward", 1.0));
+    cases.push(("VCA feed-forward".to_string(), feed_forward));
     assert_detects_ahead(&cases);
 }
 
 #[test]
 fn lookahead_reduces_gain_before_the_delayed_burst_reaches_the_output_in_stage_two() {
-    let cases: Vec<_> = [("VCA", VCA), ("FET", FET), ("Diode", DIODE)]
+    let mut cases: Vec<_> = [("VCA", VCA), ("FET", FET), ("Diode", DIODE)]
         .iter()
         .map(|&(label, topology)| (format!("idle Opto into {label}"), idle_opto_into(topology)))
         .collect();
+    cases.extend([
+        // Range 0 caps VCA's reduction at nothing.
+        (
+            "idle VCA into Opto".to_string(),
+            idle_into_opto(VCA, ("range", 0.0)),
+        ),
+        // Ratio 1 is unity gain; the Opto has no ratio control.
+        (
+            "idle FET into Opto".to_string(),
+            idle_into_opto(FET, ("ratio", 1.0)),
+        ),
+        // A 0 dB threshold sits above the burst; the Opto's is set after it.
+        (
+            "idle Diode into Opto".to_string(),
+            idle_into_opto(DIODE, ("threshold", 0.0)),
+        ),
+    ]);
     assert_detects_ahead(&cases);
 }
 
@@ -168,6 +204,128 @@ fn lookahead_keeps_every_topology_settling_at_the_same_reduction() {
             "{label}: settled reduction moved from {without} dB to {with} dB with lookahead"
         );
     }
+}
+
+const MINUS_6_DBFS: f32 = 0.501_187_2;
+const SETTLE_FRAMES: usize = 24_000;
+/// The last quarter second, long after every topology's attack has settled.
+const SETTLE_TAIL: usize = 12_000;
+const SETTLE_BLOCK: usize = 120;
+const OVERSAMPLING_FACTORS: [f32; 3] = [1.0, 2.0, 4.0];
+
+fn sine(frequency_hz: f32) -> Vec<f32> {
+    (0..SETTLE_FRAMES)
+        .map(|frame| {
+            let t = frame as f32 / SAMPLE_RATE;
+            MINUS_6_DBFS * (std::f32::consts::TAU * frequency_hz * t).sin()
+        })
+        .collect()
+}
+
+/// Uniform white noise peaking at −6 dBFS, from a fixed xorshift seed so both
+/// renders of a pair hear the same programme.
+fn white_noise() -> Vec<f32> {
+    let mut state = 0x9E37_79B9_u32;
+    (0..SETTLE_FRAMES)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            MINUS_6_DBFS * (state as f32 / u32::MAX as f32 * 2.0 - 1.0)
+        })
+        .collect()
+}
+
+/// Mean gain reduction over the tail. Each block's meter is that block's mean,
+/// and the blocks tile the tail, so this is the per-sample mean.
+fn settled_reduction(params: &[(&str, f32)], lookahead_ms: f32, programme: &[f32]) -> f32 {
+    let mut engine = GlutenEngine::new(SAMPLE_RATE);
+    for &(name, value) in params {
+        engine.set_param(name, value);
+    }
+    engine.set_param("lookahead", lookahead_ms);
+
+    let mut tail_sum = 0.0_f32;
+    for (index, block) in programme.chunks(SETTLE_BLOCK).enumerate() {
+        let mut left = block.to_vec();
+        let mut right = block.to_vec();
+        engine.process_block(&mut left, &mut right);
+        if index * SETTLE_BLOCK >= SETTLE_FRAMES - SETTLE_TAIL {
+            tail_sum += engine.current_gr_db();
+        }
+    }
+    tail_sum / (SETTLE_TAIL / SETTLE_BLOCK) as f32
+}
+
+fn treble_chain(
+    stage_one: f32,
+    stage_two: Option<f32>,
+    oversampling: f32,
+) -> Vec<(&'static str, f32)> {
+    let mut params = vec![
+        ("topology", stage_one),
+        ("threshold", -20.0),
+        ("ratio", 4.0),
+        ("oversampling", oversampling),
+    ];
+    if let Some(stage_two) = stage_two {
+        params.extend([("blend_topology", stage_two), ("blend_amount", 1.0)]);
+    }
+    params
+}
+
+/// FET and Diode colour their output at an oversampled rate, and the
+/// oversampler's half-band filters cut the treble they pass — about 3 dB at
+/// 16 kHz. A lookahead estimate that skipped them would let a feedback
+/// detector hear more treble than the output carries, and settle deeper on
+/// bright programme than the same compressor without lookahead. Every
+/// topology, alone and as either stage of a chain, must settle at the same
+/// depth with lookahead as without, at every oversampling factor.
+#[test]
+fn lookahead_keeps_treble_and_noise_settling_at_the_same_reduction_at_every_oversampling() {
+    let programmes = [
+        ("16 kHz", sine(16_000.0)),
+        ("12 kHz", sine(12_000.0)),
+        ("white noise", white_noise()),
+    ];
+    let mut chains: Vec<(String, f32, Option<f32>)> = TOPOLOGIES
+        .iter()
+        .map(|&(label, topology)| (label.to_string(), topology, None))
+        .collect();
+    for (one_label, stage_one) in TOPOLOGIES {
+        for (two_label, stage_two) in TOPOLOGIES {
+            if stage_one != stage_two {
+                chains.push((
+                    format!("{one_label} into {two_label}"),
+                    stage_one,
+                    Some(stage_two),
+                ));
+            }
+        }
+    }
+
+    let mut failures = Vec::new();
+    for oversampling in OVERSAMPLING_FACTORS {
+        for (chain_label, stage_one, stage_two) in &chains {
+            let params = treble_chain(*stage_one, *stage_two, oversampling);
+            for (programme_label, programme) in &programmes {
+                let without = settled_reduction(&params, 0.0, programme);
+                let with = settled_reduction(&params, LOOKAHEAD_MS, programme);
+                let label = format!("{chain_label}, {oversampling}x, {programme_label}");
+                println!(
+                    "{label}: {without:.3} dB without, {:+.3} dB moved",
+                    with - without
+                );
+                if (with - without).abs() >= 0.05 {
+                    failures.push(format!(
+                        "{label}: settled reduction moved from {without} dB to {with} dB \
+                         with lookahead"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]

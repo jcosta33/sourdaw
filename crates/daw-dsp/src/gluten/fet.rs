@@ -47,6 +47,10 @@ pub struct FetCompressor {
     /// Configurable oversamplers for nonlinear distortion (L/R)
     os_l: ConfigurableOversample,
     os_r: ConfigurableOversample,
+    /// The lookahead estimate's own oversamplers, at the same rate, so the
+    /// estimate passes the same half-band filters as the output.
+    ahead_os_l: ConfigurableOversample,
+    ahead_os_r: ConfigurableOversample,
 }
 
 impl FetCompressor {
@@ -74,6 +78,8 @@ impl FetCompressor {
             applied_gr_db_r: 0.0,
             os_l: ConfigurableOversample::new(2),
             os_r: ConfigurableOversample::new(2),
+            ahead_os_l: ConfigurableOversample::new(2),
+            ahead_os_r: ConfigurableOversample::new(2),
         };
         c.update_coeffs();
         c
@@ -112,6 +118,8 @@ impl FetCompressor {
             "oversampling" => {
                 self.os_l.set_rate(value as u8);
                 self.os_r.set_rate(value as u8);
+                self.ahead_os_l.set_rate(value as u8);
+                self.ahead_os_r.set_rate(value as u8);
             }
             "all_buttons" => self.all_buttons = value > 0.5,
             _ => {}
@@ -180,18 +188,20 @@ impl FetCompressor {
     }
 
     /// `left`/`right` through the drive, gain and colour this FET applied
-    /// last. This is also the detector source under lookahead: the 1176 senses
-    /// its own output, which can never run ahead of the delayed audio.
-    pub(crate) fn ahead_output(&self, left: f32, right: f32) -> (f32, f32) {
+    /// last, at the output's oversampled rate. This is also the detector source
+    /// under lookahead: the 1176 senses its own output, which can never run
+    /// ahead of the delayed audio. Advances the estimate's filter state, so
+    /// call it once per sample.
+    pub(crate) fn ahead_output(&mut self, left: f32, right: f32) -> (f32, f32) {
         let input_linear = db_to_linear(self.input_gain);
         let output_linear = db_to_linear(self.output_gain);
-        let colour = |x: f32, gr_db: f32| {
-            let wet = x * input_linear * db_to_linear(gr_db);
-            fet_color(wet, self.jfet_k3, self.xfmr_drive, self.xfmr_k2) * output_linear
-        };
+        let (k3, xfmr, k2) = (self.jfet_k3, self.xfmr_drive, self.xfmr_k2);
+        let distortion = |x: f32| -> f32 { fet_color(x, k3, xfmr, k2) };
+        let wet_l = left * input_linear * db_to_linear(self.applied_gr_db_l);
+        let wet_r = right * input_linear * db_to_linear(self.applied_gr_db_r);
         (
-            colour(left, self.applied_gr_db_l),
-            colour(right, self.applied_gr_db_r),
+            self.ahead_os_l.process(wet_l, &distortion) * output_linear,
+            self.ahead_os_r.process(wet_r, &distortion) * output_linear,
         )
     }
 
@@ -257,6 +267,8 @@ impl FetCompressor {
         self.applied_gr_db_r = 0.0;
         self.os_l.reset();
         self.os_r.reset();
+        self.ahead_os_l.reset();
+        self.ahead_os_r.reset();
     }
 }
 

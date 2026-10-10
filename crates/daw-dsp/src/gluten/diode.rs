@@ -41,6 +41,10 @@ pub struct DiodeCompressor {
     /// Configurable oversamplers for diode bridge nonlinearity (L/R)
     os_l: ConfigurableOversample,
     os_r: ConfigurableOversample,
+    /// The lookahead estimate's own oversamplers, at the same rate, so the
+    /// estimate passes the same half-band filters as the output.
+    ahead_os_l: ConfigurableOversample,
+    ahead_os_r: ConfigurableOversample,
 }
 
 impl DiodeCompressor {
@@ -64,6 +68,8 @@ impl DiodeCompressor {
             applied_gr_db_r: 0.0,
             os_l: ConfigurableOversample::new(2),
             os_r: ConfigurableOversample::new(2),
+            ahead_os_l: ConfigurableOversample::new(2),
+            ahead_os_r: ConfigurableOversample::new(2),
         };
         c.update_coeffs();
         c
@@ -108,6 +114,8 @@ impl DiodeCompressor {
             "oversampling" => {
                 self.os_l.set_rate(value as u8);
                 self.os_r.set_rate(value as u8);
+                self.ahead_os_l.set_rate(value as u8);
+                self.ahead_os_r.set_rate(value as u8);
             }
             _ => {}
         }
@@ -129,12 +137,18 @@ impl DiodeCompressor {
         (left, right)
     }
 
-    /// `left`/`right` through the gain and bridge colour applied last.
-    pub(crate) fn ahead_output(&self, left: f32, right: f32) -> (f32, f32) {
+    /// `left`/`right` through the gain and bridge colour applied last, at the
+    /// output's oversampled rate. Advances the estimate's filter state, so call
+    /// it once per sample.
+    pub(crate) fn ahead_output(&mut self, left: f32, right: f32) -> (f32, f32) {
         let (gr_l, gr_r) = (self.applied_gr_db_l, self.applied_gr_db_r);
+        let bridge_l = |x: f32| -> f32 { diode_bridge_color(x, gr_l) };
+        let bridge_r = |x: f32| -> f32 { diode_bridge_color(x, gr_r) };
         (
-            diode_bridge_color(left * db_to_linear(gr_l), gr_l),
-            diode_bridge_color(right * db_to_linear(gr_r), gr_r),
+            self.ahead_os_l
+                .process(left * db_to_linear(gr_l), &bridge_l),
+            self.ahead_os_r
+                .process(right * db_to_linear(gr_r), &bridge_r),
         )
     }
 
@@ -237,6 +251,8 @@ impl DiodeCompressor {
         self.applied_gr_db_r = 0.0;
         self.os_l.reset();
         self.os_r.reset();
+        self.ahead_os_l.reset();
+        self.ahead_os_r.reset();
     }
 }
 

@@ -235,15 +235,19 @@ impl VcaCompressor {
         }
     }
 
-    /// Detector source while lookahead delays the audio and `ahead` is the
-    /// undelayed programme. Feed-forward reads it directly; feedback reads it
-    /// as the VCA is passing audio now, because its own output can never run
-    /// ahead of the delayed audio.
-    pub(crate) fn lookahead_detector_source(&self, ahead_l: f32, ahead_r: f32) -> (f32, f32) {
+    /// Detector source while lookahead delays the audio: `ahead_input` is this
+    /// stage's input ahead of the delay and `ahead_output` its `ahead_output`.
+    /// Feed-forward reads the input; feedback reads the output, because the
+    /// VCA's own output can never run ahead of the delayed audio.
+    pub(crate) fn lookahead_detector_source(
+        &self,
+        ahead_input: (f32, f32),
+        ahead_output: (f32, f32),
+    ) -> (f32, f32) {
         if self.feed_forward {
-            (ahead_l, ahead_r)
+            ahead_input
         } else {
-            self.ahead_output(ahead_l, ahead_r)
+            ahead_output
         }
     }
 
