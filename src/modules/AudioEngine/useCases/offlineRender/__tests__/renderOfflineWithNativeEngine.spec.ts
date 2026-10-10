@@ -25,12 +25,12 @@ import { audioBufferCache } from '../../../stores/audioBufferCache';
 import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
 import { renderOfflineWithNativeEngine } from '../renderOfflineWithNativeEngine';
 
-class StubAudioBuffer {
+class StubAudioBuffer implements AudioBuffer {
     readonly length: number;
     readonly numberOfChannels: number;
     readonly sampleRate: number;
     readonly duration: number;
-    private readonly channels: Float32Array[];
+    private readonly channels: Float32Array<ArrayBuffer>[];
 
     constructor(options: { length: number; numberOfChannels: number; sampleRate: number }) {
         this.length = options.length;
@@ -40,7 +40,7 @@ class StubAudioBuffer {
         this.channels = Array.from({ length: options.numberOfChannels }, () => new Float32Array(options.length));
     }
 
-    getChannelData(channel: number): Float32Array {
+    getChannelData(channel: number): Float32Array<ArrayBuffer> {
         const data = this.channels[channel];
         if (!data) {
             throw new Error(`StubAudioBuffer has no channel ${String(channel)}`);
@@ -48,8 +48,17 @@ class StubAudioBuffer {
         return data;
     }
 
-    copyToChannel(source: Float32Array, channel: number): void {
-        this.getChannelData(channel).set(source);
+    copyFromChannel(destination: Float32Array<ArrayBuffer>, channel: number, bufferOffset = 0): void {
+        const source = this.getChannelData(channel);
+        destination.set(source.subarray(bufferOffset, bufferOffset + destination.length));
+    }
+
+    copyToChannel(source: Float32Array<ArrayBuffer>, channel: number, bufferOffset = 0): void {
+        const destination = this.getChannelData(channel);
+        if (bufferOffset >= destination.length) {
+            return;
+        }
+        destination.set(source.subarray(0, destination.length - bufferOffset), bufferOffset);
     }
 }
 
@@ -91,13 +100,17 @@ function createTrack(overrides?: Partial<Track>): Track {
     };
 }
 
-function capturingTransport(frames: number): {
+function capturingTransport(
+    frames: number,
+    registerTimelineSample: NativeGraphTransport['registerTimelineSample'] = () =>
+        Promise.reject(new Error('routing spec registers no sample'))
+): {
     transport: NativeGraphTransport;
     commands: NativeGraphWireCommand[];
 } {
     const commands: NativeGraphWireCommand[] = [];
     const transport: NativeGraphTransport = {
-        registerTimelineSample: () => Promise.reject(new Error('routing spec registers no sample')),
+        registerTimelineSample,
         beginLevainBank: () => Promise.reject(new Error('routing spec stages no levain bank')),
         registerLevainSample: () => Promise.reject(new Error('routing spec stages no levain bank')),
         commitLevainBank: () => Promise.reject(new Error('routing spec stages no levain bank')),
@@ -671,7 +684,7 @@ describe('renderOfflineWithNativeEngine — captured pass source admission', () 
     it('sends only this pass source interval to the native wire', async () => {
         vi.stubGlobal('AudioBuffer', StubAudioBuffer);
         const buffer = new StubAudioBuffer({ length: 96000, numberOfChannels: 1, sampleRate: 48000 });
-        audioBufferCache.set('captured-buf', buffer as AudioBuffer);
+        audioBufferCache.set('captured-buf', buffer);
         takeLaneStore.set({
             lanes: [
                 {
@@ -711,8 +724,7 @@ describe('renderOfflineWithNativeEngine — captured pass source admission', () 
             muted: false,
         };
         const track = createTrack({ clips: [clip] });
-        const { transport, commands } = capturingTransport(8);
-        transport.registerTimelineSample = () => Promise.resolve({});
+        const { transport, commands } = capturingTransport(8, () => Promise.resolve({}));
         try {
             const result = await renderOfflineWithNativeEngine({
                 transport,
