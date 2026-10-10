@@ -1,0 +1,22 @@
+scripts/ensurePinnedRustToolchain.sh
+  s_1f0dcd815e8946::t_4eac9e70789225 12,22-25,28,44-48
+scripts/__tests__/ensurePinnedRustToolchain.spec.ts
+  s_1f0dcd815e8946::t_8e5987fa47d675 33-34,101
+  s_1f0dcd815e8946::t_a9eb53f7a9821d 102-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eca747162e3f73b860b3734ba742042f10507c52",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
