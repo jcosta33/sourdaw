@@ -30,6 +30,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
@@ -232,7 +233,12 @@ function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
                                 )
                             ),
                         ],
-                        targetRanges: [],
+                        // A seek's target is the beat it moves the playhead to.
+                        targetRanges: plan.flatMap((call) =>
+                            typeof call.arguments.beat === 'number'
+                                ? [{ startBeat: call.arguments.beat, endBeat: call.arguments.beat }]
+                                : []
+                        ),
                         protectedTargetIds: ['track-drum-bus'],
                         protectedRanges: [],
                     },
@@ -742,6 +748,50 @@ describe('mix prompt workflow', () => {
         await undo();
 
         expect(readCommitStanding()).toBe('undone');
+    });
+
+    // A transport request after a mix change changes no project state: the thread the next
+    // request reads must still name the mix change, never the seek.
+    async function commitRoomMicGainThenSeek(): Promise<void> {
+        registerHandlerMap(getTransportHandlers());
+        setProviderPlan([{ name: 'setTrackGain', arguments: { trackId: 'track-room-mic', gain: 0.5 } }]);
+        await sendChatMessage('Set Room Mic gain to 50%, leaving the Drum Bus unchanged.');
+        expect(getTrack('track-room-mic')).toMatchObject({ gain: 0.5 });
+
+        setProviderPlan([{ name: 'seekPlayhead', arguments: { beat: 8 } }]);
+        await sendChatMessage('Move the playhead to beat 8, leaving the Drum Bus unchanged.');
+        await expect(confirmPendingChatActions({ confirmationId: getConfirmationId() })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(transportStore.value?.playheadPosition).toBe(8);
+        const seek = getPendingActionConfirmation(getConfirmationId());
+        expect(seek?.executedActions.map((execution) => execution.executionKind)).toEqual(['runtime']);
+        expect(
+            agentRunStore.value?.runs
+                .find((run) => run.runId === seek?.runId)
+                ?.receipts.map((receipt) => receipt.revertGroupId)
+        ).toEqual([null]);
+    }
+
+    it('keeps the mix change as the last commit after a seek the user confirmed', async () => {
+        await commitRoomMicGainThenSeek();
+
+        expect(readChatThreadContext()?.lastCommit).toMatchObject({
+            standing: 'standing',
+            commands: [{ name: 'setTrackGain' }],
+        });
+    });
+
+    it('reads the mix change undone after an undo, though the seek is the newer message', async () => {
+        await commitRoomMicGainThenSeek();
+
+        await undo();
+
+        expect(getTrack('track-room-mic')).toMatchObject({ gain: 1 });
+        expect(readChatThreadContext()?.lastCommit).toMatchObject({
+            standing: 'undone',
+            commands: [{ name: 'setTrackGain' }],
+        });
     });
 
     it('grounds the hosted OpenAI-compatible fixture to the same terminal result', async () => {

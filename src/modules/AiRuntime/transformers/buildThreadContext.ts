@@ -21,6 +21,8 @@ type ThreadConfirmation = {
      * group id, which a re-proposed subset keeps from the proposal it replaced.
      */
     batchId: string | null;
+    /** What each executed action changed: project state, or only the runtime (transport and the like). */
+    executedActions: ReadonlyArray<{ executionKind: 'project' | 'runtime' }>;
     approvalSnapshot: {
         actions: ReadonlyArray<{ type: string; payload?: unknown }>;
         actionLabels: readonly string[];
@@ -115,16 +117,32 @@ function readStanding(receipt: AgentRunReceipt, sources: ThreadContextSources): 
 }
 
 /**
+ * Whether a confirmed batch only drove the runtime. Command runs a runtime action (play, stop, seek)
+ * alone in its batch, so a batch whose executed actions are all runtime changed no project state.
+ */
+function isRuntimeOnly(confirmation: ThreadConfirmation): boolean {
+    return (
+        confirmation.executedActions.length > 0 &&
+        confirmation.executedActions.every((action) => action.executionKind === 'runtime')
+    );
+}
+
+/**
  * A confirmed batch's commit: the run's receipt for the very batch the confirmation records,
  * whatever status the confirmation settled in, since a batch that committed with effects still
  * pending settles as `failed` yet its change is in the project. Without that receipt the batch
- * committed nothing.
+ * committed nothing, and a runtime-only batch is receipted but changed no project state, so
+ * neither is a commit and the thread reads on to an earlier one.
  */
 function readConfirmedCommit(
     confirmation: ThreadConfirmation,
     sources: ThreadContextSources
 ): ThreadContext['lastCommit'] {
-    if (!isOpenProjectConfirmation(confirmation, sources) || confirmation.batchId === null) {
+    if (
+        !isOpenProjectConfirmation(confirmation, sources) ||
+        confirmation.batchId === null ||
+        isRuntimeOnly(confirmation)
+    ) {
         return null;
     }
     const run = sources.runs.find((candidate) => candidate.runId === confirmation.runId);
@@ -142,10 +160,11 @@ function readConfirmedCommit(
 }
 
 /**
- * A direct commit's batch: the run's receipt for the very batch the message was stamped with when
- * that batch began executing. A run can commit several batches directly, each from its own message,
- * so no other receipt of the run stands in for it. Its commands are the ones the history recorded
- * under its revert group.
+ * A direct commit's batch: the run's receipt for the very batch the message was stamped with once
+ * that batch committed a project change. A runtime-only batch stamps no batch, so its message
+ * reports nothing and the thread reads on to an earlier commit. A run can commit several batches
+ * directly, each from its own message, so no other receipt of the run stands in for one. Its
+ * commands are the ones the history recorded under its revert group.
  */
 function readDirectCommit(message: ChatMessage, sources: ThreadContextSources): ThreadContext['lastCommit'] {
     const { agentRunId: runId, agentBatchId: batchId } = message;

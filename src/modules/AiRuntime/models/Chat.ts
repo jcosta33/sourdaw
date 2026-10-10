@@ -23,8 +23,9 @@ export type ChatMessage = {
     /** The agent run a command message reports, so the thread can name the run it committed. */
     agentRunId?: string;
     /**
-     * The command batch this message committed without a confirmation, stamped when its execution
-     * begins, so the thread reports that batch's own receipt and never another batch of its run.
+     * The command batch this message committed to the project without a confirmation, stamped once
+     * it committed, so the thread reports that batch's own receipt and never another batch of its
+     * run. A runtime-only batch, which changes no project state, never stamps it.
      */
     agentBatchId?: string;
     /** The identity of the project that run planned against, so another project's commit never reads as this one's. */
