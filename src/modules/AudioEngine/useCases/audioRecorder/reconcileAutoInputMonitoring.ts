@@ -12,7 +12,7 @@ import { readCommittedInputMonitoringTrack } from '../../stores/inputMonitoringP
 
 import { admitInputMonitoring } from './admitInputMonitoring';
 import { deriveAutoMonitorEdge } from './deriveAutoInputMonitoring';
-import { type Admission, inputMonitoringAdmissions } from './inputMonitoringAdmission';
+import { type Admission, inputMonitoringAdmissions, type ReadIntent } from './inputMonitoringAdmission';
 import { readChangedInputMonitoringAdmission } from './readChangedInputMonitoringAdmission';
 import { startInputMonitoring } from './startInputMonitoring';
 import { stopTrackInputMonitoring } from './stopTrackInputMonitoring';
@@ -66,6 +66,7 @@ function closeInvalidAdmission(
     if (
         admission.captureRetired &&
         committed &&
+        committed.inputMonitoring !== 'off' &&
         (committed.inputMonitoring !== track.inputMonitoring ||
             committed.inputId !== track.inputId ||
             committed.kind !== track.kind ||
@@ -77,6 +78,35 @@ function closeInvalidAdmission(
         return;
     }
     closeEdge(track.id);
+}
+
+function readCommittedMonitoringIntent(trackId: string): ReturnType<ReadIntent> {
+    const committed = readCommittedInputMonitoringTrack(trackId);
+    if (!committed || !getTrackEligibility(committed.kind).acceptsMonitoring) {
+        return null;
+    }
+    const canAttach = trackStore.value?.tracks.some((track) => track.id === trackId) === true;
+    if (committed.inputMonitoring === 'on') {
+        return { inputId: committed.inputId, inputMonitoring: 'on', canAttach };
+    }
+    const transport = transportStore.value ?? defaultTransportState;
+    if (
+        committed.kind !== 'audio' ||
+        committed.inputMonitoring !== 'auto' ||
+        deriveAutoMonitorEdge({
+            inputMonitoring: committed.inputMonitoring,
+            armed: committed.armed,
+            isPlaying: transport.isPlaying,
+            isRecording: transport.isRecording,
+        }) !== 'open'
+    ) {
+        return null;
+    }
+    return {
+        inputId: committed.inputId,
+        inputMonitoring: 'auto',
+        canAttach: canAttach && !isAutoInputMonitoringHeld(),
+    };
 }
 
 function followAdmittedOnInput(trackId: string, interestedIds: Set<string>, opensSuppressed: boolean): void {
@@ -145,6 +175,37 @@ function openEdge(
     );
 }
 
+function openAutoEdge(
+    track: NonNullable<typeof trackStore.value>['tracks'][number],
+    transport: TransportFlags,
+    opensSuppressed: boolean
+): void {
+    const committed = readCommittedInputMonitoringTrack(track.id);
+    if (
+        committed &&
+        (committed.kind !== 'audio' ||
+            deriveAutoMonitorEdge({
+                inputMonitoring: committed.inputMonitoring,
+                armed: committed.armed,
+                isPlaying: transport.isPlaying,
+                isRecording: transport.isRecording,
+            }) !== 'open')
+    ) {
+        // A cancelled admission cannot reopen from Auto's stale rollback row.
+        closeEdge(track.id);
+        return;
+    }
+    if (opensSuppressed) {
+        return;
+    }
+    if (committed) {
+        // A rollback row may still carry the previous selector or arm state.
+        openEdge(track.id, committed.inputId, () => readCommittedMonitoringIntent(track.id));
+    } else {
+        openEdge(track.id, track.inputId);
+    }
+}
+
 /**
  * The single owner of Auto input monitoring. Derives each Auto track's desired
  * edge from its arm state and the transport, and opens or closes it so that
@@ -204,9 +265,7 @@ export function reconcileAutoInputMonitoring(): void {
             isRecording: transport.isRecording,
         });
         if (edge === 'open') {
-            if (!opensSuppressed) {
-                openEdge(track.id, track.inputId);
-            }
+            openAutoEdge(track, transport, opensSuppressed);
         } else if (edge === 'closed') {
             closeEdge(track.id);
         } else if (track.inputMonitoring === 'off' && interestedIds.has(track.id)) {
@@ -235,7 +294,8 @@ export function reconcileAutoInputMonitoring(): void {
             if (admission) {
                 const intent = admission.readIntent();
                 if (!intent) {
-                    if (readCommittedInputMonitoringTrack(trackId)) {
+                    const committed = readCommittedInputMonitoringTrack(trackId);
+                    if (committed && committed.inputMonitoring !== 'off') {
                         retireCapture(trackId, admission);
                     } else {
                         closeEdge(trackId);

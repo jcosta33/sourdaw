@@ -2277,9 +2277,11 @@ describe('track deletion releases the input monitor at Command commit', () => {
     it.each([
         ['on', 'eligible'],
         ['on', 'off'],
+        ['on', 'visible-off'],
         ['on', 'kind'],
         ['on', 'root'],
         ['auto', 'eligible'],
+        ['auto', 'off'],
         ['auto', 'disarm'],
     ] as const)(
         'settles an obsolete hidden %s grant only for current %s authority and keeps history available',
@@ -2338,6 +2340,9 @@ describe('track deletion releases the input monitor at Command commit', () => {
                             }
                             if (authority === 'off') {
                                 track.inputMonitoring = 'off';
+                            } else if (authority === 'visible-off') {
+                                track.inputMonitoring = 'auto';
+                                track.armed = false;
                             } else if (authority === 'kind') {
                                 track.kind = 'vca';
                             } else {
@@ -2368,6 +2373,24 @@ describe('track deletion releases the input monitor at Command commit', () => {
                 if (authority === 'root') {
                     return;
                 }
+                if (authority === 'visible-off') {
+                    mutateCrdtDoc<{
+                        tracks: { tracks: Array<{ id: string; inputMonitoring: string }> };
+                    }>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            const track = document.tracks.tracks.find((track) => track.id === 'a');
+                            if (!track) {
+                                throw new Error('Expected returned owner before committed Off');
+                            }
+                            track.inputMonitoring = 'off';
+                        },
+                    });
+                    expect(committedInputMonitoring('a')).toBe('off');
+                    expect(liveTrackIds()).toEqual(['a', 'b']);
+                    expect(getUserMedia).toHaveBeenCalledOnce();
+                    expect(monitorOwners()).toEqual([]);
+                }
                 mutateCrdtDoc<{
                     tracks: { tracks: Array<{ id: string; inputMonitoring: string; kind: string; armed: boolean }> };
                 }>({
@@ -2382,7 +2405,15 @@ describe('track deletion releases the input monitor at Command commit', () => {
                         track.armed = true;
                     },
                 });
-                if (authority === 'kind') {
+                if ((authority === 'off' && mode === 'on') || authority === 'visible-off') {
+                    expect(committedInputMonitoring('a')).toBe('on');
+                    expect(getUserMedia).toHaveBeenCalledOnce();
+                    expect(inputMonitoringSession.pendingRequests.size).toBe(0);
+                    expect(inputMonitoringSession.captures.size).toBe(0);
+                    expect(monitorOwners()).toEqual([]);
+                    expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
+                    await rearmCommittedTrackInputMonitoring('a');
+                } else if (authority === 'kind') {
                     await rearmCommittedTrackInputMonitoring('a');
                 }
             }
