@@ -44,6 +44,10 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 describe('handleSetDeviceParameter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.captureAutomationRecordingRollback.mockReset();
+        mocks.setDeviceParameter.mockReset();
+        mocks.updateDeviceParam.mockReset();
+        mocks.getTrackStoreState.mockReset();
         mocks.captureAutomationRecordingRollback.mockReturnValue(vi.fn());
         mocks.getTrackStoreState.mockReturnValue(null);
     });

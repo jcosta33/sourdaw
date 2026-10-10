@@ -9,6 +9,7 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
+import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 
 function isRestoreSnapshot(value: RestoreTrackPayloadSnapshot | null): value is RestoreTrackPayloadSnapshot {
     return value !== null;
@@ -21,14 +22,25 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
             return { status: 'no-write' };
         }
         const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
-        const removals: Array<{ trackId: string; finalizeRuntimeRemoval: () => void }> = [];
+        const removals: Array<{
+            trackId: string;
+            finalizeRuntimeRemoval: () => void;
+            modulationRemoval: ReturnType<typeof removeTrackModulationReferences>;
+        }> = [];
         for (const track of state.tracks) {
             const result = removeTrack(track.id, {
                 deferRuntimeEffects: true,
                 suppressRemovedEvent: true,
             });
             if (result.removed) {
-                removals.push({ trackId: track.id, finalizeRuntimeRemoval: result.finalizeRuntimeRemoval });
+                removals.push({
+                    trackId: track.id,
+                    finalizeRuntimeRemoval: result.finalizeRuntimeRemoval,
+                    modulationRemoval: removeTrackModulationReferences({
+                        trackId: track.id,
+                        deferRuntimeEffects: true,
+                    }),
+                });
             }
         }
         if (removals.length === 0) {
@@ -38,10 +50,12 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
             status: 'written',
             afterCommit: () =>
                 runAllAsyncEffects(
-                    removals.flatMap(({ trackId, finalizeRuntimeRemoval }) =>
-                        [finalizeRuntimeRemoval, () => publishTrackRemoved({ trackId })].map((effect) =>
-                            runtimeAuthority.guardAbsent(trackId, effect)
-                        )
+                    removals.flatMap(({ trackId, finalizeRuntimeRemoval, modulationRemoval }) =>
+                        [
+                            finalizeRuntimeRemoval,
+                            modulationRemoval.afterCommit,
+                            () => publishTrackRemoved({ trackId }),
+                        ].map((effect) => runtimeAuthority.guardAbsent(trackId, effect))
                     )
                 ),
             afterAmbiguousCommit: () => {
@@ -54,7 +68,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
                 }
                 const committedIds = new Set(committedState.tracks.map((track) => track.id));
                 const effects: Array<() => void | Promise<void>> = [];
-                for (const { trackId, finalizeRuntimeRemoval } of removals) {
+                for (const { trackId, finalizeRuntimeRemoval, modulationRemoval } of removals) {
                     if (committedIds.has(trackId)) {
                         effects.push(() => {
                             projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
@@ -65,6 +79,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
                             runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId }))
                         );
                     }
+                    effects.push(modulationRemoval.afterAmbiguousCommit);
                 }
                 effects.push(() => wireSidechainRoutes());
                 return runAllAsyncEffects(effects.map(runtimeAuthority.guard));

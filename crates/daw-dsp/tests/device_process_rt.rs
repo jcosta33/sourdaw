@@ -1142,6 +1142,64 @@ fn gluten_process_does_not_allocate_with_an_unlinked_detector() {
     }
 }
 
+/// Lookahead engaged on every topology, with a second stage behind it.
+///
+/// Lookahead off takes each topology's original detector route, so the guards
+/// above never run the undelayed one that lookahead selects, nor the second
+/// stage reading the first stage's output ahead of the delay.
+#[test]
+fn gluten_process_does_not_allocate_with_lookahead_on_every_topology() {
+    use daw_dsp::gluten::GlutenInstance;
+
+    for topology in 0..4_u32 {
+        let mut instance = GlutenInstance::new(SAMPLE_RATE);
+        instance.set_param("topology", topology as f32);
+        instance.set_param("blend_topology", ((topology + 1) % 4) as f32);
+        instance.set_param("blend_amount", 0.5);
+        instance.set_param("threshold", -24.0);
+        instance.set_param("ratio", 8.0);
+        instance.set_param("lookahead", 5.0);
+
+        unsafe {
+            fill_input(
+                instance.get_input_left_ptr(),
+                instance.get_input_right_ptr(),
+                BLOCK,
+                0,
+            );
+        }
+        let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+        assert_all_finite(&warmup, "gluten lookahead");
+
+        assert_no_alloc(|| {
+            for block in 0..GUARDED_BLOCKS {
+                unsafe {
+                    fill_input(
+                        instance.get_input_left_ptr(),
+                        instance.get_input_right_ptr(),
+                        BLOCK,
+                        (block + 1) * BLOCK,
+                    );
+                }
+                instance.process(BLOCK as u32);
+            }
+        });
+
+        let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+        assert_all_finite(&out, "gluten lookahead");
+        assert!(
+            peak(&out) > 1e-4,
+            "gluten topology {topology} fell silent, so the guarded region did not \
+             exercise the lookahead detector"
+        );
+        assert!(
+            instance.get_gr_db() < -1.0,
+            "gluten topology {topology} was not compressing, so the guarded region did \
+             not exercise the lookahead detector"
+        );
+    }
+}
+
 /// Driven at **non-default** calibration on purpose.
 ///
 /// `cc_smoothing_ms` defaults to 0, and at 0 `advance_sustain_smoothing`

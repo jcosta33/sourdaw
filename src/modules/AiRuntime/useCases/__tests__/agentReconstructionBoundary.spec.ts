@@ -124,7 +124,7 @@ describe('agent reconstruction boundary (AC-048)', () => {
             ])
         );
 
-        const result = await parsePromptToActions(PROMPT, context, undefined, 'revision-reconstruct');
+        const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: 'revision-reconstruct' });
 
         // The advertised tool set never carries the deferred name, so the request is refused one
         // gate before the loop; the loop refuses the same call on its own account below.

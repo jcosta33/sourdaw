@@ -435,12 +435,11 @@ describe('high-level intent conformance', () => {
     it('proposes from what the command index returned rather than collapsing to no-match', async () => {
         const messages = scriptHighLevelIntentProvider(runtimeMocks.generateWebLlmCompletion);
 
-        const result = await parsePromptToActions(
-            BLUES_PROMPT,
-            getProjectContext(),
-            undefined,
-            captureProjectRevision()
-        );
+        const result = await parsePromptToActions({
+            prompt: BLUES_PROMPT,
+            context: getProjectContext(),
+            projectRevision: captureProjectRevision(),
+        });
 
         const discoverTurnMessage = messages[1] ?? '';
         const proposeTurnMessage = messages[2] ?? '';

@@ -210,12 +210,11 @@ describe('transform.compile planner tool', () => {
                         },
                     ],
                 });
-            const planned = await parsePromptToActions(
-                'set note velocities in the selected MIDI clips to 90',
-                CONTEXT,
-                undefined,
-                'revision-transform-1'
-            );
+            const planned = await parsePromptToActions({
+                prompt: 'set note velocities in the selected MIDI clips to 90',
+                context: CONTEXT,
+                projectRevision: 'revision-transform-1',
+            });
             expect(planned.rejectionReason).toBeUndefined();
             expect(planned.actions).toHaveLength(2);
             const rejected = protocol.start(request);
@@ -299,12 +298,11 @@ describe('transform.compile planner tool', () => {
                 ],
             })
             .mockResolvedValueOnce({ status: 'complete', toolCalls: admitted.output.toolCalls });
-        const result = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toHaveLength(2);
 
@@ -321,12 +319,11 @@ describe('transform.compile planner tool', () => {
         );
         const emptyCall = emptySession.finish(finishEnvelope(request, 1, { reason: 'stop' })).output.toolCalls;
         vi.mocked(generateToolPlanningOutcome).mockResolvedValueOnce({ status: 'complete', toolCalls: emptyCall });
-        const empty = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const empty = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(empty.actions).toEqual([]);
         expect(empty.rejectionReason).toContain('unknown, duplicate, or failed transform compilation');
     });
@@ -351,12 +348,11 @@ describe('transform.compile planner tool', () => {
 
     it('returns exact expanded commands in a receipt and carries selected emissions into one approval batch', async () => {
         planCalls();
-        const result = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.applicationToolReceipts).toMatchObject([
             {
@@ -377,12 +373,11 @@ describe('transform.compile planner tool', () => {
 
     it('grounds a named MIDI clip list and the value at the end of its continuation', async () => {
         planCalls();
-        const result = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions.map((action) => action.payload)).toEqual([
             expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
@@ -436,12 +431,11 @@ describe('transform.compile planner tool', () => {
             })),
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90, excluding Chorus; set note velocities in Bridge MIDI clip to 100',
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90, excluding Chorus; set note velocities in Bridge MIDI clip to 100',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected or unresolved target');
     });
@@ -525,12 +519,11 @@ describe('transform.compile planner tool', () => {
                     },
                 ],
             });
-        const result = await parsePromptToActions(
-            'set note velocities in Bass Verse to 90, excluding Lead, rename Bass Verse to "set 100"',
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Bass Verse to 90, excluding Lead, rename Bass Verse to "set 100"',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions.map((action) => action.type)).toEqual(['setAllVelocities', 'renameClip']);
         expect(result.actions[0]).toMatchObject({ payload: { clipId: 'clip-bass-verse', velocity: 90 } });
@@ -580,12 +573,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'set note velocities in Chorus MIDI clip to 90, excluding Chorus and Missing',
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Chorus MIDI clip to 90, excluding Chorus and Missing',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected or unresolved target');
     });
@@ -626,12 +618,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'set note velocities in Verse MIDI clip to 90, excluding Alpha and Omega',
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse MIDI clip to 90, excluding Alpha and Omega',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected or unresolved target');
     });
@@ -741,7 +732,11 @@ describe('transform.compile planner tool', () => {
                         },
                     ],
                 });
-            const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
+            const result = await parsePromptToActions({
+                prompt,
+                context: CONTEXT,
+                projectRevision: 'revision-transform-1',
+            });
             expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
             if (allowed) {
                 expect(result.rejectionReason).toBeUndefined();
@@ -807,12 +802,11 @@ describe('transform.compile planner tool', () => {
                     },
                 ],
             });
-        const result = await parsePromptToActions(
-            'set note velocities in Verse MIDI clip to 90, excluding Chorus; set note velocities in Chorus MIDI clip to 100',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse MIDI clip to 90, excluding Chorus; set note velocities in Chorus MIDI clip to 100',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected or unresolved target');
@@ -919,7 +913,11 @@ describe('transform.compile planner tool', () => {
                         },
                     ],
                 });
-            const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
+            const result = await parsePromptToActions({
+                prompt,
+                context: CONTEXT,
+                projectRevision: 'revision-transform-1',
+            });
             if (allowed) {
                 expect(result.rejectionReason).toBeUndefined();
                 expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
@@ -984,12 +982,11 @@ describe('transform.compile planner tool', () => {
                     },
                 ],
             });
-        const result = await parsePromptToActions(
-            `create a MIDI track named Lead; create a MIDI track named Bass; add a MIDI clip named Melody on the new Lead track from beat 0 to beat 4; add notes to Melody on ${ownerName} track`,
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: `create a MIDI track named Lead; create a MIDI track named Bass; add a MIDI clip named Melody on the new Lead track from beat 0 to beat 4; add notes to Melody on ${ownerName} track`,
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         if (allowed) {
             expect(result.rejectionReason).toBeUndefined();
             expect(result.actions.map((action) => action.type)).toEqual([
@@ -1010,12 +1007,11 @@ describe('transform.compile planner tool', () => {
             selectors: { clips: { target: 'clip', where: { nameIncludes: 'Verse' }, limit: 1 } },
         };
         planCalls(['compile-1'], oneClip);
-        const omitted = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const omitted = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(omitted.actions).toEqual([]);
         expect(omitted.rejectionReason).toContain('exact request target set');
 
@@ -1051,12 +1047,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], threeClips);
-        const added = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90',
+        const added = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(added.actions).toEqual([]);
         expect(added.rejectionReason).toContain('exact request target set');
     });
@@ -1072,22 +1067,20 @@ describe('transform.compile planner tool', () => {
                 },
             ],
         };
-        const duplicate = await parsePromptToActions(
-            'set note velocities in Verse MIDI clips to 90',
-            duplicateContext,
-            undefined,
-            'revision-transform-1'
-        );
+        const duplicate = await parsePromptToActions({
+            prompt: 'set note velocities in Verse MIDI clips to 90',
+            context: duplicateContext,
+            projectRevision: 'revision-transform-1',
+        });
         expect(duplicate.actions).toEqual([]);
 
         vi.clearAllMocks();
         planCalls();
-        const protectedResult = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90 but leave Chorus unchanged',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const protectedResult = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90 but leave Chorus unchanged',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(protectedResult.actions).toEqual([]);
         expect(protectedResult.rejectionReason).toContain('protected or unresolved target');
     });
@@ -1137,12 +1130,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'set note velocities in Verse MIDI clip to 90; set note velocities in Chorus MIDI clip to 100',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse MIDI clip to 90; set note velocities in Chorus MIDI clip to 100',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions.map((action) => action.payload)).toEqual([
             expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
@@ -1202,12 +1194,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100',
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions.map((action) => action.payload)).toEqual([
             expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
@@ -1219,12 +1210,11 @@ describe('transform.compile planner tool', () => {
 
         vi.clearAllMocks();
         planCalls(['compile-1'], { ...document, steps: [document.steps[2], document.steps[0], document.steps[1]] });
-        const reordered = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100',
+        const reordered = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(reordered.rejectionReason).toBeUndefined();
         expect(reordered.actions.map((action) => action.payload)).toEqual([
             expect.objectContaining({ clipId: 'clip-bridge', velocity: 100 }),
@@ -1234,12 +1224,11 @@ describe('transform.compile planner tool', () => {
 
         vi.clearAllMocks();
         planCalls(['compile-1'], document);
-        const reversedClauses = await parsePromptToActions(
-            'set note velocities in Bridge MIDI clip to 100; set note velocities in Verse and Chorus MIDI clips to 90',
+        const reversedClauses = await parsePromptToActions({
+            prompt: 'set note velocities in Bridge MIDI clip to 100; set note velocities in Verse and Chorus MIDI clips to 90',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(reversedClauses.rejectionReason).toBeUndefined();
         expect(reversedClauses.actions.map((action) => action.payload)).toEqual([
             expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
@@ -1264,12 +1253,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], sameValue);
-        const repeatedValue = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 90',
+        const repeatedValue = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 90',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(repeatedValue.rejectionReason).toBeUndefined();
         expect(repeatedValue.actions.map((action) => action.payload)).toEqual([
             expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
@@ -1327,12 +1315,11 @@ describe('transform.compile planner tool', () => {
         };
         vi.clearAllMocks();
         planCalls(['compile-1'], extraTarget);
-        const pluralGroups = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge and Outro MIDI clips to 100',
-            contextWithOutro,
-            undefined,
-            'revision-transform-1'
-        );
+        const pluralGroups = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge and Outro MIDI clips to 100',
+            context: contextWithOutro,
+            projectRevision: 'revision-transform-1',
+        });
         expect(pluralGroups.rejectionReason).toBeUndefined();
         expect(pluralGroups.actions.map((action) => action.payload)).toEqual([
             expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
@@ -1358,12 +1345,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], threeGroups);
-        const threeClauses = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100; set note velocities in Outro MIDI clip to 110',
-            contextWithOutro,
-            undefined,
-            'revision-transform-1'
-        );
+        const threeClauses = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100; set note velocities in Outro MIDI clip to 110',
+            context: contextWithOutro,
+            projectRevision: 'revision-transform-1',
+        });
         expect(threeClauses.rejectionReason).toBeUndefined();
         expect(threeClauses.actions.map((action) => action.payload)).toEqual([
             expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
@@ -1401,7 +1387,11 @@ describe('transform.compile planner tool', () => {
         ] as const) {
             vi.clearAllMocks();
             planCalls(['compile-1'], rejectedDocument);
-            const rejected = await parsePromptToActions(prompt, rejectedContext, undefined, 'revision-transform-1');
+            const rejected = await parsePromptToActions({
+                prompt,
+                context: rejectedContext,
+                projectRevision: 'revision-transform-1',
+            });
             expect(rejected.actions).toEqual([]);
             expect(rejected.rejectionReason).toBeDefined();
         }
@@ -1409,19 +1399,18 @@ describe('transform.compile planner tool', () => {
 
     it('rejects an incomplete or ineligible captured MIDI selection', async () => {
         planCalls();
-        const missing = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90',
-            { ...CONTEXT, selectedClipIds: ['clip-verse', 'clip-chorus', 'clip-missing'] },
-            undefined,
-            'revision-transform-1'
-        );
+        const missing = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90',
+            context: { ...CONTEXT, selectedClipIds: ['clip-verse', 'clip-chorus', 'clip-missing'] },
+            projectRevision: 'revision-transform-1',
+        });
         expect(missing.actions).toEqual([]);
 
         vi.clearAllMocks();
         planCalls();
-        const audio = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90',
-            {
+        const audio = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90',
+            context: {
                 ...CONTEXT,
                 tracks: [
                     {
@@ -1441,9 +1430,8 @@ describe('transform.compile planner tool', () => {
                 ],
                 selectedClipIds: ['clip-verse', 'clip-chorus', 'clip-audio'],
             },
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(audio.actions).toEqual([]);
     });
 
@@ -1465,12 +1453,11 @@ describe('transform.compile planner tool', () => {
                 },
             ],
         };
-        const result = await parsePromptToActions(
-            'set note velocities in "selected MIDI clips" MIDI clip to 90',
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in "selected MIDI clips" MIDI clip to 90',
             context,
-            undefined,
-            'revision-transform-1'
-        );
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions.map((action) => action.payload)).toEqual([
             expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
@@ -1503,12 +1490,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'set note velocities in Verse MIDI clip to 90; set note velocities in Chorus MIDI clip to 100',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse MIDI clip to 90; set note velocities in Chorus MIDI clip to 100',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actionCommandGraph?.dependenciesByActionIndex).toEqual([[], [0]]);
     });
@@ -1568,12 +1554,11 @@ describe('transform.compile planner tool', () => {
                     },
                 ],
             });
-        const result = await parsePromptToActions(
-            'set note velocities in Verse and Chorus MIDI clips to 90, then mute all MIDI tracks',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse and Chorus MIDI clips to 90, then mute all MIDI tracks',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions.map((action) => action.type)).toEqual([
             'setAllVelocities',
@@ -1664,12 +1649,11 @@ describe('transform.compile planner tool', () => {
                     },
                 ],
             });
-        const result = await parsePromptToActions(
-            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('Provider value name does not match the user request');
@@ -1729,12 +1713,11 @@ describe('transform.compile planner tool', () => {
                     ],
                 });
 
-            const result = await parsePromptToActions(
-                'create 2 MIDI tracks named Lead and Bass',
-                CONTEXT,
-                undefined,
-                'revision-transform-1'
-            );
+            const result = await parsePromptToActions({
+                prompt: 'create 2 MIDI tracks named Lead and Bass',
+                context: CONTEXT,
+                projectRevision: 'revision-transform-1',
+            });
 
             expect(
                 result.actions.map((action) => (action.type === 'addTrack' ? action.payload.name : action.type))
@@ -1797,7 +1780,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
+        const result = await parsePromptToActions({
+            prompt,
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
         if (allowed) {
             expect(result.rejectionReason).toBeUndefined();
@@ -1839,12 +1826,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90, then create a MIDI track named Lead and add a MIDI clip named Lead Take on that new track from beat 2 to beat 6',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90, then create a MIDI track named Lead and add a MIDI clip named Lead Take on that new track from beat 2 to beat 6',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions.map((action) => action.type)).toEqual([
             'setAllVelocities',
@@ -1888,12 +1874,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'create a MIDI track named Piano and add a MIDI clip named Melody on that new track from beat 0 to beat 4',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'create a MIDI track named Piano and add a MIDI clip named Melody on that new track from beat 0 to beat 4',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('Provider action rejected');
     });
@@ -1950,12 +1935,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'create a MIDI track named Piano; create a MIDI track named Bass; add a MIDI clip named Melody on the new Piano track from beat 0 to beat 4; add a MIDI clip named Bassline on the new Bass track from beat 4 to beat 8',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'create a MIDI track named Piano; create a MIDI track named Bass; add a MIDI clip named Melody on the new Piano track from beat 0 to beat 4; add a MIDI clip named Bassline on the new Bass track from beat 4 to beat 8',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addTrack', 'addClip', 'addClip']);
         expect(result.actionCommandGraph).toMatchObject({
@@ -2035,12 +2019,11 @@ describe('transform.compile planner tool', () => {
             ],
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'set note velocities in Verse MIDI clip to 90; create a MIDI track named Lead; mute Keys MIDI track; add a MIDI clip named Lead Take on that new track from beat 2 to beat 6; set note velocities in Chorus MIDI clip to 100',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse MIDI clip to 90; create a MIDI track named Lead; mute Keys MIDI track; add a MIDI clip named Lead Take on that new track from beat 2 to beat 6; set note velocities in Chorus MIDI clip to 100',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions.map((action) => action.type)).toEqual([
             'setAllVelocities',
@@ -2064,7 +2047,11 @@ describe('transform.compile planner tool', () => {
             arguments: { name: { literal: `MIDI ${String(index)}` }, kind: { literal: 'midi' } },
         }));
         planCalls(['compile-1'], { ...DOCUMENT, selectors: {}, steps: tracks });
-        const atLimit = await parsePromptToActions('create 12 MIDI tracks', CONTEXT, undefined, 'revision-transform-1');
+        const atLimit = await parsePromptToActions({
+            prompt: 'create 12 MIDI tracks',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(atLimit.rejectionReason).toBeUndefined();
         expect(atLimit.actions).toHaveLength(12);
 
@@ -2084,47 +2071,43 @@ describe('transform.compile planner tool', () => {
                 },
             ],
         });
-        const overLimit = await parsePromptToActions(
-            'create 12 MIDI tracks and duplicate Keys MIDI track',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const overLimit = await parsePromptToActions({
+            prompt: 'create 12 MIDI tracks and duplicate Keys MIDI track',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(overLimit.actions).toEqual([]);
         expect(overLimit.rejectionReason).toContain('more than 12 project objects');
     });
 
     it('rejects an unknown selected call ID without treating provider text as compiled output', async () => {
         planCalls(['unknown']);
-        const result = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('unknown, duplicate, or failed transform compilation');
     });
 
     it('refuses duplicate and failed selected compilation references', async () => {
         planCalls(['compile-1', 'compile-1']);
-        const duplicate = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const duplicate = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(duplicate.actions).toEqual([]);
         expect(duplicate.rejectionReason).toContain('unknown, duplicate, or failed transform compilation');
 
         vi.clearAllMocks();
         planCalls(['compile-1'], { ...DOCUMENT, seed: -1 });
-        const failed = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const failed = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(failed.applicationToolReceipts?.[0]).toMatchObject({ status: 'failure' });
         expect(failed.actions).toEqual([]);
         expect(failed.rejectionReason).toContain('unknown, duplicate, or failed transform compilation');
@@ -2152,12 +2135,11 @@ describe('transform.compile planner tool', () => {
                     },
                 ],
             });
-        const result = await parsePromptToActions(
-            'set note velocities in the selected MIDI clips to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in the selected MIDI clips to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toBeUndefined();
@@ -2219,12 +2201,11 @@ describe('transform.compile planner tool', () => {
             })),
         };
         planCalls(['compile-1'], document);
-        const result = await parsePromptToActions(
-            'set note velocities in Verse MIDI clip to 90',
-            CONTEXT,
-            undefined,
-            'revision-transform-1'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set note velocities in Verse MIDI clip to 90',
+            context: CONTEXT,
+            projectRevision: 'revision-transform-1',
+        });
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('command budget');
     });
