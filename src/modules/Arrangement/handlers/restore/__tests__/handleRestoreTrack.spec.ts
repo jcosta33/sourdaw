@@ -68,6 +68,21 @@ vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
 
+// This unit spec owns the restore handler's runtime effects, not live CRDT root
+// identity. Keep the root absent and stable; integration specs cover the actual
+// command/CRDT fence and root-change behavior.
+vi.mock(
+    '#/modules/CrdtDocument/useCases',
+    (): Pick<
+        typeof import('#/modules/CrdtDocument/useCases'),
+        'DOC_PREFIX_ROOT' | 'captureProjectRootIdentity' | 'getCrdtDoc'
+    > => ({
+        DOC_PREFIX_ROOT: 'root',
+        captureProjectRootIdentity: () => 'restore-track-spec-root',
+        getCrdtDoc: () => undefined,
+    })
+);
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     rearmCommittedTrackInputMonitoring: mocks.rearmCommittedTrackInputMonitoring,
 }));
