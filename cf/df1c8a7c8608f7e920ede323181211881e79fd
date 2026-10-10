@@ -1,0 +1,39 @@
+scripts/__tests__/prValidationScope.spec.ts
+  s_97ab82e0b4f10c::t_df42aedd7b4469 234-255
+scripts/__tests__/e2eAffectedGraph.spec.ts
+  s_97ab82e0b4f10c::t_15a03649ec4b3d 7,178-184,186-201,206-212,256,268-269
+  s_97ab82e0b4f10c::t_7aef8c9aa31d02 165-166,172-175,245-255
+  s_97ab82e0b4f10c::t_a01ff7f22c5627 167-171,257-267
+  s_97ab82e0b4f10c::t_04b5c78bffc3c6 185
+  s_97ab82e0b4f10c::t_21785c0a61b19b 202-205,213
+  s_1f0dcd815e8946::t_5da8fa74b2006f 214
+scripts/e2eAffectedGraph.ts
+  s_97ab82e0b4f10c::t_680bcad2f6cfbb 204-205,218-226,233-236,239,242-243
+  s_97ab82e0b4f10c::t_4d939e48423548 177-178,192-203,206-217,270-271
+scripts/prValidationScope.ts
+  s_97ab82e0b4f10c::t_0e66552f792570 510
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cfdf1c8a7c8608f7e920ede323181211881e79fd",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
