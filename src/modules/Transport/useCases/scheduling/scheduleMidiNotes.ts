@@ -1313,6 +1313,13 @@ export async function scheduleMidiNotes(
                         // selector keeps the two separate for its own callers.
                         lastScheduledBeat: fromBeat,
                         grooveLookaroundBeats: MIDI_NOTE_GROOVE_LOOKAROUND_BEATS,
+                        // The same anchored window the per-note admission below
+                        // tests: a leftward trim lifts the window ceiling above
+                        // the loop length, and the generator must still offer
+                        // that material (#5198).
+                        clipStartBeat: clip.startBeat,
+                        loopOriginBeat: clip.loopOriginBeat,
+                        loopEnabled: true,
                     });
                 } else {
                     iterNotes = selectMidiNotesForSchedulerWindow({

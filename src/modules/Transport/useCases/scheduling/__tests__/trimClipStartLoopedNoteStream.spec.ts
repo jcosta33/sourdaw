@@ -143,6 +143,10 @@ describe('trimClipStart keeps a wrapping trim audible on the scheduler stream', 
             lastScheduledBeat: 7.5,
             // Mirrors scheduleMidiNotes' MIDI_NOTE_GROOVE_LOOKAROUND_BEATS.
             grooveLookaroundBeats: 1,
+            // The same anchored window the live admission test reads.
+            clipStartBeat: trimmed.startBeat,
+            loopOriginBeat: trimmed.loopOriginBeat,
+            loopEnabled: trimmed.loopEnabled ?? false,
         });
         expect(selected.map((note) => note.id)).toEqual(['n-beat-8']);
 

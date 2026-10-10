@@ -1,4 +1,5 @@
 import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
+import { restampLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 
 import { getNextClipId } from '../../repositories/clipIdCounter';
@@ -90,6 +91,19 @@ export function prepareClipSplit({
         name: `${clip.name} (L)`,
         fadeOutBeats: 0,
     };
+    // The right fragment's loop anchor follows its basis (#4988). The MIDI
+    // fragment re-bases its notes (offset 0, notes shifted down by the split)
+    // into a fresh media basis the source's timeline anchor has no meaning
+    // in: carried through, the old anchor's advance opens the loop window
+    // behind the fragment's head and silences surviving material, so it
+    // restamps at the fragment's own start — key absent for an unanchored
+    // source, the same law the delete/bounce fragment writers follow. The
+    // audio fragment's media basis is preserved: its offset advances with
+    // the head by the same timeline delta the carried anchor's advance grows
+    // by, so the region the audio readers recover —
+    // `audioOffsetBeats - (startBeat - loopOriginBeat)` — is unchanged, and
+    // the `...clip` spread carries the anchor unchanged.
+    const rightLoopOriginEntry = clip.type === 'midi' ? restampLoopOriginEntry(clip, adjustedSplitBeat) : {};
     const rightClip: Clip = {
         ...clip,
         id: effectiveRightClipId,
@@ -98,6 +112,7 @@ export function prepareClipSplit({
         fadeInBeats: 0,
         audioOffsetBeats: contentSplitBeats,
         midiOffsetBeats: 0,
+        ...rightLoopOriginEntry,
     };
     const previous: ClipSplitActionSnapshot = {
         trackId: track.id,
