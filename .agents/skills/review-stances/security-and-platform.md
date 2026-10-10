@@ -22,6 +22,20 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-10 — verification temporary storage lacked an owned deletion boundary
+
+The original resource guard (`0e20269791`, retained through PR #2449) contained processes without
+owning their temporary storage. PR #4899's Vitest upgrade review omitted the killed-run storage
+lifecycle risk. An RSS ceiling does not limit disk use, and process termination does not grant
+authority to delete an arbitrary system-temp cache.
+
+Probe: place an unowned sibling beside a UUID-bound run, then attack owner JSON, symlinked roots,
+metadata and temp directories, reused PID identities, missing process census, and competing
+scavengers. Only a proven-dead owned payload may disappear. Keep claim metadata outside recursive
+deletion and kill its reclaimer twice; a later owner must recover it without deleting live or
+uncertain state. Inject low and unavailable disk samples on each monitored volume and require
+admission refusal or contained runtime termination with an explicit nonzero failure reason.
+
 ### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 
 PR #4586 first appended `delivery-authorized` after reading review state without a final PR state

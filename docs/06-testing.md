@@ -719,6 +719,33 @@ kill prints the budget it applied — record a budget above the observed peak in
 free RAM covers active unused headroom, the new command, and the 2 GiB system reserve. It still
 enforces timeouts, process cleanup, host pressure, and the command RSS ceiling. Never bypass it.
 
+Each guarded command inherits `TMPDIR`, `TMP`, and `TEMP` before startup, pointing to its own
+private directory under the primary repository's `.agents/guard-storage/` on the repository's
+volume. Nested guards use separate directories and retain the shared memory admission registry.
+Normal exits, spawn errors, signals, and forced termination release storage only after the entire
+tracked process tree is proven stopped. A surviving process or unavailable process census retains
+the ownership record and reports failure; the guard never deletes old unowned system-temp caches.
+
+New guard starts recover storage only after the supervisor and its descendants are proven dead.
+Records bind UUIDs, process start identities, and directory identities. Atomic rename claims let
+concurrent scavengers serialize one payload, and a claim retains its reclamation owner's identity
+outside that payload until deletion finishes, so a second supervisor crash remains recoverable.
+Live owners, reused or uncertain PID identities, malformed records, and symlinked ownership paths
+are retained. Windows cannot establish a complete inherited-token census after supervisor death;
+crashed spawned runs there retain their storage for explicit inspection.
+
+The guard samples available disk space on the temporary-storage volume, the command's working
+volume, and the system volume without walking their directory trees. It requires a 20 GiB free
+reserve at admission and throughout execution. Set `--disk-reserve-mib <positive-integer>` or
+`SOURDAW_GUARD_DISK_RESERVE_MIB` to configure it; nested guards inherit the chosen reserve. Supply
+the desired override again on `--recover`. Disk pressure stops the process tree with the existing
+`pressure` failure receipt and a disk-specific diagnostic; unavailable or invalid disk sampling
+fails closed with `monitor`. Cleanup uncertainty never turns a stopped run into success.
+
+Existing running commands and old lane copies keep their original guard. After this change lands,
+their next verification must invoke the updated guard, or merge the fix into the owned lane when
+needed. Do not rewrite or clean another agent's lane to upgrade it.
+
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 
 Spec files are excluded from the app `pnpm typecheck` (`tsconfig.app.json` excludes `src/**/*.spec.ts(x)`), so `pnpm typecheck:test` is the only gate that type-checks them. Run it whenever you touch a spec, a dummy factory, or a model shape that fixtures mirror. It must stay at zero errors — fix fixtures to the real types; never silence with `any` or `@ts-expect-error`.
