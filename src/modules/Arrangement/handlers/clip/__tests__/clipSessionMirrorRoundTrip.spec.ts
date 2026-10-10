@@ -3095,10 +3095,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             },
             { source: 'manual' }
         );
-        await executeAppAction(
-            { type: 'removeClip', payload: { clipId: occupiedId, ripple: false } },
-            { source: 'manual' }
-        );
+        await executeAppAction({ type: 'removeClip', payload: { clipId: occupiedId } }, { source: 'manual' });
         await vi.waitFor(() => expect(undoStore.value?.past).toHaveLength(2));
         const removal = undoHistoryStore.value?.past.at(-1);
         const restore = removal?.kind === 'action' ? removal.inverseAction : null;
