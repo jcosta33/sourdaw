@@ -353,14 +353,22 @@ function splitSourceNotes(
         // overlapping a played window stays whole on the source clip in its own
         // coordinates (#5112). The chain below still runs, so the right
         // fragment's rebased copy — which its own comp fragments read — is
-        // unaffected.
-        if (command.retainOnSourceWindows?.some((window) => note.startBeat < window.end && noteEnd > window.start)) {
+        // unaffected. The left side is exclusive: the retention push is the
+        // note's whole stored copy, so the left-keep and left-slice clauses
+        // must not push it again (a played window reaching into the keep zone
+        // used to store the same note twice, #5213).
+        const retained = command.retainOnSourceWindows?.some(
+            (window) => note.startBeat < window.end && noteEnd > window.start
+        );
+        if (retained) {
             leftNotes.push(note);
         }
 
         if (command.discardBeforeBeat !== undefined) {
             if (noteEnd <= command.discardBeforeBeat) {
-                leftNotes.push(note);
+                if (!retained) {
+                    leftNotes.push(note);
+                }
                 continue;
             }
             if (note.startBeat < command.discardBeforeBeat) {
@@ -368,7 +376,9 @@ function splitSourceNotes(
                 if (!Number.isFinite(leftDuration)) {
                     return { status: 'rejected' };
                 }
-                leftNotes.push(sliceMidiNoteExtent(note, { fromOffset: 0, duration: leftDuration }));
+                if (!retained) {
+                    leftNotes.push(sliceMidiNoteExtent(note, { fromOffset: 0, duration: leftDuration }));
+                }
                 if (noteEnd > command.splitBeat) {
                     const rightDuration = noteEnd - command.splitBeat;
                     if (!Number.isFinite(rightDuration)) {
@@ -423,7 +433,9 @@ function splitSourceNotes(
         }
 
         if (noteEnd <= command.splitBeat) {
-            leftNotes.push(note);
+            if (!retained) {
+                leftNotes.push(note);
+            }
             continue;
         }
         if (note.startBeat >= command.splitBeat) {
@@ -440,7 +452,9 @@ function splitSourceNotes(
         if (!Number.isFinite(leftDuration) || !Number.isFinite(rightDuration)) {
             return { status: 'rejected' };
         }
-        leftNotes.push(sliceMidiNoteExtent(note, { fromOffset: 0, duration: leftDuration }));
+        if (!retained) {
+            leftNotes.push(sliceMidiNoteExtent(note, { fromOffset: 0, duration: leftDuration }));
+        }
         const request: MidiGeneratedNoteIdentityRequest = {
             role: 'split-right',
             sourceClipId: command.sourceClipId,

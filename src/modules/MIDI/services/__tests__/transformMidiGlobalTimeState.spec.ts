@@ -756,6 +756,87 @@ describe('transformMidiGlobalTimeState split edge cases', () => {
     });
 });
 
+describe('transformMidiGlobalTimeState retained comp windows (#5213)', () => {
+    // A comped Delete Time hands the split both boundary windows and the played
+    // media windows. When a played window reaches into the keep zone (an
+    // offset-0 take, or a gap continuing the clip's own media), the retention
+    // branch and the stored-position chain both matched the same rows and
+    // Delete Time stored one note as two identical entries; each stored copy
+    // per note id must stay at one while the right-fragment rebase still runs.
+    const command = {
+        type: 'split-notes' as const,
+        sourceClipId: 'source',
+        targetClipId: 'right',
+        splitBeat: 4,
+        discardBeforeBeat: 2,
+    };
+
+    function storedCopiesById(notes: readonly { id: string }[]): Map<string, number> {
+        const copies = new Map<string, number>();
+        for (const note of notes) {
+            copies.set(note.id, (copies.get(note.id) ?? 0) + 1);
+        }
+        return copies;
+    }
+
+    it('stores an offset-0 take note the keep zone plays exactly once', () => {
+        const prepared = state({
+            notesByClipId: {
+                source: [
+                    { id: 'kept-early', pitch: 60, startBeat: 0.5, duration: 0.5, velocity: 100 },
+                    { id: 'kept-late', pitch: 60, startBeat: 1.5, duration: 0.5, velocity: 100 },
+                    { id: 'after-cut', pitch: 62, startBeat: 8.5, duration: 0.5, velocity: 100 },
+                ],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ ...command, retainOnSourceWindows: [{ start: 0, end: 2 }] }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        const leftNotes = result.state.notesByClipId.source ?? [];
+        expect(leftNotes.map((note) => note.id)).toEqual(['kept-early', 'kept-late']);
+        expect([...storedCopiesById(leftNotes).values()]).toEqual([1, 1]);
+        // The retained rows are the whole stored notes, unchanged.
+        expect(leftNotes[0]).toBe(prepared.notesByClipId.source?.[0]);
+        expect(leftNotes[1]).toBe(prepared.notesByClipId.source?.[1]);
+        // The right-fragment distribution still runs beside the retained copy.
+        expect(result.state.notesByClipId.right).toStrictEqual([
+            { id: 'after-cut', pitch: 62, startBeat: 4.5, duration: 0.5, velocity: 100 },
+        ]);
+    });
+
+    it('stores a gap-shape straddler once on the left while its rebased right copy still mints', () => {
+        const straddler = { id: 'straddler', pitch: 64, startBeat: 1, duration: 4, velocity: 100 };
+        const prepared = state({
+            notesByClipId: {
+                source: [straddler, { id: 'kept', pitch: 60, startBeat: 0.5, duration: 0.5, velocity: 100 }],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ ...command, retainOnSourceWindows: [{ start: 0, end: 2 }] }],
+            targetNoteIds: ['straddler-right'],
+        });
+
+        expect(result.status).toBe('ready');
+        const leftNotes = result.state.notesByClipId.source ?? [];
+        // The straddler stays whole (its left slice would duplicate it), the
+        // kept note is not re-pushed by the left-keep clause.
+        expect(leftNotes.map((note) => note.id)).toEqual(['straddler', 'kept']);
+        expect([...storedCopiesById(leftNotes).values()]).toEqual([1, 1]);
+        expect(leftNotes[0]).toBe(straddler);
+        // The right fragment still receives its rebased copy under a minted id.
+        expect(result.state.notesByClipId.right?.map((note) => [note.id, note.startBeat, note.duration])).toEqual([
+            ['straddler-right', 0, 1],
+        ]);
+    });
+});
+
 describe('transformMidiGlobalTimeState copy and removal edge cases', () => {
     it('is a no-op when copying from an empty source clip', () => {
         const prepared = state({ notesByClipId: { source: [], target: [] } });

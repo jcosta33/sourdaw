@@ -58,7 +58,11 @@ const noActionHistoryMetadataPort = {
 let stopProjectionBridge: () => void;
 
 function clips() {
-    return trackStore.value?.tracks[0]?.clips ?? [];
+    const track = trackStore.value?.tracks[0];
+    if (!track) {
+        throw new Error('Expected the arrangement track fixture');
+    }
+    return track.clips;
 }
 
 function notesOf(clipId: string): NonNullable<MidiStoreState['notesByClipId'][string]> {
@@ -132,9 +136,21 @@ function arrangeLoopCompMidi(): { compTake: Take } {
 function expectAuthority(): void {
     flushAutomergeStorageWrites();
     const project = getCrdtDoc<Project>('root');
-    expect(project?.tracks.tracks).toEqual(trackStore.value?.tracks);
-    expect(project?.takeLanes.lanes).toEqual(takeLaneStore.value?.lanes);
-    expect(project?.midi.notesByClipId).toEqual(midiStore.value?.notesByClipId);
+    if (!project) {
+        throw new Error('Expected the project document');
+    }
+    if (!trackStore.value) {
+        throw new Error('Expected the track store');
+    }
+    if (!takeLaneStore.value) {
+        throw new Error('Expected the take lane store');
+    }
+    if (!midiStore.value) {
+        throw new Error('Expected the midi store');
+    }
+    expect(project.tracks.tracks).toEqual(trackStore.value.tracks);
+    expect(project.takeLanes.lanes).toEqual(takeLaneStore.value.lanes);
+    expect(project.midi.notesByClipId).toEqual(midiStore.value.notesByClipId);
 }
 
 /** Resolved comp fragments as plain rows: timeline span, media origin. */
@@ -264,9 +280,13 @@ describe('Delete Time through a comped MIDI loop pass (#5112)', () => {
         expectAuthority();
 
         await redo();
+        const rightClip = clips().find((clip) => clip.id !== 'source');
+        if (!rightClip) {
+            throw new Error('Expected the re-minted right fragment');
+        }
         expect(clips().map((clip) => [clip.id, clip.startBeat, clip.endBeat])).toEqual([
             ['source', 8, 10],
-            [clips().find((clip) => clip.id !== 'source')!.id, 10, 14],
+            [rightClip.id, 10, 14],
         ]);
         expect(
             noteRows([notesOf('source')]).filter(([pitch, start]) => pitch === 62 && start >= 8 && start < 10)

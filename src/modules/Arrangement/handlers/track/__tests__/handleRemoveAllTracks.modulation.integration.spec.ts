@@ -5,8 +5,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { type Modulator } from '#/modules/Automation/models/Modulator';
-import { modulationRuntimeStore, modulationStore } from '#/modules/Automation/stores';
+import { type ModulationStoreState, modulationRuntimeStore, modulationStore } from '#/modules/Automation/stores';
 import { addMapping, addModulator } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
@@ -20,6 +19,8 @@ import {
 import {
     createCrdtDoc,
     getCrdtDoc,
+    hasCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -44,10 +45,42 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+type StorageRuntimeDoc = {
+    [key: string]: unknown;
+};
+
+/**
+ * The storage runtime with one production hazard injected: every document
+ * mutation publishes, then the port dies before the commit reports. That is
+ * exactly the partial-commit shape executeAppActionBatch reconciles as an
+ * ambiguous commit, which is the only route that runs a handler's
+ * afterAmbiguousCommit finalizers.
+ */
+function registerVolatileStorageRuntime(): void {
+    configureAutomergeStoragePort({
+        getDoc: (docId) => getCrdtDoc<StorageRuntimeDoc>(docId),
+        hasDoc: (docId) => hasCrdtDoc(docId),
+        getSemanticMessage: () => undefined,
+        mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction }) => {
+            mutateCrdtDoc<StorageRuntimeDoc>({
+                id: docId,
+                changeFn,
+                message,
+                snapshotTransaction,
+                localSlots: changedKeys,
+            });
+            throw new Error('Simulated storage loss after the change published');
+        },
+    });
+}
+
 type Project = {
     tracks: TrackStoreState;
     modulation: { modulators: Modulator[] };
 };
+
+/** Structural view of the Automation module's modulator rows (index-only boundary). */
+type Modulator = ModulationStoreState['modulators'][number];
 
 function track(id: string, kind: 'audio' | 'midi' = 'audio') {
     return TrackDummy.create({ id, kind });
@@ -65,7 +98,7 @@ function modulatorById(id: string): Modulator | null {
     return liveModulators().find((modulator) => modulator.id === id) ?? null;
 }
 
-function documentModulators(document: { modulation: { modulators: Modulator[] } } | null): Modulator[] {
+function documentModulators(document: { modulation: { modulators: Modulator[] } } | null | undefined): Modulator[] {
     if (!document) {
         throw new Error('Expected the project document');
     }
@@ -176,6 +209,43 @@ describe('removeAllTracks modulation lifecycle (#5090)', () => {
         expect(documentModulators(document)).toEqual([]);
     });
 
+    it('a committed bulk removal finalizes the deferred modulation runtime', async () => {
+        seedArrangement();
+        modulationRuntimeStore.set({ runtimeValues: { 'mod-t1': 0.42, 'mod-t2': -0.2 } });
+
+        const result = await executeAppActionBatch([{ type: 'removeAllTracks', payload: undefined }]);
+
+        expect(result.status).toBe('committed');
+        // The commit ran the handler's afterCommit: the deferred finalizers
+        // reverted the removed modulators' runtime so no engine override
+        // outlives its owner. Dropping the finalizer registration strands both
+        // runtime values here.
+        expect(modulationRuntimeStore.value).toEqual({ runtimeValues: {} });
+        expect(liveModulators()).toEqual([]);
+    });
+
+    it('an ambiguous bulk commit reconciles the deferred runtime against durable truth', async () => {
+        seedArrangement();
+        modulationRuntimeStore.set({ runtimeValues: { 'mod-t1': 0.42, 'mod-t2': -0.2 } });
+        registerVolatileStorageRuntime();
+
+        const result = await executeAppActionBatch([{ type: 'removeAllTracks', payload: undefined }]);
+
+        // The change published before the port died, so the durable document
+        // carries the removal even though the batch reports the commit as
+        // ambiguous. The handler's afterAmbiguousCommit reconciled the runtime
+        // for the modulators durable truth still shows removed — the commit
+        // route's afterCommit never runs on this path.
+        expect(result.status).toBe('ambiguous');
+        const document = getCrdtDoc<Project>('root');
+        if (!document) {
+            throw new Error('Expected the project document');
+        }
+        expect(document.tracks.tracks).toEqual([]);
+        expect(documentModulators(document)).toEqual([]);
+        expect(modulationRuntimeStore.value).toEqual({ runtimeValues: {} });
+    });
+
     it('undo restores the captured modulation and redo removes it again', async () => {
         seedArrangement();
         const captured = structuredClone(liveModulators());
@@ -188,14 +258,14 @@ describe('removeAllTracks modulation lifecycle (#5090)', () => {
 
         expect(trackStore.value?.tracks.map((candidate) => candidate.id)).toEqual(['t1', 't2', 't3']);
         expect(liveModulators()).toEqual(captured);
-        expect(getCrdtDoc<Project>('root')?.modulation.modulators).toEqual(captured);
+        expect(documentModulators(getCrdtDoc<Project>('root'))).toEqual(captured);
 
         await redo();
         flushAutomergeStorageWrites();
 
         expect(trackStore.value?.tracks).toEqual([]);
         expectNoDeletedTrackReferences(['t1', 't2', 't3']);
-        expect(getCrdtDoc<Project>('root')?.modulation.modulators).toEqual([]);
+        expect(documentModulators(getCrdtDoc<Project>('root'))).toEqual([]);
     });
 
     it('refused transaction retains the prior modulation truth and its runtime', async () => {
@@ -220,8 +290,11 @@ describe('removeAllTracks modulation lifecycle (#5090)', () => {
         // stale live-store projection over it, the opposite of what a refusal
         // guarantees.
         const refusedDocument = getCrdtDoc<Project>('root');
-        expect(refusedDocument?.modulation.modulators).toEqual(seeded.modulators);
-        expect(refusedDocument?.tracks.tracks.map((candidate) => candidate.id)).toEqual(['t1', 't2', 't3']);
+        if (!refusedDocument) {
+            throw new Error('Expected the project document');
+        }
+        expect(documentModulators(refusedDocument)).toEqual(seeded.modulators);
+        expect(refusedDocument.tracks.tracks.map((candidate) => candidate.id)).toEqual(['t1', 't2', 't3']);
         // No precommit runtime teardown: the deferred finalizers ride the
         // commit, which never happened.
         expect(modulationRuntimeStore.value).toEqual({ runtimeValues: { 'mod-t1': 0.42 } });

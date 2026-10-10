@@ -87,8 +87,17 @@ function arrangeLoopComp(): { lane: TakeLane; compTake: Take } {
 function expectAuthority(): void {
     flushAutomergeStorageWrites();
     const project = getCrdtDoc<Project>('root');
-    expect(project?.tracks.tracks).toEqual(trackStore.value?.tracks);
-    expect(project?.takeLanes.lanes).toEqual(takeLaneStore.value?.lanes);
+    if (!project) {
+        throw new Error('Expected the project document');
+    }
+    if (!trackStore.value) {
+        throw new Error('Expected the track store');
+    }
+    if (!takeLaneStore.value) {
+        throw new Error('Expected the take lane store');
+    }
+    expect(project.tracks.tracks).toEqual(trackStore.value.tracks);
+    expect(project.takeLanes.lanes).toEqual(takeLaneStore.value.lanes);
 }
 
 function lane(): TakeLane {
@@ -100,7 +109,11 @@ function lane(): TakeLane {
 }
 
 function clips() {
-    return trackStore.value?.tracks[0]?.clips ?? [];
+    const track = trackStore.value?.tracks[0];
+    if (!track) {
+        throw new Error('Expected the arrangement track fixture');
+    }
+    return track.clips;
 }
 
 /** Resolved comp fragments as plain rows: timeline span, media origin, media offset. */
