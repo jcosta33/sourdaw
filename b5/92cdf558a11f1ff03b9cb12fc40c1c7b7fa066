@@ -1,0 +1,35 @@
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_4c8cd08893b364::t_c357a290146c75 236,238-243,249,265-266,268,270,280
+  s_4c8cd08893b364::t_70020a8bdb83af 668-771
+  s_4c8cd08893b364::t_1a62e1fa340923 77-78,124-127,129-134,153,186-187,247-248,259,267,269,277-279,281
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_1c08b47ac3792f::t_2d92068c272285 103-106
+src/modules/AudioEngine/AGENTS.md
+  s_1c08b47ac3792f::t_db09efc5d2d7cf 35
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_4c8cd08893b364::t_2c26ea778911d6 21-22,154-155,168,197-200,296-302,317-324,356-361,367,369-373,380-385,393,404,410-414,453-454,456-457,459,721-724
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b592cdf558a11f1ff03b9cb12fc40c1c7b7fa066",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
