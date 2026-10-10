@@ -153,6 +153,26 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Lessons from escapes
 
+### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
+
+PR #4057 added the streamed-artifact positive case and ZIP-based strict-parser fixtures without
+explicit `mtime` values. In fflate 0.8.3, streamed `Zip.add` and `Zip.end` each call `wzh` for the
+local and central header; `zipSync` calls that same writer twice for every file. Each call reads a
+fresh `Date.now()`. If a pair crosses a DOS two-second timestamp boundary, the timestamp words
+differ and the unchanged parser rejects the archive before the intended descriptor, bounds, or
+decompressed-data oracle. The CI failure established parser rejection, not how often or how quickly
+the reads crossed the boundary.
+
+Blind spot: fixture validity depended on separate live clock reads, so the archive's metadata could
+fail before its intended positive or negative assertion ran.
+
+Probe that would have caught it: force actual streamed and `zipSync` writers across a DOS two-second
+boundary, capture local and central timestamp bytes, and require the strict parser to reject the
+archive. Apply one fixed fixture `mtime` through the supported `zipSync` options and streamed-entry
+property; run the owning spec with its payload, bounds, CRC, file-set, encryption, and descriptor
+oracles intact. On the fixed head, reverting `mtime` must make the forced-clock case red. Keep the
+strict parser unchanged; this probe does not establish the hosted failure's clock interval or rate.
+
 ### 2026-10-09 — a newly declared "every spec owes the first-paint bound" left literal 15 s and 30 s waits in place (escaped via commit `04c28be0f8`)
 
 Commit `04c28be0f8` declared in `tests/e2e/e2eUtils.ts` that every spec waiting on the launch overlay itself owes `LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS`, but did not sweep the specs that already waited with a literal bound; the 15 s in `promptBarCancelRecentTestId.spec.ts` came from commit `d78dac728a`. It surfaced only when two Playwright workers per runner added CPU contention and a cold boot was still on its loading overlay at 15 s.
@@ -761,3 +781,31 @@ session history mirror. Require a full global-ID census, valid project invariant
 scalar values/order/curves, and all owner projections before real Undo and Redo. Retaining
 copied point IDs must turn that reload assertion red; fresh in-memory curve checks alone
 do not observe this obligation.
+
+### Saved replay authority refinements measured in PR #5064
+
+A saved clip inverse must use its MIDI owner's complete snapshot law before hydration or any
+Arrangement write. Duplicate note identities, malformed CC or pitch-bend rows, and a missing
+required capture are not an empty or null capture. Probe a real removal's saved inverse through
+production hydration, then require no raw, projection or history write; retain separate valid null
+and present-empty controls. Minimal mocked rows cannot establish that the restore owner admitted
+what the earlier Arrangement write already published.
+
+For split replay, recreate either target identity under another track after Undo and binary reload,
+then require direct and grouped Redo to preserve every owner and the pending history. Delete just
+one side of a mirrored optional satellite or automation guard: reject the group before a later peer
+value can be replaced. Both historically absent sides remain valid, and present empty is distinct.
+A durable-head change alone cannot authorize refresh of a removal inverse; roll the root back in
+its lineage from a committed observer before the finalizer, and require the old inverse to survive
+on ordinary and ambiguous commit paths. Keep genuine own-commit warning and refused-flush controls.
+
+Copied split lane, main, trim, ghost and seam identities must reserve the entire live namespace.
+Preoccupy the preferred generated identity under an unrelated owner before the split, then require
+binary reload and repeated Undo/Redo with exact values and valid invariants. After Undo, let a peer
+claim an actual captured identity and require zero-write refusal rather than reminting that saved
+capture. A census only against the source lane misses both collisions. Include nested object points
+and cross-domain clip owners, while preserving clip-local gain point and arrangement namespaces.
+For a batch-admitted restored clip preceding a split, compare captured IDs with the actual committed
+IDs before reloading and replaying twice; a live execution that remints a preflight capture is not
+replay-stable. Draw is singleton-only, so a rejected draw/split batch proves admission, not prefix
+execution. Read executable entries from the full history owner rather than its label-only UI view.

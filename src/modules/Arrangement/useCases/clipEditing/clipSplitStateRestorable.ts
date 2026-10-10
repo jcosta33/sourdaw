@@ -50,6 +50,18 @@ export function clipSplitStateRestorable(
     if (!state || !track || !trackSnapshotMatches(track.clips, clipId, rightClipId, expected)) {
         return false;
     }
+    if (
+        state.tracks.some(
+            (candidate) =>
+                candidate.id !== expected.trackId &&
+                candidate.clips.some((clip) => clip.id === clipId || clip.id === rightClipId)
+        ) ||
+        state.tracks.flatMap((candidate) => candidate.clips).filter((clip) => clip.id === clipId).length !== 1 ||
+        state.tracks.flatMap((candidate) => candidate.clips).filter((clip) => clip.id === rightClipId).length !==
+            (expected.rightClip === null ? 0 : 1)
+    ) {
+        return false;
+    }
     if (replacement.rightClip) {
         const clipsAfterRemoval = track.clips.filter((clip) => clip.id !== rightClipId).length;
         if (replacement.rightClipIndex < 0 || replacement.rightClipIndex > clipsAfterRemoval) {

@@ -89,9 +89,12 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
     validateSessionActionArguments: isRestoreClipSessionPayload,
     // Grouped undo replays every inverse of the gesture as one batch; this
     // preflight keeps that batch honest. Single-entry undo never calls validate.
-    validate: (action, context) => restoreStateMatches(action, context) && batchMembersAreIndependent(action, context),
+    validate: (action, context) =>
+        isRestoreClipSessionPayload(action.payload) &&
+        restoreStateMatches(action, context) &&
+        batchMembersAreIndependent(action, context),
     execute: (alpha) => {
-        if (!restoreStateMatches(alpha)) {
+        if (!isRestoreClipSessionPayload(alpha.payload) || !restoreStateMatches(alpha)) {
             return { status: 'conflict' };
         }
         const {
@@ -108,14 +111,14 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
         if (ripplePlan) {
             undoRippleDelete({
                 trackId,
-                removedClips: ripplePlan.removedClips as never,
-                shiftedClips: ripplePlan.shiftedClips as never,
-                clipSatellites: ripplePlan.clipSatellites as never,
-                clipAutomationLanes: ripplePlan.clipAutomationLanes as never,
+                removedClips: ripplePlan.removedClips,
+                shiftedClips: ripplePlan.shiftedClips,
+                clipSatellites: ripplePlan.clipSatellites,
+                clipAutomationLanes: ripplePlan.clipAutomationLanes,
                 retiredTakeLanes,
             });
         } else {
-            updateTrack(trackId, (time) => ({ ...time, clips: [...time.clips, clipSnapshot as never] }));
+            updateTrack(trackId, (time) => ({ ...time, clips: [...time.clips, clipSnapshot] }));
             restoreTakesForClip(retiredTakeLanes ?? []);
         }
 

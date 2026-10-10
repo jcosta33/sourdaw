@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
 import { applyPreparedClipSplit } from '../../useCases/clipEditing/applyPreparedClipSplit';
@@ -13,7 +13,7 @@ type RestoreSplitAction = Extract<AppAction, { type: 'restoreClipSplitState' }>;
 type Description = { label: string; inverseAction: RestoreSplitAction | null; redoAction?: RestoreSplitAction };
 const pendingDescriptions = new WeakMap<SplitClipAction, Description>();
 
-function prepareAction(action: SplitClipAction) {
+function prepareAction(action: SplitClipAction, context?: HandlerValidationContext) {
     const rightClipId = action.payload.rightClipId ?? getNextAppActionClipId();
     action.payload.rightClipId = rightClipId;
     const plan = prepareClipSplit({
@@ -22,6 +22,7 @@ function prepareAction(action: SplitClipAction) {
         rightClipId,
         resolvedSplitBeat: action.payload.resolvedBeat,
         targetNoteIds: action.payload.targetNoteIds,
+        priorActions: context?.actions.slice(0, context.actionIndex),
     });
     if (plan && action.payload.targetNoteIds === undefined) {
         action.payload.targetNoteIds = plan.targetNoteIds;
@@ -48,16 +49,17 @@ export const handleSplitClip = createHandler<'splitClip'>({
         }
         return true;
     },
-    validate: (action) =>
+    validate: (action, context) =>
         prepareClipSplit({
             clipId: action.payload.clipId,
             splitBeat: action.payload.beat,
             rightClipId: action.payload.rightClipId ?? '__split-preflight__',
             resolvedSplitBeat: action.payload.resolvedBeat,
             targetNoteIds: action.payload.targetNoteIds,
+            priorActions: context.actions.slice(0, context.actionIndex),
         }) !== null,
-    materializeCommandArguments: (action) => {
-        prepareAction(action);
+    materializeCommandArguments: (action, context) => {
+        prepareAction(action, context);
     },
     execute: (action) => {
         const pending = pendingDescriptions.get(action);
@@ -90,8 +92,8 @@ export const handleSplitClip = createHandler<'splitClip'>({
             pendingDescriptions.delete(action);
         }
     },
-    describe: (action) => {
-        const plan = prepareAction(action);
+    describe: (action, context) => {
+        const plan = prepareAction(action, context);
         const description = plan ? describePlan(action, plan) : { label: 'Split clip', inverseAction: null };
         pendingDescriptions.set(action, description);
         return description;

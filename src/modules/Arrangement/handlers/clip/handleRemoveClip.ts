@@ -78,16 +78,23 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         // and restores exactly the material this replay retired.
         const paired = pairedInverseForRedo(alpha);
         const fresh = paired?.type === 'restoreClip' ? handleRemoveClip.describe(alpha).inverseAction : null;
-        const installCapture = () => {
-            if (fresh?.type === 'restoreClip') {
-                commitRedoInverseCapture(alpha, fresh);
-            }
-        };
         const documentBeforeReplay = fresh ? captureDurableDocumentWitness() : null;
         const ownsPublication = fresh ? captureProjectMutationAuthorization() : null;
         // Bind now, inside the actual handler scope, while its exact transaction
         // owner is visible. Later group members publish under this same owner.
         ownsPublication?.();
+        const installCapture = () => {
+            // Both successful and ambiguously published commits can run observers
+            // before this effect. Only this mutation owner may refresh its inverse.
+            if (
+                fresh?.type === 'restoreClip' &&
+                getCrdtDoc('root') &&
+                captureDurableDocumentWitness() !== documentBeforeReplay &&
+                ownsPublication?.()
+            ) {
+                commitRedoInverseCapture(alpha, fresh);
+            }
+        };
         const committedResult = () => {
             if (!fresh) {
                 return undefined;
@@ -95,17 +102,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             return {
                 status: 'written' as const,
                 afterCommit: installCapture,
-                afterAmbiguousCommit: () => {
-                    // A published flush error still needs fresh durable authority:
-                    // peer/replacement writes cannot stand in for this transaction.
-                    if (
-                        getCrdtDoc('root') &&
-                        captureDurableDocumentWitness() !== documentBeforeReplay &&
-                        ownsPublication?.()
-                    ) {
-                        installCapture();
-                    }
-                },
+                afterAmbiguousCommit: installCapture,
             };
         };
 

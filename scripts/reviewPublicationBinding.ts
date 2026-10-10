@@ -34,7 +34,7 @@ import {
     type SemanticAssessmentCoverage,
 } from './reviewDossierSemanticAssessment.ts';
 import { acceptedFindings, deliveryAuthorization, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
-import { exactPublishedReview } from './reviewPublicationRemoteInspection.ts';
+import { recordedReviewStands } from './reviewPublicationRemoteInspection.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
 import {
     REASSESSMENT_FILE_NAME,
@@ -379,14 +379,16 @@ export function prepareReviewDossierPublication(input: {
  * binding. The run then reports that id instead of posting a duplicate. A recorded publication that
  * no longer stands, or stands differently, is corrupt evidence and fails closed before any write.
  * Returns undefined while the bundle records no publication: a legacy bundle (no risk plan) or a
- * dossier whose POST has not completed.
+ * dossier whose POST has not completed. Only recovery passes `recoveryLiveHead`, which lets a
+ * reviewer approval that a later push dismissed stand as the recorded publication (#5046).
  */
 export function recordedPublicationReplay(
     number: number,
     head: string,
     document: ReviewDocument,
     actorNodeId: string,
-    port: PublishReviewPort
+    port: PublishReviewPort,
+    recoveryLiveHead?: string
 ): number | undefined {
     const bundle = reviewBundlePath(port.primaryRoot(), number, head);
     if (readBundleFile(port, join(bundle, REVIEW_RISK_PLAN_NAME)).present !== true) {
@@ -414,7 +416,7 @@ export function recordedPublicationReplay(
     }
     const rendered = { ...document, body: renderReviewDocumentBody(document) };
     const remote = port.remoteReview(number, recorded);
-    if (remote === undefined || !exactPublishedReview(remote, rendered, head, actorNodeId)) {
+    if (remote === undefined || !recordedReviewStands(remote, rendered, head, actorNodeId, recoveryLiveHead)) {
         fail(
             `recorded review publication ${recorded} does not stand live and exact for head ${head}; refusing to post a duplicate`
         );
@@ -581,7 +583,10 @@ export function recordRecoveredPublicationBindings(
     if (recorded !== undefined && recorded !== reviewId) {
         fail(`review dossier binds publication ${recorded}, not the recovered landed review ${reviewId}`);
     }
-    if (recordedPublicationReplay(number, head, document, publication.actorNodeId, port) !== undefined) {
+    if (
+        recordedPublicationReplay(number, head, document, publication.actorNodeId, port, publication.liveHead) !==
+        undefined
+    ) {
         return;
     }
     if (!hasRiskPlan(bundle, port)) {
