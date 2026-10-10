@@ -1153,6 +1153,145 @@ export function readStorageDescriptor(
     }
 }
 
+type LinuxFileSnapshot = { pid: number; tgid: number; uids: number[]; state: string; threads: number };
+
+export function parseLinuxFileSnapshot(output: string): LinuxFileSnapshot | undefined {
+    if (output.length > 16_384 || !output.endsWith('\n')) {
+        return undefined;
+    }
+    const fields = new Map<string, string>();
+    for (const line of output.split('\n')) {
+        const match = /^(Pid|Tgid|Uid|State|Threads):[\t ]*(.*)$/.exec(line);
+        if (match === null) {
+            continue;
+        }
+        if (fields.has(match[1])) {
+            return undefined;
+        }
+        fields.set(match[1], match[2].trim());
+    }
+    const state = /^([RSDTtXZPI])(?:[\t ]+\([a-z ]+\))?$/.exec(fields.get('State') ?? '')?.[1];
+    const ids = ['Pid', 'Tgid', 'Threads'].map((key) => {
+        const value = fields.get(key) ?? '';
+        return /^\d+$/.test(value) ? Number(value) : NaN;
+    });
+    const uidField = fields.get('Uid') ?? '';
+    const uids = /^\d+[\t ]+\d+[\t ]+\d+[\t ]+\d+$/.test(uidField) ? uidField.split(/[\t ]+/).map(Number) : [];
+    if (
+        state === undefined ||
+        ids.some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+        uids.length !== 4 ||
+        uids.some((value) => !Number.isSafeInteger(value))
+    ) {
+        return undefined;
+    }
+    return { pid: ids[0], tgid: ids[1], threads: ids[2], uids, state };
+}
+
+type LinuxFilePorts = {
+    inspectUid: (pid: number) => number;
+    readCwd: (pid: number) => string;
+    listDescriptors: (pid: number) => string[];
+    readDescriptor: (pid: number, fd: string) => string | undefined;
+    readStatus: (pid: number) => string;
+    isGone: (pid: number) => boolean;
+    now?: () => number;
+};
+
+function linuxTerminalFilesReleased(snapshot: LinuxFileSnapshot | undefined, pid: number, uid: number): boolean {
+    // Linux drops files/fs before publishing EXIT_ZOMBIE. nr_threads includes
+    // the unreaped leader and drops other threads only after their file release.
+    return (
+        snapshot !== undefined &&
+        snapshot.pid === pid &&
+        snapshot.tgid === pid &&
+        snapshot.uids.every((value) => value === uid) &&
+        snapshot.state === 'Z' &&
+        snapshot.threads === 1
+    );
+}
+
+function linuxInspectionFailure(pid: number, phase: string, error: unknown, snapshot: LinuxFileSnapshot | undefined) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    const safeCode = typeof code === 'string' && /^[A-Z][A-Z0-9]{0,15}$/.test(code) ? code : 'unknown';
+    const status =
+        snapshot === undefined
+            ? 'unknown'
+            : `${snapshot.pid}/${snapshot.tgid}/${snapshot.uids.join(',')}/${snapshot.state}/${snapshot.threads}`;
+    return `proc-inspection-unavailable:pid=${pid}:phase=${phase}:error=${safeCode}:pid/tgid/uids/state/threads=${status}`;
+}
+
+export function linuxStorageFileState(
+    pids: number[],
+    uid: number,
+    tempDirectories: string[],
+    deadline: number,
+    report: (reason: string) => void = () => {},
+    ports: LinuxFilePorts = {
+        inspectUid: (pid) => lstatSync(`/proc/${pid}`).uid,
+        readCwd: (pid) => readlinkSync(`/proc/${pid}/cwd`),
+        listDescriptors: (pid) => readdirSync(`/proc/${pid}/fd`),
+        readDescriptor: (pid, fd) => readStorageDescriptor(`/proc/${pid}/fd/${fd}`),
+        readStatus: (pid) => readFileSync(`/proc/${pid}/status`, 'utf8'),
+        isGone: processIsGone,
+    }
+): 'alive' | 'dead' | 'unknown' {
+    const unknown = (reason: string): 'unknown' => {
+        report(reason);
+        return 'unknown';
+    };
+    const now = ports.now ?? Date.now;
+    let descriptors = 0;
+    for (const pid of pids) {
+        if (now() > deadline) {
+            return unknown('proc-time-bound');
+        }
+        let phase = 'root';
+        try {
+            if (ports.inspectUid(pid) !== uid) {
+                return unknown(`proc-uid-changed:pid=${pid}`);
+            }
+            phase = 'cwd';
+            if (referencesStoragePath(ports.readCwd(pid), tempDirectories)) {
+                return 'alive';
+            }
+            phase = 'fd-list';
+            const fds = ports.listDescriptors(pid);
+            phase = 'fd-link';
+            for (const fd of fds) {
+                if (now() > deadline || ++descriptors > 65_536 || !/^\d+$/.test(fd)) {
+                    return unknown('proc-descriptor-bound');
+                }
+                const path = ports.readDescriptor(pid, fd);
+                if (path !== undefined && referencesStoragePath(path, tempDirectories)) {
+                    return 'alive';
+                }
+            }
+        } catch (error) {
+            if (ports.isGone(pid)) {
+                continue;
+            }
+            let snapshot: LinuxFileSnapshot | undefined;
+            if (now() <= deadline) {
+                try {
+                    snapshot = parseLinuxFileSnapshot(ports.readStatus(pid));
+                } catch {
+                    // Diagnostics cannot turn an unavailable inspection into proof.
+                }
+            }
+            if (
+                (error as NodeJS.ErrnoException).code === 'ENOENT' &&
+                now() <= deadline &&
+                linuxTerminalFilesReleased(snapshot, pid, uid)
+            ) {
+                continue;
+            }
+            return unknown(linuxInspectionFailure(pid, phase, error, snapshot));
+        }
+    }
+    return 'dead';
+}
+
 export function storageFileState(
     tempDirectories: string[],
     ownedPids: number[],
@@ -1263,36 +1402,7 @@ export function storageFileState(
         if (platform() !== 'linux') {
             return unknown('file-census-platform-unavailable');
         }
-        let descriptors = 0;
-        for (const pid of pids) {
-            if (Date.now() > deadline) {
-                return unknown('proc-time-bound');
-            }
-            try {
-                const root = `/proc/${pid}`;
-                if (lstatSync(root).uid !== uid) {
-                    return unknown(`proc-uid-changed:pid=${pid}`);
-                }
-                if (referencesStoragePath(readlinkSync(join(root, 'cwd')), tempDirectories)) {
-                    return 'alive';
-                }
-                const fdRoot = join(root, 'fd');
-                for (const fd of readdirSync(fdRoot)) {
-                    if (Date.now() > deadline || ++descriptors > 65_536 || !/^\d+$/.test(fd)) {
-                        return unknown('proc-descriptor-bound');
-                    }
-                    const path = readStorageDescriptor(join(fdRoot, fd));
-                    if (path !== undefined && referencesStoragePath(path, tempDirectories)) {
-                        return 'alive';
-                    }
-                }
-            } catch {
-                if (!processIsGone(pid)) {
-                    return unknown(`proc-inspection-unavailable:pid=${pid}`);
-                }
-            }
-        }
-        return 'dead';
+        return linuxStorageFileState(pids, uid, tempDirectories, deadline, report);
     } catch {
         return unknown('file-census-unavailable');
     }

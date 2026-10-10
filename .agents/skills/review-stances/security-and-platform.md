@@ -43,6 +43,9 @@ after the payload moves into a claim. Require OS file-use evidence, complete sam
 and uncertainty retention for empty process output, missing utilities, denied or partial fields.
 For Linux descriptor closure, include the scanner's own enumeration descriptor and a genuinely
 recreated slot. Check presence without re-enumerating the directory; unavailable metadata retains.
+Probe Linux terminal file proof with a real unreaped child and a zombie leader with live threads.
+Require matching PID/thread-group/four UIDs and one thread; denied, incomplete or expired status
+retains. File release never grants authority to treat a registered PID as gone.
 
 ### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 

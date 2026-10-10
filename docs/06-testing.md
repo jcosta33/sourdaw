@@ -737,6 +737,11 @@ evidence, and denied, malformed, truncated, or incomplete file evidence retains 
 On Linux, a descriptor that closes during inspection is checked with link and directory metadata.
 Reopening the descriptor directory can recreate the scanner's own closed slot and cannot prove
 that it remains open. A present slot or unavailable directory still retains storage.
+After a Linux `ENOENT` inspection failure, fresh complete status may prove file release only for
+a zombie whose PID and thread-group ID match the inspected PID, whose four UIDs match the guard,
+and whose thread count is exactly one. A zombie leader with other threads remains uncertain.
+This evidence must arrive within the existing proof deadline and never releases PID ownership
+or signaling fences. Denied inspection and unavailable or malformed status still retain storage.
 On macOS, an unreaped same-UID process positively sampled in zombie state has already released
 its file table; this exception never releases process-identity or signaling fences.
 If an otherwise valid macOS file catalog lacks only a descriptor type, the guard discards it and

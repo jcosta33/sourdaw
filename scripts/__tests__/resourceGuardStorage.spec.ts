@@ -17,7 +17,15 @@ import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { main, parseCliArgs, runGuardedCommand, storageFileState, readStorageDescriptor } from '../resourceGuard';
+import {
+    main,
+    parseCliArgs,
+    runGuardedCommand,
+    storageFileState,
+    readStorageDescriptor,
+    linuxStorageFileState,
+    parseLinuxFileSnapshot,
+} from '../resourceGuard';
 import {
     createGuardStorage,
     diskStorageFailure,
@@ -673,6 +681,91 @@ describe('guard-owned temporary storage', () => {
 });
 
 describe('storage ownership recovery', () => {
+    const terminalStatus = 'Pid:\t123\nTgid:\t123\nUid:\t501\t501\t501\t501\nState:\tZ (zombie)\nThreads:\t1\n';
+    it.each([
+        { scenario: 'terminal thread group', status: terminalStatus, released: true },
+        { scenario: 'runnable process', status: terminalStatus.replace('Z (zombie)', 'R (running)'), released: false },
+        {
+            scenario: 'zombie leader with another thread',
+            status: terminalStatus.replace('Threads:\t1', 'Threads:\t2'),
+            released: false,
+        },
+        {
+            scenario: 'changed UID',
+            status: terminalStatus.replace('501\t501\t501\t501', '501\t0\t501\t501'),
+            released: false,
+        },
+        { scenario: 'different PID', status: terminalStatus.replace('Pid:\t123', 'Pid:\t124'), released: false },
+        {
+            scenario: 'different thread group',
+            status: terminalStatus.replace('Tgid:\t123', 'Tgid:\t124'),
+            released: false,
+        },
+        { scenario: 'unknown status', status: '', released: false },
+        { scenario: 'truncated status', status: terminalStatus.slice(0, -1), released: false },
+        { scenario: 'duplicate status field', status: `${terminalStatus}Threads:\t1\n`, released: false },
+        { scenario: 'missing status field', status: terminalStatus.replace('Threads:\t1\n', ''), released: false },
+        {
+            scenario: 'malformed thread count',
+            status: terminalStatus.replace('Threads:\t1', 'Threads:\tNaN'),
+            released: false,
+        },
+        { scenario: 'denied status inspection', status: terminalStatus, released: false, statusDenied: true },
+        { scenario: 'denied cwd inspection', status: terminalStatus, released: false, cwdDenied: true },
+        { scenario: 'expired status sample', status: terminalStatus, released: false, expired: true },
+    ])(
+        'requires complete Linux file-release proof for a $scenario',
+        async ({ status, released, statusDenied, cwdDenied, expired }) => {
+            const root = fixture();
+            const reports: string[] = [];
+            const denied = Object.assign(new Error('private path must not be emitted'), { code: 'EPERM' });
+            const missing = Object.assign(new Error('private path must not be emitted'), { code: 'ENOENT' });
+            let sampledAt = 0;
+            const ports: StorageRecoveryPorts = {
+                identityState: () => 'dead',
+                sessionState: (_owner, tempDirectory, currentTempDirectory) =>
+                    linuxStorageFileState(
+                        [123],
+                        501,
+                        [tempDirectory, currentTempDirectory ?? tempDirectory],
+                        5_000,
+                        (reason) => reports.push(reason),
+                        {
+                            inspectUid: () => 501,
+                            readCwd: () => {
+                                throw cwdDenied ? denied : missing;
+                            },
+                            listDescriptors: () => {
+                                throw new Error('cwd failure must precede FD enumeration');
+                            },
+                            readDescriptor: () => {
+                                throw new Error('cwd failure must precede FD inspection');
+                            },
+                            isGone: () => false,
+                            readStatus: () => {
+                                if (statusDenied) {
+                                    throw denied;
+                                }
+                                if (expired) {
+                                    sampledAt = 5_001;
+                                }
+                                return status;
+                            },
+                            now: () => sampledAt,
+                        }
+                    ),
+            };
+            const storage = ownedStorage(root, ports);
+            expect(await storage.release(true)).toBe(released);
+            expect(existsSync(storage.tempDirectory)).toBe(!released);
+            if (!released) {
+                expect(reports).toHaveLength(1);
+                expect(reports[0]).toContain(`pid=123:phase=cwd:error=${cwdDenied ? 'EPERM' : 'ENOENT'}`);
+                expect(reports[0]).not.toContain('private path');
+            }
+        }
+    );
+
     it.each([
         {
             scenario: 'closed enumeration descriptor',
@@ -834,6 +927,88 @@ describe('storage ownership recovery', () => {
             expect(existsSync(storage.tempDirectory)).toBe(false);
         },
         15_000
+    );
+
+    it.skipIf(process.platform !== 'linux')(
+        'reclaims native Linux storage after the last file-using thread exits unreaped',
+        async () => {
+            const root = fixture();
+            const ports: StorageRecoveryPorts = {
+                identityState: () => 'dead',
+                sessionState: (_owner, original, current = original) => storageFileState([original, current], []),
+            };
+            const storage = ownedStorage(join(root, 'storage'), ports);
+            const program = [
+                'import os, sys',
+                'temp = sys.stdin.readline().rstrip("\\n")',
+                'pid = os.fork()',
+                'if pid == 0:',
+                '    os.chdir(temp)',
+                '    fd = os.open("held", os.O_CREAT | os.O_WRONLY, 0o600)',
+                '    os.write(fd, b"released on exit")',
+                '    os._exit(0)',
+                'print(pid, flush=True)',
+                'sys.stdin.readline()',
+                'os.waitpid(pid, 0)',
+            ].join('\n');
+            const owner = spawn('python3', ['-c', program], {
+                cwd: root,
+                env: { PATH: process.env.PATH },
+                stdio: ['pipe', 'pipe', 'ignore'],
+            });
+            let startupError: Error | undefined;
+            owner.on('error', (error) => {
+                startupError = error;
+            });
+            let closed = false;
+            owner.on('close', () => {
+                closed = true;
+            });
+            owner.stdin.on('error', () => {});
+            let output = '';
+            owner.stdout.on('data', (chunk: Buffer) => {
+                output += chunk.toString();
+            });
+            if (owner.pid !== undefined) {
+                childPids.add(owner.pid);
+            }
+            try {
+                owner.stdin.write(`${storage.tempDirectory}\n`);
+                await waitUntil(() => {
+                    if (startupError !== undefined) {
+                        throw startupError;
+                    }
+                    return /^\d+\n$/.test(output);
+                });
+                expect(startupError).toBeUndefined();
+                expect(owner.pid).toBeDefined();
+                const pid = Number(output.trim());
+                expect(Number.isSafeInteger(pid)).toBe(true);
+                await waitUntil(() => {
+                    const snapshot = parseLinuxFileSnapshot(readFileSync(`/proc/${pid}/status`, 'utf8'));
+                    return snapshot?.state === 'Z' && snapshot.threads === 1;
+                });
+                const snapshot = parseLinuxFileSnapshot(readFileSync(`/proc/${pid}/status`, 'utf8'));
+                expect(snapshot).toEqual({
+                    pid,
+                    tgid: pid,
+                    state: 'Z',
+                    threads: 1,
+                    uids: Array(4).fill(process.getuid?.()),
+                });
+                expect(isAlive(pid)).toBe(true);
+                expect(existsSync(join(storage.tempDirectory, 'held'))).toBe(true);
+                expect(await storage.release(true)).toBe(true);
+                expect(existsSync(storage.tempDirectory)).toBe(false);
+            } finally {
+                owner.stdin.end('reap\n');
+                await waitUntil(() => closed);
+                if (owner.pid !== undefined) {
+                    childPids.delete(owner.pid);
+                }
+            }
+        },
+        20_000
     );
 
     it('admits only complete same-UID evidence and retains ambiguous or observed cross-UID owners', () => {
