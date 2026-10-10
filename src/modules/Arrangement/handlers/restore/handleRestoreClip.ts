@@ -26,15 +26,16 @@ function restoreStateMatches(action: RestoreClipAction, context?: HandlerValidat
     // is present and the removed clip is absent from every track. A peer may
     // recreate the same identity under another owner after removal.
     const tracks = getTrackStoreState()?.tracks ?? [];
+    const priorActions = context?.actions.slice(0, context.actionIndex);
     if (
         !tracks.some((track) => track.id === action.payload.trackId) ||
         tracks.some((track) => track.clips.some((clip) => clip.id === action.payload.clipId)) ||
-        !retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? []) ||
+        !retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], priorActions) ||
         !rippleDeleteShiftStateMatchesStore(
             action.payload.trackId,
             action.payload.ripplePlan?.shiftedClips ?? [],
             action.payload.ripplePlan?.clipAutomationLanes ?? [],
-            context?.actions.slice(0, context.actionIndex)
+            priorActions
         )
     ) {
         return false;

@@ -813,6 +813,160 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(clipOnTrack(TRACK_ID, 'clip-right')).toBeUndefined();
     });
 
+    it('preflights saved grouped removals whose retired lane id was reused between the real Commands', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        const firstTake = { ...createTake('clip-a', 'First owner', 0, 4), id: 'first-owner-take' };
+        const secondTake = { ...createTake('clip-b', 'Second owner', 4, 8), id: 'second-owner-take' };
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: TRACK_ID, clips: [createClipFixture('clip-a', 0, 4)] }),
+                TrackDummy.create({
+                    id: 'other-track',
+                    clips: [{ ...createClipFixture('clip-b', 4, 8), trackId: 'other-track' }],
+                }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        takeLaneStore.set({
+            lanes: [{ ...createTakeLane(TRACK_ID), id: 'reused-lane', takes: [firstTake] }],
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-a' } },
+            { source: 'manual', groupId: 'reused-retired-owner' }
+        );
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        syncPeerProject((project) => {
+            project.takeLanes.lanes.push({
+                ...createTakeLane('other-track'),
+                id: 'reused-lane',
+                takes: [secondTake],
+            });
+        });
+        await executeAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-b' } },
+            { source: 'manual', groupId: 'reused-retired-owner' }
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+        );
+        expect(persistedInverse(0).payload.retiredTakeLanes).toMatchObject([
+            { lane: { id: 'reused-lane', trackId: TRACK_ID }, retiredTakeIds: [firstTake.id] },
+        ]);
+        expect(persistedInverse(1).payload.retiredTakeLanes).toMatchObject([
+            { lane: { id: 'reused-lane', trackId: 'other-track' }, retiredTakeIds: [secondTake.id] },
+        ]);
+        reloadSavedProject();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        await expectReplayRefused('undo');
+    });
+
+    it.each(['undo', 'redo'] as const)(
+        'saved split %s restores missing moved takes behind a later synced selection',
+        async (replay) => {
+            const original = {
+                ...createTake('clip-a', 'Captured selected pass', 0, 4, 3),
+                id: 'captured-selected-take',
+                selected: true,
+                passAnchorSeconds: -1,
+                passDepthSeconds: 2,
+            };
+            const untouched = { ...createTake('clip-b', 'Unchanged deleted pass', 4, 8), id: 'untouched-take' };
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        ...createTakeLane(TRACK_ID),
+                        id: 'selected-transition-lane',
+                        takes: [original, untouched],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: original.id }],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            await executeAppAction(
+                { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+                { source: 'manual' }
+            );
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            const splitTakes = structuredClone(
+                takeLaneStore.value!.lanes[0]!.takes.filter((take) => take.id !== untouched.id)
+            );
+            expect(splitTakes).toHaveLength(2);
+            reloadSavedProject();
+            if (replay === 'redo') {
+                expect((await undo()).headConsumed).toBe(true);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+                );
+                reloadSavedProject();
+            }
+            const later = {
+                ...createTake('clip-b', 'Later peer choice', 4, 8, 7),
+                id: 'later-selected-take',
+                selected: true,
+                passAnchorSeconds: 1,
+                passDepthSeconds: 3,
+            };
+            syncPeerProject((project) => {
+                const lane = project.takeLanes.lanes.find((row) => row.id === 'selected-transition-lane')!;
+                for (let index = lane.takes.length - 1; index >= 0; index -= 1) {
+                    if (lane.takes[index]!.id === original.id || lane.takes[index]!.id === untouched.id) {
+                        lane.takes.splice(index, 1);
+                    }
+                }
+                for (const take of lane.takes) {
+                    take.selected = false;
+                }
+                lane.takes.push(later);
+                for (let index = lane.activeCompRegions.length - 1; index >= 0; index -= 1) {
+                    if (!lane.takes.some((take) => take.id === lane.activeCompRegions[index]!.takeId)) {
+                        lane.activeCompRegions.splice(index, 1);
+                    }
+                }
+                lane.activeCompRegions.push({ startBeat: 5, endBeat: 6, takeId: later.id });
+            });
+            if (replay === 'undo') {
+                expect((await undo()).headConsumed).toBe(true);
+            } else {
+                await redo();
+            }
+            const restoredTakes = replay === 'undo' ? [original] : splitTakes;
+            const expectedTakes = [...restoredTakes.map((take) => ({ ...take, selected: false })), later];
+            const lane = takeLaneStore.value!.lanes[0]!;
+            expect(lane.takes).toEqual(expectedTakes);
+            expect(lane.takes.filter((take) => take.selected).map((take) => take.id)).toEqual([later.id]);
+            expect(lane.activeCompRegions).toEqual([
+                ...restoredTakes.map((take) => ({
+                    startBeat: take.startBeat,
+                    endBeat: take.endBeat,
+                    takeId: take.id,
+                })),
+                { startBeat: 5, endBeat: 6, takeId: later.id },
+            ]);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 0, endBeat: replay === 'undo' ? 4 : 2 });
+            expect(clipOnTrack(TRACK_ID, 'clip-right')).toEqual(
+                replay === 'undo' ? undefined : expect.objectContaining({ startBeat: 2, endBeat: 4 })
+            );
+            expect(getCrdtDoc<PeerProject>('root')!.takeLanes).toEqual(takeLaneStore.value);
+            expect(
+                takeLaneSelection.resolve(takeLaneStore.value!, {
+                    type: 'selectTake',
+                    payload: { trackId: TRACK_ID, takeId: later.id },
+                })?.selectedTakeId
+            ).toBe(later.id);
+            expect(undoHistoryStore.value?.past).toHaveLength(replay === 'undo' ? 0 : 1);
+            expect(undoHistoryStore.value?.future).toHaveLength(replay === 'undo' ? 1 : 0);
+        }
+    );
+
     it('replays a saved comped split through binary reload while preserving a peer selection and unrelated lane', async () => {
         await persistCompedSplit();
         const splitLane = takeLaneStore.value!.lanes.find((lane) => lane.id === 'comp-lane')!;
