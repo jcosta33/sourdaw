@@ -4,9 +4,10 @@ import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
-import { loadAffectedE2e, type AffectedSelection } from './e2eAffectedGraph.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
+
+import type { AffectedSelection } from './e2eAffectedGraph.ts';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
@@ -521,7 +522,12 @@ async function affectedFromCheckout(
         productPaths.length > 0 &&
         productPaths.every((path) => path.startsWith('src/modules/'))
     ) {
-        affected = await loadAffectedE2e(root, productPaths, specs);
+        try {
+            const { loadAffectedE2e } = await import('./e2eAffectedGraph.ts');
+            affected = await loadAffectedE2e(root, productPaths, specs);
+        } catch {
+            affected = { kind: 'full', reason: 'dependency graph helper unavailable' };
+        }
     }
     return { paths, packageScriptOnly, affected };
 }
