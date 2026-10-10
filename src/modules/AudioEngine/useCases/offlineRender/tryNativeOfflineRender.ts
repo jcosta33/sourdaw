@@ -1,3 +1,6 @@
+import { adjustmentLayerStore } from '#/modules/Arrangement/stores';
+import { modulationStore } from '#/modules/Automation/stores';
+
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { renderOfflineWithNativeEngine } from './renderOfflineWithNativeEngine';
 import { type resolveOfflineMixPlan } from './resolveOfflineMixPlan';
@@ -20,7 +23,7 @@ export async function tryNativeOfflineRender(
         vcaMultiplierByTrackId,
         renderContext,
     } = plan;
-    const { durationSeconds, defaultTempo, changes, projectPpqEndpoints, resolveTempoAtBeat } = renderContext;
+    const { durationSeconds, defaultTempo, changes, projectPpqEndpoints, resolveTempoAtBeat, tracks } = renderContext;
     // The D3.c.2 cutover (#2225): a desktop export the native engine can
     // hold renders through it; every other outcome carries its reason, and
     // a *degraded* one — a native engine that exists here and was passed
@@ -33,6 +36,17 @@ export async function tryNativeOfflineRender(
         gainEnvelopes: input.scheduling.gainEnvelopes,
         // The routes this render's own latency and detector wiring read.
         sidechainRoutes: input.scheduling.latency.routes,
+        // The rack and stack the Web Audio render carries and the native one
+        // has no vocabulary for. Read live, as the scheduling input's own
+        // store fallbacks are: a document-source render reads the live rack
+        // and stack the same way it already reads the automation lanes.
+        modulators: modulationStore.value?.modulators ?? [],
+        adjustmentLayers: adjustmentLayerStore.value?.layers ?? [],
+        // An implicit layer position resolves against the full project track
+        // list, exactly as live's `resolveAffectedTrackIds` and the Web Audio
+        // composition do — not against the renderable subset, whose index
+        // space a folder or disabled track ahead of the stack shifts.
+        projectTrackIds: (tracks?.tracks ?? allRenderableTracks).map((track) => track.id),
     });
     if (selection.engine === 'native/offline') {
         const native = await renderOfflineWithNativeEngine({

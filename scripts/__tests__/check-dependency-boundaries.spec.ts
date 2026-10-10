@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import {
     collectCausalEdges,
     compareRows,
+    findContractReexportFindings,
     findMixedTypeValueExports,
     findModelCasingFindings,
     findStaticGuardFindings,
@@ -1402,6 +1403,129 @@ describe('check-dependency-boundaries', () => {
             'src/modules/Foo/models/Foo/fooBar.ts',
             'src/modules/Foo/models/foo/FooBar.ts',
         ]);
+    });
+
+    it('should refuse unregistered contract-folder re-exports of private surfaces while passing internal imports', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-contract-reexport-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const modelsDirectory = join(moduleDirectory, 'models');
+            const storesDirectory = join(moduleDirectory, 'stores');
+            const foreignViewsDirectory = join(repositoryRoot, 'src/modules/Bar/presentations/views');
+            mkdirSync(modelsDirectory, { recursive: true });
+            mkdirSync(storesDirectory, { recursive: true });
+            mkdirSync(foreignViewsDirectory, { recursive: true });
+
+            writeFixtureFiles(modelsDirectory, {
+                'ScaleSteps.ts': 'export const SCALE_STEPS = [2, 1, 2];\n',
+            });
+            writeFixtureFiles(storesDirectory, {
+                // The laundering carrier: a non-barrel stores file re-exporting a model value, which
+                // the barrel legally re-exports from its own folder — the hop the edge rules cannot
+                // see because a re-export edge is indistinguishable from an import edge.
+                'scaleCarrier.ts': "export { SCALE_STEPS } from '../models/ScaleSteps';\n",
+                'index.ts': "export { SCALE_STEPS } from './scaleCarrier';\n",
+                // Consuming the same model for internal use is not a re-export and must stay clean.
+                'scaleLegit.ts': [
+                    "import { SCALE_STEPS } from '../models/ScaleSteps';",
+                    'export const readScaleSteps = (): readonly number[] => SCALE_STEPS;',
+                ],
+            });
+            writeFixtureFiles(foreignViewsDirectory, {
+                'ForeignPanel.tsx': [
+                    "import { SCALE_STEPS } from '#/modules/Foo/stores';",
+                    'export const consumedScaleSteps = SCALE_STEPS;',
+                ],
+            });
+
+            expect(findContractReexportFindings(repositoryRoot)).toEqual([
+                {
+                    type: 'contract-reexport',
+                    from: 'src/modules/Foo/stores/scaleCarrier.ts',
+                    to: 'src/modules/Foo/models/ScaleSteps.ts',
+                    rule: {
+                        severity: 'error',
+                        name: 'no-models-repos-transformers-in-contract-folders',
+                    },
+                },
+            ]);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
+    it('should refuse contract-folder re-exports of private surfaces bound without a module specifier', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-contract-reexport-bound-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const modelsDirectory = join(moduleDirectory, 'models');
+            const storesDirectory = join(moduleDirectory, 'stores');
+            const useCasesDirectory = join(moduleDirectory, 'useCases');
+            mkdirSync(modelsDirectory, { recursive: true });
+            mkdirSync(storesDirectory, { recursive: true });
+            mkdirSync(useCasesDirectory, { recursive: true });
+
+            writeFixtureFiles(modelsDirectory, {
+                'ScaleSteps.ts': 'export const SCALE_STEPS = [2, 1, 2];\n',
+            });
+            writeFixtureFiles(storesDirectory, {
+                // Each carrier launders the model value through one no-module-specifier export
+                // spelling; the from-spelled control above already reddens, these must too.
+                'scaleNamedCarrier.ts': [
+                    "import { SCALE_STEPS } from '../models/ScaleSteps';",
+                    'export { SCALE_STEPS };',
+                ],
+                'scaleRenamedCarrier.ts': [
+                    "import { SCALE_STEPS } from '../models/ScaleSteps';",
+                    'export { SCALE_STEPS as STEPS };',
+                ],
+                'scaleNamespaceCarrier.ts': [
+                    "import * as scaleSteps from '../models/ScaleSteps';",
+                    'export { scaleSteps };',
+                ],
+                'scaleDefaultCarrier.ts': [
+                    "import ScaleSteps from '../models/ScaleSteps';",
+                    'export default ScaleSteps;',
+                ],
+                'scaleRequireCarrier.ts': [
+                    "import scaleSteps = require('../models/ScaleSteps');",
+                    'export { scaleSteps };',
+                ],
+                // Importing a non-private surface and re-exporting it bound is not a private hop.
+                'publicCarrier.ts': [
+                    "import { readScaleSteps } from '../useCases/readScaleSteps';",
+                    'export { readScaleSteps };',
+                ],
+                'index.ts': [
+                    "export { SCALE_STEPS } from './scaleNamedCarrier';",
+                    "export { STEPS } from './scaleRenamedCarrier';",
+                    "export { scaleSteps } from './scaleNamespaceCarrier';",
+                    "export { readScaleSteps } from './publicCarrier';",
+                ],
+            });
+            writeFixtureFiles(useCasesDirectory, {
+                'readScaleSteps.ts': 'export const readScaleSteps = (): readonly number[] => [2, 1, 2];\n',
+            });
+
+            const rows = findContractReexportFindings(repositoryRoot);
+            expect(rows.map(({ from, to }: { from: string; to: string }) => `${from} -> ${to}`)).toEqual([
+                'src/modules/Foo/stores/scaleDefaultCarrier.ts -> src/modules/Foo/models/ScaleSteps.ts',
+                'src/modules/Foo/stores/scaleNamedCarrier.ts -> src/modules/Foo/models/ScaleSteps.ts',
+                'src/modules/Foo/stores/scaleNamespaceCarrier.ts -> src/modules/Foo/models/ScaleSteps.ts',
+                'src/modules/Foo/stores/scaleRenamedCarrier.ts -> src/modules/Foo/models/ScaleSteps.ts',
+                'src/modules/Foo/stores/scaleRequireCarrier.ts -> src/modules/Foo/models/ScaleSteps.ts',
+            ]);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
     });
 
     it('should reject symlinked model directories and source files before walking targets', ({ skip }) => {

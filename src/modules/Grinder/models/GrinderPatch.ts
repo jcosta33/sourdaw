@@ -29,6 +29,24 @@ export type GrinderUiSection = 'browse' | 'amp' | 'drive' | 'cab' | 'neural' | '
 
 export type GrinderNeuralModelSource = 'builtin' | 'imported';
 
+/** The .nam architectures the native runtime implements. Anything else is
+ * rejected explicitly at import — never substituted. */
+export type GrinderNeuralArchitecture = 'WaveNet' | 'LSTM' | 'ConvNet' | 'Linear';
+
+/** The complete validated model a `.nam` file carries: the source network's
+ * actual topology (architecture + config) and every weight. The runtime
+ * executes this directly; the scalar fields below remain only as display
+ * metadata and the legacy numeric-record carrier. */
+export type GrinderNeuralModel = {
+    architecture: GrinderNeuralArchitecture;
+    /** Declared file version, or null for version-less legacy exports. */
+    version: string | null;
+    /** Sample rate from the document root, or null when absent. */
+    sampleRate: number | null;
+    config: Readonly<Record<string, unknown>>;
+    weights: readonly number[];
+};
+
 export type GrinderNeuralProfile = {
     derivedFrom: 'nam';
     sourceArchitecture: string;
@@ -41,6 +59,14 @@ export type GrinderNeuralProfile = {
     contourMix: number;
     recurrentBias: number;
     convWeights: Array<[number, number, number]>;
+    /** The full model when the profile was built from a validated `.nam`
+     * file; null for profiles reconstructed from a legacy numeric record,
+     * which carry only the scalars (plus the digest to re-match a library
+     * entry). */
+    model: GrinderNeuralModel | null;
+    /** 64-bit digest (four 16-bit base36 words, hyphen-joined) over the
+     * model's architecture, version, config and weights. */
+    modelDigest: string | null;
 };
 
 export type GrinderNeuralLibraryEntry = {
@@ -401,9 +427,20 @@ function cloneNeuralProfile(profile: GrinderNeuralProfile | null | undefined): G
         return null;
     }
 
+    const model = profile.model;
+    let clonedModel: GrinderNeuralModel | null = null;
+    if (model !== undefined && model !== null) {
+        clonedModel = {
+            ...model,
+            config: { ...model.config },
+            weights: [...model.weights],
+        };
+    }
     return {
         ...profile,
         convWeights: profile.convWeights.map((weights) => [weights[0], weights[1], weights[2]]),
+        model: clonedModel,
+        modelDigest: profile.modelDigest ?? null,
     };
 }
 

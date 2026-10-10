@@ -10,6 +10,10 @@
 //   2) .dependency-cruiser.reachability.cjs (causal component → useCases edges)
 //   3) .dependency-cruiser.types.cjs (type-only boundary edges)
 //   4) .dependency-cruiser.tests.cjs (test-inclusive barrel boundaries)
+//   5) the contract-folder re-export register (static `export … from` rows over
+//      every contract-folder file, baseline-compared like a cruise, so a private
+//      models/repositories/transformers symbol reaches a contract surface only
+//      through a registered publication — dependency edges cannot see re-exports)
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
@@ -207,7 +211,9 @@ module.exports = {
             name: 'no-models-repos-transformers-in-index',
             severity: 'error',
             comment:
-                'Contract-folder barrels must never import or re-export models, repositories, or transformers from anywhere.',
+                'Contract-folder barrels must never import or re-export models, repositories, or transformers from anywhere. ' +
+                'A carrier file beside the barrel re-exporting the same private folders is refused by the static re-export guard in ' +
+                'scripts/check-dependency-boundaries.mjs — dependency edges cannot tell that laundering re-export from a legitimate internal import.',
             from: {
                 path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(useCases|events|stores|presentations/views)/index\\.ts$',
             },

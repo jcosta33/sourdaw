@@ -1,5 +1,14 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    mkdtempSync,
+    mkdirSync,
+    readFileSync,
+    readdirSync,
+    renameSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -287,6 +296,21 @@ describe('required affected verification', () => {
         }
     });
 
+    it('keeps the required planner source and spec in the Node tooling suite', () => {
+        expect(
+            selectValidationPlan(
+                ['scripts/prValidationScope.ts', 'scripts/__tests__/prValidationScope.spec.ts'],
+                INVENTORY
+            )
+        ).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+    });
+
     it.each(REVIEW_SPEC_ONLY_STEMS)('admits exact review-only spec %s', (stem) => {
         expect(selectValidationPlan([`scripts/__tests__/${stem}.spec.ts`], INVENTORY)).toMatchObject({
             profile: 'tooling',
@@ -344,6 +368,196 @@ describe('required affected verification', () => {
         expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
         expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
     });
+
+    it('admits only immutable known package script route changes', () => {
+        const root = temporaryRoot();
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        const packagePath = join(root, 'package.json');
+        const output = join(root, 'output');
+        const packageText = (scripts: Record<string, string>, fields: Record<string, unknown> = {}) =>
+            `${JSON.stringify({ name: 'scope-fixture', scripts, ...fields }, null, 4)}\n`;
+        const known = { test: 'node scripts/other.ts', 'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts' };
+        const baseline = { test: 'node scripts/other.ts' };
+        const writePackage = (contents: string | null) => {
+            rmSync(packagePath, { force: true });
+            if (contents !== null) {
+                writeFileSync(packagePath, contents);
+            }
+        };
+        const commit = (message: string) => {
+            git(['add', '-A']);
+            git(['commit', '--quiet', '--allow-empty', '-m', message]);
+            return git(['rev-parse', 'HEAD']);
+        };
+        const planAt = (base: string, head: string) => {
+            writeFileSync(output, '');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+            expect(readFileSync(output, 'utf8')).toContain(`profile=${plan.profile}\nbrowser=${plan.browser}\n`);
+            return plan;
+        };
+        const expectBroad = (base: string, head: string) => {
+            expect(planAt(base, head)).toMatchObject({
+                profile: 'broad',
+                browser: true,
+                browserAi: true,
+                codeql: true,
+                matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] },
+            });
+        };
+
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Scope test']);
+        writeFileSync(join(root, '.gitignore'), 'output\npr-validation-scope.json\n');
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        writeFileSync(join(root, SMOKE_SPEC), '// smoke\n');
+        writeFileSync(join(root, 'tests/e2e/undo.spec.ts'), '// browser\n');
+        writePackage(packageText(baseline));
+        const base = commit('base');
+
+        mkdirSync(join(root, 'scripts'), { recursive: true });
+        writeFileSync(join(root, 'scripts/retargetCapabilitySnapshot.ts'), 'export const fixture = true;\n');
+        mkdirSync(join(root, 'docs'), { recursive: true });
+        writeFileSync(join(root, 'docs/change.md'), '# Tooling\n');
+        writePackage(packageText(known));
+        const head = commit('known operational route and tooling');
+        expect(planAt(base, head)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+            reasons: expect.arrayContaining([
+                {
+                    path: 'package.json',
+                    reason: 'known operational script route; security/static checks without browser execution',
+                },
+            ]),
+        });
+        expect(readFileSync(output, 'utf8')).toContain(
+            'profile=tooling\nbrowser=false\nbrowser-ai=false\ncodeql=true\nmatrix={"include":[]}\n'
+        );
+        writePackage(packageText({ ...known, surprise: 'node scripts/other.ts' }, { dependencies: { new: '1.0.0' } }));
+        expect(planAt(base, head).profile).toBe('tooling');
+        writePackage(packageText(baseline));
+        const removalHead = commit('remove known route');
+        expect(planAt(head, removalHead)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+
+        writePackage(packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }));
+        const unsafeCandidate = commit('unsafe candidate package command');
+        writePackage(packageText(known));
+        const safeCheckout = commit('safe checkout after candidate');
+        expect(git(['rev-parse', 'HEAD'])).toBe(safeCheckout);
+        expectBroad(removalHead, unsafeCandidate);
+
+        const cases: { name: string; before: string; after: string | null; extra?: string }[] = [
+            {
+                name: 'unknown old route',
+                before: packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }),
+                after: packageText(known),
+            },
+            {
+                name: 'unknown new route',
+                before: packageText(known),
+                after: packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }),
+            },
+            {
+                name: 'unknown script key',
+                before: packageText(baseline),
+                after: packageText({ ...baseline, 'other:plan': 'node scripts/retargetCapabilitySnapshot.ts' }),
+            },
+            {
+                name: 'route flag',
+                before: packageText(baseline),
+                after: packageText({
+                    ...baseline,
+                    'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts --unsafe',
+                }),
+            },
+            {
+                name: 'dependency change',
+                before: packageText(baseline),
+                after: packageText(known, { dependencies: { new: '1.0.0' } }),
+            },
+            {
+                name: 'package manager change',
+                before: packageText(baseline),
+                after: packageText(known, { packageManager: 'pnpm@99' }),
+            },
+            {
+                name: 'unknown field change',
+                before: packageText(baseline),
+                after: packageText(known, { futurePolicy: true }),
+            },
+            {
+                name: 'product mix',
+                before: packageText(baseline),
+                after: packageText(known),
+                extra: 'src/app/bootstrap.ts',
+            },
+            {
+                name: 'shared mix',
+                before: packageText(baseline),
+                after: packageText(known),
+                extra: 'scripts/e2eServerIdentity.ts',
+            },
+            { name: 'config mix', before: packageText(baseline), after: packageText(known), extra: 'vite.config.ts' },
+            { name: 'lockfile mix', before: packageText(baseline), after: packageText(known), extra: 'pnpm-lock.yaml' },
+            { name: 'malformed JSON', before: packageText(baseline), after: '{' },
+            {
+                name: 'duplicate key',
+                before: packageText(baseline),
+                after: '{"name":"scope-fixture","scripts":{},"scripts":{"retarget:plan":"node scripts/retargetCapabilitySnapshot.ts"}}\n',
+            },
+            {
+                name: 'missing scripts',
+                before: packageText(baseline),
+                after: `${JSON.stringify({ name: 'scope-fixture' }, null, 4)}\n`,
+            },
+            {
+                name: 'non-string command',
+                before: packageText(baseline),
+                after: `${JSON.stringify({ name: 'scope-fixture', scripts: { 'retarget:plan': 1 } }, null, 4)}\n`,
+            },
+            { name: 'deleted package', before: packageText(baseline), after: null },
+        ];
+        for (const testCase of cases) {
+            writePackage(testCase.before);
+            const caseBase = commit(`${testCase.name} base`);
+            writePackage(testCase.after);
+            if (testCase.extra) {
+                const fullPath = join(root, testCase.extra);
+                mkdirSync(fullPath.slice(0, fullPath.lastIndexOf('/')), { recursive: true });
+                writeFileSync(fullPath, '// mixed change\n');
+            }
+            const caseHead = commit(testCase.name);
+            expectBroad(caseBase, caseHead);
+        }
+
+        writePackage(packageText(baseline));
+        const deletionBase = commit('deletion base');
+        writePackage(packageText(known));
+        chmodSync(packagePath, 0o755);
+        const executableHead = commit('executable package');
+        expectBroad(deletionBase, executableHead);
+        chmodSync(packagePath, 0o644);
+        const renameBase = commit('restore package mode');
+        renameSync(packagePath, join(root, 'renamed-package.json'));
+        const renameHead = commit('rename package');
+        expectBroad(renameBase, renameHead);
+    }, 30_000);
 
     it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)('keeps shared or browser-owned script %s broad', (stem) => {
         for (const path of [`scripts/${stem}.ts`, `scripts/__tests__/${stem}.spec.ts`]) {

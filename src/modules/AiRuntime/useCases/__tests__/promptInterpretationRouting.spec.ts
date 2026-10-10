@@ -200,7 +200,7 @@ describe('whole-request prompt interpretation routing', () => {
         const context = createContext();
         const snapshot = structuredClone(context);
 
-        const result = await parsePromptToActions(prompt, context);
+        const result = await parsePromptToActions({ prompt, context });
 
         expect(result.actions[0]?.type).toBe(actionType);
         expect(result.planningOutcome).toEqual({ kind: 'proposal' });
@@ -213,7 +213,7 @@ describe('whole-request prompt interpretation routing', () => {
         const snapshot = structuredClone(context);
         const prompt = 'create 2 audio tracks named "Lead Vocals", "Backing Vocals"';
 
-        const result = await parsePromptToActions(prompt, context, undefined, 'revision-routing');
+        const result = await parsePromptToActions({ prompt, context, projectRevision: 'revision-routing' });
 
         commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
         registerHandlerMap(getArrangementHandlers());
@@ -268,7 +268,7 @@ describe('whole-request prompt interpretation routing', () => {
     });
 
     it('keeps the full deterministic creation ceiling outside the provider batch limit', async () => {
-        const result = await parsePromptToActions('create 32 audio tracks', createContext());
+        const result = await parsePromptToActions({ prompt: 'create 32 audio tracks', context: createContext() });
 
         expect(result.actions).toHaveLength(32);
         expect(result.actions[0]).toMatchObject({ type: 'addTrack', payload: { name: 'Audio 1', kind: 'audio' } });
@@ -279,10 +279,10 @@ describe('whole-request prompt interpretation routing', () => {
     it('preserves prior numeric and quoted-value semantics with every interpreter active', async () => {
         const context = createContext();
 
-        const onePercent = await parsePromptToActions('volume 1%', context);
-        const bareOne = await parsePromptToActions('set volume to 1', context);
-        const quotedBridgeRename = await parsePromptToActions('rename clip to "Bridge Solo"', context);
-        const quotedRename = await parsePromptToActions('rename clip to "Bridge And Solo"', context);
+        const onePercent = await parsePromptToActions({ prompt: 'volume 1%', context });
+        const bareOne = await parsePromptToActions({ prompt: 'set volume to 1', context });
+        const quotedBridgeRename = await parsePromptToActions({ prompt: 'rename clip to "Bridge Solo"', context });
+        const quotedRename = await parsePromptToActions({ prompt: 'rename clip to "Bridge And Solo"', context });
 
         expect(onePercent.actions[0]?.payload).toMatchObject({ trackId: 'track-bass', gain: 0.01 });
         expect(bareOne.actions[0]?.payload).toMatchObject({ trackId: 'track-bass', gain: 1 });
@@ -297,7 +297,7 @@ describe('whole-request prompt interpretation routing', () => {
     it('uses the complete clip selection union for deterministic rename routing', async () => {
         const arrayOnly = createContext();
         arrayOnly.selectedClipId = null;
-        const unique = await parsePromptToActions('rename clip Opening', arrayOnly);
+        const unique = await parsePromptToActions({ prompt: 'rename clip Opening', context: arrayOnly });
 
         expect(unique.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Opening' } }]);
         expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
@@ -306,7 +306,7 @@ describe('whole-request prompt interpretation routing', () => {
     it.each(['rename clip Opening', 'rename clip to "Bridge Solo"'])(
         'sends ambiguous bare rename %s whole to clarification',
         async (prompt) => {
-            const result = await parsePromptToActions(prompt, createMultiClipSelectionContext());
+            const result = await parsePromptToActions({ prompt, context: createMultiClipSelectionContext() });
 
             expect(result.actions).toEqual([]);
             expect(result.planningOutcome.kind).toBe('clarify');
@@ -319,7 +319,7 @@ describe('whole-request prompt interpretation routing', () => {
         const context = createContext();
         context.selectedClipIds = ['clip-bass', 'missing-clip'];
 
-        const result = await parsePromptToActions('rename clip Opening', context);
+        const result = await parsePromptToActions({ prompt: 'rename clip Opening', context });
 
         expect(result.actions).toEqual([]);
         expect(result.planningOutcome.kind).toBe('clarify');
@@ -329,14 +329,17 @@ describe('whole-request prompt interpretation routing', () => {
     it('preserves quoted clause-looking values through every real interpreter', async () => {
         const context = createContext();
 
-        const periodRename = await parsePromptToActions('rename clip to "Verse. Mute Bass"', context);
-        const colonRename = await parsePromptToActions('rename clip to "Verse: mute Bass"', context);
-        const invite = await parsePromptToActions('join session "invite-ABC. Mute Bass"', context);
-        const periodTrackName = await parsePromptToActions('create 2 tracks named Bass, "Keys. Mute Bass"', context);
-        const imperativeTrackName = await parsePromptToActions(
-            'create 3 tracks named Bass, Keys and "mute Drums"',
-            context
-        );
+        const periodRename = await parsePromptToActions({ prompt: 'rename clip to "Verse. Mute Bass"', context });
+        const colonRename = await parsePromptToActions({ prompt: 'rename clip to "Verse: mute Bass"', context });
+        const invite = await parsePromptToActions({ prompt: 'join session "invite-ABC. Mute Bass"', context });
+        const periodTrackName = await parsePromptToActions({
+            prompt: 'create 2 tracks named Bass, "Keys. Mute Bass"',
+            context,
+        });
+        const imperativeTrackName = await parsePromptToActions({
+            prompt: 'create 3 tracks named Bass, Keys and "mute Drums"',
+            context,
+        });
 
         expect(periodRename.actions[0]?.payload).toMatchObject({ name: 'Verse. Mute Bass' });
         expect(colonRename.actions[0]?.payload).toMatchObject({ name: 'Verse: mute Bass' });
@@ -363,10 +366,13 @@ describe('whole-request prompt interpretation routing', () => {
         async (selector, displayName, namedTrackId) => {
             const context = createReservedSelectorCollisionContext();
 
-            const single = await parsePromptToActions(`add eq to ${selector}`, context);
-            const multi = await parsePromptToActions(`add eq and compressor to ${selector}`, context);
-            const quoted = await parsePromptToActions(`add eq to "${displayName}"`, context);
-            const quotedMulti = await parsePromptToActions(`add eq and compressor to "${displayName}"`, context);
+            const single = await parsePromptToActions({ prompt: `add eq to ${selector}`, context });
+            const multi = await parsePromptToActions({ prompt: `add eq and compressor to ${selector}`, context });
+            const quoted = await parsePromptToActions({ prompt: `add eq to "${displayName}"`, context });
+            const quotedMulti = await parsePromptToActions({
+                prompt: `add eq and compressor to "${displayName}"`,
+                context,
+            });
 
             expect(single.actions).toMatchObject([
                 { type: 'addDevice', payload: { trackId: 'track-bass', deviceType: 'EQ' } },
@@ -401,8 +407,8 @@ describe('whole-request prompt interpretation routing', () => {
         async (verb, actionType, selector, displayName, namedTrackId) => {
             const context = createReservedSelectorCollisionContext();
 
-            const selected = await parsePromptToActions(`${verb} ${selector}`, context);
-            const quoted = await parsePromptToActions(`${verb} "${displayName}"`, context);
+            const selected = await parsePromptToActions({ prompt: `${verb} ${selector}`, context });
+            const quoted = await parsePromptToActions({ prompt: `${verb} "${displayName}"`, context });
 
             expect(selected.actions).toMatchObject([{ type: actionType, payload: { trackId: 'track-bass' } }]);
             expect(quoted.actions).toMatchObject([{ type: actionType, payload: { trackId: namedTrackId } }]);
@@ -416,7 +422,7 @@ describe('whole-request prompt interpretation routing', () => {
             const context = { ...createReservedSelectorCollisionContext(), selectedTrackId: null };
             const prompt = `${verb} selected track`;
 
-            const result = await parsePromptToActions(prompt, context);
+            const result = await parsePromptToActions({ prompt, context });
 
             expect(result.actions).toEqual([]);
             expect(result.planningOutcome?.kind).toBe('clarify');
@@ -431,7 +437,7 @@ describe('whole-request prompt interpretation routing', () => {
             const context = { ...createReservedSelectorCollisionContext(), selectedTrackId: null };
             const prompt = `add eq to ${selector}`;
 
-            const result = await parsePromptToActions(prompt, context);
+            const result = await parsePromptToActions({ prompt, context });
 
             expect(result.actions).toEqual([]);
             expect(result.planningOutcome?.kind).toBe('clarify');
@@ -444,7 +450,7 @@ describe('whole-request prompt interpretation routing', () => {
         const context = { ...createReservedSelectorCollisionContext(), selectedTrackId: 'missing-track' };
         const prompt = 'add eq and compressor to selected track';
 
-        const result = await parsePromptToActions(prompt, context);
+        const result = await parsePromptToActions({ prompt, context });
 
         expect(result.actions).toEqual([]);
         expect(result.planningOutcome?.kind).toBe('clarify');
@@ -455,7 +461,7 @@ describe('whole-request prompt interpretation routing', () => {
     it('rejects an invalid explicit numeric value truthfully without changing or semantically rerouting it', async () => {
         const context = createContext();
 
-        const result = await parsePromptToActions('set pan to 100', context);
+        const result = await parsePromptToActions({ prompt: 'set pan to 100', context });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toBe('Recognized command failed runtime validation: setTrackPan');
@@ -465,8 +471,8 @@ describe('whole-request prompt interpretation routing', () => {
     it('keeps reserved bulk syntax ahead of a colliding track name while quoted text targets the name', async () => {
         const context = createBulkNameCollisionContext();
 
-        const bulk = await parsePromptToActions('mute all tracks', context);
-        const quoted = await parsePromptToActions('mute "All Tracks"', context);
+        const bulk = await parsePromptToActions({ prompt: 'mute all tracks', context });
+        const quoted = await parsePromptToActions({ prompt: 'mute "All Tracks"', context });
 
         expect(bulk.actions).toMatchObject([
             { type: 'muteTrack', payload: { trackId: 'all-track', muted: true } },
@@ -487,9 +493,12 @@ describe('whole-request prompt interpretation routing', () => {
             clipCount: 0,
         };
 
-        const result = await parsePromptToActions('mute literal-target', {
-            ...context,
-            tracks: [literalTarget, nameCollision],
+        const result = await parsePromptToActions({
+            prompt: 'mute literal-target',
+            context: {
+                ...context,
+                tracks: [literalTarget, nameCollision],
+            },
         });
 
         expect(result.actions).toMatchObject([
@@ -525,7 +534,7 @@ describe('whole-request prompt interpretation routing', () => {
     ])(
         'sends the complete unresolved request %s to one provider turn without returning a prefix',
         async (prompt, makeContext) => {
-            const result = await parsePromptToActions(prompt, makeContext());
+            const result = await parsePromptToActions({ prompt, context: makeContext() });
 
             expect(result.actions).toEqual([]);
             expect(result.planningOutcome).toEqual({

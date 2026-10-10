@@ -10,7 +10,11 @@ import { type OfflineCurveWriteTargets } from '../../models/OfflineCurveWriteTar
 import { beatToSeconds } from '../../services/beatConversion';
 import { clampRenderFrameCount } from '../clampRenderFrameCount';
 import { applyLimiterCeilingWrite } from '../devices/dynamics/applyLimiterCeilingWrite';
-import { type AudioDeviceStrategy, type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStrategy';
+import {
+    type AudioDeviceStrategy,
+    type OfflineAutomationBinding,
+    type OfflineAutomationSegment,
+} from '../deviceStrategy/AudioDeviceStrategy';
 
 import {
     type CompiledAutomationEvent,
@@ -20,6 +24,7 @@ import {
 import { compileAutomationSegments } from './compileAutomationSegments';
 import { eventStreamFrame } from './eventStreamFrame';
 import { type ScheduleCall } from './makeOfflineFrameScheduler';
+import { makeSecondsToBeat } from './makeSecondsToBeat';
 import { mergeAutomationEventStreams, type AutomationEventStream } from './mergeAutomationEventStreams';
 import {
     mergeAutomationSegmentStreams,
@@ -28,6 +33,34 @@ import {
 } from './mergeAutomationSegmentStreams';
 import { unrenderableAutomationRefusal } from './refuseUnrenderableAutomation';
 import { scheduleCompiledEventsOnParam } from './scheduleCompiledEventsOnParam';
+
+/**
+ * One resolved modulator mapping aimed at a device parameter of this track —
+ * the offline scheduler's plain-data half of live `applyModulationToEngine`.
+ * Built per render by `buildOfflineModulatorPlans` (Automation's modulation
+ * use cases, which own the curve and the binding law) and handed in here, a
+ * repository, as data: this module cannot read the modulator store or its
+ * dependency seam, exactly as it cannot read Arrangement's parameter law.
+ *
+ * The scheduler composes the delta onto the parameter's base in live's order —
+ * base (the automation the lane families applied, else the persisted base) +
+ * `deltaAtBeat`, clamped to the declared range, slewed at the live modulation
+ * alpha, quantised on delivery — one sample per slew tick across the render,
+ * which is the offline grain of live's per-tick write.
+ */
+export type OfflineModulatorPlan = {
+    /** The track the mapped device lives on — the caller filters plans per scheduling pass with it. */
+    targetTrackId: string;
+    deviceId: string;
+    parameterId: string;
+    deviceType: string;
+    /** The persisted device value — the base when no lane automates the parameter. */
+    baseValue: number;
+    paramMin: number;
+    paramMax: number;
+    /** `computeModulatorValue(modulator, beat) × amount × (max − min)`, in device units. */
+    deltaAtBeat: (beat: number) => number;
+};
 
 type AutomationTempoChange = {
     beat: number;
@@ -195,6 +228,22 @@ export type ScheduleTrackAutomationInput = {
      */
     vcaMultiplier?: number;
     /**
+     * The project beat the render region starts at (0 for a full-timeline
+     * render). Modulator curves are functions of the project beat, so their
+     * samples must anchor where the region anchors — the same anchor the
+     * lane compiles' `regionStartSeconds` gives the lane curves.
+     */
+    regionStartBeat?: number;
+    /**
+     * Every modulator mapping resolved against this track's devices, from
+     * `buildOfflineModulatorPlans`. The composed base+delta schedule replaces
+     * a lane's plain schedule on the same parameter (live's modulation write
+     * lands after automation's in the same tick and carries the base with it),
+     * and parameters no lane drives get their schedule from the persisted
+     * base alone.
+     */
+    modulatorPlans?: readonly OfflineModulatorPlan[];
+    /**
      * Automation's `getAutomationLaneCeiling`: the ceiling a lane really has,
      * which is not always the scalar it stores. A track gain lane written
      * before the fader gained its `+6 dB` of headroom still records
@@ -289,6 +338,171 @@ function scheduleCurveWritePoints(
     }
 }
 
+/**
+ * The device-units value of a compiled event timeline (the lane families'
+ * merged stream) at a region-relative second, or `null` before its first
+ * event — there the parameter still holds its strip seed, which is the
+ * modulated pass's own persisted-base fallback.
+ *
+ * A `linear` event ramps from the previous event's value to its own over the
+ * span between them (`scheduleCompiledEventsOnParam` writes exactly that
+ * timeline); a `set` anchors and holds.
+ */
+function sampleCompiledTimeline(events: readonly CompiledAutomationEvent[], timeSeconds: number): number | null {
+    const first = events[0];
+    if (!first || timeSeconds < first.timeSeconds) {
+        return null;
+    }
+    let previous = first;
+    let next: CompiledAutomationEvent | undefined;
+    for (let index = 1; index < events.length; index++) {
+        const event = events[index]!;
+        if (event.timeSeconds > timeSeconds) {
+            next = event;
+            break;
+        }
+        previous = event;
+    }
+    if (next && next.type === 'linear' && next.timeSeconds > previous.timeSeconds) {
+        const fraction = (timeSeconds - previous.timeSeconds) / (next.timeSeconds - previous.timeSeconds);
+        return previous.value + (next.value - previous.value) * fraction;
+    }
+    return previous.value;
+}
+
+/** The device-units value of a compiled segment timeline at a frame, same `null` law. */
+function sampleSegmentTimeline(segments: readonly OfflineAutomationSegment[], frame: number): number | null {
+    const first = segments[0];
+    if (!first || frame < first.startFrame) {
+        return null;
+    }
+    let value = first.endValue;
+    for (const segment of segments) {
+        if (frame < segment.startFrame) {
+            break;
+        }
+        if (frame >= segment.endFrame) {
+            value = segment.endValue;
+            continue;
+        }
+        const span = segment.endFrame - segment.startFrame;
+        const fraction = span > 0 ? (frame - segment.startFrame) / span : 1;
+        value = segment.startValue + (segment.endValue - segment.startValue) * fraction;
+    }
+    return value;
+}
+
+/**
+ * The composed base+delta schedule for one modulator group, replacing the
+ * parameter's plain lane schedule — the offline grain of live's per-tick
+ * modulation write.
+ *
+ * Live order (`applyModulationToEngine`): base (the automation applied this
+ * tick, else the persisted base) + delta, clamped to the declared range,
+ * slewed one step per tick, quantised on delivery. The block grid is the slew
+ * tick, the same grain live's scheduler writes at, walked through the tempo
+ * map so the beat-based curves sample at the beat each block moment actually
+ * is. When several modulators map one parameter, live's per-tick writes land
+ * last-modulator-wins; the offline schedule is the last plan's.
+ */
+function scheduleModulatedGroup(input: {
+    plans: readonly OfflineModulatorPlan[];
+    binding: OfflineAutomationBinding;
+    /** The lane family's merged timeline for one target, in that target's units; absent when no lane drives the parameter. */
+    sampleBaseDevice?: (timeSeconds: number) => number | null;
+    scheduleFrame?: ScheduleCall;
+    renderFrames: number;
+    durationSeconds: number;
+    slewTickSeconds: number;
+    defaultTempo: number;
+    changes: AutomationTempoChange[];
+    regionStartBeat: number;
+    regionStartSeconds: number;
+    projectBeatToSeconds: (beat: number) => number;
+    sampleRate: number;
+    compensationDelaySec: number;
+    clampStep: (value: number) => number;
+    quantiseEmit: (value: number) => number;
+}): void {
+    const { plans, binding, sampleBaseDevice, scheduleFrame, renderFrames } = input;
+    // Live's last-write-wins per tick; one schedule per group, from the last plan.
+    const plan = plans[plans.length - 1]!;
+    const secondsToBeat = makeSecondsToBeat(input.defaultTempo, input.changes);
+    const descriptorClamp = (value: number): number => Math.min(plan.paramMax, Math.max(plan.paramMin, value));
+
+    // The blocks: slew-tick moments across the render, each carrying the
+    // project beat it falls on and the combined target at that beat.
+    const times: number[] = [];
+    const values: number[] = [];
+    let previous: number | null = null;
+    for (let timeSeconds = 0; timeSeconds < input.durationSeconds; timeSeconds += input.slewTickSeconds) {
+        const beat = input.regionStartBeat + secondsToBeat(timeSeconds);
+        const sampled = sampleBaseDevice?.(timeSeconds);
+        const base = sampled ?? plan.baseValue;
+        // Live: `target = clamp(base + delta, paramMin, paramMax)`; the device
+        // law is the same declared range for builtins and runs where
+        // `applyAutomation` runs it — on the slew's target.
+        const target: number = input.clampStep(descriptorClamp(base + plan.deltaAtBeat(beat)));
+        // The modulation slew: live's per-param exponential glide, seeded at
+        // the first tick's target.
+        const smoothed: number = previous === null ? target : previous + (target - previous) * AUTOMATION_SLEW_ALPHA;
+        previous = smoothed;
+        times.push(timeSeconds);
+        // Quantise on delivery only, never into the recurrence.
+        values.push(input.quantiseEmit(smoothed));
+    }
+    if (times.length === 0) {
+        return;
+    }
+
+    const writeTime = (timeSeconds: number): number => timeSeconds + input.compensationDelaySec;
+
+    if (binding.kind === 'audioParam') {
+        for (const target of binding.targets) {
+            // The seed `scheduleCompiledEventsOnParam` writes when the
+            // compensation shift opens a gap at the region start.
+            const firstValue = target.convert ? target.convert(values[0]!) : values[0]! * target.scale + target.offset;
+            if (input.compensationDelaySec > 0) {
+                target.audioParam.setValueAtTime(firstValue, 0);
+            }
+            for (let index = 0; index < times.length; index++) {
+                const value = values[index]!;
+                target.audioParam.setValueAtTime(
+                    target.convert ? target.convert(value) : value * target.scale + target.offset,
+                    writeTime(times[index]!)
+                );
+            }
+        }
+        return;
+    }
+    if (binding.kind === 'curveWrite') {
+        if (!scheduleFrame) {
+            return;
+        }
+        for (let index = 0; index < times.length; index++) {
+            const time = writeTime(times[index]!);
+            if (input.sampleRate > 0 && Math.round(time * input.sampleRate) >= renderFrames) {
+                continue;
+            }
+            const value = values[index]!;
+            scheduleFrame(time, () => applyLimiterCeilingWrite(binding.targets, value));
+        }
+        return;
+    }
+    // `segments`: one constant segment per block, on the compensated clock the
+    // lane families shift by (M-038).
+    const segments: OfflineAutomationSegment[] = [];
+    for (let index = 0; index < times.length; index++) {
+        const startFrame = eventStreamFrame(writeTime(times[index]!), input.durationSeconds, input.sampleRate);
+        const isLast = index === times.length - 1;
+        const endFrame = isLast
+            ? eventStreamFrame(input.durationSeconds, input.durationSeconds, input.sampleRate)
+            : eventStreamFrame(writeTime(times[index + 1]!), input.durationSeconds, input.sampleRate);
+        segments.push({ startFrame, endFrame, startValue: values[index]!, endValue: values[index]! });
+    }
+    binding.apply(segments);
+}
+
 export function scheduleTrackAutomation({
     lanes,
     trackId,
@@ -308,6 +522,8 @@ export function scheduleTrackAutomation({
     compensationDelaySec = 0,
     clipBoundsById,
     vcaMultiplier = 1,
+    regionStartBeat = 0,
+    modulatorPlans,
     resolveLaneCeiling,
     onWithheldDeviceLanes,
 }: ScheduleTrackAutomationInput): void {
@@ -879,10 +1095,83 @@ export function scheduleTrackAutomation({
     // A caller that must account for lanes the merge could not keep learns
     // about it through `onWithheldDeviceLanes`, which the total law leaves
     // silent.
+    const modulatorPlansByGroup = new Map<string, OfflineModulatorPlan[]>();
+    for (const plan of modulatorPlans ?? []) {
+        const key = `${plan.deviceId}::${plan.parameterId}`;
+        const plans = modulatorPlansByGroup.get(key);
+        if (plans) {
+            plans.push(plan);
+        } else {
+            modulatorPlansByGroup.set(key, [plan]);
+        }
+    }
+    const deviceEntryById = new Map(deviceEntries.map((entry) => [entry.deviceId, entry]));
+    const scheduleModulatedForKey = (
+        key: string,
+        sampleBaseDevice: ((timeSeconds: number) => number | null) | undefined
+    ): boolean => {
+        const plans = modulatorPlansByGroup.get(key);
+        if (!plans || plans.length === 0) {
+            return false;
+        }
+        const entry = deviceEntryById.get(plans[0]!.deviceId);
+        const binding = entry?.strategy.resolveOfflineAutomation(plans[0]!.parameterId);
+        if (!entry || !binding) {
+            return false;
+        }
+        scheduleModulatedGroup({
+            plans,
+            binding,
+            sampleBaseDevice,
+            scheduleFrame,
+            renderFrames: clampRenderFrameCount({ durationSeconds, sampleRate }),
+            durationSeconds,
+            slewTickSeconds,
+            defaultTempo,
+            changes,
+            regionStartBeat,
+            regionStartSeconds,
+            projectBeatToSeconds: projectBeat,
+            sampleRate,
+            compensationDelaySec,
+            clampStep: (value) =>
+                deviceParameterLaw.clampValue({
+                    deviceId: plans[0]!.deviceId,
+                    deviceType: plans[0]!.deviceType,
+                    paramId: plans[0]!.parameterId,
+                    value,
+                }),
+            quantiseEmit: (value) =>
+                deviceParameterLaw.quantiseValue({
+                    deviceId: plans[0]!.deviceId,
+                    deviceType: plans[0]!.deviceType,
+                    paramId: plans[0]!.parameterId,
+                    value,
+                }),
+        });
+        return true;
+    };
+
     for (const { apply, deviceId, parameterId, streams } of segmentGroupsByKey.values()) {
         const merged = mergeAutomationSegmentStreams(streams);
         if (merged.withheldLaneIds.length > 0) {
             onWithheldDeviceLanes?.({ deviceId, parameterId, laneIds: merged.withheldLaneIds });
+        }
+        // The modulated schedule replaces the lane's plain one on the same
+        // parameter — its base is sampled from the merged segments, so the
+        // lane's moves ride inside the composed curve (live's base-then-
+        // modulation order). When the binding cannot be resolved the plain
+        // merged schedule still applies rather than losing the lane too.
+        const sampleBase =
+            modulatorPlansByGroup.has(`${deviceId}::${parameterId}`) && merged.segments.length > 0
+                ? (timeSeconds: number) =>
+                      sampleSegmentTimeline(
+                          merged.segments,
+                          eventStreamFrame(timeSeconds + compensationDelaySec, durationSeconds, sampleRate)
+                      )
+                : undefined;
+        if (sampleBase && scheduleModulatedForKey(`${deviceId}::${parameterId}`, sampleBase)) {
+            continue;
         }
         if (merged.segments.length > 0) {
             apply(merged.segments);
@@ -899,21 +1188,60 @@ export function scheduleTrackAutomation({
     // pair's write schedule — that plays the clip lane inside its window and
     // the track lane around it, whichever order the lanes arrived in.
     for (const { deviceId, parameterId, targets } of eventGroupsByKey.values()) {
-        for (const { apply, streams } of targets) {
+        const groupKey = `${deviceId}::${parameterId}`;
+        // A modulated group's schedule replaces each target's plain lane
+        // timeline (the base sampled from it, in that target's units, rides
+        // inside the composed curve). The plain application stays as the
+        // fallback whenever the binding cannot be resolved fresh.
+        const binding = modulatorPlansByGroup.has(groupKey)
+            ? deviceEntryById.get(deviceId)?.strategy.resolveOfflineAutomation(parameterId)
+            : undefined;
+        for (const [targetIndex, { apply, streams }] of targets.entries()) {
+            let events: readonly CompiledAutomationEvent[];
             if (streams.length <= 1) {
                 const single = streams[0];
-                if (single && single.events.length > 0) {
-                    apply(single.events);
+                events = single?.events ?? [];
+            } else {
+                const merged = mergeAutomationEventStreams(streams, sampleRate, durationSeconds);
+                if (merged.withheldLaneIds.length > 0) {
+                    onWithheldDeviceLanes?.({ deviceId, parameterId, laneIds: merged.withheldLaneIds });
                 }
+                events = merged.events;
+            }
+            if (events.length === 0) {
                 continue;
             }
-            const merged = mergeAutomationEventStreams(streams, sampleRate, durationSeconds);
-            if (merged.withheldLaneIds.length > 0) {
-                onWithheldDeviceLanes?.({ deviceId, parameterId, laneIds: merged.withheldLaneIds });
+            if (binding) {
+                // The base sampler inverts this target's affine (its compile
+                // folded the lane scale and the unit scale into the emitted
+                // values); a `convert` target's timeline is already device
+                // units, and a degenerate scale-0 affine has no inverse to
+                // sample so the persisted base answers.
+                const mapping = binding.kind === 'audioParam' ? binding.targets[targetIndex] : undefined;
+                const sampleBase = (timeSeconds: number): number | null => {
+                    const value = sampleCompiledTimeline(events, timeSeconds);
+                    if (value === null) {
+                        return null;
+                    }
+                    if (mapping && !mapping.convert) {
+                        return mapping.scale === 0 ? null : (value - mapping.offset) / mapping.scale;
+                    }
+                    return value;
+                };
+                if (scheduleModulatedForKey(groupKey, sampleBase)) {
+                    continue;
+                }
             }
-            if (merged.events.length > 0) {
-                apply(merged.events);
-            }
+            apply(events);
         }
+    }
+
+    // Modulator mappings whose parameter no lane drives: the base is the
+    // persisted device value, and the composed schedule is the whole story.
+    for (const key of modulatorPlansByGroup.keys()) {
+        if (segmentGroupsByKey.has(key) || eventGroupsByKey.has(key)) {
+            continue;
+        }
+        scheduleModulatedForKey(key, undefined);
     }
 }

@@ -20,6 +20,16 @@ export type ChatMessage = {
     answerEvidence?: readonly AnswerEvidenceEntry[];
     /** Whether this message is an executable prompt-command receipt rather than ordinary chat. */
     isCommandAction?: boolean;
+    /** The agent run a command message reports, so the thread can name the run it committed. */
+    agentRunId?: string;
+    /**
+     * The command batch this message committed to the project without a confirmation, stamped once
+     * it committed, so the thread reports that batch's own receipt and never another batch of its
+     * run. A runtime-only batch, which changes no project state, never stamps it.
+     */
+    agentBatchId?: string;
+    /** The identity of the project that run planned against, so another project's commit never reads as this one's. */
+    projectId?: string;
     /** Pending prompt-action confirmation owned by AiRuntime. */
     pendingActionConfirmationId?: string;
     pendingActionConfirmationStatus?: ChatActionConfirmationStatus;

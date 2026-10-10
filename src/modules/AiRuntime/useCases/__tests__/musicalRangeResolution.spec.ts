@@ -295,12 +295,11 @@ describe('musical range resolution', () => {
         });
 
         scriptDip('chorus');
-        const result = await parsePromptToActions(
-            'Dip the Lead Vocal by 6 dB in the chorus.',
+        const result = await parsePromptToActions({
+            prompt: 'Dip the Lead Vocal by 6 dB in the chorus.',
             context,
-            undefined,
-            'revision-ambiguous-chorus'
-        );
+            projectRevision: 'revision-ambiguous-chorus',
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.planningOutcome).toMatchObject({
@@ -311,12 +310,11 @@ describe('musical range resolution', () => {
 
     it('proposes the range write through the registry route once the reference names one section', async () => {
         scriptDip('second chorus');
-        const result = await parsePromptToActions(
-            'Dip the Lead Vocal by 6 dB in the second chorus.',
-            projectWithTwoChoruses(),
-            undefined,
-            'revision-second-chorus'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'Dip the Lead Vocal by 6 dB in the second chorus.',
+            context: projectWithTwoChoruses(),
+            projectRevision: 'revision-second-chorus',
+        });
 
         expect(result.planningOutcome).toEqual({ kind: 'proposal' });
         expect(result.actions).toEqual([

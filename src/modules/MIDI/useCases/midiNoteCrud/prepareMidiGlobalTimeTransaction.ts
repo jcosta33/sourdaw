@@ -27,6 +27,8 @@ type MidiGlobalTimeSplitOperation = {
     newClipId: string;
     splitBeat: number;
     discardBeforeBeat?: number;
+    /** Media windows that stay on the source clip beside the boundary split (#5112). */
+    retainOnSourceWindows?: readonly { start: number; end: number }[];
 };
 
 type MidiGlobalTimeCopyOperation = {
@@ -115,6 +117,15 @@ const DELETE_OPERATION_KEYS = ['type', 'startBeat', 'endBeat', 'splits', 'remove
 const DUPLICATE_OPERATION_KEYS = ['type', 'startBeat', 'endBeat', 'copies'] as const;
 const SPLIT_OPERATION_KEYS = ['sourceClipId', 'newClipId', 'splitBeat'] as const;
 const SPLIT_WITH_DISCARD_KEYS = ['sourceClipId', 'newClipId', 'splitBeat', 'discardBeforeBeat'] as const;
+const SPLIT_WITH_RETAIN_KEYS = ['sourceClipId', 'newClipId', 'splitBeat', 'retainOnSourceWindows'] as const;
+const SPLIT_WITH_DISCARD_AND_RETAIN_KEYS = [
+    'sourceClipId',
+    'newClipId',
+    'splitBeat',
+    'discardBeforeBeat',
+    'retainOnSourceWindows',
+] as const;
+const RETAIN_WINDOW_KEYS = ['start', 'end'] as const;
 const COPY_OPERATION_KEYS = ['sourceClipId', 'newClipId'] as const;
 const REPLAY_PLAN_KEYS = ['version', 'notes'] as const;
 const REPLAY_NOTE_KEYS = [
@@ -165,11 +176,44 @@ function isNonEmptyId(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
 }
 
+function validateRetainWindows(value: unknown): { start: number; end: number }[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+    const windows: { start: number; end: number }[] = [];
+    for (const entry of value) {
+        if (!isPlainObject(entry) || !hasExactKeys(entry, RETAIN_WINDOW_KEYS)) {
+            return null;
+        }
+        if (!isFiniteNumber(entry.start) || !isFiniteNumber(entry.end) || entry.start >= entry.end) {
+            return null;
+        }
+        windows.push({ start: entry.start, end: entry.end });
+    }
+    return windows;
+}
+
 function validateSplitOperation(value: unknown): MidiGlobalTimeSplitOperation | null {
     if (!isPlainObject(value)) {
         return null;
     }
-    if (!hasExactKeysForOptionalProperty(value, 'discardBeforeBeat', SPLIT_OPERATION_KEYS, SPLIT_WITH_DISCARD_KEYS)) {
+    let retainOnSourceWindows: { start: number; end: number }[] | undefined;
+    if (Object.hasOwn(value, 'retainOnSourceWindows')) {
+        const windows = validateRetainWindows(value.retainOnSourceWindows);
+        if (!windows) {
+            return null;
+        }
+        retainOnSourceWindows = windows;
+    }
+    const carriesRetain = retainOnSourceWindows !== undefined;
+    if (
+        !hasExactKeysForOptionalProperty(
+            value,
+            'discardBeforeBeat',
+            carriesRetain ? SPLIT_WITH_RETAIN_KEYS : SPLIT_OPERATION_KEYS,
+            carriesRetain ? SPLIT_WITH_DISCARD_AND_RETAIN_KEYS : SPLIT_WITH_DISCARD_KEYS
+        )
+    ) {
         return null;
     }
 
@@ -180,15 +224,16 @@ function validateSplitOperation(value: unknown): MidiGlobalTimeSplitOperation | 
     if (!isNonEmptyId(sourceClipId) || !isNonEmptyId(newClipId) || !isFiniteNonNegative(splitBeat)) {
         return null;
     }
+    const retainFields = retainOnSourceWindows === undefined ? {} : { retainOnSourceWindows };
     if (Object.hasOwn(value, 'discardBeforeBeat')) {
         if (!isFiniteNonNegative(discardBeforeBeat) || discardBeforeBeat > splitBeat) {
             return null;
         }
 
-        return { sourceClipId, newClipId, splitBeat, discardBeforeBeat };
+        return { sourceClipId, newClipId, splitBeat, discardBeforeBeat, ...retainFields };
     }
 
-    return { sourceClipId, newClipId, splitBeat };
+    return { sourceClipId, newClipId, splitBeat, ...retainFields };
 }
 
 function validateCopyOperation(value: unknown): MidiGlobalTimeCopyOperation | null {
@@ -427,13 +472,19 @@ function createDeleteCommands(
 
         sourceIds.add(split.sourceClipId);
         targetIds.add(split.newClipId);
-        commands.push({
+        const command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }> = {
             type: 'split-notes',
             sourceClipId: split.sourceClipId,
             targetClipId: split.newClipId,
             splitBeat: split.splitBeat,
-            ...(split.discardBeforeBeat === undefined ? {} : { discardBeforeBeat: split.discardBeforeBeat }),
-        });
+        };
+        if (split.discardBeforeBeat !== undefined) {
+            command.discardBeforeBeat = split.discardBeforeBeat;
+        }
+        if (split.retainOnSourceWindows !== undefined) {
+            command.retainOnSourceWindows = split.retainOnSourceWindows;
+        }
+        commands.push(command);
     }
 
     for (const sourceId of sourceIds) {

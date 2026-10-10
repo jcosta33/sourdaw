@@ -92,6 +92,7 @@ export async function executeOfflineRender(
                 plan,
                 offlineCtx,
                 backend,
+                masterNode: masterGain,
                 onWarning: callbacks.onWarning,
                 abortSignal,
             });

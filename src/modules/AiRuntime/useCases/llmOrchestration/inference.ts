@@ -8,6 +8,7 @@ import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { type AgentDataCategory } from '../../models/AgentDataPolicy';
 import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
@@ -87,8 +88,17 @@ const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
 // provider limit. Raise it with the mandatory set, never below it plus one free slot.
 export const WEBLLM_TOOL_BUDGET = 37;
 
-/** What one hosted turn replays: the run's first user message, the turns behind it, and the note closing them. */
-type HostedTurnRequest = { firstUserMessage: string; history: HostedTurnHistory; budgetNote: string };
+/**
+ * What one hosted turn replays: the run's first user message, the turns behind it, and the note
+ * closing them, with any evidence category the message itself carries beyond the text every
+ * request declares.
+ */
+type HostedTurnRequest = {
+    firstUserMessage: string;
+    history: HostedTurnHistory;
+    budgetNote: string;
+    messageDataCategories?: readonly AgentDataCategory[];
+};
 
 /**
  * The protocol record of a replayed hosted turn: the first user message, then every earlier
@@ -562,7 +572,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 });
                 const correlationId = `tool-planning-${crypto.randomUUID()}`;
                 const requestId = streamIdentity?.requestId ?? correlationId;
-                const declaredDataCategories = declareHostedTurnDataCategories(hostedTurn?.history);
+                const declaredDataCategories = declareHostedTurnDataCategories(
+                    hostedTurn?.history,
+                    hostedTurn?.messageDataCategories
+                );
                 const remoteDisclosure =
                     backend === 'cloud'
                         ? remoteTransmissionDisclosure.prepare({

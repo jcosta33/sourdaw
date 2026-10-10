@@ -37,7 +37,7 @@ function toFiniteOrNull(value: unknown): number | null | undefined {
 function compileImportedPayload(value: unknown): RuntimeGrinderNeuralPatchCompilation {
     if (
         !isRecord(value) ||
-        !hasOnlyKeys(value, ['neuralModelMode', 'profile']) ||
+        !hasOnlyKeys(value, ['neuralModelMode', 'profile', 'modelJson']) ||
         value.neuralModelMode !== 'imported'
     ) {
         return invalid('Runtime Grinder neural patch payload has an unsupported schema');
@@ -45,6 +45,14 @@ function compileImportedPayload(value: unknown): RuntimeGrinderNeuralPatchCompil
     if (!isRecord(value.profile)) {
         return invalid('Runtime Grinder imported neural profile is invalid');
     }
+    // `model`/`modelDigest` ride the project patch's profile (#3774): the
+    // digest proved the capture's identity, the model is the validated
+    // network. The compiled patch drops both — the model travels onward as
+    // `modelJson`, the string the runtime parses.
+    if (value.modelJson !== undefined && (typeof value.modelJson !== 'string' || value.modelJson.length === 0)) {
+        return invalid('Runtime Grinder imported neural model JSON is invalid');
+    }
+    const modelJson = typeof value.modelJson === 'string' ? value.modelJson : undefined;
     const profile = value.profile;
     if (
         !hasOnlyKeys(profile, [
@@ -59,6 +67,8 @@ function compileImportedPayload(value: unknown): RuntimeGrinderNeuralPatchCompil
             'contourMix',
             'recurrentBias',
             'convWeights',
+            'model',
+            'modelDigest',
         ])
     ) {
         return invalid('Runtime Grinder imported neural profile has an unsupported schema');
@@ -106,24 +116,38 @@ function compileImportedPayload(value: unknown): RuntimeGrinderNeuralPatchCompil
         }
         convWeights.push(Object.freeze([layer[0], layer[1], layer[2]]));
     }
+    const compiledProfile = Object.freeze({
+        preferredTier,
+        inputDrive,
+        asymmetry,
+        outputTrim,
+        contourMix,
+        recurrentBias,
+        convWeights: Object.freeze(convWeights),
+    });
+    const compiledPayload: {
+        neuralModelMode: 'imported';
+        profile: typeof compiledProfile;
+        modelJson?: string;
+        modelDigest?: string;
+    } = { neuralModelMode: 'imported', profile: compiledProfile };
+    if (modelJson !== undefined) {
+        compiledPayload.modelJson = modelJson;
+        // The model's digest rides along so the worklet can skip a re-parse of
+        // an already-loaded capture. Only a bounded non-empty string travels:
+        // anything else drops the field, and the worklet reloads as before.
+        const modelDigest = profile.modelDigest;
+        if (typeof modelDigest === 'string' && modelDigest.length > 0 && modelDigest.length <= MAX_ID_LENGTH) {
+            compiledPayload.modelDigest = modelDigest;
+        }
+    }
     return {
         status: 'compiled',
         patch: Object.freeze({
             schemaVersion: 1,
             command: 'apply-grinder-neural-patch',
             target: Object.freeze({ trackId: '', deviceId: '', deviceType: 'grinder' }),
-            patch: Object.freeze({
-                neuralModelMode: 'imported',
-                profile: Object.freeze({
-                    preferredTier,
-                    inputDrive,
-                    asymmetry,
-                    outputTrim,
-                    contourMix,
-                    recurrentBias,
-                    convWeights: Object.freeze(convWeights),
-                }),
-            }),
+            patch: Object.freeze(compiledPayload),
             correlation: Object.freeze({ workletGeneration: 0, controlSequence: 0 }),
             scheduling: Object.freeze({ targetFrame: null, deadlineFrame: null }),
         }),

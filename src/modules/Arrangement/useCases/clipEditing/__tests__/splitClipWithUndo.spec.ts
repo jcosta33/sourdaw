@@ -99,7 +99,9 @@ describe('splitClipWithUndo', () => {
 
         splitClipWithUndo('c1', 0);
 
-        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 0);
+        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 0, undefined, undefined, undefined, {
+            reKeyedTakeLanes: [],
+        });
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
@@ -109,7 +111,9 @@ describe('splitClipWithUndo', () => {
 
         splitClipWithUndo('c1', 4);
 
-        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4);
+        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, undefined, undefined, undefined, {
+            reKeyedTakeLanes: [],
+        });
         expect(capturedUndoEntry().label).toBe('Split clip');
     });
 
@@ -145,7 +149,12 @@ describe('splitClipWithUndo', () => {
         mocks.splitClip.mockClear();
 
         capturedUndoEntry().redoFn();
-        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-1');
+        // The redo re-enters splitClip with the SAME re-key holder the forward
+        // call filled in place, so the re-split re-captures into it (#5048).
+        const forwardReKeyHolder = mocks.splitClip.mock.calls[0]?.[5]?.reKeyedTakeLanes;
+        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-1', undefined, undefined, {
+            reKeyedTakeLanes: forwardReKeyHolder,
+        });
     });
 
     it('restores frozen source and right MIDI snapshots across undo and redo', () => {
@@ -195,7 +204,9 @@ describe('splitClipWithUndo', () => {
         splitClipWithUndo('c1', 4);
         const result = capturedUndoEntry().redoFn();
 
-        expect(mocks.splitClip).toHaveBeenLastCalledWith('c1', 4, 'right-1');
+        expect(mocks.splitClip).toHaveBeenLastCalledWith('c1', 4, 'right-1', undefined, undefined, {
+            reKeyedTakeLanes: mocks.splitClip.mock.calls[0]?.[5]?.reKeyedTakeLanes,
+        });
         expect(result).toBe(mocks.redoNotApplied);
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Failed to redo split clip - the clip no longer spans the split beat',

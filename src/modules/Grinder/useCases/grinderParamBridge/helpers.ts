@@ -25,6 +25,14 @@ export const ROUTING_MODES = ['serial', 'parallel', 'wet-dry-wet', 'dual-amp'] a
 export type GrinderNeuralAudioPatch = {
     neuralModelMode: 'builtin' | 'imported';
     profile?: GrinderNeuralProfile;
+    /**
+     * The validated model serialized to `.nam` JSON (#3774). Present when the
+     * profile carries the full model; the runtime parses it and executes the
+     * source network directly. Absent means the scalar-only compatibility
+     * profile (a record with no matching library entry) — the substitute runs,
+     * exactly as before this transport existed.
+     */
+    modelJson?: string;
 };
 
 /**
