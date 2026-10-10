@@ -269,12 +269,11 @@ export async function loadAffectedE2e(
             );
             let found = false;
             const visit = (node: import('typescript').Node): void => {
-                if (
-                    ts.isCallExpression(node) &&
-                    node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-                    (node.arguments.length !== 1 || !ts.isStringLiteralLike(node.arguments[0]))
-                ) {
-                    found = true;
+                if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+                    const argument = node.arguments[0];
+                    if (node.arguments.length !== 1 || argument === undefined || !ts.isStringLiteralLike(argument)) {
+                        found = true;
+                    }
                 }
                 if (ts.isCallExpression(node) && node.expression.getText(source) === 'import.meta.glob') {
                     found = true;

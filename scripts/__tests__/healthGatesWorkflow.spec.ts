@@ -556,11 +556,12 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
     const indexes = setupOrder.map((name) =>
         steps.findIndex((step: unknown) => asRecord(step, 'scope step').name === name)
     );
-    if (
-        indexes.some((index) => index < 0) ||
-        indexes.some((index, position) => position > 0 && index <= indexes[position - 1])
-    ) {
-        throw new Error('required scope must install dependencies before planning');
+    let previous = -1;
+    for (const index of indexes) {
+        if (index <= previous) {
+            throw new Error('required scope must install dependencies before planning');
+        }
+        previous = index;
     }
     const plan = stepNamed(scope, 'Plan affected checks');
     if (
