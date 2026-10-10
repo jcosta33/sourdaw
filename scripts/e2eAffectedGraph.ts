@@ -284,6 +284,22 @@ function staticWorkerTarget(worker: ts.NewExpression, source: ts.SourceFile, sou
     return resolved.startsWith('src/') ? resolved : undefined;
 }
 
+function isQualifiedPlatformWorker(expression: ts.Expression): boolean {
+    if (ts.isPropertyAccessExpression(expression) && expression.name.text === 'Worker') {
+        return (
+            ts.isIdentifier(expression.expression) &&
+            ['globalThis', 'self', 'window'].includes(expression.expression.text)
+        );
+    }
+    return (
+        ts.isElementAccessExpression(expression) &&
+        ts.isIdentifier(expression.expression) &&
+        ['globalThis', 'self', 'window'].includes(expression.expression.text) &&
+        ts.isStringLiteralLike(expression.argumentExpression) &&
+        expression.argumentExpression.text === 'Worker'
+    );
+}
+
 /** Complete syntax-visible runtime edges before trusting reverse reachability. */
 export function completeRuntimeGraph(
     root: string,
@@ -326,12 +342,15 @@ export function completeRuntimeGraph(
             if (ts.isCallExpression(node) && node.expression.getText(source) === 'import.meta.glob') {
                 opaqueSources.add(path);
             }
-            if (ts.isNewExpression(node) && node.expression.getText(source) === 'Worker') {
-                const target = staticWorkerTarget(node, source, path);
-                if (!target || !modules.has(target)) {
-                    opaqueSources.add(path);
-                } else {
-                    addEdge(path, target);
+            if (ts.isNewExpression(node)) {
+                const directWorker = ts.isIdentifier(node.expression) && node.expression.text === 'Worker';
+                if (directWorker || isQualifiedPlatformWorker(node.expression)) {
+                    const target = directWorker ? staticWorkerTarget(node, source, path) : undefined;
+                    if (!target || !modules.has(target)) {
+                        opaqueSources.add(path);
+                    } else {
+                        addEdge(path, target);
+                    }
                 }
             }
             ts.forEachChild(node, visit);

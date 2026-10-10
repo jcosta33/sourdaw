@@ -175,14 +175,15 @@ describe('affected E2E graph', () => {
         );
     });
 
-    it('rejects a shadowed fixed URL in the installed graph loader', async () => {
+    it('rejects shadowed imports and qualified Workers in the installed graph loader', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-shadowed-runtime-'));
         const sharedLoader = 'src/components/SharedRuntimeLoader.ts';
         const sources: Record<string, string> = {
             [TUNER]: 'export const tuner = 1;',
             [PANEL]: "import { tuner } from '../components/TunerDisplay'; export const panel = tuner;",
             [BARREL]: "export * from './TunerPanel';",
-            [CRUST]: "import { load } from '../../../../components/SharedRuntimeLoader'; export const crust = load;",
+            [CRUST]: `import { load } from '../../../../components/SharedRuntimeLoader';
+                export const crust = load('/src/modules/Tuner/presentations/components/TunerDisplay.tsx');`,
             [CRUST_BARREL]: "export * from './CrustPanel';",
             [SHELL]: "import '#/modules/Tuner/presentations/views'; import '#/modules/Crust/presentations/views';",
             [sharedLoader]: `export async function load(template: string) {
@@ -207,6 +208,16 @@ describe('affected E2E graph', () => {
                 kind: 'full',
                 reason: `opaque runtime dependency: ${sharedLoader}`,
             });
+            writeFileSync(
+                join(root, sharedLoader),
+                `export function load(template: string) {
+                    return new globalThis.Worker(template, { type: 'module' });
+                }`
+            );
+            expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
+                kind: 'full',
+                reason: `opaque runtime dependency: ${sharedLoader}`,
+            });
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -221,6 +232,14 @@ describe('affected E2E graph', () => {
                 reason: `opaque runtime dependency: ${sharedWorker}`,
             });
         });
+        for (const constructor of ['self.Worker', 'window.Worker', "globalThis['Worker']"]) {
+            withRuntimeSources(unknown, { [sharedWorker]: `new ${constructor}(runtimeUrl);` }, (root) => {
+                expect(selectCompleted(root, unknown)).toEqual({
+                    kind: 'full',
+                    reason: `opaque runtime dependency: ${sharedWorker}`,
+                });
+            });
+        }
         const host = 'src/modules/Crust/presentations/views/CrustWorkerHost.tsx';
         const worker = 'src/modules/Crust/presentations/views/crustWorker.ts';
         const known: SourceNode[] = [
