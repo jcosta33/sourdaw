@@ -1,0 +1,35 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_97ab82e0b4f10c::t_648be4498a2dae 1,1040-1171
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_97ab82e0b4f10c::t_1b7ee8e0566946 1,5-136
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_56c434e26a1c86 1344,1350,1770
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_97ab82e0b4f10c::t_86e5dd458f259d 1,1040-1171
+public/wasm/manifest.json
+  s_1c08b47ac3792f::t_392f597eb71b5d 12,16-18,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6acb3be032973bb85928d349dd964fb3b93b78e",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
