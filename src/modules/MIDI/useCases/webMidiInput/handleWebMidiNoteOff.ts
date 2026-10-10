@@ -24,6 +24,7 @@ import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveLiveInputNoteReceiver } from './resolveLiveInputNoteReceiver';
+import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
 
@@ -188,6 +189,9 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             (device) => yeastDeviceId !== undefined && device.id === yeastDeviceId && device.type === 'yeast'
         );
         if (yeastDeviceId !== undefined && yeastDevice === undefined) {
+            // No key-up reaches the rack, so the note's idle pump is retired
+            // here: a batch it still hands back voices nothing (#5222).
+            noteData.yeastSessionEnded = true;
             releaseVoicesWithoutYeast(noteData, yeastDeviceId, dispatchFrame, releaseVelocity);
         }
         if (instrumentTrack && yeastDevice) {
@@ -336,6 +340,18 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                         // A reset ended the input session that owns this
                         // release's voices; the pump retires with it (#4870).
                         if (generation !== memberExpressionGeneration.current) {
+                            return false;
+                        }
+                        if (
+                            retireDrainOfRemovedYeast({
+                                noteData,
+                                yeastDeviceId: yeastDevice.id,
+                                chainDevices: deps
+                                    .getTrackStoreState()
+                                    ?.tracks.find((track) => track.id === instrumentTrackId)?.devices,
+                                sampleFrame: Math.round(context.currentTime * context.sampleRate),
+                            })
+                        ) {
                             return false;
                         }
                         voiceYeastEvents(drainedEvents);
