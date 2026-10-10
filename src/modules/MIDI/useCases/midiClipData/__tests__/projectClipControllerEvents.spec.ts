@@ -146,6 +146,77 @@ describe('projectClipControllerEvents', () => {
         });
     });
 
+    describe('with a row on the closing line that is not a switch release', () => {
+        it('plays no pedal press where a comp cut ends a take on it', () => {
+            // Take 1 re-presses the pedal on beat 4 for its next phrase, and the comp cuts to a
+            // take 2 with no pedal rows there: the press would hold the pedal down until stop.
+            const take1Slice = { startBeat: 0, endBeat: 4 };
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('down', 0, 127), controller('lift', 3, 0), controller('re-press', 4, 127)],
+                clip: take1Slice,
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ id, beat, value }) => [id, beat, value])).toEqual([
+                ['down', 0, 127],
+                ['lift', 3, 0],
+            ]);
+        });
+
+        it('plays no pedal press where a trim moves the clip end onto it', () => {
+            const lane = [
+                controller('down', 0, 127),
+                controller('lift', 2, 0),
+                controller('down-again', 4, 127),
+                controller('lift-again', 6, 0),
+            ];
+            const events = projectClipControllerEvents({
+                controlChanges: lane,
+                clip: { startBeat: 8, endBeat: 12 },
+                fromBeat: 0,
+                toBeat: 16,
+            });
+
+            expect(events.map(({ id, beat }) => [id, beat])).toEqual([
+                ['down', 8],
+                ['lift', 10],
+            ]);
+        });
+
+        it.each([
+            ['a mod-wheel row', controller('mod', 4, 0, 1)],
+            ['an expression row', controller('expression', 4, 0, 11)],
+            ['a sostenuto press', controller('sostenuto', 4, 64, 66)],
+        ])('plays %s on the closing line nowhere, while a lift beside it still plays', (_kind, row) => {
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('down', 0, 127), row, controller('lift', 4, 0)],
+                clip: { startBeat: 0, endBeat: 4 },
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ id, beat, closesClip }) => [id, beat, closesClip])).toEqual([
+                ['down', 0, false],
+                ['lift', 4, true],
+            ]);
+        });
+
+        it('plays a sostenuto or una corda release on the closing line, below the latch threshold', () => {
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('sostenuto-off', 4, 63, 66), controller('una-corda-off', 4, 0, 67)],
+                clip: { startBeat: 0, endBeat: 4 },
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ id, closesClip }) => [id, closesClip])).toEqual([
+                ['sostenuto-off', true],
+                ['una-corda-off', true],
+            ]);
+        });
+    });
+
     it('carries each controller lane on each channel independently', () => {
         const events = projectClipControllerEvents({
             controlChanges: [

@@ -2974,15 +2974,16 @@ describe('scheduleMidiNotes', () => {
 
             describe('with a sustain lift stored on the closing line of a clip', () => {
                 // Clip A sounds a note under the pedal and lifts it on its own end; clip B follows it.
-                function loadAbuttingClips(trackClips: ReturnType<typeof midiClip>[], clipBRows: unknown[]) {
+                function loadAbuttingClips(
+                    trackClips: ReturnType<typeof midiClip>[],
+                    clipBRows: unknown[],
+                    clipARows: unknown[] = [storedController('down', 64, 127, 0), storedController('lift', 64, 0, 2)]
+                ) {
                     const track = midiTrack({ clips: trackClips, devices: [{ id: 'gb-1', type: 'grand-boule' }] });
                     (trackStore as { value: unknown }).value = { tracks: [track] };
                     (midiStore as { value: unknown }).value = {
                         notesByClipId: { 'clip-a': [note('a', 1, 1)], 'clip-b': [note('b', 0, 1)] },
-                        ccByClipId: {
-                            'clip-a': [storedController('down', 64, 127, 0), storedController('lift', 64, 0, 2)],
-                            'clip-b': clipBRows,
-                        },
+                        ccByClipId: { 'clip-a': clipARows, 'clip-b': clipBRows },
                     };
                 }
                 const clipA = () => midiClip({ id: 'clip-a', endBeat: 2 });
@@ -3051,6 +3052,88 @@ describe('scheduleMidiNotes', () => {
                         `sustain 0 @${2 * BEAT_FRAMES}`,
                         `sustain 1 @${2 * BEAT_FRAMES}`,
                         `on 60 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                // Clip A presses a rounding step before its end and lifts on its closing line: both
+                // land on one frame, and the export writes them in beat order, so the pedal ends up.
+                const pressThenClosingLift = [
+                    storedController('press', 64, 127, 2 - 1e-6),
+                    storedController('lift', 64, 0, 2),
+                ];
+
+                it('keeps the clip own press a step before its closing-line lift ahead of it, so the pedal ends up', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips([clipA(), clipB()], [], pressThenClosingLift);
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(postedAt(posted, 2 * BEAT_FRAMES).filter((entry) => entry.startsWith('sustain'))).toEqual([
+                        `sustain 1 @${2 * BEAT_FRAMES}`,
+                        `sustain 0 @${2 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it.each([
+                    ['the ending clip listed first', true],
+                    ['the starting clip listed first', false],
+                ])(
+                    'still lets the next clip press on that frame have the last word over both (%s)',
+                    async (_order, aFirst) => {
+                        const posted: string[] = [];
+                        useRealProjections();
+                        stripWith({
+                            type: 'grand-boule',
+                            deviceId: 'gb-1',
+                            grandBouleControls: recordingGrandBoule(posted),
+                        });
+                        loadAbuttingClips(
+                            aFirst ? [clipA(), clipB()] : [clipB(), clipA()],
+                            [storedController('head-press', 64, 127, 0)],
+                            pressThenClosingLift
+                        );
+
+                        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                        expect(
+                            postedAt(posted, 2 * BEAT_FRAMES).filter((entry) => entry.startsWith('sustain'))
+                        ).toEqual([
+                            `sustain 1 @${2 * BEAT_FRAMES}`,
+                            `sustain 0 @${2 * BEAT_FRAMES}`,
+                            `sustain 1 @${2 * BEAT_FRAMES}`,
+                        ]);
+                    }
+                );
+
+                it('plays no press stored on the closing line of a comp-cut take with no pedal rows after it', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    loadAbuttingClips(
+                        [clipA(), clipB()],
+                        [],
+                        [
+                            storedController('down', 64, 127, 0),
+                            storedController('lift', 64, 0, 1.5),
+                            storedController('re-press', 64, 127, 2),
+                        ]
+                    );
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(posted.filter((entry) => entry.startsWith('sustain'))).toEqual([
+                        'sustain 1 @0',
+                        `sustain 0 @${1.5 * BEAT_FRAMES}`,
                     ]);
                 });
             });

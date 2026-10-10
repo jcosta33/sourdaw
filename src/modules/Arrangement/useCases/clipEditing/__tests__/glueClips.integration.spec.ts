@@ -83,7 +83,8 @@ describe('glueClips MIDI state integration', () => {
             },
             ccByClipId: {
                 'clip-a': [
-                    { id: 'cc-a-closing', controller: 1, value: 0.75, beat: 6, channel: 0 },
+                    { id: 'cc-a-closing-lift', controller: 64, value: 0, beat: 6, channel: 0 },
+                    { id: 'cc-a-closing-mod', controller: 1, value: 0.75, beat: 6, channel: 0 },
                     { id: 'cc-a-hidden', controller: 1, value: 0.25, beat: 7, channel: 0 },
                 ],
                 'clip-b': [{ id: 'cc-b', controller: 1, value: 0.5, beat: 2, channel: 0 }],
@@ -260,11 +261,12 @@ describe('glueClips MIDI state integration', () => {
             { id: 'note-b', startBeat: 5 },
         ]);
         const gluedCCRows = midiStore.value!.ccByClipId[glued.id];
+        // Only the pedal lift on clip A's closing line is kept: a mod-wheel row there is not a release.
         expect(gluedCCRows).toMatchObject([
-            { id: 'cc-a-closing', beat: 4 },
+            { id: 'cc-a-closing-lift', beat: 4 },
             { id: 'cc-b', beat: 5 },
         ]);
-        expect(gluedCCRows).not.toContainEqual(expect.objectContaining({ id: 'cc-a-hidden' }));
+        expect(gluedCCRows).toHaveLength(2);
         expect(midiStore.value!.pitchBendByClipId[glued.id]).toMatchObject([{ id: 'bend-b', beat: 6 }]);
         expect(midiStore.value!.migratedAbsoluteNoteClipIds).toEqual([glued.id]);
     });

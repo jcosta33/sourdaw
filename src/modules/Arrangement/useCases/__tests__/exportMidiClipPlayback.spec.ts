@@ -530,6 +530,37 @@ describe('exportMidiClip writes what the clip plays', () => {
         ]);
     });
 
+    it('writes a press a rounding step before the closing-line lift ahead of it, so the pedal ends up as playback leaves it', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 2 },
+            [],
+            [sustain('press', 2 - 1e-6, 127), sustain('lift', 2, 0)]
+        );
+
+        expect(events.map(({ tick, kind, data2 }) => [tick / TICKS_PER_BEAT, kind, data2])).toEqual([
+            [2, 'cc', 127],
+            [2, 'cc', 0],
+        ]);
+    });
+
+    it('writes no press and no mod-wheel row stored on the closing line, where a trim ends the clip', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 4 },
+            [],
+            [
+                sustain('down', 0, 127),
+                sustain('lift', 2, 0),
+                sustain('down-again', 4, 127),
+                { id: 'mod', controller: 1, value: 90, beat: 4, channel: 0 },
+            ]
+        );
+
+        expect(events.map(({ tick, kind, data1, data2 }) => [tick / TICKS_PER_BEAT, kind, data1, data2])).toEqual([
+            [0, 'cc', SUSTAIN_PEDAL, 127],
+            [2, 'cc', SUSTAIN_PEDAL, 0],
+        ]);
+    });
+
     it('writes a controller ahead of a note struck at the same content beat when the slip projects them a float apart', () => {
         const clip = { startBeat: 0.1, endBeat: 4.1, midiOffsetBeats: 1 / 3 };
         const [played] = projectClipMidiEvents({

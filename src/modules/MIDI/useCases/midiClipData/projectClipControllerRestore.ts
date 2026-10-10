@@ -28,7 +28,7 @@ type ClipControllerRestore = {
 type PostedController = {
     event: ProjectedClipControllerMove;
     sampleFrame: number;
-    /** A move on a clip's closing line applies at its frame before every other move there. */
+    /** A clip's moves on the frame its closing-line move plays on apply before other clips' moves there. */
     sameFrameRank: number;
     clipIndex: number;
     /** Where the clip's own projection put it: beat order, ties in source order. */
@@ -61,13 +61,14 @@ function postedAfter(candidate: PostedController, held: PostedController): boole
  * that starts after a clip left a controller set, without a row of its own for it,
  * leaves it set.
  *
- * "Last" is the order the window posts in: by sample frame, then a move on a clip's
- * closing line ahead of every other move of that frame, then clip sequence, then the
- * clip's own row order, never by float beat. Two moves a rounding step apart in beat
- * share a frame, and which one the instrument ends on is the clip order, so a restore
- * that ordered them by beat would end on the other one. A clip's closing-line move and
- * the head of the clip that starts there share a frame too, and the starting clip has
- * the last word whatever the clip order.
+ * "Last" is the order the window posts in: by sample frame, then the moves of a clip on
+ * the frame its closing-line move plays on ahead of other clips' moves of that frame,
+ * then clip sequence, then the clip's own row order, never by float beat. Two moves a
+ * rounding step apart in beat share a frame, and which one the instrument ends on is the
+ * clip order, so a restore that ordered them by beat would end on the other one. A clip's
+ * closing-line move and the head of the clip that starts there share a frame too, and the
+ * starting clip has the last word whatever the clip order; the closing clip's own earlier
+ * moves on that frame keep their place ahead of its closing move, as the export does.
  *
  * A controller is one value per instrument: the instruments take the controller number
  * and drop the channel, so a controller is keyed by number alone. A row on any channel
@@ -103,6 +104,8 @@ export function projectClipControllerRestore({
             fromBeat: Number.NEGATIVE_INFINITY,
             toBeat: windowToBeat,
         });
+        const closingMove = events.find((event) => event.closesClip);
+        const closingFrame = closingMove ? sampleFrameAtBeat(closingMove.beat) : undefined;
         for (const [rowIndex, event] of events.entries()) {
             const sampleFrame = sampleFrameAtBeat(event.beat);
             if (sampleFrame > destinationFrame) {
@@ -111,7 +114,7 @@ export function projectClipControllerRestore({
             const candidate = {
                 event,
                 sampleFrame,
-                sameFrameRank: event.closesClip ? 0 : 1,
+                sameFrameRank: sampleFrame === closingFrame ? 0 : 1,
                 clipIndex,
                 rowIndex,
                 fromWindow: event.closesClip ? event.beat > atBeat : event.beat >= atBeat,

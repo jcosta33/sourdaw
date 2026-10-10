@@ -35,8 +35,8 @@ const straightProjection = getGrooveProjection({ templates: [], assignments: [] 
  * Notes come from `projectClipMidiEvents` per pass, so a pass clips a note at its
  * end and a note a slip leaves before the content offset wraps into the pass, as
  * playback does. Controllers come from `projectClipControllerEvents`, so each pass
- * opens with the value in force at its head and a row on the clip's closing line
- * plays on the clip end, the window `(-inf, clip end]` owning it as the last window
+ * opens with the value in force at its head and a pedal release on the clip's closing
+ * line plays on the clip end, the window `(-inf, clip end]` owning it as the last window
  * playback schedules the clip in does. No groove applies. Pitch-bend lanes are not
  * projected here.
  */

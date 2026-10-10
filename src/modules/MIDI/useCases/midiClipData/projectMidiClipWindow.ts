@@ -1,3 +1,5 @@
+import { isSwitchControllerRelease } from '#/utils/pianoPedalController';
+
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
@@ -9,9 +11,9 @@ type MidiClipWindow = {
     visibleStartBeat: number;
     visibleEndBeat: number;
     /**
-     * Where a controller row on the closing line (`visibleEndBeat`) plays, on the destination
-     * timeline, when the window ends where the clip does. Absent, the window ends on a loop seam
-     * or a cut and the closing line belongs to whatever plays next: the row is dropped.
+     * Where a switch-controller release on the closing line (`visibleEndBeat`) plays, on the
+     * destination timeline, when the window ends where the clip does. Absent, the window ends on a
+     * loop seam or a cut and the closing line belongs to whatever plays next: the row is dropped.
      */
     closingLineBeat?: number;
 };
@@ -123,9 +125,19 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
 }
 
 /**
+ * Of the controller rows on a closing line, only the release of an on/off switch (a pedal
+ * lift) plays: it ends what the clip held. A press there would hold past the clip end with
+ * nothing of the clip left to hold, and a continuous controller there would leave its value
+ * set for whatever follows, so every other row stays dropped.
+ */
+function playsOnClosingLine(row: MidiCC): boolean {
+    return isSwitchControllerRelease(row.controller, row.value);
+}
+
+/**
  * What a MIDI clip plays for one pass through `window`: notes clipped to it, controllers
- * carried into it, and the controller rows on its closing line when it has one. Pitch-bend
- * rows on the closing line are always dropped; no route plays a stored bend lane.
+ * carried into it, and the switch-controller releases on its closing line when it has one.
+ * Pitch-bend rows on the closing line are always dropped; no route plays a stored bend lane.
  */
 export function projectMidiClipWindow({ notes, controlChanges, pitchBends, window }: ProjectMidiClipWindowInput): {
     notes: MidiNote[];
@@ -142,7 +154,7 @@ export function projectMidiClipWindow({ notes, controlChanges, pitchBends, windo
     return {
         notes: notes.flatMap((note) => projectVisibleNote(note, window) ?? []),
         controlChanges: controllers.rows,
-        closingControlChanges: controllers.closing,
+        closingControlChanges: controllers.closing.filter(playsOnClosingLine),
         pitchBends: projectVisibleControllerRows(pitchBends, (row) => `${row.channel}`, window, undefined).rows,
     };
 }

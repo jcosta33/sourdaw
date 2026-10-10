@@ -1876,7 +1876,11 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
 
     describe('with a sustain lift stored on the closing line of a clip', () => {
         // Clip A sounds a note under the pedal and lifts it on its own end; clip B follows it.
-        function abuttingClips(aFirst: boolean, clipBRows: ReturnType<typeof storedController>[]) {
+        function abuttingClips(
+            aFirst: boolean,
+            clipBRows: ReturnType<typeof storedController>[],
+            clipARows = [storedController('down', 64, 127, 0), storedController('lift', 64, 0, 2)]
+        ) {
             return ({ track, midi }: { track: Track; midi: NonNullable<MidiStoreState> }) => {
                 const first = { ...track.clips[0]!, id: 'clip-a', endBeat: 2 };
                 const second = { ...track.clips[0]!, id: 'clip-b', startBeat: 2, endBeat: 4 };
@@ -1885,10 +1889,7 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
                     'clip-a': [{ id: 'note-a', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
                     'clip-b': [{ id: 'note-b', pitch: 62, startBeat: 0, duration: 1, velocity: 100 }],
                 };
-                midi.ccByClipId = {
-                    'clip-a': [storedController('down', 64, 127, 0), storedController('lift', 64, 0, 2)],
-                    'clip-b': clipBRows,
-                };
+                midi.ccByClipId = { 'clip-a': clipARows, 'clip-b': clipBRows };
             };
         }
 
@@ -1918,6 +1919,57 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
                 `control 64=0 @${2 * BEAT_FRAMES}`,
                 `control 64=127 @${2 * BEAT_FRAMES}`,
                 `noteOn @${2 * BEAT_FRAMES}`,
+            ]);
+        });
+
+        // Clip A presses a rounding step before its end and lifts on its closing line: both land
+        // on one frame, and the export writes them in beat order, so the pedal ends up.
+        const pressThenClosingLift = [storedController('press', 64, 127, 2 - 1e-6), storedController('lift', 64, 0, 2)];
+
+        it('keeps the clip own press a step before its closing-line lift ahead of it, so the pedal ends up', async () => {
+            const { arrivals } = await scheduleWithPedalLane({
+                shape: abuttingClips(true, [], pressThenClosingLift),
+            });
+
+            expect(
+                arrivals.filter((arrival) => arrival.startsWith('control') && arrival.endsWith(`@${2 * BEAT_FRAMES}`))
+            ).toEqual([`control 64=127 @${2 * BEAT_FRAMES}`, `control 64=0 @${2 * BEAT_FRAMES}`]);
+        });
+
+        it.each([
+            ['the ending clip listed first', true],
+            ['the starting clip listed first', false],
+        ])('still lets the next clip press on that frame have the last word over both (%s)', async (_order, aFirst) => {
+            const { arrivals } = await scheduleWithPedalLane({
+                shape: abuttingClips(aFirst, [storedController('head-press', 64, 127, 0)], pressThenClosingLift),
+            });
+
+            expect(
+                arrivals.filter((arrival) => arrival.startsWith('control') && arrival.endsWith(`@${2 * BEAT_FRAMES}`))
+            ).toEqual([
+                `control 64=127 @${2 * BEAT_FRAMES}`,
+                `control 64=0 @${2 * BEAT_FRAMES}`,
+                `control 64=127 @${2 * BEAT_FRAMES}`,
+            ]);
+        });
+
+        it('plays no mod-wheel row or pedal press stored on the closing line', async () => {
+            const { arrivals } = await scheduleWithPedalLane({
+                shape: abuttingClips(
+                    true,
+                    [],
+                    [
+                        storedController('down', 64, 127, 0),
+                        storedController('lift', 64, 0, 1.5),
+                        storedController('mod', 1, 90, 2),
+                        storedController('re-press', 64, 127, 2),
+                    ]
+                ),
+            });
+
+            expect(arrivals.filter((arrival) => arrival.startsWith('control'))).toEqual([
+                'control 64=127 @0',
+                `control 64=0 @${1.5 * BEAT_FRAMES}`,
             ]);
         });
     });

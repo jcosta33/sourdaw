@@ -30,22 +30,33 @@ function restoreAt(lane: readonly MidiCC[], clip: Clip, atBeat: number) {
     return restoreTrackAt([{ clip, controlChanges: lane }], atBeat);
 }
 
-/** Where a move sits among the controllers of its frame: a closing-line move first, as the same-frame queue posts it. */
-const sameFrameRank = (move: { closesClip: boolean }) => (move.closesClip ? 0 : 1);
+/** The frame a clip's closing-line move plays on, among moves its projection placed, if one is there. */
+function closingFrameOf(moves: readonly { beat: number; closesClip: boolean }[]): number | undefined {
+    const closing = moves.find((move) => move.closesClip);
+    return closing ? frameOf(closing.beat) : undefined;
+}
 
-/** Everything the instrument is told at the destination frame, in the order it is posted: the window's own events there (closing-line moves first, then clip by clip), then the restore's moves. */
+/**
+ * Where a move sits among the controllers of its frame, as the same-frame queue posts it: a clip's
+ * moves on the frame it closes on ahead of other clips' moves there, in the clip's own order.
+ */
+const sameFrameRank = (frame: number, closingFrame: number | undefined) => (frame === closingFrame ? 0 : 1);
+
+/** Everything the instrument is told at the destination frame, in the order it is posted: the window's own events there (a clip closing there first, then clip by clip), then the restore's moves. */
 function sentTrackAtDestination(clips: readonly TrackClip[], atBeat: number): MidiCC[] {
     const restore = restoreTrackAt(clips, atBeat);
-    const window = clips
-        .flatMap(({ clip, controlChanges }) =>
-            projectClipControllerEvents({
-                controlChanges,
-                clip,
-                fromBeat: atBeat,
-                toBeat: atBeat + 1,
-            }).filter((event) => frameOf(event.beat) === frameOf(atBeat))
-        )
-        .sort((left, right) => sameFrameRank(left) - sameFrameRank(right));
+    const ranked = clips.flatMap(({ clip, controlChanges }) => {
+        const moves = projectClipControllerEvents({
+            controlChanges,
+            clip,
+            fromBeat: atBeat,
+            toBeat: atBeat + 1,
+        });
+        const closingFrame = closingFrameOf(moves);
+        const onDestination = moves.filter((event) => frameOf(event.beat) === frameOf(atBeat));
+        return onDestination.map((event) => ({ event, rank: sameFrameRank(frameOf(event.beat), closingFrame) }));
+    });
+    const window = ranked.sort((left, right) => left.rank - right.rank).map(({ event }) => event);
     return [...window, ...restore.moves];
 }
 
@@ -62,9 +73,9 @@ function laneOf(row: MidiCC): string {
  * The value each controller holds at the destination frame had playback run through the track
  * to get there: each clip's real projection stepped in abutting windows from a beat before the
  * track's first clip, every event up to the destination frame posted as the window's same-frame
- * queue posts a window's controllers (by sample frame, then a closing-line move ahead of the
- * others, then the order they were added: clip sequence, then each clip's row order) and applied
- * in that order. The whole history is one
+ * queue posts a window's controllers (by sample frame, then the moves of a clip closing on that
+ * frame ahead of other clips', then the order they were added: clip sequence, then each clip's
+ * row order) and applied in that order. The whole history is one
  * window, because two moves a rounding step apart in beat share a frame and the window that
  * posts them decides nothing the clip order does not.
  */
@@ -73,6 +84,14 @@ function valuesHeldByContinuousPlayback(clips: readonly TrackClip[], atBeat: num
     const step = 0.75;
     const origin = Math.min(...clips.map(({ clip }) => clip.startBeat)) - 1;
     for (const { clip, controlChanges } of clips) {
+        const closingFrame = closingFrameOf(
+            projectClipControllerEvents({
+                controlChanges,
+                clip,
+                fromBeat: Number.NEGATIVE_INFINITY,
+                toBeat: Number.POSITIVE_INFINITY,
+            })
+        );
         // One window past the destination: an event placed a rounding step after its beat sits on the destination's frame.
         for (let index = 0; origin + index * step <= atBeat + step; index++) {
             const window = projectClipControllerEvents({
@@ -85,7 +104,7 @@ function valuesHeldByContinuousPlayback(clips: readonly TrackClip[], atBeat: num
                 if (frameOf(event.beat) <= frameOf(atBeat)) {
                     posts.push({
                         frame: frameOf(event.beat),
-                        rank: sameFrameRank(event),
+                        rank: sameFrameRank(frameOf(event.beat), closingFrame),
                         sequence: posts.length,
                         event,
                     });
@@ -306,6 +325,31 @@ describe('projectClipControllerRestore', () => {
                 // A relocation onto the clip end gives the pedal the value in force there, the head's press,
                 // and never lifts it first.
                 expect(sentTrackAtDestination(clips, 4).map((move) => move.value)).toEqual([127]);
+            });
+
+            // The clip presses a rounding step before its end, on the frame of its closing-line lift:
+            // the export writes the press then the lift, so the pedal ends up.
+            const pressedThenLiftedA = {
+                clip: clipA,
+                controlChanges: [controller('press', 4 - 1e-6, 127), controller('lift', 4, 0)],
+            };
+
+            it('ends on the lift after the clip own press on that frame', () => {
+                const clips = [pressedThenLiftedA, { clip: clipB, controlChanges: [controller('other', 0.5, 90, 11)] }];
+
+                expect(placed(restoreTrackAt(clips, 6).moves)).toEqual(
+                    expect.arrayContaining([{ controller: 64, beat: 6, value: 0 }])
+                );
+            });
+
+            it.each([
+                ['the ending clip listed first', [0, 1]],
+                ['the starting clip listed first', [1, 0]],
+            ])('still ends on the head press of the clip starting there (%s)', (_order, order) => {
+                const pair = [pressedThenLiftedA, { clip: clipB, controlChanges: [controller('head-press', 0, 127)] }];
+                const clips = order.map((index) => pair[index]!);
+
+                expect(placed(restoreTrackAt(clips, 6).moves)).toEqual([{ controller: 64, beat: 6, value: 127 }]);
             });
         });
 

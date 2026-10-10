@@ -3,11 +3,13 @@
  * sample frame, in live playback and in an offline render alike.
  *
  * A release comes first: a pedal pressed on the frame a note ends must not catch
- * that note, so the note is already released when the pedal goes down. A stored
- * controller on a clip's closing line follows: it is the last thing the ending clip
- * does, so it applies before anything a clip starting on that frame sets, and the
- * starting clip has the last word whichever clip was scheduled first. Every other
- * stored controller follows, so a note struck on the same frame sounds under the pedal
+ * that note, so the note is already released when the pedal goes down. The stored
+ * controllers of a clip closing on that frame follow (`closing-control`: its
+ * closing-line release and its own earlier moves on the frame, which keep the clip's
+ * own order among themselves, as the export does): they are the last thing the
+ * ending clip does, so they apply before anything a clip starting on that frame sets,
+ * and the starting clip has the last word whichever clip was scheduled first. Every
+ * other stored controller follows, so a note struck on the same frame sounds under the pedal
  * or controller it was recorded with (a pedal pressed with the chord catches the
  * chord; sostenuto, una corda and Levain dynamics apply to the note struck there).
  * A note-on follows the controllers. Expression comes last because the engines

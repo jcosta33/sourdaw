@@ -29,7 +29,9 @@ type ScheduleStoredControllersInput = {
  * The moves post with the window's notes, controllers ahead of the note-ons of
  * their frame and behind the note-offs, so a note struck on the same frame sounds
  * under the pedal or controller it was recorded with and a note released there is
- * not caught by it. Each pedal a move leaves engaged is recorded as it posts, so a
+ * not caught by it. The clip's moves on the frame its closing-line move plays on post
+ * ahead of other clips' moves there, in the clip's own order, so a clip starting on that
+ * frame has the last word. Each pedal a move leaves engaged is recorded as it posts, so a
  * stop or a locate can release it.
  */
 export function scheduleStoredControllers({
@@ -44,9 +46,11 @@ export function scheduleStoredControllers({
     queue,
 }: ScheduleStoredControllersInput): void {
     const moves = projectClipControllerEvents({ controlChanges, clip, fromBeat, toBeat });
+    const closingMove = moves.find((move) => move.closesClip);
+    const closingFrame = closingMove ? sampleFrameAtBeat(closingMove.beat) : undefined;
     for (const move of moves) {
         const sampleFrame = sampleFrameAtBeat(move.beat);
-        queue.add(move.closesClip ? 'closing-control' : 'control', sampleFrame, () =>
+        queue.add(sampleFrame === closingFrame ? 'closing-control' : 'control', sampleFrame, () =>
             postStoredControllerMove({
                 trackId,
                 device,

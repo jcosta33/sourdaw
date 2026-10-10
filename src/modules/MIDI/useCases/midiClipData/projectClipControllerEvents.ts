@@ -26,10 +26,11 @@ type IterationRange = { startIndex: number; endIndex: number };
 /** A controller move a clip plays, at its absolute beat. */
 export type ProjectedClipControllerMove = MidiCC & {
     /**
-     * Whether the move sits on the clip's closing line, at exactly `clip.endBeat`. Such a move is
-     * owned by the window `[fromBeat, toBeat)` with `fromBeat < endBeat <= toBeat` (the last window
-     * the clip plays in), and at its sample frame it applies before the moves of a clip that starts
-     * there, so the clip that follows has the last word.
+     * Whether the move is a switch-controller release on the clip's closing line, at exactly
+     * `clip.endBeat`. Such a move is owned by the window `[fromBeat, toBeat)` with
+     * `fromBeat < endBeat <= toBeat` (the last window the clip plays in). At its sample frame the
+     * clip's moves apply, in the clip's own order, before the moves of a clip that starts there,
+     * so the clip that follows has the last word.
      */
     closesClip: boolean;
 };
@@ -104,10 +105,13 @@ function ownsMove(move: ProjectedClipControllerMove, fromBeat: number, toBeat: n
  * names what a relocation must send, and the window that opens at the
  * destination still emits the rows sitting on it.
  *
- * A row on the clip's closing line plays at the clip end, as the last thing the clip
- * does, so a pedal lift drawn on the final bar line ends the sustain there before the
- * next clip starts (Cubase's own reset events after a recording sit on a part's end).
- * Only the last pass has that line: an inner loop seam stays half-open, so a row on the
+ * A switch-controller release (a pedal lift) on the clip's closing line plays at the
+ * clip end, as the last thing the clip does, so a lift drawn on the final bar line ends
+ * the sustain there before the next clip starts (Cubase's own reset events after a
+ * recording sit on a part's end). Any other row there stays dropped: a press would
+ * hold past the clip end with nothing of the clip left to hold (a comp cut or a trim
+ * landing on a press would leave the pedal down until stop), and a continuous
+ * controller would set a value for whatever follows. Only the last pass has that line: an inner loop seam stays half-open, so a row on the
  * loop end is not replayed at every wrap, and notes keep the half-open end everywhere.
  * The move is placed at exactly `clip.endBeat` and owned by the window that closes at
  * or past it: the clip plays in that window and in no later one, so a window that

@@ -3,8 +3,8 @@ import { SAME_FRAME_EVENT_ORDER } from '#/utils/sameFrameEventOrder';
 import { type PendingWorkletEvent } from './types';
 
 /**
- * Pending events sort by time, then by `SAME_FRAME_EVENT_ORDER`: release, a stored
- * controller on a clip's closing line, any other stored controller, note-on,
+ * Pending events sort by time, then by `SAME_FRAME_EVENT_ORDER`: release, the stored
+ * controllers of a clip closing at that time, any other stored controller, note-on,
  * expression. The table is shared with live scheduling so a
  * pedal pressed on the frame a note ends catches that note in neither route (the
  * release is applied first), and a pedal or controller on the frame a note starts

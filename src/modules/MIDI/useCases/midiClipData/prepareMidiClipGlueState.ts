@@ -44,7 +44,7 @@ function compareCodeUnits(left: string, right: string): number {
 }
 
 /**
- * Where a source's closing-line controller rows land in the glued clip, so the glued clip
+ * Where a source's closing-line pedal releases land in the glued clip, so the glued clip
  * plays what the sources played: a source's closing line plays on its end, ahead of the
  * next source's head (the sources abut, and its end and that head differ by a rounding
  * step at most, so the earlier of the two keeps the closing row first in beat order and
