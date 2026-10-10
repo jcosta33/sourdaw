@@ -253,3 +253,19 @@ times playbackRate to end at exactly 0.5, and region trimming to advance source
 entry at that rate. Selection after the exclusive endpoint is silent. Keep the
 absolute saved source end, ignored ratios in Off mode, legacy passes, MIDI and
 the deliberate musical carrier minimum. Reverting the consumer's rate must fail.
+
+## Exclusive source ends after short tempo excursions
+
+Place a captured interval [0.1, 0.5) on a continuous two-second source with
+120, 240 and 120 BPM at beats 0, 0.0001 and 0.0002. Select from beat 0.5,
+then read the actual playback projection's source offset plus integrated
+duration times source rate. Repeat at rates 2 and 0.5 with later comp entry,
+and preserve constant-tempo entry arithmetic on a whole-sample render map.
+The scheduled fragment must stop at its own exclusive source end; equality
+between live and offline fragments alone can preserve the same overread twice.
+
+PR #5165's source-rate repair kept a 100-microsecond constant-span approximation
+for fragment entry but integrated its endpoint exactly. The standing source-rate
+probe covered constant tempos and missed a short excursion that read 0.500025
+seconds from a pass ending at 0.5. Bound each fragment from the source entry its
+consumer actually reads, without weakening the sample-grid compatibility law.

@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type Clip, takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { tempoMapStore } from '#/modules/Transport/stores';
+import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
 
 import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
+import { renderTempoTimeline } from '../renderTempoTimeline';
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
 type Take = TakeLaneStoreState['lanes'][number]['takes'][number];
@@ -359,6 +360,82 @@ describe('captured pass source endings', () => {
             )
         ).toBe(false);
         expect(resolveTrackClipsWithComping('t1', [clip], unavailable)).toEqual(resolveClipsWithComping('t1', [clip]));
+    });
+
+    it.each([1, 2, 0.5])('keeps the source end exclusive after a short tempo excursion at rate %s', (ratio) => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-up', beat: 0.0001, tempo: 240, curve: 'instant' },
+                { id: 'tempo-back', beat: 0.0002, tempo: 120, curve: 'instant' },
+            ],
+        });
+        const clip = { ...recording(0, 4), stretchMode: 'timestretch' as const, stretchRatio: ratio };
+        const take = { ...placedPass('bounded', [0, 4], 0, 0.1), passSourceEndSeconds: 0.5 };
+        const compStart = 0.5 / ratio;
+        const state = lane([take], take.id, compStart, 4);
+        takeLaneStore.set(state);
+        const secondsAtBeat = (beat: number) => readSecondsAtBeat({ beat });
+        const tempoAtBeat = (beat: number) => readTempoAtBeat({ beat });
+        const live = resolveClipsWithComping('t1', [clip]);
+        const offline = resolveTrackClipsWithComping('t1', [clip], state);
+        const rendered = resolveTrackClipsWithComping(
+            't1',
+            [clip],
+            state,
+            renderTempoTimeline(secondsAtBeat, tempoAtBeat)
+        );
+        expect(offline).toEqual(live);
+        for (const fragments of [live, offline, rendered]) {
+            const selected = fragments.find((fragment) => fragment.regionStartBeat === compStart)!;
+            expect(selected).toBeDefined();
+            const [playback] = projectOfflineAudioClipPlaybacks({
+                clip: selected,
+                bufferDurationSeconds: 2,
+                regionStartBeat: 0,
+                regionStartSec: 0,
+                durationSeconds: 2,
+                compensationDelay: 0,
+                projectBeatToSeconds: secondsAtBeat,
+                resolveTempoAtBeat: tempoAtBeat,
+            });
+            expect(playback).toBeDefined();
+            expect(playback!.playbackRate).toBe(ratio);
+            const sourceEnd = playback!.bufferOffsetSec + playback!.playDuration * playback!.playbackRate;
+            expect(sourceEnd).toBeCloseTo(0.5, 12);
+            expect(Math.round(sourceEnd * 48000) - 1).toBe(23999);
+        }
+    });
+
+    it.each([1, 2, 0.5])('preserves constant-tempo entry arithmetic on a sample grid at rate %s', (ratio) => {
+        const tempo = 140;
+        const start = 3.3;
+        const compStart = start + 0.1 / ratio;
+        const clip = { ...recording(start, 8), stretchMode: 'timestretch' as const, stretchRatio: ratio };
+        const take = { ...placedPass('bounded', [start, 8], 0, 0.1), passSourceEndSeconds: 0.5 };
+        const state = lane([take], take.id, compStart, 8);
+        const sampleRate = 48000;
+        const secondsAtBeat = (beat: number) => Math.round(((beat * 60) / tempo) * sampleRate) / sampleRate;
+        const timeline = renderTempoTimeline(secondsAtBeat, () => tempo);
+        const selected = resolveTrackClipsWithComping('t1', [clip], state, timeline).find(
+            (fragment) => fragment.regionStartBeat === compStart
+        )!;
+        expect(selected).toBeDefined();
+        expect(selected.audioOffsetBeats).toBe((0.1 * tempo) / 60 + (compStart - start) * ratio);
+        const [playback] = projectOfflineAudioClipPlaybacks({
+            clip: selected,
+            bufferDurationSeconds: 2,
+            regionStartBeat: start,
+            regionStartSec: secondsAtBeat(start),
+            durationSeconds: 2,
+            compensationDelay: 0,
+            projectBeatToSeconds: secondsAtBeat,
+            resolveTempoAtBeat: () => tempo,
+        });
+        expect(playback).toBeDefined();
+        expect(playback!.bufferOffsetSec).toBe(selected.audioOffsetBeats! * (60 / tempo));
+        const sourceEnd = playback!.bufferOffsetSec + playback!.playDuration * playback!.playbackRate;
+        expect(Math.abs(sourceEnd - take.passSourceEndSeconds)).toBeLessThanOrEqual(ratio / sampleRate);
     });
 
     const retainedFrameCases: readonly {

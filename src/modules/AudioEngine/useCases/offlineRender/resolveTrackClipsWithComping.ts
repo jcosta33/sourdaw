@@ -14,7 +14,7 @@ export type ResolvedClip = Track['clips'][number] & {
 
 type TakeMedia = {
     earliestBeat: number;
-    latestBeat?: number;
+    latestBeatAt?: (fragmentStartBeat: number) => number;
     sourceStartBeat: number;
     offsetAt: (beat: number) => number;
 };
@@ -134,9 +134,20 @@ function placedPassMedia(
         },
     };
     if (sourceEndSeconds !== undefined) {
-        media.latestBeat = timeline.beatAtSeconds(
+        const passEndBeat = timeline.beatAtSeconds(
             timeline.secondsAtBeat(passStartBeat) + (sourceEndSeconds - depthSeconds) / sourceRate
         );
+        media.latestBeatAt = (beat) => {
+            const entrySeconds = clipEntrySeconds(timeline, beat, media.offsetAt(beat));
+            const remainingSourceSeconds = sourceEndSeconds - entrySeconds;
+            if (remainingSourceSeconds <= 0) {
+                return beat;
+            }
+            const fragmentEndBeat = timeline.beatAtSeconds(
+                timeline.secondsAtBeat(beat) + remainingSourceSeconds / sourceRate
+            );
+            return Math.min(passEndBeat, fragmentEndBeat);
+        };
     }
     return media;
 }
@@ -225,7 +236,7 @@ export function resolveTrackClipsWithComping(
 
         const media = resolveTakeMedia(take, sourceClip, timeline);
         const overlapStart = Math.max(region.startBeat, media.earliestBeat);
-        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeat ?? Infinity);
+        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeatAt?.(overlapStart) ?? Infinity);
         if (overlapStart >= overlapEnd) {
             continue;
         }

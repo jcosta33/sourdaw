@@ -9,7 +9,7 @@ import { clipMediaOffsetAt } from './clipMediaOffsetAt';
 type TakeMedia = {
     /** The first beat the take can sound. */
     earliestBeat: number;
-    latestBeat?: number;
+    latestBeatAt?: (fragmentStartBeat: number) => number;
     /** Carries the loop-occurrence count for probability rolls. */
     sourceStartBeat: number;
     /** The media offset a fragment of the take starting at `beat` carries. */
@@ -76,7 +76,8 @@ function beatAtClipMediaSeconds(
  * A placed audio pass: it starts on the beat its clip's media reaches
  * `passAnchorSeconds`, and a fragment at a later beat seeks `passDepthSeconds`
  * plus the source time consumed since, converted at that beat's tempo.
- * The exclusive source end bounds destination time at that same playback rate.
+ * The exclusive source end bounds each fragment at its actual source entry and
+ * playback rate, including entries rounded by the constant-tempo shortcut.
  */
 function placedPassMedia(
     clip: Clip,
@@ -102,9 +103,20 @@ function placedPassMedia(
         },
     };
     if (sourceEndSeconds !== undefined) {
-        media.latestBeat = timeline.beatAtSeconds(
+        const passEndBeat = timeline.beatAtSeconds(
             timeline.secondsAtBeat(passStartBeat) + (sourceEndSeconds - depthSeconds) / sourceRate
         );
+        media.latestBeatAt = (beat) => {
+            const entrySeconds = clipEntrySeconds(timeline, beat, media.offsetAt(beat));
+            const remainingSourceSeconds = sourceEndSeconds - entrySeconds;
+            if (remainingSourceSeconds <= 0) {
+                return beat;
+            }
+            const fragmentEndBeat = timeline.beatAtSeconds(
+                timeline.secondsAtBeat(beat) + remainingSourceSeconds / sourceRate
+            );
+            return Math.min(passEndBeat, fragmentEndBeat);
+        };
     }
     return media;
 }

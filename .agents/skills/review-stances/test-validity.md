@@ -853,6 +853,18 @@ against both the producer buffer and the frozen terminal, and retain the same
 source ending through the single recording Undo/Redo. Await a sounded seam clock;
 a wrap counter may report planned look-ahead rather than sounded playback.
 
+### Exclusive-source probes must observe integrated consumption
+
+PR #5165's source-rate coverage compared comp fragments and measured constant
+tempo playback, so it missed a source entry using the 100-microsecond span
+approximation while the ending used exact integrated time. Use a two-second
+carrier, source interval [0.1, 0.5), and 120, 240, 120 BPM at beats 0, 0.0001,
+0.0002, with comp entry at 0.5. Assert actual projected source offset plus
+duration times rate and the last readable 48 kHz frame, at rates 1, 2 and 0.5.
+Keep a separate sample-grid constant-tempo control whose entry arithmetic stays
+exactly unchanged. Reverting the fragment-entry bound must fail the consumption
+case; parity between the two resolver copies cannot carry that obligation.
+
 ### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
 
 PR #5269's successful exact-hit fixture reported rustc, cargo, rustfmt, and clippy, so it
