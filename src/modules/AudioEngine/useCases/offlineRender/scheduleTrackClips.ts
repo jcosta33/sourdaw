@@ -507,7 +507,7 @@ export async function scheduleTrackClips({
     // Read off the strategy, not `instrumentControls`, like expression: only an
     // instrument whose engine honours a stored controller carries one.
     const dispatchControl = instrumentEntry?.strategy.controlChange;
-    const workletControlEvents: { time: number; controller: number; value: number }[] = [];
+    const workletControlEvents: { time: number; controller: number; value: number; atClipClose: boolean }[] = [];
     let noteCount = 0;
 
     function getScheduledArticulationId(articulation: string | undefined): number | undefined {
@@ -794,9 +794,13 @@ export async function scheduleTrackClips({
             // uses and timed exactly as a note at its beat is. A move before
             // the region start is dropped, as a note that ends before it is:
             // the chase a mid-song start needs belongs to the transport.
+            // The clip's moves at the time its closing-line move plays apply, in its own
+            // order, ahead of a clip starting there, as live playback posts them.
             const storedControllers = dispatchControl ? midi.ccByClipId[clip.id] : undefined;
             if (storedControllers && projectClipControllers) {
                 const regionStartSamples = regionStartSec * offlineCtx.sampleRate;
+                const clipControlEvents: { time: number; controller: number; value: number }[] = [];
+                let closingTime: number | undefined;
                 for (const controller of projectClipControllers({
                     controlChanges: storedControllers,
                     clip,
@@ -818,7 +822,13 @@ export async function scheduleTrackClips({
                     if (time >= durationSeconds) {
                         continue;
                     }
-                    workletControlEvents.push({ time, controller: controller.controller, value: controller.value });
+                    clipControlEvents.push({ time, controller: controller.controller, value: controller.value });
+                    if (controller.closesClip) {
+                        closingTime = time;
+                    }
+                }
+                for (const event of clipControlEvents) {
+                    workletControlEvents.push({ ...event, atClipClose: event.time === closingTime });
                 }
             }
 
@@ -927,8 +937,12 @@ export async function scheduleTrackClips({
     }
 
     if (dispatchControl && pendingWorkletEvents) {
-        for (const event of workletControlEvents) {
-            pendingWorkletEvents.push({ type: 'control', dispatch: dispatchControl, ...event });
+        for (const { atClipClose, ...event } of workletControlEvents) {
+            pendingWorkletEvents.push({
+                type: atClipClose ? 'closing-control' : 'control',
+                dispatch: dispatchControl,
+                ...event,
+            });
         }
     }
 

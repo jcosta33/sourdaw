@@ -5,6 +5,7 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Clip, type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
@@ -378,6 +379,8 @@ describe('commitPitchEdit storage transaction scope (audit CC-10)', () => {
             },
         });
 
+        // Earlier port-less writes leave a deferred baseline that swallows this case's same-value contour write.
+        resetAutomergeStorageProjections('root');
         trackStore.set({
             tracks: [
                 createTrack({

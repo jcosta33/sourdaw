@@ -260,7 +260,11 @@ async function runCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseR
     if (testCase.providerTurns.length > 0) {
         scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, testCase.providerTurns.map(toScriptedTurn));
     }
-    const result = await parsePromptToActions(testCase.prompt, context, undefined, `revision-${testCase.id}`);
+    const result = await parsePromptToActions({
+        prompt: testCase.prompt,
+        context,
+        projectRevision: `revision-${testCase.id}`,
+    });
 
     if (testCase.providerTurns.length > 0) {
         expect(

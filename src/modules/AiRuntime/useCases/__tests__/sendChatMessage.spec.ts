@@ -270,6 +270,9 @@ vi.mock('../planPromptActions', () => ({
     planPromptActions: mocks.planPromptActions,
 }));
 
+// The chat and confirmation stores are mocked without their state, so the thread reads as empty.
+vi.mock('../readChatThreadContext', () => ({ readChatThreadContext: () => null }));
+
 const commandGraphContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
@@ -2796,7 +2799,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 ordering.push('cleanup-finished');
             });
         mocks.updateChatMessage.mockImplementation((_messageId, update) => {
-            if (update.content.startsWith('Planned without changing')) {
+            // An update may stamp identity alone, with no content.
+            if (typeof update.content === 'string' && update.content.startsWith('Planned without changing')) {
                 ordering.push('plan-published');
             }
         });

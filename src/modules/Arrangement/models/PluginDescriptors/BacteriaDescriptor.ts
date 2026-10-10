@@ -151,6 +151,18 @@ const BACTERIA_DESCRIPTOR_DATA: PluginDescriptor = {
         automatable: true,
         hasAutomation: false,
     })),
+    // Each band's body (`bandN_convolutionIr`, one per possible band — see
+    // `bandCount`) is a panel choice rather than a declared parameter. A band
+    // that has never had one plays no body, -1, so undoing its first choice
+    // returns the record to having none.
+    undeclaredParameterDefaults: {
+        band0_convolutionIr: -1,
+        band1_convolutionIr: -1,
+        band2_convolutionIr: -1,
+        band3_convolutionIr: -1,
+        band4_convolutionIr: -1,
+        band5_convolutionIr: -1,
+    },
 };
 
 export const BACTERIA_DESCRIPTOR = applySingleDescriptorGuidance(

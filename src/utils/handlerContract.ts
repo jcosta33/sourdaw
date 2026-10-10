@@ -510,6 +510,17 @@ export type ClipSplitActionSnapshot = {
      */
     readonly clipAutomationLanes?: readonly ClipAutomationLaneSnapshot[];
 };
+/** One lane's take and comp-region facets before and after a clip transform —
+ *  structural mirror of Arrangement's `TakeReKeyLaneTransition`, declared here
+ *  because model isolation forbids importing it. */
+export type TakeReKeyLaneTransitionSnapshot = {
+    laneId: string;
+    trackId: string;
+    takesBefore: TakeSnapshot[];
+    takesAfter: TakeSnapshot[];
+    regionsBefore: CompRegionSnapshot[];
+    regionsAfter: CompRegionSnapshot[];
+};
 export type RippleShiftSnapshot = {
     readonly clipId: string;
     readonly origStartBeat: number;
@@ -1385,6 +1396,14 @@ export type AppAction =
                * restores nothing.
                */
               retiredTakeLanes?: RetiredTakeLaneSnapshot[];
+              /**
+               * Shared holder for the take/comp-region re-key the forward split
+               * captured (#5048), filled in place by its `execute()`. The undo
+               * leg restores the pre-split facets from it; the paired redo
+               * re-applies them. Optional so entries persisted before the field
+               * existed still decode; absent means neither leg re-keys lanes.
+               */
+              reKeyedTakeLanes?: TakeReKeyLaneTransitionSnapshot[];
           };
       }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
