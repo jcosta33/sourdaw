@@ -21,7 +21,9 @@ import { registerActionReplayCapability, revokeActionReplayCapability } from '..
 import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { appendAbortFailures } from './appendAbortFailures';
 import { commitUndoEntry } from './commitUndoEntry';
+import { type AbortCompensation, compensateAbortedActions } from './compensateAbortedActions';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
 import { getCommandHandler } from './getCommandHandler';
@@ -48,30 +50,45 @@ function collapseCommittedFailures(failures: readonly unknown[], message: string
     return new AggregateError(failures, message);
 }
 
+type AttemptedAction = {
+    readonly actionType: string;
+    readonly rollback: (() => void | Promise<void>) | null;
+    readonly compensation: AbortCompensation;
+};
+
+type AbortFailures = {
+    readonly compensation: string | null;
+    readonly rollback: string | null;
+};
+
 /**
- * Rolls back what the handler changed outside the document, inside the still-open
- * transaction, and aborts it. Runs before the abort for the same reason the batch
- * does: the rollback reads the state the action saw, and an aborted transaction
- * refuses re-entry. Returns the rollback's failure, which the caller reports in
- * place of the abort's own cause.
+ * Undoes what the handler changed outside the document, inside the still-open
+ * transaction, and aborts it. Compensation, then rollback, then abort, in the
+ * batch's order: both read the state the action left, and an aborted transaction
+ * refuses re-entry. Returns their failures, which the caller reports in place of
+ * the abort's own cause.
  */
-async function rollbackAndAbort(
+async function compensateRollbackAndAbort(
     transaction: Pick<ReturnType<typeof runWithAutomergeStorageTransaction>, 'abort' | 'scope'>,
-    actionType: string,
-    rollback: (() => void | Promise<void>) | null
-): Promise<string | null> {
-    const rollbackFailure = await rollbackAbortedActions([{ actionType, rollback }], transaction.scope);
+    attempted: AttemptedAction
+): Promise<AbortFailures> {
+    const compensation = await compensateAbortedActions([attempted.compensation], transaction.scope);
+    const rollback = await rollbackAbortedActions([attempted], transaction.scope);
     transaction.abort();
-    return rollbackFailure;
+    return { compensation, rollback };
 }
 
-/** A failed rollback leaves the runtime out of step with the document, so it outranks a retryable conflict. */
-function withRollbackFailure(error: unknown, rollbackFailure: string | null): unknown {
-    if (!rollbackFailure) {
+function hasAbortFailure(failures: AbortFailures | null): boolean {
+    return failures !== null && (failures.compensation !== null || failures.rollback !== null);
+}
+
+/** A failed compensation or rollback leaves the runtime out of step with the document, so it outranks a retryable conflict. */
+function withAbortFailures(error: unknown, failures: AbortFailures | null): unknown {
+    if (!failures || !hasAbortFailure(failures)) {
         return error;
     }
     const reason = error instanceof Error ? error.message : String(error);
-    return new Error(`${reason}; abort rollback failed: ${rollbackFailure}`, { cause: error });
+    return new Error(appendAbortFailures(reason, failures.compensation, failures.rollback), { cause: error });
 }
 
 /**
@@ -256,7 +273,22 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             // Captured against the same store state the handler is about to read, before
             // anything is written, exactly where the batch path captures it.
-            const rollback = handler.prepareAbort?.(action) ?? null;
+            // The batch reports a handler that needs compensation but described no inverse as a
+            // failed abort. A single action has no atomic-batch preflight that refuses such a
+            // handler up front, and every non-undoable handler is one, so here an absent inverse
+            // means nothing to replay and the abort keeps its own classification.
+            const inverseAction = undoResult?.inverseAction ?? null;
+            const attempted: AttemptedAction = {
+                actionType: action.type,
+                rollback: handler.prepareAbort?.(action) ?? null,
+                compensation: {
+                    actionType: action.type,
+                    requiresAbortCompensation: (handler.requiresAbortCompensation ?? true) && inverseAction !== null,
+                    inverseAction,
+                    commandId: command.envelope.commandId,
+                    groupId: command.envelope.groupId,
+                },
+            };
 
             // Set semantic context so AutomergeStorage attaches a message to the CRDT change.
             // This makes `Automerge.getHistory()` return readable change descriptions.
@@ -279,7 +311,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             );
             if (storage_transaction.status === 'threw') {
                 const error = storage_transaction.error;
-                const rollbackFailure = await rollbackAndAbort(storage_transaction, action.type, rollback);
+                const abortFailures = await compensateRollbackAndAbort(storage_transaction, attempted);
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
@@ -290,10 +322,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     );
                 }
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
-                if (error instanceof AutomergeStorageWriteConflictError && !rollbackFailure) {
+                if (error instanceof AutomergeStorageWriteConflictError && !hasAbortFailure(abortFailures)) {
                     throw new AppActionConflictError(action.type);
                 }
-                throw withRollbackFailure(error, rollbackFailure);
+                throw withAbortFailures(error, abortFailures);
             }
             storage_transaction.validateCommit(getProjectMutationAdmissionFailure);
             let production_brief_commit_denied = false;
@@ -306,7 +338,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             try {
                 execution_result = await storage_transaction.value;
             } catch (error) {
-                const rollbackFailure = await rollbackAndAbort(storage_transaction, action.type, rollback);
+                const abortFailures = await compensateRollbackAndAbort(storage_transaction, attempted);
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
@@ -317,10 +349,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     );
                 }
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
-                if (error instanceof AutomergeStorageWriteConflictError && !rollbackFailure) {
+                if (error instanceof AutomergeStorageWriteConflictError && !hasAbortFailure(abortFailures)) {
                     throw new AppActionConflictError(action.type);
                 }
-                throw withRollbackFailure(error, rollbackFailure);
+                throw withAbortFailures(error, abortFailures);
             }
 
             // A handler that reports no write or a conflict declined before changing
@@ -344,9 +376,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 // A commit that already reached storage cannot be undone by rolling the
                 // runtime back; the ambiguous-commit reconciliation below owns that case.
                 const reachedStorage = error instanceof AutomergeStorageTransactionCommittedError;
-                const rollbackFailure = reachedStorage
+                const abortFailures = reachedStorage
                     ? null
-                    : await rollbackAndAbort(storage_transaction, action.type, rollback);
+                    : await compensateRollbackAndAbort(storage_transaction, attempted);
                 if (reachedStorage) {
                     storage_transaction.abort();
                 }
@@ -375,17 +407,17 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     throw committed_error;
                 }
                 if (
-                    !rollbackFailure &&
+                    !hasAbortFailure(abortFailures) &&
                     production_brief_commit_denied &&
                     error instanceof AutomergeStorageTransactionValidationError
                 ) {
                     throw new AppActionConflictError(action.type);
                 }
-                if (!rollbackFailure && error instanceof AutomergeStorageWriteConflictError) {
+                if (!hasAbortFailure(abortFailures) && error instanceof AutomergeStorageWriteConflictError) {
                     throw new AppActionConflictError(action.type);
                 }
                 logger.error(new Error(`Action storage commit failed for action: ${action.type}`, { cause: error }));
-                throw withRollbackFailure(error, rollbackFailure);
+                throw withAbortFailures(error, abortFailures);
             }
 
             let committed_failure: unknown;

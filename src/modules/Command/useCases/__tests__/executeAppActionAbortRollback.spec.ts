@@ -117,6 +117,93 @@ function registerHandler(
     });
 }
 
+const inverseAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+
+/**
+ * Like `registerHandler`, for a handler that describes the inverse the batch path replays
+ * on abort. The inverse is the same action type with the stored tool, so one `execute`
+ * serves both and tells them apart by payload.
+ */
+function registerCompensableHandler(
+    recorder: Recorder,
+    execute: (action: SetEditingToolAction) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>,
+    compensate: () => void | HandlerExecutionResult = () => undefined,
+    requiresAbortCompensation?: boolean
+): void {
+    registerHandlerMap({
+        [action.type]: {
+            undoable: true,
+            describe: () => ({ label: 'Set editing tool', inverseAction }),
+            prepareAbort: recorder.prepareAbort,
+            requiresAbortCompensation,
+            execute: (executed) => {
+                if (executed.payload.tool === inverseAction.payload.tool) {
+                    recorder.calls.push('compensate');
+                    return compensate();
+                }
+                recorder.calls.push('execute');
+                return execute(executed);
+            },
+        } satisfies ActionHandler<SetEditingToolAction>,
+    });
+}
+
+let productionBriefAllows = true;
+
+function refuseBrief(): void {
+    productionBriefAllows = false;
+}
+
+type AbortRoute = {
+    name: string;
+    mutateDoc?: () => void;
+    execute: (context: {
+        storage: Harness['storage'];
+    }) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
+};
+
+const abortRoutes: AbortRoute[] = [
+    {
+        name: 'a synchronous handler throw',
+        execute: () => {
+            throw new Error('handler threw');
+        },
+    },
+    {
+        name: 'a rejected handler',
+        execute: async () => {
+            await Promise.resolve();
+            throw new Error('handler rejected');
+        },
+    },
+    {
+        name: 'a synchronous storage write conflict',
+        execute: () => {
+            throw new AutomergeStorageWriteConflictError('storage conflict');
+        },
+    },
+    {
+        name: 'an awaited storage write conflict',
+        execute: async () => {
+            await Promise.resolve();
+            throw new AutomergeStorageWriteConflictError('storage conflict');
+        },
+    },
+    {
+        name: 'a commit validation failure',
+        execute: () => {
+            refuseBrief();
+        },
+    },
+    {
+        name: 'another commit failure',
+        mutateDoc: () => {
+            throw new Error('CRDT commit failed');
+        },
+        execute: ({ storage }) => storage.set({ tool: 'marquee' }),
+    },
+];
+
 describe('executeAppAction abort rollback', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -124,7 +211,8 @@ describe('executeAppAction abort rollback', () => {
         clearActionReplayCapabilities();
         mocks.recordActionHistoryMetadata.mockReturnValue([]);
         configureAutomergeStoragePort(null);
-        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+        productionBriefAllows = true;
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => productionBriefAllows }));
     });
 
     afterEach(() => {
@@ -331,20 +419,159 @@ describe('executeAppAction abort rollback', () => {
         expect(recorder.calls).toEqual(['prepareAbort', 'execute']);
     });
 
-    it('reports a failed rollback with the abort cause, as a failure rather than a retryable conflict', async () => {
-        createHarness();
-        const recorder = recordRollback(() => {
-            throw new Error('engine unreachable');
-        });
-        let briefAllows = true;
-        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => briefAllows }));
-        registerHandler(recorder, () => {
-            briefAllows = false;
+    // Every route that aborts after execute names its own failure kind, and each kind
+    // has its own classification as a retryable conflict. A failed rollback or
+    // compensation must outrank that classification on all of them, so each route is
+    // exercised for both the failure reporting and the compensation it shares.
+    describe.each<AbortRoute>(abortRoutes)('on $name', (route) => {
+        it('reports a failed rollback with the abort cause, as a failure rather than a retryable conflict', async () => {
+            const { storage } = createHarness(route.mutateDoc);
+            const recorder = recordRollback(() => {
+                throw new Error('engine unreachable');
+            });
+            registerHandler(recorder, () => route.execute({ storage }));
+
+            const execution = executeAppAction(action);
+
+            await expect(execution).rejects.toThrow('abort rollback failed: setEditingTool: engine unreachable');
+            await expect(execution).rejects.not.toBeInstanceOf(AppActionConflictError);
+            expect(recorder.calls).toEqual(['prepareAbort', 'execute', 'rollback']);
         });
 
-        const execution = executeAppAction(action);
+        it('replays the described inverse once, before the rollback', async () => {
+            const { storage } = createHarness(route.mutateDoc);
+            const recorder = recordRollback();
+            registerCompensableHandler(recorder, () => route.execute({ storage }));
 
-        await expect(execution).rejects.toThrow('abort rollback failed: setEditingTool: engine unreachable');
-        await expect(execution).rejects.not.toBeInstanceOf(AppActionConflictError);
+            await expect(executeAppAction(action)).rejects.toThrow();
+
+            expect(recorder.calls).toEqual(['prepareAbort', 'execute', 'compensate', 'rollback']);
+        });
+
+        it('reports a failed compensation, and still rolls back, rather than a retryable conflict', async () => {
+            const { storage } = createHarness(route.mutateDoc);
+            const recorder = recordRollback();
+            registerCompensableHandler(
+                recorder,
+                () => route.execute({ storage }),
+                () => ({ status: 'conflict' })
+            );
+
+            const execution = executeAppAction(action);
+
+            await expect(execution).rejects.toThrow(
+                'runtime compensation failed: Runtime compensation did not apply for setEditingTool'
+            );
+            await expect(execution).rejects.not.toBeInstanceOf(AppActionConflictError);
+            expect(recorder.calls).toEqual(['prepareAbort', 'execute', 'compensate', 'rollback']);
+        });
+    });
+
+    describe('abort compensation', () => {
+        it('does not run for a handler that declares the transaction abort undoes everything', async () => {
+            const { storage } = createHarness();
+            const recorder = recordRollback();
+            registerCompensableHandler(
+                recorder,
+                () => {
+                    storage.set({ tool: 'marquee' });
+                    refuseBrief();
+                },
+                undefined,
+                false
+            );
+
+            await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
+
+            expect(recorder.calls).toEqual(['prepareAbort', 'execute', 'rollback']);
+        });
+
+        it('does not run when the action commits', async () => {
+            const { storage } = createHarness();
+            const recorder = recordRollback();
+            registerCompensableHandler(recorder, () => storage.set({ tool: 'marquee' }));
+
+            await executeAppAction(action);
+
+            expect(recorder.calls).toEqual(['prepareAbort', 'execute']);
+        });
+
+        it('does not run for an action the production brief refuses before execute', async () => {
+            createHarness();
+            productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => false }));
+            const recorder = recordRollback();
+            registerCompensableHandler(recorder, () => undefined);
+
+            await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
+
+            expect(recorder.calls).toEqual([]);
+        });
+
+        it('does not run for a handler that reports no write or a conflict', async () => {
+            createHarness();
+            const noWrite = recordRollback();
+            registerCompensableHandler(noWrite, () => ({ status: 'no-write' }));
+
+            await executeAppAction(action);
+
+            expect(noWrite.calls).toEqual(['prepareAbort', 'execute']);
+
+            clearHandlerRegistry();
+            const conflict = recordRollback();
+            registerCompensableHandler(conflict, () => ({ status: 'conflict' }));
+
+            await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
+
+            expect(conflict.calls).toEqual(['prepareAbort', 'execute']);
+        });
+
+        it('does not run after a commit that already reached storage', async () => {
+            const commitFailure = new Error('secondary document commit failed');
+            const docs: Record<string, Record<string, unknown>> = {
+                primary: { editingTool: { tool: 'select' } },
+                secondary: { snap: { value: 0 } },
+            };
+            configureAutomergeStoragePort({
+                getDoc: (docId) => docs[docId],
+                getSemanticMessage: () => undefined,
+                hasDoc: (docId) => docs[docId] !== undefined,
+                mutateDoc: ({ docId, changeFn }) => {
+                    const doc = docs[docId];
+                    if (!doc) {
+                        throw new Error(`Missing test document: ${docId}`);
+                    }
+                    if (docId === 'secondary') {
+                        throw commitFailure;
+                    }
+                    changeFn(doc);
+                },
+            });
+            const primary = createAutomergeStorage<StorageValue>('primary', 'editingTool');
+            const secondary = createAutomergeStorage<{ value: number }>('secondary', 'snap');
+            primary.hydrate?.();
+            secondary.hydrate?.();
+            const recorder = recordRollback();
+            registerCompensableHandler(recorder, () => {
+                primary.set({ tool: 'marquee' });
+                secondary.set({ value: 1 });
+                return { status: 'written', afterCommit: () => undefined, afterAmbiguousCommit: () => undefined };
+            });
+
+            await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionCommittedError);
+
+            expect(recorder.calls).toEqual(['prepareAbort', 'execute']);
+        });
+
+        it('has nothing to replay for a handler that described no inverse, so the abort keeps its classification', async () => {
+            createHarness();
+            const recorder = recordRollback();
+            registerHandler(recorder, () => {
+                throw new AutomergeStorageWriteConflictError('storage conflict');
+            });
+
+            await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
+
+            expect(recorder.calls).toEqual(['prepareAbort', 'execute', 'rollback']);
+        });
     });
 });

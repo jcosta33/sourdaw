@@ -24,8 +24,10 @@ import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../
 import { registerActionReplayCapabilities, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
+import { appendAbortFailures } from './appendAbortFailures';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commitUndoEntries } from './commitUndoEntries';
+import { compensateAbortedActions } from './compensateAbortedActions';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
 import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
@@ -428,63 +430,26 @@ function rollbackAttemptedBatch(
     );
 }
 
-function appendAbortFailures(
-    reason: string,
-    compensationFailure: string | null,
-    rollbackFailure: string | null
-): string {
-    let result = reason;
-    if (compensationFailure) {
-        result = `${result}; runtime compensation failed: ${compensationFailure}`;
-    }
-    if (rollbackFailure) {
-        result = `${result}; abort rollback failed: ${rollbackFailure}`;
-    }
-    return result;
-}
-
 function describeValidationConflict(prepared: PreparedBatchAction, context: HandlerValidationContext): string {
     const conflict = `Action conflicts with current project state: ${prepared.action.type}`;
     const refusal = prepared.handler.validationRefusalReason?.(prepared.action, context);
     return refusal ? `${conflict}: ${refusal}` : conflict;
 }
 
-async function compensateAttemptedBatch(
+function compensateAttemptedBatch(
     attemptedActions: readonly PreparedBatchAction[],
     scope: AutomergeStorageTransactionScope
 ): Promise<string | null> {
-    const compensableActions = attemptedActions.filter((action) => action.requiresAbortCompensation);
-    if (compensableActions.length === 0) {
-        return null;
-    }
-
-    try {
-        for (const prepared of [...compensableActions].reverse()) {
-            const inverseAction = prepared.description?.inverseAction;
-            if (!inverseAction) {
-                throw new Error(`No inverse action available for ${prepared.action.type}`);
-            }
-            const inverseHandler = getCommandHandler(inverseAction);
-            if (!inverseHandler) {
-                throw new Error(`No registered handler for inverse action: ${inverseAction.type}`);
-            }
-            const compensation = createExecutionCommandEnvelope({
-                action: inverseAction,
-                dependencyIds: [prepared.envelope.commandId],
-                expectedEffect: inverseHandler.describe(inverseAction).label,
-                options: { groupId: prepared.envelope.groupId, source: 'ai' },
-            });
-            const result: HandlerExecutionResult | void = await scope(() =>
-                inverseHandler.execute(compensation.action)
-            );
-            if (result?.status === 'conflict' || result?.status === 'no-write') {
-                throw new Error(`Runtime compensation did not apply for ${inverseAction.type}`);
-            }
-        }
-        return null;
-    } catch (error) {
-        return failureReason(error);
-    }
+    return compensateAbortedActions(
+        attemptedActions.map((prepared) => ({
+            actionType: prepared.action.type,
+            requiresAbortCompensation: prepared.requiresAbortCompensation,
+            inverseAction: prepared.description?.inverseAction,
+            commandId: prepared.envelope.commandId,
+            groupId: prepared.envelope.groupId,
+        })),
+        scope
+    );
 }
 
 function recordCommittedBatch(
