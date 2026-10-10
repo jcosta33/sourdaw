@@ -1,0 +1,44 @@
+crates/daw-dsp/tests/gluten_lookahead_every_topology.rs
+  s_2bfd55a4393d7c::t_0d40945521fb60 717
+  s_2bfd55a4393d7c::t_b37655b95820b4 172-174
+  s_2bfd55a4393d7c::t_fd59edc06531e5 334-448,497,499,548,566,571-574
+  s_2bfd55a4393d7c::t_a8dd320bb5d825 449-451,479-496,498,500-547,549-565,567-570,575-716,718,721,767-778,780
+crates/daw-dsp/src/gluten/engine.rs
+  s_2bfd55a4393d7c::t_e0749a9e50ae34 508-509
+  s_2bfd55a4393d7c::t_0768fe4bec340b 667-691,693,698
+  s_2bfd55a4393d7c::t_c11f51708b547e 449-451
+  s_2bfd55a4393d7c::t_5c8672f413c827 488-495
+  s_2bfd55a4393d7c::t_2c6d97d918f096 442-443
+  s_2bfd55a4393d7c::t_6827550cf36fdf 479,482,487,496-497,499-503,506-507,511,514,647
+  s_2bfd55a4393d7c::t_f22adec630a21f 625-627,634,638-643
+  s_2bfd55a4393d7c::t_9688919a3f8ff9 498
+  s_2bfd55a4393d7c::t_e24682772c2da9 644-646
+crates/daw-dsp/src/gluten/vca.rs
+  s_2bfd55a4393d7c::t_6e55136067bc32 238-240
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_99da92ae145fed 1,1148-1163
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_e4eacbdbbba4ba 1,163-178
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_74ca97dd8b3f24 12,16-18,21
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_5eb506ca213a2d 1344,1350,1770
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_dccc82a3b35f3b 1,1148-1163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe3d28e3803e17bad3cc38350ad5bfb19330ca59",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
