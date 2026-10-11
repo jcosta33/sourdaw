@@ -215,6 +215,40 @@ describe('projectClipControllerEvents', () => {
                 ['una-corda-off', true],
             ]);
         });
+
+        it.each([
+            ['a half sustain', 63],
+            ['the lightest partial sustain', 1],
+        ])('plays %s on the closing line nowhere, while a full lift beside it still plays', (_kind, value) => {
+            // Sustain is a continuous position, not an on/off switch: only value 0 lifts it,
+            // so a partial sustain on the final line is dropped like every other row — it
+            // would leave the pedal partly down for whatever follows the clip.
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('down', 0, 127), controller('partial', 4, value), controller('lift', 4, 0)],
+                clip: { startBeat: 0, endBeat: 4 },
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ id, beat, closesClip }) => [id, beat, closesClip])).toEqual([
+                ['down', 0, false],
+                ['lift', 4, true],
+            ]);
+        });
+
+        it('keeps a half sustain stored inside the clip an ordinary move', () => {
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('down', 0, 127), controller('half', 2, 63)],
+                clip: { startBeat: 0, endBeat: 4 },
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ id, beat, value, closesClip }) => [id, beat, value, closesClip])).toEqual([
+                ['down', 0, 127, false],
+                ['half', 2, 63, false],
+            ]);
+        });
     });
 
     it('carries each controller lane on each channel independently', () => {

@@ -25,6 +25,19 @@ export function isSwitchControllerRelease(controller: number, value: number): bo
     );
 }
 
+/**
+ * Whether a controller change is a true pedal lift. Sustain is a continuous position,
+ * not an on/off switch, so only its full lift (value 0) ends what the pedal held and a
+ * partial value leaves it partly down; the other switch controllers are latches, and
+ * any value below the latch threshold releases them.
+ */
+export function isPedalControllerLift(controller: number, value: number): boolean {
+    if (controller === CC_SUSTAIN_PEDAL) {
+        return value === 0;
+    }
+    return isSwitchControllerRelease(controller, value);
+}
+
 type PianoPedalMove =
     /** Sustain is continuous: `position` is `0..1`, so half-pedal damps partially. */
     { pedal: 'sustain'; position: number } | { pedal: 'sostenuto' | 'unaCorda'; engaged: boolean };
