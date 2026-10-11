@@ -2477,6 +2477,100 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         }
     );
 
+    it('replays a saved trim then split group against the admitted trimmed prefix', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        tempoMapStore.set({ changes: [{ id: 'initial', beat: 0, tempo: 120, curve: 'instant' }] });
+        const original = {
+            ...createClipFixture('clip-a', 2, 8),
+            type: 'audio' as const,
+            audioBufferId: 'buffer-a',
+            audioOffsetBeats: 0,
+            audioOffsetSeconds: 0,
+        };
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'audio', clips: [original] })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        const result = await executeAppActionBatch(
+            [
+                { type: 'trimClipStart', payload: { clipId: 'clip-a', newStartBeat: 3 } },
+                { type: 'splitClip', payload: { clipId: 'clip-a', beat: 5, rightClipId: 'clip-right' } },
+            ],
+            { source: 'manual', groupId: 'trim-split-prefix' }
+        );
+        expect(result.status, JSON.stringify(result)).toBe('committed');
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 3, endBeat: 5 });
+        expect(clipOnTrack(TRACK_ID, 'clip-right')).toMatchObject({ startBeat: 5, endBeat: 8 });
+        const committed = structuredClone(trackStore.value?.tracks);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+        );
+        reloadSavedProject();
+        expect((await undo()).headConsumed).toBe(true);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(original);
+        expect(clipOnTrack(TRACK_ID, 'clip-right')).toBeUndefined();
+        reloadSavedProject();
+        await redo();
+        expect(trackStore.value?.tracks).toEqual(committed);
+        expect((await undo()).headConsumed).toBe(true);
+        receiveClipAudioSourceEdit('clip-a', 7);
+        const peerProject = structuredClone(getCrdtDoc('root'));
+        const pending = structuredClone(undoStore.value);
+        await redo();
+        expect(getCrdtDoc('root')).toEqual(peerProject);
+        expect(undoStore.value).toEqual(pending);
+    });
+
+    it('captures a legacy trim after an earlier tempo edit and restores exact absence on grouped Undo', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        tempoMapStore.set({ changes: [{ id: 'initial', beat: 0, tempo: 120, curve: 'instant' }] });
+        const original = {
+            ...createClipFixture('clip-a', 8, 12),
+            type: 'audio' as const,
+            audioBufferId: 'buffer-a',
+            audioOffsetBeats: 0,
+        };
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'audio', clips: [original] })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        const result = await executeAppActionBatch(
+            [
+                { type: 'setTempo', payload: { bpm: 60 } },
+                { type: 'trimClipStart', payload: { clipId: 'clip-a', newStartBeat: 9 } },
+            ],
+            { source: 'manual', groupId: 'tempo-legacy-trim' }
+        );
+        expect(result.status, JSON.stringify(result)).toBe('committed');
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 9 });
+        const committed = structuredClone(trackStore.value?.tracks);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+        );
+        reloadSavedProject();
+        expect((await undo()).headConsumed).toBe(true);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(original);
+        expect(Object.hasOwn(clipOnTrack(TRACK_ID, 'clip-a') ?? {}, 'audioOffsetSeconds')).toBe(false);
+        reloadSavedProject();
+        await redo();
+        expect(trackStore.value?.tracks).toEqual(committed);
+        expect((await undo()).headConsumed).toBe(true);
+        receiveClipAudioSourceEdit('clip-a', 7);
+        const peerProject = structuredClone(getCrdtDoc('root'));
+        const pending = structuredClone(undoStore.value);
+        await redo();
+        expect(getCrdtDoc('root')).toEqual(peerProject);
+        expect(undoStore.value).toEqual(pending);
+    });
+
     it.each([
         {
             name: 'gain envelope point',

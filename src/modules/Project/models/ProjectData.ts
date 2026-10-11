@@ -800,6 +800,10 @@ export type ProjectTake = {
     startBeat: number;
     endBeat: number;
     selected: boolean;
+    sourceOffsetBeats?: number;
+    sourceOffsetSeconds?: number;
+    passAnchorSeconds?: number;
+    passDepthSeconds?: number;
 };
 
 export type ProjectTakeLane = {
