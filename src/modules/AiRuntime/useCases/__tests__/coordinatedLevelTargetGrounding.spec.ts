@@ -321,7 +321,8 @@ describe('a coordinated level list refuses calls that do not match it exactly', 
     it('refuses a first member with an unresolved word before a known name', () => {
         const result = bridge(
             [gainCall(bass.id, { deltaDb: -3 }), gainCall(drums.id, { deltaDb: -3 })],
-            'lower Acoustic Bass and Drums by 3 dB'
+            'lower Acoustic Bass and Drums by 3 dB',
+            { ...projectContext, tracks: [bass, drums] }
         );
 
         expect(result.actions).toEqual([]);
