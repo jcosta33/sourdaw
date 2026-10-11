@@ -337,6 +337,7 @@ export async function renderOfflineWithNativeEngine(
             lanes: automationLanes,
             regionStartSeconds: regionStartSec,
             durationSeconds,
+            defaultTempo,
             changes,
             projectBeatToSeconds,
             sampleRate,

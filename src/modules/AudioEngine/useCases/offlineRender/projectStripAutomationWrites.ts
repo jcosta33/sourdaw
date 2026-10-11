@@ -113,6 +113,8 @@ export type StripAutomationWritesInput = Readonly<{
     lanes: readonly AutomationLane[];
     regionStartSeconds: number;
     durationSeconds: number;
+    /** The tempo before the first tempo change; the modulator path's seconds-to-beat inverse consumes it. */
+    defaultTempo: number;
     changes: readonly { beat: number; tempo: number }[];
     projectBeatToSeconds: (beat: number) => number;
     sampleRate: number;
@@ -274,6 +276,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         lanes,
         regionStartSeconds,
         durationSeconds,
+        defaultTempo,
         changes,
         projectBeatToSeconds,
         sampleRate,
@@ -318,6 +321,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         sendAutomationParams,
         deviceEntries: recordingEntries,
         durationSeconds,
+        defaultTempo,
         changes: [...changes],
         slewTickSeconds,
         deviceParameterLaw,

@@ -238,6 +238,7 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
         lanes: automationStore.value?.lanes ?? [],
         regionStartSeconds,
         regionEndSeconds,
+        defaultTempo,
         changes,
         projectBeatToSeconds,
         sampleRate,
