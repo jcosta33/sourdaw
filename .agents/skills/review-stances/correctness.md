@@ -68,6 +68,36 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
+
+The orchestrator packet prescribed the requested beat-four anchor without tracing
+`resolveHistoryAwareRenderContext`, which expands bounded renders to beat zero for device
+history. The resulting moving-layer inverse sampled the crop's future during warmup and
+lost the fade in the retained crop; its positive-compensation seed also used the wrong beat.
+This was a dispatch-origin error as well as an implementation and review gap.
+
+Trace the actual render origin through history expansion before prescribing an anchor.
+Require terminal gain and pan writes to match a whole render on both sides of the crop under
+a tempo ramp. Add a layer whose beat-zero value differs from its requested-start value,
+and prove positive compensation changes only write times while its zero-time seed uses the
+actual render origin. Keep crop selection distinct from the scheduling clock.
+
+### 2026-10-11 — offline modulation retained a second tempo inverse (#5209, exposed by #5243)
+
+PR #5209 (`54ff77cd1`) sampled modulation and moving adjustment layers through a private,
+step-only seconds-to-beat helper with inverted units. PR #5243's Transport ramp integration
+removed the modulation caller's `defaultTempo` and `projectBeat` aliases at its actual landing
+(`83a92c4005`), leaving a runtime ReferenceError as well as ramp and subregion drift.
+The historical reviewer prompts and tiers are unestablished; the missed probe is established.
+
+Trace both projection directions from captured tempo state to every terminal binding: AudioParam,
+segment writer and curve writer, with track, clip and absent automation lanes. Drive a flat tempo
+and a linear ramp from a nonzero region anchor; independently integrate the ramp and require the
+actual delivered value, quantisation, slew and compensated write clock. Include both moving-layer
+schedulers and both stem branches. Replacing the Transport inverse or losing the region anchor
+must fail the terminal-output cases. Require the inverse only for moving consumers so lane-only
+native recorders remain valid, and preserve native refusal of enabled modulation and layers.
+
 ### 2026-09-28 — elapsed cohort timeout retired progressing instruments (introduced in `9783731236`; exposed after PR #3982)
 
 The 10-second `waitForDevices` deadline measured the whole cohort from wait entry, even while Levain decoded files continued to complete. A cold 161-file bank with five consumers therefore timed out after 39 files and rolled back all five live nodes. The method also returned `void` after timeout, so a committed demo/template could appear ready without usable instruments. The timeout commit is associated with PR #2035, but that association does not prove its readiness policy was reviewed there. PR #3982 deliberately fixed cohort isolation and explicitly deferred progress and caller outcomes to #3318; do not charge its bounded review with that missing promise.

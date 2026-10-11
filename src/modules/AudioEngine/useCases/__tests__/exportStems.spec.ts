@@ -31,7 +31,6 @@ const offlineRenderMocks = vi.hoisted(() => ({
         ) => Promise<BuildDeviceChainOutput>
     >(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
-    beatToSeconds: vi.fn(() => 0),
     resolveDrumKit: vi.fn(() => null),
     scheduleTrackAutomation: vi.fn(),
     scheduleNoteOffline: vi.fn(),
@@ -113,10 +112,6 @@ vi.mock('../buildDeviceChain', () => ({
     buildDeviceChain: offlineRenderMocks.buildDeviceChain,
 }));
 
-vi.mock('#/modules/AudioEngine/services/beatConversion', () => ({
-    beatToSeconds: offlineRenderMocks.beatToSeconds,
-}));
-
 vi.mock('#/modules/AudioEngine/services/deviceResolution', () => ({
     resolveDrumKit: offlineRenderMocks.resolveDrumKit,
 }));
@@ -174,7 +169,18 @@ function createRenderContext(tracks: unknown[] | null) {
         projectMidiEvents: vi.fn(),
         selectMidiEventProbability: vi.fn(() => true),
         projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
-        projectPpqEndpoints: vi.fn(),
+        beatAtSecondsFromAnchor: vi.fn(
+            (_changes: readonly unknown[], anchor: number, elapsed: number, tempo: number) =>
+                anchor + (elapsed * tempo) / 60
+        ),
+        projectPpqEndpoints: vi.fn(({ startPpq, endPpq }: { startPpq: number; endPpq: number }) => ({
+            startSamples: startPpq,
+            endSamples: endPpq,
+            durationSamples: endPpq - startPpq,
+            startSeconds: startPpq,
+            endSeconds: endPpq,
+            durationSeconds: endPpq - startPpq,
+        })),
         resolveTempoAtBeat: ({ defaultTempo: tempo }: { defaultTempo: number }) => tempo,
         processYeastMidi: null,
     };
@@ -792,7 +798,8 @@ describe('exportStems', () => {
             offlineRenderMocks.sidechainStore.value = {
                 routes: [{ sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],
             };
-            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(keyedPair()));
+            const context = createRenderContext(keyedPair());
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(context);
             primeStemRender();
 
             await exportStems(4);
@@ -802,6 +809,16 @@ describe('exportStems', () => {
             // 'kick' is scheduled twice: once as its own stem, once as the key
             // driving the compressor in the 'bass' stem's context.
             expect(scheduleCountFor('kick')).toBe(2);
+            // Both the grouped stem and its key-source pass receive the captured inverse.
+            const kickSchedules = offlineRenderMocks.scheduleTrackClips.mock.calls.filter(
+                (call) => (call[0] as { track: { id: string } }).track.id === 'kick'
+            );
+            expect(kickSchedules).toHaveLength(2);
+            for (const call of kickSchedules) {
+                expect(call[0]).toMatchObject({
+                    projections: { beatAtSecondsFromAnchor: context.beatAtSecondsFromAnchor },
+                });
+            }
             // The key-source strip carries the stem set's cancellation scope
             // (#4440). 'kick' is built twice here — once as its own stem through
             // the grouped loop, once as the bass stem's key source — and an

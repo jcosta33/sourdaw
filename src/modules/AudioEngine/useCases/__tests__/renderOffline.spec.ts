@@ -25,7 +25,6 @@ const offlineRenderMocks = vi.hoisted(() => ({
         ) => Promise<BuildDeviceChainOutput>
     >(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
-    beatToSeconds: vi.fn(() => 0),
     resolveDrumKit: vi.fn(() => null),
     scheduleTrackAutomation: vi.fn(),
     scheduleNoteOffline: vi.fn(),
@@ -101,10 +100,6 @@ vi.mock('../../repositories/faustDeviceFactory', () => ({
 
 vi.mock('../buildDeviceChain', () => ({
     buildDeviceChain: offlineRenderMocks.buildDeviceChain,
-}));
-
-vi.mock('#/modules/AudioEngine/services/beatConversion', () => ({
-    beatToSeconds: offlineRenderMocks.beatToSeconds,
 }));
 
 vi.mock('#/modules/AudioEngine/services/deviceResolution', () => ({
