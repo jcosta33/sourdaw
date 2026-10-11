@@ -115,6 +115,7 @@ describe('graph-backed browser selection', () => {
         expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
     });
 
+    // Four planner invocations collect the real Playwright suite, alongside a direct list check.
     it('emits a narrowed immutable-head plan that Playwright collects as exact files', () => {
         const root = temporaryRoot();
         const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
@@ -255,7 +256,7 @@ describe('graph-backed browser selection', () => {
         >;
         expect(allSelected(dirtyPublicPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
         expect(dirtyPublicPlan.browserAi).toBe(true);
-    });
+    }, 30_000);
 });
 const PR_4890_PATHS = [
     '.agents/skills/review-stances/correctness.md',
