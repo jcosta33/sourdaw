@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { captureOfflineLevain, prepareOfflineLevain } from '#/modules/Levain/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { installWorkletGlobals, makeChannels } from '../../../services/__tests__/wasmViewGrowthHarness';
@@ -45,6 +46,7 @@ function makeAudioNode(): AudioNode {
 }
 
 function makeTrack(id: string, withClip: boolean): Track {
+    const instrumentId = id === 'a' ? 'cello' : 'horn';
     const clips: Track['clips'] = [];
     if (withClip) {
         clips.push({
@@ -73,7 +75,16 @@ function makeTrack(id: string, withClip: boolean): Track {
         pan: 0,
         color: '#ffffff',
         clips,
-        devices: [{ id: `levain-${id}`, name: 'Levain', type: 'levain', bypassed: false, parameterValues: {} }],
+        devices: [
+            {
+                id: `levain-${id}`,
+                name: 'Levain',
+                type: 'levain',
+                bypassed: false,
+                parameterValues: {},
+                deviceState: { version: 1, data: { instrumentId, currentArticulation: 'sustain' } },
+            },
+        ],
         sends: [],
         frozen: false,
         freezeState: { status: 'unfrozen' },
@@ -172,44 +183,43 @@ function send(processor: Processor, data: unknown): void {
     processor.port.onmessage?.({ data });
 }
 
-function loadBank(processor: Processor, instrumentId: string): void {
-    const loadToken = 1;
-    send(processor, { type: 'beginSampleBank', bankKey: `bank-${instrumentId}`, instrumentId, loadToken });
-    const data = new Float32Array(SAMPLE_FRAMES).map((_, frame) => Math.sin(frame * 0.05) * 0.5);
-    send(processor, {
-        type: 'addSample',
-        loadToken,
-        sampleId: 0,
-        data,
-        frameCount: SAMPLE_FRAMES,
-        channels: 1,
+function manifest(instrumentId: 'cello' | 'horn') {
+    return {
+        version: 1,
+        instrumentId,
         sampleRate: SAMPLE_RATE,
-    });
-    send(processor, {
-        type: 'addZone',
-        loadToken,
-        zoneId: 0,
-        sampleId: 0,
-        articulationId: 0,
-        rootNote: 60,
-        loKey: 0,
-        hiKey: 127,
-        loVel: 0,
-        hiVel: 127,
-        rrPos: 0,
-        rrLen: 1,
-        micId: 0,
-        loopMode: 'forward',
-        loopStart: 0,
-        loopEnd: SAMPLE_FRAMES,
-        loopCrossfade: 0,
-        gainDb: 0,
-        attack: 0.005,
-        decay: 0.1,
-        sustain: 1,
-        release: 0.3,
-    });
-    send(processor, { type: 'buildZoneMap', loadToken, numArticulations: 1, numMics: 1 });
+        micPositions: ['close'],
+        articulations: [
+            {
+                type: 'sustain',
+                id: 0,
+                zones: [
+                    {
+                        file: 'sustain-c4.wav',
+                        rootNote: 60,
+                        loKey: 0,
+                        hiKey: 127,
+                        loVel: 0,
+                        hiVel: 127,
+                        rrPos: 0,
+                        rrLen: 1,
+                        micId: 0,
+                        isRelease: false,
+                        loopMode: 'forward',
+                        loopStart: 0,
+                        loopEnd: SAMPLE_FRAMES,
+                        loopCrossfade: 0,
+                        gainDb: 0,
+                        attack: 0.005,
+                        decay: 0.1,
+                        sustain: 1,
+                        release: 0.3,
+                    },
+                ],
+            },
+        ],
+        legatoTransitions: [],
+    };
 }
 
 function render(processor: Processor): Float32Array[][] {
@@ -224,12 +234,14 @@ function render(processor: Processor): Float32Array[][] {
 }
 
 afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.resetModules();
 });
 
 describe('two shipped Levain processors through the offline MIDI route', () => {
     it('sounds only the track the scheduler selected, while both banks are playable', async () => {
+        vi.useFakeTimers();
         const { registry } = installWorkletGlobals<Processor>();
         await import('../../../services/levainProcessor');
         const ProcessorCtor = registry.get('levain-processor');
@@ -237,7 +249,44 @@ describe('two shipped Levain processors through the offline MIDI route', () => {
             throw new Error('Levain processor was not registered');
         }
         const simulated: SimulatedNode[] = [];
+        const decodedIdentities: number[] = [];
         class FakeAudioContext {}
+        class FakeOfflineAudioContext {
+            decodeAudioData = vi.fn(async (encoded: ArrayBuffer) => {
+                const sample = new Float32Array(SAMPLE_FRAMES);
+                const identity = new Uint8Array(encoded)[0];
+                decodedIdentities.push(identity ?? -1);
+                for (let frame = 0; frame < SAMPLE_FRAMES; frame++) {
+                    sample[frame] = Math.sin(frame * 0.05) * (identity === 1 ? 0.5 : 0.4);
+                }
+                return {
+                    numberOfChannels: 1,
+                    length: SAMPLE_FRAMES,
+                    sampleRate: SAMPLE_RATE,
+                    getChannelData: (channel: number) => {
+                        expect(channel).toBe(0);
+                        return sample;
+                    },
+                } as AudioBuffer;
+            });
+        }
+        const requested: string[] = [];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (url: string) => {
+                requested.push(url);
+                const match = /^\/samples\/levain\/(cello|horn)\/(manifest\.json|sustain-c4\.wav)$/.exec(url);
+                if (!match) {
+                    throw new Error(`Unexpected Levain sample request: ${url}`);
+                }
+                const instrumentId = match[1] as 'cello' | 'horn';
+                return {
+                    ok: true,
+                    json: async () => manifest(instrumentId),
+                    arrayBuffer: async () => new Uint8Array([instrumentId === 'cello' ? 1 : 2]).buffer,
+                } as Response;
+            })
+        );
         class SimulatedAudioWorkletNode {
             port: MessagePort;
             numberOfInputs = 0;
@@ -247,30 +296,66 @@ describe('two shipped Levain processors through the offline MIDI route', () => {
                 const processor = new ProcessorCtor({ processorOptions: options.processorOptions });
                 const sent: unknown[] = [];
                 const received: unknown[] = [];
+                const listeners = new Set<EventListenerOrEventListenerObject>();
                 const port = {
                     onmessage: null as ((event: { data: unknown }) => void) | null,
                     postMessage(data: unknown) {
                         sent.push(data);
                         send(processor, data);
                     },
+                    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+                        if (type === 'message') {
+                            listeners.add(listener);
+                        }
+                    },
+                    removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+                        if (type === 'message') {
+                            listeners.delete(listener);
+                        }
+                    },
                     close: vi.fn(),
                 };
                 processor.port.postMessage.mockImplementation((data: unknown) => {
                     received.push(data);
-                    port.onmessage?.({ data });
+                    const event = { data } as MessageEvent<unknown>;
+                    port.onmessage?.(event);
+                    for (const listener of [...listeners]) {
+                        if (typeof listener === 'function') {
+                            listener(event);
+                        } else {
+                            listener.handleEvent(event);
+                        }
+                    }
                 });
                 this.port = port as unknown as MessagePort;
                 simulated.push({ processor, sent, received });
             }
         }
         vi.stubGlobal('AudioContext', FakeAudioContext);
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
         vi.stubGlobal('AudioWorkletNode', SimulatedAudioWorkletNode);
         const offlineCtx = { sampleRate: SAMPLE_RATE, currentTime: 0, state: 'running' } as OfflineAudioContext;
         const a = makeTrack('a', true);
         const b = makeTrack('b', false);
+        const aCaptured = captureOfflineLevain({ deviceId: a.devices[0]!.id, device: a.devices[0], state: null });
+        const bCaptured = captureOfflineLevain({ deviceId: b.devices[0]!.id, device: b.devices[0], state: null });
+        expect([aCaptured.patch.instrumentId, bCaptured.patch.instrumentId]).toEqual(['cello', 'horn']);
+        const prepared: string[] = [];
         const instruments = new Map([
-            ['levain-a', async () => undefined],
-            ['levain-b', async () => undefined],
+            [
+                a.devices[0]!.id,
+                async ({ port, signal }: { port: MessagePort; signal?: AbortSignal }) => {
+                    await prepareOfflineLevain({ deviceId: a.devices[0]!.id, port, signal, captured: aCaptured });
+                    prepared.push('cello');
+                },
+            ],
+            [
+                b.devices[0]!.id,
+                async ({ port, signal }: { port: MessagePort; signal?: AbortSignal }) => {
+                    await prepareOfflineLevain({ deviceId: b.devices[0]!.id, port, signal, captured: bCaptured });
+                    prepared.push('horn');
+                },
+            ],
         ]);
         const aEntries = await buildDeviceChain(offlineCtx, a.devices, makeAudioNode(), makeAudioNode(), {
             instruments,
@@ -281,12 +366,41 @@ describe('two shipped Levain processors through the offline MIDI route', () => {
         expect(aEntries[0]?.instrumentControls).toBeDefined();
         expect(bEntries[0]?.instrumentControls).toBeDefined();
         expect(simulated).toHaveLength(2);
-        loadBank(simulated[0]!.processor, 'cello');
-        loadBank(simulated[1]!.processor, 'horn');
-        for (const node of simulated) {
-            expect(node.received).toContainEqual({ type: 'sampleBankLoaded', loadToken: 1 });
+        expect(prepared).toEqual(['cello', 'horn']);
+        expect(requested).toEqual([
+            '/samples/levain/cello/manifest.json',
+            '/samples/levain/cello/sustain-c4.wav',
+            '/samples/levain/horn/manifest.json',
+            '/samples/levain/horn/sustain-c4.wav',
+        ]);
+        expect(decodedIdentities).toEqual([1, 2]);
+        const begun = simulated.map(
+            (node) =>
+                node.sent.find((message) => (message as { type?: string }).type === 'beginSampleBank') as
+                    { loadToken: number; instrumentId: string } | undefined
+        );
+        expect(begun.map((message) => message?.instrumentId)).toEqual(['cello', 'horn']);
+        for (const [index, node] of simulated.entries()) {
+            const begin = begun[index];
+            expect(begin).toBeDefined();
+            expect(node.received).toContainEqual({
+                type: 'sampleBankUploadDecision',
+                loadToken: begin?.loadToken,
+                uploadRequired: true,
+            });
+            expect(node.sent).toContainEqual(
+                expect.objectContaining({ type: 'addSample', loadToken: begin?.loadToken })
+            );
+            const sample = node.sent.find((message) => (message as { type?: string }).type === 'addSample') as
+                { data: Float32Array; frameCount: number; channels: number; sampleRate: number } | undefined;
+            expect(sample?.data.buffer).toBeInstanceOf(SharedArrayBuffer);
+            expect(sample).toMatchObject({ frameCount: SAMPLE_FRAMES, channels: 1, sampleRate: SAMPLE_RATE });
+            expect(node.sent).toContainEqual(expect.objectContaining({ type: 'addZone', loadToken: begin?.loadToken }));
+            expect(node.received).toContainEqual({ type: 'sampleBankLoaded', loadToken: begin?.loadToken });
+            expect(node.received).not.toContainEqual(expect.objectContaining({ type: 'sampleBankError' }));
             expect(node.received).not.toContainEqual(expect.objectContaining({ type: 'error' }));
         }
+        vi.runOnlyPendingTimers();
 
         const entries = new Map([
             [a.id, aEntries],
