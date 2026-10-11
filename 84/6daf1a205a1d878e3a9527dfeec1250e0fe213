@@ -1,0 +1,53 @@
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_29d8df116c5b92::t_df39a58bcd479a 91-92
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_29d8df116c5b92::t_e3b9bf1b8216b1 76-87,94-108
+crates/daw-dsp/AGENTS.md
+  s_29d8df116c5b92::t_cf5aee8b087d69 61-74
+crates/daw-dsp/src/levain/engine.rs
+  s_29d8df116c5b92::t_9deef19746db25 29,44-66,70-72,90,110-111,130,142,157-158,313-315,324,331-439,450-451,482,522,2255,2328
+crates/daw-dsp/src/levain/mod.rs
+  s_29d8df116c5b92::t_94ccc698a3a5cc 41-50,150-158,170-232
+crates/daw-dsp/src/levain/zone.rs
+  s_29d8df116c5b92::t_5c0e2eb509e74e 82-93
+crates/daw-dsp/tests/device_process_rt.rs
+  s_29d8df116c5b92::t_df68a621b1196f 1921-1967
+crates/daw-dsp/tests/levain_sample_upload.rs
+  s_29d8df116c5b92::t_e22527ca7616bb 1-409
+src/infra/audioWorklet/levainSampleChunk.ts
+  s_29d8df116c5b92::t_cc920eea9e54bd 1-32
+src/modules/AudioEngine/AGENTS.md
+  s_29d8df116c5b92::t_035c8ec8cb1444 35
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_29d8df116c5b92::t_f6fbaa7b5c6191 77-84
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_29d8df116c5b92::t_9a3ca4e64b1c1a 28-31,82-85,88-89,92-122,211-224,372-379,381-486,489-495,519-520,524-526,538,550,554-556,571,583,586,595,599,625-627,632,635,679,682,709,712
+src/modules/AudioEngine/services/__tests__/levainProcessorDisposalRelease.spec.ts
+  s_29d8df116c5b92::t_e5f8a8de015535 67,74-75
+src/modules/AudioEngine/services/__tests__/levainProcessorSampleUpload.spec.ts
+  s_29d8df116c5b92::t_00fdb0e965b510 1-402
+src/modules/AudioEngine/services/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_29d8df116c5b92::t_f4a6c6bf01bd1b 32,39-40
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_29d8df116c5b92::t_887756d937f974 18-20,28-37,177,184-185,254-258,724-725,728,734-746,814-852
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_29d8df116c5b92::t_9ac8824412c1ee 3-4,75-78,121-136,139-140,153-154,174-190,214-216,222-227,236,238-243,247-249,259,265-270,276-281,295-298,309-310,315-321,348-350,354-355,358-360,362,364-368,444,475-939,950-952,1270,1518,1521,1523-1528
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_29d8df116c5b92::t_f877c34a98e943 1,21-22,154-155,168,197-200,293-501,582-583,620-621,721-724
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "846daf1a205a1d878e3a9527dfeec1250e0fe213",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
