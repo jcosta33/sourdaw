@@ -195,7 +195,7 @@ export async function renderTrackSubgraphOffline({
         source?.project
     );
     const captured = source === undefined ? null : captureOfflineSubgraphInput({ source, renderTracks, sampleRate });
-    const { midi, defaultTempo, changes, durationSeconds, ...projections } = renderContext;
+    const { midi, defaultTempo, changes, durationSeconds, startBeat: renderStartBeat, ...projections } = renderContext;
     const {
         projectMidiEvents,
         projectPpqEndpoints,
@@ -454,8 +454,10 @@ export async function renderTrackSubgraphOffline({
         );
         let projectSecondsToBeat: ((elapsedSeconds: number) => number) | undefined;
         if (beatAtSecondsFromAnchor) {
+            // History warmup starts before the requested crop. Sample layers
+            // on that same render clock as clips and modulation.
             projectSecondsToBeat = (elapsedSeconds) =>
-                beatAtSecondsFromAnchor(changes, startBeat, elapsedSeconds, defaultTempo);
+                beatAtSecondsFromAnchor(changes, renderStartBeat, elapsedSeconds, defaultTempo);
         }
         for (const track of renderTracks) {
             const strip = trackStripsById.get(track.id);
@@ -479,7 +481,7 @@ export async function renderTrackSubgraphOffline({
                     includeTargetVca,
                 }),
                 durationSeconds,
-                regionStartBeat: startBeat,
+                regionStartBeat: renderStartBeat,
                 tickSeconds: adjustmentTickSeconds,
                 projectSecondsToBeat,
                 compensationDelaySec: getCompensationDelay(track.id),
