@@ -311,6 +311,58 @@ describe('inactive retarget capability plan', () => {
         expect(plan.activationEligible).toBe(false);
     });
 
+    it.each([
+        { label: 'empty contexts and checks', contexts: [], checks: [], complete: true },
+        { label: 'required context with no binding', contexts: ['Gate'], checks: [], complete: false },
+        {
+            label: 'partially bound contexts',
+            contexts: ['Gate', 'Build'],
+            checks: [{ context: 'Gate', app_id: null }],
+            complete: false,
+        },
+        {
+            label: 'mismatched binding',
+            contexts: ['Gate'],
+            checks: [{ context: 'Build', app_id: 42 }],
+            complete: false,
+        },
+        {
+            label: 'every required context bound',
+            contexts: ['Gate', 'Build'],
+            checks: [
+                { context: 'Build', app_id: 42 },
+                { context: 'Gate', app_id: null },
+            ],
+            complete: true,
+        },
+        {
+            label: 'duplicate valid bindings',
+            contexts: ['Gate'],
+            checks: [
+                { context: 'Gate', app_id: null },
+                { context: 'Gate', app_id: 42 },
+            ],
+            complete: true,
+        },
+    ])('records exact-main check coverage for $label', ({ contexts, checks, complete }) => {
+        const exactMainProtection = {
+            ...requiredRecord(observed().exactMainProtection ?? undefined),
+            required_status_checks: { contexts, checks },
+        };
+        const plan = buildCapabilityPlan({ ...observed(), exactMainProtection }, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(complete);
+        expect(plan.limitations).toEqual(complete ? [] : ['exact main classic protection is incomplete']);
+        expect(plan.activationEligible).toBe(false);
+        expect(requiredRecord(plan.baseline).exactMainProtection).toEqual(exactMainProtection);
+        expect(plan.baselineDigest).toBe(
+            createHash('sha256')
+                .update(canonicalJson(plan.baseline ?? null))
+                .digest('hex')
+        );
+        expect(plan.proposal).toEqual(CAPABILITY_PROPOSAL);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
     const restrictionKinds = ['users', 'teams', 'apps'] as const;
     const malformedRestrictionActors: Array<{ label: string; actor: JsonValue }> = [
         { label: 'null', actor: null },
