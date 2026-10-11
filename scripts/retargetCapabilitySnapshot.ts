@@ -106,16 +106,21 @@ function nullableDatabaseId(value: JsonValue | undefined): boolean {
 }
 function assertClassicChecks(rule: RulesetDocument): void {
     if (rule.requiredStatusChecks === null) {
+        if (Array.isArray(rule.requiredStatusCheckContexts) && rule.requiredStatusCheckContexts.length > 0) {
+            throw new TypeError('classic status checks are incomplete');
+        }
         return;
     }
     if (!Array.isArray(rule.requiredStatusChecks)) {
         throw new TypeError('classic status checks are incomplete');
     }
+    const capturedContexts = new Set<string>();
     for (const value of rule.requiredStatusChecks) {
         const check = object(value, 'classic status check');
         if (typeof check.context !== 'string' || check.app === undefined) {
             throw new Error('classic status check is incomplete');
         }
+        capturedContexts.add(check.context);
         if (check.app !== null) {
             const app = object(check.app, 'classic status app');
             id(app.id ?? null, 'classic status app id');
@@ -123,6 +128,12 @@ function assertClassicChecks(rule: RulesetDocument): void {
                 throw new TypeError('classic status app is incomplete');
             }
         }
+    }
+    if (
+        Array.isArray(rule.requiredStatusCheckContexts) &&
+        rule.requiredStatusCheckContexts.some((context) => !capturedContexts.has(context))
+    ) {
+        throw new TypeError('classic status checks are incomplete');
     }
 }
 function assertClassicRule(rule: RulesetDocument): void {

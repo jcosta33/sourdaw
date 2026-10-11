@@ -712,6 +712,55 @@ describe('bounded capability capture', () => {
     );
 
     it.each([
+        ['missing Build binding', [{ context: 'Gate', app: null }]],
+        ['null binding list', null],
+    ])('refuses required classic contexts with a %s in the production CLI', (_label, requiredStatusChecks) => {
+        const capture = runStableClassicCli(
+            portWithClassicMetadata(CLASSIC_REPOSITORY, {
+                ...CLASSIC,
+                requiredStatusCheckContexts: ['Gate', 'Build'],
+                requiredStatusChecks,
+            })
+        );
+        expect(capture.run).toThrow(/classic status checks are incomplete/u);
+        expect(capture.printed).toEqual([]);
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        [
+            'bound required contexts',
+            ['Gate', 'Build'],
+            [
+                { context: 'Gate', app: null },
+                { context: 'Build', app: null },
+            ],
+            true,
+        ],
+        ['nullable unrequired contexts', null, null, false],
+    ])(
+        'preserves %s through two stable CLI captures',
+        (_label, requiredStatusCheckContexts, requiredStatusChecks, requiresStatusChecks) => {
+            const capture = runStableClassicCli(
+                portWithClassicMetadata(CLASSIC_REPOSITORY, {
+                    ...CLASSIC,
+                    requiredStatusCheckContexts,
+                    requiredStatusChecks,
+                    requiresStatusChecks,
+                })
+            );
+            expect(capture.run()).toBe(0);
+            expect(capture.classicReads()).toBe(2);
+            expect(capture.printed).toHaveLength(1);
+            const { emitted, classic } = emittedClassicBaseline(capture.printed[0]!);
+            expect(classic.requiredStatusCheckContexts).toEqual(requiredStatusCheckContexts);
+            expect(classic.requiredStatusChecks).toEqual(requiredStatusChecks);
+            expect(emitted.activationEligible).toBe(false);
+            expect(capture.disposed).toHaveBeenCalledOnce();
+        }
+    );
+
+    it.each([
         ['missing database ID', { id: 'app-node', slug: 'example' }],
         ['string database ID', { id: 'app-node', databaseId: '42', slug: 'example' }],
         ['fractional database ID', { id: 'app-node', databaseId: 42.5, slug: 'example' }],
