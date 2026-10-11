@@ -21,12 +21,7 @@ export const LEVAIN_SAMPLE_CHUNK_FLOATS = 16_384;
  * written chunk with `sampleChunkWritten`, and the loader posts the next one
  * only while fewer than this many are outstanding, so the worklet's queue
  * holds at most this many chunks and it cannot drain a long run of them between
- * two render quanta. A chunk's handler costs up to about a third of a
- * millisecond (measured on the shipped wasm), so four queued chunks keep the
- * most one gap can hold near 1.2 ms, under half of a 2.67 ms quantum. The load
- * is bound by the acknowledgement's round trip, not by the copy: with a 1 ms
- * hop each way a violin-sized bank took 2.7 s with two in flight and 1.4 s
- * with four (Node, shipped wasm), so four halves the wait for the same
- * per-gap bound.
+ * two render quanta. This bounds queued upload work; its render-thread timing
+ * still depends on the host and must be verified in the browser.
  */
 export const LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT = 4;
