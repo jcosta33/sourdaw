@@ -194,7 +194,10 @@ describe('trusted nightly evidence consumer', () => {
         await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('Unexpected');
         const brokenCrc = Buffer.from(f.bytes);
         const position = brokenCrc.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
-        brokenCrc[position + 16] ^= 1;
+        if (position < 0) {
+            throw new Error('Fixture is missing its ZIP central directory');
+        }
+        brokenCrc.writeUInt8(brokenCrc.readUInt8(position + 16) ^ 1, position + 16);
         f.port.downloadArtifact = async () => brokenCrc;
         f.artifact.size_in_bytes = brokenCrc.length;
         f.artifact.digest = `sha256:${createHash('sha256').update(brokenCrc).digest('hex')}`;
@@ -259,8 +262,12 @@ describe('trusted nightly evidence consumer', () => {
             created_at: '2026-10-11T01:30:00Z',
         });
         await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('CodeQL analysis');
-        f.analyses[0].analysis_key = '.github/workflows/nightly.yml:codeql';
-        f.analyses[0].created_at = '2026-10-11T01:50:00Z';
+        const analysis = f.analyses.at(0);
+        if (analysis === undefined) {
+            throw new Error('Fixture is missing its CodeQL analysis');
+        }
+        analysis.analysis_key = '.github/workflows/nightly.yml:codeql';
+        analysis.created_at = '2026-10-11T01:50:00Z';
         await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('CodeQL analysis');
     });
 });

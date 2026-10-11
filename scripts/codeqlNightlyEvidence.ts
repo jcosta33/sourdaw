@@ -176,10 +176,10 @@ async function observedResult(
 ): Promise<{ failedLegs: string[]; analysisId: number }> {
     const jobs = await port.listJobs(runId, 1);
     const codeql = jobs.map((job) => record(job, 'job')).filter((job) => job.name === 'CodeQL');
-    if (codeql.length !== 1 || codeql[0].conclusion !== 'success') {
+    const codeqlJob = codeql.at(0);
+    if (codeql.length !== 1 || codeqlJob === undefined || codeqlJob.conclusion !== 'success') {
         throw new Error('Missing successful CodeQL job for this run and attempt');
     }
-    const codeqlJob = codeql[0];
     const checkedJobs = jobs.map((job) => record(job, 'job'));
     const failedJobs = checkedJobs.filter((job) => job.conclusion === 'failure');
     const failedLegs = failedJobs.map((job) => job.name);
@@ -204,10 +204,11 @@ async function observedResult(
                 analysis.created_at >= codeqlJob.started_at &&
                 analysis.created_at <= codeqlJob.completed_at
         );
-    if (analyses.length !== 1) {
+    const analysis = analyses.at(0);
+    if (analyses.length !== 1 || analysis === undefined) {
         throw new Error('Missing or ambiguous run-bound CodeQL analysis');
     }
-    const analysisId = integer(analyses[0].id, 'CodeQL analysis ID');
+    const analysisId = integer(analysis.id, 'CodeQL analysis ID');
     return { failedLegs: failedLegs as string[], analysisId };
 }
 
