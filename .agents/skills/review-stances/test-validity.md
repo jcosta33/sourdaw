@@ -26,6 +26,8 @@ The timeout probe must also own the nested Bash process after its direct child e
 
 Await process-group shutdown independently of Node's `close` event: a surviving grandchild can keep the inherited stderr pipe open after the direct child dies. On macOS, a group-zero probe may briefly return `EPERM` after `SIGTERM`; only `ESRCH` establishes that the group is gone. Keep the fixture until that observation, with a bounded `SIGKILL` escalation.
 
+PR #5320's plain spinning grandchild died on the initial group `SIGTERM`, so deleting the independent group-exit wait still passed the stalled-child case. Make the nested published apt fixture ignore `TERM` and close its inherited stderr before spinning: the direct child and Node's `close` can finish while the owned grandchild remains. The unchanged case must fail separately when only the timeout path's group-exit wait is deleted and when group signaling is replaced with direct-PID signaling; its final rescue must kill and await the owned group before removing the fixture.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992

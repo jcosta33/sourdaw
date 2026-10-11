@@ -3705,6 +3705,8 @@ sleep() { printf '%s\\n' "$1" >> "$SLEEP_LOG"; }
 apt-get() {
   if [ "$1" = update ]; then
     if [ "\${STALL_ALSA_CHILD:-false}" = true ]; then
+      trap '' TERM
+      exec 2>/dev/null
       printf '%s\\n' "$$" > "$STALL_ALSA_PID_FILE"
       while :; do :; done
     fi
