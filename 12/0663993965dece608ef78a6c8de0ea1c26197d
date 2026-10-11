@@ -1,0 +1,37 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/midiStrategy.spec.ts
+  s_29d8df116c5b92::t_4ca73b4ffb785a 339-470
+src/modules/AiRuntime/transformers/llmActionStrategies/midiStrategy.ts
+  s_29d8df116c5b92::t_c51db188d52e66 7,65-69,71,76,79-86
+src/modules/AiRuntime/transformers/validateNotesWithinClipWindow.ts
+  s_29d8df116c5b92::t_57e639d5a58934 1-2,5-20,29-33,42-53,59-157,183,187
+src/modules/Arrangement/handlers/clip/handleRestoreClipLoop.ts
+  s_29d8df116c5b92::t_5d6f2f035f5275 28-33
+src/modules/Arrangement/handlers/clip/handleSetClipLoop.ts
+  s_29d8df116c5b92::t_c7007ec67db4b6 16-25,30
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_29d8df116c5b92::t_d3c0733500e600 9-11,26-39
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartLoopOrigin.spec.ts
+  s_29d8df116c5b92::t_9439f51ebfeafa 7,157-235
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_29d8df116c5b92::t_8fa1f328002e24 58-67,88-107,112,114-119
+src/modules/Arrangement/useCases/clipLoop/setClipLoop.ts
+  s_29d8df116c5b92::t_b4b6c122fe63e5 11-17,19,26-28,30,32-35
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_bb9335b3456164 1409-1425,2428-2429,2431,2439-2443,2445
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "120663993965dece608ef78a6c8de0ea1c26197d",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
