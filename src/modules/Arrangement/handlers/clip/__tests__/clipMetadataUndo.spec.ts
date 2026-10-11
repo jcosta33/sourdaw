@@ -396,3 +396,87 @@ describe('clip loop enable undo removes the minted anchor (#5198)', () => {
         ).toEqual({ status: 'written' });
     });
 });
+
+describe('clip loop disable undo keeps a never-anchored clip anchorless (#5198)', () => {
+    /** A legacy looped clip: looping on, but saved before the anchor existed. */
+    function seedLegacyLoopedClip(): void {
+        // The base fixture carries no loopOriginBeat key, so the seed is
+        // anchorless by construction — a pre-#4988 looped clip.
+        const seededClip: Clip = { ...clip, loopEnabled: true };
+        const track = { ...createTrack({ id: 'track-1', name: 'Audio', kind: 'audio' }), clips: [seededClip] };
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+    }
+
+    /** A whole-track restore entry captured while the clip was looped and anchorless. */
+    function capturedAnchorlessLoopedEntry(): TrackClipStateSnapshot {
+        const track = trackStore.value?.tracks[0];
+        const seededClip = track?.clips[0];
+        if (!track || !seededClip) {
+            throw new Error('Expected the seeded anchorless looped clip');
+        }
+        return {
+            trackId: track.id,
+            clips: [structuredClone(seededClip)],
+            trackFields: {
+                kind: track.kind,
+                devices: structuredClone(track.devices),
+                frozen: track.frozen,
+                freezeState: structuredClone(track.freezeState),
+                activeAlternativeId: track.activeAlternativeId,
+                alternatives: structuredClone(track.alternatives),
+            },
+            midiNotesByClipId: {},
+            midiCcByClipId: {},
+            midiPitchBendByClipId: {},
+            clipSatellites: [],
+            clipAutomationLanes: [],
+        };
+    }
+
+    beforeEach(seedLegacyLoopedClip);
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    });
+
+    it('restores the exact pre-disable anchor state and lets an older restore entry execute', () => {
+        // An older whole-track restore captured this looped clip anchorless,
+        // before the anchor field existed.
+        const olderEntry = capturedAnchorlessLoopedEntry();
+
+        const action = { type: 'setClipLoop', payload: { clipId: clip.id, enabled: false } } as const;
+        const description = handleSetClipLoop.describe(action);
+        expect(handleSetClipLoop.execute(action)).toEqual({ status: 'written' });
+        // The clip was never anchored, so the disable mints nothing either.
+        expect(Object.hasOwn(trackStore.value?.tracks[0]?.clips[0] ?? {}, 'loopOriginBeat')).toBe(false);
+
+        if (description.inverseAction?.type !== 'restoreClipLoop') {
+            throw new Error('Expected exact loop inverse action');
+        }
+        // The inverse records the pre-disable anchor state explicitly: the
+        // clip carried none. An anchorless entry here would decode as legacy
+        // and the undo would replay the enable's restamp, minting an anchor
+        // this clip never carried.
+        expect(description.inverseAction.payload.replacement).toEqual({
+            present: true,
+            enabled: true,
+            loopOriginBeat: null,
+        });
+
+        expect(handleRestoreClipLoop.execute(description.inverseAction)).toEqual({ status: 'written' });
+        const undone = trackStore.value?.tracks[0]?.clips[0];
+        expect(undone?.loopEnabled).toBe(true);
+        // The undo minted no anchor.
+        expect(Object.hasOwn(undone ?? {}, 'loopOriginBeat')).toBe(false);
+
+        // The older entry's anchorless snapshot matches live state again, so
+        // it executes instead of returning conflict and leaving a conflicted
+        // entry that bricks the user's next undo.
+        expect(
+            handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: { expected: [olderEntry], replacement: [structuredClone(olderEntry)] },
+            })
+        ).toEqual({ status: 'written' });
+    });
+});
