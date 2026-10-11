@@ -213,11 +213,21 @@ caller files only while the bound base name and merge-base context match; a
 populated legacy bundle without base identity cannot be reused. Unrelated
 movement of the base tip is allowed when that context is unchanged.
 
-The caller writes `stances.json` into that bundle in two phases: before
-dispatch it holds the derived stance set, one entry per stance naming the
-failure mode that admits it; as each draw reports, its baseline-probe result —
-and its exhaustion when that draw fell back to an authoring model — is
-recorded into the same file. It sits alongside the
+The caller writes `stances.json` into that bundle in two phases. Before dispatch,
+use `format: "stances-admission-v1"`, the risk plan's `pr`/`headSha`/`baseSha`, and
+at least three unique task-risk entries in `stances`, each with `stance` and
+`admittedBy` naming the failure mode. As each draw reports, add it to that
+entry's `draws`: `{ reviewerModel, baselineProbe: { spec, mutation, observed,
+result } }`, plus `exhaustion` when the corresponding dossier draw has it.
+The probe strings are bounded, trimmed, single-line and evidence-safe.
+`result` is `mutation-detected`, `still-green`, or `not-run`; only
+`mutation-detected` admits a fresh reviewer POST. Every completed dossier
+`(stance, reviewerModel)` pair needs exactly one matching probe, with no extra
+pair. A `native-security`, `realtime-audio`, or `undo` plan needs at least one
+completed `strongest` dossier draw on any recorded stance. The gate checks
+caller evidence structure, while the orchestrator verifies its truth and
+independence. Published exact replay and recovered binding keep their prior
+caller-record rules. The file sits alongside the
 later `dossier.json`, `review.json`, `discarded.json`, and `acceptance.json`.
 
 `risk-plan.json` records `format: 'risk-plan-v1'`, the `pr`/`headSha`/`baseSha`
