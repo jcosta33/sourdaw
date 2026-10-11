@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -109,7 +109,19 @@ describe('planned browser matrix', () => {
         const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
         const recorded = [...readSpecDurations().keys()].sort().slice(0, 30);
         const inventory = [SMOKE_SPEC, ...recorded];
-        symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
+        const playwrightRoot = realpathSync(resolve('node_modules/playwright'));
+        mkdirSync(join(root, 'node_modules/@playwright'), { recursive: true });
+        for (const [source, destination] of [
+            [realpathSync(resolve('node_modules/@playwright/test')), 'node_modules/@playwright/test'],
+            [playwrightRoot, 'node_modules/playwright'],
+            [realpathSync(resolve(playwrightRoot, '../playwright-core')), 'node_modules/playwright-core'],
+        ]) {
+            cpSync(source, join(root, destination), { recursive: true, dereference: true });
+        }
+        mkdirSync(join(root, 'node_modules/.bin'), { recursive: true });
+        const playwrightBin = join(root, 'node_modules/.bin/playwright');
+        writeFileSync(playwrightBin, "#!/usr/bin/env node\nrequire('../playwright/cli.js');\n");
+        chmodSync(playwrightBin, 0o755);
         writeFileSync(join(root, '.gitignore'), 'node_modules\n');
         writeFileSync(join(root, 'playwright.config.mjs'), "export default { testDir: './tests/e2e' };\n");
         for (const path of inventory) {
