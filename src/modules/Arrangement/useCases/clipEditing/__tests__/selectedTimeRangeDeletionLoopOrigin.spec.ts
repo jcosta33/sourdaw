@@ -26,11 +26,14 @@ import { executeSelectedTimeRangeDeletion } from '../executeSelectedTimeRangeDel
  * every surviving note of an excised head (the #5198 review draw).
  *
  * The audio twins follow the same per-basis law on the other side: an audio
- * fragment's `audioOffsetBeats` stays in source coordinates advanced by the
- * cut, so it carries the source anchor — the offset advance and the
- * anchor-advance growth cancel, the region the audio readers recover,
- * `audioOffsetBeats - (startBeat - loopOriginBeat)`, stays the source's own,
- * and the entry lands at the cut phase.
+ * fragment's `audioOffsetBeats` stays in source coordinates, advanced by the
+ * stretched media delta the cut consumed, so its anchor shifts by
+ * `timelineDelta - contentDelta` — zero at stretch 1 — and the fragment's
+ * advance grows by exactly the offset's growth: the region the audio readers
+ * recover, `audioOffsetBeats - (startBeat - loopOriginBeat)`, stays the
+ * source's own at any ratio, and the entry lands at the cut phase. Carried
+ * unshifted, a stretched cut displaces the region by
+ * `timelineDelta * (stretch - 1)` source beats — the stretched pins below.
  *
  * Each case drives the real transaction (real MIDI split, real arrangement
  * write) and reads the survivor back through `projectMidiClipPlayback`.
@@ -311,6 +314,52 @@ describe('selected-range excise keeps looped survivors sounding (#5198)', () => 
         expect(trimmed.audioOffsetBeats).toBe(5);
         expect(trimmed.loopOriginBeat).toBe(0);
         expect(regionOf(trimmed)).toEqual({ region: 0, entry: 1 });
+    });
+
+    it('a stretched spanning excise shifts the fragment anchor by the stretch residue', () => {
+        // Audio clip [0,16) anchored at 0, region [0,4), ratio 2. Excise
+        // [4,8): the fragment's offset advances by the stretched media delta,
+        // 8 × 2 = 16 — the content the runtimes actually played over the cut —
+        // with its head at 8. The anchor therefore shifts by
+        // 8 − 16 = −8: advance 8 − (−8) = 16 recovers region 16 − 16 = 0 at
+        // entry phase 0, the source's own. Carried unshifted, the advance
+        // would grow by the raw span only (8) and the region would read 8 —
+        // displaced by exactly 8 × (2 − 1) source beats.
+        seedAudioLoopedClip({ stretchMode: 'timestretch', stretchRatio: 2 });
+
+        const result = executeSelectedTimeRangeDeletion({ startBeat: 4, endBeat: 8, trackIds: ['t-keys'] });
+        expect(result.status).toBe('applied');
+
+        const fragment = allClips().find((clip) => clip.id.startsWith('clip-dtr-'));
+        if (!fragment) {
+            throw new Error('Expected the excise right fragment in the track store');
+        }
+        expect(fragment.startBeat).toBe(8);
+        expect(fragment.audioOffsetBeats).toBe(16);
+        expect(fragment.loopOriginBeat).toBe(-8);
+        expect(regionOf(fragment)).toEqual({ region: 0, entry: 0 });
+    });
+
+    it('a stretched head excision shifts the trimmed anchor by the stretch residue', () => {
+        // Audio clip [0,16) anchored at 0, region [0,4), ratio 2. Excise
+        // [0,6): the clip keeps its id, its head moves to 6, and its offset
+        // advances by the stretched media delta 6 × 2 = 12. The anchor shifts
+        // by 6 − 12 = −6: advance 6 − (−6) = 12 recovers region 12 − 12 = 0
+        // at entry phase 12 mod 4 = 0. Carried unshifted, the region would
+        // read 12 − 6 = 6 — material past the region end that never sounds.
+        seedAudioLoopedClip({ stretchMode: 'timestretch', stretchRatio: 2 });
+
+        const result = executeSelectedTimeRangeDeletion({ startBeat: 0, endBeat: 6, trackIds: ['t-keys'] });
+        expect(result.status).toBe('applied');
+
+        const trimmed = allClips().find((clip) => clip.id === 'c-loop');
+        if (!trimmed) {
+            throw new Error('Expected the head-excised clip to keep its id');
+        }
+        expect(trimmed.startBeat).toBe(6);
+        expect(trimmed.audioOffsetBeats).toBe(12);
+        expect(trimmed.loopOriginBeat).toBe(-6);
+        expect(regionOf(trimmed)).toEqual({ region: 0, entry: 0 });
     });
 
     it('an unanchored clip writes no anchor key on its fragment', () => {

@@ -653,14 +653,24 @@ function planTrack(
             // has no meaning in, whose carried advance would open the window
             // behind the head and silence the survivors — so it re-stamps to
             // its own start, key absent for an unanchored source. The audio
-            // fragment keeps source-coordinate offsets advanced by the cut,
-            // so it carries the source anchor: the offset advance and the
-            // anchor-advance growth cancel, the region
-            // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the
-            // source's own, and the entry lands at the cut phase. Carrying is
-            // writing nothing — the inverse plan's snapshot is compared
-            // structurally against the normalized live state.
-            const rightLoopOriginEntry = clip.type === 'midi' ? restampLoopOriginEntry(clip, operation.endBeat) : {};
+            // fragment keeps source-coordinate offsets, advanced by the
+            // stretched media delta the cut consumed (`contentBeatsConsumed`),
+            // so its anchor shifts by `timelineDelta - contentDelta` — zero at
+            // stretch 1, the same law `prepareClipSplit`'s
+            // `fragmentLoopOriginEntry` applies to the identical geometry: the
+            // fragment's advance grows by exactly the offset's growth, the
+            // region `audioOffsetBeats - (startBeat - loopOriginBeat)` stays
+            // the source's own at any ratio, and the entry lands at the cut
+            // phase. Carried unshifted, a stretched cut displaces the region
+            // by `timelineDelta * (stretch - 1)` source beats. The inverse
+            // plan's snapshot is compared structurally against the normalized
+            // live state, so writing the shifted key is safe.
+            const timelineDelta = operation.endBeat - clip.startBeat;
+            const contentDelta = contentBeatsConsumed(clip, timelineDelta);
+            const rightLoopOriginEntry =
+                clip.type === 'midi'
+                    ? restampLoopOriginEntry(clip, operation.endBeat)
+                    : shiftLoopOriginEntry(clip, timelineDelta - contentDelta);
             const rightClip: Clip = {
                 ...clip,
                 id: identity.targetClipId,
@@ -669,8 +679,7 @@ function planTrack(
                 // The fragment plays on where the cut left off: the consumed
                 // span is timeline beats times the ratio, the same conversion
                 // the ordinary split and the warp cut below use.
-                audioOffsetBeats:
-                    (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
+                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
                 midiOffsetBeats: 0,
                 ...rightLoopOriginEntry,
             };
@@ -709,22 +718,31 @@ function planTrack(
             // (#4988). The MIDI side keeps its notes and content offset —
             // a whole-clip relocation by (endBeat − startBeat) — so the
             // anchor rides that delta. The audio side's offset advances by
-            // the excised span, so it carries the source anchor instead:
-            // the offset advance and the anchor-advance growth cancel, the
-            // region `audioOffsetBeats - (startBeat - loopOriginBeat)`
-            // stays the source's own, and the entry lands at the cut phase
-            // — shifting here slid the region right by the span (#5198).
-            // Unanchored clips keep the key absent.
+            // the stretched media delta the excised span consumed
+            // (`contentBeatsConsumed`), so its anchor shifts by
+            // `timelineDelta - contentDelta` — zero at stretch 1, the same
+            // law `prepareClipSplit`'s `fragmentLoopOriginEntry` applies to
+            // the identical geometry — and the offset growth and the
+            // anchor-advance growth cancel at any ratio: the region
+            // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the
+            // source's own and the entry lands at the cut phase. Carried
+            // unshifted, a stretched trim displaces the region by
+            // `timelineDelta * (stretch - 1)` source beats; shifting by the
+            // raw span alone slid it under the unstretched regression
+            // (#5198). Unanchored clips keep the key absent.
+            const timelineDelta = operation.endBeat - clip.startBeat;
+            const contentDelta = contentBeatsConsumed(clip, timelineDelta);
             const trimLoopOriginEntry =
-                clip.type === 'midi' ? shiftLoopOriginEntry(clip, operation.endBeat - clip.startBeat) : {};
+                clip.type === 'midi'
+                    ? shiftLoopOriginEntry(clip, timelineDelta)
+                    : shiftLoopOriginEntry(clip, timelineDelta - contentDelta);
             finalClips.push({
                 ...clip,
                 startBeat: operation.endBeat,
                 // Same ratio conversion as the spanning fragment above: the
                 // head inside the deleted range is content the clip no longer
                 // plays.
-                audioOffsetBeats:
-                    (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
+                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
                 ...trimLoopOriginEntry,
             });
             changed = true;

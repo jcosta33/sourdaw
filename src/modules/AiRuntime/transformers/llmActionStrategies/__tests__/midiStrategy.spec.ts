@@ -208,4 +208,125 @@ describe('midiStrategy', () => {
             })
         ).toEqual({ type: 'setAllVelocities', payload: { clipId: 'clip-midi-a', velocity: 100 } });
     });
+
+    it('addNotes validates against the anchored loop window of a trimmed looped clip', () => {
+        // A clip looped at 0 (region media [0, 4)) and start-trimmed to 3:
+        // the trim advanced the offset to 3, so the scheduler's window in
+        // media coordinates is [offset − advance, …) = [0, 4) — pass one
+        // enters at phase 3 and wraps to the region head. The pre-anchor
+        // window `[offset, offset + min(4, 5))` = [3, 7) admitted the
+        // trimmed-away material the scheduler silently drops and refused the
+        // wrapped head it plays.
+        const loopedContext: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                {
+                    ...projectContext.tracks[0]!,
+                    clips: [
+                        {
+                            id: 'clip-loop-trimmed',
+                            name: 'Looped',
+                            type: 'midi',
+                            startBeat: 3,
+                            endBeat: 8,
+                            locked: false,
+                            muted: false,
+                            gain: 1,
+                            loopEnabled: true,
+                            loopLength: 4,
+                            loopOriginBeat: 0,
+                            midiOffsetBeats: 3,
+                            noteCount: 1,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        // Media 4.5 sits inside the old window but outside the region: the
+        // scheduler would drop it, so validation rejects it.
+        expect(
+            bridgeMidiToolCall({
+                call: {
+                    name: 'addNotes',
+                    arguments: { clipId: 'clip-loop-trimmed', notes: [{ pitch: 60, startBeat: 4.5, duration: 1 }] },
+                },
+                context: loopedContext,
+                index: 0,
+            })
+        ).toMatchObject({ name: 'addNotes', reason: expect.stringContaining('falls outside') });
+
+        // Media 0.5 is the wrapped region head the scheduler plays below the
+        // old floor: validation admits it.
+        expect(
+            bridgeMidiToolCall({
+                call: {
+                    name: 'addNotes',
+                    arguments: { clipId: 'clip-loop-trimmed', notes: [{ pitch: 62, startBeat: 0.5, duration: 1 }] },
+                },
+                context: loopedContext,
+                index: 0,
+            })
+        ).toEqual({
+            type: 'addNotes',
+            payload: { clipId: 'clip-loop-trimmed', notes: [{ pitch: 62, startBeat: 0.5, duration: 1 }] },
+        });
+    });
+
+    it('addNotes keeps the pre-anchor window for an unanchored looped clip', () => {
+        // Loop on but never anchored: the advance is zero and the window
+        // stays `[offset, offset + min(loop, span))` = [0, 4) — the exact
+        // pre-anchor behavior.
+        const unanchoredContext: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                {
+                    ...projectContext.tracks[0]!,
+                    clips: [
+                        {
+                            id: 'clip-loop-unanchored',
+                            name: 'Looped',
+                            type: 'midi',
+                            startBeat: 0,
+                            endBeat: 8,
+                            locked: false,
+                            muted: false,
+                            gain: 1,
+                            loopEnabled: true,
+                            loopLength: 4,
+                            midiOffsetBeats: 0,
+                            noteCount: 1,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        expect(
+            bridgeMidiToolCall({
+                call: {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: 'clip-loop-unanchored',
+                        notes: [{ pitch: 60, startBeat: 3.5, duration: 0.25 }],
+                    },
+                },
+                context: unanchoredContext,
+                index: 0,
+            })
+        ).toEqual({
+            type: 'addNotes',
+            payload: { clipId: 'clip-loop-unanchored', notes: [{ pitch: 60, startBeat: 3.5, duration: 0.25 }] },
+        });
+        expect(
+            bridgeMidiToolCall({
+                call: {
+                    name: 'addNotes',
+                    arguments: { clipId: 'clip-loop-unanchored', notes: [{ pitch: 60, startBeat: 4.5, duration: 1 }] },
+                },
+                context: unanchoredContext,
+                index: 0,
+            })
+        ).toMatchObject({ name: 'addNotes', reason: expect.stringContaining('falls outside') });
+    });
 });

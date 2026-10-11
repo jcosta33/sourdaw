@@ -404,4 +404,98 @@ describe('crossfadeClips', () => {
         expect(clipB).toMatchObject({ startBeat: 3.5, fadeInBeats: 1.0, audioOffsetBeats: 1.5 });
         expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 1.0 });
     });
+
+    it('shifts a looped stretched clip B anchor so the crossfade keeps the loop region', () => {
+        // The finding's figures: clipA [0,8), clipB [8,16) looped at 8 with
+        // offset 4 — region [4,8), advance 0 — and ratio 2. A 1-beat
+        // crossfade retreats the start by the raw −0.5 and the offset by the
+        // stretched −1: carried unshifted, the anchor 8 derives advance −0.5
+        // and the region reads 3.5 at entry phase 3.5, displaced by
+        // −0.5 × (2 − 1) source beats. The anchor therefore shifts by
+        // clipBDelta − contentDelta = +0.5 to 8.5: advance −1 recovers the
+        // region 3 − (−1) = 4, and the head's entry phase −1 mod 4 = 3 is the
+        // region tail the pre-roll plays cyclically before the seam — at the
+        // overlap beat 8 the read is 3 + 0.5 × 2 = 4, the source's own head
+        // entry, unbroken under the fade.
+        const clips = [
+            makeClip('a', 0, 8),
+            makeClip('b', 8, 16, {
+                stretchMode: 'timestretch',
+                stretchRatio: 2.0,
+                audioOffsetBeats: 4,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 8,
+            }),
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        if (!clipB) {
+            throw new Error('expected clip B in the mapper result');
+        }
+        expect(clipB.startBeat).toBe(7.5);
+        expect(clipB.audioOffsetBeats).toBe(3);
+        expect(clipB.loopOriginBeat).toBe(8.5);
+        const advance = clipB.startBeat - (clipB.loopOriginBeat ?? clipB.startBeat);
+        expect((clipB.audioOffsetBeats ?? 0) - advance).toBe(4);
+        // The seam continuity: at the old boundary beat 8 the stretched read
+        // is the source's own entry into the region.
+        expect((clipB.audioOffsetBeats ?? 0) + (8 - clipB.startBeat) * 2.0).toBe(4);
+    });
+
+    it('keeps an unstretched looped clip B anchor and region exactly', () => {
+        // Stretch off ignores the dormant ratio: contentDelta equals
+        // clipBDelta, the anchor shift is zero, and the carried anchor keeps
+        // the advance at −0.25 so the region stays the source's own.
+        const clips = [
+            makeClip('a', 0, 8),
+            makeClip('b', 8, 16, {
+                audioOffsetBeats: 4,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 8,
+            }),
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        if (!clipB) {
+            throw new Error('expected clip B in the mapper result');
+        }
+        expect(clipB.startBeat).toBe(7.5);
+        expect(clipB.audioOffsetBeats).toBe(3.5);
+        expect(clipB.loopOriginBeat).toBe(8);
+        const advance = clipB.startBeat - (clipB.loopOriginBeat ?? clipB.startBeat);
+        expect((clipB.audioOffsetBeats ?? 0) - advance).toBe(4);
+    });
+
+    it('leaves a looped MIDI clip B anchor untouched as its offset retreats by the raw delta', () => {
+        // The MIDI offset retreats by the raw clipBDelta, so the carried
+        // anchor derives the same advance as before the crossfade: shifting
+        // it would slide the region. The anchor rides unchanged.
+        const clips = [
+            makeClip('a', 0, 8, { type: 'midi' }),
+            makeClip('b', 8, 16, {
+                type: 'midi',
+                midiOffsetBeats: 4,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 8,
+            }),
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        expect(clipB).toMatchObject({ startBeat: 7.5, midiOffsetBeats: 3.5, loopOriginBeat: 8 });
+    });
 });

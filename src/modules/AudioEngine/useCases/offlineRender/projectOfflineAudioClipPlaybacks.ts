@@ -230,6 +230,10 @@ export function projectOfflineAudioClipPlaybacks(
         const isFirstIter = iter === 0;
         const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
         const passSegments = buildPassSegments(remainingBeats);
+        // Where this pass's playbacks begin in the array: the fade-out is
+        // stamped on the pass's last emitted playback after the segment loop,
+        // so the index range must be known before it runs.
+        const passFirstPlaybackIndex = playbacks.length;
 
         // #2865 — the envelope curve's breakpoints over the pass's beat span,
         // read once per pass: every segment's playback carries the same
@@ -301,35 +305,25 @@ export function projectOfflineAudioClipPlaybacks(
 
             // The fade in lives on the pass's first *emitted* playback — the
             // first segment that actually sounds — and the fade out on the
-            // last: a later loop iteration, or one entered part-way by the
-            // region trim, continues an unbroken sound and must not dip at
-            // the seam. A head segment whose read starts at or past the
-            // buffer's end emits nothing, so the pass's first sound is its
-            // wrapped tail and the drawn fade rides it — the same law the
-            // live scheduler holds, anchoring the fade at the pass's first
-            // sound (`startedSegments[0]`). Within a fade that is present, a
-            // zero-length user fade leaves
-            // `userEndSec`/`userStartSec` absent, which the scheduler reads as
-            // the anti-click micro-fade.
+            // pass's last *emitted* playback, stamped after the segment loop:
+            // a later loop iteration, or one entered part-way by the region
+            // trim, continues an unbroken sound and must not dip at the seam.
+            // A head segment whose read starts at or past the buffer's end —
+            // or a wrapped tail whose pre-roll consumes its span, or whose
+            // buffer end kills it — emits nothing, so both fades ride the
+            // playbacks the pass actually emitted, never a segment index. The
+            // live scheduler holds the same law (`startedSegments[0]` and
+            // `startedSegments[startedSegments.length - 1]`, the pass's first
+            // and last sounds). Within a fade that is present, a zero-length
+            // user fade leaves `userEndSec`/`userStartSec` absent, which the
+            // scheduler reads as the anti-click micro-fade.
             const isFirstEmittedPlayback = isFirstIter && !emittedPlayback;
-            const isTailSegment = segmentIndex === passSegments.length - 1;
             const fadeIn =
                 isFirstEmittedPlayback && trimBeforeSec === 0
                     ? {
                           userEndSec:
                               clip.fadeInBeats > 0
                                   ? projectBeatToSeconds(clip.startBeat + clip.fadeInBeats) +
-                                    compensationDelay -
-                                    regionStartSec
-                                  : undefined,
-                      }
-                    : undefined;
-            const fadeOut =
-                isLastIter && isTailSegment
-                    ? {
-                          userStartSec:
-                              clip.fadeOutBeats > 0
-                                  ? projectBeatToSeconds(clip.endBeat - clip.fadeOutBeats) +
                                     compensationDelay -
                                     regionStartSec
                                   : undefined,
@@ -344,10 +338,33 @@ export function projectOfflineAudioClipPlaybacks(
                 clipGainValue,
                 ...(envelope ? { envelope } : {}),
                 ...(fadeIn ? { fadeIn } : {}),
-                ...(fadeOut ? { fadeOut } : {}),
                 rawIterEndSec: rawSegmentEndSec,
             });
             emittedPlayback = true;
+        }
+
+        // The fade out lands on the last playback the pass actually emitted.
+        // Keying it on the tail segment's index instead ships the pass with
+        // no end fade whenever a wrapped tail dies before it emits — its
+        // pre-roll consuming the span, or the buffer ending first — leaving
+        // the sound the pass emitted with no drawn close, where the live
+        // seam ramps the shared fade node to zero
+        // (`startedSegments[startedSegments.length - 1]`).
+        if (isLastIter && playbacks.length > passFirstPlaybackIndex) {
+            const lastEmitted = playbacks[playbacks.length - 1];
+            if (lastEmitted) {
+                playbacks[playbacks.length - 1] = {
+                    ...lastEmitted,
+                    fadeOut: {
+                        userStartSec:
+                            clip.fadeOutBeats > 0
+                                ? projectBeatToSeconds(clip.endBeat - clip.fadeOutBeats) +
+                                  compensationDelay -
+                                  regionStartSec
+                                : undefined,
+                    },
+                };
+            }
         }
     }
     return playbacks;

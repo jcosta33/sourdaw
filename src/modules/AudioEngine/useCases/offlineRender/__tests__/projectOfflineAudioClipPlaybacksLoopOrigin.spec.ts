@@ -223,6 +223,79 @@ describe('projectOfflineAudioClipPlaybacks fade parity on a dead head segment', 
     });
 });
 
+describe('projectOfflineAudioClipPlaybacks fade parity on a dead tail segment', () => {
+    it('carries the drawn fade out on the last playback the pass emits when the wrapped tail is dead', () => {
+        // The tail twin of the dead-head case below: loop 4, start 3/end 7,
+        // offset −0.5, anchor 0 — advance 3, entry 3, region [−3.5, 0.5) —
+        // with a 4 s buffer and fadeOutBeats 1. The pass's wrapped tail
+        // segment reads from source beat −3.5, so its 1.75 s pre-roll
+        // consumes its entire span and `playDuration` lands at zero: the
+        // tail emits nothing. Keyed on the tail's index, the pass shipped
+        // with no end fade at all while the live seam ramped the shared fade
+        // node to zero on `startedSegments[startedSegments.length - 1]` —
+        // the head segment, the last sound the pass actually emitted. The
+        // fade out belongs there.
+        const playbacks = projectOfflineAudioClipPlaybacks({
+            clip: {
+                ...CLIP_BASE,
+                startBeat: 3,
+                endBeat: 7,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                audioOffsetBeats: -0.5,
+                fadeOutBeats: 1,
+            },
+            bufferDurationSeconds: 4,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 40,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => beat * 0.5,
+            resolveTempoAtBeat: () => 120,
+        });
+
+        // The wrapped tail emitted nothing: the head segment is the pass's
+        // only playback, and it carries the pass's fade out.
+        expect(playbacks).toHaveLength(1);
+        expect(playbacks[0]).toMatchObject({
+            startSec: 1.75,
+            bufferOffsetSec: 0,
+            playDuration: 0.25,
+            fadeOut: { userStartSec: 3 },
+        });
+    });
+
+    it('keeps the fade out on the tail segment when the tail actually sounds', () => {
+        // Tail-alive control for the same shape: offset 1 (region [−2, 2))
+        // shrinks the wrapped tail's pre-roll to 1 s, inside its 1.5 s span,
+        // so the pass emits head then tail and the fade out sits on the tail
+        // — the last playback the pass emits, exactly where the index-keyed
+        // stamp put it before.
+        const playbacks = projectOfflineAudioClipPlaybacks({
+            clip: {
+                ...CLIP_BASE,
+                startBeat: 3,
+                endBeat: 7,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                audioOffsetBeats: 1,
+                fadeOutBeats: 1,
+            },
+            bufferDurationSeconds: 4,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 40,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => beat * 0.5,
+            resolveTempoAtBeat: () => 120,
+        });
+
+        expect(playbacks).toHaveLength(2);
+        expect(playbacks[0]!.fadeOut).toBeUndefined();
+        expect(playbacks[1]).toMatchObject({ fadeOut: { userStartSec: 3 } });
+    });
+});
+
 describe('projectOfflineAudioClipPlaybacks split continuity on a stretched looped clip', () => {
     // The split write law (#4988) on the audio arm, measured at the projector:
     // the fragment's offset advances by the media delta the runtimes played

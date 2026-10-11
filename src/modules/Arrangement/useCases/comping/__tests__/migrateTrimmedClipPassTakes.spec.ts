@@ -145,9 +145,13 @@ describe('migrateTrimmedClipPassTakes', () => {
         // from its record origin (2) to the take's span start (0): offset 2,
         // media origin 0 — byte-identical to the trimmed twin above. Equality
         // must resolve to the trim, because that figure is exactly what the
-        // clamping cases exist to repair; the false positive is bounded to a
-        // slip of exactly that distance. Pass 1, whose span starts at the clip
-        // itself, never qualified.
+        // clamping cases exist to repair; the predicate's false positive is
+        // any slip long enough to land the media origin at or before the
+        // take's span start, not just this equality — a slip past it is
+        // indistinguishable from a trim of a recording begun mid-loop, and
+        // landing exactly on it is byte-identical to a trim, so geometry
+        // splits neither and the repair side wins. Pass 1, whose span starts
+        // at the clip itself, never qualified.
         seedTracks([ClipDummy.create({ id: 'clip-1', startBeat: 2, endBeat: 8, audioOffsetBeats: 2 })]);
         seedLanes([passTake('pass-1', 2, 8, 0), passTake('pass-2', 0, 4, 2)]);
 

@@ -1,3 +1,4 @@
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
@@ -64,14 +65,18 @@ function findWritableMidiClip(context: ProjectContext, clipId: unknown) {
 
 /**
  * The span of clip content that actually sounds, in the clip's own media coordinates. The scheduler
- * reads notes at `note.startBeat - midiOffsetBeats` and drops everything at or past the clip's loop
- * length, so the window starts at the offset and runs for that length — which `projectClipLoopExpansion`
- * reports as the clip's own duration whenever the clip does not loop.
+ * reads notes at `note.startBeat - midiOffsetBeats` and admits them against the anchored loop
+ * window — the half-open region the clip was looped with, carried backwards by the trim advance in
+ * offset-relative coordinates (`isBeatInClipLoopWindow`, #4988) — so a start trim opens the window
+ * `advance` beats below the offset: notes in the trimmed-away head range sit outside it and are
+ * dropped, and the wrapped region head below the pre-anchor floor is played. This window follows
+ * that law; the span cap stays the pre-anchor one, because a clip shorter than its own loop never
+ * plays a whole iteration: every scheduler truncates one at the clip end, so the content the first
+ * pass sounds is whichever of the two is shorter. A four-beat clip looping every sixty-four beats
+ * would otherwise accept a note at beat sixty that no route ever reaches.
  *
- * The loop length alone is not the bound, because a clip shorter than its own loop never plays a
- * whole iteration: every scheduler truncates one at the clip end, so the content that sounds is
- * whichever of the two is shorter. A four-beat clip looping every sixty-four beats would otherwise
- * accept a note at beat sixty that no route ever reaches.
+ * An absent anchor — or a stale one with the loop off, the anchor being inert there — advances zero,
+ * which reproduces the pre-anchor window `[offset, offset + min(loop, span))` exactly.
  */
 function clipContentWindow(clip: ProjectContextClip): ClipContentWindow | undefined {
     const startBeat = clip.midiOffsetBeats ?? 0;
@@ -80,13 +85,18 @@ function clipContentWindow(clip: ProjectContextClip): ClipContentWindow | undefi
         configuredLoopLengthBeats: clip.loopLength,
         loopEnabled: clip.loopEnabled ?? false,
     });
-    const endBeat = startBeat + Math.min(loopLengthBeats, clip.endBeat - clip.startBeat);
+    const advance = resolveClipLoopOriginAdvance({
+        startBeat: clip.startBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const endBeat = startBeat - advance + Math.min(loopLengthBeats, clip.endBeat - clip.startBeat);
     // A non-finite bound makes every comparison against it false, so an unguarded window would
     // admit any note at all rather than refusing the clip that cannot state where its content is.
     if (!Number.isFinite(startBeat) || !Number.isFinite(endBeat)) {
         return undefined;
     }
-    return { endBeat, startBeat };
+    return { endBeat, startBeat: startBeat - advance };
 }
 
 function isIntegerInRange(value: unknown, minimum: number, maximum: number): value is number {
