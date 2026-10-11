@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Keep integration context verification with the authenticated shadow measurement entry point. */
 import { strict as assert } from 'node:assert';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -28,7 +29,13 @@ import {
     verifyIntegrationCheckout,
     type InventoryRow,
 } from './e2eSelectionShadowIntegration.ts';
-import { parseChangedPaths, selectValidationPlan, SMOKE_SPEC } from './prValidationScope.ts';
+import {
+    parseChangedPaths,
+    resolveCheckoutSelection,
+    selectValidationPlan,
+    SMOKE_SPEC,
+    type ValidationPlan,
+} from './prValidationScope.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 type ChangedRecord = {
@@ -59,6 +66,8 @@ type ShadowInput = {
     candidateHead: string | null;
     durationText: string;
     livePlan: unknown;
+    expectedPlan?: ValidationPlan;
+    integrationFirstParent?: string;
 };
 
 const CANDIDATE_PATH = certificate.candidatePath;
@@ -270,11 +279,13 @@ function validateMeasurementInput(input: ShadowInput): {
     assert.equal(input.sourceModes[validationPath], '100644', invalidValidation);
     assert.match(String(input.sourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
     assert.match(String(input.integrationSourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
-    const expectedPlan = selectValidationPlan(
-        paths,
-        inventory.map((row) => row.path),
-        durations
-    );
+    const expectedPlan =
+        input.expectedPlan ??
+        selectValidationPlan(
+            paths,
+            inventory.map((row) => row.path),
+            durations
+        );
     if (canonical(expectedPlan) !== canonical(input.livePlan)) {
         throw new Error('Authoritative scope artifact disagrees with the current selector or inventory');
     }
@@ -451,6 +462,7 @@ export function measureShadow(input: ShadowInput) {
         base: input.base,
         head: input.head,
         integrationSha: input.integrationSha,
+        integrationFirstParent: input.integrationFirstParent ?? null,
         controlSha: input.base,
         rawDiffSha256: sha256(input.rawDiff),
         certificateSha256: input.certificateSha256,
@@ -471,14 +483,14 @@ export function measureShadow(input: ShadowInput) {
     };
 }
 
-function runSupportedShadow(input: {
+async function runSupportedShadow(input: {
     root: string;
     integrationRoot: string;
     scopePath: string;
     base: string;
     head: string;
     integrationSha: string;
-}): void {
+}): Promise<void> {
     const { root, integrationRoot, scopePath, base, head, integrationSha } = input;
     const rawDiff = git(['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--']);
     const parsed = parseChangedRecords(rawDiff.toString('utf8'));
@@ -509,6 +521,15 @@ function runSupportedShadow(input: {
         );
     }
     const plan: unknown = JSON.parse(readFileSync(scopePath, 'utf8'));
+    const integrationInventory = listIntegrationInventory(integrationRoot, integrationSha);
+    const durationText = git(['show', `${head}:scripts/e2eSpecDurations.json`]).toString('utf8');
+    const { plan: expectedPlan, firstParent } = await resolveCheckoutSelection(
+        integrationRoot,
+        base,
+        head,
+        integrationInventory.map((row) => row.path),
+        parseBoundDurations({ sourceModes, sourceHashes, integrationSourceHashes, durationText })
+    );
     const report = measureShadow({
         base,
         head,
@@ -517,15 +538,17 @@ function runSupportedShadow(input: {
         certificateSha256,
         records,
         inventory: listInventory(root, head),
-        integrationInventory: listIntegrationInventory(integrationRoot, integrationSha),
+        integrationInventory,
         sourceHashes,
         integrationSourceHashes,
         sourceModes,
         healthRequiredPolicySha256,
         candidateBase,
         candidateHead,
-        durationText: git(['show', `${head}:scripts/e2eSpecDurations.json`]).toString('utf8'),
+        durationText,
         livePlan: plan,
+        expectedPlan,
+        integrationFirstParent: firstParent,
     });
     writeFileSync('e2e-selection-shadow.json', `${JSON.stringify(report, null, 2)}\n`);
     console.log(
@@ -533,11 +556,15 @@ function runSupportedShadow(input: {
             measurementStatus: report.measurementStatus,
             counts: report.counts,
             fallbackReasons: report.fallbackReasons,
+            eventBase: base,
+            candidateHead: head,
+            integrationFirstParent: firstParent,
+            integrationSha,
         })
     );
 }
 
-function main(): void {
+async function main(): Promise<void> {
     const {
         BASE_SHA: base,
         HEAD_SHA: head,
@@ -588,13 +615,11 @@ function main(): void {
         console.log(JSON.stringify({ measurementStatus: report.measurementStatus, counts: report.counts }));
         return;
     }
-    runSupportedShadow({ root, integrationRoot, scopePath, base, head, integrationSha });
+    await runSupportedShadow({ root, integrationRoot, scopePath, base, head, integrationSha });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    try {
-        main();
-    } catch (error) {
+    main().catch((error) => {
         const reason = error instanceof Error ? error.message : String(error);
         writeFileSync(
             'e2e-selection-shadow.json',
@@ -615,5 +640,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         );
         console.error(`E2E shadow measurement failed: ${reason}`);
         process.exitCode = 1;
-    }
+    });
 }
+/* eslint-enable max-lines */

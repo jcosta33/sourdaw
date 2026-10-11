@@ -19,6 +19,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -129,6 +130,10 @@ function withShadowCliCheckouts(
         | 'deleted'
         | 'merge-deleted'
         | 'integration-matcher'
+        | 'merge-baseline'
+        | 'merge-baseline-invalid-scope'
+        | 'merge-package'
+        | 'merge-graph'
         | 'invalid-scope',
     run: (
         result: ReturnType<typeof spawnSync>,
@@ -165,6 +170,7 @@ function withShadowCliCheckouts(
         'scripts/e2eSelectionShadowIntegration.ts',
         'scripts/e2eShardPartition.ts',
         'scripts/e2eCollectorInventory.ts',
+        'scripts/e2eAffectedGraph.ts',
         'scripts/e2eSpecDurations.json',
         'scripts/prValidationScope.ts',
         'scripts/vitestCollectionPatterns.ts',
@@ -186,10 +192,51 @@ function withShadowCliCheckouts(
         if (!['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
             copyControl();
         }
-        commit('base');
+        const mergeBaseline = [
+            'merge-baseline',
+            'merge-baseline-invalid-scope',
+            'merge-package',
+            'merge-graph',
+        ].includes(capability);
+        if (mergeBaseline) {
+            writeFileSync(join(repository, 'scripts/claimTrackerIssue.ts'), 'export const claim = 0;\n');
+        }
+        if (capability === 'merge-graph') {
+            mkdirSync(join(repository, 'src/modules/Tuner/presentations/views'), { recursive: true });
+            mkdirSync(join(repository, 'public'), { recursive: true });
+            writeFileSync(join(repository, candidate), 'export const panel = 0;\n');
+            writeFileSync(join(repository, 'public/fixture.js'), 'export const fixture = true;\n');
+            writeFileSync(join(repository, 'tests/e2e/tuner.spec.ts'), 'tuner\n');
+            writeFileSync(
+                join(repository, 'tsconfig.json'),
+                JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
+            );
+            writeFileSync(
+                join(repository, 'scripts/e2eSuiteOwners.json'),
+                JSON.stringify({
+                    version: 1,
+                    owners: ['Tuner'],
+                    entries: [{ spec: 'tests/e2e/tuner.spec.ts', owners: ['Tuner'] }],
+                })
+            );
+        }
+        const eventBase = commit('base');
         git('checkout', '-q', '-b', 'candidate');
-        mkdirSync(join(repository, 'src'));
-        writeFileSync(join(repository, 'src/feature.ts'), 'export const feature = true;\n');
+        if (capability === 'merge-graph') {
+            writeFileSync(join(repository, candidate), 'export const panel = 1;\n');
+        } else if (capability === 'merge-package') {
+            const packagePath = join(repository, 'package.json');
+            const packageDocument = JSON.parse(readFileSync(packagePath, 'utf8')) as {
+                scripts: Record<string, string>;
+            };
+            packageDocument.scripts['retarget:plan'] = 'node scripts/retargetCapabilitySnapshot.ts';
+            writeFileSync(packagePath, `${JSON.stringify(packageDocument, null, 4)}\n`);
+        } else if (mergeBaseline) {
+            writeFileSync(join(repository, 'scripts/claimTrackerIssue.ts'), 'export const claim = 1;\n');
+        } else {
+            mkdirSync(join(repository, 'src'));
+            writeFileSync(join(repository, 'src/feature.ts'), 'export const feature = true;\n');
+        }
         if (capability === 'malformed') {
             writeFileSync(join(repository, 'scripts/e2eSelectionShadowCertificate.json'), '{ invalid json\n');
         }
@@ -235,6 +282,10 @@ function withShadowCliCheckouts(
             copyControl();
         }
         writeFileSync(join(repository, 'integration.txt'), 'integration\n');
+        if (mergeBaseline) {
+            mkdirSync(join(repository, 'src/app'), { recursive: true });
+            writeFileSync(join(repository, 'src/app/bootstrap.ts'), 'export const app = true;\n');
+        }
         const control = commit('control');
         if (capability === 'integration-matcher') {
             const config = join(repository, 'playwright.config.ts');
@@ -261,7 +312,7 @@ function withShadowCliCheckouts(
         const integration = git('rev-parse', 'HEAD');
         git('worktree', 'add', '-q', '--detach', candidateRoot, head);
         git('worktree', 'add', '-q', '--detach', integrationRoot, integration);
-        git('worktree', 'add', '-q', '--detach', controlRoot, control);
+        git('worktree', 'add', '-q', '--detach', controlRoot, mergeBaseline ? eventBase : control);
         if (advertiseCleanControl) {
             git('worktree', 'add', '-q', '--detach', cleanControlRoot, control);
         }
@@ -269,10 +320,29 @@ function withShadowCliCheckouts(
             const file = join(controlRoot, dirtyControlPath);
             writeFileSync(file, `${readFileSync(file, 'utf8')}\n// Dirty executing control source.\n`);
         }
-        const changed = git('diff', '--name-only', `${control}...${head}`).split('\n');
-        const plan = selectValidationPlan(changed, [SMOKE_SPEC, 'tests/e2e/example.spec.ts']);
+        const changed = git('diff', '--name-only', `${mergeBaseline ? eventBase : control}...${head}`).split('\n');
+        const availableSpecs = [SMOKE_SPEC, 'tests/e2e/example.spec.ts'];
+        if (capability === 'merge-graph') {
+            availableSpecs.push('tests/e2e/tuner.spec.ts');
+        }
+        let plan = selectValidationPlan(changed, availableSpecs, new Map(), capability === 'merge-package');
+        if (capability === 'merge-graph') {
+            const plannerUrl = pathToFileURL(resolve('scripts/prValidationScope.ts')).href;
+            const script = `import { resolveCheckoutSelection } from ${JSON.stringify(plannerUrl)}; const result = await resolveCheckoutSelection(${JSON.stringify(integrationRoot)}, ${JSON.stringify(eventBase)}, ${JSON.stringify(head)}, ['tests/e2e/smoke.spec.ts', 'tests/e2e/example.spec.ts', 'tests/e2e/tuner.spec.ts']); console.log(JSON.stringify(result.plan));`;
+            const produced = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+                cwd: repository,
+                encoding: 'utf8',
+            });
+            if (produced.status !== 0) {
+                throw new Error(`Graph fixture producer failed: ${produced.stderr}`);
+            }
+            plan = JSON.parse(produced.stdout);
+        }
         mkdirSync(join(candidateRoot, 'shadow-scope'));
-        const scopeText = JSON.stringify(capability === 'invalid-scope' ? { ...plan, browser: false } : plan);
+        if (capability === 'invalid-scope' || capability === 'merge-baseline-invalid-scope') {
+            plan = { ...plan, browser: !plan.browser };
+        }
+        const scopeText = JSON.stringify(plan);
         writeFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), scopeText);
         writeFileSync(join(candidateRoot, 'github-output.txt'), 'preserved\n');
         const cliArgs = [join(controlRoot, 'scripts/e2eSelectionShadow.ts'), 'shadow-scope/pr-validation-scope.json'];
@@ -281,7 +351,7 @@ function withShadowCliCheckouts(
             encoding: 'utf8',
             env: {
                 ...process.env,
-                BASE_SHA: control,
+                BASE_SHA: mergeBaseline ? eventBase : control,
                 HEAD_SHA: head,
                 INTEGRATION_SHA: integration,
                 INTEGRATION_ROOT: integrationRoot,
@@ -324,7 +394,7 @@ function withShadowCliCheckouts(
                 )}\n`
             );
         }
-        run(result, report, control, head, integration);
+        run(result, report, mergeBaseline ? eventBase : control, head, integration);
         expect(readFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), 'utf8')).toBe(scopeText);
         expect(readFileSync(join(candidateRoot, 'github-output.txt'), 'utf8')).toBe('preserved\n');
     } finally {
@@ -461,6 +531,52 @@ describe('E2E selection shadow', () => {
             expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
             expect(report.measurementStatus).toBe('complete');
             expect(report.candidateSpecs).toEqual(['tests/e2e/example.spec.ts']);
+        });
+    }, 30_000);
+
+    it('authenticates a tooling plan against the integration first parent despite concurrent product edits', () => {
+        withShadowCliCheckouts('merge-baseline', (result, report, base, head, integration) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report).toMatchObject({
+                measurementStatus: 'complete',
+                base,
+                head,
+                integrationSha: integration,
+                counts: { liveSelected: 0 },
+                liveSelectedSpecs: [],
+            });
+            expect(report.integrationFirstParent).toMatch(/^[0-9a-f]{40}$/);
+            expect(report.integrationFirstParent).not.toBe(base);
+        });
+    }, 30_000);
+
+    it('rejects a tampered authoritative plan on the integration first-parent route', () => {
+        withShadowCliCheckouts('merge-baseline-invalid-scope', (result, report) => {
+            expect(result.status).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(/Authoritative scope artifact disagrees/);
+        });
+    }, 30_000);
+
+    it('agrees with the authenticated operational package route on the integration checkout', () => {
+        withShadowCliCheckouts('merge-package', (result, report) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report).toMatchObject({
+                measurementStatus: 'complete',
+                liveSelectedSpecs: [],
+                counts: { liveSelected: 0 },
+            });
+        });
+    }, 30_000);
+
+    it('agrees with a feature graph narrowed on the integration checkout', () => {
+        withShadowCliCheckouts('merge-graph', (result, report) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report).toMatchObject({
+                measurementStatus: 'complete',
+                liveSelectedSpecs: ['tests/e2e/example.spec.ts', 'tests/e2e/tuner.spec.ts'],
+                counts: { liveSelected: 2 },
+            });
         });
     }, 30_000);
 
