@@ -136,6 +136,318 @@ describe('prepareStripSilence', () => {
         expect(prepareStripSilence({ clipId: 'clip-1' })).toBeNull();
     });
 
+    it('emits fragments at the heard samples when canonical zero overrides a stale beat alias', () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            startBeat: 0,
+            endBeat: 10,
+            audioOffsetBeats: 10,
+            audioOffsetSeconds: 0,
+        });
+        const channelData = new Float32Array(100);
+        channelData.fill(0.5, 10, 20);
+        channelData.fill(0.5, 40, 50);
+        mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+        mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+
+        const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+        expect(plan).not.toBeNull();
+        expect(plan!.next.clips).toEqual([
+            expect.objectContaining({
+                startBeat: 1,
+                endBeat: 2,
+                audioOffsetSeconds: 0.1,
+                audioOffsetBeats: 1,
+            }),
+            expect.objectContaining({
+                startBeat: 4,
+                endBeat: 5,
+                audioOffsetSeconds: 0.4,
+                audioOffsetBeats: 4,
+            }),
+        ]);
+    });
+
+    it('keeps the first sounding region when canonical entry falls inside a sample', () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            startBeat: 0,
+            endBeat: 10,
+            audioOffsetBeats: 9,
+            audioOffsetSeconds: 0.105,
+        });
+        const channelData = new Float32Array(100);
+        channelData.fill(0.5, 10, 20);
+        channelData.fill(0.5, 40, 50);
+        mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+        mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+
+        const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+        expect(plan?.next.clips).toHaveLength(2);
+        expect(plan!.next.clips[0]).toEqual(
+            expect.objectContaining({ startBeat: 0, audioOffsetSeconds: 0.105, audioOffsetBeats: 1.05 })
+        );
+        expect(plan!.next.clips[0]!.endBeat).toBeCloseTo(0.95, 10);
+        expect(plan!.next.clips[1]!.startBeat).toBeCloseTo(2.95, 10);
+        expect(plan!.next.clips[1]!.audioOffsetSeconds).toBe(0.4);
+    });
+
+    it('places detected source regions through an interior tempo marker', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            startBeat: 0,
+            endBeat: 8,
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 3,
+        });
+        const channelData = new Float32Array(700);
+        channelData.fill(0.5, 100, 120);
+        channelData.fill(0.5, 400, 420);
+        mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+        mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+
+        const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+        expect(plan?.next.clips).toHaveLength(2);
+        expect(plan!.next.clips[0]!.startBeat).toBeCloseTo(2);
+        expect(plan!.next.clips[0]!.audioOffsetSeconds).toBeCloseTo(1);
+        expect(plan!.next.clips[1]!.startBeat).toBeCloseTo(6);
+        expect(plan!.next.clips[1]!.endBeat).toBeCloseTo(6.2);
+        expect(plan!.next.clips[1]!.audioOffsetSeconds).toBeCloseTo(4);
+    });
+
+    it('begins signed canonical pre-roll at the actual inverse beat before creating fragments', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 2, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            startBeat: 0,
+            endBeat: 8,
+            audioOffsetBeats: 8,
+            audioOffsetSeconds: -2,
+        });
+        const channelData = new Float32Array(300);
+        channelData.fill(0.5, 0, 20);
+        channelData.fill(0.5, 150, 170);
+        mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+        mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+
+        const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+        expect(plan?.next.clips).toHaveLength(2);
+        expect(plan!.next.clips[0]).toEqual(
+            expect.objectContaining({ startBeat: 3, audioOffsetSeconds: 0, audioOffsetBeats: 0 })
+        );
+        expect(plan!.next.clips[1]).toEqual(
+            expect.objectContaining({ startBeat: 4.5, audioOffsetSeconds: 1.5, audioOffsetBeats: 1.5 })
+        );
+    });
+
+    it('repeats only actually heard source regions as nonlooping fragments across a tempo seam', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            startBeat: 0,
+            endBeat: 8,
+            audioOffsetSeconds: 0,
+            loopEnabled: true,
+            loopLength: 4,
+        });
+        const channelData = new Float32Array(500);
+        channelData.fill(0.5, 50, 60);
+        channelData.fill(0.5, 150, 160);
+        mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+        mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+
+        const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+        expect(plan?.next.clips).toHaveLength(4);
+        expect(plan!.next.clips.map((fragment) => fragment.startBeat)).toEqual([1, 3, 4.5, 5.5]);
+        expect(plan!.next.clips.map((fragment) => fragment.audioOffsetSeconds)).toEqual([0.5, 1.5, 0.5, 1.5]);
+        expect(plan!.next.clips.every((fragment) => fragment.loopEnabled === false)).toBe(true);
+        expect(plan!.next.clips.every((fragment) => !Object.hasOwn(fragment, 'loopLength'))).toBe(true);
+    });
+
+    describe('supplied identities across loop iterations and a tempo seam', () => {
+        const segmentClipIds = ['segment-a', 'segment-b', 'segment-c', 'segment-d'];
+        const automationLaneIds = ['lane-a', 'lane-b', 'lane-c', 'lane-d'];
+
+        function prepareLoopFixture(): TrackState {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            tempoMapStore.set({
+                changes: [
+                    { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 8,
+                audioOffsetSeconds: 0,
+                audioOffsetBeats: 7,
+                loopEnabled: true,
+                loopLength: 4,
+            });
+            const channelData = new Float32Array(500);
+            channelData.fill(0.5, 50, 60);
+            channelData.fill(0.5, 150, 160);
+            const state = createTrackState(createTrackWithClips([clip]));
+            mocks.getTrackState.mockReturnValue(state);
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+            mocks.getAutomationLanes.mockReturnValue([
+                {
+                    id: 'source-lane',
+                    trackId: 'track-1',
+                    clipId: 'clip-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [1.1, 3.1, 4.55, 5.55].map((beat, index) => ({
+                        id: `point-${index}`,
+                        beat,
+                        value: 0.5,
+                        curve: 'linear',
+                        tension: 0,
+                    })),
+                    objects: [1.1, 3.1, 4.55, 5.55].map((beat, index) => ({
+                        id: `object-${index}`,
+                        laneId: 'source-lane',
+                        startBeat: beat,
+                        endBeat: beat,
+                        points: [],
+                        name: 'Gain ride',
+                    })),
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ]);
+            return state;
+        }
+
+        it('keeps supplied fragment and lane ids on the heard source windows in timeline order', () => {
+            const state = prepareLoopFixture();
+            const before = structuredClone(state);
+            const lanesBefore = structuredClone(mocks.getAutomationLanes());
+
+            const plan = prepareStripSilence({ clipId: 'clip-1', segmentClipIds, automationLaneIds });
+
+            expect(plan).not.toBeNull();
+            expect(plan!.newClipIds).toEqual(segmentClipIds);
+            expect(plan!.next.clipOrder).toEqual(segmentClipIds);
+            expect(plan!.next.clips).toMatchObject([
+                {
+                    id: 'segment-a',
+                    startBeat: 1,
+                    endBeat: expect.closeTo(1.2, 10),
+                    audioOffsetSeconds: 0.5,
+                    audioOffsetBeats: 1,
+                },
+                { id: 'segment-b', startBeat: 3, endBeat: 3.2, audioOffsetSeconds: 1.5, audioOffsetBeats: 3 },
+                { id: 'segment-c', startBeat: 4.5, endBeat: 4.6, audioOffsetSeconds: 0.5, audioOffsetBeats: 0.5 },
+                { id: 'segment-d', startBeat: 5.5, endBeat: 5.6, audioOffsetSeconds: 1.5, audioOffsetBeats: 1.5 },
+            ]);
+            expect(plan!.next.clips.every((fragment) => fragment.loopEnabled === false)).toBe(true);
+            expect(plan!.next.clips.every((fragment) => !Object.hasOwn(fragment, 'loopLength'))).toBe(true);
+            expect(plan!.next.clipSatellites.slice(1).map((entry) => entry.clipId)).toEqual(segmentClipIds);
+            expect(plan!.next.clipAutomationLanes).toMatchObject(
+                automationLaneIds.map((id, index) => ({
+                    id,
+                    clipId: segmentClipIds[index],
+                    objects: [{ id: `object-${index}`, laneId: id }],
+                }))
+            );
+            expect(state).toEqual(before);
+            expect(mocks.getAutomationLanes()).toEqual(lanesBefore);
+        });
+
+        it.each<[string, readonly string[], readonly string[]]>([
+            ['too few segments', ['segment-a', 'segment-b'], automationLaneIds],
+            ['too many segments', [...segmentClipIds, 'segment-e'], automationLaneIds],
+            ['duplicate segments', ['segment-a', 'segment-b', 'segment-c', 'segment-a'], automationLaneIds],
+            ['empty segment', ['segment-a', 'segment-b', 'segment-c', ''], automationLaneIds],
+            ['live segment', ['segment-a', 'segment-b', 'segment-c', 'clip-1'], automationLaneIds],
+            ['too few lanes', segmentClipIds, ['lane-a', 'lane-b']],
+            ['too many lanes', segmentClipIds, [...automationLaneIds, 'lane-e']],
+            ['duplicate lanes', segmentClipIds, ['lane-a', 'lane-b', 'lane-c', 'lane-a']],
+            ['empty lane', segmentClipIds, ['lane-a', 'lane-b', 'lane-c', '']],
+            ['live lane', segmentClipIds, ['lane-a', 'lane-b', 'lane-c', 'source-lane']],
+        ])('refuses %s without changing the source owners', (_name, suppliedClipIds, suppliedLaneIds) => {
+            const state = prepareLoopFixture();
+            const before = structuredClone(state);
+            const lanesBefore = structuredClone(mocks.getAutomationLanes());
+
+            expect(
+                prepareStripSilence({
+                    clipId: 'clip-1',
+                    segmentClipIds: suppliedClipIds,
+                    automationLaneIds: suppliedLaneIds,
+                })
+            ).toBeNull();
+            expect(state).toEqual(before);
+            expect(mocks.getAutomationLanes()).toEqual(lanesBefore);
+        });
+    });
+
+    it('caps each loop at the buffer end and its final partial iteration', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            startBeat: 0,
+            endBeat: 9,
+            loopEnabled: true,
+            loopLength: 4,
+            audioOffsetSeconds: 0,
+        });
+        const channelData = new Float32Array(150);
+        channelData.fill(0.5, 30, 40);
+        channelData.fill(0.5, 120, 130);
+        mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+        mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+
+        const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+        expect(plan?.next.clips).toHaveLength(5);
+        expect(plan!.next.clips.map((fragment) => fragment.startBeat)).toEqual([
+            expect.closeTo(0.6, 10),
+            expect.closeTo(2.4, 10),
+            expect.closeTo(4.6, 10),
+            expect.closeTo(6.4, 10),
+            expect.closeTo(8.6, 10),
+        ]);
+        expect(plan!.next.clips.map((fragment) => fragment.audioOffsetSeconds)).toEqual([0.3, 1.2, 0.3, 1.2, 0.3]);
+        expect(plan!.next.clips.at(-1)!.endBeat).toBeLessThan(9);
+    });
+
     it('splits multi-region audio into a before/after snapshot', () => {
         const clip = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buf-1', startBeat: 0, endBeat: 10 });
         const track = createTrackWithClips([clip]);
@@ -176,8 +488,16 @@ describe('prepareStripSilence', () => {
 
         const plan = prepareStripSilence({ clipId: 'clip-1', minDuration: 0.2 });
         expect(plan?.next.clips).toEqual([
-            expect.objectContaining({ startBeat: 4.1, endBeat: 4.3, audioOffsetBeats: 0.6 }),
-            expect.objectContaining({ startBeat: 4.8, endBeat: 5, audioOffsetBeats: 1.3 }),
+            expect.objectContaining({
+                startBeat: expect.closeTo(4.1, 10),
+                endBeat: expect.closeTo(4.3, 10),
+                audioOffsetBeats: 0.6,
+            }),
+            expect.objectContaining({
+                startBeat: expect.closeTo(4.8, 10),
+                endBeat: expect.closeTo(5, 10),
+                audioOffsetBeats: 1.3,
+            }),
         ]);
     });
 
@@ -278,7 +598,7 @@ describe('prepareStripSilence', () => {
             // a third region at buffer beats [0,2) that the clip never plays.
             expect(plan!.next.clips).toEqual([
                 expect.objectContaining({ startBeat: 17, endBeat: 19, audioOffsetBeats: 4 }),
-                expect.objectContaining({ startBeat: 23, endBeat: 26, audioOffsetBeats: 10 }),
+                expect.objectContaining({ startBeat: expect.closeTo(23, 10), endBeat: 26, audioOffsetBeats: 10 }),
             ]);
         });
 
@@ -342,7 +662,7 @@ describe('prepareStripSilence', () => {
             // First segment shift would be 1 (startBeat 17), second 7 (startBeat 23).
             expect(plan!.next.clips).toEqual([
                 expect.objectContaining({ startBeat: 17, endBeat: 19, audioOffsetBeats: 4 }),
-                expect.objectContaining({ startBeat: 23, endBeat: 26, audioOffsetBeats: 10 }),
+                expect.objectContaining({ startBeat: expect.closeTo(23, 10), endBeat: 26, audioOffsetBeats: 10 }),
             ]);
             const segmentSatellites = plan!.next.clipSatellites.filter((entry) => entry.clipId !== 'clip-1');
             expect(segmentSatellites).toHaveLength(2);
@@ -404,7 +724,7 @@ describe('prepareStripSilence', () => {
             expect(plan!.next.clips).toEqual([
                 expect.objectContaining({ startBeat: 0.5, endBeat: 1, audioOffsetBeats: 1 }),
                 expect.objectContaining({ startBeat: 2, endBeat: 3, audioOffsetBeats: 4 }),
-                expect.objectContaining({ startBeat: 6, endBeat: 7, audioOffsetBeats: 12 }),
+                expect.objectContaining({ startBeat: 6, endBeat: expect.closeTo(7, 10), audioOffsetBeats: 12 }),
             ]);
         });
 

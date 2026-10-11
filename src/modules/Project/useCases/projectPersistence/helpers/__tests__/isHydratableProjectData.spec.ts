@@ -173,6 +173,64 @@ function buildValidProjectData(): HydratableProjectData {
 }
 
 describe('isHydratableProjectData', () => {
+    it.each(['top-level', 'saved-arrangement'] as const)(
+        'validates take source depth and paired pass placement before %s hydration',
+        (location) => {
+            const base = buildValidProjectData();
+            const take = {
+                id: 'take-1',
+                clipId: 'clip-1',
+                name: 'Selected pass',
+                startBeat: 0,
+                endBeat: 4,
+                selected: true,
+                sourceOffsetBeats: 4,
+                sourceOffsetSeconds: 2,
+                passAnchorSeconds: -1,
+                passDepthSeconds: 2,
+            };
+            const withTake = (value: Record<string, unknown>) => {
+                const takeLanes = {
+                    lanes: [
+                        {
+                            id: 'lane-1',
+                            trackId: 'track-1',
+                            takes: [value],
+                            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+                        },
+                    ],
+                };
+                if (location === 'top-level') {
+                    return { ...base, takeLanes };
+                }
+                return { ...base, arrangements: [{ id: 'saved', name: 'Saved', takeLanes }] };
+            };
+            const fileShape = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
+            expect(isHydratableProjectData(fileShape(withTake(take)))).toBe(true);
+            const legacy = {
+                id: take.id,
+                clipId: take.clipId,
+                name: take.name,
+                startBeat: take.startBeat,
+                endBeat: take.endBeat,
+                selected: take.selected,
+            };
+            expect(isHydratableProjectData(withTake(legacy))).toBe(true);
+            expect(isHydratableProjectData(withTake({ ...legacy, sourceOffsetBeats: 4 }))).toBe(true);
+            expect(isHydratableProjectData(withTake({ ...legacy, sourceOffsetSeconds: 2 }))).toBe(true);
+            expect(isHydratableProjectData(fileShape(withTake({ ...take, passDepthSeconds: undefined })))).toBe(false);
+
+            for (const malformed of [
+                { sourceOffsetBeats: -1 },
+                { sourceOffsetSeconds: Number.NaN },
+                { passDepthSeconds: undefined },
+                { passAnchorSeconds: Number.POSITIVE_INFINITY },
+                { passDepthSeconds: -1 },
+            ]) {
+                expect(isHydratableProjectData(withTake({ ...take, ...malformed }))).toBe(false);
+            }
+        }
+    );
     it.each(['active MIDI', 'saved arrangement', 'inline clip'])(
         'rejects malformed %s expression before import',
         (route) => {

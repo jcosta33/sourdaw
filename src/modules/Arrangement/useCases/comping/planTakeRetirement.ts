@@ -1,12 +1,7 @@
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
-
-import { type TakeLane } from '../../models/TakeLane';
+import { deriveTakeRetirement } from '../../services/deriveTakeRetirement';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
-export type TakeRetirementPlan = {
-    readonly lanes: TakeLane[];
-    readonly retiredLanes: readonly RetiredTakeLaneSnapshot[];
-};
+export type TakeRetirementPlan = NonNullable<ReturnType<typeof deriveTakeRetirement>>;
 
 /**
  * The one derivation of "which takes retiring clip ids remove, and which lanes
@@ -32,41 +27,10 @@ export function planTakeRetirement(
     preservedTakeIds?: ReadonlySet<string>,
     options?: { readonly preservedLaneIds: ReadonlySet<string> }
 ): TakeRetirementPlan | null {
-    const state = takeLaneStore.value;
-    if (!state || clipIds.length === 0) {
-        return null;
-    }
-
-    const retiringClipIds = new Set(clipIds);
-    const nextLanes: TakeLane[] = [];
-    const retiredLanes: RetiredTakeLaneSnapshot[] = [];
-    let changed = false;
-
-    for (let index = 0; index < state.lanes.length; index += 1) {
-        const lane = state.lanes[index]!;
-        const removedTakeIds = new Set(
-            lane.takes
-                .filter((take) => retiringClipIds.has(take.clipId) && !preservedTakeIds?.has(take.id))
-                .map((take) => take.id)
-        );
-        if (removedTakeIds.size === 0) {
-            nextLanes.push(lane);
-            continue;
-        }
-
-        changed = true;
-        retiredLanes.push({ lane: structuredClone(lane), laneIndex: index, retiredTakeIds: [...removedTakeIds] });
-
-        const takes = lane.takes.filter((take) => !removedTakeIds.has(take.id));
-        if (takes.length === 0 && !options?.preservedLaneIds.has(lane.id)) {
-            continue;
-        }
-        nextLanes.push({
-            ...lane,
-            takes,
-            activeCompRegions: lane.activeCompRegions.filter((region) => !removedTakeIds.has(region.takeId)),
-        });
-    }
-
-    return changed ? { lanes: nextLanes, retiredLanes } : null;
+    return deriveTakeRetirement({
+        lanes: takeLaneStore.value?.lanes ?? null,
+        clipIds,
+        preservedTakeIds,
+        preservedLaneIds: options?.preservedLaneIds,
+    });
 }

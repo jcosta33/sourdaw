@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type Clip, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
+import { tempoMapStore, transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
 import { createTrack } from '../../../models/Track';
 import { trimClipStart } from '../trimClipStart';
@@ -54,6 +55,8 @@ function audioMediaOrigin(target: Clip): number {
 
 describe('trimClipStart keeps the surviving material where it was', () => {
     beforeEach(() => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         const keys = createTrack({ id: 't-keys', name: 'Keys', kind: 'midi', withoutDefaultDevice: true });
         const vocal = createTrack({ id: 't-vocal', name: 'Vocal', kind: 'audio' });
         trackStore.set({
@@ -66,6 +69,8 @@ describe('trimClipStart keeps the surviving material where it was', () => {
     });
 
     afterEach(() => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         trackStore.set(structuredClone(defaultTrackState));
     });
 
@@ -75,6 +80,44 @@ describe('trimClipStart keeps the surviving material where it was', () => {
         const trimmed = readClip('c-vocal');
         expect(trimmed.startBeat).toBe(2);
         expect(audioMediaOrigin(trimmed)).toBe(0);
+    });
+
+    it('keeps signed pre-roll when trimming through a tempo change', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 2, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id === 't-vocal') {
+                    return { ...track, clips: [{ ...track.clips[0]!, audioOffsetSeconds: -2, audioOffsetBeats: 8 }] };
+                }
+                return track;
+            }),
+        });
+
+        expect(trimClipStart('c-vocal', 3)).toBe(true);
+        expect(readClip('c-vocal').audioOffsetSeconds).toBe(0);
+    });
+
+    it('treats canonical zero as the source entry despite a stale beat alias', () => {
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id === 't-vocal') {
+                    return { ...track, clips: [{ ...track.clips[0]!, audioOffsetSeconds: 0, audioOffsetBeats: 8 }] };
+                }
+                return track;
+            }),
+        });
+
+        expect(trimClipStart('c-vocal', 2)).toBe(true);
+        expect(readClip('c-vocal').audioOffsetSeconds).toBe(1);
     });
 
     it('a MIDI clip trimmed by two beats keeps its notes at the same timeline position', () => {

@@ -6,6 +6,7 @@ import {
     prepareAutomationTimeStateRestore,
     restoreAutomationSnapshot,
 } from '#/modules/Automation/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 const mocks = vi.hoisted(() => {
     const trackState = { value: null as unknown };
@@ -107,6 +108,7 @@ function createClip(input: {
     endBeat: number;
     type?: 'audio' | 'midi';
     audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
     midiOffsetBeats?: number;
 }) {
     return {
@@ -117,6 +119,7 @@ function createClip(input: {
         endBeat: input.endBeat,
         type: input.type ?? 'midi',
         ...(input.audioOffsetBeats === undefined ? {} : { audioOffsetBeats: input.audioOffsetBeats }),
+        ...(input.audioOffsetSeconds === undefined ? {} : { audioOffsetSeconds: input.audioOffsetSeconds }),
         ...(input.midiOffsetBeats === undefined ? {} : { midiOffsetBeats: input.midiOffsetBeats }),
         fadeInBeats: 0,
         fadeOutBeats: 0,
@@ -222,6 +225,35 @@ describe('executeGlobalTimeOperation', () => {
         setStates();
         restoreAutomationSnapshot({ lanes: [] });
         setTimeOperationDependencies(null);
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
+    });
+
+    it('materializes a shifted legacy audio clip before an inserted interval changes its start tempo', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        setStates({
+            tracks: [
+                createTrack('track-1', 'audio', [
+                    createClip({ id: 'shifted', type: 'audio', startBeat: 3, endBeat: 5, audioOffsetBeats: 2 }),
+                ]),
+            ],
+        });
+        registerDependencies();
+
+        expect(executeGlobalTimeOperation({ operation: { type: 'insert', atBeat: 2, durationBeats: 4 } }).status).toBe(
+            'applied'
+        );
+
+        const state = mocks.trackState.value as {
+            tracks: Array<{ clips: Array<{ startBeat: number; audioOffsetSeconds?: number }> }>;
+        };
+        expect(state.tracks[0]?.clips[0]?.startBeat).toBe(7);
+        expect(state.tracks[0]?.clips[0]?.audioOffsetSeconds).toBe(1);
     });
 
     it('applies insert geometry, complete owner snapshots, and dormant identity preservation in one batch', () => {

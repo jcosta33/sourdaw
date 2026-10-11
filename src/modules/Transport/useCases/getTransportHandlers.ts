@@ -1,8 +1,11 @@
+import { handleAddTempoMapChange } from '../handlers/transport/handleAddTempoMapChange';
 import { handleAddTimeSignatureChange } from '../handlers/transport/handleAddTimeSignatureChange';
+import { handleRemoveTempoMapChange } from '../handlers/transport/handleRemoveTempoMapChange';
 import { handleRemoveTimeSignatureChange } from '../handlers/transport/handleRemoveTimeSignatureChange';
 import { handleRestoreLoopRegion } from '../handlers/transport/handleRestoreLoopRegion';
 import { handleRestoreMasterGain } from '../handlers/transport/handleRestoreMasterGain';
 import { handleRestorePunchRegion } from '../handlers/transport/handleRestorePunchRegion';
+import { handleRestoreTempoMapChange } from '../handlers/transport/handleRestoreTempoMapChange';
 import { handleSeekPlayhead } from '../handlers/transport/handleSeekPlayhead';
 import { handleSetCountInBars } from '../handlers/transport/handleSetCountInBars';
 import { handleSetLoopEnabled } from '../handlers/transport/handleSetLoopEnabled';
@@ -25,8 +28,13 @@ import { handleTogglePlayback } from '../handlers/transport/handleTogglePlayback
 import { handleTogglePreRoll } from '../handlers/transport/handleTogglePreRoll';
 import { handleTogglePunch } from '../handlers/transport/handleTogglePunch';
 import { handleToggleRecording } from '../handlers/transport/handleToggleRecording';
+import { handleUpdateTempoMapChange } from '../handlers/transport/handleUpdateTempoMapChange';
 
 export type TransportHandlersMap = {
+    addTempoMapChange: typeof handleAddTempoMapChange;
+    updateTempoMapChange: typeof handleUpdateTempoMapChange;
+    removeTempoMapChange: typeof handleRemoveTempoMapChange;
+    restoreTempoMapChange: typeof handleRestoreTempoMapChange;
     addTimeSignatureChange: typeof handleAddTimeSignatureChange;
     removeTimeSignatureChange: typeof handleRemoveTimeSignatureChange;
     restorePunchRegion: typeof handleRestorePunchRegion;
@@ -61,6 +69,10 @@ export type TransportHandlersMap = {
  */
 export function getTransportHandlers(): TransportHandlersMap {
     return {
+        addTempoMapChange: handleAddTempoMapChange,
+        updateTempoMapChange: handleUpdateTempoMapChange,
+        removeTempoMapChange: handleRemoveTempoMapChange,
+        restoreTempoMapChange: handleRestoreTempoMapChange,
         setTempo: handleSetTempo,
         togglePlayback: handleTogglePlayback,
         stopPlayback: handleStopPlayback,

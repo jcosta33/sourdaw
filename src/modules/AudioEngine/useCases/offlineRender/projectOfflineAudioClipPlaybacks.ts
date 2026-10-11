@@ -1,5 +1,6 @@
 import { type GainEnvelopeSeriesPoint, type Track } from '#/modules/Arrangement/stores';
 // Not `#/modules/Arrangement/useCases` — same cycle law as `scheduleTrackClips`.
+import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { envelopeGainDbToLinear } from '#/utils/clipGainEnvelopeSchedule';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -28,6 +29,7 @@ export type OfflineProjectableAudioClip = Pick<
     | 'fadeInBeats'
     | 'fadeOutBeats'
     | 'audioOffsetBeats'
+    | 'audioOffsetSeconds'
 >;
 
 export type ProjectOfflineAudioClipPlaybacksInput = Readonly<{
@@ -144,26 +146,11 @@ export function projectOfflineAudioClipPlaybacks(
         clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
     const clipGainValue = clip.gain;
 
-    const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
-    // Where the clip enters its own material, in *source* seconds — the same
-    // number `scheduleAudioClips` hands to `source.start(when, offset, …)`, and
-    // the same entry point both waveform renderers draw from. Two things the
-    // timeline arithmetic below does are deliberately absent here:
-    //
-    //   - the tempo map is not integrated. The rate is the flat one governing
-    //     the clip's start beat, because the material was rendered at one
-    //     tempo; a change inside the offset span moves the clip on the
-    //     timeline, never the point it seeks to inside the file.
-    //   - the stretch ratio is not applied. It scales how long the material
-    //     sounds, not where reading begins; `scheduleOfflineClipSource` scales
-    //     the duration alone, exactly as live does.
-    //
-    // A non-positive or non-finite tempo cannot come from either tempo store,
-    // both of which clamp what they hold; treating it as "no offset" keeps a
-    // malformed one from turning the seek into Infinity or NaN.
+    // Canonical seconds name the source frame directly. Only an old clip's
+    // beat alias is converted at its own start tempo; stretch changes duration,
+    // not the source frame at which the clip begins.
     const clipTempo = resolveTempoAtBeat(clip.startBeat);
-    const clipSecondsPerBeat = Number.isFinite(clipTempo) && clipTempo > 0 ? 60 / clipTempo : 0;
-    const clipAudioOffsetSec = clipAudioOffsetBeats * clipSecondsPerBeat;
+    const clipAudioOffsetSec = resolveAudioSourceOffsetSeconds(clip, clipTempo);
     const baseBufferOffsetSec = Math.max(0, clipAudioOffsetSec);
     // A negative offset — reachable by slipping content right or dragging the
     // left edge leftward, neither of which floors it — puts the clip's head

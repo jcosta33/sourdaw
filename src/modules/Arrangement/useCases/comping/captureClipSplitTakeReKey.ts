@@ -1,3 +1,5 @@
+import { readTempoAtBeat } from '#/modules/Transport/stores';
+
 import { captureTakeReKeyTransitions } from './captureTakeReKeyTransitions';
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
@@ -54,6 +56,7 @@ export function captureClipSplitTakeReKeyTransitions(
         removedClipIds: new Set<string>(),
         deleteStartBeat: input.splitBeat,
         deleteEndBeat: input.splitBeat,
+        sourceTempoByClipId: new Map([[input.clipId, readTempoAtBeat({ beat: input.clipStartBeat })]]),
         operationKind: 'clip-transform',
     });
 }

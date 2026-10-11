@@ -1,5 +1,5 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 
 import { snapSplitBeatToZeroCrossing as snapSplitBeatToZeroCrossingService } from '../../services/snapSplitBeatToZeroCrossing';
 import { type Clip } from '../../stores/trackStore';
@@ -20,5 +20,7 @@ export function snapToZeroCrossing(clip: Clip, beat: number): number {
         channelData: buffer.getChannelData(0),
         sampleRate: buffer.sampleRate,
         tempo: readTempoAtBeat({ beat: clip.startBeat }),
+        secondsAtBeat: (position) => readSecondsAtBeat({ beat: position }),
+        beatAtSeconds: (seconds) => readBeatAtSamples({ samples: seconds, sampleRate: 1 }),
     });
 }

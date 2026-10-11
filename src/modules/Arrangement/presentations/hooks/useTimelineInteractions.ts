@@ -5,8 +5,10 @@ import { broadcastPresence } from '#/modules/Collaboration/useCases';
 import { executeUserAppAction, generateGroupId } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
+import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { clampMidiData7 } from '#/utils/midiData';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -19,6 +21,7 @@ import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
+import { consumedStretchFactor } from '../../useCases/clipEditing/consumedStretchFactor';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
@@ -56,6 +59,27 @@ import { useTimelineGestures } from './useTimelineGestures';
 type ClipMenuState = { kind: 'clip'; x: number; y: number; clipId: string; trackId: string; splitBeat: number };
 type EmptyMenuState = { kind: 'empty'; x: number; y: number; trackId: string | null; beat: number };
 export type ContextMenuState = ClipMenuState | EmptyMenuState | null;
+
+type SlipDragState = {
+    clipId: string;
+    clipType: 'audio' | 'midi';
+    startX: number;
+    originalOffset: number;
+    audioSource?: { entrySeconds: number; startBeat: number; stretch: number; tempoAtStart: number };
+};
+
+function sourceOffsetAtSlipBeat(drag: SlipDragState, deltaBeats: number): { offset: number; offsetSeconds?: number } {
+    if (!drag.audioSource) {
+        return { offset: drag.originalOffset + deltaBeats };
+    }
+    const { entrySeconds, startBeat, stretch, tempoAtStart } = drag.audioSource;
+    const offsetSeconds = getAudioSourcePositionSeconds(
+        entrySeconds,
+        readSecondsAtBeat({ beat: startBeat + deltaBeats }) - readSecondsAtBeat({ beat: startBeat }),
+        stretch
+    );
+    return { offset: (offsetSeconds * tempoAtStart) / 60, offsetSeconds };
+}
 
 // Pixels-of-pinch-spread → pixels-per-beat conversion for two-finger pinch zoom.
 // Kept in the same range as the Ctrl+wheel pinch step (see useTimelineGestures,
@@ -109,12 +133,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         points: AutomationPoint[];
     } | null>(null);
     const drawDragRef = useRef<{ trackId: string; startBeat: number; clipType: 'audio' | 'midi' } | null>(null);
-    const slipDragRef = useRef<{
-        clipId: string;
-        clipType: 'audio' | 'midi';
-        startX: number;
-        originalOffset: number;
-    } | null>(null);
+    const slipDragRef = useRef<SlipDragState | null>(null);
     const noteDragRef = useRef<{
         clipId: string;
         noteId: string;
@@ -335,13 +354,26 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const track = state?.tracks.find((time) => time.id === slipHit.trackId);
                 const clip = track?.clips.find((context) => context.id === slipHit.clipId);
                 if (clip) {
-                    slipDragRef.current = {
+                    const tempoAtStart = readTempoAtBeat({ beat: clip.startBeat });
+                    const sourceEntrySeconds = resolveAudioSourceOffsetSeconds(clip, tempoAtStart);
+                    const slipDrag: SlipDragState = {
                         clipId: clip.id,
                         clipType: clip.type,
                         startX: x,
                         originalOffset:
-                            clip.type === 'audio' ? (clip.audioOffsetBeats ?? 0) : (clip.midiOffsetBeats ?? 0),
+                            clip.type === 'audio'
+                                ? (sourceEntrySeconds * tempoAtStart) / 60
+                                : (clip.midiOffsetBeats ?? 0),
                     };
+                    if (clip.type === 'audio') {
+                        slipDrag.audioSource = {
+                            entrySeconds: sourceEntrySeconds,
+                            startBeat: clip.startBeat,
+                            stretch: consumedStretchFactor(clip),
+                            tempoAtStart,
+                        };
+                    }
+                    slipDragRef.current = slipDrag;
                     return;
                 }
             }
@@ -426,13 +458,20 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 for (const time of state.tracks) {
                     for (const clip of time.clips) {
                         if (allIds.includes(clip.id)) {
-                            originals.set(clip.id, {
+                            const original: ClipPreviewPosition = {
                                 trackId: time.id,
                                 startBeat: clip.startBeat,
                                 endBeat: clip.endBeat,
                                 audioOffsetBeats: clip.audioOffsetBeats,
                                 midiOffsetBeats: clip.midiOffsetBeats,
-                            });
+                            };
+                            if (clip.type === 'audio') {
+                                original.audioOffsetSeconds = resolveAudioSourceOffsetSeconds(
+                                    clip,
+                                    readTempoAtBeat({ beat: clip.startBeat })
+                                );
+                            }
+                            originals.set(clip.id, original);
                             types.set(clip.id, clip.type);
                             if (clip.locked) {
                                 locked.add(clip.id);
@@ -523,11 +562,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
 
         if (slipDragRef.current) {
-            const { clipId, clipType, startX, originalOffset } = slipDragRef.current;
+            const drag = slipDragRef.current;
+            const { clipId, clipType, startX } = drag;
             const view = timelineViewStore.value;
             if (view) {
                 const deltaBeats = (x - startX) / view.pixelsPerBeat;
-                const newOffset = originalOffset + deltaBeats;
+                const sourceOffset = sourceOffsetAtSlipBeat(drag, deltaBeats);
+                const newOffset = sourceOffset.offset;
 
                 // Update ephemeral preview
                 if (!clipDragPreviewRef.current) {
@@ -541,10 +582,17 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                             endBeat: clip.endBeat,
                             audioOffsetBeats: clip.audioOffsetBeats,
                             midiOffsetBeats: clip.midiOffsetBeats,
-                        };
+                        } satisfies ClipPreviewPosition;
+                        const previewPosition: ClipPreviewPosition = { ...pos };
+                        if (clip.type === 'audio') {
+                            previewPosition.audioOffsetSeconds = resolveAudioSourceOffsetSeconds(
+                                clip,
+                                readTempoAtBeat({ beat: clip.startBeat })
+                            );
+                        }
                         clipDragPreviewRef.current = {
-                            positions: new Map([[clipId, { ...pos }]]),
-                            originals: new Map([[clipId, { ...pos }]]),
+                            positions: new Map([[clipId, { ...previewPosition }]]),
+                            originals: new Map([[clipId, { ...previewPosition }]]),
                         };
                     }
                 }
@@ -553,11 +601,15 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 if (preview) {
                     const current = preview.positions.get(clipId);
                     if (current) {
-                        preview.positions.set(clipId, {
+                        const next: ClipPreviewPosition = {
                             ...current,
                             audioOffsetBeats: clipType === 'audio' ? newOffset : current.audioOffsetBeats,
                             midiOffsetBeats: clipType === 'midi' ? newOffset : current.midiOffsetBeats,
-                        });
+                        };
+                        if (clipType === 'audio' && sourceOffset.offsetSeconds !== undefined) {
+                            next.audioOffsetSeconds = sourceOffset.offsetSeconds;
+                        }
+                        preview.positions.set(clipId, next);
                     }
                 }
                 previewDirtyFlag.value = true;
@@ -598,13 +650,29 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     // instead of sliding with it (#4989).
                     const delta = newStart - orig.startBeat;
                     const clipType = dragContextRef.current?.types.get(dragState.clipId);
-                    preview.positions.set(dragState.clipId, {
+                    const position: ClipPreviewPosition = {
                         ...orig,
                         startBeat: newStart,
                         audioOffsetBeats: (orig.audioOffsetBeats ?? 0) + delta,
                         midiOffsetBeats:
                             clipType === 'midi' ? (orig.midiOffsetBeats ?? 0) + delta : orig.midiOffsetBeats,
-                    });
+                    };
+                    if (clipType === 'audio' && orig.audioOffsetSeconds !== undefined) {
+                        const clip = trackStore.value?.tracks
+                            .flatMap((track) => track.clips)
+                            .find((candidate) => candidate.id === dragState.clipId);
+                        const stretch = clip ? consumedStretchFactor(clip) : 1;
+                        const elapsedSeconds =
+                            readSecondsAtBeat({ beat: newStart }) - readSecondsAtBeat({ beat: orig.startBeat });
+                        const sourceSeconds = getAudioSourcePositionSeconds(
+                            orig.audioOffsetSeconds,
+                            elapsedSeconds,
+                            stretch
+                        );
+                        position.audioOffsetSeconds = sourceSeconds;
+                        position.audioOffsetBeats = (sourceSeconds * readTempoAtBeat({ beat: newStart })) / 60;
+                    }
+                    preview.positions.set(dragState.clipId, position);
                     previewDirtyFlag.value = true;
                 }
             }
@@ -793,7 +861,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             return;
         }
         if (slipDragRef.current) {
-            const { clipId, clipType, startX, originalOffset } = slipDragRef.current;
+            const drag = slipDragRef.current;
+            const { clipId, clipType, startX } = drag;
             slipDragRef.current = null;
             clipDragPreviewRef.current = null;
             previewDirtyFlag.value = true;
@@ -808,7 +877,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     // refusals surface instead of vanishing.
                     void executeUserAppAction({
                         type: 'slipClipContent',
-                        payload: { clipId, clipType, offset: originalOffset + deltaBeats },
+                        payload: { clipId, clipType, ...sourceOffsetAtSlipBeat(drag, deltaBeats) },
                     });
                 }
             }

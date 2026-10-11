@@ -21,6 +21,7 @@ describe('serializeArrangementTracks (clip-shape mapping)', () => {
                     type: 'audio',
                     audioBufferId: 'buf-abc',
                     audioOffsetBeats: 2,
+                    audioOffsetSeconds: 0,
                     fadeInBeats: 0,
                     fadeOutBeats: 0,
                     gain: 1,
@@ -36,6 +37,8 @@ describe('serializeArrangementTracks (clip-shape mapping)', () => {
 
         expect(clip?.bufferId).toBe('buf-abc');
         expect(clip?.sampleStartBeat).toBe(2);
+        expect(clip?.audioOffsetSeconds).toBe(0);
+        expect(hydrateArrangementTracks([serialized!])[0]?.clips[0]?.audioOffsetSeconds).toBe(0);
         // The runtime field name must not leak into the serialized shape.
         expect((clip as Record<string, unknown>).audioBufferId).toBeUndefined();
     });

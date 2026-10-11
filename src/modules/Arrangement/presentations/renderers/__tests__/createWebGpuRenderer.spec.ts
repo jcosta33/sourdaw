@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
+import { type ClipRenderModel, type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { drawClip } from '../clipDrawing';
 import { CLIP_LABEL_ASCENT_CSS_PX, CLIP_LABEL_INSET_CSS_PX } from '../clipLabel';
 import { computeMidiNoteBeatSpan } from '../createWebGpuRenderer';
@@ -19,15 +19,16 @@ const mocks = vi.hoisted(() => ({
     getCachedAudioBufferWaveformPeaks: vi.fn<GetCachedAudioBufferWaveformPeaksMock>(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
     getCachedAudioBufferWaveformPeaks: mocks.getCachedAudioBufferWaveformPeaks,
 }));
 
 const original_device_pixel_ratio = window.devicePixelRatio;
 
-const create_test_audio_buffer = (sampleRate = 48_000): AudioBuffer => {
-    const channel_data = new Float32Array(96_000);
+const create_test_audio_buffer = (sampleRate = 48_000, length = 96_000): AudioBuffer => {
+    const channel_data = new Float32Array(length);
     return {
         copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {
             destination.set(channel_data.subarray(start_in_channel, start_in_channel + destination.length));
@@ -68,6 +69,7 @@ const create_test_model = (): TimelineRenderModel => ({
                     midiNotes: [],
                     audioBufferId: 'buf-1',
                     audioOffsetBeats: 1,
+                    stretchMode: 'timestretch',
                     stretchRatio: 2,
                     loopEnabled: false,
                     loopLength: undefined,
@@ -825,7 +827,7 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
         if (!renderer) {
             throw new Error('expected WebGPU renderer');
         }
-        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 288_000));
         mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
 
         renderer.render(create_test_model());
@@ -851,10 +853,11 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
         if (!renderer) {
             throw new Error('expected WebGPU renderer');
         }
-        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 288_000));
         mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
         const model = create_test_model();
         model.tracks[0]!.clips[0]!.clipStartTempo = 90;
+        model.tempoChanges = [{ id: 'at-clip-start', beat: 2, tempo: 90, curve: 'instant' }];
         renderer.render(model);
         expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith(
             expect.objectContaining({ startSample: 32_000, endSample: 288_000 })
@@ -1866,10 +1869,33 @@ describe('audio waveform span parity across renderers (#2519)', () => {
     });
 
     /** Render one clip through both renderers; report each one's span and gap. */
-    const render_through_both = async (audioOffsetBeats: number, stretchRatio: number) => {
-        const base = create_test_model();
-        const clip = { ...base.tracks[0]!.clips[0]!, audioOffsetBeats, stretchRatio };
-        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+    const render_through_both = async (
+        audioOffsetBeats: number,
+        stretchRatio: number,
+        audioOffsetSeconds?: number,
+        tempoChanges: Array<{ id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }> = [],
+        view: { clipEndBeat: number; startBeat: number; endBeat: number; bufferLength: number } = {
+            clipEndBeat: 6,
+            startBeat: 0,
+            endBeat: 16,
+            bufferLength: 192_000,
+        }
+    ) => {
+        const base = {
+            ...create_test_model(),
+            tempoChanges,
+            viewportStartBeat: view.startBeat,
+            viewportEndBeat: view.endBeat,
+        };
+        const clip: ClipRenderModel = {
+            ...base.tracks[0]!.clips[0]!,
+            endBeat: view.clipEndBeat,
+            audioOffsetBeats,
+            audioOffsetSeconds,
+            stretchMode: stretchRatio === 1 ? 'off' : 'timestretch',
+            stretchRatio,
+        };
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, view.bufferLength));
         mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.6, 0.6, 0.6, 0.6]));
 
         // Canvas2D: clip beats 2..6 at 25 px/beat → x = 50, w = 100, inset 2.
@@ -1878,7 +1904,12 @@ describe('audio waveform span parity across renderers (#2519)', () => {
         const canvasPeaksCall = mocks.getCachedAudioBufferWaveformPeaks.mock.calls.at(-1)![0];
         // The only non-waveform lineTo is the top-edge highlight at y = 2.5.
         const firstWaveformX = canvasCtx.lineTo.mock.calls.find((args: number[]) => args[1] !== 2.5)![0];
-        const canvasGapPx = firstWaveformX - (50 + 2);
+        const clipX = (clip.startBeat - base.viewportStartBeat) * base.pixelsPerBeat;
+        const canvasGapPx = firstWaveformX - (clipX + 2);
+        const canvasBinXs = canvasCtx.lineTo.mock.calls
+            .filter((args: number[]) => args[1] !== 2.5)
+            .slice(0, 4)
+            .map((args: number[]) => args[0]);
 
         // WebGPU, at dpr 1 so its device px are the canvas renderer's CSS px.
         const canvas = document.createElement('canvas');
@@ -1892,9 +1923,10 @@ describe('audio waveform span parity across renderers (#2519)', () => {
         }
         renderer.render({ ...base, tracks: [{ ...base.tracks[0]!, clips: [clip] }] });
         const gpuPeaksCall = mocks.getCachedAudioBufferWaveformPeaks.mock.calls.at(-1)![0];
-        const gpuGapPx = decode_waveform_rect_left_edges(handles, canvas)[0]! - 50;
+        const gpuBinXs = decode_waveform_rect_left_edges(handles, canvas);
+        const gpuGapPx = gpuBinXs[0]! - clipX;
 
-        return { canvasPeaksCall, canvasGapPx, gpuPeaksCall, gpuGapPx };
+        return { canvasPeaksCall, canvasGapPx, canvasBinXs, gpuPeaksCall, gpuGapPx, gpuBinXs };
     };
 
     it.each([
@@ -1921,6 +1953,77 @@ describe('audio waveform span parity across renderers (#2519)', () => {
             expect(gpuGapPx).toBeCloseTo(gapPx);
         }
     );
+
+    it('uses canonical zero instead of a stale beat alias in both waveform renderers', async () => {
+        const { canvasPeaksCall, gpuPeaksCall } = await render_through_both(2, 1, 0);
+
+        expect(canvasPeaksCall.startSample).toBe(0);
+        expect(gpuPeaksCall.startSample).toBe(0);
+        expect(canvasPeaksCall.endSample).toBe(96_000);
+        expect(gpuPeaksCall.endSample).toBe(96_000);
+    });
+
+    it('requests only a long clip’s visible tail and aligns Canvas/GPU source bins there', async () => {
+        const { canvasPeaksCall, gpuPeaksCall, canvasBinXs, gpuBinXs } = await render_through_both(20, 1, 0, [], {
+            clipEndBeat: 102,
+            startBeat: 100,
+            endBeat: 102,
+            bufferLength: 2_500_000,
+        });
+
+        expect(canvasPeaksCall).toEqual({
+            bufferId: 'buf-1',
+            numBins: 50,
+            startSample: 2_352_000,
+            endSample: 2_400_000,
+        });
+        expect(gpuPeaksCall).toEqual(canvasPeaksCall);
+        expect(canvasBinXs[0]).toBeCloseTo(2, 10);
+        expect(gpuBinXs[0]).toBeCloseTo(0, 10);
+        expect(canvasBinXs[3]).toBeCloseTo(39.5, 10);
+        expect(gpuBinXs[3]).toBeCloseTo(37.5, 10);
+    });
+
+    it('integrates an interior tempo marker for the visible source window in both renderers', async () => {
+        const changes = [
+            { id: 'fast', beat: 2, tempo: 120, curve: 'instant' as const },
+            { id: 'slow', beat: 4, tempo: 60, curve: 'instant' as const },
+        ];
+        const { canvasPeaksCall, gpuPeaksCall } = await render_through_both(0, 1, 0, changes);
+
+        expect(canvasPeaksCall.endSample).toBe(144_000);
+        expect(gpuPeaksCall.endSample).toBe(144_000);
+    });
+
+    it('places signed canonical pre-roll at the inverse beat across a marker in both renderers', async () => {
+        const changes = [
+            { id: 'fast', beat: 2, tempo: 120, curve: 'instant' as const },
+            { id: 'slow', beat: 4, tempo: 60, curve: 'instant' as const },
+        ];
+        const { canvasPeaksCall, gpuPeaksCall, canvasGapPx, gpuGapPx } = await render_through_both(2, 1, -2, changes);
+
+        expect(canvasPeaksCall.startSample).toBe(0);
+        expect(gpuPeaksCall.startSample).toBe(0);
+        expect(canvasPeaksCall.endSample).toBe(48_000);
+        expect(gpuPeaksCall.endSample).toBe(48_000);
+        expect(canvasGapPx).toBeCloseTo(75);
+        expect(gpuGapPx).toBeCloseTo(75);
+    });
+
+    it('warps peak x positions through a linear tempo ramp in both renderers', async () => {
+        const changes = [
+            { id: 'ramp', beat: 2, tempo: 120, curve: 'linear' as const },
+            { id: 'slow', beat: 6, tempo: 60, curve: 'instant' as const },
+        ];
+        const { canvasPeaksCall, gpuPeaksCall, canvasBinXs, gpuBinXs } = await render_through_both(0, 1, 0, changes);
+        const expectedEndSample = Math.floor(4 * Math.LN2 * 48_000);
+        const expectedSecondBinX = 50 + 25 * 8 * (1 - 2 ** (-1 / 4));
+
+        expect(canvasPeaksCall.endSample).toBe(expectedEndSample);
+        expect(gpuPeaksCall.endSample).toBe(expectedEndSample);
+        expect(canvasBinXs[1]).toBeCloseTo(expectedSecondBinX + 2, 1);
+        expect(gpuBinXs[1]).toBeCloseTo(expectedSecondBinX, 1);
+    });
 
     it('both renderers decline to draw when the pre-roll swallows the clip', async () => {
         const base = create_test_model();

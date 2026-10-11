@@ -2,16 +2,20 @@ import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } fr
 import { decodeMidiClipDataSnapshots } from '#/modules/MIDI/useCases';
 import {
     type AppAction,
+    type ClipSplitActionSnapshot,
     type HandlerSessionActionEntry,
-    type TakeReKeyLaneTransitionSnapshot,
+    type TakeSourceDepthSnapshot,
 } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
+import { isAudioSourceStateSnapshot } from '../../useCases/clipEditing/isAudioSourceStateSnapshot';
+import { decodeClipSplitTakeTransitions } from '../../useCases/comping/decodeClipSplitTakeTransitions';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
-import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLaneTransition';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
+
+import { isSplitTakeReKeyCapture } from './isSplitTakeReKeyCapture';
 
 import type { Clip } from '../../stores/trackStore';
 import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
@@ -29,7 +33,7 @@ function hasFiniteNumbers(value: unknown): boolean {
     return true;
 }
 
-function isFiniteNumber(value: unknown): boolean {
+function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
@@ -81,6 +85,7 @@ const optionalClipFields: Record<string, (value: unknown) => boolean> = {
     fileId: (value) => typeof value === 'string',
     assetHash: (value) => typeof value === 'string',
     audioOffsetBeats: isFiniteNumber,
+    audioOffsetSeconds: isFiniteNumber,
     midiOffsetBeats: isFiniteNumber,
     stretchMode: (value) => value === 'off' || value === 'repitch' || value === 'timestretch',
     stretchRatio: isFiniteNumber,
@@ -274,7 +279,50 @@ export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): bool
     );
 }
 
-function isPlacement(value: unknown): boolean {
+function isTakeSourceDepthSnapshot(value: unknown): value is TakeSourceDepthSnapshot {
+    return (
+        isRecord(value) &&
+        Object.keys(value).every((key) =>
+            [
+                'laneId',
+                'takeId',
+                'sourceOffsetSeconds',
+                'sourceOffsetBeats',
+                'passAnchorSeconds',
+                'passDepthSeconds',
+            ].includes(key)
+        ) &&
+        Object.hasOwn(value, 'passAnchorSeconds') === Object.hasOwn(value, 'passDepthSeconds') &&
+        (!Object.hasOwn(value, 'passAnchorSeconds') ||
+            (isFiniteNumber(value.passAnchorSeconds) &&
+                isFiniteNumber(value.passDepthSeconds) &&
+                value.passDepthSeconds >= 0 &&
+                value.sourceOffsetBeats !== null)) &&
+        ['laneId', 'takeId', 'sourceOffsetSeconds', 'sourceOffsetBeats'].every((key) => Object.hasOwn(value, key)) &&
+        typeof value.laneId === 'string' &&
+        value.laneId.length > 0 &&
+        typeof value.takeId === 'string' &&
+        value.takeId.length > 0 &&
+        (value.sourceOffsetSeconds === null ||
+            (isFiniteNumber(value.sourceOffsetSeconds) && value.sourceOffsetSeconds >= 0)) &&
+        (value.sourceOffsetBeats === null || (isFiniteNumber(value.sourceOffsetBeats) && value.sourceOffsetBeats >= 0))
+    );
+}
+
+function isTakeSourceDepthSnapshots(value: unknown): boolean {
+    if (!Array.isArray(value) || !value.every(isTakeSourceDepthSnapshot)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) {
+            return false;
+        }
+    }
+    const identities = value.map((source) => JSON.stringify([source.laneId, source.takeId]));
+    return new Set(identities).size === identities.length;
+}
+
+function isPlacement(value: unknown): value is Record<string, unknown> {
     return (
         isRecord(value) &&
         typeof value.trackId === 'string' &&
@@ -287,17 +335,25 @@ function isPlacement(value: unknown): boolean {
         value.endBeat > value.startBeat &&
         isExactClipAutomationMoveSnapshots(value.automationLanes) &&
         value.automationLanes.every((lane) => lane.trackId === value.trackId) &&
-        hasFiniteNumbers(value.automationLanes)
+        hasFiniteNumbers(value.automationLanes) &&
+        (!Object.hasOwn(value, 'audioSource') || isAudioSourceStateSnapshot(value.audioSource)) &&
+        (!Object.hasOwn(value, 'takeSources') || isTakeSourceDepthSnapshots(value.takeSources))
     );
 }
 
 export function isRestoreClipPlacementSessionPayload(value: unknown): boolean {
+    if (
+        !isRecord(value) ||
+        typeof value.clipId !== 'string' ||
+        value.clipId.length === 0 ||
+        !isPlacement(value.expected) ||
+        !isPlacement(value.replacement)
+    ) {
+        return false;
+    }
     return (
-        isRecord(value) &&
-        typeof value.clipId === 'string' &&
-        value.clipId.length > 0 &&
-        isPlacement(value.expected) &&
-        isPlacement(value.replacement)
+        Object.hasOwn(value.expected, 'audioSource') === Object.hasOwn(value.replacement, 'audioSource') &&
+        Object.hasOwn(value.expected, 'takeSources') === Object.hasOwn(value.replacement, 'takeSources')
     );
 }
 
@@ -325,7 +381,7 @@ export function isMoveClipSessionEntry(entry: HandlerSessionActionEntry): boolea
     );
 }
 
-function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): value is { trackId: string } {
+function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): value is ClipSplitActionSnapshot {
     return (
         isRecord(value) &&
         typeof value.trackId === 'string' &&
@@ -396,77 +452,6 @@ export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
     );
 }
 
-function foreignTakesUnchanged(
-    takes: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['takesBefore'][number]>,
-    otherTakes: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['takesAfter'][number]>,
-    clipId: string,
-    rightClipId: string
-): boolean {
-    return takes.every(
-        (take) =>
-            take.clipId === clipId ||
-            take.clipId === rightClipId ||
-            valuesEqual(
-                take,
-                otherTakes.find((other) => other.id === take.id)
-            )
-    );
-}
-
-function foreignRegionsUnchanged(
-    regions: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['regionsBefore'][number]>,
-    otherRegions: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['regionsAfter'][number]>,
-    takes: ReadonlyArray<TakeReKeyLaneTransitionSnapshot['takesBefore'][number]>,
-    clipId: string,
-    rightClipId: string
-): boolean {
-    return regions.every((region) => {
-        const take = takes.find((candidate) => candidate.id === region.takeId);
-        return (
-            take?.clipId === clipId ||
-            take?.clipId === rightClipId ||
-            otherRegions.some((other) => valuesEqual(region, other))
-        );
-    });
-}
-
-function isSplitTakeReKeyCapture(value: unknown, trackId: string, clipId: string, rightClipId: string): boolean {
-    if (value === undefined) {
-        return true;
-    }
-    if (!Array.isArray(value) || !value.every(isReKeyLaneTransition)) {
-        return false;
-    }
-    const laneIds = new Set<string>();
-    for (const transition of value) {
-        if (transition.trackId !== trackId || laneIds.has(transition.laneId)) {
-            return false;
-        }
-        laneIds.add(transition.laneId);
-        if (
-            !foreignTakesUnchanged(transition.takesBefore, transition.takesAfter, clipId, rightClipId) ||
-            !foreignTakesUnchanged(transition.takesAfter, transition.takesBefore, clipId, rightClipId) ||
-            !foreignRegionsUnchanged(
-                transition.regionsBefore,
-                transition.regionsAfter,
-                transition.takesBefore,
-                clipId,
-                rightClipId
-            ) ||
-            !foreignRegionsUnchanged(
-                transition.regionsAfter,
-                transition.regionsBefore,
-                transition.takesAfter,
-                clipId,
-                rightClipId
-            )
-        ) {
-            return false;
-        }
-    }
-    return true;
-}
-
 export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
     return (
         isRecord(value) &&
@@ -480,7 +465,13 @@ export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
         clipSplitCaptureOwnersMatch(value) &&
         (value.retiredTakeLanes === undefined ||
             (isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId, value.expected.trackId) &&
-                isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId, value.replacement.trackId)))
+                isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId, value.replacement.trackId))) &&
+        decodeClipSplitTakeTransitions({
+            clipId: value.clipId,
+            rightClipId: value.rightClipId,
+            expected: value.expected,
+            replacement: value.replacement,
+        }) !== null
     );
 }
 
@@ -530,24 +521,18 @@ export function isRestoreTimeOperationSessionPayload(value: unknown): boolean {
     return isRecord(value) && timeOperationRestorePlan.isValid(value.plan);
 }
 
-export function isDeleteTimeSessionEntry(entry: HandlerSessionActionEntry): boolean {
+function hasPairedGlobalTimeRestorePlans(entry: HandlerSessionActionEntry): boolean {
     if (
-        entry.action.type !== 'deleteTime' ||
         entry.inverseAction?.type !== 'restoreTimeOperationState' ||
         entry.redoAction?.type !== 'restoreTimeOperationState'
     ) {
         return false;
     }
-    const action = entry.action.payload;
     const inverse = entry.inverseAction.payload;
     const redo = entry.redoAction.payload;
     const inversePlan: unknown = inverse.plan;
     const redoPlan: unknown = redo.plan;
     if (
-        !Number.isFinite(action.startBeat) ||
-        !Number.isFinite(action.endBeat) ||
-        action.startBeat < 0 ||
-        action.endBeat <= action.startBeat ||
         !isRestoreTimeOperationSessionPayload(inverse) ||
         !isRestoreTimeOperationSessionPayload(redo) ||
         !isRecord(inversePlan) ||
@@ -562,4 +547,46 @@ export function isDeleteTimeSessionEntry(entry: HandlerSessionActionEntry): bool
     } catch {
         return false;
     }
+}
+
+export function isInsertTimeSessionEntry(entry: HandlerSessionActionEntry): boolean {
+    if (entry.action.type !== 'insertTime') {
+        return false;
+    }
+    const { atBeat, durationBeats } = entry.action.payload;
+    return (
+        Number.isFinite(atBeat) &&
+        atBeat >= 0 &&
+        Number.isFinite(durationBeats) &&
+        durationBeats > 0 &&
+        hasPairedGlobalTimeRestorePlans(entry)
+    );
+}
+
+export function isDuplicateTimeRangeSessionEntry(entry: HandlerSessionActionEntry): boolean {
+    if (entry.action.type !== 'duplicateTimeRange') {
+        return false;
+    }
+    const { startBeat, endBeat } = entry.action.payload;
+    return (
+        Number.isFinite(startBeat) &&
+        startBeat >= 0 &&
+        Number.isFinite(endBeat) &&
+        endBeat > startBeat &&
+        hasPairedGlobalTimeRestorePlans(entry)
+    );
+}
+
+export function isDeleteTimeSessionEntry(entry: HandlerSessionActionEntry): boolean {
+    if (entry.action.type !== 'deleteTime') {
+        return false;
+    }
+    const { startBeat, endBeat } = entry.action.payload;
+    return (
+        Number.isFinite(startBeat) &&
+        startBeat >= 0 &&
+        Number.isFinite(endBeat) &&
+        endBeat > startBeat &&
+        hasPairedGlobalTimeRestorePlans(entry)
+    );
 }

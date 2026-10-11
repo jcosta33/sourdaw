@@ -238,6 +238,7 @@ export type ProjectClip = {
     // Audio specific
     bufferId?: string;
     sampleStartBeat?: number;
+    audioOffsetSeconds?: number;
     fileId?: string;
     // Runtime aliases retained only for loading snapshots written before the
     // arrangement collection gained an explicit serialized shape.
@@ -799,6 +800,10 @@ export type ProjectTake = {
     startBeat: number;
     endBeat: number;
     selected: boolean;
+    sourceOffsetBeats?: number;
+    sourceOffsetSeconds?: number;
+    passAnchorSeconds?: number;
+    passDepthSeconds?: number;
 };
 
 export type ProjectTakeLane = {

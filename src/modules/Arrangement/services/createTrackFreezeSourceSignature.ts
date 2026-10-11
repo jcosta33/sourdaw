@@ -20,6 +20,7 @@ type RenderAffectingClipFields = Pick<
     | 'audioBufferId'
     | 'assetHash'
     | 'audioOffsetBeats'
+    | 'audioOffsetSeconds'
     | 'midiOffsetBeats'
     | 'fadeInBeats'
     | 'fadeOutBeats'
@@ -51,7 +52,7 @@ function clipSignatureEntry(clip: RenderAffectingClipFields): string {
     // field does not mark a render-identical track stale. Identity strings
     // (`audioBufferId`, `stretchMode`, `stretchRatio`) stay raw: absent
     // means absent.
-    return [
+    const signature = [
         clip.id,
         clip.startBeat,
         duration,
@@ -69,6 +70,12 @@ function clipSignatureEntry(clip: RenderAffectingClipFields): string {
         clip.loopEnabled ?? false,
         clip.loopLength ?? 0,
     ].join(':');
+
+    // Preserve legacy signatures byte-for-byte. When the authoritative source
+    // entrance is present, sign its presence and value, including explicit 0.
+    return clip.audioOffsetSeconds === undefined
+        ? signature
+        : `${signature}:audioOffsetSeconds=${clip.audioOffsetSeconds}`;
 }
 
 /*

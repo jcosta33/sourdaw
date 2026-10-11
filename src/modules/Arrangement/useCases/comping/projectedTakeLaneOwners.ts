@@ -1,11 +1,10 @@
-import {
-    type AppAction,
-    type RetiredTakeLaneSnapshot,
-    type TakeReKeyLaneTransitionSnapshot,
-} from '#/utils/handlerContract';
+import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { takeLaneStore } from '../../stores/takeLaneStore';
+
+import { decodeClipSplitTakeTransitions } from './decodeClipSplitTakeTransitions';
+import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 type TakeLaneOwners = { id: string; trackId: string; takes: { id: string; clipId: string }[] };
 
@@ -30,7 +29,7 @@ function restoreRetiredOwners(lanes: TakeLaneOwners[], captures: readonly Retire
 
 function projectReKeyOwners(
     lanes: TakeLaneOwners[],
-    transitions: readonly TakeReKeyLaneTransitionSnapshot[],
+    transitions: readonly TakeReKeyLaneTransition[],
     direction: 'apply' | 'restore'
 ): void {
     for (const transition of transitions) {
@@ -86,12 +85,18 @@ export function projectedTakeLaneOwners(priorActions: readonly AppAction[]): Tak
             restoreRetiredOwners(lanes, action.payload.retiredTakeLanes ?? []);
         } else if (action.type === 'restoreClipSplitState') {
             const { replacement, rightClipId, retiredTakeLanes, reKeyedTakeLanes } = action.payload;
+            const snapshotTransitions =
+                replacement.takeLanes === undefined ? null : decodeClipSplitTakeTransitions(action.payload);
             if (replacement.rightClip) {
                 restoreRetiredOwners(lanes, retiredTakeLanes ?? []);
-                projectReKeyOwners(lanes, reKeyedTakeLanes ?? [], 'apply');
+                projectReKeyOwners(lanes, snapshotTransitions ?? reKeyedTakeLanes ?? [], 'apply');
             } else {
                 retireClipOwners(lanes, rightClipId);
-                projectReKeyOwners(lanes, reKeyedTakeLanes ?? [], 'restore');
+                projectReKeyOwners(
+                    lanes,
+                    snapshotTransitions ?? reKeyedTakeLanes ?? [],
+                    snapshotTransitions ? 'apply' : 'restore'
+                );
             }
         }
     }

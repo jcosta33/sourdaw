@@ -1,6 +1,6 @@
 import { cloneClipAutomationLanes, shiftClipAutomation } from '#/modules/Automation/useCases';
 import { restoreMidiClipData, setNotesForClip } from '#/modules/MIDI/useCases';
-import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
+import { playheadPositionRef, readTempoAtBeat, transportStore } from '#/modules/Transport/stores';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNoteViewTypes';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -11,6 +11,7 @@ import { setWarpState } from '../../stores/warpStates';
 import { addClip } from '../clip/addClip';
 import { isClipDropCompatible } from '../clip/isClipDropCompatible';
 import { removeClip } from '../clip/removeClip';
+import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
 
 export function pasteClip(): boolean {
     const clipClipboard = clipboardStore.value?.clipClipboard ?? [];
@@ -118,6 +119,12 @@ export function pasteClip(): boolean {
     try {
         for (const plan of plans) {
             const { entry, endBeat, startBeat, targetTrackId } = plan;
+            let audioOffsetSeconds: number | undefined;
+            let audioOffsetBeats = entry.clip.audioOffsetBeats;
+            if (entry.clip.type === 'audio') {
+                audioOffsetSeconds = audioSourceAtBeat(entry.clip, entry.clip.startBeat).audioOffsetSeconds;
+                audioOffsetBeats = (audioOffsetSeconds * readTempoAtBeat({ beat: startBeat })) / 60;
+            }
             // Apart from identity and position a pasted clip equals its
             // source, same carry-over list as `duplicateClipCore`: only the
             // id, target track, span and name differ.
@@ -129,7 +136,8 @@ export function pasteClip(): boolean {
                 type: entry.clip.type,
                 audioBufferId: entry.clip.audioBufferId,
                 assetHash: entry.clip.assetHash,
-                audioOffsetBeats: entry.clip.audioOffsetBeats,
+                audioOffsetBeats,
+                audioOffsetSeconds,
                 midiOffsetBeats: entry.clip.midiOffsetBeats,
                 fadeInBeats: entry.clip.fadeInBeats,
                 fadeOutBeats: entry.clip.fadeOutBeats,

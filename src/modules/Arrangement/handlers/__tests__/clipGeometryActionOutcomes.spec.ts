@@ -12,10 +12,18 @@ type GetTrackState = typeof import('../../repositories/track/getTrackState').get
 type GetTrackStoreState = typeof import('../../useCases/getTrackStoreState').getTrackStoreState;
 type UpdateClip = typeof import('../../repositories/track/updateClip').updateClip;
 type TrackState = NonNullable<ReturnType<GetTrackState>>;
+type AutomationUseCases = typeof import('#/modules/Automation/useCases');
+type GetAutomationLanes = AutomationUseCases['getAutomationLanes'];
+type AutomationLane = ReturnType<GetAutomationLanes>[number];
+type IsExactAutomationLaneSnapshots = AutomationUseCases['isExactAutomationLaneSnapshots'];
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<GetTrackState>(),
     getTrackStoreState: vi.fn<GetTrackStoreState>(),
+    getAutomationLanes: vi.fn<GetAutomationLanes>(() => []),
+    isExactAutomationLaneSnapshots: vi.fn<IsExactAutomationLaneSnapshots>(
+        (value): value is readonly AutomationLane[] => Array.isArray(value) && value.length === 0
+    ),
     shiftClipAutomation: vi.fn<(clipId: string, deltaBeats: number) => void>(),
     shiftClipMidiNotes: vi.fn<(clipId: string, deltaBeats: number) => void>(),
     updateClip: vi.fn<UpdateClip>(),
@@ -34,6 +42,8 @@ vi.mock('../../useCases/getTrackStoreState', () => ({
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
+    getAutomationLanes: mocks.getAutomationLanes,
+    isExactAutomationLaneSnapshots: mocks.isExactAutomationLaneSnapshots,
     shiftClipAutomation: mocks.shiftClipAutomation,
 }));
 

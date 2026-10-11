@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     captureClipPitchAnalysis: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     readTempoAtBeat: vi.fn<(input: { beat: number }) => number>(),
+    readSecondsAtBeat: vi.fn<(input: { beat: number }) => number>(),
     transportTempo: 60,
     tempoMapChanges: [] as { beat: number; tempo: number; curve: 'instant' }[],
     updateClipInStore: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('#/modules/Transport/stores', () => ({
         },
     },
     readTempoAtBeat: ({ beat }: { beat: number }) => mocks.readTempoAtBeat({ beat }),
+    readSecondsAtBeat: ({ beat }: { beat: number }) => mocks.readSecondsAtBeat({ beat }),
 }));
 vi.mock('../../../stores/updateClipInStore', () => ({
     updateClipInStore: mocks.updateClipInStore,
@@ -50,6 +52,7 @@ describe('handleReverseClip', () => {
         mocks.transportTempo = 60;
         mocks.tempoMapChanges = [];
         mocks.readTempoAtBeat.mockImplementation((_input: { beat: number }) => mocks.transportTempo);
+        mocks.readSecondsAtBeat.mockImplementation(({ beat }) => beat);
         mocks.getCachedAudioBuffer.mockReturnValue({
             length: 32,
             sampleRate: 8,
@@ -121,6 +124,7 @@ describe('handleReverseClip', () => {
                 fadeInBeats: 0.25,
                 fadeOutBeats: 1.5,
                 audioOffsetBeats: 1,
+                audioSource: { audioOffsetSeconds: null, audioOffsetBeats: 1 },
                 blobs: [{ id: 'b1', pitchCurveCents: [1, 2] }],
                 contour: { points: [{ time: 0 }], sample_rate: 48000, hop_size: 256 },
             },
@@ -135,11 +139,12 @@ describe('handleReverseClip', () => {
                 fadeInBeats: 1.5,
                 fadeOutBeats: 0.25,
                 audioOffsetBeats: 2,
+                audioSource: { audioOffsetSeconds: 2, audioOffsetBeats: 2 },
             },
         });
     });
 
-    it('restores audioOffsetBeats 0 when the clip never stored the field', () => {
+    it('restores absent source fields when the original clip stored neither field', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
@@ -170,7 +175,10 @@ describe('handleReverseClip', () => {
         }
         expect(inverse).toMatchObject({
             type: 'restoreReversedClip',
-            payload: { audioOffsetBeats: 0 },
+            payload: {
+                audioOffsetBeats: 0,
+                audioSource: { audioOffsetSeconds: null, audioOffsetBeats: null },
+            },
         });
 
         mocks.getTrackStoreState.mockReturnValue({
@@ -186,6 +194,7 @@ describe('handleReverseClip', () => {
                             startBeat: 0,
                             endBeat: 2,
                             audioOffsetBeats: 2,
+                            audioOffsetSeconds: 2,
                             fadeInBeats: 1.5,
                             fadeOutBeats: 0.25,
                         },
@@ -210,10 +219,18 @@ describe('handleReverseClip', () => {
             startBeat: 0,
             endBeat: 2,
             audioOffsetBeats: 2,
+            audioOffsetSeconds: 2,
             fadeInBeats: 1.5,
             fadeOutBeats: 0.25,
         });
-        expect(restored).toMatchObject({ audioOffsetBeats: 0 });
+        expect(restored).toMatchObject({
+            audioBufferId: 'buffer-1',
+            name: 'Verse',
+            fadeInBeats: 0.25,
+            fadeOutBeats: 1.5,
+        });
+        expect(restored).not.toHaveProperty('audioOffsetBeats');
+        expect(restored).not.toHaveProperty('audioOffsetSeconds');
     });
 
     it('restores the original audioOffsetBeats when undo applies the inverse restore', () => {
@@ -310,7 +327,50 @@ describe('handleReverseClip', () => {
 
         expect(description.redoAction).toMatchObject({
             type: 'restoreReversedClip',
-            payload: { audioOffsetBeats: 4 },
+            payload: { audioOffsetBeats: 4, audioSource: { audioOffsetSeconds: 4, audioOffsetBeats: 4 } },
+        });
+    });
+
+    it('captures canonical zero and replays the mirrored seconds through a tempo change', () => {
+        mocks.getCachedAudioBuffer.mockReturnValue({ length: 64, sampleRate: 8 });
+        mocks.readSecondsAtBeat.mockImplementation(({ beat }) => (beat <= 2 ? beat : 2 + (beat - 2) / 2));
+        mocks.readTempoAtBeat.mockImplementation(({ beat }) => (beat < 2 ? 60 : 120));
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            name: 'Verse',
+                            audioBufferId: 'buffer-1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            audioOffsetSeconds: 0,
+                            audioOffsetBeats: 7,
+                            stretchMode: 'timestretch',
+                            stretchRatio: 2,
+                            fadeInBeats: 0.25,
+                            fadeOutBeats: 1.5,
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const description = handleReverseClip.describe({
+            type: 'reverseClip',
+            payload: { clipId: 'c1', reversedBufferId: 'reversed-command-1' },
+        });
+
+        expect(description.inverseAction).toMatchObject({
+            type: 'restoreReversedClip',
+            payload: { audioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 7 } },
+        });
+        expect(description.redoAction).toMatchObject({
+            type: 'restoreReversedClip',
+            payload: { audioSource: { audioOffsetSeconds: 2, audioOffsetBeats: 2 } },
         });
     });
 

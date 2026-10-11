@@ -174,6 +174,8 @@ export { insertTime } from './timeOperations/insertTime';
 export { executeUndoableDuplicateTimeRange } from './timeOperations/executeUndoableDuplicateTimeRange';
 export { executeUndoableInsertTime } from './timeOperations/executeUndoableInsertTime';
 export { setTimeOperationDependencies } from './timeOperations/timeOperationDependencies';
+export { isTempoAudioSourceTransition } from './clipEditing/isTempoAudioSourceTransition';
+export { prepareAudioSourcesForTempoChange } from './clipEditing/prepareAudioSourcesForTempoChange';
 export { setVcaRuntimeProjectionDependencies } from './vca/vcaRuntimeProjectionDependencies';
 
 export { addMarker } from './marker/markerOperations/addMarker';

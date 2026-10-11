@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+
+import { type Clip } from '../../../models/Track';
 import { duplicateClipCore } from '../duplicateClipCore';
 
 const mocks = vi.hoisted(() => ({
@@ -59,6 +62,8 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
 describe('duplicateClipCore', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        transportStore.set(defaultTransportState);
+        tempoMapStore.set({ changes: [] });
         mocks.getNextClipId.mockReturnValue('c2');
         mocks.getWarpState.mockReturnValue({
             enabled: false,
@@ -75,6 +80,11 @@ describe('duplicateClipCore', () => {
             }
             return { status: 'missing' };
         });
+    });
+
+    afterEach(() => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(defaultTransportState);
     });
 
     it('exports duplicateClipCore', () => {
@@ -143,6 +153,53 @@ describe('duplicateClipCore', () => {
                 followAction: 'play_next',
             })
         );
+    });
+
+    it.each([
+        { name: 'canonical zero over a stale alias', seconds: 0, beats: 9, copiedSeconds: 0, copiedBeats: 0 },
+        { name: 'signed pre-roll', seconds: -0.5, beats: 9, copiedSeconds: -0.5, copiedBeats: -0.5 },
+        { name: 'positive canonical depth', seconds: 1.25, beats: 9, copiedSeconds: 1.25, copiedBeats: 1.25 },
+        { name: 'legacy source depth', seconds: undefined, beats: 2, copiedSeconds: 1, copiedBeats: 1 },
+    ])('keeps $name when a copy moves from 120 to 60 BPM', ({ seconds, beats, copiedSeconds, copiedBeats }) => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'original-tempo', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'destination-tempo', beat: 8, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const source: Clip = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Trimmed take',
+            startBeat: 4,
+            endBeat: 8,
+            type: 'audio',
+            audioOffsetBeats: beats,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+        if (seconds !== undefined) {
+            source.audioOffsetSeconds = seconds;
+        }
+        const original = structuredClone(source);
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [source] }] });
+        mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
+
+        expect(duplicateClipCore({ clipId: 'c1', targetClipId: 'c2', computeStartBeat: () => 12 })).toBe(true);
+
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                startBeat: 12,
+                endBeat: 16,
+                audioOffsetSeconds: copiedSeconds,
+                audioOffsetBeats: copiedBeats,
+            })
+        );
+        expect(source).toEqual(original);
     });
 
     it('copies warp markers to the duplicate', () => {

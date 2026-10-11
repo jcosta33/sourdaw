@@ -378,9 +378,23 @@ function seedStores(overrides: {
 
 describe('buildTimelineRenderModel — clip-start tempo', () => {
     it('projects normal, ghost, and variation clips and invalidates a cached model on a map-only edit', () => {
-        const audioClip = clip({ id: 'audio', type: 'audio', startBeat: 4, audioOffsetBeats: 1 });
-        const ghost = clip({ id: 'ghost', type: 'audio', startBeat: 4, audioOffsetBeats: 1 });
-        const alternative = clip({ id: 'alternative', type: 'audio', startBeat: 4, audioOffsetBeats: 1 });
+        const audioClip = clip({
+            id: 'audio',
+            type: 'audio',
+            startBeat: 4,
+            audioOffsetBeats: 1,
+            audioOffsetSeconds: 0,
+            stretchMode: 'off',
+            stretchRatio: 2,
+        });
+        const ghost = clip({ id: 'ghost', type: 'audio', startBeat: 4, audioOffsetBeats: 1, audioOffsetSeconds: -2 });
+        const alternative = clip({
+            id: 'alternative',
+            type: 'audio',
+            startBeat: 4,
+            audioOffsetBeats: 1,
+            audioOffsetSeconds: 2,
+        });
         seedStores({
             tracks: [
                 {
@@ -394,19 +408,24 @@ describe('buildTimelineRenderModel — clip-start tempo', () => {
         });
         const first = buildTimelineRenderModel();
         expect(first.tracks[0]!.clips[0]!.clipStartTempo).toBe(120);
+        expect(first.tracks[0]!.clips[0]).toMatchObject({ audioOffsetSeconds: 0, stretchMode: 'off' });
+        expect(first.tracks[0]!.clips[1]!.audioOffsetSeconds).toBe(-2);
+        expect(first.tracks[0]!.variationLanes![0]!.clips[0]!.audioOffsetSeconds).toBe(2);
 
         tempoMapStoreMock.value = { changes: [{ id: 'slow', beat: 4, tempo: 90, curve: 'instant' }] };
         const second = buildTimelineRenderModel();
         expect(second.tracks).not.toBe(first.tracks);
+        expect(second.tempoChanges).toBe(tempoMapStoreMock.value.changes);
         expect(second.tracks[0]!.clips.map((item) => item.clipStartTempo)).toEqual([90, 90]);
         expect(second.tracks[0]!.variationLanes![0]!.clips[0]!.clipStartTempo).toBe(90);
 
         clipDragPreviewRef.current = {
-            positions: new Map([['audio', { trackId: 't', startBeat: 2, endBeat: 6 }]]),
+            positions: new Map([['audio', { trackId: 't', startBeat: 2, endBeat: 6, audioOffsetSeconds: 3 }]]),
             originals: new Map(),
         };
         const preview = buildTimelineRenderModel();
         expect(preview.tracks[0]!.clips[0]!.clipStartTempo).toBe(120);
+        expect(preview.tracks[0]!.clips[0]!.audioOffsetSeconds).toBe(3);
     });
 });
 

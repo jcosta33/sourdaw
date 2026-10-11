@@ -1,6 +1,8 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { tempoMapStore, transportStore, defaultTransportState } from '#/modules/Transport/stores';
+
 import { clipDragPreviewRef } from '../../../stores/clipDragPreviewRef';
 import { useTimelineInteractions } from '../useTimelineInteractions';
 
@@ -550,12 +552,12 @@ describe('useTimelineInteractions', () => {
                 audioOffsetBeats: 0.5,
                 midiOffsetBeats: 1.25,
             },
-            expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: 3.25 },
+            expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: 3.25, audioOffsetSeconds: undefined },
         },
         {
             name: 'audio clip',
             clip: { id: 'clip-1', trackId: 'track-1', type: 'audio', startBeat: 0, endBeat: 4, audioOffsetBeats: 0.5 },
-            expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: undefined },
+            expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: undefined, audioOffsetSeconds: 1.25 },
         },
     ];
 
@@ -585,15 +587,82 @@ describe('useTimelineInteractions', () => {
             // clientX 200 at 100 px/beat previews start 2: a +2 delta, so the
             // commit advances both offsets by 2 — the preview must show the
             // advanced offsets together with the moved start.
-            expect(clipDragPreviewRef.current?.positions.get('clip-1')).toEqual({
+            const expectedPreview: {
+                trackId: string;
+                startBeat: number;
+                endBeat: number;
+                audioOffsetBeats: number;
+                audioOffsetSeconds?: number;
+                midiOffsetBeats: number | undefined;
+            } = {
                 trackId: 'track-1',
                 startBeat: 2,
                 endBeat: 4,
                 audioOffsetBeats: expectedOffsets.audioOffsetBeats,
                 midiOffsetBeats: expectedOffsets.midiOffsetBeats,
-            });
+            };
+            if (expectedOffsets.audioOffsetSeconds !== undefined) {
+                expectedPreview.audioOffsetSeconds = expectedOffsets.audioOffsetSeconds;
+            }
+            expect(clipDragPreviewRef.current?.positions.get('clip-1')).toEqual(expectedPreview);
         }
     );
+
+    it('previews signed audio trim through an interior tempo marker from the source media point', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 2, tempo: 60, curve: 'instant' },
+            ],
+        });
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        try {
+            mocks.trackStoreValue.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        clips: [
+                            {
+                                id: 'clip-1',
+                                trackId: 'track-1',
+                                type: 'audio',
+                                startBeat: 0,
+                                endBeat: 8,
+                                audioOffsetSeconds: -2,
+                                audioOffsetBeats: 9,
+                            },
+                        ],
+                    },
+                ],
+            };
+            mocks.hitTestClip.mockReturnValue({ clipId: 'clip-1', trackId: 'track-1' });
+            mocks.hitTestClipEdge.mockReturnValue({ edge: 'left' });
+            mocks.beginClipDrag.mockReturnValue({
+                clipId: 'clip-1',
+                sourceTrackId: 'track-1',
+                startBeat: 0,
+                endBeat: 8,
+                offsetBeat: 0,
+                mode: 'trim-start',
+            });
+            const { result } = renderHook(() => useTimelineInteractions(canvasRef));
+
+            act(() => result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any));
+            act(() => result.current.handleMouseMove({ clientX: 400, clientY: 20 } as any));
+
+            expect(clipDragPreviewRef.current?.positions.get('clip-1')).toEqual({
+                trackId: 'track-1',
+                startBeat: 4,
+                endBeat: 8,
+                audioOffsetBeats: 1,
+                audioOffsetSeconds: 1,
+                midiOffsetBeats: undefined,
+            });
+        } finally {
+            tempoMapStore.set({ changes: [] });
+            transportStore.set({ ...defaultTransportState });
+        }
+    });
 
     const pointer = (pointerId: number, clientX: number, clientY: number) =>
         ({ pointerId, clientX, clientY, nativeEvent: { clientX, clientY } }) as any;
@@ -954,10 +1023,50 @@ describe('useTimelineInteractions', () => {
         expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
         expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'slipClipContent',
-            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5, offsetSeconds: 0.75 },
         });
         expect(mocks.slipClipContent).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('starts an audio slip from canonical zero rather than a stale beat alias', () => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState });
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 4,
+                            audioOffsetSeconds: 0,
+                            audioOffsetBeats: 9,
+                        },
+                    ],
+                },
+            ],
+        };
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({
+                button: 0,
+                clientX: 100,
+                clientY: 50,
+                ctrlKey: true,
+                shiftKey: true,
+            } as any);
+            result.current.handleMouseUp({ clientX: 250, clientY: 50 } as any);
+        });
+
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'slipClipContent',
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5, offsetSeconds: 0.75 },
+        });
     });
 
     it('does not commit a slip when the drag delta is sub-threshold', () => {
@@ -1294,7 +1403,7 @@ describe('useTimelineInteractions', () => {
         // 150px / 100ppb = 1.5 beats from a base offset of 0.
         expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'slipClipContent',
-            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5, offsetSeconds: 0.75 },
         });
     });
 

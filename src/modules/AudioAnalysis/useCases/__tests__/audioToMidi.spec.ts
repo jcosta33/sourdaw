@@ -39,6 +39,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { audioToMidi } from '../audioToMidi';
 import { detectOnsets } from '../detectOnsets';
@@ -265,6 +266,127 @@ describe('audioToMidi converts only the audio a clip plays', () => {
     function noteStartBeats(): number[] {
         return mocks.addMidiNote.mock.calls.map((call) => call[2] as number);
     }
+
+    it('places an onset at its song-time beat across a tempo marker with canonical zero', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        try {
+            arrangeClip({
+                id: 'c1',
+                audioBufferId: 'buf1',
+                startBeat: 0,
+                endBeat: 8,
+                name: 'Drum',
+                audioOffsetBeats: 2,
+                audioOffsetSeconds: 0,
+            });
+            const buffer = stepBuffer(3 * SAMPLE_RATE, 4 * SAMPLE_RATE);
+            mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+
+            expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+            const detected = detectOnsets(buffer, SENSITIVITY, MIN_INTERVAL_SEC);
+            expect(detected).toHaveLength(1);
+            expect(noteStartBeats()).toHaveLength(1);
+            expect(noteStartBeats()[0]).toBeCloseTo(5 + (detected[0]!.timeSec - 3), 1);
+        } finally {
+            tempoMapStore.set({ changes: [] });
+            transportStore.set(defaultTransportState);
+        }
+    });
+
+    it('restarts source time for each loop but integrates each occurrence at its own tempo', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        try {
+            arrangeClip({
+                id: 'c1',
+                audioBufferId: 'buf1',
+                startBeat: 0,
+                endBeat: 8,
+                name: 'Drum',
+                audioOffsetSeconds: 0,
+                loopEnabled: true,
+                loopLength: 4,
+            });
+            mocks.getCachedAudioBuffer.mockReturnValue(stepBuffer(SAMPLE_RATE / 2, 2 * SAMPLE_RATE));
+
+            expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+            const notes = noteStartBeats().sort((left, right) => left - right);
+            expect(notes).toHaveLength(2);
+            expect(notes[0]).toBeCloseTo(1, 1);
+            expect(notes[1]).toBeCloseTo(4.5, 1);
+        } finally {
+            tempoMapStore.set({ changes: [] });
+            transportStore.set(defaultTransportState);
+        }
+    });
+
+    it('places a detected onset inside a linear tempo ramp at its inverse song beat', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'ramp', beat: 0, tempo: 120, curve: 'linear' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        try {
+            arrangeClip({
+                id: 'c1',
+                audioBufferId: 'buf1',
+                startBeat: 0,
+                endBeat: 4,
+                name: 'Drum',
+                audioOffsetSeconds: 0,
+            });
+            const buffer = stepBuffer(SAMPLE_RATE, 2 * SAMPLE_RATE);
+            mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+
+            expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+            const detected = detectOnsets(buffer, SENSITIVITY, MIN_INTERVAL_SEC);
+            expect(detected).toHaveLength(1);
+            expect(noteStartBeats()).toHaveLength(1);
+            expect(noteStartBeats()[0]).toBeCloseTo(8 * (1 - Math.exp(-detected[0]!.timeSec / 4)), 1);
+        } finally {
+            tempoMapStore.set({ changes: [] });
+            transportStore.set(defaultTransportState);
+        }
+    });
+
+    it('keeps inter-onset note duration in clip-relative beats for a clip away from beat zero', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({ changes: [] });
+        try {
+            arrangeClip({ id: 'c1', audioBufferId: 'buf1', startBeat: 4, endBeat: 8, name: 'Drum' });
+            const buffer = stepBuffer(8 * HOP_SIZE, 180 * HOP_SIZE + FRAME_SIZE, 60 * HOP_SIZE);
+            mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+            const detected = detectOnsets(buffer, SENSITIVITY, 0);
+            expect(detected.length).toBeGreaterThanOrEqual(2);
+
+            expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+            expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 4, endBeat: 8 }));
+            const calls = mocks.addMidiNote.mock.calls;
+            expect(calls.length).toBeGreaterThanOrEqual(2);
+            expect(calls[0]![0]).toBe('new-midi-clip');
+            expect(calls.at(-1)![0]).toBe('new-midi-clip');
+            expect(calls[0]![2]).toBeCloseTo(detected[0]!.timeSec * 2, 1);
+            expect(calls[1]![2]).toBeCloseTo(detected[1]!.timeSec * 2, 1);
+            expect(calls[0]![3]).toBeCloseTo((detected[1]!.timeSec - detected[0]!.timeSec) * 2 * 0.9, 1);
+            expect(calls[0]![3]).toBeLessThan(2);
+        } finally {
+            tempoMapStore.set({ changes: [] });
+            transportStore.set(defaultTransportState);
+        }
+    });
 
     it('drops an onset before a positive audio offset and shifts a later one earlier by that offset', () => {
         const offsetHops = 86;

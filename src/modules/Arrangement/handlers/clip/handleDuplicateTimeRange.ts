@@ -4,6 +4,8 @@ import { type TimeOperationRestorePlanSnapshot } from '#/utils/handlerContract';
 import { duplicateTimeRange } from '../../useCases/timeOperations/duplicateTimeRange';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
+import { isDuplicateTimeRangeSessionEntry } from './validateClipEditSessionEntries';
+
 type RestoreTimeOperationStateAction = {
     type: 'restoreTimeOperationState';
     payload: { plan: TimeOperationRestorePlanSnapshot };
@@ -40,6 +42,7 @@ function toRestorePlanSnapshot(plan: unknown): TimeOperationRestorePlanSnapshot 
 }
 
 export const handleDuplicateTimeRange = createHandler<'duplicateTimeRange'>({
+    validateSessionEntry: isDuplicateTimeRangeSessionEntry,
     execute: (action) => {
         const result = duplicateTimeRange(action.payload.startBeat, action.payload.endBeat);
         const pending = pendingDescriptions.get(action);

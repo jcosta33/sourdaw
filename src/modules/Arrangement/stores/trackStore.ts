@@ -269,6 +269,9 @@ function normalize_clip(value: unknown): Clip | null {
     if (is_finite_number(value.audioOffsetBeats)) {
         clip.audioOffsetBeats = value.audioOffsetBeats;
     }
+    if (is_finite_number(value.audioOffsetSeconds)) {
+        clip.audioOffsetSeconds = value.audioOffsetSeconds;
+    }
     if (is_finite_number(value.midiOffsetBeats)) {
         clip.midiOffsetBeats = value.midiOffsetBeats;
     }

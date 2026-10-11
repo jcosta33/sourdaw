@@ -72,6 +72,7 @@ const CLIP_UNDEFINED_PROPERTIES = new Set([
     'audioBufferId',
     'assetHash',
     'audioOffsetBeats',
+    'audioOffsetSeconds',
     'midiOffsetBeats',
     'stretchMode',
     'stretchRatio',
