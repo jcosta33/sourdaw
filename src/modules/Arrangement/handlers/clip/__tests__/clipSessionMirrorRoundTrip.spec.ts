@@ -292,7 +292,7 @@ async function persistCompedSplit(grouped = false): Promise<void> {
                 kind: 'audio',
                 clips: [unrelated],
                 alternatives: [],
-                activeAlternativeId: null,
+                activeAlternativeId: '',
             }),
         ],
         selectedTrackId: TRACK_ID,
@@ -1177,7 +1177,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                             kind: 'audio',
                             clips: [other],
                             alternatives: [],
-                            activeAlternativeId: null,
+                            activeAlternativeId: '',
                         }),
                     ],
                     selectedTrackId: TRACK_ID,
@@ -1323,30 +1323,34 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 )
             )!;
             const occupiedId = takeLaneStore.value!.lanes.find((lane) => lane.id === 'other-lane')!.takes[0]!.id;
+            const mintedId = entry.redoAction.payload
+                .reKeyedTakeLanes!.flatMap((transition) => transition.takesAfter)
+                .find((take) => take.clipId === 'clip-right')!.id;
+            const remapTakeId = (id: string): string => (id === mintedId ? occupiedId : id);
             for (const action of [entry.inverseAction, entry.redoAction]) {
-                const transition = action.payload.reKeyedTakeLanes![0]!;
-                const right = transition.takesAfter.find((take) => take.clipId === 'clip-right')!;
-                const mintedId = right.id;
-                right.id = occupiedId;
-                for (const region of transition.regionsAfter) {
-                    if (region.takeId === mintedId) {
-                        region.takeId = occupiedId;
+                for (const transition of action.payload.reKeyedTakeLanes ?? []) {
+                    for (const take of [...transition.takesBefore, ...transition.takesAfter]) {
+                        take.id = remapTakeId(take.id);
+                    }
+                    for (const region of [...transition.regionsBefore, ...transition.regionsAfter]) {
+                        region.takeId = remapTakeId(region.takeId);
                     }
                 }
-                for (const retired of action.payload.retiredTakeLanes ?? []) {
-                    retired.retiredTakeIds = retired.retiredTakeIds?.map((id) => (id === mintedId ? occupiedId : id));
-                    for (const take of retired.lane.takes) {
-                        if (take.id === mintedId) {
-                            take.id = occupiedId;
-                        }
-                    }
-                    for (const region of retired.lane.activeCompRegions) {
-                        if (region.takeId === mintedId) {
-                            region.takeId = occupiedId;
-                        }
-                    }
-                }
+                action.payload.retiredTakeLanes = action.payload.retiredTakeLanes?.map((retired) => ({
+                    ...retired,
+                    retiredTakeIds: retired.retiredTakeIds?.map(remapTakeId),
+                    lane: {
+                        ...retired.lane,
+                        takes: retired.lane.takes.map((take) => ({ ...take, id: remapTakeId(take.id) })),
+                        activeCompRegions: retired.lane.activeCompRegions.map((region) => ({
+                            ...region,
+                            takeId: remapTakeId(region.takeId),
+                        })),
+                    },
+                }));
             }
+            expect(entry.inverseAction.payload.reKeyedTakeLanes).toEqual(entry.redoAction.payload.reKeyedTakeLanes);
+            expect(entry.inverseAction.payload.retiredTakeLanes).toEqual(entry.redoAction.payload.retiredTakeLanes);
             sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
             reloadSavedProject();
             expectValidProject();
