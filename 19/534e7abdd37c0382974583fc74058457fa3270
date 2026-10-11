@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_59e31a5c6f3e31::t_c93b21aefad4a9 352-392
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_59e31a5c6f3e31::t_d5cc94b1e13955 122,1288-1291,1299-1314,1317,1360-1366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19534e7abdd37c0382974583fc74058457fa3270",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
