@@ -11,6 +11,13 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Standing probes
 
+- PR #5091's head `71221839` fenced grant settlement but retained an unfenced reusable
+  admission reader. A root-ownership stance must replace the root while On permission is
+  pending, then change the same-ID owner's input through the real action. Require no second
+  request or successor edge from the old reader; pair `replaceCrdtDocInLineage` input changes
+  with a successful retarget. Capture authority before publication and retain that fence in
+  every reusable reader, rather than recapturing the current root on reconciliation.
+
 - Enumerate the gestures that can reach the lifecycle from the module's own control surface — the
   directory of use cases that owns them — and never from the diff. The diff shows which gestures the
   author thought about; the directory shows which ones the user can press.
@@ -151,3 +158,158 @@ run is unchanged, then cancel the same confirmation again. The retry must persis
 before releasing either temporary run assets or confirmation resources, and must not report success
 while cleanup remains pending. Repeat without temporary assets: an already-terminal no-op cannot
 prove persistence. A mocked cancellation helper misses the live-store-before-storage failure seam.
+
+### 2026-10-08 — deleting a track left its input capture alive
+
+PR #312 added `removeTrackStrip` and `removeBusStrip` calls to `removeTrack`; bulk removal already
+looped through `removeTrack` before PR #2387. PR #867 made runtime strip teardown deferrable, and
+PR #2387 added bulk-removal undo snapshots. PR #4255 later gave the shared monitor capture
+per-track edges and pending owners, and PR #4449 keyed captures by input while retaining per-track
+ownership. Before this fix, track removal released the engine strip without releasing that recorder
+owner. The missing lifecycle probe crossed the Arrangement and recorder owners: deleting the last
+monitored track could leave its MediaStream running, while deletion before a pending grant could
+recreate an edge for a removed track. Bulk deletion also needed proof that aborted project writes
+retain live resources.
+
+Probe: start two tracks monitoring one input through the public AudioEngine API. Delete one through
+each Arrangement removal route and check that only its source edge disconnects; delete the last and
+check that the MediaStreamTrack stops exactly once. Hold a permission grant through deletion, then
+resolve it and check that no deleted strip or edge is recreated. Abort and commit the single and
+bulk commands separately: the abort must retain every edge and stream, while the commit releases
+only owners whose IDs are absent from committed project truth.
+
+### 2026-10-09 — admitted interests and optimistic deletion cross the monitor owner (PR #5011)
+
+PR #5011 added the subscribed Auto owner. Its removal sweep read the visible track store, so an
+optimistic single or bulk Command deletion disconnected Auto edges before a refused transaction
+restored the tracks. It also swept only its Auto-open records, leaving direct On interests outside
+store-only Off, kind-change and absence cleanup, including permission still pending during a hold.
+
+The final reviewed-head bundle's strongest draw attacked newly merged main changes; its economy
+draws attacked the merged contract and existing probes. Their recorded admissions and baseline
+probes did not demand direct On admission or refused optimistic deletion. Those records establish
+the prompt gap on that head; they do not establish what unrecorded reviewer work covered or that a
+higher tier alone would have caught it.
+
+Probe: start through the real direct On repository and real subscribed owner, then publish Off
+while held, change a MIDI track to Auto, and remove one shared owner. Observe the actual source
+edges and stream tracks, including a late permission grant; never count only Auto-open records.
+Separately refuse and commit both deletion commands with Auto and On captures, require zero
+disconnects, stops or reacquisitions on refusal, and read the raw committed document at the first
+edge disconnect and last-owner stop. Preserve a direct On admitted before its mode flush while an
+unrelated owned publication occurs. Reverting the admitted-interest sweep or committed-absence
+fence must fail the corresponding real capture probe.
+
+Monitoring capability comes from Arrangement's `getTrackEligibility(...).acceptsMonitoring`, not
+from a recorder-owned list of kinds. PR #5091's first repair incorrectly treated bus, master and
+folder On as ineligible while the real toggle admitted them. Tests asserting those wrong closures
+passed without proving admission. Start a bus through the real Auto-to-On toggle, publish play and
+stop, and require saved On, admitted interest and its source edge to survive; repeat for every
+owner-supported project kind, including permission still pending. Off and removal must release only
+that owner; non-audio Auto and unadmitted store-only On must acquire nothing. The eligibility table's
+dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
+proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
+
+### 2026-10-09 — monitor release must be paired with committed Undo restoration (caught in PR #5091)
+
+The committed-deletion probes proved release and refused-deletion preservation but omitted the
+actual inverse. Real Command Undo restored the track and its saved On mode while the recorder
+held only the surviving track's edge; bulk Undo restored both On tracks with no capture owners.
+Strip reconstruction alone does not restore the independent monitoring runtime.
+
+Probe: admit two On tracks through the real recorder, delete one and Undo, then remove all and
+Undo. Inspect raw document membership and modes, the store projection, actual monitor owners,
+source connections and stream stops. Require re-admission only after the restored strip and
+project commit, preserving the survivor's shared capture and acquiring a fresh stream after
+last-owner release. Refuse restore storage, run an isolated preview, and inject a published-then-
+throwing restore; only committed, still-present On owners may rearm. Denied reacquisition must
+leave restored truth and Undo success intact. Reverting either restore commit hook must redden
+its connected runtime assertion.
+
+The restoration repair in PR #5091 (`319cc5b5f8`) still read the optimistic store after
+awaited strip effects. Hold a second real storage transaction projecting On over a committed
+Off restoration, then abort it: neither normal nor ambiguous restore may request capture,
+retain an owner, or connect an edge. Change the committed selected input during the strip
+await and while permission is pending; admission must use current committed intent and a late
+grant must attach only current owners of that input. Include a shared pending survivor and
+last-owner removal so rejecting one stale restore cannot orphan another owner's capture.
+
+The follow-up head in PR #5091 (`fac4a4f061`) fenced restored owners but left ordinary
+On grants unfenced. Hold two direct On owners on one pending input, commit deletion of one,
+commit the survivor's input selector change, then grant the old request: it must connect neither
+removed nor switched owner, and the selected input must retain the survivor's admitted intent.
+Repeat without a reconciliation subscriber to prove the grant itself checks current intent.
+A store-only On track is not a new admission, and an unrelated publication must preserve an
+unflushed explicit On and an unchanged global input selection.
+
+The deletion probe also omitted disconnect faults. PR #4255's per-track release and PR #4449's
+keyed capture path could remove the logical owner, throw from the targeted disconnect, and
+leave the last capture's stream running; a whole-source disconnect throw could skip stream stop.
+Through real Command removal, fault targeted and whole-source disconnect independently and
+together. Inspect retained captures, actual modeled source edges and MediaStreamTrack.stop,
+not only owner keys. Last-owner release must attempt every terminal step while reporting errors;
+a failed removed edge must preserve the shared survivor until its own eventual release.
+
+The follow-up head in PR #5091 (`2511d0c172`) checked settled captures through refused deletion,
+but omitted permission settlement inside the optimistic-removal window. Open a real removal
+storage transaction, settle both direct On and committed-rearm grants while the row is absent,
+then abort. The committed owner must retain capture without recreating a stripped edge before
+rollback, and reconnect when the row returns without reacquiring permission. Committed deletion,
+Off, selector replacement and teardown must still reject the old grant. Await the grant's actual
+settlement and inspect owner, edge and stream state; a snapshot after abort misses lost authority.
+
+The same head's hold probes walked Auto opens and immediate On cleanup, but omitted an admitted
+On selector change. Hold the subscribed owner, change the selected input repeatedly, and require
+no new acquisition until resume chooses the current input. Repeat for every eligible track kind
+and while the original permission is pending: settle the stale grant during the hold, require its
+stream to close and its edge to stay absent, then retain the original admission authority until
+resume. Off, removal and ineligibility still retire that authority immediately. Explicit restore
+rearm during a held graph repair remains a separate authorized opening.
+
+Handler-only deletion probes missed the real palette entry and other direct removal callers.
+Invoke palette Delete Track through its registered action, refuse storage, and require committed
+and visible membership, selection, history and shared capture to survive; committing afterward
+releases only the removed owner. Enumerate direct import cleanup, render Undo and stem replacement
+callers from source. Their runtime cleanup must follow committed absence without changing their
+history route. For an unscoped refused write, assert that committed owners survive while the write
+remains pending, then that a successful retry finalizes only its removed owner. Abort and replace
+the project root with a reused track ID: observe observer retirement and publish a later removal
+to prove the outgoing finalizer cannot tear down the recreated strip.
+
+PR #5091's follow-up head `1297f963` retained optimistic absence but missed two owner transitions.
+Delete two shared owners after an empty optimistic projection and throw from the first targeted
+disconnect: every removed owner must still release, the final stream must stop, and the error
+must remain reported. Repeat the fault with visible Off, disarm and ineligible-kind transitions;
+isolating each repository release does not isolate the surrounding reconciliation sweep.
+
+Settle a pending armed, stopped Auto grant while a real removal transaction hides its row, then
+abort. Raw committed kind, arm, mode and input must retain that device without recreating the
+missing strip; rollback attaches the original grant without another permission request. Disarm,
+Off, input change, committed deletion, non-audio Auto and playback without recording still reject
+the old grant. A monitoring hold keeps an eligible retained grant detached until resume. On-only
+absence probes and already-granted Auto probes miss this settlement boundary.
+
+PR #5091's head `b2e7491d` allowed a pre-commit On gesture over committed disarmed Auto,
+but its pending grant still trusted the optimistic row after committed deletion. Begin that
+gesture in a real storage transaction, delete the authoritative owner while the On row stays
+projected, then grant permission before abort: no strip or edge may be created, and the unused
+stream stops once. Pair it with the still-present owner and a shared pending survivor. An
+isolated runtime without a committed provider remains a separate positive control.
+
+The same admission window at `3b1c0ad9` still accepted stale On after committed Off or an input
+replacement: presence alone did not protect current intent. Hold the optimistic gesture over
+committed Auto, commit each supersession, then grant the old request before abort. Inspect zero
+strip creation, edges, owners and captures plus one orphan-stream stop. A relevant committed
+mode, input, kind or arm change must take authority; unchanged Auto/Off and an unrelated commit
+must still permit the gesture. Pair shared survivors and an already-admitted selected-input
+replacement so rejecting the old grant cannot retire current permission authority.
+
+PR #5091's grant fence was introduced in `2511d0c172` and refined in `46c03b3ab9`, but head
+`e9672c7966` still identified an admission only by track intent. Replace the installed root while
+an optimistic On grant over committed disarmed Auto is pending, preserving the same track ID,
+mode, input, kind and arm; repeat after real Command Undo restores On and has already returned
+`headConsumed`. Each outgoing grant must stop unused without creating a strip, edge, owner or
+capture in the successor. A fresh successor On admission must then connect both same-input owners
+without the stale settlement deleting their authority or stopping their shared stream. Removal
+continuation probes do not exercise this incoming grant boundary; deleting the root-identity
+fencing in shared admission, including its retained reader, must redden both replacement cases.

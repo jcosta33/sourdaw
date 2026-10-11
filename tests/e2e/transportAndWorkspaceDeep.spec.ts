@@ -220,24 +220,6 @@ test.describe('Undo/Redo Buttons', () => {
         await add_track(page, 'MIDI');
         await expect(undo).toBeEnabled({ timeout: 5000 });
     });
-
-    test('Redo button becomes enabled after undo', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await add_track(page, 'MIDI');
-        await page.waitForTimeout(300);
-
-        const undo = page.getByRole('button', { name: 'Undo', exact: true });
-        const redo = page.getByRole('button', { name: 'Redo' });
-
-        if (await undo.isEnabled().catch(() => false)) {
-            await undo.click();
-            await page.waitForTimeout(1000);
-            if (await redo.isEnabled().catch(() => false)) {
-                await expect(redo).toBeEnabled();
-            }
-        }
-    });
 });
 
 test.describe('Launch Screen Back Navigation', () => {

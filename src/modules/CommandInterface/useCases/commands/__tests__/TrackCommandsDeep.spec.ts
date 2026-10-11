@@ -61,9 +61,10 @@ describe('trackCommands — guarded action commands', () => {
         expect(mockDuplicateTrack).not.toHaveBeenCalled();
     });
 
-    it('delete-track calls removeTrack with the selected trackId', () => {
+    it('delete-track dispatches the registered removeTrack action with the selected trackId', () => {
         runAction('delete-track');
-        expect(mockRemoveTrack).toHaveBeenCalledWith('t1');
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'removeTrack', payload: { trackId: 't1' } });
+        expect(mockRemoveTrack).not.toHaveBeenCalled();
     });
 
     it('freeze-track dispatches freezeTrack action', async () => {

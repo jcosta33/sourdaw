@@ -1,9 +1,13 @@
+import { wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
-import { runAllEffects } from '#/utils/runEffects';
+import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
+import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 
@@ -17,21 +21,70 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
         if (!state || state.tracks.length === 0) {
             return { status: 'no-write' };
         }
-        // #5090 — the single-track handler sweeps modulation ownership
-        // separately from removeTrack; the bulk route must do the same, or the
-        // serialized document keeps modulators and target mappings naming
-        // deleted tracks. Runtime effects stay deferred to the commit so a
-        // refused or ambiguous transaction retains the prior modulation truth
-        // and its runtime, exactly like handleRemoveTrack.
-        const modulationRemovals = state.tracks.map((time) => {
-            removeTrack(time.id);
-            return removeTrackModulationReferences({ trackId: time.id, deferRuntimeEffects: true });
-        });
+        const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
+        const removals: Array<{
+            trackId: string;
+            finalizeRuntimeRemoval: () => void;
+            modulationRemoval: ReturnType<typeof removeTrackModulationReferences>;
+        }> = [];
+        for (const track of state.tracks) {
+            const result = removeTrack(track.id, {
+                deferRuntimeEffects: true,
+                suppressRemovedEvent: true,
+            });
+            if (result.removed) {
+                removals.push({
+                    trackId: track.id,
+                    finalizeRuntimeRemoval: result.finalizeRuntimeRemoval,
+                    modulationRemoval: removeTrackModulationReferences({
+                        trackId: track.id,
+                        deferRuntimeEffects: true,
+                    }),
+                });
+            }
+        }
+        if (removals.length === 0) {
+            return { status: 'no-write' };
+        }
         return {
             status: 'written',
-            afterCommit: () => runAllEffects(modulationRemovals.map((removal) => removal.afterCommit)),
-            afterAmbiguousCommit: () =>
-                runAllEffects(modulationRemovals.map((removal) => removal.afterAmbiguousCommit)),
+            afterCommit: () =>
+                runAllAsyncEffects(
+                    removals.flatMap(({ trackId, finalizeRuntimeRemoval, modulationRemoval }) =>
+                        [
+                            runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval),
+                            modulationRemoval.afterCommit,
+                            runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId })),
+                        ].map((effect) => runtimeAuthority.guard<void | Promise<void>>(effect))
+                    )
+                ),
+            afterAmbiguousCommit: () => {
+                if (!runtimeAuthority.isCurrent()) {
+                    return undefined;
+                }
+                const committedState = getTrackStoreState();
+                if (!committedState) {
+                    throw new Error('Committed track state is unavailable; manual repair required');
+                }
+                const committedIds = new Set(committedState.tracks.map((track) => track.id));
+                const effects: Array<() => void | Promise<void>> = [];
+                for (const { trackId, finalizeRuntimeRemoval, modulationRemoval } of removals) {
+                    if (committedIds.has(trackId)) {
+                        effects.push(() => {
+                            projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
+                        });
+                    } else {
+                        effects.push(
+                            runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval),
+                            runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId }))
+                        );
+                    }
+                    effects.push(modulationRemoval.afterAmbiguousCommit);
+                }
+                effects.push(() => wireSidechainRoutes());
+                return runAllAsyncEffects(effects.map(runtimeAuthority.guard));
+            },
+            postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
         };
     },
     describe: (alpha) => {
@@ -49,5 +102,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
         };
     },
     isNoop: () => (getTrackStoreState()?.tracks.length ?? 0) === 0,
+    previewExecution: 'isolated-project',
+    requiresAbortCompensation: false,
     undoable: true,
 });
