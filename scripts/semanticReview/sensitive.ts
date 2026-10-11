@@ -303,6 +303,96 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
     return !PLACEHOLDER_VALUE.test(value);
 }
 
+/** Literal scheme values do not inherit assignment-expression exemptions. */
+function hasOpaqueBearerValue(text: string): boolean {
+    // Match every candidate with a fresh iterator: a benign first example cannot hide later material.
+    // Literal keys may close a bracket; paired arguments admit only terminated comments.
+    // Closed one-level header arrays inspect every quoted literal, so placeholders cannot mask peers.
+    // These lexical forms do not decode text or evaluate expressions and nested arrays.
+    // Raw and JSON-escaped tabs remain whitespace at these explicit header boundaries.
+    // Unqualified scheme text retains the generic assignment screen's 16-character opaque-value floor.
+    const quote = String.raw`\\*["'\x60]`;
+    const gap = String.raw`(?:\s|\\+t)*`;
+    const schemeGap = String.raw`(?:[ \t]|\\+t)+`;
+    const quotedKeyEnd = `${quote}(?:${gap}\\])?`;
+    const assignment = `(?:${quotedKeyEnd})?${gap}[:=]${gap}(?:${quote}${gap})?`;
+    const blockComment = String.raw`\/\*[\s\S]*?\*\/`;
+    const lineComment = String.raw`\/\/[^\r\n]*?(?:\r?\n|\\+r\\+n|\\+n)`;
+    const argumentGap = `${gap}(?:(?:${blockComment}|${lineComment})${gap})*`;
+    const commaKey = `${quote}${argumentGap},${argumentGap}`;
+    const commaPair = `${commaKey}${quote}${gap}`;
+    const arrayAssignment = `(?:${quotedKeyEnd})?${gap}[:=]${gap}`;
+    const arrayHeader = String.raw`\bauthorization(?:${arrayAssignment}|${commaKey})\[`;
+    const arrayLiteral = String.raw`(?:^|,)${gap}${quote}${gap}bearer${schemeGap}([A-Za-z0-9+/_~.-]+=*)`;
+    const explicitHeader = String.raw`\bauthorization(?:${assignment}|${commaPair})bearer${schemeGap}([A-Za-z0-9+/_~.-]+=*)`;
+    const genericScheme = String.raw`\bbearer[ \t]+([A-Za-z0-9+/_=.~-]{16,})`;
+    for (const match of text.matchAll(new RegExp(`${explicitHeader}|${genericScheme}`, 'giu'))) {
+        const value = match[1] ?? match[2]!;
+        if (isBearerPlaceholder(value)) {
+            continue;
+        }
+        // Only this explicit documentation descriptor receives the prose-context exemption.
+        if (
+            match[1] === undefined &&
+            value === 'credential-shaped' &&
+            /\b[A-Za-z]+[ \t]+$/u.test(text.slice(0, match.index)) &&
+            /^[ \t]+[A-Za-z]+\b/u.test(text.slice(match.index + match[0].length))
+        ) {
+            continue;
+        }
+        return true;
+    }
+    for (const header of text.matchAll(new RegExp(arrayHeader, 'giu'))) {
+        const content = closedFlatArrayContent(text, header.index + header[0].length);
+        if (content === undefined) {
+            continue;
+        }
+        for (const literal of content.matchAll(new RegExp(arrayLiteral, 'giu'))) {
+            if (!isBearerPlaceholder(literal[1]!)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/** Find the closing flat-array bracket without interpreting raw or serialized quoted text. */
+function closedFlatArrayContent(text: string, start: number): string | undefined {
+    let delimiter: { quote: string; backslashes: number } | undefined;
+    let backslashes = 0;
+    for (let index = start; index < text.length; index += 1) {
+        const character = text[index]!;
+        if (character === '\\') {
+            backslashes += 1;
+            continue;
+        }
+        if (character === '"' || character === "'" || character === '`') {
+            if (delimiter === undefined) {
+                delimiter = { quote: character, backslashes };
+            } else if (
+                character === delimiter.quote &&
+                // Escaped interior quotes add one stride; trailing literal backslashes add two.
+                backslashes % (2 * (delimiter.backslashes + 1)) === delimiter.backslashes
+            ) {
+                delimiter = undefined;
+            }
+        } else if (delimiter === undefined) {
+            if (character === '[') {
+                return undefined;
+            }
+            if (character === ']') {
+                return text.slice(start, index);
+            }
+        }
+        backslashes = 0;
+    }
+    return undefined;
+}
+
+function isBearerPlaceholder(value: string): boolean {
+    return PLACEHOLDER_VALUE.test(value) || /^[A-Z][A-Z0-9_]*_PLACEHOLDER$/u.test(value);
+}
+
 /**
  * The gap, operator, and value anchored at `stop`, when they can form a genuine second
  * assignment for a rejected value ending at `matchEnd`.
@@ -627,6 +717,9 @@ export function sensitiveContentReason(text: string): string | undefined {
         if (match !== null && (shape.validate === undefined || shape.validate(match))) {
             return shape.reason;
         }
+    }
+    if (hasOpaqueBearerValue(text)) {
+        return 'an opaque bearer credential';
     }
     return secretAssignmentReason(text);
 }

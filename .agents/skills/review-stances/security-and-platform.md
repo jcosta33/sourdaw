@@ -22,6 +22,18 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
+
+PR #4586 first appended `delivery-authorized` after reading review state without a final PR state
+and head read. Its recorded stances attacked wrong digest or head binding and unsolicited or
+duplicate authorization, but did not admit a late PR state transition. PR #5032 extended that
+vulnerable binder to recovered publications; its recovery-authority stance and moved-head probe
+covered a head already moved at inspection, not a merge, close, or move after both inspections.
+
+Probe that would have caught it: hold the landed review exact across both inspections, change the
+PR state or head before the final authorization read, and require a publication-only dossier with
+zero review POSTs. Keep an open, unchanged PR as the positive authorization control.
+
 ### 2026-09-09 — hosted WASM control and source revisions were assumed identical (introduced via PR #4057)
 
 PR #4057 validated artifact provenance when the workflow helper and checked-out source shared a
@@ -36,6 +48,26 @@ root lacking both hosted helpers; exercise relevant and irrelevant source change
 closure hashes and toolchain pins, and require invalid or dirty roots to fail before source-toolkit
 import. For return verification, use a source toolkit sentinel and prove the verifier only reads the
 clean source root and never imports it.
+
+### 2026-10-10 — ZIP fixture clock drift obscured the strict artifact boundary (introduced by PR #4057, commit `d608d165a49`)
+
+PR #4057's streamed-artifact case and ZIP-based artifact-return fixtures used fflate 0.8.3 without
+explicit `mtime` values. Both the streamed local/central header writes and the two `zipSync` writes
+per file call `wzh`, which reads a fresh `Date.now()`. Crossing a DOS two-second boundary changes
+the timestamp word, so the strict parser refuses the archive before its descriptor or artifact
+checks run.
+
+Blind spot: a clock-dependent positive fixture can make strict metadata validation look like the
+problem. Preserve local-central equality and the parser's other metadata, bounds, CRC, path, and
+encryption checks.
+
+Probe that would have caught it: force actual streamed and `zipSync` fixtures across a two-second
+DOS timestamp boundary and inspect both timestamp byte fields. Pin every ZIP fixture writer to one
+fixed `mtime` using the supported `zipSync` options and streamed-entry property. Keep streamed
+content acceptance and descriptor corruption refusal, along with all bounds, CRC, file-set, and
+encryption oracles. On the fixed head, revert only `mtime` and require the forced-clock case to fail;
+do not relax the parser. This proves boundary behavior, not the hosted failure's clock interval or
+frequency.
 
 ### 2026-09-05 — the OS temporary directory was called app-owned (introduced via PR #2; retained by PR #3404; fixed by #3642)
 
@@ -54,6 +86,17 @@ Probe that would have caught it: enumerate every implicit root, create a synthet
 sibling one component outside each owned child, and drive every exposed read, list and write route.
 Require the sibling to be refused without mutation while the owned child and an explicit recursive
 grant remain positive controls.
+
+### 2026-10-09 — an old receipt bypassed publication authority checks (issue #5111)
+
+Receipt shape and exact owner alone did not prove that a modern dossier could adopt a landed
+publication. The absent-lock replay branch exited before authenticating the reviewer, serializing
+the write, and comparing the retained payload with stable live evidence.
+
+Probe that would have caught it: present a foreign lock, a live original owner, and changed actor,
+head, body, or payload one at a time to the production recovery route. Require no dossier mutation
+or review POST. Permit exact adoption only under the native lock, and require a merged historical
+approval to remain without delivery authorization.
 
 ### 2026-09-19 — the reviewer confirm token could not perform its own mutation (introduced via PR #4411)
 

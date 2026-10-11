@@ -30,6 +30,10 @@ const gates = {
     main: {
         baseline: '.dependency-cruiser-known-violations.json',
     },
+    contractReexports: {
+        baseline: '.dependency-cruiser-known-violations-contract-reexports.json',
+        static: true,
+    },
     reachability: {
         baseline: '.dependency-cruiser-known-violations-reachability.json',
         config: '.dependency-cruiser.reachability.cjs',
@@ -1571,7 +1575,160 @@ function hidesSourceFromTheWalk(absolutePath, file) {
     }
 }
 
-export function findStaticGuardFindings(repositoryRoot = root) {
+// Contract folders are the only cross-module import surfaces, and a barrel may re-export only from
+// its own folder. That scope lets a carrier file beside the barrel launder a private symbol: the
+// barrel re-exports the carrier legally while the carrier re-exports models/repositories/transformers.
+// Dependency edges cannot distinguish that laundering re-export from the legitimate internal imports
+// contract-folder files carry, so the edge rules never see it — this guard reads the
+// `export … from` syntax itself, anchored to the whole contract folder, not the barrel alone.
+// The repository deliberately publishes specific model vocabulary through carrier files (each
+// publication carries its own reason at the site), so the guard's rows go through the same
+// exact-baseline comparison as every cruise: a hop is legal only once registered, and any
+// unregistered hop — the laundering shape — fails the gate naming the edge.
+const contractFolderPath =
+    /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/(?:useCases|events|stores|presentations\/views)\//;
+const privateSurfaceSegmentPath = /\/(models|repositories|transformers)\//;
+const contractReexportRule = {
+    severity: 'error',
+    name: 'no-models-repos-transformers-in-contract-folders',
+};
+
+function collectContractReexportRows({ files, repositoryRoot, sourceFilesByPath, options, compilerHost }) {
+    const rowsByKey = new Map();
+    for (const { absolutePath, repoPath } of files) {
+        if (!contractFolderPath.test(repoPath)) {
+            continue;
+        }
+        const sourceFile = sourceFilesByPath.get(normalizeFileName(absolutePath));
+        if (!sourceFile) {
+            continue;
+        }
+        // An `export { X }` without a module specifier re-exports whatever this file's import
+        // declarations bound, so reading only specifier-carrying export declarations misses the
+        // laundering spelling `import { X } from '../models/Foo'; export { X };`. This table binds
+        // each local name to its importing module specifier so the visit below can run bound
+        // re-exports through the same private-surface resolution as spelled ones.
+        const importSpecifiersByLocalName = new Map();
+        const visitImports = (node) => {
+            if (ts.isImportDeclaration(node) && node.importClause) {
+                const moduleSpecifier = moduleSpecifierText(node.moduleSpecifier);
+                if (moduleSpecifier) {
+                    const clause = node.importClause;
+                    const namedBindings = clause.namedBindings;
+                    const localNames = [
+                        clause.name?.text,
+                        namedBindings && ts.isNamespaceImport(namedBindings) ? namedBindings.name.text : null,
+                        ...(namedBindings && ts.isNamedImports(namedBindings)
+                            ? namedBindings.elements.map((element) => (element.propertyName ?? element.name).text)
+                            : []),
+                    ].filter(Boolean);
+                    for (const localName of localNames) {
+                        importSpecifiersByLocalName.set(localName, moduleSpecifier);
+                    }
+                }
+            } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+                const moduleSpecifier = moduleSpecifierText(node.moduleReference.expression);
+                if (moduleSpecifier) {
+                    importSpecifiersByLocalName.set(node.name.text, moduleSpecifier);
+                }
+            }
+            ts.forEachChild(node, visitImports);
+        };
+        visitImports(sourceFile);
+        const privateRowBySpecifier = new Map();
+        const privateRowForSpecifier = (moduleSpecifier) => {
+            if (!privateRowBySpecifier.has(moduleSpecifier)) {
+                const targetFile = resolveRepositoryModuleSpecifier(
+                    moduleSpecifier,
+                    sourceFile.fileName,
+                    options,
+                    compilerHost
+                );
+                const targetPath = targetFile ? toPosixPath(relative(repositoryRoot, targetFile)) : null;
+                privateRowBySpecifier.set(
+                    moduleSpecifier,
+                    targetPath?.startsWith('src/') && privateSurfaceSegmentPath.test(targetPath)
+                        ? {
+                              type: 'contract-reexport',
+                              from: repoPath,
+                              to: targetPath,
+                              rule: contractReexportRule,
+                          }
+                        : null
+                );
+            }
+            return privateRowBySpecifier.get(moduleSpecifier);
+        };
+        const addRow = (row) => {
+            if (!row) {
+                return;
+            }
+            // One file may re-export the same target on several statements (a value and a
+            // type line); the register speaks in edges, so the duplicates collapse.
+            rowsByKey.set(keyOf(row), row);
+        };
+        const visit = (node) => {
+            if (ts.isExportDeclaration(node)) {
+                const moduleSpecifier = moduleSpecifierText(node.moduleSpecifier);
+                if (moduleSpecifier) {
+                    addRow(privateRowForSpecifier(moduleSpecifier));
+                } else if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+                    // `export { X }` and `export { X as Y }` re-export the symbol the file
+                    // imported under the clause's local binding name.
+                    for (const element of node.exportClause.elements) {
+                        const importedSpecifier = importSpecifiersByLocalName.get(
+                            (element.propertyName ?? element.name).text
+                        );
+                        if (importedSpecifier !== undefined) {
+                            addRow(privateRowForSpecifier(importedSpecifier));
+                        }
+                    }
+                }
+            } else if (ts.isExportAssignment(node) && ts.isIdentifier(node.expression)) {
+                // `export default X` re-exports the imported symbol without a module specifier.
+                const importedSpecifier = importSpecifiersByLocalName.get(node.expression.text);
+                if (importedSpecifier !== undefined) {
+                    addRow(privateRowForSpecifier(importedSpecifier));
+                }
+            }
+            ts.forEachChild(node, visit);
+        };
+        visit(sourceFile);
+    }
+    return [...rowsByKey.values()];
+}
+
+export function findContractReexportFindings(repositoryRoot = root) {
+    const symlinkPaths = [];
+    const allSourcePaths = walkFiles(resolve(repositoryRoot, 'src'), symlinkPaths);
+    const files = allSourcePaths
+        .filter((absolutePath) => /^src\/modules(?:\/|$)/.test(toPosixPath(relative(repositoryRoot, absolutePath))))
+        .map((absolutePath) => ({
+            absolutePath,
+            repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
+        }));
+    const sourcePaths = allSourcePaths.filter((absolutePath) =>
+        sourceFilePath.test(toPosixPath(relative(repositoryRoot, absolutePath)))
+    );
+    const environment = createRepositoryTypeEnvironment(repositoryRoot);
+    const { program } = createRepositoryTypeProgram(sourcePaths, environment);
+    const sourceFilesByPath = new Map(
+        program.getSourceFiles().map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
+    );
+    return sortRows(
+        collectContractReexportRows({
+            files,
+            repositoryRoot,
+            sourceFilesByPath,
+            options: environment.options,
+            compilerHost: environment.compilerHost,
+        })
+    );
+}
+
+// One walk and one type program feed both the hard static refusal findings and the
+// contract-folder re-export register, so `main()` never builds the program twice.
+function buildStaticGuardState(repositoryRoot) {
     const symlinkPaths = [];
     const allSourcePaths = walkFiles(resolve(repositoryRoot, 'src'), symlinkPaths);
     const files = allSourcePaths
@@ -1633,11 +1790,18 @@ export function findStaticGuardFindings(repositoryRoot = root) {
         program,
         environment
     );
+    const contractReexportRows = collectContractReexportRows({
+        files,
+        repositoryRoot,
+        sourceFilesByPath,
+        options: environment.options,
+        compilerHost: environment.compilerHost,
+    });
     // Dependency-cruiser only reports nodes reachable from imports. Walk every
     // module file here so an unreferenced model path cannot evade the naming gate.
     const modelCasingFindings = findModelCasingFindings(files.map(({ repoPath }) => repoPath));
     // Dependency-cruiser sees resolved edges, so inspect repository declarations to close type laundering through local aliases.
-    return [
+    const findings = [
         ...commonJsFindings,
         ...rootIndexes,
         ...mixedExports,
@@ -1650,6 +1814,11 @@ export function findStaticGuardFindings(repositoryRoot = root) {
             (left.line ?? 0) - (right.line ?? 0) ||
             comparePaths(left.reason, right.reason)
     );
+    return { findings, contractReexportRows };
+}
+
+export function findStaticGuardFindings(repositoryRoot = root) {
+    return buildStaticGuardState(repositoryRoot).findings;
 }
 
 function depcruiseBin() {
@@ -1680,6 +1849,9 @@ function runCruise(gate) {
 }
 
 function currentRows(gate, cruise) {
+    if (gate.static) {
+        return sortRows(cruise);
+    }
     if (gate.causal) {
         return collectCausalEdges(cruise);
     }
@@ -1720,7 +1892,7 @@ function writeBaseline(name, gate, cruise) {
 }
 
 function main() {
-    const staticFindings = findStaticGuardFindings();
+    const { findings: staticFindings, contractReexportRows } = buildStaticGuardState(root);
     if (staticFindings.length > 0) {
         for (const finding of staticFindings) {
             console.error(`${finding.file}:${finding.line}: ${finding.reason}`);
@@ -1736,13 +1908,14 @@ function main() {
             console.error(`Choose one baseline: ${Object.keys(gates).join(', ')}`);
             process.exit(1);
         }
-        writeBaseline(name, gate, runCruise(gate));
+        writeBaseline(name, gate, gate.static ? contractReexportRows : runCruise(gate));
         return;
     }
 
     let valid = true;
     for (const [name, gate] of Object.entries(gates)) {
-        valid = validateGate(name, gate, runCruise(gate)) && valid;
+        const cruise = gate.static ? contractReexportRows : runCruise(gate);
+        valid = validateGate(name, gate, cruise) && valid;
     }
     if (!valid) {
         console.error('\nRefresh only after an intentional debt decision:');

@@ -7,6 +7,10 @@
 //! vanish: a counting allocator sees none during the commit or abort and sees
 //! them during the release, one bounded step at a time.
 //!
+//! Disposal uses the same slot: `retire_sample_bank` moves the sounding bank
+//! into it, so a disposed instance drains in bounded steps and is freed with
+//! nothing bank-sized left.
+//!
 //! The counters are per thread, so tests running in parallel do not see each
 //! other's allocations.
 
@@ -30,6 +34,7 @@ struct CountingAllocator;
 thread_local! {
     static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
     static DEALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+    static DEALLOCATED_BYTES: Cell<usize> = const { Cell::new(0) };
 }
 
 unsafe impl GlobalAlloc for CountingAllocator {
@@ -40,6 +45,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         DEALLOCATIONS.with(|count| count.set(count.get() + 1));
+        DEALLOCATED_BYTES.with(|bytes| bytes.set(bytes.get() + layout.size()));
         System.dealloc(ptr, layout)
     }
 }
@@ -51,16 +57,19 @@ struct Counted<T> {
     value: T,
     allocations: usize,
     deallocations: usize,
+    deallocated_bytes: usize,
 }
 
 fn counted<T>(run: impl FnOnce() -> T) -> Counted<T> {
     ALLOCATIONS.with(|count| count.set(0));
     DEALLOCATIONS.with(|count| count.set(0));
+    DEALLOCATED_BYTES.with(|bytes| bytes.set(0));
     let value = run();
     Counted {
         value,
         allocations: ALLOCATIONS.with(Cell::get),
         deallocations: DEALLOCATIONS.with(Cell::get),
+        deallocated_bytes: DEALLOCATED_BYTES.with(Cell::get),
     }
 }
 
@@ -70,11 +79,17 @@ fn pcm() -> Vec<f32> {
         .collect()
 }
 
-/// Stage a complete bank of `BANK_SAMPLES` samples, one zone and one legato
+/// Stage a complete bank of `BANK_SAMPLES` samples (`stage_bank_of` takes the count), one zone and one legato
 /// transition per sample, ready to commit.
 fn stage_bank(instance: &mut LevainInstance, instrument_id: &str) {
+    stage_bank_of(instance, instrument_id, BANK_SAMPLES);
+}
+
+fn stage_bank_of(instance: &mut LevainInstance, instrument_id: &str, samples: u32) {
     instance.begin_sample_bank(instrument_id);
-    for index in 0..BANK_SAMPLES {
+    for index in 0..samples {
+        // One note per zone keeps the zone map's arena inside its cap for a large bank.
+        let key = (index % 128) as u8;
         let sample_id = instance
             .add_sample(pcm(), SAMPLE_FRAMES, 1, SAMPLE_RATE)
             .expect("test sample should fit the bank");
@@ -84,8 +99,8 @@ fn stage_bank(instance: &mut LevainInstance, instrument_id: &str) {
             0,
             60,
             0.0,
-            0,
-            127,
+            key,
+            key,
             0,
             127,
             0,
@@ -307,4 +322,118 @@ fn beginning_the_next_bank_frees_a_retired_bank_nobody_released() {
         !instance.has_retired_bank(),
         "begin_sample_bank must leave the retired slot empty so the next commit can use it"
     );
+}
+
+/// Commit a bank of `samples` samples, free what the commit displaced, then
+/// drain the instance for disposal: retire the sounding bank and release it in
+/// bounded steps. Returns the instance with nothing bank-sized left in it.
+fn drained_instance(samples: u32) -> LevainInstance {
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    stage_bank_of(&mut instance, "violin-1", samples);
+    assert!(instance.commit_sample_bank());
+    while !instance.release_retired_bank(STEP_ENTRIES) {}
+    assert!(instance.retire_sample_bank());
+    release_in_bounded_steps(&mut instance);
+    assert!(!instance.has_retired_bank());
+    instance
+}
+
+#[test]
+fn retiring_the_sounding_bank_frees_nothing_and_the_release_steps_free_it() {
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    stage_bank(&mut instance, "violin-1");
+    assert!(instance.commit_sample_bank());
+    while !instance.release_retired_bank(STEP_ENTRIES) {}
+
+    let retire = counted(|| instance.retire_sample_bank());
+
+    assert!(retire.value, "the sounding bank should have been retired");
+    assert_eq!(
+        retire.deallocations, 0,
+        "retiring the sounding bank must free nothing"
+    );
+    assert!(
+        retire.allocations <= 1,
+        "retiring allocated {} times, past the one empty replacement pool",
+        retire.allocations
+    );
+    assert!(instance.has_retired_bank());
+
+    let (steps, total_frees) = release_in_bounded_steps(&mut instance);
+
+    assert!(
+        steps > 1,
+        "the retired sounding bank should take several bounded steps to free, took {steps}"
+    );
+    assert!(
+        total_frees >= BANK_SAMPLES as usize,
+        "the release freed only {total_frees} allocations, so the sounding PCM was not freed"
+    );
+    assert!(!instance.has_retired_bank());
+    assert!(
+        !instance.retire_sample_bank(),
+        "an emptied instance has no sounding bank left to retire"
+    );
+}
+
+#[test]
+fn dropping_a_drained_instance_frees_the_same_bytes_whatever_the_bank_size() {
+    let small = drained_instance(4);
+    let large = drained_instance(400);
+
+    let small_drop = counted(move || drop(small));
+    let large_drop = counted(move || drop(large));
+
+    assert_eq!(
+        small_drop.deallocated_bytes, large_drop.deallocated_bytes,
+        "dropping a drained instance freed a different number of bytes for a 4-sample and a 400-sample bank"
+    );
+    assert!(
+        large_drop.deallocated_bytes > 0,
+        "the drop freed nothing, so the counter did not observe the engine"
+    );
+}
+
+#[test]
+fn dropping_an_undrained_instance_frees_more_for_a_larger_bank() {
+    let mut small = LevainInstance::new(SAMPLE_RATE, 8);
+    stage_bank_of(&mut small, "violin-1", 4);
+    assert!(small.commit_sample_bank());
+    while !small.release_retired_bank(STEP_ENTRIES) {}
+    let mut large = LevainInstance::new(SAMPLE_RATE, 8);
+    stage_bank_of(&mut large, "violin-1", 400);
+    assert!(large.commit_sample_bank());
+    while !large.release_retired_bank(STEP_ENTRIES) {}
+
+    let small_drop = counted(move || drop(small));
+    let large_drop = counted(move || drop(large));
+
+    assert!(
+        large_drop.deallocated_bytes > small_drop.deallocated_bytes,
+        "an undrained drop must scale with the bank, or the drained comparison proves nothing"
+    );
+}
+
+#[test]
+fn a_committed_bank_and_an_unreleased_retired_bank_both_drain_before_the_drop() {
+    let mut instance = committed_instance();
+    stage_bank(&mut instance, "cello");
+    assert!(instance.commit_sample_bank());
+    assert!(
+        instance.has_retired_bank(),
+        "the first bank is still retired"
+    );
+
+    assert!(
+        !instance.retire_sample_bank(),
+        "the slot is occupied, so the sounding bank cannot be retired yet"
+    );
+    while !instance.release_retired_bank(STEP_ENTRIES) {}
+    assert!(instance.retire_sample_bank());
+    while !instance.release_retired_bank(STEP_ENTRIES) {}
+
+    let baseline_instance = drained_instance(4);
+    let drop_cost = counted(move || drop(instance));
+    let baseline = counted(move || drop(baseline_instance));
+    assert_eq!(drop_cost.deallocated_bytes, baseline.deallocated_bytes);
 }

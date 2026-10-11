@@ -67,6 +67,7 @@ describe('three-role permission matrix (spec #3367 AC-002, #4584)', () => {
         expect(inspect([review('reviewer-approval', 'reviewer')])).toEqual({
             latestReviewerStateOnHead: 'APPROVED',
             latestReviewerReviewDatabaseId: 1,
+            latestReviewerCommitOid: head,
             unresolvedThreads: 0,
         });
     });
@@ -89,6 +90,7 @@ describe('three-role permission matrix (spec #3367 AC-002, #4584)', () => {
         expect(state).toEqual({
             latestReviewerStateOnHead: 'APPROVED',
             latestReviewerReviewDatabaseId: 1,
+            latestReviewerCommitOid: head,
             unresolvedThreads: 0,
         });
     });

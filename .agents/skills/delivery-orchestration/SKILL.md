@@ -659,6 +659,22 @@ itself proves no mutation landed — the owner is still `prepared`, or it carrie
 an HTTP 422 marker — absence releases the owner, and its receipt makes repeat
 recovery idempotent without GitHub access.
 
+The live main ruleset dismisses a reviewer approval when the pull request head moves
+past it, so a landed approval then reads back as DISMISSED. Recovery accepts that one
+state difference, and only for the reviewer App's APPROVE document once the live head
+differs from the journaled head; every other field must still match exactly. It binds
+the publication, records no delivery authorization (a dismissed approval of a stale head
+authorizes nothing), and releases the lock. A DISMISSED review on an unmoved head, a
+dismissed REQUEST_CHANGES, or a dismissed review from another actor keeps the
+ambiguous-or-non-exact refusal. A dismissed exact copy of the document from any actor
+other than the sanctioned other publication identity (the reviewer App or the
+orchestrator) is refused as unauthorized landed review evidence, exactly as a live copy
+is, whatever the head or event: unlike the reviewer's own dismissed approval, it needs
+neither a moved head nor an APPROVE document to be refused. The two
+inspections must agree: an approval that stands at the first read and is dismissed at
+the second refuses as a change during reconciliation, moved head or not.
+`review:publish` and `deliver` never treat DISMISSED as live.
+
 `--attest-absent` is the operator's explicit assertion that the review POST never
 landed, and it is the only path that releases an owner whose sole failing
 condition is a missing definitive answer. It is legitimate only after

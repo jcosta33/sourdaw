@@ -35,6 +35,23 @@ describe('projectMidiClipWindow controller rows at the window end', () => {
         expect(projected.pitchBends.map((row) => row.id)).toEqual(['head']);
     });
 
+    it('plays a controller row on the closing line where the window says its closing line plays, and drops a bend row there', () => {
+        const projected = projectMidiClipWindow({
+            notes: [],
+            controlChanges: [
+                controller('head', 0, 127),
+                controller('closing', length, 0),
+                controller('past', length + 1e-6, 64),
+            ],
+            pitchBends: [bend('head', 0, 100), bend('closing', length, 0)],
+            window: { ...window, closingLineBeat: 2 },
+        });
+
+        expect(projected.controlChanges.map((row) => row.id)).toEqual(['head']);
+        expect(projected.closingControlChanges.map(({ id, beat }) => [id, beat])).toEqual([['closing', 2]]);
+        expect(projected.pitchBends.map((row) => row.id)).toEqual(['head']);
+    });
+
     it('keeps a row that sits just inside the closing line', () => {
         const projected = projectMidiClipWindow({
             notes: [],

@@ -4,6 +4,7 @@ import { type updateDeviceParam, type updateDevicePatch } from '#/modules/AudioE
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
 
+import { encodeBacteriaBody } from '../../models/BacteriaBodyIndex';
 import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatch';
 
 export { createFindDeviceRef };
@@ -47,11 +48,12 @@ export const NON_SCALAR_GLOBAL_KEYS = new Set<keyof BacteriaPatch>([
 ]);
 
 /**
- * Per-band keys that are not scalar audio parameters: `convolutionIr` is an IR
- * identifier string with no numeric encoding (encodePatchValue returns null for
- * it), so it is excluded explicitly rather than relying on the null guard.
+ * Per-band keys a morph corner does not carry. `convolutionIr` chooses one
+ * physical body, and there is no body between wood and metal: interpolated, the
+ * index would land on whichever body it rounds to and switch it mid-gesture.
+ * It still travels every other route a scalar does.
  */
-export const NON_SCALAR_BAND_KEYS = new Set<keyof BacteriaBand>(['convolutionIr']);
+export const NON_MORPHED_BAND_KEYS = new Set<keyof BacteriaBand>(['convolutionIr']);
 
 export const DISTORTION_MODE_INDEX = {
     'soft-clip': 0,
@@ -98,9 +100,8 @@ const ROUTING_MODE_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(
 
 // String-valued patch fields that are intentionally not audio params, so
 // encodePatchValue returning null for them is expected (not a misconfiguration).
-// `name` is the patch label; `convolutionIr` is an IR identifier resolved
-// out-of-band rather than encoded into a numeric engine param.
-const NON_AUDIO_STRING_KEYS = new Set<string>(['name', 'convolutionIr']);
+// `name` is the patch label.
+const NON_AUDIO_STRING_KEYS = new Set<string>(['name']);
 
 export function encodePatchValue(key: string, value: unknown): number | null {
     if (typeof value === 'number') {
@@ -133,6 +134,10 @@ export function encodePatchValue(key: string, value: unknown): number | null {
 
     if (key === 'globalRouting' || key === 'routingMode') {
         return ROUTING_MODE_LOOKUP.get(value) ?? 0;
+    }
+
+    if (key === 'convolutionIr') {
+        return encodeBacteriaBody(value);
     }
 
     // An unrecognized string-valued key silently never reaches the engine.

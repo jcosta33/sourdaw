@@ -8,7 +8,14 @@ import { Container } from '#/infra/di/Container';
 type MidiNoteOnPayload = { deviceId?: string; midiNote: number; velocity: number };
 type MidiNoteOffPayload = { deviceId?: string; midiNote: number; releaseVelocity?: number };
 type MidiPedalCcPayload = { deviceId?: string; cc: number; value: number | boolean };
-type YeastNoteOffIdentity = { channel: number; note: number };
+type YeastNoteOffIdentity = {
+    channel: number;
+    note: number;
+    // The generated voice identity the rack carried on the off (#4873), and
+    // the settle frame, when present. Optional: identityless offs stay legal.
+    noteInstanceId?: string;
+    sampleFrame?: number;
+};
 type YeastNotesOffPayload = { trackId: string; noteOffs: YeastNoteOffIdentity[] };
 
 type WebMidiEvents = {

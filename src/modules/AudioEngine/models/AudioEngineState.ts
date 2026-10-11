@@ -530,7 +530,10 @@ export type AudioEngine = {
     /** Rehydration-only baseline; validates one complete strip before publishing it. */
     initializeTrackStripFromSnapshot(snapshot: unknown): RuntimeGraphDeltaResult;
     ensureTrackStrip(trackId: string): TrackChannelStrip;
+    /** Tears down the strip of a track that left the project; each device it held leaves with it. */
     removeTrackStrip(trackId: string): void;
+    /** Tears down a strip whose track stays in the project without one; its devices stay too. */
+    deactivateTrackStrip(trackId: string): void;
     getTrackStrip(trackId: string): TrackChannelStrip | undefined;
     findToasterControls(deviceId: string): ToasterDeviceControls | undefined;
     /** Live reading of the builtin LUFS meter with this device id, or null while it has no loaded node. */

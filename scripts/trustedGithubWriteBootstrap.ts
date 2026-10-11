@@ -291,6 +291,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
     'review:publish:recover': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/recoverPublishReviewLock.ts',
+        'scripts/reviewPublicationReceiptAdoption.ts',
         'scripts/reconstructReviewRounds.ts',
         'scripts/reviewRepair.ts',
         'scripts/reviewRoundEscalation.ts',

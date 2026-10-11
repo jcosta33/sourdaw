@@ -297,6 +297,43 @@ describe('linear tempo-ramp coordinates', () => {
     });
 });
 
+describe('a ramp that arrives on a beat shared by two changes', () => {
+    const sampleRate = 48_000;
+    // The first change on beat 4 is where the ramp from beat 0 arrives (140);
+    // the last governs from there (160 ramping to 200 at beat 8).
+    const step: TempoChange[] = [
+        { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' },
+        { id: 'arrival', beat: 4, tempo: 140, curve: 'instant' },
+        { id: 'governing', beat: 4, tempo: 160, curve: 'linear' },
+        { id: 'end', beat: 8, tempo: 200, curve: 'instant' },
+    ];
+
+    it('integrates the ramp up to the arrival tempo, not the tempo that governs from the beat', () => {
+        // BPM(b) = 100 + 10b, so beats 0..4 take 6 * ln(1.4) seconds.
+        expect(secondsBetweenBeats(step, 0, 4, 120)).toBeCloseTo(6 * Math.log(1.4), 9);
+        expect(secondsBetweenBeats(step, 4, 8, 120)).toBeCloseTo(6 * Math.log(1.25), 9);
+        expect(secondsBetweenBeats(step, 0, 8, 120)).toBeCloseTo(6 * Math.log(1.4) + 6 * Math.log(1.25), 9);
+    });
+
+    it('integrates a span that ends inside the ramp that precedes the shared beat', () => {
+        expect(secondsBetweenBeats(step, 0, 2, 120)).toBeCloseTo(6 * Math.log(1.2), 9);
+        expect(secondsBetweenBeats(step, 2, 4, 120)).toBeCloseTo(6 * Math.log(1.4 / 1.2), 9);
+    });
+
+    it('round-trips beats across the step through samples', () => {
+        for (const beat of [1, 3.999, 4, 4.001, 6]) {
+            const samples = beatToSamples(step, beat, 120, sampleRate);
+
+            expect(samplesToBeat(step, samples, 120, sampleRate)).toBeCloseTo(beat, 3);
+        }
+    });
+
+    it('reads the arrival just before the shared beat and the governing change on it', () => {
+        expect(getTempoAtBeat(step, 3.999999, 120)).toBeCloseTo(140, 3);
+        expect(getTempoAtBeat(step, 4, 120)).toBe(160);
+    });
+});
+
 describe('secondsBetweenBeats', () => {
     it('falls back to the default tempo when the map is empty', () => {
         expect(secondsBetweenBeats([], 0, 8, 120)).toBeCloseTo(4, 12);

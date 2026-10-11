@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isPianoPedalMoveEngaged, resolvePianoPedalMove } from '../pianoPedalController';
+import { isPianoPedalMoveEngaged, isSwitchControllerRelease, resolvePianoPedalMove } from '../pianoPedalController';
 
 describe('resolvePianoPedalMove', () => {
     it('reads CC64 as a continuous sustain position', () => {
@@ -42,5 +42,21 @@ describe('isPianoPedalMoveEngaged', () => {
         expect(isPianoPedalMoveEngaged({ pedal: 'sustain', position: 0 })).toBe(false);
         expect(isPianoPedalMoveEngaged({ pedal: 'sostenuto', engaged: true })).toBe(true);
         expect(isPianoPedalMoveEngaged({ pedal: 'unaCorda', engaged: false })).toBe(false);
+    });
+});
+
+describe('isSwitchControllerRelease', () => {
+    it.each([64, 65, 66, 67, 68, 69])(
+        'reads CC%i below the latch threshold as a release and at it as a press',
+        (cc) => {
+            expect(isSwitchControllerRelease(cc, 0)).toBe(true);
+            expect(isSwitchControllerRelease(cc, 63)).toBe(true);
+            expect(isSwitchControllerRelease(cc, 64)).toBe(false);
+            expect(isSwitchControllerRelease(cc, 127)).toBe(false);
+        }
+    );
+
+    it.each([1, 7, 11, 63, 70])('never reads CC%i, which is not an on/off switch, as a release', (cc) => {
+        expect(isSwitchControllerRelease(cc, 0)).toBe(false);
     });
 });

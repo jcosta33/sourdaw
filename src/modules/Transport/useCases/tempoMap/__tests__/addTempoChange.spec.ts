@@ -79,6 +79,30 @@ describe('addTempoChange', () => {
         expect(result.changes[0]!.curve).toBe('instant');
     });
 
+    it('updates the change that governs from a beat shared by an arrival and a governing change', async () => {
+        // Changes on one beat arrive at the first and govern from the last, so
+        // an edit at that beat has to rewrite the last, never the arrival.
+        const { getTempoAtBeat } =
+            await vi.importActual<typeof import('../../../models/TempoMap')>('../../../models/TempoMap');
+        mockStore.value = {
+            changes: [
+                { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' },
+                { id: 'arrival', beat: 4, tempo: 140, curve: 'instant' },
+                { id: 'governing', beat: 4, tempo: 160, curve: 'linear' },
+                { id: 'end', beat: 8, tempo: 200, curve: 'instant' },
+            ],
+        };
+        subject.addTempoChange(4, 150, 'instant');
+        const result = setMock.mock.calls[0]![0]!;
+        expect(result.changes.map(({ id, tempo }) => [id, tempo])).toEqual([
+            ['ramp', 100],
+            ['arrival', 140],
+            ['governing', 150],
+            ['end', 200],
+        ]);
+        expect(getTempoAtBeat(result.changes, 4, 120)).toBe(150);
+    });
+
     it('keeps unrelated changes untouched when updating an existing beat', () => {
         // Exercises the ternary false-arm (index !== existing returns the
         // original context unchanged) alongside the update path.

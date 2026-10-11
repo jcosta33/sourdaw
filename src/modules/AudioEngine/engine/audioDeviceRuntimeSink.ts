@@ -59,7 +59,11 @@ export type AudioDeviceRuntimeSink = {
         port?: MessagePort;
         onProgress?: (epoch: number, progress: number) => void;
     }) => Promise<DeviceContentLoadOutcome>;
-    unregisterLevainDevice: (deviceId: string) => void;
+    /**
+     * Release the registration `port` made for `deviceId`. A no-op when a newer
+     * node has since registered under the same id with its own port.
+     */
+    unregisterLevainDevice: (deviceId: string, port: MessagePort) => void;
     setLevainEngineReady: (input: { deviceId: string; isReady: boolean }) => void;
     setFermenterTelemetry: (deviceId: string, telemetry: FermenterTelemetry) => void;
     updateGlutenMeters: (deviceId: string, meters: GlutenMeterData) => void;

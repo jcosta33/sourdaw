@@ -16,9 +16,11 @@ type ProcessYeastMidiInput = {
     blockEndSamples: number;
     transport: TransportInfo;
     preserveInputTrackIds?: boolean;
+    onlyWhileRackCurrent?: boolean;
 };
 
 export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<MidiEvent[]> {
+    const { onlyWhileRackCurrent, ...blockInput } = input;
     // Racks are per device instance (issue #2422): a caller that names its
     // rack processes that device's rack; one that does not keeps the legacy
     // behaviour of processing the active rack.
@@ -39,10 +41,11 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
     let output: MidiEvent[];
     try {
         const processed = await processYeastRuntimeTransaction({
-            ...input,
+            ...blockInput,
             rackId: previewScope.rackId,
             routeId: previewScope.routeId,
             projection,
+            onlyWhileProjectionCurrent: onlyWhileRackCurrent,
         });
         publishYeastRuntimeStatus(input.rackId);
         output = processed ?? [...input.events];

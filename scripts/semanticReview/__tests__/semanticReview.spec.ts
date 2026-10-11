@@ -69,6 +69,7 @@ import {
     assessUnit,
     computeResponseCacheKey,
     createBudgetController,
+    createSdkProviderPort,
     readUsage,
     TYPESAFE_MODEL,
     type SemanticProviderPort,
@@ -11297,5 +11298,419 @@ describe('verify refuses an omitted strongest-evidence answer', () => {
         });
         expect(report.findingAssessments).toHaveLength(0);
         expect(report.scope.unassessed[0]?.reason).toBe('invalid_response');
+    });
+});
+
+describe('opaque bearer source and caller admission', () => {
+    const opaque = secretFixture('A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0');
+    const header = ['Authorization:', 'Bearer', opaque].join(' ');
+    const path = 'src/modules/Project/__tests__/header.spec.ts';
+    const clean = 'it("ordinary", () => { expect(1).toBe(1); });\n';
+    const unsafe = `const header = '${header}';\n`;
+    const opaqueProse = ['Reviewer saw Bearer', ['qzxvpmrt', 'ncbwksjg'].join('-'), 'expire'].join(' ');
+    const unsafeProse = `const note = '${opaqueProse}';\n`;
+    const headerValues = [
+        { shape: 'one-character', value: String.fromCharCode(81) },
+        { shape: 'fifteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7i'].join('') },
+        { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
+        { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
+    ];
+    function explicitHeaderForms(value: string, padding = '', separator = ' ') {
+        const scheme = `${padding}${['Bearer', value].join(separator)}${padding}`;
+        return [
+            { shape: 'template-bracket', text: `headers[\`Authorization\`] = \`${scheme}\`;` },
+            { shape: 'bracket-assignment', text: `headers['Authorization'] = '${scheme}';` },
+            { shape: 'computed-key', text: `const headers = { ['Authorization']: '${scheme}' };` },
+            { shape: 'quoted-object', text: JSON.stringify({ Authorization: scheme }) },
+            { shape: 'assignment', text: `headers.Authorization = '${scheme}';` },
+            { shape: 'setter', text: `headers.set('Authorization', '${scheme}');` },
+            { shape: 'append', text: `headers.append("Authorization", "${scheme}");` },
+            { shape: 'tuple', text: JSON.stringify(['Authorization', scheme]) },
+            { shape: 'escaped-tuple', text: JSON.stringify(JSON.stringify(['Authorization', scheme])) },
+            { shape: 'escaped-setter', text: JSON.stringify(`headers.set("Authorization", "${scheme}");`) },
+            { shape: 'template-assignment', text: `headers.Authorization = \`${scheme}\`;` },
+        ];
+    }
+    function additionalHeaderForms(value: string) {
+        const scheme = ['Bearer', value].join(' ');
+        const comments = [
+            { kind: 'block', gap: '/* retained */' },
+            { kind: 'line', gap: '// retained\n' },
+        ];
+        const setters = comments.flatMap(({ kind, gap }) =>
+            [
+                { quote: "'", before: '', after: gap },
+                { quote: '"', before: gap, after: '' },
+                { quote: '`', before: gap, after: gap },
+            ].map(({ quote, before, after }, index) => ({
+                shape: `commented-setter-${kind}-${String(index)}`,
+                text: `headers.set(${quote}Authorization${quote} ${before}, ${after} ${quote}${scheme}${quote});`,
+            }))
+        );
+        const arrays = [
+            [scheme],
+            ['Bearer <token>', scheme],
+            [scheme, 'Bearer <token>'],
+            ['Bearer <token>', 'ordinary [note]', scheme],
+            ['Bearer <token>', 'ordinary ]note', scheme],
+            ['Bearer <token>', 'ordinary [note', scheme],
+            ['Bearer <token>', 'ordinary "[note]" and \\path', scheme],
+            ['Bearer <token>', 'ordinary [note]\\', scheme],
+        ].flatMap((values, index) => [
+            { shape: `array-record-${String(index)}`, text: JSON.stringify({ Authorization: values }) },
+            { shape: `array-tuple-${String(index)}`, text: JSON.stringify([['Authorization', values]]) },
+        ]);
+        return [...setters, ...arrays].flatMap((form) => [
+            { ...form, shape: `${form.shape}-raw` },
+            { shape: `${form.shape}-serialized`, text: JSON.stringify(form.text) },
+        ]);
+    }
+    function whitespaceHeaderForms(value: string) {
+        return [
+            { whitespace: 'space', padding: ' ', separator: ' ' },
+            { whitespace: 'tab', padding: String.fromCharCode(9), separator: ' ' },
+            { whitespace: 'mixed', padding: ` ${String.fromCharCode(9)}`, separator: ' ' },
+            { whitespace: 'scheme-tab', padding: '', separator: String.fromCharCode(9) },
+        ].flatMap(({ whitespace, padding, separator }) =>
+            explicitHeaderForms(value, padding, separator).flatMap((form) => [
+                { ...form, shape: `${form.shape}-${whitespace}-raw` },
+                { shape: `${form.shape}-${whitespace}-escaped`, text: JSON.stringify(form.text) },
+            ])
+        );
+    }
+    const unsafeSources = [
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                additionalHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+            ),
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                whitespaceHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+            ),
+        ...headerValues.flatMap(({ shape, value }) =>
+            explicitHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` }))
+        ),
+        { shape: 'header', text: unsafe },
+        { shape: 'hyphenated-prose', text: unsafeProse },
+        ...headerValues.map(({ shape, value }) => ({
+            shape: `object-header-${shape}`,
+            text: `const headers = { Authorization: '${['Bearer', value].join(' ')}' };\n`,
+        })),
+    ];
+
+    it('opaque bearer source and JSON values reject all candidates without echoing material', () => {
+        const values = [
+            ...unsafeSources.map(({ text }) => text),
+            ...headerValues.flatMap(({ value }) => {
+                const scheme = ['Bearer', value].join(' ');
+                return [
+                    ['Authorization:', scheme].join(' '),
+                    `const headers = { Authorization: '${scheme}' };`,
+                    JSON.stringify({ Authorization: scheme }),
+                    JSON.stringify({ source: JSON.stringify({ Authorization: scheme }) }),
+                ];
+            }),
+            header,
+            unsafe,
+            opaqueProse,
+            unsafeProse,
+            JSON.stringify({ nested: [{ value: opaqueProse }] }),
+            ...[
+                ['abcde', 'fghij', 'klmnop'].join('.'),
+                ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''),
+                'credential-shaped',
+            ].flatMap((value) => {
+                const scheme = ['Bearer', value].join(' ');
+                return [scheme, `const header = '${scheme}';`, JSON.stringify({ nested: [{ scheme }] })];
+            }),
+            ['Authorization:', 'Bearer', 'credential-shaped'].join(' '),
+            `${header} expired`,
+            ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),
+            ['finding: Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''), 'was logged'].join(' '),
+            JSON.stringify({ nested: [{ header }] }),
+            ['bEaReR', opaque].join(' '),
+            ['Bearer', opaque].join('\t'),
+            ['Bearer <token>', header].join('\n'),
+        ];
+        for (let repeat = 0; repeat < 3; repeat += 1) {
+            for (const value of values) {
+                const reason = sensitiveContentReason(value);
+                expect(reason).toBeTypeOf('string');
+                expect(reason).not.toBe('');
+                expect(reason).not.toContain(opaque);
+            }
+        }
+    });
+
+    it('opaque bearer flat arrays require their closing bracket and exclude unquoted nesting', () => {
+        const scheme = ['Bearer', String.fromCharCode(81)].join(' ');
+        const unterminated = JSON.stringify({ Authorization: ['ordinary [note]', scheme] }).slice(0, -2);
+        for (const text of [
+            unterminated,
+            `${unterminated}${'ordinary '.repeat(4096)}`,
+            JSON.stringify({ Authorization: [['ordinary [note]'], scheme] }),
+        ]) {
+            expect(sensitiveContentReason(text)).toBeUndefined();
+            expect(sensitiveContentReason(JSON.stringify(text))).toBeUndefined();
+        }
+    });
+
+    it('opaque bearer controls remain eligible in decoded and serialized forms', () => {
+        for (const value of [
+            ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER', ''].flatMap(
+                (value) => whitespaceHeaderForms(value).map(({ text }) => text)
+            ),
+            ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER']
+                .flatMap(additionalHeaderForms)
+                .map(({ text }) => text),
+            ...explicitHeaderForms('<token>').map(({ text }) => text),
+            ...explicitHeaderForms('${runtimeCredentialReference}').map(({ text }) => text),
+            ...explicitHeaderForms('').map(({ text }) => text),
+            ...headerValues.filter(({ value }) => value.length < 16).map(({ value }) => ['Bearer', value].join(' ')),
+            'A reviewer discusses authorization, Bearer Q and ordinary prose.',
+            JSON.stringify(['X-Note', ['Bearer', String.fromCharCode(81)].join(' ')]),
+            JSON.stringify(['Authorization', 'ordinary', ['Bearer', String.fromCharCode(81)].join(' ')]),
+            'Bearer',
+            'Bearer <token>',
+            'Bearer ${apiKey}',
+            'Bearer RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER',
+            'Bearer ${runtimeCredentialReference}',
+            'Authorization: Bearer <token>',
+            'Authorization: Bearer ${runtimeCredentialReference}',
+            "const headers = { Authorization: 'Bearer ' + runtimeCredentialReference };",
+            JSON.stringify({ Authorization: 'Bearer RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER' }),
+            'A reviewer mentions Bearer schemes in this note.',
+            "'Bearer ' + runtimeCredentialReference",
+            'CREDENTIAL_PATTERN = /\\bbearer\\s+/iu',
+            'A bearer header carries authentication material supplied by the caller.',
+            'A reviewer notes Bearer credential-shaped examples remain synthetic and contain no credential.',
+        ]) {
+            expect(sensitiveContentReason(value), value).toBeUndefined();
+            expect(sensitiveContentReason(JSON.stringify({ value })), value).toBeUndefined();
+        }
+    });
+
+    function effects() {
+        const fetch = vi.fn(async () => new Response(JSON.stringify({ model: TYPESAFE_MODEL, answers: {} })));
+        const sdk = createSdkProviderPort({ apiKey: 'unused-offline-key', fetch });
+        const systemOne = vi.fn(sdk.systemOne);
+        const read = vi.fn(() => undefined);
+        const write = vi.fn();
+        return { fetch, systemOne, cache: { read, write }, provider: { systemOne }, log: vi.fn() };
+    }
+    function expectZero(effect: ReturnType<typeof effects>) {
+        expect(effect.cache.read).not.toHaveBeenCalled();
+        expect(effect.cache.write).not.toHaveBeenCalled();
+        expect(effect.systemOne).not.toHaveBeenCalled();
+        expect(effect.fetch).not.toHaveBeenCalled();
+    }
+
+    it.each(
+        (['before', 'after', 'fallback'] as const).flatMap((side) =>
+            unsafeSources.map((source) => ({ side, ...source }))
+        )
+    )('opaque bearer scan $shape $side withholding has zero effects', async ({ side, text }) => {
+        const effect = effects();
+        const blobs: Record<string, string> = {};
+        const line = side === 'fallback' ? 99 : 1;
+        // A line comment moves its paired value past line one; the admitted hunk must carry the binding.
+        const endLine = side === 'fallback' ? line : text.split('\n').length;
+        let hunk: PathHunks = { path, before: [], after: [{ startLine: line, endLine }] };
+        if (side === 'before') {
+            blobs[`${MERGE_BASE}:${path}`] = text;
+            hunk = { path, before: [{ startLine: 1, endLine }], after: [] };
+        } else {
+            blobs[`${HEAD}:${path}`] = text;
+        }
+        const source = fakeSource({
+            files: [changedFile(path, { kind: side === 'before' ? 'deleted' : 'added' })],
+            blobs,
+            hunks: new Map([[path, hunk]]),
+        });
+        const input = scanPorts(effect.provider, source, fixedClock(1_000));
+        const result = await runScan({ ...input, ports: { ...input.ports, cache: effect.cache } });
+        expect(result.report.scope.excluded).toContainEqual({
+            path,
+            reason: side === 'fallback' ? 'no-admissible-evidence' : 'credential-shaped-content-excluded',
+        });
+        expect(result.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'evidence-withheld-credential-shaped',
+        });
+        expect(result.report.limitations.join(' ')).toContain('withheld');
+        expect(result.report.scope.assessed).toBe(0);
+        expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
+        expect(result.report.scope.cacheHits).toBe(0);
+        expectZero(effect);
+    });
+
+    it('opaque bearer scan placeholder admits a clean independent unit beside a withheld unit', async () => {
+        const safePath = 'src/modules/Project/__tests__/ordinary.spec.ts';
+        const provider = constantProvider(0.05);
+        const systemOne = vi.fn(provider.systemOne);
+        const result = await runScan(
+            scanPorts(
+                { systemOne },
+                fakeSource({
+                    files: [changedFile(path), changedFile(safePath)],
+                    blobs: {
+                        [`${MERGE_BASE}:${path}`]: unsafe,
+                        [`${HEAD}:${path}`]: unsafe,
+                        [`${MERGE_BASE}:${safePath}`]: clean,
+                        [`${HEAD}:${safePath}`]: `${clean}const header = 'Bearer <token>';\n`,
+                    },
+                }),
+                fixedClock(1_000)
+            )
+        );
+        expect(result.report.scope.excluded).toContainEqual({ path, reason: 'credential-shaped-content-excluded' });
+        expect(result.report.scope.assessed).toBe(1);
+        expect(systemOne).toHaveBeenCalled();
+        expect(JSON.stringify(systemOne.mock.calls)).not.toContain(opaque);
+    });
+
+    function finding(): CandidateFinding {
+        return {
+            findingId: 'f1',
+            headSha: HEAD,
+            claim: 'a claim',
+            expectedBehavior: 'expected behavior',
+            evidenceReferences: [{ path, side: 'after', startLine: 1, endLine: 1 }],
+        };
+    }
+    async function verify(candidate: CandidateFinding, text: string, effect: ReturnType<typeof effects>) {
+        const { runVerify } = await import('../verify.ts');
+        return runVerify({
+            ports: {
+                source: fakeSource({ files: [], blobs: { [`${HEAD}:${path}`]: text } }),
+                provider: effect.provider,
+                cache: effect.cache,
+                clock: fixedClock(1_000),
+                signal: new AbortController().signal,
+                log: effect.log,
+            },
+            revision: BASE_REVISION,
+            profile: SEMANTIC_BUDGET_PROFILES.local,
+            findings: [candidate],
+            runId: 'opaque-bearer-verify',
+        });
+    }
+
+    it.each(unsafeSources)('opaque bearer verify $shape evidence withholding has zero effects', async ({ text }) => {
+        const effect = effects();
+        const result = await verify(finding(), text, effect);
+        expect(result.report.findingAssessments).toEqual([]);
+        expect(result.report.scope.truncated).toContainEqual({ path, reason: 'evidence-withheld-credential-shaped' });
+        expect(result.report.limitations.join(' ')).toContain('withheld');
+        expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
+        expect(result.report.scope.cacheHits).toBe(0);
+        expectZero(effect);
+    });
+
+    const findingFields = [
+        'claim',
+        'expectedBehavior',
+        'reproductionReferences',
+        'allegedFailureInputOrState',
+        'allegedObservedBehavior',
+    ] as const;
+    const findingLiterals = [
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                additionalHeaderForms(value).map((form) => ({ shape: `${form.shape}-${shape}`, value: form.text }))
+            ),
+        ...headerValues
+            .slice(0, 2)
+            .flatMap(({ shape, value }) =>
+                whitespaceHeaderForms(value).map((form) => ({ shape: `${form.shape}-${shape}`, value: form.text }))
+            ),
+        ...headerValues.flatMap(({ shape, value }) =>
+            explicitHeaderForms(value).map((form) => ({ shape: `${form.shape}-${shape}`, value: form.text }))
+        ),
+        ...headerValues.map(({ shape, value }) => ({
+            shape: `explicit-header-${shape}`,
+            value: ['Authorization:', 'Bearer', value].join(' '),
+        })),
+        {
+            shape: 'quoted-header',
+            value: JSON.stringify({ Authorization: ['Bearer', String.fromCharCode(81)].join(' ') }),
+        },
+        { shape: 'alphanumeric', value: header },
+        { shape: 'header-tail', value: `${header} expired` },
+        { shape: 'hyphenated-prose', value: opaqueProse },
+        {
+            shape: 'dotted-tail',
+            value: ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),
+        },
+        {
+            shape: 'alphabetic-tail',
+            value: ['finding: Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''), 'was logged'].join(' '),
+        },
+    ];
+    it.each(findingFields.flatMap((field) => findingLiterals.map((literal) => ({ field, ...literal }))))(
+        'opaque bearer finding $shape $field rejects before cache or SDK delegate',
+        async ({ field, value }) => {
+            const effect = effects();
+            let candidate = finding();
+            if (field === 'reproductionReferences') {
+                candidate = {
+                    ...candidate,
+                    reproductionReferences: [{ path: 'probe.txt', note: value, verifiedExecution: false }],
+                };
+            } else {
+                candidate = { ...candidate, [field]: value };
+            }
+            const result = await verify(candidate, clean, effect);
+            expect(result.report.failureCode).toBe('sensitive_content_excluded');
+            expect(result.report.findingAssessments).toEqual([]);
+            expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
+            expect(result.report.scope.cacheHits).toBe(0);
+            expectZero(effect);
+        }
+    );
+
+    it('opaque bearer verify ordinary caller descriptions remain assessable', async () => {
+        const effect = effects();
+        effect.systemOne.mockImplementation(async ({ questions }) => {
+            const answers: Record<string, unknown> = {};
+            for (const [key, question] of Object.entries(questions)) {
+                if (
+                    typeof question !== 'object' ||
+                    question === null ||
+                    !('criteria' in question) ||
+                    typeof question.criteria !== 'object' ||
+                    question.criteria === null
+                ) {
+                    throw new Error('the verify fixture requires choice criteria');
+                }
+                const labels = Object.keys(question.criteria);
+                answers[key] = {
+                    type: 'choice',
+                    choice: labels[0],
+                    confidence: 0.9,
+                    probabilities: Object.fromEntries(labels.map((label) => [label, 1 / labels.length])),
+                };
+            }
+            return { model: TYPESAFE_MODEL, answers };
+        });
+        const result = await verify(
+            {
+                ...finding(),
+                allegedFailureInputOrState: 'an ordinary input',
+                allegedObservedBehavior: 'an ordinary observation',
+                reproductionReferences: [
+                    { path: 'probe.txt', note: 'a reported observation', verifiedExecution: false },
+                ],
+            },
+            clean,
+            effect
+        );
+        expect(result.report.failureCode, JSON.stringify(effect.log.mock.calls)).toBeUndefined();
+        expect(result.report.findingAssessments).toHaveLength(1);
+        expect(effect.cache.read).toHaveBeenCalledTimes(1);
+        expect(effect.systemOne).toHaveBeenCalledTimes(1);
     });
 });

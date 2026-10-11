@@ -1,30 +1,39 @@
-import { deriveVcaMultiplier, getVcaGroupsState, type Track } from '#/modules/Arrangement/stores';
+import { deriveVcaMultiplier, getVcaGroupsState, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import { clampRenderFrameCount } from '../../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../../repositories/offlineRouting/connectOfflineSidechainRoutes';
 import { makeOfflineFrameScheduler } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { getAudioContext } from '../engineAccess/getAudioContext';
+import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
 
 import { captureOfflineSubgraphInput } from './captureOfflineSubgraphInput';
 import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
+import { composeOfflineStripLevel } from './composeOfflineStripLevel';
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
+import { createOfflineAdjustmentBusChain, type OfflineAdjustmentBus } from './createOfflineAdjustmentBusChain';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
 import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './destroyOfflineDeviceStrategies';
+import { resolveTrackAdjustmentComposition } from './offlineAdjustmentLayers';
 import { type OfflineRenderProjectSource, type OfflineRenderRuntimeSource } from './OfflineRenderSource';
 import { prepareOfflineContext } from './prepareOfflineContext';
 import { projectStripTrack, type TargetMixerDisposition } from './projectStripTrack';
+import { readOfflineAdjustmentLayerSnapshot } from './readOfflineAdjustmentLayerSnapshot';
 import { renderInSegments } from './renderInSegments';
 import { resolveHistoryAwareRenderContext } from './resolveHistoryAwareRenderContext';
 import { resolvePrintReachability } from './resolvePrintReachability';
+import { scheduleOfflineAdjustmentCurves } from './scheduleOfflineAdjustmentCurves';
 import { schedulePendingSuspends } from './schedulePendingSuspends';
 import { scheduleTrackClips } from './scheduleTrackClips';
 import { type OfflineScheduleTally, type OfflineTrackStrip, type PendingWorkletEvent } from './types';
+import { wireAdjustmentBusChain } from './wireAdjustmentBusChain';
 import { yieldToMain } from './yieldToMain';
 
 /** Stand-in note tables for a render started before the MIDI store is hydrated. */
@@ -262,6 +271,65 @@ export async function renderTrackSubgraphOffline({
     // same group levels, however long the render takes.
     const vcaGroups = captured?.vcaGroups ?? getVcaGroupsState();
 
+    // One snapshot of the adjustment-layer stack, and each track's composition
+    // over the exact span this render covers. A freeze with `keepLive` mixer
+    // disposition is the exception below: its buffer replays through the live
+    // strip, which keeps applying the layers itself, so baking them would
+    // apply them twice — the same rule `projectStripTrack` applies to the
+    // fader and panner those layers compose onto.
+    const adjustmentLayers = readOfflineAdjustmentLayerSnapshot();
+    // An implicit layer position resolves against the full ordered project
+    // track list — live `resolveAffectedTrackIds` and the mixdown composition
+    // slice that list, not this render's subgraph subset, whose index space
+    // any folder or disabled track ahead of the stack shifts. A document
+    // source renders that document alone, so the live store is read only
+    // without one; the subgraph subset stays the last-resort stand-in.
+    let projectTracks: readonly Track[];
+    if (source !== undefined) {
+        projectTracks = source.project.tracks?.tracks ?? renderTracks;
+    } else {
+        projectTracks = trackStore.value?.tracks ?? renderTracks;
+    }
+    const allTrackIds = projectTracks.map((track) => track.id);
+    const compositionsByTrackId = new Map(
+        renderTracks.map((track) => [
+            track.id,
+            resolveTrackAdjustmentComposition({
+                layers: adjustmentLayers,
+                trackId: track.id,
+                allTrackIds,
+                spanStartBeat: startBeat,
+                spanEndBeat: endBeat,
+            }),
+        ])
+    );
+    const trackReceivesAdjustmentLayers = (trackId: string): boolean =>
+        !(trackId === targetTrackId && targetMixer === 'keepLive');
+    const adjustmentBusesByTrackId = new Map<string, OfflineAdjustmentBus[]>();
+    let warnedMovingDsp = false;
+    for (const track of renderTracks) {
+        const composition = compositionsByTrackId.get(track.id);
+        if (!composition || composition.dsp.length === 0 || !trackReceivesAdjustmentLayers(track.id)) {
+            continue;
+        }
+        // A moving blend would need per-block crossfade writes through the
+        // live bus node's slewed API; until that exists, a steady layer is
+        // rendered and a moving one is skipped — loudly, never silently.
+        if (!composition.constant) {
+            if (!warnedMovingDsp) {
+                warnedMovingDsp = true;
+                onWarning?.(
+                    'A DSP adjustment layer that fades across this bounce is skipped; only steady layers render offline.'
+                );
+            }
+            continue;
+        }
+        adjustmentBusesByTrackId.set(
+            track.id,
+            createOfflineAdjustmentBusChain({ context: offlineCtx, layers: composition.dsp })
+        );
+    }
+
     const trackStripsById = new Map<string, OfflineTrackStrip>();
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
     // Everything from the first strip on is inside the teardown's scope. Every
@@ -272,15 +340,24 @@ export async function renderTrackSubgraphOffline({
     try {
         for (const track of renderTracks) {
             const honorMuted = sidechainKeySourceIds.has(track.id);
+            const projected = projectStripTrack({
+                track,
+                isTarget: track.id === targetTrackId,
+                includeInserts,
+                includeAutomation,
+                targetMixer,
+            });
+            // The adjustment-layer composition folds into the same seed the
+            // VCA multiplier folds into — multiply, then let the strip clamp —
+            // which is live's composed fader write.
+            const composition = compositionsByTrackId.get(track.id);
+            let level = { gain: projected.gain, pan: projected.pan };
+            if (composition && trackReceivesAdjustmentLayers(track.id)) {
+                level = composeOfflineStripLevel({ gain: projected.gain, pan: projected.pan }, composition);
+            }
             const strip = await createOfflineTrackStrip(
                 offlineCtx,
-                projectStripTrack({
-                    track,
-                    isTarget: track.id === targetTrackId,
-                    includeInserts,
-                    includeAutomation,
-                    targetMixer,
-                }),
+                { ...projected, gain: level.gain, pan: level.pan },
                 // Freeze and bounce produce deliverable audio, not a monitoring
                 // snapshot — the same reason exportStems opts out. Baking mute in
                 // would hand back a zeroed buffer, and bounce-to-new-track then
@@ -333,12 +410,19 @@ export async function renderTrackSubgraphOffline({
                 continue;
             }
 
+            // The destination — the print, or the next strip downstream — with
+            // the track's DSP adjustment buses inserted in between when it has
+            // them (live routes the strip output through the bus chain).
+            let destination: AudioNode | null = trackStripsById.get(track.outputId)?.inputNode ?? null;
             if (track.id === targetTrackId || printTrackIds.includes(track.id)) {
-                strip.outputNode.connect(offlineCtx.destination);
-            } else {
-                const downstream = trackStripsById.get(track.outputId);
-                if (downstream) {
-                    strip.outputNode.connect(downstream.inputNode);
+                destination = offlineCtx.destination;
+            }
+            if (destination) {
+                const buses = adjustmentBusesByTrackId.get(track.id);
+                if (buses) {
+                    wireAdjustmentBusChain(strip.outputNode, buses, destination);
+                } else {
+                    strip.outputNode.connect(destination);
                 }
             }
 
@@ -357,6 +441,44 @@ export async function renderTrackSubgraphOffline({
                 tapNode.connect(sendGain);
                 sendGain.connect(busStrip.inputNode);
             }
+        }
+
+        // A volume/pan composition that moves across the span is sampled per
+        // slew tick onto the strip's fader and panner — the moving
+        // composition's version of the seed fold in the strip build above.
+        const adjustmentTickSeconds = automationSlewTickSecondsForGrain(
+            captured?.scheduling.scheduleGrainMs ??
+                transportStore.value?.scheduleGrainMs ??
+                defaultTransportState.scheduleGrainMs
+        );
+        for (const track of renderTracks) {
+            const strip = trackStripsById.get(track.id);
+            const composition = compositionsByTrackId.get(track.id);
+            if (!strip || !composition || composition.constant || !trackReceivesAdjustmentLayers(track.id)) {
+                continue;
+            }
+            scheduleOfflineAdjustmentCurves({
+                layers: adjustmentLayers,
+                trackId: track.id,
+                allTrackIds,
+                composition,
+                trackGainNode: strip.faderNode,
+                trackPanNode: strip.panNode,
+                baseGain: track.gain,
+                basePan: track.pan,
+                vcaMultiplier: resolveContributorVcaMultiplier({
+                    track,
+                    isTarget: track.id === targetTrackId,
+                    groups: vcaGroups,
+                    includeTargetVca,
+                }),
+                durationSeconds,
+                regionStartBeat: startBeat,
+                tickSeconds: adjustmentTickSeconds,
+                defaultTempo,
+                changes,
+                compensationDelaySec: getCompensationDelay(track.id),
+            });
         }
 
         // An audio-only freeze can run before any MIDI has been loaded; the

@@ -39,6 +39,7 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
     'semantic-review.yml',
+    'cargo-dependency-seed.yml',
 ] as const;
 
 export const WORKFLOW_SNAPSHOT_PATH = 'scripts/__tests__/fixtures/health-gate-workflows.snapshot.json';
@@ -66,6 +67,7 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
 // beside the assessment job's own ban.
 export const JOB_LEVEL_PERMISSION_FREE_FILES = [
     'validation.yml',
+    'cargo-dependency-seed.yml',
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
 ] as const;
@@ -95,6 +97,25 @@ const STATIC_SUITE_STEPS = [
 // deleted proof step leaves its job green while the proof never runs, and an
 // added one runs unpinned; both directions refuse the drift.
 export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, readonly string[] | null>>>> = {
+    'cargo-dependency-seed.yml': {
+        rust: [
+            'Checkout',
+            'Install ALSA development headers',
+            'Restore pinned Rust toolchain',
+            'Install the pinned Rust toolchain',
+            'Cache cargo build',
+            'Cache Cargo dependencies',
+            'Rust workspace health gates',
+        ],
+        'native-macos': [
+            'Checkout',
+            'Install the pinned Rust toolchain',
+            'Cache cargo build',
+            'Cache the cargo registry index',
+            'Test the audio crates',
+            'Test the native crate',
+        ],
+    },
     'quantum-measurements.yml': {
         measure: [
             'Checkout source head',
@@ -126,10 +147,11 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
     },
     'health-gates.yml': {
-        scope: ['Checkout', 'Set up Node', 'Plan affected checks', 'Upload scope manifest'],
+        scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
         'selection-shadow': [
             'Checkout candidate head',
             'Checkout immutable integration commit',
+            'Checkout immutable shadow control',
             'Download authoritative scope',
             'Set up pnpm',
             'Set up Node',
@@ -161,8 +183,10 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Set up pnpm',
             'Set up Node',
             'Install ALSA development headers',
+            'Restore pinned Rust toolchain',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
+            'Cache Cargo dependencies',
             'Install server dependencies',
             'Server and Rust workspace health gates',
         ],
@@ -170,6 +194,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Checkout',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
+            'Cache the cargo registry index',
             'Test the audio crates',
             'Test the native crate',
         ],
@@ -177,12 +202,14 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Checkout',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
+            'Cache the cargo registry index',
             'Test the audio crates',
         ],
         'native-parity': [
             'Checkout',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
+            'Cache the cargo registry index',
             'Set up pnpm',
             'Set up Node',
             'Install dependencies',

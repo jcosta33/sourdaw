@@ -2,7 +2,7 @@
 type: adr
 id: 0051
 title: A wasm bank commit allocates and frees nothing; the displaced bank is retired and freed by a paced message
-status: accepted
+status: partially superseded by 0052 (the disposed-processor message clause only)
 date: 2026-10-08
 owner: The Sourdaw team
 sources:
@@ -16,6 +16,10 @@ sources:
 ---
 
 # 0051 - A wasm bank commit allocates and frees nothing; the displaced bank is retired and freed by a paced message
+
+> **Partially superseded by ADR 0052.** The clause that a disposed processor "drops every later
+> message" is superseded: a disposed processor answers `releaseDisposedBanks` and a repeated
+> `dispose`. Every other decision here remains accepted.
 
 ## Context
 
@@ -63,6 +67,8 @@ otherwise. The replacement contract has two parts:
   loads before it. Begin then finds the slot empty and frees nothing. If the processor ended (it
   faulted or was disposed, and drops every later message), the release loop stops at once, and the
   waiting load rejects with the same "processor ended" error the handshake uses and posts nothing.
+  **Superseded by ADR 0052 for a disposed processor:** it answers `releaseDisposedBanks` and a repeated
+  `dispose` and drops every other message; see its Message contract for every answer by state.
 - **Two bounded costs stay on the render thread, accepted.** `attach_sample_bank` frees an empty
   placeholder pool (one small allocation, since followers and ready roles never upload PCM) and
   refuses once the staged bank holds PCM, so a misused call cannot drop staged samples.

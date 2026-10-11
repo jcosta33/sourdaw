@@ -1,6 +1,6 @@
 /**
- * Native offline routing (#3082): the producer must drop a bus-source send
- * the same way live `sendCommands` does, without a native addon. Device
+ * Native offline routing (#3082): the producer emits a bus-source send the
+ * same way live `sendCommands` does (#5067), without a native addon. Device
  * parameter automation (#3776): a native body's lane reaches the batch under
  * the body's own name and the declared law, and a lane the law will not carry
  * declines the render instead of vanishing from the file.
@@ -120,7 +120,7 @@ describe('renderOfflineWithNativeEngine — routing', () => {
         vi.unstubAllGlobals();
     });
 
-    it('emits a track send and drops a bus-source send to another built bus', async () => {
+    it('emits a track send and a bus-source send to another built bus', async () => {
         const frames = 8;
         const { transport, commands } = capturingTransport(frames);
         const audio = createTrack({
@@ -166,6 +166,7 @@ describe('renderOfflineWithNativeEngine — routing', () => {
         expect(result.outcome).toBe('rendered');
         expect(commands.filter((command) => command.kind === 'add-send')).toEqual([
             { kind: 'add-send', trackId: 'audio-1', busId: 'verb', tap: 'post-fader', level: 0.3 },
+            { kind: 'add-send', trackId: 'verb', busId: 'parallel-comp', tap: 'post-fader', level: 0.5 },
         ]);
     });
 

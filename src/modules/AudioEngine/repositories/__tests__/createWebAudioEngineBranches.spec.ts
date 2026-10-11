@@ -47,6 +47,7 @@ vi.mock('../../engine/TrackNode', () => ({
         };
         private outputDestination: unknown;
         dispose = vi.fn();
+        disposeLeavingProject = vi.fn();
         setGain = vi.fn();
         setPan = vi.fn();
         setMute = vi.fn();

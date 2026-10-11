@@ -12,8 +12,8 @@
  *
  * The contract requires a batch to be refused **at apply time**, whole, before
  * any of it is applied — and nearly every refusal reason this backend is
- * accountable for (`smoothed-write-unsupported`, `bus-send-unsupported`,
- * the queue-capacity refusals) is the native mapper's own. The exception is
+ * accountable for (`smoothed-write-unsupported`, a routing cycle, the
+ * queue-capacity refusals) is the native mapper's own. The exception is
  * {@link UNSUPPORTED_COMMAND_REASONS}, refused here because the native mapper
  * is shared with the live path and cannot refuse a command that path needs. So
  * `apply` probes through `map_graph_batch`: the incoming batch maps against

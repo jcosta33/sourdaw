@@ -6,6 +6,9 @@ import { join, resolve } from 'node:path';
 
 import {
     AUTHOR_BOT_NODE_ID,
+    AUTHOR_MINT_PERMISSIONS,
+    DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+    authorWorkflowWriteRequired,
     isOrchestratorUserNodeId,
     isHistoricalMergerActor,
     assertRequiredRepository,
@@ -19,6 +22,7 @@ import {
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
+    type MintPermissions,
 } from './githubAppIdentity.ts';
 import {
     TITLE_PATTERN,
@@ -4431,7 +4435,7 @@ export { withPullRequestMutationLock as withPullRequestDeliveryLock };
 export type DeliveryCoordinatorDependencies = {
     primaryRoot: () => string;
     serializeDelivery: DeliverySerialization;
-    authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
+    authenticateAuthor: (primaryRoot: string, permissions: MintPermissions) => Promise<DeliveryAuthentication>;
     authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
     deliveryPort: (
@@ -4454,7 +4458,8 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
     return {
         primaryRoot: () => resolvePrimaryRoot(),
         serializeDelivery: withPullRequestMutationLock,
-        authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
+        authenticateAuthor: (primaryRoot, permissions) =>
+            authenticateRole({ primaryRoot, role: 'author', permissions }),
         authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
@@ -4521,14 +4526,35 @@ export async function coordinateDelivery(
         primaryRoot,
         number,
         async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
-            const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
+            let authorAuth = await dependencies.authenticateAuthor(primaryRoot, AUTHOR_MINT_PERMISSIONS);
             let trackerAuth: DeliveryAuthentication | undefined;
             try {
+                const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
+                assertRequiredRepository(repository);
+                // The snapshot read itself needs a session token, so delivery authenticates
+                // ordinarily first and classifies the pull request's committed merge diff
+                // afterwards: GitHub refuses a merge whose diff changes workflows unless the
+                // merging token carries workflows write. The derivation is fixed here, never
+                // caller input, and runs before any remote mutation.
+                const classificationPort = dependencies.deliveryPort(
+                    repository,
+                    authorAuth,
+                    primaryRoot,
+                    markRemoteMutationAttempt
+                );
+                classificationPort.fetch();
+                const mergeSnapshot = classificationPort.pullRequest(number);
+                if (authorWorkflowWriteRequired(primaryRoot, mergeSnapshot.baseRefOid, mergeSnapshot.headRefOid)) {
+                    const ordinary = authorAuth;
+                    authorAuth = await dependencies.authenticateAuthor(
+                        primaryRoot,
+                        DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS
+                    );
+                    ordinary.session.dispose();
+                }
                 if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
                     fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
                 }
-                const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
-                assertRequiredRepository(repository);
                 const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
                 trackerAuth = authenticatedTracker;
                 const trackerPort = markTrackerMutationAttempts(

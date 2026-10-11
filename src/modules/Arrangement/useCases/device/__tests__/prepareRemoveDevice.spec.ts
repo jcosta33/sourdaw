@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<typeof getTrackState>(),
     mapAllTracks: vi.fn<typeof mapAllTracks>(),
     applyDeviceChainRuntimeDelta: vi.fn(),
-    removeTrackStrip: vi.fn(),
+    deactivateTrackStrip: vi.fn(),
     clearReportedLatency: vi.fn<(deviceId: string) => void>(),
     unloadPlugin: vi.fn<typeof unloadPlugin>(),
     projectTrackToLiveStrip: vi.fn<typeof projectTrackToLiveStrip>(),
@@ -45,7 +45,7 @@ vi.mock('../../../repositories/track/mapAllTracks', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    removeTrackStrip: mocks.removeTrackStrip,
+    deactivateTrackStrip: mocks.deactivateTrackStrip,
     clearReportedLatency: mocks.clearReportedLatency,
 }));
 
@@ -178,7 +178,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.mapAllTracks).toHaveBeenCalledOnce();
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
-        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
         expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
     });
@@ -338,7 +338,7 @@ describe('prepareRemoveDevice', () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [{ id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} }];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
-        mocks.removeTrackStrip
+        mocks.deactivateTrackStrip
             .mockImplementationOnce(() => {
                 throw new Error('strip teardown failed');
             })
@@ -353,7 +353,7 @@ describe('prepareRemoveDevice', () => {
         await expect(result.afterCommit()).rejects.toThrow('strip teardown failed');
         await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
-        expect(mocks.removeTrackStrip).toHaveBeenCalledTimes(2);
+        expect(mocks.deactivateTrackStrip).toHaveBeenCalledTimes(2);
     });
 
     it('reprojects a restored external device after an ambiguous rollback without unloading it', async () => {
@@ -377,7 +377,9 @@ describe('prepareRemoveDevice', () => {
         });
     });
 
-    it('removes the strip after removing the last Toaster from a folder', () => {
+    // The folder and its remaining devices stay in the project, so the strip is
+    // deactivated rather than removed: a removal would announce them as gone.
+    it('deactivates the strip after removing the last Toaster from a folder', () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [
             createExternalDevice(),
@@ -390,9 +392,9 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
             expect.objectContaining({ operation: 'remove-device' })
         );
-        expect(mocks.removeTrackStrip).toHaveBeenCalledWith('folder-1');
+        expect(mocks.deactivateTrackStrip).toHaveBeenCalledWith('folder-1');
         expect(mocks.applyDeviceChainRuntimeDelta.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.removeTrackStrip.mock.invocationCallOrder[0]!
+            mocks.deactivateTrackStrip.mock.invocationCallOrder[0]!
         );
         expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
@@ -416,7 +418,7 @@ describe('prepareRemoveDevice', () => {
         }
         await result.afterCommit();
 
-        expect(mocks.removeTrackStrip).toHaveBeenCalledWith('folder-1');
+        expect(mocks.deactivateTrackStrip).toHaveBeenCalledWith('folder-1');
         expect(mocks.unloadPlugin.mock.calls.map(([id]) => id).sort()).toEqual(['instance-1', 'instance-2']);
         expect(clearedLatencyDeviceIds()).toEqual(['external-1', 'external-2']);
     });
@@ -434,7 +436,7 @@ describe('prepareRemoveDevice', () => {
 
         removeDevice('external-1');
 
-        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
         expect(clearedLatencyDeviceIds()).toEqual(['external-1']);
     });
@@ -449,7 +451,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.mapAllTracks).toHaveBeenCalled();
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
-        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
@@ -466,7 +468,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
             expect.objectContaining({ operation: 'remove-device' })
         );
-        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
     });
 
     it('retains a live Toaster folder strip and unloads a removed external device exactly once', () => {
@@ -482,7 +484,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
             expect.objectContaining({ operation: 'remove-device' })
         );
-        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
     });
@@ -498,7 +500,7 @@ describe('prepareRemoveDevice', () => {
 
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
         expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
-        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
@@ -561,7 +563,7 @@ describe('prepareRemoveDevice', () => {
 
         removeDevice('toaster-1');
 
-        expect(mocks.removeTrackStrip).toHaveBeenCalledWith('folder-1');
+        expect(mocks.deactivateTrackStrip).toHaveBeenCalledWith('folder-1');
         // Only the external sibling is unloaded; the builtin sibling is not.
         expect(mocks.unloadPlugin.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
     });
@@ -584,7 +586,7 @@ describe('prepareRemoveDevice', () => {
         await expect(result.afterCommit()).rejects.toThrow('device teardown failed');
         expect(mocks.mapAllTracks).toHaveBeenCalledOnce();
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
-        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
@@ -607,7 +609,7 @@ describe('prepareRemoveDevice', () => {
 
         await expect(result.afterCommit()).rejects.toThrow(runtimeResult.reason);
         expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
-        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
@@ -622,7 +624,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
             expect.objectContaining({ operation: 'remove-device' })
         );
-        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
         expect(mocks.mapAllTracks).toHaveBeenCalled();
     });

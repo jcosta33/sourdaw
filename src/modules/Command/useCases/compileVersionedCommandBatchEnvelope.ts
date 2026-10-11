@@ -11,10 +11,12 @@ import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelop
 
 import { type CommandApprovalBinding, type CommandApprovalValidationResult } from './commandApprovalBinding';
 import { commandRequiresDynamicEffects } from './commandRequiresDynamicEffects';
+import { getBatchCreatedTargetIndex } from './getBatchCreatedTargetIndex';
 import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetRanges } from './getVersionedCommandTargetRanges';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
+import { isBatchCreatedTargetId } from './isBatchCreatedTargetId';
 import { issueCommandApprovalBinding } from './issueCommandApprovalBinding';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
 import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
@@ -92,12 +94,14 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
     const dynamicEffects =
         requiresDynamicEffects || hasDeclaredDynamicEffects(input.dynamicEffects) ? input.dynamicEffects : undefined;
     const effects = getVersionedCommandBatchEffects(commands, dynamicEffects);
-    const createdTargetIds = new Set(
-        commands.flatMap((command) =>
-            command.operation === 'armTrack' ? [] : command.applicationAssignedIds.map((assigned) => assigned.value)
-        )
-    );
-    const batchLocalDependentTargetIds = getBatchLocalDependentTargetIds(commands, createdTargetIds);
+    const targetIndex = getBatchCreatedTargetIndex(commands);
+    const createdTargetIds = new Set<string>();
+    for (const assignedId of targetIndex.firstAssignedAt.keys()) {
+        if (isBatchCreatedTargetId(targetIndex, assignedId)) {
+            createdTargetIds.add(assignedId);
+        }
+    }
+    const batchLocalDependentTargetIds = getBatchLocalDependentTargetIds(commands);
     const protectedTargetIds = [...new Set(input.protectedTargetIds ?? [])];
     const dynamicTargetIds = new Set([
         ...(dynamicEffects?.affectedTrackIds ?? []),

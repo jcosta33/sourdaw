@@ -6,6 +6,33 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
+
+The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
+failed on a Rust distribution metadata TCP timeout before rustfmt or any health gate ran. Cargo
+dependency caches after setup could not affect that failure. The missed CI runtime stance treated a
+later green Rust job as evidence of recovery without proving its compiler setup path had changed.
+
+Probe that would have caught it: trace the first compiler invocation and place an exact host-and-
+TOML-keyed installed-toolchain restore before it. With the distribution endpoint unavailable,
+require a complete exact hit to run rustc, rustfmt, and clippy with automatic installation disabled;
+require a mismatched or incomplete hit to fail closed, and a cold install error to fail before Cargo
+caches and health gates. A local fake endpoint proves the wiring only; hosted proof needs the
+actual seeded main cache and a new-head required Rust run.
+
+### 2026-10-09 — authority tests fixed PR state for the whole run (introduced by PR #4586)
+
+PR #4586 introduced the authority append with a publication fixture whose PR reader always
+returned `OPEN` at the same head. Its recorded test-validity stance asked whether reverting the
+writer would stay green, but did not mutate PR state after approval inspection. PR #5032 extended the
+same binder to recovery; its moved-head fixture changed the head before reconciliation and held
+it constant through the two inspections and later dossier write.
+
+Probe that would have caught it: make the first two inspections return the same open head, then
+return merged, closed, or another head on the next PR read. Assert the publication binds without
+`delivery-authorized`, replay is byte-identical, and no second POST occurs. Revert only the live
+PR-state check and require these cases to fail; retain an open current-head approval control.
+
 ### 2026-10-09 — cold navigation expired before its warmup allowance (introduced by PR #3222)
 
 The E2E global warmup gave the launch overlay 180 seconds but left the preceding `page.goto('/')`
@@ -139,6 +166,26 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
+
+PR #4057 added the streamed-artifact positive case and ZIP-based strict-parser fixtures without
+explicit `mtime` values. In fflate 0.8.3, streamed `Zip.add` and `Zip.end` each call `wzh` for the
+local and central header; `zipSync` calls that same writer twice for every file. Each call reads a
+fresh `Date.now()`. If a pair crosses a DOS two-second timestamp boundary, the timestamp words
+differ and the unchanged parser rejects the archive before the intended descriptor, bounds, or
+decompressed-data oracle. The CI failure established parser rejection, not how often or how quickly
+the reads crossed the boundary.
+
+Blind spot: fixture validity depended on separate live clock reads, so the archive's metadata could
+fail before its intended positive or negative assertion ran.
+
+Probe that would have caught it: force actual streamed and `zipSync` writers across a DOS two-second
+boundary, capture local and central timestamp bytes, and require the strict parser to reject the
+archive. Apply one fixed fixture `mtime` through the supported `zipSync` options and streamed-entry
+property; run the owning spec with its payload, bounds, CRC, file-set, encryption, and descriptor
+oracles intact. On the fixed head, reverting `mtime` must make the forced-clock case red. Keep the
+strict parser unchanged; this probe does not establish the hosted failure's clock interval or rate.
 
 ### 2026-10-09 — a newly declared "every spec owes the first-paint bound" left literal 15 s and 30 s waits in place (escaped via commit `04c28be0f8`)
 
@@ -284,6 +331,18 @@ and cache counters to survive without being added twice.
 Blind spot: the stance asked what each assertion would do under a mutation of the logic under test, but treated one spawned end-to-end case as covering the command without checking which branch it took — that tree had nothing to restamp, so every write-path mutation stayed green — and it never asked what the spec's own imports do to the tree.
 
 Probe that would have caught it: for a spec that imports the module it tests, import it against a deliberately drifted fixture and require every tracked file to be unchanged; then require the command's happy path to be exercised on a drifted fixture and delete the write, retarget the path, drop the refusal call and remove the printing, requiring each mutation to fail the suite.
+
+### 2026-10-09 — a landed recovery receipt left a modern dossier unbound (issue #5111)
+
+An absent-lock replay returned success from its receipt before authenticating or inspecting the
+landed review. The fresh-owner recovery test exercised a different branch, so it did not prove
+historical receipt adoption or native publication replay.
+
+Probe that would have caught it: start with an exact landed version-2 receipt, no lock, and a modern
+unbound dossier; require two stable exact remote reads, one append-only publication binding, and a
+second recovery plus native publish replay with no new POST. Restore the old early return and require
+the owning assertion to fail. On a merged PR, require publication binding without retrospective
+delivery authorization; on an open current approval, require zero unresolved threads for authority.
 
 ### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
 
@@ -691,3 +750,47 @@ real dispatcher, and assert notes plus both history stacks stay unchanged. One r
 cannot carry the family-wide claim. For replay, duplicate the clip ID on the same track and on another
 track after commit for undo, then again after undo for redo; assert the live notes remain exact and the
 blocked history entry stays on its original stack.
+
+## Escape: opaque Bearer fixtures missed complete caller admission
+
+[PR #4491](https://github.com/jcosta33/sourdaw/pull/4491) introduced the screen and
+adapter in `9effe3689c72384f30f60971ca40f26a44c0a355`. Issue #5144 exposed a
+value-bearing HTTP scheme outside vendor prefixes and secret assignments. Synthetic offline
+SDK/CLI captures established admission into request bytes, not real credential disclosure; the
+historical stance name, prompt and tier are unestablished.
+
+Compose opaque fixtures at runtime and exercise actual scan, verify, complete request and stance
+callers. Assert refusal unconditionally together with zero cache read/write, budget reservation,
+recording/provider invocation and delegated fetch; an empty answer or caught provider error is
+insufficient. Use a schema-valid would-hit cache, a later unsafe candidate after an admitted
+placeholder, repeated calls, ordinary controls and clean independent units. Preserve the separate
+serialized-only fixture. On a committed head, removing the recognizer must redden the caller cases,
+and bypassing preparation before cache must redden the would-hit-cache cases.
+
+PR #5156's unlanded comment/array repair extended a source fixture to raw line comments,
+but its scan hunk still ended at line one. The paired value was on a later line, so the
+fixture screened a different input and could not establish the intended withholding.
+Derive the fixture's admitted range from the complete multiline binding; preserve an
+independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
+only the committed recognizer is reverted. A full-source screen assertion does not prove
+which region the real scan caller admitted.
+
+### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
+
+PR #5269's successful exact-hit fixture reported rustc, cargo, rustfmt, and clippy, so it
+could not expose that the cache admission omitted the host `rust-std` required by rustup's
+minimal profile.
+
+Probe that would have caught it: keep `rust-std-<host>` in the complete exact-hit fixture,
+then remove only that component while leaving rustc, cargo, and every TOML extra installed.
+Require the exact cache hit to fail before any toolchain-install request; the preserved full
+fixture must still pass without installation.
+
+The component registry alone is insufficient: a partial restore can retain its
+`rust-std-<host>` entry while losing the host library payload. Keep the registry
+entry in the broken fixture, make a one-input `std`-using executable compile fail
+at the link step, and require setup to fail before Cargo admission with no install
+or success output. The complete exact-hit fixture must pass the same compile
+without installation. Also copy a different nightly under the expected directory
+name and require its channel manifest date to reject setup before Cargo; a compiler
+commit date need not equal the requested channel date.

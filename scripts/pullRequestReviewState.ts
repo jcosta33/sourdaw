@@ -6,6 +6,8 @@ import { fail } from './prContract.ts';
 export type ReviewState = {
     latestReviewerStateOnHead: string | null;
     latestReviewerReviewDatabaseId: number | null;
+    /** Present on shell reads even when the latest reviewer decision is on another head. */
+    latestReviewerCommitOid?: string | null;
     unresolvedThreads: number;
 };
 
@@ -282,6 +284,7 @@ export function readPullRequestReviewState(
         latestReviewerStateOnHead: reviewer?.commitOid === expectedHead ? reviewer.state : null,
         latestReviewerReviewDatabaseId:
             reviewer?.commitOid === expectedHead && reviewer.state === 'APPROVED' ? reviewer.databaseId : null,
+        latestReviewerCommitOid: reviewer?.commitOid ?? null,
         unresolvedThreads: second.reviewThreads.filter((thread) => !thread.isResolved).length,
     };
 }

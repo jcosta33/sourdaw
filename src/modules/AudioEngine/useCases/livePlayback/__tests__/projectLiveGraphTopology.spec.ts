@@ -323,27 +323,41 @@ describe('projectLiveGraphTopology', () => {
         ]);
     });
 
-    it('drops a send whose source is a bus, which the native graph refuses outright', () => {
+    it('carries a send whose source is a bus, on the tap it was configured on (#5067)', () => {
         // Bus into bus is ordinary practice — a reverb bus feeding a parallel
-        // compressor — and the sanctioned add-send path admits it, because a
-        // bus accepts sends. The native send tap sits on track strips only, so
-        // emitting it would refuse the batch and start no engine for the whole
-        // project. The track's own send must survive that filter.
+        // compressor — and the native bus strip carries the same send taps a
+        // track strip does, so the bus's sends travel beside the track's.
         const commands = project({
             stripTracks: [
                 createTrack({ id: 'audio-1', sends: [{ busId: 'verb', level: 0.3, preFader: false }] }),
                 createTrack({
                     id: 'verb',
                     kind: 'bus',
-                    sends: [{ busId: 'parallel-comp', level: 0.5, preFader: false }],
+                    sends: [
+                        { busId: 'parallel-comp', level: 0.5, preFader: false },
+                        { busId: 'cue', level: 0.8, preFader: true },
+                    ],
                 }),
                 createTrack({ id: 'parallel-comp', kind: 'bus' }),
+                createTrack({ id: 'cue', kind: 'bus' }),
             ],
         });
 
         expect(commands.filter((command) => command.kind === 'add-send')).toEqual([
             { kind: 'add-send', trackId: 'audio-1', busId: 'verb', tap: 'post-fader', level: 0.3 },
+            { kind: 'add-send', trackId: 'verb', busId: 'parallel-comp', tap: 'post-fader', level: 0.5 },
+            { kind: 'add-send', trackId: 'verb', busId: 'cue', tap: 'pre-fader', level: 0.8 },
         ]);
+    });
+
+    it('drops a bus send naming no built bus, as it drops a track one', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'verb', kind: 'bus', sends: [{ busId: 'ghost-bus', level: 1, preFader: false }] }),
+            ],
+        });
+
+        expect(commands.filter((command) => command.kind === 'add-send')).toEqual([]);
     });
 
     it('drops a send naming no built bus, because it names no audio path either', () => {

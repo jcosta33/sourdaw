@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => {
         automation: { value: {} },
         midi: { value: {} },
         transport: { value: {} },
+        tempoMap: { value: {} },
+        takeLanes: { value: {} },
         project: { value: { initialized: true, loading: false, identityPersistencePending: false } },
         settledProjectId,
     };
@@ -24,6 +26,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     markerStore: {
         get value() {
             return mocks.markers.value;
+        },
+    },
+    takeLaneStore: {
+        get value() {
+            return mocks.takeLanes.value;
         },
     },
 }));
@@ -47,6 +54,11 @@ vi.mock('#/modules/Transport/stores', () => ({
             return mocks.transport.value;
         },
     },
+    tempoMapStore: {
+        get value() {
+            return mocks.tempoMap.value;
+        },
+    },
 }));
 vi.mock('#/modules/Project/stores', () => ({
     getSettledProjectId: () => mocks.settledProjectId.value,
@@ -66,6 +78,8 @@ describe('captureSnapshot', () => {
         mocks.automation.value = { lanes: [] };
         mocks.midi.value = { notesByClipId: {} };
         mocks.transport.value = { tempo: 120 };
+        mocks.tempoMap.value = { changes: [] };
+        mocks.takeLanes.value = { lanes: [] };
         mocks.project.value = { initialized: true, loading: false, identityPersistencePending: false };
         mocks.settledProjectId.value = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
     });
@@ -86,6 +100,8 @@ describe('captureSnapshot', () => {
         expect(Reflect.get(parsed, 'transport')).toEqual(mocks.transport.value);
         expect(Reflect.get(parsed, 'midi')).toEqual(mocks.midi.value);
         expect(Reflect.get(parsed, 'automation')).toEqual(mocks.automation.value);
+        expect(Reflect.get(parsed, 'tempoMap')).toEqual(mocks.tempoMap.value);
+        expect(Reflect.get(parsed, 'takeLanes')).toEqual(mocks.takeLanes.value);
         expect(typeof Reflect.get(parsed, 'timestamp')).toBe('number');
         expect(snapshot.size).toBe(new TextEncoder().encode(snapshot.data).byteLength);
     });

@@ -1,6 +1,6 @@
 ---
 type: adr
-id: 0050
+id: 0053
 title: A pull request freezes at its fifth review round
 status: superseded
 date: 2026-09-25
@@ -11,7 +11,7 @@ sources:
     - scripts/__tests__/reviewRoundEscalation.spec.ts
 ---
 
-# 0050 — A pull request freezes at its fifth review round
+# 0053 — A pull request freezes at its fifth review round
 
 ## Superseded 2026-09-27
 
