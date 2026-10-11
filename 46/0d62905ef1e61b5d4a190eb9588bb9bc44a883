@@ -1,0 +1,14 @@
+scripts/workletPolyfills.ts
+  h_beb54bf43b47b7 9-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "460d62905ef1e61b5d4a190eb9588bb9bc44a883",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
