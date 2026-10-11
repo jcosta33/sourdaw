@@ -1,0 +1,83 @@
+name: Nightly evidence report
+
+# This default-branch consumer lands before the Nightly evidence producer.
+# Legacy runs with no `nightly-evidence-v1` artifact are explicitly unsupported.
+# Never check out the completed run's revision: workflow_run may follow an
+# untrusted workflow, while the publisher receives an issues-write token.
+on:
+  workflow_run:
+    workflows: [Nightly]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate nightly evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      security-events: read
+    outputs:
+      supported: ${{ steps.evidence.outputs.supported }}
+      run_id: ${{ steps.evidence.outputs.run_id }}
+      failed_legs: ${{ steps.evidence.outputs.failed_legs }}
+    steps:
+      - name: Checkout trusted default-branch reporter
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/codeqlNightlyEvidence.ts
+            scripts/hostedWasmZip.ts
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+
+      - name: Validate independent run, artifact, jobs and CodeQL analysis
+        id: evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/codeqlNightlyEvidence.ts
+
+  publish:
+    name: Publish validated nightly failure
+    needs: validate
+    if: ${{ needs.validate.outputs.supported == 'true' && needs.validate.outputs.failed_legs != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout trusted default-branch repository context
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: .github
+          sparse-checkout-cone-mode: false
+
+      - name: Open or update nightly failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ needs.validate.outputs.run_id }}
+          FAILED_LEGS: ${{ needs.validate.outputs.failed_legs }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$FAILED_LEGS" =~ ^[A-Za-z0-9\ \(\)/.,-]+$ ]]
+          title='ci(nightly): health gates red on main'
+          body=$(printf 'The validated scheduled run against `main` failed.\n\nFailing jobs: %s\n\nhttps://github.com/jcosta33/sourdaw/actions/runs/%s\n' "$FAILED_LEGS" "$RUN_ID")
+          existing=$(gh issue list --repo jcosta33/sourdaw --state open --search '"ci(nightly): health gates red on main" in:title' --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo jcosta33/sourdaw --body "$body"
+          else
+            gh issue create --repo jcosta33/sourdaw --title "$title" --body "$body" --label bug --label status:ready --label priority:P1
+          fi
