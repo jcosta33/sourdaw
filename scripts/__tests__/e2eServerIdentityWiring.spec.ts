@@ -258,10 +258,14 @@ describe('cold first-paint warmup', () => {
             goto: typeof warmupMocks.goto;
             getByLabel: typeof warmupMocks.getByLabel;
         }>();
+        const navigation = deferred<null>();
+        const overlay = deferred<void>();
         const close = deferred<void>();
         warmupMocks.assertIdentity.mockReturnValue(identity.promise);
         warmupMocks.launch.mockReturnValue(launch.promise);
         warmupMocks.newPage.mockReturnValue(page.promise);
+        warmupMocks.goto.mockReturnValue(navigation.promise);
+        warmupMocks.waitFor.mockReturnValue(overlay.promise);
         warmupMocks.close.mockReturnValue(close.promise);
         const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
         const marker = (phase: string) =>
@@ -289,9 +293,18 @@ describe('cold first-paint warmup', () => {
             getByLabel: warmupMocks.getByLabel,
         });
 
-        await vi.waitFor(() => expect(warmupMocks.close).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(warmupMocks.goto).toHaveBeenCalledOnce());
         expect(warmupLog).toHaveBeenCalledWith(marker('page creation: complete'));
         expect(warmupLog).toHaveBeenCalledWith(marker('readiness: start'));
+        expect(warmupLog).not.toHaveBeenCalledWith(marker('readiness: complete'));
+        navigation.resolve(null);
+
+        await vi.waitFor(() => expect(warmupMocks.waitFor).toHaveBeenCalledOnce());
+        expect(warmupLog).toHaveBeenCalledWith(marker('readiness: start'));
+        expect(warmupLog).not.toHaveBeenCalledWith(marker('readiness: complete'));
+        overlay.resolve(undefined);
+
+        await vi.waitFor(() => expect(warmupMocks.close).toHaveBeenCalledOnce());
         expect(warmupLog).toHaveBeenCalledWith(marker('readiness: complete'));
         expect(warmupLog).toHaveBeenCalledWith(marker('browser close: start'));
         expect(warmupLog).not.toHaveBeenCalledWith(marker('browser close: complete'));

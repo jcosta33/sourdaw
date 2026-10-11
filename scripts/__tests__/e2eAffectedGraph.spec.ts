@@ -310,6 +310,74 @@ describe('affected E2E graph', () => {
         30_000
     );
 
+    it.each(['TS_NODE_PROJECT', 'TS_NODE_BASEURL'] as const)(
+        'refuses caller %s alias overrides before they can omit a cross-owner consumer',
+        async (override) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-requested-alias-'));
+            const shadow = mkdtempSync(join(tmpdir(), 'sourdaw-shadow-alias-'));
+            const originalProject = process.env.TS_NODE_PROJECT;
+            const originalBaseUrl = process.env.TS_NODE_BASEURL;
+            observedGraphs.length = 0;
+            try {
+                delete process.env.TS_NODE_PROJECT;
+                delete process.env.TS_NODE_BASEURL;
+                const sources = {
+                    [TUNER]: 'export const tuner = 1;',
+                    [PANEL]: "import { tuner } from '../components/TunerDisplay'; export const panel = tuner;",
+                    [BARREL]: "export * from './TunerPanel';",
+                    [CRUST]: `import { tuner } from '#/modules/Tuner/presentations/components/TunerDisplay';
+                        export const crust = tuner;`,
+                    [CRUST_BARREL]: "export * from './CrustPanel';",
+                    [SHELL]:
+                        "import '#/modules/Tuner/presentations/views'; import '#/modules/Crust/presentations/views';",
+                };
+                for (const [path, content] of Object.entries(sources)) {
+                    mkdirSync(dirname(join(root, path)), { recursive: true });
+                    writeFileSync(join(root, path), content);
+                }
+                mkdirSync(join(root, 'scripts'));
+                mkdirSync(join(root, 'public'));
+                writeFileSync(join(root, 'scripts/e2eSuiteOwners.json'), JSON.stringify(manifest));
+                const config = { compilerOptions: { baseUrl: '.', paths: { '#/*': ['./src/*'] } } };
+                writeFileSync(join(root, 'tsconfig.json'), JSON.stringify(config));
+                writeFileSync(join(shadow, 'tsconfig.json'), JSON.stringify(config));
+                const shadowTuner = join(shadow, TUNER);
+                mkdirSync(dirname(shadowTuner), { recursive: true });
+                writeFileSync(shadowTuner, 'export const tuner = 2;');
+
+                expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
+                    kind: 'narrow',
+                    specs: [CRUST_SPEC, MIXED_SPEC, NEW_SPEC, TUNER_SPEC],
+                    browserAi: false,
+                    owners: ['Crust', 'Tuner'],
+                });
+                expect(observedDependencies(CRUST)).toEqual([TUNER]);
+
+                observedGraphs.length = 0;
+                process.env[override] = override === 'TS_NODE_PROJECT' ? join(shadow, 'tsconfig.json') : shadow;
+                expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
+                    kind: 'full',
+                    reason: 'caller TypeScript alias override prevents proving the requested root',
+                });
+                expect(observedGraphs).toEqual([]);
+            } finally {
+                if (originalProject === undefined) {
+                    delete process.env.TS_NODE_PROJECT;
+                } else {
+                    process.env.TS_NODE_PROJECT = originalProject;
+                }
+                if (originalBaseUrl === undefined) {
+                    delete process.env.TS_NODE_BASEURL;
+                } else {
+                    process.env.TS_NODE_BASEURL = originalBaseUrl;
+                }
+                rmSync(root, { recursive: true, force: true });
+                rmSync(shadow, { recursive: true, force: true });
+            }
+        },
+        30_000
+    );
+
     it('refuses inherited implicit alias bases before a shadow graph can narrow selection', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-inherited-alias-base-'));
         observedGraphs.length = 0;

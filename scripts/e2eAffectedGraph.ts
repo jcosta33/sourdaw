@@ -513,6 +513,12 @@ export async function loadAffectedE2e(
             ...config,
             options: { ...config.options, baseUrl: config.options.baseUrl ?? resolve(root) },
         };
+        if (process.env.TS_NODE_PROJECT || process.env.TS_NODE_BASEURL) {
+            return {
+                kind: 'full',
+                reason: 'caller TypeScript alias override prevents proving the requested root',
+            };
+        }
         const { cruise } = await import('dependency-cruiser');
         const result = await cruise(
             ['src', 'public'],
