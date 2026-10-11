@@ -760,6 +760,38 @@ describe('bounded capability capture', () => {
         expect(capture.disposed).toHaveBeenCalledOnce();
     });
 
+    it('emits an incomplete inactive plan for repeated stable exact-main restrictions with an unidentified actor', () => {
+        const exactMainProtection = {
+            ...EXACT_MAIN_PROTECTION,
+            restrictions: { users: [{ login: 'actor' }], teams: [], apps: [] },
+        };
+        const { port } = fakePort();
+        let protectionReads = 0;
+        const capture = runStableClassicCli({
+            ...port,
+            exactMainProtection: () => {
+                protectionReads += 1;
+                return exactMainProtection;
+            },
+        });
+        expect(capture.run()).toBe(0);
+        expect(protectionReads).toBe(2);
+        expect(capture.printed).toHaveLength(1);
+        const output = capture.printed[0];
+        if (output === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const plan = requiredRecord(JSON.parse(output) as JsonValue, 'emitted capability plan');
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('exact main classic protection is incomplete');
+        expect(plan.activationEligible).toBe(false);
+        const baseline = requiredRecord(plan.baseline, 'captured baseline');
+        expect(baseline.exactMainProtection).toEqual(exactMainProtection);
+        expect(plan.baselineDigest).toBe(createHash('sha256').update(canonicalJson(baseline)).digest('hex'));
+        expect(output).toBe(canonicalJson(plan));
+        expect(capture.disposed).toHaveBeenCalledOnce();
+    });
+
     const allowanceActors = (['User', 'Team', 'App'] as const).flatMap((typename) =>
         [42, null].map((databaseId) => ({ typename, databaseId }))
     );

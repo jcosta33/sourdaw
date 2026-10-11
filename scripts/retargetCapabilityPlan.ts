@@ -139,6 +139,21 @@ function classicCheckBindingsComplete(value: JsonValue | undefined): boolean {
     );
 }
 
+function restrictionActorsComplete(value: JsonValue | undefined): boolean {
+    return (
+        jsonArray(value) &&
+        value.every(
+            (actor) =>
+                actor !== null &&
+                !Array.isArray(actor) &&
+                typeof actor === 'object' &&
+                typeof actor.id === 'number' &&
+                Number.isSafeInteger(actor.id) &&
+                actor.id > 0
+        )
+    );
+}
+
 function exactMainProtectionComplete(value: JsonValue | null): boolean {
     if (value === null || Array.isArray(value) || typeof value !== 'object') {
         return false;
@@ -164,7 +179,9 @@ function exactMainProtectionComplete(value: JsonValue | null): boolean {
         (admins === null || typeof admins.enabled === 'boolean') &&
         (reviews === null || Number.isSafeInteger(reviews.required_approving_review_count)) &&
         (restrictions === null ||
-            (jsonArray(restrictions.users) && jsonArray(restrictions.teams) && jsonArray(restrictions.apps)))
+            (restrictionActorsComplete(restrictions.users) &&
+                restrictionActorsComplete(restrictions.teams) &&
+                restrictionActorsComplete(restrictions.apps)))
     );
 }
 

@@ -311,6 +311,59 @@ describe('inactive retarget capability plan', () => {
         expect(plan.activationEligible).toBe(false);
     });
 
+    const restrictionKinds = ['users', 'teams', 'apps'] as const;
+    const malformedRestrictionActors: Array<{ label: string; actor: JsonValue }> = [
+        { label: 'null', actor: null },
+        { label: 'primitive', actor: 'actor' },
+        { label: 'array', actor: [] },
+        { label: 'missing id', actor: {} },
+        { label: 'null id', actor: { id: null } },
+        { label: 'string id', actor: { id: '42' } },
+        { label: 'fractional id', actor: { id: 1.5 } },
+        { label: 'zero id', actor: { id: 0 } },
+        { label: 'negative id', actor: { id: -1 } },
+        { label: 'unsafe integer id', actor: { id: Number.MAX_SAFE_INTEGER + 1 } },
+    ];
+    it.each(
+        restrictionKinds.flatMap((kind) =>
+            malformedRestrictionActors.map(({ label, actor }) => ({ kind, label, actor }))
+        )
+    )('marks $kind restriction actor with $label incomplete without dropping the raw capture', ({ kind, actor }) => {
+        const exactMainProtection = {
+            ...requiredRecord(observed().exactMainProtection ?? undefined),
+            restrictions: { users: [], teams: [], apps: [], [kind]: [{ id: 42 }, actor] },
+        };
+        const input: CapabilityObservation = { ...observed(), exactMainProtection };
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('exact main classic protection is incomplete');
+        expect(plan.activationEligible).toBe(false);
+        expect(requiredRecord(plan.baseline).exactMainProtection).toEqual(exactMainProtection);
+        expect(plan.baselineDigest).toBe(
+            createHash('sha256')
+                .update(canonicalJson(plan.baseline ?? null))
+                .digest('hex')
+        );
+        expect(plan.proposal).toEqual(CAPABILITY_PROPOSAL);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
+    it.each(restrictionKinds.flatMap((kind) => [1, Number.MAX_SAFE_INTEGER].map((id) => ({ kind, id }))))(
+        'accepts $kind restriction actor with positive safe id $id',
+        ({ kind, id }) => {
+            const exactMainProtection = {
+                ...requiredRecord(observed().exactMainProtection ?? undefined),
+                restrictions: { users: [], teams: [], apps: [], [kind]: [{ id, name: 'actor' }] },
+            };
+            const plan = buildCapabilityPlan({ ...observed(), exactMainProtection }, SOURCE, INTERVAL);
+            expect(plan.completeObservedInventory).toBe(true);
+            expect(plan.limitations).toEqual([]);
+            expect(plan.activationEligible).toBe(false);
+            expect(requiredRecord(plan.baseline).exactMainProtection).toEqual(exactMainProtection);
+            expect(plan.proposal).toEqual(CAPABILITY_PROPOSAL);
+        }
+    );
+
     it.each(
         [
             [{ context: 'Gate', app_id: { unreadable: true } }],
