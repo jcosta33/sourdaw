@@ -1,0 +1,21 @@
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_8eda029f90e3f4 60-67
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_29d8df116c5b92::t_9f5d6a361a2859 3741-3747,3755,3765-3769,3775-3779,3787,3789,3792-3793,3806,3814,3833,3853,3858-3859,3873-3874,3877-3879,3912,3960-3978,3985-3989,4024,4031-4033,4035-4044,4047
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49eeae959a65ae67e4f7629c80130d130d934624",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
