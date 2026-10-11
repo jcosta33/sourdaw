@@ -24,6 +24,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE, isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { isBypassedNoteReceiver, type NoteReceivingInstrumentKind } from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -779,7 +780,15 @@ function getSourceOccurrenceOffset({
         return 0;
     }
 
-    return Math.floor(beatsFromSourceStart / loopLength);
+    // Mirrors the offline module's tolerant floor (#5198): an advance within the
+    // beat tolerance of an exact multiple of the loop length is that many loops
+    // — the raw quotient mis-floors by one ulp at non-dyadic loop lengths.
+    const quotient = beatsFromSourceStart / loopLength;
+    const nearestMultiple = loopLength * Math.round(quotient);
+    if (Math.abs(beatsFromSourceStart - nearestMultiple) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE) {
+        return Math.round(quotient);
+    }
+    return Math.floor(quotient);
 }
 
 /**
@@ -1312,6 +1321,13 @@ export async function scheduleMidiNotes(
                         // selector keeps the two separate for its own callers.
                         lastScheduledBeat: fromBeat,
                         grooveLookaroundBeats: MIDI_NOTE_GROOVE_LOOKAROUND_BEATS,
+                        // The same anchored window the per-note admission below
+                        // tests: a leftward trim lifts the window ceiling above
+                        // the loop length, and the generator must still offer
+                        // that material (#5198).
+                        clipStartBeat: clip.startBeat,
+                        loopOriginBeat: clip.loopOriginBeat,
+                        loopEnabled: true,
                     });
                 } else {
                     iterNotes = selectMidiNotesForSchedulerWindow({
@@ -1329,7 +1345,16 @@ export async function scheduleMidiNotes(
                         return;
                     }
                     const isTrackScopedYeastNote = trackScopedYeastNoteIds.has(note.id);
-                    if (!notesAreAbsolute && note.startBeat - clipMidiOffset >= loopLen) {
+                    if (
+                        !notesAreAbsolute &&
+                        !isBeatInClipLoopWindow({
+                            relativeBeat: note.startBeat - clipMidiOffset,
+                            startBeat: clip.startBeat,
+                            loopOriginBeat: clip.loopOriginBeat,
+                            loopLengthBeats: loopLen,
+                            loopEnabled: clip.loopEnabled ?? false,
+                        })
+                    ) {
                         continue;
                     }
                     // #4910 — a live Yeast source note is owned once, by
@@ -1363,6 +1388,7 @@ export async function scheduleMidiNotes(
                             loopLengthBeats: loopLen,
                             midiOffsetBeats: clipMidiOffset,
                             loopEnabled: clip.loopEnabled ?? false,
+                            loopOriginBeat: clip.loopOriginBeat,
                             clipGrooveAlreadyApplied: notesAreAbsolute,
                             eventsAreAbsolute: notesAreAbsolute,
                         });

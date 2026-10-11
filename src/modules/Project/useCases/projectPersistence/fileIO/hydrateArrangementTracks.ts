@@ -28,6 +28,7 @@ function hydrateClip(clip: SerializedProjectClip): ProjectClip {
         stretchRatio: clip.stretchRatio,
         loopEnabled: clip.loopEnabled,
         loopLength: clip.loopLength,
+        loopOriginBeat: clip.loopOriginBeat,
         followAction: clip.followAction,
         generating: clip.generating,
         isGhost: clip.isGhost,

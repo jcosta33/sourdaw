@@ -1,4 +1,5 @@
 import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
+import { loopOriginEntry } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type Clip } from '../../models/Track';
@@ -54,7 +55,16 @@ function shiftNotesWithOffsetWrap(clip: Clip, rawOffsetBeats: number, wrappedOff
     );
 }
 
-export function trimClipStart(clipId: string, newStartBeat: number): boolean {
+/**
+ * Trims a clip's start. `anchorBeat` is the restore leg's exact-anchor form
+ * (#5198): a recorded inverse carries the pre-action anchor state so BOTH
+ * replay directions restore it — a value puts that anchor back, `null`
+ * records a clip that carried none and removes any key the action minted (an
+ * extension-undo replaying a rightward trim must stay anchorless, not mint at
+ * the extension start). Absent — a fresh trim, or a legacy entry — keeps the
+ * mint law below exactly as it always was.
+ */
+export function trimClipStart(clipId: string, newStartBeat: number, anchorBeat?: number | null): boolean {
     if (!Number.isFinite(newStartBeat)) {
         return false;
     }
@@ -75,11 +85,38 @@ export function trimClipStart(clipId: string, newStartBeat: number): boolean {
         if (newStartBeat < context.endBeat) {
             const startBeat = Math.max(0, newStartBeat);
             const delta = startBeat - context.startBeat;
+            // A trim advances the content offset but never the loop anchor:
+            // the loop window and the pass count stay anchored to the source
+            // (#4988). A clip born looped gets its anchor at this first trim;
+            // an already-anchored clip keeps theirs. The mint only fires when
+            // the trim advances the head (the start moves right): the inverse
+            // leg of a pre-anchor undo entry replays `trimClipStart` at the
+            // pre-trim start — a leftward move — and anchoring there derives a
+            // negative advance whose window silences the restored head
+            // (#5198), so a replayed entry stays anchorless at the pre-anchor
+            // reading, advance zero. The key is written only when an anchor
+            // results — an explicit-undefined key is a shape no clip writer
+            // may leave behind (#4988).
+            let restoredAnchorBeat: number | null | undefined;
+            if (anchorBeat === undefined) {
+                restoredAnchorBeat =
+                    context.loopOriginBeat ??
+                    (context.loopEnabled === true && startBeat >= context.startBeat ? context.startBeat : undefined);
+            } else {
+                restoredAnchorBeat = anchorBeat;
+            }
             const updated = {
                 ...context,
                 startBeat,
                 audioOffsetBeats: (context.audioOffsetBeats ?? 0) + delta,
+                ...loopOriginEntry(restoredAnchorBeat === null ? undefined : restoredAnchorBeat),
             };
+            if (restoredAnchorBeat === null) {
+                // `loopOriginEntry` expresses "no anchor" by leaving the key
+                // out; the exact-anchorless leg must also remove one the clip
+                // spread carried over.
+                delete updated.loopOriginBeat;
+            }
             if (context.type === 'midi') {
                 const rawOffsetBeats = (context.midiOffsetBeats ?? 0) + delta;
                 const midiOffsetBeats = loopedMidiOffsetBeats(updated, rawOffsetBeats);
