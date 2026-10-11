@@ -1044,7 +1044,11 @@
         "steps": [
           {
             "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 2,
+              "persist-credentials": false
+            }
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1053,7 +1057,10 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+            "with": {
+              "save-if": "false"
+            }
           },
           {
             "name": "Cache the cargo registry index",
@@ -1078,6 +1085,34 @@
               "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
             },
             "run": "cargo test --package sourdaw-native"
+          },
+          {
+            "name": "Set up Node for native mutation proof",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0"
+            }
+          },
+          {
+            "name": "Verify native transport mutation sensitivity",
+            "id": "native-mutations",
+            "timeout-minutes": 20,
+            "env": {
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "BASE_SHA": "${{ github.event.pull_request.base.sha }}"
+            },
+            "run": "node scripts/verifyNativeTransportMutations.ts"
+          },
+          {
+            "name": "Upload native transport mutation evidence",
+            "if": "${{ always() }}",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "native-transport-mutations-${{ github.event.pull_request.head.sha }}",
+              "path": ".agents/artifacts/native-transport-mutations/",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
           }
         ]
       },

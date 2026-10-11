@@ -198,6 +198,9 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Cache the cargo registry index',
             'Test the audio crates',
             'Test the native crate',
+            'Set up Node for native mutation proof',
+            'Verify native transport mutation sensitivity',
+            'Upload native transport mutation evidence',
         ],
         'native-windows': [
             'Checkout',
@@ -365,14 +368,12 @@ const DEPLOY_SKIP = `${DEPLOY_CRED} && steps.production.outputs.deploy != 'true'
 const DEPLOY_NO_CRED = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
 const PRODUCT_SCOPE = "needs.decide.outputs.tooling != 'true'";
 
-const pin = (workflow: string, job: string, step: string, condition: string): ConditionalStepPin => ({
-    workflow,
-    job,
-    step,
-    condition,
-});
+function pin(workflow: string, job: string, step: string, condition: string): ConditionalStepPin {
+    return { workflow, job, step, condition };
+}
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    pin('validation.yml', 'native-macos', 'Upload native transport mutation evidence', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'selection-shadow', 'Upload shadow measurement', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
     pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),

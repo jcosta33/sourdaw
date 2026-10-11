@@ -1325,6 +1325,44 @@ function assertCargoIndexCacheKeysJobScoped(candidate: UnknownRecord): void {
     }
 }
 
+function assertNativeTransportMutationProof(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, 'native-macos');
+    expect(job['runs-on']).toBe('macos-latest');
+    expect(recordAt(stepNamed(job, 'Checkout'), 'with')).toEqual({
+        'fetch-depth': 2,
+        'persist-credentials': false,
+    });
+    expect(recordAt(stepNamed(job, 'Cache cargo build'), 'with')).toEqual({ 'save-if': 'false' });
+    const setup = stepNamed(job, 'Set up Node for native mutation proof');
+    expect(setup.uses).toBe('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020');
+    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '24.19.0' });
+    const probe = stepNamed(job, 'Verify native transport mutation sensitivity');
+    expect(probe.run).toBe('node scripts/verifyNativeTransportMutations.ts');
+    expect(probe.id).toBe('native-mutations');
+    expect(probe['timeout-minutes']).toBe(20);
+    expect(probe.if).toBeUndefined();
+    expect(probe['continue-on-error']).toBeUndefined();
+    expect(probe['working-directory']).toBeUndefined();
+    expect(recordAt(probe, 'env')).toEqual({
+        HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
+        BASE_SHA: '${{ github.event.pull_request.base.sha }}',
+    });
+    const upload = stepNamed(job, 'Upload native transport mutation evidence');
+    expect(upload.if).toBe('${{ always() }}');
+    expect(upload['continue-on-error']).toBeUndefined();
+    expect(upload.uses).toBe('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+    expect(recordAt(upload, 'with')).toEqual({
+        name: 'native-transport-mutations-${{ github.event.pull_request.head.sha }}',
+        path: '.agents/artifacts/native-transport-mutations/',
+        'if-no-files-found': 'error',
+        'retention-days': 7,
+    });
+    const names = arrayAt(job, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(names.indexOf('Test the native crate')).toBeLessThan(names.indexOf('Set up Node for native mutation proof'));
+    expect(names.indexOf('Set up Node for native mutation proof')).toBeLessThan(names.indexOf(probe.name));
+    expect(names.indexOf(probe.name)).toBeLessThan(names.indexOf(upload.name));
+}
+
 function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord): void {
     expect(Object.keys(recordAt(seed, 'on'))).toEqual(['push']);
     const push = recordAt(recordAt(seed, 'on'), 'push');
@@ -4278,6 +4316,86 @@ describe('health gates workflow contract', () => {
         expect(() => assertRequiredCodeQlPermissions(widenedScope.health)).toThrow(
             'the scope job must inherit read-only workflow permissions'
         );
+    });
+
+    it('requires exact-head native sensitivity after the warm baseline and preserves failed evidence', () => {
+        expect(() => assertNativeTransportMutationProof(validationWorkflow)).not.toThrow();
+    });
+
+    it.each([
+        ['missing probe', (job: UnknownRecord) => removeStepNamed(job, 'Verify native transport mutation sensitivity')],
+        [
+            'wrong head',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Verify native transport mutation sensitivity'), 'env').HEAD_SHA =
+                    '${{ github.sha }}';
+            },
+        ],
+        [
+            'arbitrary input',
+            (job: UnknownRecord) => {
+                stepNamed(job, 'Verify native transport mutation sensitivity').run =
+                    'node scripts/verifyNativeTransportMutations.ts "$MUTATION"';
+            },
+        ],
+        [
+            'softened failure',
+            (job: UnknownRecord) => {
+                stepNamed(job, 'Verify native transport mutation sensitivity')['continue-on-error'] = true;
+            },
+        ],
+        [
+            'conditional proof',
+            (job: UnknownRecord) => {
+                stepNamed(job, 'Verify native transport mutation sensitivity').if = 'false';
+            },
+        ],
+        [
+            'saved mutated target',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Cache cargo build'), 'with')['save-if'] = 'true';
+            },
+        ],
+        [
+            'missing failed logs',
+            (job: UnknownRecord) => {
+                delete stepNamed(job, 'Upload native transport mutation evidence').if;
+            },
+        ],
+        [
+            'wrong artifact head',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Upload native transport mutation evidence'), 'with').name =
+                    'native-proof-latest';
+            },
+        ],
+        [
+            'unfetched head',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Checkout'), 'with')['fetch-depth'] = 1;
+            },
+        ],
+        [
+            'persistent credential',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Checkout'), 'with')['persist-credentials'] = true;
+            },
+        ],
+        [
+            'probe before baseline',
+            (job: UnknownRecord) => {
+                const steps = arrayAt(job, 'steps');
+                const index = steps.findIndex(
+                    (step) => asRecord(step, 'step').name === 'Verify native transport mutation sensitivity'
+                );
+                const [probe] = steps.splice(index, 1);
+                steps.unshift(probe);
+            },
+        ],
+    ])('refuses disconnected native proof: %s', (_label, mutate) => {
+        const candidate = structuredClone(validationWorkflow);
+        mutate(jobAt(candidate, 'native-macos'));
+        expect(() => assertNativeTransportMutationProof(candidate)).toThrow();
     });
 
     it('pins the recorded workflow snapshot, the shard matrices, job-level permissions, and every step inventory', () => {

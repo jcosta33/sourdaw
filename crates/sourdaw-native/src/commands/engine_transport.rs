@@ -733,7 +733,7 @@ mod tests {
     /// The collapse drops a segment, so it must not drop the refusal a
     /// malformed one earns: a producer fault stays a refusal wherever it sits.
     #[test]
-    fn a_malformed_segment_sharing_a_frame_is_still_refused() {
+    fn a_malformed_tempo_sharing_a_frame_is_still_refused() {
         for bad_tempo in [0.0, -5.0] {
             let tempo = TransportMapsPayload {
                 tempo: vec![
@@ -756,6 +756,10 @@ mod tests {
                 "tempo {bad_tempo}"
             );
         }
+    }
+
+    #[test]
+    fn a_malformed_meter_sharing_a_frame_is_still_refused() {
         for (numerator, denominator) in [(0, 4), (3, 0)] {
             let meter = TransportMapsPayload {
                 time_signature: vec![
@@ -805,7 +809,7 @@ mod tests {
     /// frame: only adjacent segments collapse, so neither map may fold the
     /// repeat into the earlier segment on that frame and install.
     #[test]
-    fn a_frame_repeated_after_a_later_one_is_still_refused() {
+    fn a_tempo_frame_repeated_after_a_later_one_is_still_refused() {
         let tempo = TransportMapsPayload {
             tempo: vec![
                 tempo_at_seconds(0.0, 120.0),
@@ -815,6 +819,18 @@ mod tests {
             ],
             ..maps_payload()
         };
+        for sample_rate in [44_100.0, 48_000.0, 96_000.0] {
+            let error = installed_maps(&tempo, sample_rate).expect_err("a repeat is refused");
+            assert_eq!(
+                error,
+                format!("tempo map is unusable: {}", TransportMapError::OutOfOrder),
+                "sample rate {sample_rate}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_meter_frame_repeated_after_a_later_one_is_still_refused() {
         let meter = TransportMapsPayload {
             time_signature: vec![
                 meter_at_seconds(0.0, 4, 4),
@@ -825,20 +841,17 @@ mod tests {
             ..maps_payload()
         };
 
-        let tempo_error = installed_maps(&tempo, 48_000.0).expect_err("a repeat is refused");
-        let meter_error = installed_maps(&meter, 48_000.0).expect_err("a repeat is refused");
-
-        assert_eq!(
-            tempo_error,
-            format!("tempo map is unusable: {}", TransportMapError::OutOfOrder)
-        );
-        assert_eq!(
-            meter_error,
-            format!(
-                "time signature map is unusable: {}",
-                TransportMapError::OutOfOrder
-            )
-        );
+        for sample_rate in [44_100.0, 48_000.0, 96_000.0] {
+            let error = installed_maps(&meter, sample_rate).expect_err("a repeat is refused");
+            assert_eq!(
+                error,
+                format!(
+                    "time signature map is unusable: {}",
+                    TransportMapError::OutOfOrder
+                ),
+                "sample rate {sample_rate}"
+            );
+        }
     }
 
     /// The issue's repro as the renderer projects it: tempo 120 at beat 4 and
