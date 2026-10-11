@@ -119,6 +119,7 @@ import { getReferencedCancellationAction } from './groundingStrategies/getRefere
 import { getStatedDecibelLevelForms } from './groundingStrategies/getStatedDecibelLevelForms';
 import { getTargetPromptScope } from './groundingStrategies/getTargetPromptScope';
 import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
+import { hasTrackControlRestriction } from './groundingStrategies/hasTrackControlRestriction';
 import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailingIntentCancellation';
 import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
@@ -1284,8 +1285,10 @@ function getCoordinatedListTargetRule(
  */
 function getProtectedListMemberIds(
     list: CoordinatedTrackList,
-    clauses: readonly PromptClause[],
-    context: ProjectContext
+    clauses: readonly PromptClauseSpan[],
+    context: ProjectContext,
+    maskedPrompt: string,
+    prompt: string
 ): ReadonlySet<string> {
     const memberIds = list.memberIds ?? [];
     return new Set(
@@ -1293,10 +1296,25 @@ function getProtectedListMemberIds(
             if (index >= list.firstClauseIndex && index <= list.lastClauseIndex) {
                 return [];
             }
-            if (!COORDINATED_TARGET_PROTECTION_CUE.test(clause.masked)) {
+            const previousClause = clauses[index - 1];
+            const joinsAllButRestriction =
+                previousClause !== undefined &&
+                index - 1 !== list.lastClauseIndex &&
+                normalizePromptText(previousClause.masked) === 'all' &&
+                normalizePromptText(maskedPrompt.slice(previousClause.end, clause.start)) === 'but';
+            const restrictionMasked = joinsAllButRestriction
+                ? maskedPrompt.slice(previousClause.start, clause.end)
+                : clause.masked;
+            const restrictionText = joinsAllButRestriction
+                ? prompt.slice(previousClause.start, clause.end)
+                : clause.text;
+            if (
+                !hasTrackControlRestriction(restrictionMasked) &&
+                !COORDINATED_TARGET_PROTECTION_CUE.test(restrictionMasked)
+            ) {
                 return [];
             }
-            return collectNamedProjectTracks(clause.text, context.tracks).filter((id) => memberIds.includes(id));
+            return collectNamedProjectTracks(restrictionText, context.tracks).filter((id) => memberIds.includes(id));
         })
     );
 }
@@ -1339,7 +1357,13 @@ function getCoordinatedLevelLists(input: {
         ) {
             return [];
         }
-        const protectedIds = getProtectedListMemberIds(list, input.clauses, input.context);
+        const protectedIds = getProtectedListMemberIds(
+            list,
+            input.clauses,
+            input.context,
+            input.maskedPrompt,
+            input.prompt
+        );
         const targetIds = list.memberIds?.filter((id) => !protectedIds.has(id)) ?? [];
         const scope: PromptClauseScope | null =
             list.memberIds === null || targetIds.length === 0
