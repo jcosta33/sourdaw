@@ -36,7 +36,7 @@
  * every projected segment boundary, whatever the sampling resolution.
  */
 
-import { secondsBetweenBeats } from '../../models/TempoMap';
+import { BEAT_EPSILON, secondsBetweenBeats } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { tempoMapStore, type TempoMapStoreState } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore, type TimeSignatureMapStoreState } from '../../stores/timeSignatureMapStore';
@@ -163,11 +163,28 @@ function segmentBeats(sorted: readonly TempoChange[], rampStep: number): number[
         if (change.curve !== 'linear' || !next || next.beat <= change.beat) {
             continue;
         }
-        for (let beat = change.beat + rampStep; beat < next.beat; beat += rampStep) {
+        // A sample within BEAT_EPSILON of the next change would open a second segment on its frame.
+        for (let beat = change.beat + rampStep; beat < next.beat - BEAT_EPSILON; beat += rampStep) {
             beats.push(beat);
         }
     }
     return beats;
+}
+
+/**
+ * One change per beat, the last of those sharing it. Two changes on one beat
+ * mean "arrive at the first, govern from the last"; both land on the same
+ * second, and the engine refuses a map whose segments do not start on strictly
+ * increasing frames. Beats within BEAT_EPSILON share a beat, because a float
+ * step apart they would otherwise open two segments on one frame. The arrival
+ * is not lost: the seconds the segments start on are integrated through the
+ * full map.
+ */
+function governingPerBeat<TChange extends { beat: number }>(sorted: readonly TChange[]): TChange[] {
+    return sorted.filter((change, index) => {
+        const next = sorted[index + 1];
+        return next === undefined || next.beat - change.beat > BEAT_EPSILON;
+    });
 }
 
 /**
@@ -238,8 +255,12 @@ function projectTempo(
     // Instant changes are held to the same budget as ramp samples: a map with
     // more authored changes than the engine can hold is thinned rather than
     // truncated, and never left over the cap for the engine to refuse whole.
-    const capacity = authoredCapacity(sorted);
-    const authored = thinUniformly(sorted, capacity);
+    // Changes sharing a beat open one segment, stated by the integral through
+    // the whole map, so the beat is kept once and its governing change is the
+    // entry that stays.
+    const governing = governingPerBeat(sorted);
+    const capacity = authoredCapacity(governing);
+    const authored = thinUniformly(governing, capacity);
 
     const ramped = totalRampBeats(authored);
     const budget = capacity - authored.length;
@@ -257,8 +278,11 @@ function projectTempo(
     // change the arrangement holds that change's tempo, so opening the map with
     // it is the projection of what the timeline already sounds like. `capacity`
     // reserved this slot, so the composed list is still within the cap.
-    if (beats[0] !== 0) {
+    // A first segment within BEAT_EPSILON of zero is the opening one: a second at zero would share its frame.
+    if (beats[0] === undefined || beats[0] > BEAT_EPSILON) {
         beats.unshift(0);
+    } else {
+        beats[0] = 0;
     }
 
     // Each boundary's second is integrated once, in beat order, through the
@@ -277,7 +301,11 @@ function projectTimeSignature(
     fallback: Readonly<{ numerator: number; denominator: number }>,
     atBeat: (beat: number) => number
 ): EngineTimeSignatureSegment[] {
-    const sorted = byBeat(changes).filter((change) => Number.isFinite(change.beat) && change.beat >= 0);
+    // Meters within BEAT_EPSILON of one beat share it, the last governing, as tempo changes do:
+    // a float step apart they would open two segments on one frame.
+    const sorted = governingPerBeat(
+        byBeat(changes).filter((change) => Number.isFinite(change.beat) && change.beat >= 0)
+    );
     // Thinned against the capacity the opening segment has already been
     // subtracted from, so the composed list is within the cap rather than one
     // over it — which is what refuses the install and leaves the engine with no
@@ -285,7 +313,7 @@ function projectTimeSignature(
     const authored = thinUniformly(sorted, authoredCapacity(sorted));
     const first = authored[0];
     const opening =
-        first && first.beat === 0
+        first && first.beat <= BEAT_EPSILON
             ? []
             : [
                   {
@@ -298,7 +326,7 @@ function projectTimeSignature(
     return [
         ...opening,
         ...authored.map((change) => ({
-            startSeconds: atBeat(change.beat),
+            startSeconds: atBeat(change.beat <= BEAT_EPSILON ? 0 : change.beat),
             numerator: change.numerator,
             denominator: change.denominator,
         })),

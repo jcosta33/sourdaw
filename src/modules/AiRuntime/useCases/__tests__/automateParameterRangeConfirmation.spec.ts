@@ -231,7 +231,11 @@ describe('an approved range write from a planned request', () => {
 
     it('dips the vocal across exactly the second chorus with short ramps, and one undo restores the lane', async () => {
         scriptDipProposal();
-        const planned = await parsePromptToActions(PROMPT, getProjectContext(), undefined, captureProjectRevision());
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: captureProjectRevision(),
+        });
         expect(planned.planningOutcome).toEqual({ kind: 'proposal' });
 
         await expect(approve(planned.actions, 'confirmation-dip')).resolves.toEqual({ status: 'executed' });

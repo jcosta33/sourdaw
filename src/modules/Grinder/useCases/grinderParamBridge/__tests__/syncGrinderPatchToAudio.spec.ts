@@ -173,6 +173,8 @@ describe('syncGrinderPatchToAudio', () => {
                 [0.1, 0.2, 0.3],
                 [0.4, 0.5, 0.6],
             ] as Array<[number, number, number]>,
+            model: null,
+            modelDigest: null,
         };
 
         run(
@@ -225,6 +227,91 @@ describe('syncGrinderPatchToAudio', () => {
             neuralModelMode: 'imported',
             profile,
         });
+    });
+
+    it('sends the model as .nam JSON on the patch when the profile carries one (#3774)', () => {
+        const model = {
+            architecture: 'WaveNet' as const,
+            version: '0.6.1' as string | null,
+            sampleRate: 48_000 as number | null,
+            config: { channels: 2, dilations: [1, 2] } as Record<string, unknown>,
+            weights: [0.5, -0.25, 0.125] as readonly number[],
+        };
+        const profile = {
+            derivedFrom: 'nam' as const,
+            sourceArchitecture: 'wavenet',
+            sourceSampleRate: 48_000,
+            sourceWeightCount: 3,
+            preferredTier: 'standard' as const,
+            inputDrive: 1,
+            asymmetry: 0,
+            outputTrim: 1,
+            contourMix: 0,
+            recurrentBias: 0,
+            convWeights: [] as Array<[number, number, number]>,
+            model,
+            modelDigest: '0123-4567-89ab-cdef',
+        };
+
+        run(
+            migrateGrinderPatch({
+                ...DEFAULT_PATCH,
+                neuralModelSource: 'imported',
+                neuralModelProfile: profile,
+            })
+        );
+
+        const patch_call = update_device_patch.mock.calls.find(
+            ([, , patch]) => (patch as { neuralModelMode?: string }).neuralModelMode === 'imported'
+        );
+        expect(patch_call).toBeDefined();
+        const sent = patch_call![2] as { modelJson?: string; profile: unknown };
+        // The serialized document parses back to exactly what the runtime
+        // parses: architecture, version, root sample rate, config, weights.
+        expect(JSON.parse(sent.modelJson ?? 'null')).toEqual({
+            architecture: 'WaveNet',
+            version: '0.6.1',
+            sample_rate: 48_000,
+            config: model.config,
+            weights: [0.5, -0.25, 0.125],
+        });
+        // The compiled door strips the raw model (pinned in
+        // runtimeGrinderNeuralPatch.spec); here the patch carries both the
+        // profile and the text the runtime parses.
+        expect(sent.modelJson).toBeDefined();
+        expect(sent.profile).toEqual(profile);
+    });
+
+    it('sends no modelJson for a model-less profile (record with no library entry)', () => {
+        const profile = {
+            derivedFrom: 'nam' as const,
+            sourceArchitecture: 'wavenet',
+            sourceSampleRate: 48_000,
+            sourceWeightCount: 6,
+            preferredTier: 'lite' as const,
+            inputDrive: 1.2,
+            asymmetry: -0.1,
+            outputTrim: 0.9,
+            contourMix: 0.3,
+            recurrentBias: 0.05,
+            convWeights: [] as Array<[number, number, number]>,
+            model: null,
+            modelDigest: null,
+        };
+
+        run(
+            migrateGrinderPatch({
+                ...DEFAULT_PATCH,
+                neuralModelSource: 'imported',
+                neuralModelProfile: profile,
+            })
+        );
+
+        const patch_call = update_device_patch.mock.calls.find(
+            ([, , patch]) => (patch as { neuralModelMode?: string }).neuralModelMode === 'imported'
+        );
+        expect(patch_call).toBeDefined();
+        expect(patch_call![2]).not.toHaveProperty('modelJson');
     });
 
     it('should send no neuralCustom writes for a built-in model', () => {

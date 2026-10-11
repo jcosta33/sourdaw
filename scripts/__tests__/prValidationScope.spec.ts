@@ -1,15 +1,26 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    mkdtempSync,
+    mkdirSync,
+    readFileSync,
+    readdirSync,
+    renameSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
+import { selectAffectedE2e } from '../e2eAffectedGraph';
 import { parseChangedPaths, selectedSpecArguments, selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
 
 const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
-const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'];
+const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'] as const;
 const EXPORT = 'src/modules/AudioRendering/presentations/views/ExportDialog.tsx';
 const PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx';
 const GENERAL_PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx';
@@ -69,6 +80,181 @@ const TRANSPORT_SPECS_FOR_CONTROLS = [
     'countInCycleTestId',
 ].map((name) => `tests/e2e/${name}.spec.ts`);
 const INVENTORY = [SMOKE_SPEC, ...TUNER_SPECS, 'tests/e2e/undo.spec.ts'];
+
+describe('graph-backed browser selection', () => {
+    it('selects an affected feature plus unowned specs and leaves unrelated hardware out', () => {
+        const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+        const ai = 'tests/e2e/browserAiWebGpuAdmission.spec.ts';
+        const inventory = [...INVENTORY, crust, ai];
+        const selected = selectAffectedE2e(
+            [TUNER],
+            inventory,
+            {
+                version: 1,
+                owners: ['BrowserAi', 'Crust', 'Tuner'],
+                entries: [
+                    ...TUNER_SPECS.map((spec) => ({ spec, owners: ['Tuner'] })),
+                    { spec: crust, owners: ['Crust'] },
+                    { spec: ai, owners: ['BrowserAi'] },
+                ],
+            },
+            [
+                { source: TUNER, dependencies: [] },
+                { source: 'src/modules/Tuner/presentations/views/index.ts', dependencies: [{ resolved: TUNER }] },
+                {
+                    source: 'src/modules/WorkspaceShell/presentations/views/AppShell.tsx',
+                    dependencies: [{ resolved: 'src/modules/Tuner/presentations/views/index.ts' }],
+                },
+            ]
+        );
+        expect(selected.kind).toBe('narrow');
+        const plan = selectValidationPlan([TUNER], inventory, new Map(), false, selected);
+        expect(allSelected(plan)).toEqual([...TUNER_SPECS, 'tests/e2e/undo.spec.ts'].sort());
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
+    });
+
+    it('emits a narrowed immutable-head plan that Playwright collects as exact files', () => {
+        const root = temporaryRoot();
+        const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
+        const barrel = 'src/modules/Tuner/presentations/views/index.ts';
+        const shell = 'src/modules/WorkspaceShell/presentations/views/AppShell.tsx';
+        const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+        const mixed = 'tests/e2e/devicePanelAllTestId.spec.ts';
+        const ai = 'tests/e2e/browserAiWebGpuAdmission.spec.ts';
+        const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust, mixed, ai];
+        for (const path of [source, barrel, shell, ...specs, 'scripts/e2eSuiteOwners.json', 'public/fixture.js']) {
+            mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+        }
+        writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
+        writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+        writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerPanel';\n");
+        writeFileSync(
+            join(root, shell),
+            "import { TunerPanel } from '#/modules/Tuner/presentations/views';\nexport const panel = TunerPanel;\n"
+        );
+        writeFileSync(
+            join(root, 'tsconfig.json'),
+            JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
+        );
+        writeFileSync(
+            join(root, 'scripts/e2eSuiteOwners.json'),
+            JSON.stringify({
+                version: 1,
+                owners: ['BrowserAi', 'Crust', 'Tuner'],
+                entries: [
+                    { spec: TUNER_SPECS[0], owners: ['Tuner'] },
+                    { spec: crust, owners: ['Crust'] },
+                    { spec: ai, owners: ['BrowserAi'] },
+                ],
+            })
+        );
+        for (const spec of specs) {
+            writeFileSync(
+                join(root, spec),
+                `import { test, expect } from '@playwright/test';\ntest('${spec}', () => expect(true).toBe(true));\n`
+            );
+        }
+        writeFileSync(
+            join(root, 'playwright.config.mjs'),
+            "export default { testDir: './tests/e2e', projects: [{ name: 'chromium' }] };\n"
+        );
+        symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Scope test']);
+        git(['add', 'src', 'public', 'scripts', 'tests', 'tsconfig.json']);
+        git(['commit', '--quiet', '-m', 'base']);
+        const base = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+        git(['add', source]);
+        git(['commit', '--quiet', '-m', 'change tuner panel']);
+        const head = git(['rev-parse', 'HEAD']);
+        const output = join(root, 'github-output');
+        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+            typeof selectValidationPlan
+        >;
+        expect(allSelected(plan)).toEqual([TUNER_SPECS[0], mixed].sort());
+        expect(plan.browserAi).toBe(false);
+        expect(plan.reasons).toContainEqual({ path: source, reason: 'affected feature owners: Tuner' });
+        expect(readFileSync(output, 'utf8')).toContain('profile=broad\nbrowser=true\nbrowser-ai=false\n');
+
+        const playwright = spawnSync(
+            resolve('node_modules/.bin/playwright'),
+            [
+                'test',
+                '--list',
+                '--config',
+                join(root, 'playwright.config.mjs'),
+                ...selectedSpecArguments(allSelected(plan), root),
+            ],
+            { cwd: root, encoding: 'utf8' }
+        );
+        expect(playwright.status, playwright.stderr).toBe(0);
+        expect(playwright.stdout).toContain('tuner.spec.ts:');
+        expect(playwright.stdout).toContain('devicePanelAllTestId.spec.ts:');
+        expect(playwright.stdout).not.toContain('crustCeilingTestId.spec.ts:');
+        expect(playwright.stdout).not.toContain('browserAiWebGpuAdmission.spec.ts:');
+
+        writeFileSync(join(root, source), 'export const TunerPanel = "dirty";\n');
+        const dirty = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+        });
+        expect(dirty.status, dirty.stderr).toBe(0);
+        const dirtyPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+            typeof selectValidationPlan
+        >;
+        expect(allSelected(dirtyPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+        expect(dirtyPlan.browserAi).toBe(true);
+
+        writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+        const renamed = 'src/modules/Tuner/presentations/views/TunerDisplayPanel.tsx';
+        git(['mv', source, renamed]);
+        git(['commit', '--quiet', '-m', 'rename tuner panel']);
+        const renamedHead = git(['rev-parse', 'HEAD']);
+        const moved = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: head, HEAD_SHA: renamedHead, GITHUB_OUTPUT: output },
+        });
+        expect(moved.status, moved.stderr).toBe(0);
+        const movedPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+            typeof selectValidationPlan
+        >;
+        expect(allSelected(movedPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+        expect(movedPlan.browserAi).toBe(true);
+
+        writeFileSync(join(root, barrel), "export { TunerPanel } from './TunerDisplayPanel';\n");
+        writeFileSync(join(root, 'public/fixture.js'), `import '../${renamed}';\n`);
+        git(['add', barrel, 'public/fixture.js']);
+        git(['commit', '--quiet', '-m', 'add public runtime consumer']);
+        const publicBase = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, renamed), 'export const TunerPanel = "public dirty";\n');
+        git(['add', renamed]);
+        git(['commit', '--quiet', '-m', 'change tuner with public runtime consumer']);
+        const publicHead = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+        const dirtyPublic = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: publicBase, HEAD_SHA: publicHead, GITHUB_OUTPUT: output },
+        });
+        expect(dirtyPublic.status, dirtyPublic.stderr).toBe(0);
+        const dirtyPublicPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+            typeof selectValidationPlan
+        >;
+        expect(allSelected(dirtyPublicPlan)).toEqual(specs.filter((spec) => spec !== SMOKE_SPEC).sort());
+        expect(dirtyPublicPlan.browserAi).toBe(true);
+    });
+});
 const PR_4890_PATHS = [
     '.agents/skills/review-stances/correctness.md',
     'scripts/__tests__/semanticReviewContext.spec.ts',
@@ -303,12 +489,27 @@ describe('required affected verification', () => {
         for (const path of [
             'scripts/reviewStructuralAdmissionFuture.ts',
             'scripts/__tests__/reviewStructuralAdmissionFuture.spec.ts',
-            'scripts/prValidationScope.ts',
+            'src/modules/Arrangement/presentations/views/Timeline.tsx',
         ]) {
             const plan = selectValidationPlan([...helperPaths, path], INVENTORY);
             expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
             expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
         }
+    });
+
+    it('keeps the required planner source and spec in the Node tooling suite', () => {
+        expect(
+            selectValidationPlan(
+                ['scripts/prValidationScope.ts', 'scripts/__tests__/prValidationScope.spec.ts'],
+                INVENTORY
+            )
+        ).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
     });
 
     it.each(REVIEW_SPEC_ONLY_STEMS)('admits exact review-only spec %s', (stem) => {
@@ -368,6 +569,197 @@ describe('required affected verification', () => {
         expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
         expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
     });
+
+    it('admits only immutable known package script route changes', () => {
+        const root = temporaryRoot();
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        const packagePath = join(root, 'package.json');
+        const output = join(root, 'output');
+        const packageText = (scripts: Record<string, string>, fields: Record<string, unknown> = {}) =>
+            `${JSON.stringify({ name: 'scope-fixture', scripts, ...fields }, null, 4)}\n`;
+        const known = { test: 'node scripts/other.ts', 'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts' };
+        const baseline = { test: 'node scripts/other.ts' };
+        const writePackage = (contents: string | null) => {
+            rmSync(packagePath, { force: true });
+            if (contents !== null) {
+                writeFileSync(packagePath, contents);
+            }
+        };
+        const commit = (message: string) => {
+            git(['add', '-A']);
+            git(['commit', '--quiet', '--allow-empty', '-m', message]);
+            return git(['rev-parse', 'HEAD']);
+        };
+        const planAt = (base: string, head: string) => {
+            writeFileSync(output, '');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+            expect(readFileSync(output, 'utf8')).toContain(`profile=${plan.profile}\nbrowser=${plan.browser}\n`);
+            return plan;
+        };
+        const expectBroad = (base: string, head: string) => {
+            expect(planAt(base, head)).toMatchObject({
+                profile: 'broad',
+                browser: true,
+                browserAi: true,
+                codeql: true,
+                matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] },
+            });
+        };
+
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Scope test']);
+        writeFileSync(join(root, '.gitignore'), 'output\npr-validation-scope.json\n');
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        writeFileSync(join(root, SMOKE_SPEC), '// smoke\n');
+        writeFileSync(join(root, 'tests/e2e/undo.spec.ts'), '// browser\n');
+        writePackage(packageText(baseline));
+        const base = commit('base');
+
+        mkdirSync(join(root, 'scripts'), { recursive: true });
+        writeFileSync(join(root, 'scripts/retargetCapabilitySnapshot.ts'), 'export const fixture = true;\n');
+        mkdirSync(join(root, 'docs'), { recursive: true });
+        writeFileSync(join(root, 'docs/change.md'), '# Tooling\n');
+        writePackage(packageText(known));
+        const head = commit('known operational route and tooling');
+        expect(planAt(base, head)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+            reasons: expect.arrayContaining([
+                {
+                    path: 'package.json',
+                    reason: 'known operational script route; security/static checks without browser execution',
+                },
+            ]),
+        });
+        expect(readFileSync(output, 'utf8')).toContain(
+            'profile=tooling\nbrowser=false\nbrowser-ai=false\ncodeql=true\nmatrix={"include":[]}\n'
+        );
+        writePackage(packageText({ ...known, surprise: 'node scripts/other.ts' }, { dependencies: { new: '1.0.0' } }));
+        expect(planAt(base, head).profile).toBe('tooling');
+        writePackage(packageText(baseline));
+        const removalHead = commit('remove known route');
+        expect(planAt(head, removalHead)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+        expectBroad(base, head);
+
+        writePackage(packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }));
+        const unsafeCandidate = commit('unsafe candidate package command');
+        writePackage(packageText(known));
+        const safeCheckout = commit('safe checkout after candidate');
+        expect(git(['rev-parse', 'HEAD'])).toBe(safeCheckout);
+        expectBroad(removalHead, unsafeCandidate);
+
+        const cases: { name: string; before: string; after: string | null; extra?: string }[] = [
+            {
+                name: 'unknown old route',
+                before: packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }),
+                after: packageText(known),
+            },
+            {
+                name: 'unknown new route',
+                before: packageText(known),
+                after: packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }),
+            },
+            {
+                name: 'unknown script key',
+                before: packageText(baseline),
+                after: packageText({ ...baseline, 'other:plan': 'node scripts/retargetCapabilitySnapshot.ts' }),
+            },
+            {
+                name: 'route flag',
+                before: packageText(baseline),
+                after: packageText({
+                    ...baseline,
+                    'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts --unsafe',
+                }),
+            },
+            {
+                name: 'dependency change',
+                before: packageText(baseline),
+                after: packageText(known, { dependencies: { new: '1.0.0' } }),
+            },
+            {
+                name: 'package manager change',
+                before: packageText(baseline),
+                after: packageText(known, { packageManager: 'pnpm@99' }),
+            },
+            {
+                name: 'unknown field change',
+                before: packageText(baseline),
+                after: packageText(known, { futurePolicy: true }),
+            },
+            {
+                name: 'product mix',
+                before: packageText(baseline),
+                after: packageText(known),
+                extra: 'src/app/bootstrap.ts',
+            },
+            {
+                name: 'shared mix',
+                before: packageText(baseline),
+                after: packageText(known),
+                extra: 'scripts/e2eServerIdentity.ts',
+            },
+            { name: 'config mix', before: packageText(baseline), after: packageText(known), extra: 'vite.config.ts' },
+            { name: 'lockfile mix', before: packageText(baseline), after: packageText(known), extra: 'pnpm-lock.yaml' },
+            { name: 'malformed JSON', before: packageText(baseline), after: '{' },
+            {
+                name: 'duplicate key',
+                before: packageText(baseline),
+                after: '{"name":"scope-fixture","scripts":{},"scripts":{"retarget:plan":"node scripts/retargetCapabilitySnapshot.ts"}}\n',
+            },
+            {
+                name: 'missing scripts',
+                before: packageText(baseline),
+                after: `${JSON.stringify({ name: 'scope-fixture' }, null, 4)}\n`,
+            },
+            {
+                name: 'non-string command',
+                before: packageText(baseline),
+                after: `${JSON.stringify({ name: 'scope-fixture', scripts: { 'retarget:plan': 1 } }, null, 4)}\n`,
+            },
+            { name: 'deleted package', before: packageText(baseline), after: null },
+        ];
+        for (const testCase of cases) {
+            writePackage(testCase.before);
+            const caseBase = commit(`${testCase.name} base`);
+            writePackage(testCase.after);
+            if (testCase.extra) {
+                const fullPath = join(root, testCase.extra);
+                mkdirSync(fullPath.slice(0, fullPath.lastIndexOf('/')), { recursive: true });
+                writeFileSync(fullPath, '// mixed change\n');
+            }
+            const caseHead = commit(testCase.name);
+            expectBroad(caseBase, caseHead);
+        }
+
+        writePackage(packageText(baseline));
+        const deletionBase = commit('deletion base');
+        writePackage(packageText(known));
+        chmodSync(packagePath, 0o755);
+        const executableHead = commit('executable package');
+        expectBroad(deletionBase, executableHead);
+        chmodSync(packagePath, 0o644);
+        const renameBase = commit('restore package mode');
+        renameSync(packagePath, join(root, 'renamed-package.json'));
+        const renameHead = commit('rename package');
+        expectBroad(renameBase, renameHead);
+    }, 30_000);
 
     it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)('keeps shared or browser-owned script %s broad', (stem) => {
         for (const path of [`scripts/${stem}.ts`, `scripts/__tests__/${stem}.spec.ts`]) {

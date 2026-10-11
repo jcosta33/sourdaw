@@ -66,4 +66,95 @@ describe('compileRuntimeGrinderNeuralPatch', () => {
     ])('rejects %s before it reaches the worklet', (_label, patch) => {
         expect(compileRuntimeGrinderNeuralPatch(patch)).toMatchObject({ status: 'invalid' });
     });
+
+    it('admits a profile carrying the model fields the project patch adds (#3774)', () => {
+        const result = compileRuntimeGrinderNeuralPatch(
+            createPatch({
+                patch: {
+                    neuralModelMode: 'imported',
+                    profile: {
+                        preferredTier: 'recurrent',
+                        convWeights: [[0.1, 0.2, 0.3]],
+                        derivedFrom: 'nam',
+                        modelDigest: '0123-4567-89ab-cdef',
+                        model: { architecture: 'WaveNet', config: {}, weights: [0.5] },
+                    },
+                },
+            })
+        );
+
+        expect(result).toMatchObject({ status: 'compiled' });
+    });
+
+    it('carries a non-empty modelJson into the compiled patch, with its digest, and drops the raw model (#3774)', () => {
+        const modelJson = '{"architecture":"WaveNet","config":{},"weights":[0.5]}';
+        const result = compileRuntimeGrinderNeuralPatch(
+            createPatch({
+                patch: {
+                    neuralModelMode: 'imported',
+                    profile: {
+                        convWeights: [[0.1, 0.2, 0.3]],
+                        model: { architecture: 'WaveNet', config: {}, weights: [0.5] },
+                        modelDigest: '0123-4567-89ab-cdef',
+                    },
+                    modelJson,
+                },
+            })
+        );
+
+        expect(result).toMatchObject({
+            status: 'compiled',
+            patch: { patch: { modelJson, modelDigest: '0123-4567-89ab-cdef' } },
+        });
+        if (result.status === 'compiled' && result.patch.patch.neuralModelMode === 'imported') {
+            // The raw model object never crosses the runtime door: only the
+            // serialized text the worklet hands to the wasm loader does, plus
+            // the digest the worklet's re-load gate compares.
+            expect(result.patch.patch).not.toHaveProperty('profile.model');
+            expect(Object.isFrozen(result.patch.patch)).toBe(true);
+        }
+    });
+
+    it.each([
+        ['a null digest', null],
+        ['an empty digest', ''],
+        ['a non-string digest', 12],
+    ])('compiles a model payload with %s without carrying a digest field', (_label, modelDigest) => {
+        const result = compileRuntimeGrinderNeuralPatch(
+            createPatch({
+                patch: {
+                    neuralModelMode: 'imported',
+                    profile: {
+                        convWeights: [[0.1, 0.2, 0.3]],
+                        model: { architecture: 'WaveNet', config: {}, weights: [0.5] },
+                        modelDigest: modelDigest as unknown as string,
+                    },
+                    modelJson: '{"architecture":"WaveNet","config":{},"weights":[0.5]}',
+                },
+            })
+        );
+
+        expect(result).toMatchObject({ status: 'compiled' });
+        if (result.status === 'compiled') {
+            expect(result.patch.patch).not.toHaveProperty('modelDigest');
+        }
+    });
+
+    it.each([
+        ['empty string', ''],
+        ['a number', 12],
+        ['an object', { weights: [] }],
+    ])('rejects a %s modelJson before it reaches the worklet', (_label, modelJson) => {
+        const result = compileRuntimeGrinderNeuralPatch(
+            createPatch({
+                patch: {
+                    neuralModelMode: 'imported',
+                    profile: { convWeights: [[0.1, 0.2, 0.3]] },
+                    modelJson: modelJson as unknown as string,
+                },
+            })
+        );
+
+        expect(result).toMatchObject({ status: 'invalid' });
+    });
 });

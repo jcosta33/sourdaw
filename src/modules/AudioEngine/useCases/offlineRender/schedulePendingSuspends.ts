@@ -6,7 +6,7 @@ import {
 } from '../../repositories/deviceStrategy/AudioDeviceStrategy';
 
 import { comparePendingWorkletEvents } from './comparePendingWorkletEvents';
-import { type PendingWorkletEvent } from './types';
+import { type PendingControlWorkletEvent, type PendingWorkletEvent } from './types';
 
 /**
  * The request is assembled key by key so an absent channel or articulation is
@@ -15,6 +15,10 @@ import { type PendingWorkletEvent } from './types';
  */
 type MutableNoteOnRequest = { -readonly [K in keyof DeviceNoteOnRequest]: DeviceNoteOnRequest[K] };
 type MutableNoteOffRequest = { -readonly [K in keyof DeviceNoteOffRequest]: DeviceNoteOffRequest[K] };
+
+function isControlEvent(event: PendingWorkletEvent): event is PendingControlWorkletEvent {
+    return event.type === 'control' || event.type === 'closing-control';
+}
 
 /**
  * Pre-queue all collected worklet events to their respective DSP processors.
@@ -53,7 +57,7 @@ export function schedulePendingSuspends(
 
         const sampleFrame = Math.max(0, Math.floor(evt.time * offlineCtx.sampleRate));
 
-        if (evt.type === 'control') {
+        if (isControlEvent(evt)) {
             evt.dispatch({ controller: evt.controller, value: evt.value, sampleFrame });
             continue;
         }

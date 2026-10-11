@@ -136,7 +136,7 @@ describe('answer.respond ends a run as an answer outcome', () => {
             .mockResolvedValueOnce(readTurn)
             .mockResolvedValueOnce(answerTurn({ text: ANSWER_TEXT, evidenceCallIds: ['caps-1', 'recipes-1'] }));
 
-        const result = await parsePromptToActions(PROMPT, context, undefined, 'revision-1');
+        const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: 'revision-1' });
 
         const receipts = result.applicationToolReceipts ?? [];
         expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual([

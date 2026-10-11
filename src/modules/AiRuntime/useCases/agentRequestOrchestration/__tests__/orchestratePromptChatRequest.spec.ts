@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     normalizeAgentFailure: vi.fn(),
     planPromptActions: vi.fn(),
     persistPromptActionConfirmation: vi.fn(),
+    readChatThreadContext: vi.fn(() => null),
     recordAgentProviderUsage: vi.fn(),
     recordError: vi.fn(),
     reserveBudget: vi.fn(),
@@ -121,6 +122,7 @@ vi.mock('../../cancelAgentRun', () => ({
 
 vi.mock('../../describePendingActionConfirmation', () => ({ describePendingActionConfirmation: vi.fn() }));
 vi.mock('../../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
+vi.mock('../../readChatThreadContext', () => ({ readChatThreadContext: mocks.readChatThreadContext }));
 vi.mock('../../recordAgentProviderUsage', () => ({ recordAgentProviderUsage: mocks.recordAgentProviderUsage }));
 vi.mock('../executeImmediatePromptCommand', () => ({
     executeImmediatePromptCommand: mocks.executeImmediatePromptCommand,
@@ -590,8 +592,9 @@ describe('orchestratePromptChatRequest', () => {
             expect.objectContaining({ workId: 'local-planning', ownerKind: 'analysis' })
         );
         expect(mocks.planPromptActions).toHaveBeenCalledWith(
-            expect.objectContaining({ providerPlanning: 'disabled', onProviderResult: undefined })
+            expect.objectContaining({ providerPlanning: 'disabled', onProviderResult: undefined, thread: null })
         );
+        expect(mocks.readChatThreadContext).toHaveBeenCalledTimes(1);
         expect(mocks.recordAgentProviderUsage).not.toHaveBeenCalled();
         expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
             2,

@@ -14,6 +14,17 @@ export const CC_UNA_CORDA_PEDAL = 67;
 /** The wire value at and above which a switch pedal (sostenuto, una corda) is engaged. */
 const PEDAL_LATCH_THRESHOLD = 64;
 
+/** The on/off switch controllers: sustain, portamento, sostenuto, soft, legato and hold 2. */
+const FIRST_SWITCH_CONTROLLER = 64;
+const LAST_SWITCH_CONTROLLER = 69;
+
+/** Whether a controller change lets go of an on/off switch controller: a value below the latch threshold. */
+export function isSwitchControllerRelease(controller: number, value: number): boolean {
+    return (
+        controller >= FIRST_SWITCH_CONTROLLER && controller <= LAST_SWITCH_CONTROLLER && value < PEDAL_LATCH_THRESHOLD
+    );
+}
+
 type PianoPedalMove =
     /** Sustain is continuous: `position` is `0..1`, so half-pedal damps partially. */
     { pedal: 'sustain'; position: number } | { pedal: 'sostenuto' | 'unaCorda'; engaged: boolean };

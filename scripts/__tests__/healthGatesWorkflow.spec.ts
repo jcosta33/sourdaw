@@ -524,9 +524,44 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
     if (checkout['fetch-depth'] !== 0 || checkout['persist-credentials'] !== false) {
         throw new Error('required scope must read complete history without persisted credentials');
     }
+    if (stepNamed(scope, 'Enable Corepack').run !== 'corepack enable') {
+        throw new Error('required scope must enable the pinned package manager');
+    }
+    const pnpm = stepNamed(scope, 'Set up pnpm');
+    if (
+        typeof pnpm.uses !== 'string' ||
+        !pnpm.uses.startsWith('pnpm/action-setup@') ||
+        recordAt(pnpm, 'with').package_json_file !== 'package.json'
+    ) {
+        throw new Error('required scope must install the repository package manager');
+    }
     const node = recordAt(stepNamed(scope, 'Set up Node'), 'with');
-    if (node['node-version'] !== '24.19.0') {
+    if (node['node-version'] !== '24.19.0' || node.cache !== 'pnpm') {
         throw new Error('required scope must use the pinned Node version');
+    }
+    if (stepNamed(scope, 'Install dependencies').run !== 'pnpm install --frozen-lockfile --ignore-scripts') {
+        throw new Error('required scope must install pinned parser dependencies before planning');
+    }
+    const steps = scope.steps;
+    const setupOrder = [
+        'Enable Corepack',
+        'Set up pnpm',
+        'Set up Node',
+        'Install dependencies',
+        'Plan affected checks',
+    ];
+    if (!Array.isArray(steps)) {
+        throw new TypeError('required scope steps are missing');
+    }
+    const indexes = setupOrder.map((name) =>
+        steps.findIndex((step: unknown) => asRecord(step, 'scope step').name === name)
+    );
+    let previous = -1;
+    for (const index of indexes) {
+        if (index <= previous) {
+            throw new Error('required scope must install dependencies before planning');
+        }
+        previous = index;
     }
     const plan = stepNamed(scope, 'Plan affected checks');
     if (
@@ -1276,6 +1311,8 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
     expect(push.branches).toEqual(['main']);
     expect(push.paths).toEqual([
         '.github/workflows/cargo-dependency-seed.yml',
+        '.github/workflows/validation.yml',
+        'scripts/ensurePinnedRustToolchain.sh',
         'Cargo.lock',
         '**/Cargo.toml',
         '.cargo/config.toml',
@@ -1305,6 +1342,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
     expect(linuxSeedNames).toEqual([
         'Checkout',
         'Install ALSA development headers',
+        'Restore pinned Rust toolchain',
         'Install the pinned Rust toolchain',
         'Cache cargo build',
         'Cache Cargo dependencies',
@@ -4023,23 +4061,35 @@ describe('health gates workflow contract', () => {
             'fetch-depth': 0,
             'persist-credentials': false,
         });
+        expect(stepNamed(shadow, 'Checkout immutable shadow control').with).toEqual({
+            ref: '${{ github.event.pull_request.base.sha }}',
+            path: 'shadow-control',
+            'fetch-depth': 0,
+            'persist-credentials': false,
+        });
         expect(stepNamed(shadow, 'Download authoritative scope').with).toEqual({
             name: 'pr-validation-scope',
             path: 'shadow-scope',
         });
+        expect(stepNamed(shadow, 'Set up pnpm').with).toEqual({ package_json_file: 'shadow-control/package.json' });
+        expect(stepNamed(shadow, 'Set up Node').with).toMatchObject({
+            'cache-dependency-path': 'shadow-control/pnpm-lock.yaml',
+        });
+        expect(stepNamed(shadow, 'Install dependencies')['working-directory']).toBe('shadow-control');
         expect(stepNamed(shadow, 'Upload shadow measurement').with).toMatchObject({
             name: 'e2e-selection-shadow',
             'if-no-files-found': 'error',
         });
         expect(stepNamed(shadow, 'Upload shadow measurement').if).toBe('${{ always() }}');
         expect(stepNamed(shadow, 'Measure shadow selection').run).toBe(
-            'node scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
+            'node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
         );
         expect(stepNamed(shadow, 'Measure shadow selection').env).toEqual({
             BASE_SHA: '${{ github.event.pull_request.base.sha }}',
             HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
             INTEGRATION_SHA: '${{ github.sha }}',
             INTEGRATION_ROOT: 'shadow-integration',
+            CONTROL_ROOT: 'shadow-control',
         });
         const gateScript = assertGateContract(health, 'gate', 'Gate', GATE_CONDITION);
         const required = JSON.stringify({
@@ -4399,6 +4449,48 @@ describe('health gates workflow contract', () => {
         const reorderedCache = asRecord(structuredClone(seed), 'reordered cache');
         arrayAt(jobAt(reorderedCache, 'rust'), 'steps').reverse();
         expect(() => assertCargoDependencySeed(reorderedCache, validationWorkflow)).toThrow();
+    });
+
+    it('restores only an exact installed Linux compiler before setup and health gates', () => {
+        const seed = loadWorkflow('cargo-dependency-seed.yml').parsed;
+        const expectedKey =
+            "pinned-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}";
+        const expectedRun =
+            'bash scripts/ensurePinnedRustToolchain.sh "${{ steps.pinned-toolchain.outputs.cache-hit }}"';
+        for (const [workflow, jobName, cacheAction] of [
+            [validationWorkflow, 'rust', 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830'],
+            [seed, 'rust', 'actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830'],
+        ] as const) {
+            const job = jobAt(workflow, jobName);
+            const steps = arrayAt(job, 'steps').map((step) => asRecord(step, 'step'));
+            const cache = stepNamed(job, 'Restore pinned Rust toolchain');
+            expect(cache.uses).toBe(cacheAction);
+            expect(cache.id).toBe('pinned-toolchain');
+            expect(recordAt(cache, 'with')).toEqual({ path: '~/.rustup/toolchains', key: expectedKey });
+            expect(stepNamed(job, 'Install the pinned Rust toolchain').run).toBe(expectedRun);
+            expect(steps.indexOf(cache)).toBeLessThan(
+                steps.indexOf(stepNamed(job, 'Install the pinned Rust toolchain'))
+            );
+            expect(steps.indexOf(stepNamed(job, 'Install the pinned Rust toolchain'))).toBeLessThan(
+                steps.indexOf(stepNamed(job, 'Cache cargo build'))
+            );
+        }
+        expect(arrayAt(recordAt(recordAt(seed, 'on'), 'push'), 'paths')).toContain(
+            'scripts/ensurePinnedRustToolchain.sh'
+        );
+        for (const path of [
+            'scripts/ensurePinnedRustToolchain.sh',
+            '.github/workflows/validation.yml',
+            '.github/workflows/cargo-dependency-seed.yml',
+        ]) {
+            expect(scopeFilterPatterns(validationWorkflow, 'rust')).toContain(path);
+        }
+        expect(stepNamed(jobAt(validationWorkflow, 'rust'), 'Server and Rust workspace health gates').run).toBe(
+            'pnpm health:server:full'
+        );
+        expect(stepNamed(jobAt(seed, 'rust'), 'Rust workspace health gates').run).toBe(
+            'sh scripts/health-gates-rust.sh'
+        );
     });
 
     it('invalidates both macOS index identities for every Cargo graph input', () => {

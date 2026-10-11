@@ -134,15 +134,26 @@ function getTempoAtBeatFromSorted(changes: readonly TempoChange[], beat: number,
     return governing.change.tempo + (governing.rampTarget.tempo - governing.change.tempo) * time;
 }
 
-function getActiveTempoChange(changes: readonly TempoChange[], beat: number): TempoChange | undefined {
+/**
+ * The change in force at the start of a segment and the first change after it.
+ *
+ * Several changes may share one beat: the first is where the preceding ramp
+ * arrives, the last governs from that beat on. A segment that ends on such a
+ * beat therefore ends at the first one's tempo, which only the ramp target —
+ * not the governing change at the end beat — reports.
+ */
+function getSegmentRamp(
+    changes: readonly TempoChange[],
+    segmentStart: number
+): { active: TempoChange | undefined; target: TempoChange | undefined } {
     let active: TempoChange | undefined;
     for (const change of changes) {
-        if (change.beat > beat) {
-            break;
+        if (change.beat > segmentStart) {
+            return { active, target: change };
         }
         active = change;
     }
-    return active;
+    return { active, target: undefined };
 }
 
 export function createTempoChange(beat: number, tempo: number, curve: TempoChange['curve'] = 'instant'): TempoChange {
@@ -216,13 +227,14 @@ function secondsAcrossSortedTempoRange(
         const segmentStart = boundaries[index]!;
         const segmentEnd = boundaries[index + 1]!;
         const startTempo = getTempoAtBeatFromSorted(sortedChanges, segmentStart, defaultTempo);
-        const activeChange = getActiveTempoChange(sortedChanges, segmentStart);
-        if (!activeChange || activeChange.curve === 'instant') {
+        const { active, target } = getSegmentRamp(sortedChanges, segmentStart);
+        if (!active || active.curve === 'instant' || !target) {
             seconds += ((segmentEnd - segmentStart) * 60) / startTempo;
             continue;
         }
 
-        const endTempo = getTempoAtBeatFromSorted(sortedChanges, segmentEnd, defaultTempo);
+        const rampProgress = (segmentEnd - active.beat) / (target.beat - active.beat);
+        const endTempo = active.tempo + (target.tempo - active.tempo) * rampProgress;
         const tempoDelta = endTempo - startTempo;
         if (tempoDelta === 0) {
             seconds += ((segmentEnd - segmentStart) * 60) / startTempo;

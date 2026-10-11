@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
-import { grinderNeuralProfileParams } from '../GrinderNeuralProfileParams';
-import { type GrinderNeuralProfile } from '../GrinderPatch';
+import {
+    derivedGrinderNeuralModelId,
+    grinderNeuralModelDigest,
+    grinderNeuralProfileFromParamValues,
+    grinderNeuralProfileParams,
+    grinderNeuralProfilesEqual,
+} from '../GrinderNeuralProfileParams';
+import { type GrinderNeuralModel, type GrinderNeuralProfile } from '../GrinderPatch';
+
+const FULL_MODEL: GrinderNeuralModel = {
+    architecture: 'WaveNet',
+    version: '0.5.4',
+    sampleRate: 48_000,
+    config: { head: null, head_scale: 0.02 },
+    weights: [0.5, -0.25, 0.125, 0.0625],
+};
+
+function profileWithModel(model: GrinderNeuralModel): GrinderNeuralProfile {
+    const scalars = buildProfile([
+        [0.1, 0.2, 0.3],
+        [0.4, 0.5, 0.6],
+    ]);
+    return { ...scalars, model, modelDigest: grinderNeuralModelDigest(model) };
+}
 
 function buildProfile(convWeights: Array<[number, number, number]>): GrinderNeuralProfile {
     return {
@@ -16,6 +38,8 @@ function buildProfile(convWeights: Array<[number, number, number]>): GrinderNeur
         contourMix: 0.3,
         recurrentBias: 0.05,
         convWeights,
+        model: null,
+        modelDigest: null,
     };
 }
 
@@ -72,5 +96,113 @@ describe('grinderNeuralProfileParams', () => {
         // one hiding at a different layer or index.
         expect(longest_names).toContain('neuralCustomConvWeight9_2');
         expect(longest_length).toBe(25);
+    });
+});
+
+describe('grinderNeuralModelDigest (#3774)', () => {
+    it('changes when any single weight changes — the sampled-scalar collapse is gone', () => {
+        const a = grinderNeuralModelDigest(FULL_MODEL);
+        const swapped: GrinderNeuralModel = {
+            ...FULL_MODEL,
+            weights: [FULL_MODEL.weights[1]!, FULL_MODEL.weights[0]!, ...FULL_MODEL.weights.slice(2)],
+        };
+        const b = grinderNeuralModelDigest(swapped);
+        expect(b).not.toBe(a);
+    });
+
+    it('is stable across identical models and distinguishes config/architecture/version', () => {
+        expect(grinderNeuralModelDigest(FULL_MODEL)).toBe(grinderNeuralModelDigest(FULL_MODEL));
+        expect(grinderNeuralModelDigest({ ...FULL_MODEL, config: { head: null, head_scale: 0.03 } })).not.toBe(
+            grinderNeuralModelDigest(FULL_MODEL)
+        );
+        expect(grinderNeuralModelDigest({ ...FULL_MODEL, architecture: 'LSTM' })).not.toBe(
+            grinderNeuralModelDigest(FULL_MODEL)
+        );
+        expect(grinderNeuralModelDigest({ ...FULL_MODEL, version: '0.5.0' })).not.toBe(
+            grinderNeuralModelDigest(FULL_MODEL)
+        );
+    });
+});
+
+describe('grinderNeuralProfileParams — digest emission', () => {
+    it('appends four digest words for a profile carrying a model', () => {
+        const profile = profileWithModel(FULL_MODEL);
+        const params = grinderNeuralProfileParams(profile);
+        const digest_params = params.filter(([name]) => name.startsWith('neuralCustomModelDigest'));
+        expect(digest_params).toHaveLength(4);
+        for (const [, value] of digest_params) {
+            expect(value).toBeTypeOf('number');
+            expect(Number.isInteger(value)).toBe(true);
+            expect(value).toBeGreaterThanOrEqual(0);
+            expect(value).toBeLessThanOrEqual(0xffff);
+        }
+    });
+
+    it('emits no digest words for a legacy scalar-only profile', () => {
+        const params = grinderNeuralProfileParams(buildProfile([[0.1, 0.2, 0.3]]));
+        expect(params.some(([name]) => name.startsWith('neuralCustomModelDigest'))).toBe(false);
+    });
+});
+
+describe('grinderNeuralProfileFromParamValues — digest reconstruction', () => {
+    it('carries the digest (not the model) from a record that proves one', () => {
+        const profile = profileWithModel(FULL_MODEL);
+        const values: Record<string, number> = {};
+        for (const [name, value] of grinderNeuralProfileParams(profile)) {
+            values[name] = value;
+        }
+        const rebuilt = grinderNeuralProfileFromParamValues(values);
+        expect(rebuilt).not.toBeNull();
+        expect(rebuilt?.model).toBeNull();
+        expect(rebuilt?.modelDigest).toBe(profile.modelDigest);
+    });
+
+    it('returns a null digest for legacy records without digest words', () => {
+        const values: Record<string, number> = {};
+        for (const [name, value] of grinderNeuralProfileParams(buildProfile([[0.1, 0.2, 0.3]]))) {
+            values[name] = value;
+        }
+        const rebuilt = grinderNeuralProfileFromParamValues(values);
+        expect(rebuilt?.modelDigest).toBeNull();
+    });
+});
+
+describe('grinderNeuralProfilesEqual — digest precedence', () => {
+    it('matches a record-derived profile to a full library entry by digest and only by digest', () => {
+        const entry_profile = profileWithModel(FULL_MODEL);
+        const record_profile: GrinderNeuralProfile = {
+            ...entry_profile,
+            model: null,
+            sourceArchitecture: 'unknown',
+            sourceSampleRate: 0,
+            sourceWeightCount: 0,
+        };
+        expect(grinderNeuralProfilesEqual(record_profile, entry_profile)).toBe(true);
+        // The scalars are identical, so only the digest can separate a
+        // DIFFERENT capture that happens to share them.
+        const other_capture = profileWithModel({ ...FULL_MODEL, weights: [1, 2, 3, 4] });
+        expect(grinderNeuralProfilesEqual(record_profile, other_capture)).toBe(false);
+    });
+
+    it('falls back to scalar equality when either side predates digest records', () => {
+        const legacy = buildProfile([[0.1, 0.2, 0.3]]);
+        const same = buildProfile([[0.1, 0.2, 0.3]]);
+        expect(grinderNeuralProfilesEqual(legacy, same)).toBe(true);
+        const digested = profileWithModel(FULL_MODEL);
+        expect(grinderNeuralProfilesEqual(legacy, digested)).toBe(false);
+    });
+});
+
+describe('derivedGrinderNeuralModelId — digest participation', () => {
+    it('derives distinct ids for records proving different digests', () => {
+        const a: GrinderNeuralProfile = { ...buildProfile([[0.1, 0.2, 0.3]]), modelDigest: '0001-0002-0003-0004' };
+        const b: GrinderNeuralProfile = { ...buildProfile([[0.1, 0.2, 0.3]]), modelDigest: '0001-0002-0003-0005' };
+        expect(derivedGrinderNeuralModelId(a)).not.toBe(derivedGrinderNeuralModelId(b));
+        // The same record rebuilt — same digest — reconstructs to the same id
+        // on every reload; only a digest change moves it.
+        const aAgain: GrinderNeuralProfile = { ...buildProfile([[0.1, 0.2, 0.3]]), modelDigest: '0001-0002-0003-0004' };
+        expect(derivedGrinderNeuralModelId(a)).toBe(derivedGrinderNeuralModelId(aAgain));
+        const identical = profileWithModel(FULL_MODEL);
+        expect(derivedGrinderNeuralModelId(a)).not.toBe(derivedGrinderNeuralModelId(identical));
     });
 });

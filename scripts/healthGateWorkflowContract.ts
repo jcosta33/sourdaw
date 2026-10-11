@@ -101,6 +101,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         rust: [
             'Checkout',
             'Install ALSA development headers',
+            'Restore pinned Rust toolchain',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
             'Cache Cargo dependencies',
@@ -146,10 +147,11 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
     },
     'health-gates.yml': {
-        scope: ['Checkout', 'Set up Node', 'Plan affected checks', 'Upload scope manifest'],
+        scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
         'selection-shadow': [
             'Checkout candidate head',
             'Checkout immutable integration commit',
+            'Checkout immutable shadow control',
             'Download authoritative scope',
             'Set up pnpm',
             'Set up Node',
@@ -181,6 +183,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Set up pnpm',
             'Set up Node',
             'Install ALSA development headers',
+            'Restore pinned Rust toolchain',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
             'Cache Cargo dependencies',

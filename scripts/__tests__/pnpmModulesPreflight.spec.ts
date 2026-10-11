@@ -7,17 +7,20 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
     PNPM_MODULES_MANIFEST,
     PNPM_MODULES_DIR,
+    PNPM_VIRTUAL_STORE,
     PNPM_WORKSPACE_STATE,
     assertCheckoutModulesBelongToCheckout,
     assertCurrentCheckoutModulesBelongToCheckout,
     checkoutModulesRefusal,
     modulesManifestProjectDir,
+    modulesManifestVirtualStoreDir,
     nodeModulesLinkTarget,
     outsideSymlinkRefusal,
     workspaceStateProjectDirs,
 } from '../pnpmModulesPreflight.ts';
 
 const RESTORE_PATTERN = /Restore: remove the lane's node_modules symlink, then run `pnpm install` in /;
+const ISSUE_CLONE_STORE = '../../../../../private/tmp/sourdaw-pr4451-mut-review.LElG7D/node_modules/.pnpm';
 
 function mapFilesystem(files: Record<string, string | undefined>): (path: string) => string | undefined {
     return (path) => files[path];
@@ -47,6 +50,36 @@ describe('modulesManifestProjectDir', () => {
 
     it('never reads a projectDir out of a JSON string value', () => {
         expect(modulesManifestProjectDir(JSON.stringify({ note: 'projectDir: /evil' }))).toBeUndefined();
+    });
+});
+
+describe('modulesManifestVirtualStoreDir', () => {
+    it('reads a pnpm 11 JSON-shaped manifest virtualStoreDir, relative or absolute', () => {
+        expect(modulesManifestVirtualStoreDir(JSON.stringify({ layoutVersion: 5, virtualStoreDir: '.pnpm' }))).toBe(
+            '.pnpm'
+        );
+        expect(
+            modulesManifestVirtualStoreDir(
+                JSON.stringify({ layoutVersion: 5, virtualStoreDir: '/repo/node_modules/.pnpm' })
+            )
+        ).toBe('/repo/node_modules/.pnpm');
+    });
+
+    it('reads a plain YAML mapping virtualStoreDir, quoted or bare', () => {
+        expect(modulesManifestVirtualStoreDir('layoutVersion: 4\nvirtualStoreDir: .pnpm\n')).toBe('.pnpm');
+        expect(modulesManifestVirtualStoreDir("layoutVersion: 4\nvirtualStoreDir: '/repo/node_modules/.pnpm'\n")).toBe(
+            '/repo/node_modules/.pnpm'
+        );
+    });
+
+    it('returns undefined when the record names no virtual store', () => {
+        expect(modulesManifestVirtualStoreDir(JSON.stringify({ layoutVersion: 5 }))).toBeUndefined();
+        expect(modulesManifestVirtualStoreDir('layoutVersion: 4\nstoreDir: /store\n')).toBeUndefined();
+        expect(modulesManifestVirtualStoreDir('')).toBeUndefined();
+    });
+
+    it('never reads a virtualStoreDir out of a JSON string value', () => {
+        expect(modulesManifestVirtualStoreDir(JSON.stringify({ note: 'virtualStoreDir: /evil' }))).toBeUndefined();
     });
 });
 
@@ -105,6 +138,65 @@ describe('checkoutModulesRefusal', () => {
     it('passes a manifest projectDir equal to the checkout', () => {
         const files = {
             [`/repo/${PNPM_MODULES_DIR}/${PNPM_MODULES_MANIFEST}`]: JSON.stringify({ projectDir: '/repo' }),
+        };
+        expect(checkoutModulesRefusal({ checkoutRoot, readFile: mapFilesystem(files) })).toBeUndefined();
+    });
+
+    it('refuses the issue-4505 signature: a pnpm 11 manifest naming a scratch clone virtual store', () => {
+        const manifestPath = `/repo/${PNPM_MODULES_DIR}/${PNPM_MODULES_MANIFEST}`;
+        // pnpm 11 writes a JSON manifest with no projectDir, and the corrupted primary kept a
+        // healthy workspace state, so only the virtual store names the clone that wrote it.
+        const files = {
+            [manifestPath]: JSON.stringify({ layoutVersion: 5, virtualStoreDir: ISSUE_CLONE_STORE }),
+            [`/repo/${PNPM_MODULES_DIR}/${PNPM_WORKSPACE_STATE}`]: workspaceStateSource('/repo'),
+        };
+
+        const refusal = checkoutModulesRefusal({ checkoutRoot, readFile: mapFilesystem(files) });
+
+        expect(refusal).toMatch(
+            new RegExp(`^${manifestPath} records virtual store .*sourdaw-pr4451-mut-review[^ ]*/node_modules/\\.pnpm`)
+        );
+        expect(refusal).toMatch(
+            new RegExp(`not this checkout's own /repo/${PNPM_MODULES_DIR}/${PNPM_VIRTUAL_STORE.replaceAll('.', '\\.')}`)
+        );
+        expect(refusal).toMatch(/ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY/);
+        expect(refusal).toMatch(/Restore: run `CI=true pnpm install --frozen-lockfile` in \/repo/);
+    });
+
+    it('refuses a YAML manifest virtualStoreDir outside the checkout, in either spelling', () => {
+        const manifestPath = `/repo/${PNPM_MODULES_DIR}/${PNPM_MODULES_MANIFEST}`;
+        const yamlFiles = {
+            [manifestPath]: `layoutVersion: 4\nvirtualStoreDir: /tmp/sourdaw-clone/node_modules/${PNPM_VIRTUAL_STORE}\n`,
+        };
+        expect(checkoutModulesRefusal({ checkoutRoot, readFile: mapFilesystem(yamlFiles) })).toMatch(
+            /records virtual store \/tmp\/sourdaw-clone\/node_modules\/\.pnpm/
+        );
+
+        const escapingRelative = {
+            [manifestPath]: `layoutVersion: 4\nvirtualStoreDir: ../elsewhere/node_modules/${PNPM_VIRTUAL_STORE}\n`,
+        };
+        expect(checkoutModulesRefusal({ checkoutRoot, readFile: mapFilesystem(escapingRelative) })).toMatch(
+            /records virtual store \.\.\/elsewhere/
+        );
+    });
+
+    it('passes a virtual store kept inside this checkout, relative or absolute', () => {
+        const manifestPath = `/repo/${PNPM_MODULES_DIR}/${PNPM_MODULES_MANIFEST}`;
+        const relative = { [manifestPath]: JSON.stringify({ layoutVersion: 5, virtualStoreDir: PNPM_VIRTUAL_STORE }) };
+        expect(checkoutModulesRefusal({ checkoutRoot, readFile: mapFilesystem(relative) })).toBeUndefined();
+
+        const absolute = {
+            [manifestPath]: JSON.stringify({
+                layoutVersion: 5,
+                virtualStoreDir: `/repo/${PNPM_MODULES_DIR}/${PNPM_VIRTUAL_STORE}`,
+            }),
+        };
+        expect(checkoutModulesRefusal({ checkoutRoot, readFile: mapFilesystem(absolute) })).toBeUndefined();
+    });
+
+    it('fails open on a manifest that records no virtual store', () => {
+        const files = {
+            [`/repo/${PNPM_MODULES_DIR}/${PNPM_MODULES_MANIFEST}`]: JSON.stringify({ layoutVersion: 5 }),
         };
         expect(checkoutModulesRefusal({ checkoutRoot, readFile: mapFilesystem(files) })).toBeUndefined();
     });
@@ -198,6 +290,12 @@ describe('pnpm modules preflight against a real filesystem', () => {
         return nodeModules;
     }
 
+    function writeModulesManifest(root: string, source: string): void {
+        const nodeModules = join(root, PNPM_MODULES_DIR);
+        mkdirSync(nodeModules, { recursive: true });
+        writeFileSync(join(nodeModules, PNPM_MODULES_MANIFEST), source);
+    }
+
     afterEach(() => {
         // rmSync never follows symlinks: the lane's link is unlinked, the primary install survives.
         for (const parent of parents.splice(0)) {
@@ -230,6 +328,31 @@ describe('pnpm modules preflight against a real filesystem', () => {
         const bareRoot = tempCheckout('bare');
         expect(nodeModulesLinkTarget(bareRoot)).toBeUndefined();
         expect(() => assertCheckoutModulesBelongToCheckout(bareRoot)).not.toThrow();
+    });
+
+    it('refuses the corrupted-primary signature: a manifest recording a /tmp clone virtual store', () => {
+        // The issue-4505 reproduce: corrupt only `.modules.yaml`'s virtualStoreDir in the primary.
+        const primaryRoot = tempCheckout('corrupted');
+        writeModulesManifest(
+            primaryRoot,
+            JSON.stringify({
+                layoutVersion: 5,
+                virtualStoreDir: `/tmp/sourdaw-pr4451-mut-review.X/node_modules/${PNPM_VIRTUAL_STORE}`,
+            })
+        );
+
+        expect(() => assertCheckoutModulesBelongToCheckout(primaryRoot)).toThrow(
+            /records virtual store \/tmp\/sourdaw-pr4451-mut-review/
+        );
+        expect(() => assertCheckoutModulesBelongToCheckout(primaryRoot)).toThrow(
+            /Restore: run `CI=true pnpm install --frozen-lockfile` in /
+        );
+    });
+
+    it('passes a real pnpm 11 install whose manifest keeps the virtual store inside node_modules', () => {
+        const primaryRoot = tempCheckout('healthy');
+        writeModulesManifest(primaryRoot, JSON.stringify({ layoutVersion: 5, virtualStoreDir: PNPM_VIRTUAL_STORE }));
+        expect(() => assertCheckoutModulesBelongToCheckout(primaryRoot)).not.toThrow();
     });
 
     it('stands down outside a git checkout instead of blocking the guard', () => {

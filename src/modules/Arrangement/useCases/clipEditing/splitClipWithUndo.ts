@@ -1,6 +1,6 @@
 import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { getMidiStoreState, restoreMidiClipData } from '#/modules/MIDI/useCases';
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { type RetiredTakeLaneSnapshot, type TakeReKeyLaneTransitionSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -9,6 +9,7 @@ import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/cl
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { removeClip } from '../clip/removeClip';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
+import { restoreTakeReKeyTransitions } from '../comping/restoreTakeReKeyTransitions';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
 import { splitClip } from './splitClip';
@@ -51,7 +52,14 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
     // source entry back and clear the right half's.
     const sourceSatelliteBefore = readClipSatelliteEntry(clipId);
 
-    const rightClipId = splitClip(clipId, splitBeat);
+    // #5048 — filled in place by each `splitClip` call with the re-key it
+    // captured and applied: the undo closure puts the pre-split facets back,
+    // and the redo's re-split re-captures the same transitions from the
+    // restored state (the minted fragment take ids derive deterministically
+    // from the take id and the split beat).
+    const reKeyedTakeLanes: TakeReKeyLaneTransitionSnapshot[] = [];
+
+    const rightClipId = splitClip(clipId, splitBeat, undefined, undefined, undefined, { reKeyedTakeLanes });
 
     if (!rightClipId) {
         // splitBeat was out of range or snapping collapsed the split — nothing to undo
@@ -89,6 +97,9 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
             });
             writeClipSatelliteEntry(sourceSatelliteBefore);
             writeClipSatelliteEntry({ clipId: rightClipId, gainEnvelope: null, warpState: null });
+            // The clips are back: put the pre-split take/comp-region facets
+            // back over the fragmented ones (the re-key's own restore leg).
+            restoreTakeReKeyTransitions(reKeyedTakeLanes);
         },
         () => {
             // Redo reuses the original right clip id (deterministic id reuse, chosen
@@ -97,7 +108,9 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
             // and its MIDI data, so the id is provably free, and id-stability keeps
             // stacked cuts on this lineage redoable: the next entry's redo splits
             // the right clip this redo recreates.
-            const newRightClipId = splitClip(clipId, splitBeat, rightClipId);
+            const newRightClipId = splitClip(clipId, splitBeat, rightClipId, undefined, undefined, {
+                reKeyedTakeLanes,
+            });
             if (!newRightClipId) {
                 // The split is genuinely rejected now (e.g. the clip was trimmed past
                 // splitBeat after the undo) — surface it (importMidiFile precedent)

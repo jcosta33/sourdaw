@@ -114,6 +114,24 @@ describe('resolveNativeNoteSink', () => {
         expect(result).toBeNull();
     });
 
+    // The built-in sink is the track's receiving instrument, the one Web Audio
+    // live input, playback and the export voice. While that receiver is not in
+    // the engine's chain yet — added mid-roll, before its splice lands — the key
+    // must not sound the carried instrument behind it.
+    it('takes no built-in behind a receiving instrument the session does not carry yet', () => {
+        const track = make_track([
+            { id: 'lev-1', type: 'levain' },
+            { id: 'ferm-1', type: 'fermenter' },
+        ]);
+
+        const result = resolveNativeNoteSink(
+            track,
+            deps((_trackId, deviceId) => deviceId === 'ferm-1')
+        );
+
+        expect(result).toBeNull();
+    });
+
     it('hands the predicate the instrument track id', () => {
         const track = {
             id: 'track-x',

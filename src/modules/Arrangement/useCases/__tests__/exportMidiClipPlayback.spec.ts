@@ -501,7 +501,7 @@ describe('exportMidiClip writes what the clip plays', () => {
         });
     });
 
-    it('writes no pedal lift on a pass head for a lift stored on the closing line of the loop', () => {
+    it('writes a lift stored on the closing line of the loop once, on the clip end, and none on a pass head', () => {
         const events = exportClip(
             { startBeat: 1 / 3, endBeat: 1 / 3 + 8, loopEnabled: true, loopLength: 2 },
             [note('n', 0, 1.5)],
@@ -509,9 +509,56 @@ describe('exportMidiClip writes what the clip plays', () => {
         );
 
         const pedals = events.filter((event) => event.kind === 'cc');
-        expect(pedals.map((event) => [event.tick, event.data2])).toEqual(
-            [0, 1, 2, 3].map((pass) => [Math.round((1 / 3 + 2 * pass) * TICKS_PER_BEAT), 127])
+        expect(pedals.map((event) => [event.tick, event.data2])).toEqual([
+            ...[0, 1, 2, 3].map((pass) => [Math.round((1 / 3 + 2 * pass) * TICKS_PER_BEAT), 127]),
+            [Math.round((1 / 3 + 8) * TICKS_PER_BEAT), 0],
+        ]);
+    });
+
+    it('writes the pedal lift drawn on the closing line of a clip, after the release of the note ending there', () => {
+        const events = exportClip(
+            { startBeat: 1, endBeat: 5 },
+            [note('held', 0, 4), note('on-the-line', 4, 1, 62)],
+            [sustain('down', 0, 127), sustain('lift', 4, 0)]
         );
+
+        expect(events.map(({ tick, kind, data1, data2 }) => [tick / TICKS_PER_BEAT, kind, data1, data2])).toEqual([
+            [1, 'cc', SUSTAIN_PEDAL, 127],
+            [1, 'on', 60, 100],
+            [5, 'off', 60, 0],
+            [5, 'cc', SUSTAIN_PEDAL, 0],
+        ]);
+    });
+
+    it('writes a press a rounding step before the closing-line lift ahead of it, so the pedal ends up as playback leaves it', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 2 },
+            [],
+            [sustain('press', 2 - 1e-6, 127), sustain('lift', 2, 0)]
+        );
+
+        expect(events.map(({ tick, kind, data2 }) => [tick / TICKS_PER_BEAT, kind, data2])).toEqual([
+            [2, 'cc', 127],
+            [2, 'cc', 0],
+        ]);
+    });
+
+    it('writes no press and no mod-wheel row stored on the closing line, where a trim ends the clip', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 4 },
+            [],
+            [
+                sustain('down', 0, 127),
+                sustain('lift', 2, 0),
+                sustain('down-again', 4, 127),
+                { id: 'mod', controller: 1, value: 90, beat: 4, channel: 0 },
+            ]
+        );
+
+        expect(events.map(({ tick, kind, data1, data2 }) => [tick / TICKS_PER_BEAT, kind, data1, data2])).toEqual([
+            [0, 'cc', SUSTAIN_PEDAL, 127],
+            [2, 'cc', SUSTAIN_PEDAL, 0],
+        ]);
     });
 
     it('writes a controller ahead of a note struck at the same content beat when the slip projects them a float apart', () => {

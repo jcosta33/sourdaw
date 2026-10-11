@@ -88,6 +88,22 @@ struct RetiredBank {
 }
 
 impl RetiredBank {
+    /// Take the sounding bank's storage, whole, leaving the caller's empty
+    /// replacements in place. Frees nothing.
+    fn from_live(
+        zone_map: ZoneMap,
+        sample_pool: Arc<SamplePool>,
+        legato_transitions: LegatoTransitionStore,
+    ) -> Self {
+        Self {
+            _zone_map: zone_map,
+            sample_pool: Some(sample_pool),
+            draining: None,
+            _legato_transitions: legato_transitions,
+            _instrument_id: String::new(),
+        }
+    }
+
     /// Take a staged bank's storage, whole, without allocating or freeing.
     fn from_pending(pending: PendingSampleBank) -> Self {
         Self {
@@ -385,6 +401,34 @@ impl LevainEngine {
             .crossfader
             .configure(3, ExpressionConfig::default().cc1_curve);
         self.retired_bank = Some(RetiredBank::from_pending(pending));
+        true
+    }
+
+    /// Move the sounding bank into the retired slot so `release_retired_bank`
+    /// can free it in bounded steps before the engine itself is dropped.
+    /// Only for an engine that will never render again: the voices are
+    /// silenced and the engine is left with an empty bank. Frees nothing and
+    /// allocates only the empty replacement pool's `Arc`, whatever the bank's
+    /// size. Refuses (false) while the slot is occupied, so no bank is dropped
+    /// here, or when the sounding pool holds no PCM, so there is nothing to
+    /// retire.
+    pub fn retire_sample_bank(&mut self) -> bool {
+        if self.retired_bank.is_some() || self.sample_pool.len() == 0 {
+            return false;
+        }
+        for voice in &mut self.voice_pool.voices {
+            voice.active = false;
+        }
+        self.auto_divisi.clear();
+        let zone_map = std::mem::replace(&mut self.zone_map, ZoneMap::new());
+        let sample_pool = std::mem::replace(&mut self.sample_pool, Arc::new(SamplePool::new()));
+        let legato_transitions =
+            std::mem::replace(&mut self.legato.transitions, LegatoTransitionStore::new());
+        self.retired_bank = Some(RetiredBank::from_live(
+            zone_map,
+            sample_pool,
+            legato_transitions,
+        ));
         true
     }
 
@@ -1144,6 +1188,14 @@ impl LevainEngine {
         let voices_active = self.voice_pool.active_count() > 0 || self.fallback.active_count() > 0;
 
         let mics = self.loaded_mics();
+        // The fallback stands in for the sample content a load in flight will
+        // bring, so it rides the first enabled position — the path the
+        // selected layer sounded through before the per-mic mix. With every
+        // position disabled (or none loaded) it stays on mic 0, where the
+        // mixer keeps it silent with the rest of that chain.
+        let fallback_mic = (0..mics)
+            .find(|&mic| self.mic_mixer.is_enabled(mic))
+            .unwrap_or(0);
         for i in 0..len {
             let mut mic_sums = [0.0_f32; MAX_MIC_POSITIONS];
 
@@ -1158,9 +1210,9 @@ impl LevainEngine {
                 }
             }
 
-            // Add fallback tone (active when no samples loaded) to the first
-            // position's chain.
-            mic_sums[0] += self.fallback.tick();
+            // Add fallback tone (armed while a load is in flight) to the
+            // first enabled position's chain.
+            mic_sums[fallback_mic] += self.fallback.tick();
 
             let mut left_sample = 0.0_f32;
             let mut right_sample = 0.0_f32;
@@ -2070,6 +2122,45 @@ mod tests {
         assert!(engine.release_retired_bank(1));
         assert!(engine.commit_sample_bank());
         assert_ne!(Arc::as_ptr(&engine.sample_pool), sounding_pool);
+    }
+
+    #[test]
+    fn retiring_the_sounding_bank_refuses_while_the_retired_slot_is_occupied() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.begin_sample_bank("violin");
+        engine
+            .add_sample(vec![0.25; 64], 64, 1, SAMPLE_RATE)
+            .expect("sample should fit the staging bank");
+        engine
+            .build_zone_map(0, 0)
+            .expect("empty test zone map should build");
+        assert!(engine.commit_sample_bank());
+        assert!(
+            engine.has_retired_bank(),
+            "the commit retires the placeholder"
+        );
+        let sounding_pool = Arc::as_ptr(&engine.sample_pool);
+
+        assert!(!engine.retire_sample_bank());
+        assert_eq!(
+            Arc::as_ptr(&engine.sample_pool),
+            sounding_pool,
+            "a refused retire must leave the sounding bank in place"
+        );
+
+        assert!(engine.release_retired_bank(1));
+        assert!(engine.retire_sample_bank());
+        assert_ne!(Arc::as_ptr(&engine.sample_pool), sounding_pool);
+        assert_eq!(engine.sample_pool.len(), 0);
+        assert!(engine.has_retired_bank());
+    }
+
+    #[test]
+    fn retiring_with_no_sounding_pcm_retires_nothing() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+
+        assert!(!engine.retire_sample_bank());
+        assert!(!engine.has_retired_bank());
     }
 
     #[test]

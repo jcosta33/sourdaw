@@ -251,7 +251,7 @@ describe('planner routes that reach the chokepoint', () => {
     });
 
     it('stamps a deterministic gain edit without consulting the provider', async () => {
-        const result = await parsePromptToActions('set volume to 1', createContext());
+        const result = await parsePromptToActions({ prompt: 'set volume to 1', context: createContext() });
 
         expect(result.actions).toEqual([
             {
@@ -308,12 +308,11 @@ describe('planner routes that reach the chokepoint', () => {
             ],
         });
 
-        const result = await parsePromptToActions(
-            'set the Reverb Mix on the Vocals track to 0.25',
-            createContext(),
-            undefined,
-            'revision-processing-only-stamp'
-        );
+        const result = await parsePromptToActions({
+            prompt: 'set the Reverb Mix on the Vocals track to 0.25',
+            context: createContext(),
+            projectRevision: 'revision-processing-only-stamp',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
