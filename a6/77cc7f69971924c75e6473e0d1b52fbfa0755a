@@ -1,0 +1,19 @@
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_29d8df116c5b92::t_cbfa354bc57864 22,133-136,173,195-223,225-239,285-288,315,323-340,342-345,354,397,537-582
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a677cc7f69971924c75e6473e0d1b52fbfa0755a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
