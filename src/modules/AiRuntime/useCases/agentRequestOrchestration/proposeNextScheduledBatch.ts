@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
 import {
     AGENT_RUN_TERMINAL_PHASES,
@@ -155,6 +155,8 @@ async function dispatchScheduledBatch(
         content: `Preparing batch ${String(position)} of ${String(schedule.total)}...`,
         timestamp: Date.now(),
         isCommandAction: true,
+        agentRunId: run.runId,
+        projectId: captureProjectIdentity(),
     });
     const description = describePendingActionConfirmation({
         actions: grounded.result.actions,

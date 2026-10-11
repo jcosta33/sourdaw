@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openExport(page: import('@playwright/test').Page): Promise<void> {
-    const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+    const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
     await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({ timeout: 10_000 });
 }
@@ -13,16 +14,21 @@ test.describe('Export fidelity controls', () => {
         await launch_new_project(page);
     });
 
-    test('export dialog shows render order with 3 mode buttons', async ({ page }) => {
+    test('export dialog shows all 3 render modes', async ({ page }) => {
         await openExport(page);
         await expect(page.getByTestId('export-mode-mixdown')).toBeVisible();
         await expect(page.getByTestId('export-mode-stems')).toBeVisible();
+        await expect(
+            page
+                .getByRole('dialog')
+                .filter({ hasText: /The Bakery/i })
+                .getByRole('button', { name: /^To Clip\b/ })
+        ).toBeVisible();
     });
 
     test('switching to stems mode changes active button', async ({ page }) => {
         await openExport(page);
         const stems = page.getByTestId('export-mode-stems');
-        const mixdown = page.getByTestId('export-mode-mixdown');
 
         const stemsBefore = await stems.getAttribute('data-variant');
         await stems.click();

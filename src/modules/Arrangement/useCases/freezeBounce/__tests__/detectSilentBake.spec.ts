@@ -6,6 +6,11 @@ vi.mock('#/modules/Automation/stores', () => ({
             return mockAutomation;
         },
     },
+    modulationStore: {
+        get value() {
+            return { modulators: [] };
+        },
+    },
 }));
 
 vi.mock('../../../services/classifyRenderSilence', () => ({

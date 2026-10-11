@@ -21,6 +21,15 @@ export type BacteriaModSourceType = 'lfo' | 'envelope-follower' | 'step-seq' | '
 
 export type BacteriaGrainWindow = 'hann' | 'gaussian';
 
+/**
+ * The Body stage's built-in bodies, in the order the engine's `convolutionIr`
+ * index selects them (`crates/daw-dsp/src/bacteria/convolution.rs`).
+ */
+export const BACTERIA_BUILTIN_BODIES = ['ceramic', 'wood', 'metal', 'spring'] as const;
+
+/** The Body stage's impulse response; `''` is no body, which passes the band through. */
+export type BacteriaConvolutionIr = '' | (typeof BACTERIA_BUILTIN_BODIES)[number];
+
 // ── Band configuration ───────────────────────────────────────────────────────
 
 export type BacteriaBand = {
@@ -95,7 +104,7 @@ export type BacteriaBand = {
     codecArtifact: number; // 0 – 1
 
     // Convolution body
-    convolutionIr: string; // IR identifier
+    convolutionIr: BacteriaConvolutionIr;
     convolutionMix: number; // 0 – 1
     convolutionSeparation: number; // 0 – 1 (mono → stereo widening)
 

@@ -1,20 +1,15 @@
+import { grinderNeuralModelDigest } from '../models/GrinderNeuralProfileParams';
 import {
     type GrinderImportedNeuralModel,
     type GrinderNeuralProfile,
     type GrinderNeuralTier,
 } from '../models/GrinderPatch';
 
+import { rootSampleRate, validateGrinderNamModel } from './validateGrinderNamModel';
+
 type ParseGrinderNamFileInput = {
     file_name: string;
     file_text: string;
-};
-
-type NamJson = {
-    version?: unknown;
-    architecture?: unknown;
-    config?: unknown;
-    metadata?: unknown;
-    weights?: unknown;
 };
 
 type NamMetadata = {
@@ -75,47 +70,6 @@ function get_finite_number(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function is_unknown_array(value: unknown): value is unknown[] {
-    return Array.isArray(value);
-}
-
-function collect_weights(value: unknown): number[] {
-    if (!is_unknown_array(value)) {
-        return [];
-    }
-
-    const flattened: number[] = [];
-    const queue: unknown[] = [...value];
-    while (queue.length > 0) {
-        const current = queue.shift();
-        if (is_unknown_array(current)) {
-            queue.unshift(...current);
-            continue;
-        }
-        const numeric = get_finite_number(current);
-        if (numeric !== null) {
-            flattened.push(numeric);
-        }
-    }
-
-    return flattened;
-}
-
-function sample_normalized_weights(weights: readonly number[], count: number): number[] {
-    if (weights.length === 0) {
-        return Array.from({ length: count }, () => 0);
-    }
-
-    const max_abs = weights.reduce((running, value) => Math.max(running, Math.abs(value)), 0.000_001);
-    return Array.from({ length: count }, (_, index) => {
-        const source_index = Math.min(
-            weights.length - 1,
-            Math.floor((index / Math.max(1, count - 1)) * (weights.length - 1))
-        );
-        return clamp(weights[source_index]! / max_abs, -1, 1);
-    });
-}
-
 function derive_preferred_tier(architecture: string, weight_count: number): GrinderNeuralTier {
     const architecture_lower = architecture.toLowerCase();
     if (architecture_lower.includes('lstm') || architecture_lower.includes('recurrent')) {
@@ -137,13 +91,23 @@ function derive_placement(description: string): 'amp-capture' | 'rig-capture' {
         : 'amp-capture';
 }
 
+/**
+ * The display/telemetry scalars stay derived from the weights (they feed the
+ * tier picker and the legacy numeric record), but the runtime no longer uses
+ * them as a substitute: `model` carries the complete validated network the
+ * native runtime executes directly.
+ */
 function derive_profile(input: {
     architecture: string;
     sample_rate: number;
     tone_type: string;
     weights: readonly number[];
-}): GrinderNeuralProfile {
-    const normalized = sample_normalized_weights(input.weights, 30);
+}): Omit<GrinderNeuralProfile, 'model' | 'modelDigest'> {
+    const max_abs = input.weights.reduce((running, value) => Math.max(running, Math.abs(value)), 0.000_001);
+    const normalized = Array.from({ length: 30 }, (_, index) => {
+        const source_index = Math.min(input.weights.length - 1, Math.floor((index / 29) * (input.weights.length - 1)));
+        return clamp(input.weights[source_index]! / max_abs, -1, 1);
+    });
     const rms = Math.sqrt(input.weights.reduce((sum, value) => sum + value * value, 0) / input.weights.length);
     const signed_mean = input.weights.reduce((sum, value) => sum + value, 0) / input.weights.length;
     const contour_energy =
@@ -187,43 +151,55 @@ export function parseGrinderNamFile(input: ParseGrinderNamFileInput): GrinderImp
         throw new Error(`Invalid NAM file: ${input.file_name} is not valid JSON`);
     }
 
-    if (!parsed || typeof parsed !== 'object') {
-        throw new Error(`Invalid NAM file: ${input.file_name} did not contain an object payload`);
-    }
+    // Complete structural validation, mirroring the native runtime. Throws
+    // with a named reason for unsupported architectures/versions or an
+    // inconsistent model — nothing is ever substituted.
+    const model = validateGrinderNamModel(parsed, input.file_name);
 
-    const nam_json = parsed as NamJson;
-    const architecture = get_string(nam_json.architecture);
-    // `version` is an optional NAM field — valid files frequently omit it. Only
-    // architecture and non-empty weights are required to derive a profile.
-    const weights = collect_weights(nam_json.weights);
-    if (!architecture || weights.length === 0) {
-        throw new Error(`Invalid NAM file: ${input.file_name} is missing documented architecture/weights data`);
-    }
-
-    const metadata = (
-        nam_json.metadata && typeof nam_json.metadata === 'object' ? nam_json.metadata : {}
-    ) as NamMetadata;
-    const config =
-        nam_json.config && typeof nam_json.config === 'object' ? (nam_json.config as Record<string, unknown>) : {};
-    const sample_rate = get_finite_number(metadata.sample_rate) ?? get_finite_number(config.sample_rate) ?? 48_000;
+    const record = (parsed ?? {}) as Record<string, unknown>;
+    const raw_metadata = typeof record.metadata === 'object' && record.metadata !== null ? record.metadata : {};
+    const metadata = raw_metadata as NamMetadata;
+    // NAMCore reads the sample rate from the document root; older exports put
+    // it in metadata or config.
+    const sample_rate =
+        model.sampleRate ??
+        get_finite_number(metadata.sample_rate) ??
+        get_finite_number(model.config.sample_rate) ??
+        48_000;
     const display_name = get_string(metadata.name) ?? input.file_name.replace(/\.(nam|json)$/i, '');
     const tone_type = get_string(metadata.tone_type) ?? 'capture';
     const modeled_by = get_string(metadata.modeled_by);
     const description = modeled_by
         ? `Imported from ${input.file_name} • modeled by ${modeled_by}`
         : `Imported from ${input.file_name}`;
-    const profile = derive_profile({
-        architecture,
-        sample_rate,
-        tone_type,
-        weights,
-    });
+    const profile: GrinderNeuralProfile = {
+        ...derive_profile({
+            architecture: model.architecture,
+            sample_rate,
+            tone_type,
+            weights: model.weights,
+        }),
+        model: {
+            architecture: model.architecture,
+            version: model.version,
+            sampleRate: rootSampleRate(record),
+            config: model.config,
+            weights: model.weights,
+        },
+        modelDigest: grinderNeuralModelDigest({
+            architecture: model.architecture,
+            version: model.version,
+            sampleRate: model.sampleRate,
+            config: model.config,
+            weights: model.weights,
+        }),
+    };
 
     return {
         id: `imported-${slugify(display_name || input.file_name)}-${hash_string(input.file_text)}`,
         source: 'imported',
         name: display_name,
-        family: `NAM import • ${architecture}`,
+        family: `NAM import • ${model.architecture}`,
         placement: derive_placement(`${tone_type} ${description}`),
         description,
         importedAt: Date.now(),

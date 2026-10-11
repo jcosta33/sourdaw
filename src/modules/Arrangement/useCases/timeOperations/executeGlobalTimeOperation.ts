@@ -14,6 +14,7 @@ import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
 import { captureTrackTakeReKeyTransitions } from '../comping/captureTrackTakeReKeyTransitions';
+import { collectCompPlayedMediaWindows } from '../comping/collectCompPlayedMediaWindows';
 import { removeTakesForClips } from '../comping/removeTakesForClips';
 import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 
@@ -123,6 +124,7 @@ type PlannedLocalState = {
                   newClipId: string;
                   splitBeat: number;
                   discardBeforeBeat?: number;
+                  retainOnSourceWindows?: readonly { start: number; end: number }[];
               }[];
               removeClipIds: readonly string[];
           })
@@ -901,7 +903,8 @@ function prepareDeletedTracks(
     state: TrackState,
     owners: readonly NormalizedOwner[],
     operation: DeleteGlobalTimeOperation,
-    identities: readonly ClipReplayIdentity[]
+    identities: readonly ClipReplayIdentity[],
+    retainWindowsFor: (clip: Clip) => readonly { start: number; end: number }[]
 ): {
     state: TrackState;
     splits: Array<{
@@ -909,6 +912,7 @@ function prepareDeletedTracks(
         newClipId: string;
         splitBeat: number;
         discardBeforeBeat?: number;
+        retainOnSourceWindows?: readonly { start: number; end: number }[];
     }>;
     removeClipIds: string[];
 } {
@@ -919,6 +923,7 @@ function prepareDeletedTracks(
         newClipId: string;
         splitBeat: number;
         discardBeforeBeat?: number;
+        retainOnSourceWindows?: readonly { start: number; end: number }[];
     }> = [];
     const removeClipIds: string[] = [];
     let changed = false;
@@ -967,12 +972,20 @@ function prepareDeletedTracks(
                     }
                 );
                 if (clip.type === 'midi') {
-                    splits.push({
+                    // #5112 — the left fragment keeps the media its comp
+                    // regions play across the cut, not only what is stored
+                    // before it.
+                    const retainWindows = retainWindowsFor(clip);
+                    const split: (typeof splits)[number] = {
                         sourceClipId: clip.id,
                         newClipId: identity.targetClipId,
                         splitBeat: operation.endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
                         discardBeforeBeat: operation.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
-                    });
+                    };
+                    if (retainWindows.length > 0) {
+                        split.retainOnSourceWindows = retainWindows;
+                    }
+                    splits.push(split);
                 }
                 continue;
             }
@@ -982,12 +995,17 @@ function prepareDeletedTracks(
                 if (clip.type === 'midi') {
                     const mediaSplit = operation.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
                     const identity = getClipIdentity(identityIndex, 'delete-discard', owner.id, clip.id);
-                    splits.push({
+                    const retainWindows = retainWindowsFor(clip);
+                    const split: (typeof splits)[number] = {
                         sourceClipId: clip.id,
                         newClipId: identity.targetClipId,
                         splitBeat: mediaSplit,
                         discardBeforeBeat: mediaSplit,
-                    });
+                    };
+                    if (retainWindows.length > 0) {
+                        split.retainOnSourceWindows = retainWindows;
+                    }
+                    splits.push(split);
                     removeClipIds.push(identity.targetClipId);
                 }
                 continue;
@@ -1215,7 +1233,8 @@ function prepareLocalState(
     markerState: MarkerStoreState,
     owners: readonly NormalizedOwner[],
     operation: GlobalTimeOperation,
-    clipIdentities: readonly ClipReplayIdentity[]
+    clipIdentities: readonly ClipReplayIdentity[],
+    retainWindowsFor: (clip: Clip) => readonly { start: number; end: number }[]
 ): PlannedLocalState {
     if (operation.type === 'insert') {
         return {
@@ -1243,7 +1262,7 @@ function prepareLocalState(
         };
     }
 
-    const deleted = prepareDeletedTracks(trackState, owners, operation, clipIdentities);
+    const deleted = prepareDeletedTracks(trackState, owners, operation, clipIdentities, retainWindowsFor);
     return {
         trackState: deleted.state,
         markerState: prepareDeletedMarkerState(markerState, operation),
@@ -1536,7 +1555,25 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
         clipIdentities = suppliedReplayPlan.clips;
     }
 
-    const local = prepareLocalState(trackState, markerState, owners, validatedInput.operation, clipIdentities);
+    // #5112 — a comped loop-pass clip's surviving left piece plays pass media
+    // stored deeper in the shared note array than the cut. Read from the lane
+    // before any handle publishes — the same pre-publication live read the
+    // take re-key capture below makes — so the splits can keep the played
+    // windows on the fragments that resolve them.
+    const deleteOperation = validatedInput.operation.type === 'delete' ? validatedInput.operation : null;
+    const retainWindowsFor: (clip: Clip) => readonly { start: number; end: number }[] = deleteOperation
+        ? (clip) =>
+              collectCompPlayedMediaWindows({ trackId: clip.trackId, clip, pieceEndBeat: deleteOperation.startBeat })
+        : () => [];
+
+    const local = prepareLocalState(
+        trackState,
+        markerState,
+        owners,
+        validatedInput.operation,
+        clipIdentities,
+        retainWindowsFor
+    );
     const clipIdentityTransition = collectClipIdentityTransition(owners, validatedInput.operation, clipIdentities);
     if (
         !clipIdentityTransition ||

@@ -424,7 +424,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(namedTracksDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(namedTrackItems));
 
-        const result = await parsePromptToActions(prompt, emptyProject, undefined, 'revision-named-tracks');
+        const result = await parsePromptToActions({
+            prompt,
+            context: emptyProject,
+            projectRevision: 'revision-named-tracks',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
@@ -476,7 +480,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename');
+        const result = await parsePromptToActions({
+            prompt,
+            context: selectedClipProject,
+            projectRevision: 'revision-rename',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
@@ -520,7 +528,11 @@ describe('high-level intent compilation', () => {
                 proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } }])
             );
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-lead');
+        const result = await parsePromptToActions({
+            prompt,
+            context: selectedClipProject,
+            projectRevision: 'revision-rename-lead',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
@@ -545,12 +557,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            { ...selectedClipProject, selectedClipIds: ['clip-bass', 'clip-lead'] },
-            undefined,
-            'revision-explicit-multi-selection'
-        );
+            context: { ...selectedClipProject, selectedClipIds: ['clip-bass', 'clip-lead'] },
+            projectRevision: 'revision-explicit-multi-selection',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
@@ -571,12 +582,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            selectedClipProject,
-            undefined,
-            'revision-clip-carrier-source'
-        );
+            context: selectedClipProject,
+            projectRevision: 'revision-clip-carrier-source',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -602,7 +612,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(prompt, context, undefined, 'revision-known-connector-source');
+        const result = await parsePromptToActions({
+            prompt,
+            context,
+            projectRevision: 'revision-known-connector-source',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -630,7 +644,11 @@ describe('high-level intent compilation', () => {
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
 
-            const result = await parsePromptToActions(prompt, context, undefined, 'revision-wrong-connector-value');
+            const result = await parsePromptToActions({
+                prompt,
+                context,
+                projectRevision: 'revision-wrong-connector-value',
+            });
 
             expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
             expect(result.actions).toEqual([]);
@@ -672,12 +690,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            selectedClipProject,
-            undefined,
-            'revision-destination-connector'
-        );
+            context: selectedClipProject,
+            projectRevision: 'revision-destination-connector',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -711,7 +728,11 @@ describe('high-level intent compilation', () => {
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
 
-            const result = await parsePromptToActions(prompt, context, undefined, 'revision-overlap-connector-source');
+            const result = await parsePromptToActions({
+                prompt,
+                context,
+                projectRevision: 'revision-overlap-connector-source',
+            });
 
             expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
             expect(result.actions).toEqual([]);
@@ -730,7 +751,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn([renameClipListItem('Road to Nowhere', 'Ending')]));
 
-        const result = await parsePromptToActions(prompt, context, undefined, 'revision-overlap-full-source');
+        const result = await parsePromptToActions({
+            prompt,
+            context,
+            projectRevision: 'revision-overlap-full-source',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.actions).toEqual([]);
@@ -760,7 +785,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(prompt, context, undefined, 'revision-quoted-connector-source');
+        const result = await parsePromptToActions({
+            prompt,
+            context,
+            projectRevision: 'revision-quoted-connector-source',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }]);
@@ -781,7 +810,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-hyphenated-name');
+        const result = await parsePromptToActions({
+            prompt,
+            context: selectedClipProject,
+            projectRevision: 'revision-hyphenated-name',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
@@ -809,12 +842,11 @@ describe('high-level intent compilation', () => {
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
 
-            const result = await parsePromptToActions(
+            const result = await parsePromptToActions({
                 prompt,
-                selectedClipProject,
-                undefined,
-                'revision-clip-carrier-wrong-source'
-            );
+                context: selectedClipProject,
+                projectRevision: 'revision-clip-carrier-wrong-source',
+            });
 
             expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
             expect(result.actions).toEqual([]);
@@ -842,12 +874,11 @@ describe('high-level intent compilation', () => {
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
 
-            const result = await parsePromptToActions(
+            const result = await parsePromptToActions({
                 prompt,
-                selectedClipProject,
-                undefined,
-                'revision-unknown-source'
-            );
+                context: selectedClipProject,
+                projectRevision: 'revision-unknown-source',
+            });
 
             expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
             expect(result.actions).toEqual([]);
@@ -874,12 +905,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            withLiteralClipName(selectedClipProject, 'clip-literal-clip', 'clip'),
-            undefined,
-            'revision-multiple-carriers'
-        );
+            context: withLiteralClipName(selectedClipProject, 'clip-literal-clip', 'clip'),
+            projectRevision: 'revision-multiple-carriers',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -898,12 +928,11 @@ describe('high-level intent compilation', () => {
                 proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'rename clip' } }])
             );
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            withLiteralClipName(selectedClipProject, 'clip-literal-command', 'rename clip'),
-            undefined,
-            'revision-quoted-carrier-inert'
-        );
+            context: withLiteralClipName(selectedClipProject, 'clip-literal-command', 'rename clip'),
+            projectRevision: 'revision-quoted-carrier-inert',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -917,7 +946,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-no-to');
+        const result = await parsePromptToActions({
+            prompt,
+            context: selectedClipProject,
+            projectRevision: 'revision-rename-no-to',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -973,7 +1006,11 @@ describe('high-level intent compilation', () => {
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
 
-            const result = await parsePromptToActions(prompt, context, undefined, 'revision-selected-media-qualifier');
+            const result = await parsePromptToActions({
+                prompt,
+                context,
+                projectRevision: 'revision-selected-media-qualifier',
+            });
 
             expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
             expect(result.rejectionReason).toBeUndefined();
@@ -1002,12 +1039,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            selectedClipProject,
-            undefined,
-            'revision-quoted-source-suffix'
-        );
+            context: selectedClipProject,
+            projectRevision: 'revision-quoted-source-suffix',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.actions).toEqual([]);
@@ -1060,12 +1096,11 @@ describe('high-level intent compilation', () => {
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
 
-            const result = await parsePromptToActions(
+            const result = await parsePromptToActions({
                 prompt,
                 context,
-                undefined,
-                'revision-mismatched-media-selection'
-            );
+                projectRevision: 'revision-mismatched-media-selection',
+            });
 
             expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
             expect(result.actions).toEqual([]);
@@ -1095,12 +1130,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
-            'rename clip "selected midi clip" to Ending',
+        const result = await parsePromptToActions({
+            prompt: 'rename clip "selected midi clip" to Ending',
             context,
-            undefined,
-            'revision-literal-media-selection-name'
-        );
+            projectRevision: 'revision-literal-media-selection-name',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -1119,12 +1153,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            { ...selectedClipProject, selectedClipIds: ['clip-bass', 'clip-lead'] },
-            undefined,
-            'revision-rename-no-to-ambiguous'
-        );
+            context: { ...selectedClipProject, selectedClipIds: ['clip-bass', 'clip-lead'] },
+            projectRevision: 'revision-rename-no-to-ambiguous',
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('not grounded');
@@ -1148,12 +1181,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            withCurlyApostropheClip(selectedClipProject),
-            undefined,
-            'revision-curly-apostrophe-source'
-        );
+            context: withCurlyApostropheClip(selectedClipProject),
+            projectRevision: 'revision-curly-apostrophe-source',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
@@ -1168,12 +1200,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            withCurlyApostropheClip(selectedClipProject),
-            undefined,
-            'revision-curly-apostrophe-wrong-source'
-        );
+            context: withCurlyApostropheClip(selectedClipProject),
+            projectRevision: 'revision-curly-apostrophe-wrong-source',
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('does not match');
@@ -1203,7 +1234,11 @@ describe('high-level intent compilation', () => {
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposeTurn([renameClipListItem(selectorName)]));
 
-            const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-list');
+            const result = await parsePromptToActions({
+                prompt,
+                context: selectedClipProject,
+                projectRevision: 'revision-rename-list',
+            });
 
             expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
             expect(result.rejectionReason).toBeUndefined();
@@ -1231,12 +1266,11 @@ describe('high-level intent compilation', () => {
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposeTurn([renameClipListItem(selectorName)]));
 
-            const result = await parsePromptToActions(
+            const result = await parsePromptToActions({
                 prompt,
-                selectedClipProject,
-                undefined,
-                'revision-rename-list-wrong'
-            );
+                context: selectedClipProject,
+                projectRevision: 'revision-rename-list-wrong',
+            });
 
             expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
             expect(result.actions).toEqual([]);
@@ -1256,7 +1290,11 @@ describe('high-level intent compilation', () => {
                 ])
             );
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-sequence');
+        const result = await parsePromptToActions({
+            prompt,
+            context: selectedClipProject,
+            projectRevision: 'revision-rename-sequence',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -1273,7 +1311,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-wrong');
+        const result = await parsePromptToActions({
+            prompt,
+            context: selectedClipProject,
+            projectRevision: 'revision-rename-wrong',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.actions).toEqual([]);
@@ -1287,7 +1329,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-protected');
+        const result = await parsePromptToActions({
+            prompt,
+            context: selectedClipProject,
+            projectRevision: 'revision-protected',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.actions).toEqual([]);
@@ -1312,12 +1358,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            selectedClipProject,
-            undefined,
-            'revision-multiline-protection'
-        );
+            context: selectedClipProject,
+            projectRevision: 'revision-multiline-protection',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.actions).toEqual([]);
@@ -1339,12 +1384,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            withLiteralSelectedClip(selectedClipProject),
-            undefined,
-            'revision-multiline-protected-scope'
-        );
+            context: withLiteralSelectedClip(selectedClipProject),
+            projectRevision: 'revision-multiline-protected-scope',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -1374,12 +1418,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            withLiteralClipName(selectedClipProject, 'clip-dotted-name', 'Verse.1'),
-            undefined,
-            'revision-dotted-protection'
-        );
+            context: withLiteralClipName(selectedClipProject, 'clip-dotted-name', 'Verse.1'),
+            projectRevision: 'revision-dotted-protection',
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected');
@@ -1392,12 +1435,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            withLiteralClipName(selectedClipProject, 'clip-dotted-word-name', 'Verse.alt'),
-            undefined,
-            'revision-dotted-protected-scope'
-        );
+            context: withLiteralClipName(selectedClipProject, 'clip-dotted-word-name', 'Verse.alt'),
+            projectRevision: 'revision-dotted-protected-scope',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
@@ -1411,7 +1453,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-protected-scope');
+        const result = await parsePromptToActions({
+            prompt,
+            context: selectedClipProject,
+            projectRevision: 'revision-protected-scope',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
@@ -1429,7 +1475,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-protected-list');
+        const result = await parsePromptToActions({
+            prompt,
+            context: selectedClipProject,
+            projectRevision: 'revision-protected-list',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.actions).toEqual([]);
@@ -1445,12 +1495,11 @@ describe('high-level intent compilation', () => {
                 proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } }])
             );
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            { ...selectedClipProject, selectedClipIds: ['clip-bass', 'clip-lead'] },
-            undefined,
-            'revision-protected-selection'
-        );
+            context: { ...selectedClipProject, selectedClipIds: ['clip-bass', 'clip-lead'] },
+            projectRevision: 'revision-protected-selection',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.actions).toEqual([]);
@@ -1475,12 +1524,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            { ...selectedClipProject, selectedClipIds: ['clip-bass'] },
-            undefined,
-            'revision-combined-protection'
-        );
+            context: { ...selectedClipProject, selectedClipIds: ['clip-bass'] },
+            projectRevision: 'revision-combined-protection',
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected');
@@ -1498,12 +1546,11 @@ describe('high-level intent compilation', () => {
                 proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Opening' } }])
             );
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            selectedClipProject,
-            undefined,
-            'revision-malformed-protection'
-        );
+            context: selectedClipProject,
+            projectRevision: 'revision-malformed-protection',
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('incomplete or malformed');
@@ -1516,12 +1563,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            withLiteralSelectedClip(selectedClipProject),
-            undefined,
-            'revision-combined-protected-scope'
-        );
+            context: withLiteralSelectedClip(selectedClipProject),
+            projectRevision: 'revision-combined-protected-scope',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
@@ -1548,12 +1594,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
 
-        const result = await parsePromptToActions(
+        const result = await parsePromptToActions({
             prompt,
-            withLiteralSelectedClip(selectedClipProject),
-            undefined,
-            'revision-protected-literal-selection'
-        );
+            context: withLiteralSelectedClip(selectedClipProject),
+            projectRevision: 'revision-protected-literal-selection',
+        });
 
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.actions).toEqual([]);
@@ -1566,7 +1611,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(discoverTurn)
             .mockResolvedValueOnce(proposeTurn(bluesItems));
 
-        const result = await parsePromptToActions(CREATIVE_REQUEST, emptyProject, undefined, 'revision-blues');
+        const result = await parsePromptToActions({
+            prompt: CREATIVE_REQUEST,
+            context: emptyProject,
+            projectRevision: 'revision-blues',
+        });
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.planningOutcome).toEqual({ kind: 'proposal' });
@@ -1580,12 +1629,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(discoverTempoTurn)
             .mockResolvedValueOnce(proposeTurn(withTempo));
 
-        const stated = await parsePromptToActions(
-            CREATIVE_REQUEST_WITH_TEMPO,
-            emptyProject,
-            undefined,
-            'revision-blues'
-        );
+        const stated = await parsePromptToActions({
+            prompt: CREATIVE_REQUEST_WITH_TEMPO,
+            context: emptyProject,
+            projectRevision: 'revision-blues',
+        });
 
         expect(stated.rejectionReason).toBeUndefined();
         expect(stated.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes', 'setTempo']);
@@ -1598,7 +1646,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(discoverTempoTurn)
             .mockResolvedValueOnce(proposeTurn(withTempo));
 
-        const result = await parsePromptToActions(CREATIVE_REQUEST, emptyProject, undefined, 'revision-blues');
+        const result = await parsePromptToActions({
+            prompt: CREATIVE_REQUEST,
+            context: emptyProject,
+            projectRevision: 'revision-blues',
+        });
 
         // The waiver covers objects this batch creates; the tempo of the project is not one of them.
         expect(result.actions).toEqual([]);
@@ -1611,7 +1663,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(discoverTurn)
             .mockResolvedValueOnce(proposeTurn(bluesItems));
 
-        const { actions } = await parsePromptToActions(CREATIVE_REQUEST, emptyProject, undefined, 'revision-blues');
+        const { actions } = await parsePromptToActions({
+            prompt: CREATIVE_REQUEST,
+            context: emptyProject,
+            projectRevision: 'revision-blues',
+        });
 
         const [addTrack, addClip, addNotes] = actions;
         expect(addTrack).toMatchObject({
@@ -1644,7 +1700,11 @@ describe('high-level intent compilation', () => {
             .mockResolvedValueOnce(discoverTurn)
             .mockResolvedValueOnce(proposeTurn(bluesItems));
 
-        await parsePromptToActions(CREATIVE_REQUEST, emptyProject, undefined, 'revision-blues');
+        await parsePromptToActions({
+            prompt: CREATIVE_REQUEST,
+            context: emptyProject,
+            projectRevision: 'revision-blues',
+        });
 
         const turnSchemaNames = (turn: number) =>
             (vi.mocked(generateToolPlanningOutcome).mock.calls[turn]?.[2] ?? []).map(
@@ -1680,7 +1740,11 @@ describe('high-level intent compilation', () => {
             })
         );
 
-        const result = await parsePromptToActions(CREATIVE_REQUEST, emptyProject, undefined, 'revision-blues');
+        const result = await parsePromptToActions({
+            prompt: CREATIVE_REQUEST,
+            context: emptyProject,
+            projectRevision: 'revision-blues',
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toBeUndefined();
@@ -1711,7 +1775,11 @@ describe('high-level intent compilation', () => {
                 })
             );
 
-        const result = await parsePromptToActions('master this for vinyl', emptyProject, undefined, 'revision-blues');
+        const result = await parsePromptToActions({
+            prompt: 'master this for vinyl',
+            context: emptyProject,
+            projectRevision: 'revision-blues',
+        });
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toBeUndefined();

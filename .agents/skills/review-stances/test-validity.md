@@ -6,6 +6,28 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
+
+The installed affected-E2E loader case asserted full selection for opaque runtime dependencies, but the actual alias graph escaped its temporary root into the checkout. The published missing-consumer-or-opaque-edge probe preserved that result without observing resolved sources; requested-root scope isolation was the missing stance and probe.
+
+Delegate to the installed cruise implementation and inspect its returned graph, rather than substituting a successful graph. Assert the exact fixture source set and root-relative alias edges for explicit, absent, and inherited `baseUrl`, together with the existing opaque-selection assertions. Reverting parsed-config forwarding or implicit-base normalization must fail the graph oracle even when selection still returns full.
+
+The first PR #5291 repair's inherited fixture supplied an explicit `baseUrl`; it could not expose the resolver's implicit inherited-path rebase. The pre-merge regression must place the declaring config and real uncurated consumer in a nested directory, add an unrelated root shadow, and use valid relative imports for surrounding composition code. Require full admission before an unproved traversal or the actual declared graph; an unrelated unresolved alias would mask the omission by selecting full for another reason.
+
+### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
+
+The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
+failed on a Rust distribution metadata TCP timeout before rustfmt or any health gate ran. Cargo
+dependency caches after setup could not affect that failure. The missed CI runtime stance treated a
+later green Rust job as evidence of recovery without proving its compiler setup path had changed.
+
+Probe that would have caught it: trace the first compiler invocation and place an exact host-and-
+TOML-keyed installed-toolchain restore before it. With the distribution endpoint unavailable,
+require a complete exact hit to run rustc, rustfmt, and clippy with automatic installation disabled;
+require a mismatched or incomplete hit to fail closed, and a cold install error to fail before Cargo
+caches and health gates. A local fake endpoint proves the wiring only; hosted proof needs the
+actual seeded main cache and a new-head required Rust run.
+
 ### 2026-10-09 — authority tests fixed PR state for the whole run (introduced by PR #4586)
 
 PR #4586 introduced the authority append with a publication fixture whose PR reader always
@@ -152,6 +174,26 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
+
+PR #4057 added the streamed-artifact positive case and ZIP-based strict-parser fixtures without
+explicit `mtime` values. In fflate 0.8.3, streamed `Zip.add` and `Zip.end` each call `wzh` for the
+local and central header; `zipSync` calls that same writer twice for every file. Each call reads a
+fresh `Date.now()`. If a pair crosses a DOS two-second timestamp boundary, the timestamp words
+differ and the unchanged parser rejects the archive before the intended descriptor, bounds, or
+decompressed-data oracle. The CI failure established parser rejection, not how often or how quickly
+the reads crossed the boundary.
+
+Blind spot: fixture validity depended on separate live clock reads, so the archive's metadata could
+fail before its intended positive or negative assertion ran.
+
+Probe that would have caught it: force actual streamed and `zipSync` writers across a DOS two-second
+boundary, capture local and central timestamp bytes, and require the strict parser to reject the
+archive. Apply one fixed fixture `mtime` through the supported `zipSync` options and streamed-entry
+property; run the owning spec with its payload, bounds, CRC, file-set, encryption, and descriptor
+oracles intact. On the fixed head, reverting `mtime` must make the forced-clock case red. Keep the
+strict parser unchanged; this probe does not establish the hosted failure's clock interval or rate.
 
 ### 2026-10-09 — a newly declared "every spec owes the first-paint bound" left literal 15 s and 30 s waits in place (escaped via commit `04c28be0f8`)
 
@@ -740,3 +782,23 @@ Derive the fixture's admitted range from the complete multiline binding; preserv
 independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
 only the committed recognizer is reverted. A full-source screen assertion does not prove
 which region the real scan caller admitted.
+
+### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
+
+PR #5269's successful exact-hit fixture reported rustc, cargo, rustfmt, and clippy, so it
+could not expose that the cache admission omitted the host `rust-std` required by rustup's
+minimal profile.
+
+Probe that would have caught it: keep `rust-std-<host>` in the complete exact-hit fixture,
+then remove only that component while leaving rustc, cargo, and every TOML extra installed.
+Require the exact cache hit to fail before any toolchain-install request; the preserved full
+fixture must still pass without installation.
+
+The component registry alone is insufficient: a partial restore can retain its
+`rust-std-<host>` entry while losing the host library payload. Keep the registry
+entry in the broken fixture, make a one-input `std`-using executable compile fail
+at the link step, and require setup to fail before Cargo admission with no install
+or success output. The complete exact-hit fixture must pass the same compile
+without installation. Also copy a different nightly under the expected directory
+name and require its channel manifest date to reject setup before Cargo; a compiler
+commit date need not equal the requested channel date.

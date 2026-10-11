@@ -33,6 +33,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
+    buildOfflineModulatorPlans: vi.fn(() => []),
     captureAutomationRecordingRollback: vi.fn(),
     clipAutomationMoveStateMatches: vi.fn(),
     cloneClipAutomationLanes: vi.fn(),

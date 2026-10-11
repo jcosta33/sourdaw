@@ -268,6 +268,58 @@ describe('prepareMidiClipGlueState', () => {
         expect(target?.data.controlChanges.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([carried]);
     });
 
+    it('keeps each source closing-line controller row, ahead of the next source head on the seam', () => {
+        mocks.state.value = {
+            notesByClipId: {},
+            ccByClipId: {
+                'source-a': [
+                    { id: 'a-down', controller: 64, value: 127, beat: 0, channel: 0 },
+                    { id: 'a-lift', controller: 64, value: 0, beat: 4, channel: 0 },
+                ],
+                'source-b': [
+                    { id: 'b-press', controller: 64, value: 127, beat: 0, channel: 0 },
+                    { id: 'b-lift', controller: 64, value: 0, beat: 4, channel: 0 },
+                ],
+            },
+            pitchBendByClipId: {},
+        };
+
+        const plan = prepareMidiClipGlueState({ sources, targetClipId: 'target' });
+        const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+        // The glued clip plays what the two did: source A lifts on its end, source B presses on its
+        // head on the same beat and has the last word, and B's own closing lift is the glued clip's.
+        expect(target?.data.controlChanges.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([
+            ['a-down', 0, 127],
+            ['a-lift', 4, 0],
+            ['b-press', 4, 127],
+            ['b-lift', 8, 0],
+        ]);
+    });
+
+    it('orders a source closing-line lift ahead of the next source head when the seam rounds an ulp apart', () => {
+        // Source A's end is 0.1 + 0.2, an ulp past the 0.3 where source B's head lands: the lift
+        // must land on the earlier of the two, or it sorts after B's press and lifts B's pedal.
+        const seamSources = [
+            { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 0.1 + 0.2 },
+            { clipId: 'source-b', beatOffset: 0.3, visibleStartBeat: 0, visibleEndBeat: 1 },
+        ];
+        expect(seamSources[0]!.visibleEndBeat).toBeGreaterThan(seamSources[1]!.beatOffset);
+        mocks.state.value = {
+            notesByClipId: {},
+            ccByClipId: {
+                'source-a': [{ id: 'a-lift', controller: 64, value: 0, beat: 0.1 + 0.2, channel: 0 }],
+                'source-b': [{ id: 'b-press', controller: 64, value: 127, beat: 0, channel: 0 }],
+            },
+            pitchBendByClipId: {},
+        };
+
+        const plan = prepareMidiClipGlueState({ sources: seamSources, targetClipId: 'target' });
+        const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+        expect(target?.data.controlChanges.value.map(({ id }) => id)).toEqual(['a-lift', 'b-press']);
+    });
+
     it('does not carry a controller value over a row the lane already has at the visible start', () => {
         mocks.state.value = {
             notesByClipId: {},

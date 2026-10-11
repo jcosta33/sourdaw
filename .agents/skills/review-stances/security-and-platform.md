@@ -49,6 +49,26 @@ closure hashes and toolchain pins, and require invalid or dirty roots to fail be
 import. For return verification, use a source toolkit sentinel and prove the verifier only reads the
 clean source root and never imports it.
 
+### 2026-10-10 — ZIP fixture clock drift obscured the strict artifact boundary (introduced by PR #4057, commit `d608d165a49`)
+
+PR #4057's streamed-artifact case and ZIP-based artifact-return fixtures used fflate 0.8.3 without
+explicit `mtime` values. Both the streamed local/central header writes and the two `zipSync` writes
+per file call `wzh`, which reads a fresh `Date.now()`. Crossing a DOS two-second boundary changes
+the timestamp word, so the strict parser refuses the archive before its descriptor or artifact
+checks run.
+
+Blind spot: a clock-dependent positive fixture can make strict metadata validation look like the
+problem. Preserve local-central equality and the parser's other metadata, bounds, CRC, path, and
+encryption checks.
+
+Probe that would have caught it: force actual streamed and `zipSync` fixtures across a two-second
+DOS timestamp boundary and inspect both timestamp byte fields. Pin every ZIP fixture writer to one
+fixed `mtime` using the supported `zipSync` options and streamed-entry property. Keep streamed
+content acceptance and descriptor corruption refusal, along with all bounds, CRC, file-set, and
+encryption oracles. On the fixed head, revert only `mtime` and require the forced-clock case to fail;
+do not relax the parser. This proves boundary behavior, not the hosted failure's clock interval or
+frequency.
+
 ### 2026-09-05 — the OS temporary directory was called app-owned (introduced via PR #2; retained by PR #3404; fixed by #3642)
 
 PR #2 introduced `std::env::temp_dir()` as an implicit built-in root in commit

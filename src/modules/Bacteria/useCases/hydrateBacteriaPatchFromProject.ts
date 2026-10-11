@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
+import { decodeBacteriaBody, NO_BODY_INDEX } from '../models/BacteriaBodyIndex';
 import { fromBacteriaModAssignmentsState, rowsEqual } from '../models/BacteriaModAssignmentsState';
 import {
     type BacteriaBand,
@@ -311,6 +312,13 @@ function hydrateBandFromProject(
     const routingMode = nameAt(ROUTING_MODE_NAMES, storedBandValue('routingMode'));
     if (routingMode !== null && next.routingMode !== routingMode) {
         next = { ...next, routingMode: routingMode as BacteriaRoutingMode };
+    }
+
+    // A band with no stored body has none: it never had one, or undo took its
+    // first one back.
+    const convolutionIr = decodeBacteriaBody(storedBandValue('convolutionIr') ?? NO_BODY_INDEX);
+    if (convolutionIr !== null && next.convolutionIr !== convolutionIr) {
+        next = { ...next, convolutionIr };
     }
 
     return next;

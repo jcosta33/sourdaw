@@ -1961,7 +1961,14 @@ pub(crate) fn seconds_to_frames(seconds: f64, sample_rate: f32, what: &str) -> R
     if seconds < 0.0 {
         return Err(format!("{what} is negative"));
     }
-    Ok((seconds * f64::from(sample_rate)).round() as u64)
+    // `as u64` saturates, so anything at or past 2^64 would arrive as
+    // u64::MAX — a real frame at the end of time — instead of a refusal.
+    // Every f64 below 2^64 converts faithfully, so the comparison is exact.
+    let frames = (seconds * f64::from(sample_rate)).round();
+    if frames >= 18_446_744_073_709_551_616.0 {
+        return Err(format!("{what} exceeds the frame range"));
+    }
+    Ok(frames as u64)
 }
 
 /// Read a hosted plugin's own parameter id off the wire.
@@ -2624,11 +2631,11 @@ fn map_device(
     // instance on this thread; knead's handful travel as commands behind the
     // registration.
     //
-    // For bacteria the thread is not only a budget: two of its names allocate
-    // when they land (`BACTERIA_CONTROL_THREAD_ONLY`,
+    // For bacteria the thread is not only a budget: one of its names allocates
+    // when it lands (`BACTERIA_CONTROL_THREAD_ONLY`,
     // `crates/daw-engine/src/scheduler.rs`), and `BacteriaBody::load_patch`
-    // here is the only door that applies them — its audio-thread `set_param`
-    // drops them.
+    // here is the only door that applies it — its audio-thread `set_param`
+    // drops it.
     //
     // For proof the record carries something no `SetParam` behind it could
     // stand in for either: the five `chain_order_{n}` keys spelling the module
@@ -5442,6 +5449,47 @@ mod tests {
             refused.is_err(),
             "a position the grid cannot hold is refused whether or not it is used"
         );
+    }
+
+    /// A payload past the representable frame range must be refused, not
+    /// saturated: the `u64` cast clamps at `u64::MAX`, so a malformed `1e30` s
+    /// would otherwise arrive as a real frame at the end of time.
+    #[test]
+    fn seconds_past_the_frame_range_refuse() {
+        let error = seconds_to_frames(1e30, 48_000.0, "x")
+            .expect_err("seconds whose frame count cannot be held must refuse");
+
+        assert_eq!(error, "x exceeds the frame range");
+    }
+
+    /// The refusal starts exactly where the cast stops being faithful — 2^64 —
+    /// and not one frame earlier: a value whose frame count is representable,
+    /// even one this close under the limit, still converts. Both numbers here
+    /// are exact in `f64`, so the product needs no rounding to be asserted.
+    #[test]
+    fn seconds_just_under_the_frame_limit_still_convert() {
+        let frames = seconds_to_frames(384_000_000_000_000.0, 48_000.0, "x")
+            .expect("1.8432e19 frames is representable in u64");
+
+        assert_eq!(frames, 18_432_000_000_000_000_000);
+    }
+
+    /// The boundary itself, at rate 1.0 where both products are exact in
+    /// `f64`: exactly 2^64 refuses, and the largest f64 below it — one f64
+    /// step of 2048 at this magnitude — still converts. The Err case is what
+    /// makes `>=` load-bearing: under `>` the cast saturates 2^64 to
+    /// `u64::MAX` and hands back an Ok instead.
+    #[test]
+    fn seconds_at_the_exact_frame_range_boundary_refuse_and_just_below_still_convert() {
+        let refused = seconds_to_frames(18_446_744_073_709_551_616.0, 1.0, "x")
+            .expect_err("2^64 frames is one past the representable range");
+
+        assert_eq!(refused, "x exceeds the frame range");
+
+        let frames = seconds_to_frames(18_446_744_073_709_549_568.0, 1.0, "x")
+            .expect("the largest f64 below 2^64 is representable in u64");
+
+        assert_eq!(frames, 18_446_744_073_709_549_568);
     }
 
     fn clip_and_gain_batch() -> GraphBatchPayload {
@@ -14087,8 +14135,8 @@ mod tests {
     /// The same law the instruments, crust and grinder are held to above, and
     /// for the same reason: the command ring is finite, and a multi-effect's
     /// record is its globals plus six bands' worth of band-prefixed names. It
-    /// carries one more reason of its own — two of the engine's names allocate
-    /// when they land, and this thread is the only one allowed to run them
+    /// carries one more reason of its own — one of the engine's names allocates
+    /// when it lands, and this thread is the only one allowed to run it
     /// (`BACTERIA_CONTROL_THREAD_ONLY`, `crates/daw-engine/src/scheduler.rs`).
     ///
     /// The render is what says the patch was applied rather than merely not

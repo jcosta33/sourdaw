@@ -273,11 +273,13 @@ describe('launch overlay first-paint bound', () => {
             .filter((entry) => entry.firstPaintArguments.length > 0)
             .map((entry) => entry.file);
 
+        // smoke.spec.ts delegates every overlay wait to
+        // e2eUtils' wait_for_launch_first_paint (#4781), so its waits are held
+        // by the helper's own bound rather than by a direct census hit.
         expect(filesWithWaits).toEqual(
             expect.arrayContaining([
                 'tests/e2e/launchFlows.spec.ts',
                 'tests/e2e/promptBarCancelRecentTestId.spec.ts',
-                'tests/e2e/smoke.spec.ts',
                 'tests/e2e/statusBarResponsive.spec.ts',
             ])
         );
@@ -285,7 +287,6 @@ describe('launch overlay first-paint bound', () => {
             expect.arrayContaining([
                 'tests/e2e/exportAudioEvidence.spec.ts',
                 'tests/e2e/promptBarCancelRecentTestId.spec.ts',
-                'tests/e2e/smoke.spec.ts',
                 'tests/e2e/statusBarResponsive.spec.ts',
             ])
         );

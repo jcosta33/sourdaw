@@ -16,6 +16,11 @@ type PendingRelease = {
 
 const pendingByVoice = new Map<string, Set<PendingVoice>>();
 const pendingByInstance = new Map<string, PendingVoice>();
+// Track-scoped instance index for lifecycle note-offs (#4873): the rack's
+// retirement offs name (track, channel, instance) but the route a voice was
+// registered under can outlive the yeast device id it was keyed with, so the
+// captured owner must be reachable without reconstructing that route id.
+const pendingByInstanceOnTrack = new Map<string, PendingVoice>();
 const pendingReleases = new Set<PendingRelease>();
 
 function voiceKey(routeId: string, channel: number, pitch: number): string {
@@ -24,6 +29,25 @@ function voiceKey(routeId: string, channel: number, pitch: number): string {
 
 function instanceKey(routeId: string, channel: number, noteInstanceId: string): string {
     return `${routeId}:${channel}:${noteInstanceId}`;
+}
+
+function instanceOnTrackKey(trackId: string, channel: number, noteInstanceId: string): string {
+    return `${trackId}:${channel}:${noteInstanceId}`;
+}
+
+function forgetInstanceIndexes(voice: PendingVoice): void {
+    const { owner, channel, noteInstanceId } = voice;
+    if (noteInstanceId === undefined) {
+        return;
+    }
+    const routeKey = instanceKey(owner.routeId, channel, noteInstanceId);
+    if (pendingByInstance.get(routeKey) === voice) {
+        pendingByInstance.delete(routeKey);
+    }
+    const trackKey = instanceOnTrackKey(owner.trackId, channel, noteInstanceId);
+    if (pendingByInstanceOnTrack.get(trackKey) === voice) {
+        pendingByInstanceOnTrack.delete(trackKey);
+    }
 }
 
 /**
@@ -40,12 +64,7 @@ function detachVoice(voice: PendingVoice): void {
     if (peers?.size === 0) {
         pendingByVoice.delete(key);
     }
-    if (voice.noteInstanceId !== undefined) {
-        const instanceId = instanceKey(voice.owner.routeId, voice.channel, voice.noteInstanceId);
-        if (pendingByInstance.get(instanceId) === voice) {
-            pendingByInstance.delete(instanceId);
-        }
-    }
+    forgetInstanceIndexes(voice);
     if (voice.owner.voices.size === 0) {
         pendingReleases.delete(voice.owner);
     }
@@ -76,6 +95,7 @@ function addVoice(
     pendingByVoice.set(key, peers);
     if (noteInstanceId !== undefined) {
         pendingByInstance.set(instanceKey(owner.routeId, channel, noteInstanceId), voice);
+        pendingByInstanceOnTrack.set(instanceOnTrackKey(owner.trackId, channel, noteInstanceId), voice);
     }
 }
 
@@ -102,7 +122,7 @@ function beginPendingYeastRelease(
 }
 
 function releaseVoice(voice: PendingVoice, sampleFrame?: number, releaseVelocity?: number): void {
-    const { owner, channel, pitch, noteInstanceId } = voice;
+    const { owner, channel, pitch } = voice;
     if (!owner.voices.delete(voice)) {
         return;
     }
@@ -112,12 +132,7 @@ function releaseVoice(voice: PendingVoice, sampleFrame?: number, releaseVelocity
     if (peers?.size === 0) {
         pendingByVoice.delete(key);
     }
-    if (noteInstanceId !== undefined) {
-        const key = instanceKey(owner.routeId, channel, noteInstanceId);
-        if (pendingByInstance.get(key) === voice) {
-            pendingByInstance.delete(key);
-        }
-    }
+    forgetInstanceIndexes(voice);
     if (owner.voices.size === 0) {
         pendingReleases.delete(owner);
     }
@@ -182,6 +197,57 @@ function registerStartedYeastVoice(
     pendingReleases.add(owner);
 }
 
+/**
+ * Keep a voice a release session started with no note instance of its own on
+ * that session's pending release: the key it belongs to is already up, so the
+ * session's source-pitch note-off, a route release, and a reset reach it only
+ * here.
+ */
+function addPendingYeastSourceVoice(pending: PendingRelease, pitch: number, channel: number, release: Release): void {
+    addVoice(pending, undefined, pitch, channel, release);
+    pendingReleases.add(pending);
+}
+
+/**
+ * Release every voice still registered on a route, whichever session started
+ * it: the route's Yeast is gone and no key that went through it is held, so no
+ * rack is left to send those voices their note-offs.
+ */
+function releaseYeastRoute(routeId: string, sampleFrame: number, releaseVelocity: number): void {
+    for (const pending of [...pendingReleases]) {
+        if (pending.routeId !== routeId) {
+            continue;
+        }
+        for (const voice of [...pending.voices]) {
+            releaseVoice(voice, sampleFrame, releaseVelocity);
+        }
+    }
+}
+
+/**
+ * Release every voice registered for an instrument track at one channel and
+ * pitch, whichever of the track's routes and sessions holds it, through the
+ * release its note-on captured.
+ */
+function releaseYeastTrackPitch(
+    trackId: string,
+    channel: number,
+    pitch: number,
+    sampleFrame?: number,
+    releaseVelocity?: number
+): void {
+    for (const pending of [...pendingReleases]) {
+        if (pending.trackId !== trackId) {
+            continue;
+        }
+        for (const voice of [...pending.voices]) {
+            if (voice.channel === channel && voice.pitch === pitch) {
+                releaseVoice(voice, sampleFrame, releaseVelocity);
+            }
+        }
+    }
+}
+
 function releasePendingYeastEvent(event: PendingYeastEvent): boolean {
     if (event.noteInstanceId === undefined) {
         return false;
@@ -196,6 +262,51 @@ function releasePendingYeastEvent(event: PendingYeastEvent): boolean {
     }
     releaseVoice(voice, event.sampleFrame, event.releaseVelocity);
     return true;
+}
+
+type CapturedLifecycleEvent = {
+    trackId: string;
+    channel: number;
+    pitch: number;
+    noteInstanceId: string | undefined;
+    sampleFrame?: number;
+    releaseVelocity?: number;
+};
+
+/**
+ * Release the captured owner behind a lifecycle note-off the Worker rack
+ * emitted while retiring (#4873). Instance-keyed offs resolve through the
+ * track-scoped registry index, so the ORIGINAL instrument control releases
+ * even after the track's instrument changed. Identityless offs resolve the
+ * pending pitch-keyed captures the same track registered. False means no
+ * captured owner claims the off: instance-keyed callers treat that as a
+ * repeat and drop it, identityless callers fall back to the current-node
+ * route.
+ */
+function releaseCapturedLifecycleVoice(event: CapturedLifecycleEvent): boolean {
+    if (event.noteInstanceId !== undefined) {
+        const voice = pendingByInstanceOnTrack.get(
+            instanceOnTrackKey(event.trackId, event.channel, event.noteInstanceId)
+        );
+        if (!voice || voice.pitch !== event.pitch) {
+            return false;
+        }
+        releaseVoice(voice, event.sampleFrame, event.releaseVelocity);
+        return true;
+    }
+    for (const owner of pendingReleases) {
+        if (owner.trackId !== event.trackId) {
+            continue;
+        }
+        for (const voice of [...owner.voices]) {
+            if (voice.noteInstanceId !== undefined || voice.channel !== event.channel || voice.pitch !== event.pitch) {
+                continue;
+            }
+            releaseVoice(voice, event.sampleFrame, event.releaseVelocity);
+            return true;
+        }
+    }
+    return false;
 }
 
 function releaseAllPendingYeastVoices(pending: PendingRelease): void {
@@ -219,10 +330,14 @@ function releaseAllPendingYeastReleases(): void {
 export const pendingYeastRelease = {
     begin: beginPendingYeastRelease,
     registerVoice: registerStartedYeastVoice,
+    addSourceVoice: addPendingYeastSourceVoice,
+    releaseRoute: releaseYeastRoute,
+    releaseTrackPitch: releaseYeastTrackPitch,
     retire: retirePendingYeastVoice,
     wasRetired: wasPendingYeastVoiceRetired,
     release: releasePendingYeastVoice,
     releaseEvent: releasePendingYeastEvent,
+    releaseLifecycleVoice: releaseCapturedLifecycleVoice,
     releaseAll: releaseAllPendingYeastVoices,
     releaseAllPending: releaseAllPendingYeastReleases,
     finish: finishPendingYeastRelease,

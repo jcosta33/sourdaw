@@ -647,7 +647,11 @@ describe('analysis.measure', () => {
             })
             .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
 
-        const result = await parsePromptToActions('how loud is the chorus', PROJECT_CONTEXT, undefined, REVISION);
+        const result = await parsePromptToActions({
+            prompt: 'how loud is the chorus',
+            context: PROJECT_CONTEXT,
+            projectRevision: REVISION,
+        });
 
         expect(engine.renderOffline).toHaveBeenCalledTimes(1);
         expect(result.applicationToolReceipts).toMatchObject([
@@ -661,7 +665,7 @@ describe('analysis.measure', () => {
             toolCalls: [measureCall(1, { scope: MASTER, range: CHORUS })],
         });
 
-        const result = await parsePromptToActions('how loud is the chorus', PROJECT_CONTEXT);
+        const result = await parsePromptToActions({ prompt: 'how loud is the chorus', context: PROJECT_CONTEXT });
 
         expect(result).toMatchObject({
             actions: [],

@@ -9,6 +9,14 @@ Use this lesson when a change selects browser files, partitions their execution,
 - For explicit Node-only tooling exemptions, classify the complete actual diff, including root and nested specs, helpers, and corpus inputs. Known tooling must keep static and security checks with an empty browser matrix; mixed product, config, and unknown paths must retain broad browser coverage. PRs #4484 (`4504a698`), #4932 (`33c27947`), and #4933 (`d03336ec`) added Node-only files without completing those opt-ins; the historical reviewer stance and tier are unavailable.
 - Apply the standard mechanical regression probe: revert the admission change and run the named planner spec. A green result means the spec does not guard this boundary.
 
+## Escape lesson from PR #5284
+
+The installed affected-E2E graph loader supplied a fixture's config filename but omitted the direct cruise API's parsed TypeScript configuration. Its resolver substituted the checkout's working directory for the alias base, traversing checkout modules despite root-bound initial enumeration. The published missing-consumer-or-opaque-edge probe asserted the opaque selection result; it did not inspect resolved graph scope. The missing stance was requested-root scope isolation.
+
+Run the actual installed producer against a distinct fixture root with aliased imports. Require the returned graph to contain exactly the fixture sources and the alias edges to resolve to those sources, for explicit, absent, and inherited `baseUrl`. Keep malformed configuration fail-closed. A correct full-selection result alone cannot prove the graph stayed inside its requested root.
+
+PR #5291's first root-isolation repair still followed a root-level shadow when implicit `paths` were declared in a nested extended config. The review caught this before merge. Plant that shadow beside a real nested target importing a changed feature, keep surrounding imports valid, and require the actual producer to follow the declaring base or select full before traversal. Inherited explicit `baseUrl` coverage alone does not establish implicit alias inheritance.
+
 ## Escape lesson from PR #4854
 
 PR #4854 introduced `scripts/prValidationScope.ts` with a `.spec.ts`/`.spec.tsx` predicate in both `listSpecs` and selected argument validation. `playwright.config.ts` left Playwright's default `testMatch` in force, which also admits `.test.*` and JS/TS variants. A new `tests/e2e/new-default.test.ts` therefore reached Playwright but did not enter the required PR matrix. The missing review probe was a filename-admission comparison from Playwright's collector through planning to execution arguments; existing planner fixtures used only `.spec.ts` names. A disposable Git fixture adding `.test.ts` and invoking `plan` exposes the omission before browser launch.
@@ -16,3 +24,15 @@ PR #4854 introduced `scripts/prValidationScope.ts` with a `.spec.ts`/`.spec.tsx`
 ## Pre-merge catch in PR #5056
 
 The first PR #5056 candidate and its author checks reused Vitest's case-sensitive filename regex for Playwright's default glob and matched `__tests__` with a case-sensitive ignore regex. Playwright's installed matcher accepts `tests/e2e/nested/fourth.TEST.ts` and ignores `tests/e2e/__TESTS__/ignored.test.ts`; the candidate planner did the reverse. Independent review under the collector-admission-parity stance detected this before merge and requested the repair. Plant both case variants in a disposable Git planner fixture, compare with the installed Playwright matcher, and prove direct selection, broad inventory, and literal runner arguments. Keep Vitest's case-sensitive collection contract separate.
+
+## Escape lesson from PR #5140
+
+PR #5140 added an advisory E2E shadow job but launched its CLI from the pull request's candidate checkout. An older head such as PR #5119's `a36a2751182fadfb55bc5e4a45b7bd798d6bc489` has no shadow CLI, so the step failed with `MODULE_NOT_FOUND` before it could write a report. The final review's candidate-control stance probed Gate dependency isolation, not whether a pre-feature head could launch the diagnostic; its matrix and inventory stance used a current-head fixture. For a new advisory selector, run the real CLI against distinct Git checkouts: a candidate from before the capability, a trusted base control with its own dependencies, and the integration merge carrying the authoritative scope. Require an older head to report unsupported with the full inventory and zero measured reduction; a partial or malformed declared capability must still fail, and no case may write `GITHUB_OUTPUT` or change required Gate selection.
+
+## Escape lesson from PR #5206
+
+For a successful older-head diagnostic, distinguish never-declared capability from deletion across every parent of a candidate merge. A path-limited default `git log` can prune the second parent when the merge tree matches an absent first parent; use full history and a real two-parent CLI fixture that declares capability only on the second parent. Also bind the integration merge's Playwright collection policy to the control revision before claiming a complete inventory: a later first-parent change to `testMatch` can admit a browser file the control collector omits even when selector and planner bytes match. The baseline probe must make both cases fail closed while genuine older absence still reports unsupported with zero measured reduction.
+
+## Further PR #5206 declaration probe
+
+The malformed-declaration stance missed a regular, head-bound TypeScript capability with no statements. An empty file or comment-only file passes transpile diagnostics, yet can be declared while the trusted control still completes the measurement. In the real candidate/integration/control CLI fixture, replace one declared TypeScript capability with each code-free form and require a failed report before measurement; keep the genuine never-declared older-head case on its unsupported full-inventory route. This probes declaration admission, not execution of candidate code.

@@ -348,7 +348,9 @@ function dossier(root: string) {
     return parseReviewDossier(JSON.parse(readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8')) as unknown);
 }
 
-describe('already recovered landed receipt binds its modern dossier', () => {
+// Every case builds a real git-backed fixture and the cleanup hook removes it; that measured up to ~6 s on a loaded
+// machine (#5229).
+describe('already recovered landed receipt binds its modern dossier', { timeout: 30_000 }, () => {
     beforeEach(() => {
         vi.spyOn(console, 'log').mockImplementation(() => undefined);
     });
@@ -358,7 +360,7 @@ describe('already recovered landed receipt binds its modern dossier', () => {
         for (const root of roots.splice(0)) {
             rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
-    });
+    }, 30_000);
 
     it('binds once after two exact reads, authorizes an open current approval, then replays without POST', async () => {
         const { root, ownerOid } = fixture();

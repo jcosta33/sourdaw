@@ -295,6 +295,7 @@ impl DrumSynthEngine {
             Self::Kick(engine) => engine.reset_base_freq(),
             Self::Tom(engine) => engine.reset_base_freq(),
             Self::FmPerc(engine) => engine.reset_engine_params(),
+            Self::Modal(engine) => engine.reset_engine_params(),
             Self::Perc(engine)
             | Self::Cowbell(engine)
             | Self::Clave(engine)

@@ -770,22 +770,40 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
         const notesOffByTrack = new Map<string, YeastNoteOffIdentity[]>();
-        const seenByTrackAndChannel = new Map<string, Map<number, Set<number>>>();
+        const seenByTrackAndChannel = new Map<string, Map<number, Set<string>>>();
         for (const evt of events) {
             if (evt.kind.type !== YEAST_MIDI_EVENT_KIND.noteOff || !evt.trackId) {
                 continue;
             }
-            const seenByChannel = seenByTrackAndChannel.get(evt.trackId) ?? new Map<number, Set<number>>();
-            const seenNotes = seenByChannel.get(evt.kind.channel) ?? new Set<number>();
-            if (seenNotes.has(evt.kind.note)) {
+            const seenByChannel = seenByTrackAndChannel.get(evt.trackId) ?? new Map<number, Set<string>>();
+            const seenIdentities = seenByChannel.get(evt.kind.channel) ?? new Set<string>();
+            // One off per voice instance, plus one per identityless pitch:
+            // distinct instances of the same pitch retire distinct voices, so
+            // only an exact identity repeat collapses (#4873). The
+            // identityless key is per note — a constant here would drop the
+            // second distinct note's off in one settle batch and hang its
+            // voice.
+            const identityKey =
+                evt.noteInstanceId !== undefined ? `instance:${evt.noteInstanceId}` : `pitch:${evt.kind.note}`;
+            if (seenIdentities.has(identityKey)) {
                 continue;
             }
-            seenNotes.add(evt.kind.note);
-            seenByChannel.set(evt.kind.channel, seenNotes);
+            seenIdentities.add(identityKey);
+            seenByChannel.set(evt.kind.channel, seenIdentities);
             seenByTrackAndChannel.set(evt.trackId, seenByChannel);
 
             const noteOffs = notesOffByTrack.get(evt.trackId) ?? [];
-            noteOffs.push({ channel: evt.kind.channel, note: evt.kind.note });
+            const identity: YeastNoteOffIdentity = {
+                channel: evt.kind.channel,
+                note: evt.kind.note,
+            };
+            if (evt.noteInstanceId !== undefined) {
+                identity.noteInstanceId = evt.noteInstanceId;
+            }
+            if (Number.isFinite(evt.timeSamples)) {
+                identity.sampleFrame = evt.timeSamples;
+            }
+            noteOffs.push(identity);
             notesOffByTrack.set(evt.trackId, noteOffs);
         }
         if (notesOffByTrack.size === 0) {

@@ -1,13 +1,18 @@
 import { strict as assert } from 'node:assert';
-import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
-import { parseDocument } from 'yaml';
 
 import certificate from './e2eSelectionShadowCertificate.json' with { type: 'json' };
+import {
+    candidateShadowCapability,
+    canonical,
+    healthPolicyDigest,
+    sha256,
+    unsupportedShadowReport,
+} from './e2eSelectionShadowCompatibility.ts';
 import {
     git,
     hashInventoryFile,
@@ -63,27 +68,6 @@ const CERTIFICATE_SHA256 = '9796398aa964b9289797b0e81c91edbdef56ff3625d77a2c0473
 const INTEGRATION_READER_SHA256 = '53f814094c2d05455c5682ff98e6b5ff40a9152fbb231da151f393a3c8c30a12';
 const ALLOWED_ATTRIBUTES = new Set(['className', 'title', 'detail', 'label', 'aria-label', 'aria-live', 'aria-atomic']);
 const SHA = /^[0-9a-f]{40}$/;
-
-function sha256(value: string | Buffer): string {
-    return createHash('sha256').update(value).digest('hex');
-}
-
-function canonical(value: unknown): string {
-    if (Array.isArray(value)) {
-        return `[${value.map(canonical).join(',')}]`;
-    }
-    if (value !== null && typeof value === 'object') {
-        return `{${Object.entries(value)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`)
-            .join(',')}}`;
-    }
-    return JSON.stringify(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 export function parseChangedRecords(raw: string): Omit<ChangedRecord, 'oldMode' | 'newMode'>[] {
     parseChangedPaths(raw);
@@ -467,6 +451,7 @@ export function measureShadow(input: ShadowInput) {
         base: input.base,
         head: input.head,
         integrationSha: input.integrationSha,
+        controlSha: input.base,
         rawDiffSha256: sha256(input.rawDiff),
         certificateSha256: input.certificateSha256,
         sourceMapSha256: certificate.sourceMapSha256,
@@ -486,57 +471,15 @@ export function measureShadow(input: ShadowInput) {
     };
 }
 
-function healthPolicyDigest(workflowSource: string): string {
-    const document = parseDocument(workflowSource);
-    if (document.errors.length > 0) {
-        throw new Error('Invalid health workflow YAML');
-    }
-    const workflow: unknown = document.toJS();
-    if (!isRecord(workflow) || !isRecord(workflow.jobs)) {
-        throw new Error('Invalid health workflow');
-    }
-    const { jobs, ...top } = workflow;
-    if (!isRecord(jobs)) {
-        throw new Error('Invalid health workflow jobs');
-    }
-    const required = Object.fromEntries(
-        ['scope', 'validation', 'affected', 'codeql', 'gate'].map((name) => [name, jobs[name]])
-    );
-    if (Object.values(required).some((job) => job === undefined)) {
-        throw new Error('Missing required health job');
-    }
-    return sha256(canonical({ ...top, jobs: required }));
-}
-
-function main(): void {
-    const {
-        BASE_SHA: base,
-        HEAD_SHA: head,
-        INTEGRATION_SHA: integrationSha,
-        INTEGRATION_ROOT: integrationPath,
-    } = process.env;
-    const scopePath = process.argv[2];
-    if (
-        !base ||
-        !head ||
-        !integrationSha ||
-        !integrationPath ||
-        !scopePath ||
-        !SHA.test(base) ||
-        !SHA.test(head) ||
-        !SHA.test(integrationSha)
-    ) {
-        throw new Error('Shadow requires BASE_SHA, HEAD_SHA, INTEGRATION_SHA, INTEGRATION_ROOT and the scope manifest');
-    }
-    const root = process.cwd();
-    const integrationRoot = resolve(root, integrationPath);
-    if (integrationRoot === root) {
-        throw new Error('Integration checkout must be distinct from candidate head');
-    }
-    if (git(['rev-parse', 'HEAD']).toString('utf8').trim() !== head) {
-        throw new Error('Shadow checkout does not match the immutable head');
-    }
-    verifyIntegrationCheckout(integrationRoot, integrationSha, head, base);
+function runSupportedShadow(input: {
+    root: string;
+    integrationRoot: string;
+    scopePath: string;
+    base: string;
+    head: string;
+    integrationSha: string;
+}): void {
+    const { root, integrationRoot, scopePath, base, head, integrationSha } = input;
     const rawDiff = git(['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--']);
     const parsed = parseChangedRecords(rawDiff.toString('utf8'));
     const mergeBase = git(['merge-base', base, head]).toString('utf8').trim();
@@ -594,6 +537,60 @@ function main(): void {
     );
 }
 
+function main(): void {
+    const {
+        BASE_SHA: base,
+        HEAD_SHA: head,
+        INTEGRATION_SHA: integrationSha,
+        INTEGRATION_ROOT: integrationPath,
+        CONTROL_ROOT: controlPath,
+    } = process.env;
+    const scopePath = process.argv[2];
+    if (
+        !base ||
+        !head ||
+        !integrationSha ||
+        !integrationPath ||
+        !controlPath ||
+        !scopePath ||
+        !SHA.test(base) ||
+        !SHA.test(head) ||
+        !SHA.test(integrationSha)
+    ) {
+        throw new Error(
+            'Shadow requires BASE_SHA, HEAD_SHA, INTEGRATION_SHA, INTEGRATION_ROOT, CONTROL_ROOT and the scope manifest'
+        );
+    }
+    const root = process.cwd();
+    const integrationRoot = resolve(root, integrationPath);
+    const controlRoot = resolve(root, controlPath);
+    if (integrationRoot === root || controlRoot === root || controlRoot === integrationRoot) {
+        throw new Error('Candidate, integration, and control checkouts must be distinct');
+    }
+    if (git(['rev-parse', 'HEAD']).toString('utf8').trim() !== head) {
+        throw new Error('Shadow checkout does not match the immutable head');
+    }
+    verifyIntegrationCheckout(integrationRoot, integrationSha, head, base);
+    if (git(['rev-parse', 'HEAD'], controlRoot).toString('utf8').trim() !== base) {
+        throw new Error('Shadow control checkout does not match the immutable base');
+    }
+    const capability = candidateShadowCapability(root, head, controlRoot, base, fileURLToPath(import.meta.url));
+    if (capability === 'unsupported') {
+        const report = unsupportedShadowReport({
+            root: controlRoot,
+            integrationRoot,
+            scopePath,
+            base,
+            head,
+            integrationSha,
+        });
+        writeFileSync('e2e-selection-shadow.json', `${JSON.stringify(report, null, 2)}\n`);
+        console.log(JSON.stringify({ measurementStatus: report.measurementStatus, counts: report.counts }));
+        return;
+    }
+    runSupportedShadow({ root, integrationRoot, scopePath, base, head, integrationSha });
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     try {
         main();
@@ -608,6 +605,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
                     measurementStatus: 'failed',
                     base: process.env.BASE_SHA ?? null,
                     head: process.env.HEAD_SHA ?? null,
+                    integrationSha: process.env.INTEGRATION_SHA ?? null,
+                    controlSha: process.env.BASE_SHA ?? null,
                     failureReason: reason,
                 },
                 null,
