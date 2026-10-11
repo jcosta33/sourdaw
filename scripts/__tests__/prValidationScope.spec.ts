@@ -1,13 +1,15 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
+    appendFileSync,
     chmodSync,
+    cpSync,
     mkdtempSync,
     mkdirSync,
     readFileSync,
+    realpathSync,
     readdirSync,
     renameSync,
     rmSync,
-    symlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -154,11 +156,11 @@ describe('graph-backed browser selection', () => {
                 `import { test, expect } from '@playwright/test';\ntest('${spec}', () => expect(true).toBe(true));\n`
             );
         }
+        fixturePlaywright(root);
         writeFileSync(
             join(root, 'playwright.config.mjs'),
             "export default { testDir: './tests/e2e', projects: [{ name: 'chromium' }] };\n"
         );
-        symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
         const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
         git(['init', '--quiet']);
         git(['config', 'user.email', 'ci@example.invalid']);
@@ -186,7 +188,7 @@ describe('graph-backed browser selection', () => {
         expect(readFileSync(output, 'utf8')).toContain('profile=broad\nbrowser=true\nbrowser-ai=false\n');
 
         const playwright = spawnSync(
-            resolve('node_modules/.bin/playwright'),
+            join(root, 'node_modules/.bin/playwright'),
             [
                 'test',
                 '--list',
@@ -378,7 +380,21 @@ function temporaryRoot(): string {
 }
 
 function fixturePlaywright(root: string): void {
-    symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
+    const playwrightRoot = realpathSync(resolve('node_modules/playwright'));
+    mkdirSync(join(root, 'node_modules/@playwright'), { recursive: true });
+    const packages: [string, string][] = [
+        [realpathSync(resolve('node_modules/@playwright/test')), 'node_modules/@playwright/test'],
+        [playwrightRoot, 'node_modules/playwright'],
+        [realpathSync(resolve(playwrightRoot, '../playwright-core')), 'node_modules/playwright-core'],
+    ];
+    for (const [source, destination] of packages) {
+        cpSync(source, join(root, destination), { recursive: true, dereference: true });
+    }
+    mkdirSync(join(root, 'node_modules/.bin'), { recursive: true });
+    const executable = join(root, 'node_modules/.bin/playwright');
+    writeFileSync(executable, "#!/usr/bin/env node\nrequire('../playwright/cli.js');\n");
+    chmodSync(executable, 0o755);
+    appendFileSync(join(root, '.gitignore'), 'node_modules/\n');
     writeFileSync(join(root, 'playwright.config.mjs'), "export default { testDir: './tests/e2e' };\n");
 }
 

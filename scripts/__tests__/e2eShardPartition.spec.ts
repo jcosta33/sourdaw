@@ -111,11 +111,12 @@ describe('planned browser matrix', () => {
         const inventory = [SMOKE_SPEC, ...recorded];
         const playwrightRoot = realpathSync(resolve('node_modules/playwright'));
         mkdirSync(join(root, 'node_modules/@playwright'), { recursive: true });
-        for (const [source, destination] of [
+        const packages: [string, string][] = [
             [realpathSync(resolve('node_modules/@playwright/test')), 'node_modules/@playwright/test'],
             [playwrightRoot, 'node_modules/playwright'],
             [realpathSync(resolve(playwrightRoot, '../playwright-core')), 'node_modules/playwright-core'],
-        ]) {
+        ];
+        for (const [source, destination] of packages) {
             cpSync(source, join(root, destination), { recursive: true, dereference: true });
         }
         mkdirSync(join(root, 'node_modules/.bin'), { recursive: true });
