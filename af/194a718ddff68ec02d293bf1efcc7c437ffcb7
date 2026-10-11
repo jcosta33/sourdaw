@@ -1,0 +1,27 @@
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_29d8df116c5b92::t_a5157059c57583 386-391,424,439
+  s_29d8df116c5b92::t_88cceb292caa9d 435-438,441-442
+src/modules/AudioEngine/services/__tests__/levainProcessorSampleUpload.spec.ts
+  s_29d8df116c5b92::t_88cceb292caa9d 290-328
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_29d8df116c5b92::t_f748ff078ea725 800,825
+  s_29d8df116c5b92::t_7807abbf03a6bd 772-799,801-824,826-845
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_afd38ef0292727 9-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af194a718ddff68ec02d293bf1efcc7c437ffcb7",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
