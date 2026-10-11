@@ -1,0 +1,19 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_59e31a5c6f3e31::t_731f0f58318dee 1032-1038,1040,1044,1046-1058,1071,1075-1076
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3441b2db868ab03e58cbcc1a9c07bb5b934d91de",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
