@@ -1,0 +1,27 @@
+src/modules/AudioEngine/services/__tests__/levainProcessorDisposalRelease.spec.ts
+  s_29d8df116c5b92::t_f25d841cdf946d 14,143-177
+crates/daw-dsp/tests/levain_sample_upload.rs
+  s_29d8df116c5b92::t_13370920e91c61 401-404,434-437
+  s_29d8df116c5b92::t_5d03c64509ebfc 23-25,33,45-47,60,67,74,385-400,405-433,438-475
+  s_29d8df116c5b92::t_31d69055452e01 476
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_a8b2af82d3c18b 9-21
+crates/daw-dsp/src/levain/engine.rs
+  s_29d8df116c5b92::t_a8b2af82d3c18b 157-161,169-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d40b8df475db52216c96200f6282ba832b6f88c9",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
