@@ -1,0 +1,14 @@
+src/modules/Arrangement/presentations/views/BeatRulerBar.tsx
+  h_1228e573df1f42 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc94803c87f117c024c0a86a8577ba35e0b88ffc",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
