@@ -1,0 +1,24 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_29d8df116c5b92::t_1e812385b748eb 3699-3708,3710-3735,3739,3741-3743,3757-3758,3760-3761,3763,3765-3769,3816-3826,3828-3846
+  s_29d8df116c5b92::t_1294ad33e0cd19 3709,3786-3789
+  s_29d8df116c5b92::t_3e5af874d76082 3755-3756,3827
+  s_29d8df116c5b92::t_f2c93c76acd3f8 3748,3753,3780,3785,3798-3813
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_2d2ea9f0f8a224 17-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "440cc517bfd5e95b393df975c827360c216c697f",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
