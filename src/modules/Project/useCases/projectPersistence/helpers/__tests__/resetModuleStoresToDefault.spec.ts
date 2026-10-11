@@ -51,6 +51,26 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     startRecording: vi.fn(),
     stopRecording: vi.fn(),
     updateClip: vi.fn(),
+    // Names the spec's import graph reaches but this spec never observes
+    // (barrel-mock coverage); the factory keeps replacing the whole barrel.
+    addTrack: vi.fn(),
+    captureArrangementToScratchPad: vi.fn(),
+    commitLegacyVcaTemplateState: vi.fn(),
+    createTrack: vi.fn(),
+    getAgentBuiltinDeviceFactoryManifest: vi.fn(),
+    getAgentPresetDiscoveryManifest: vi.fn(),
+    getFactoryPresets: vi.fn(),
+    getPluginById: vi.fn(),
+    hydrateClipGainEnvelopes: vi.fn(),
+    hydrateClipWarpStates: vi.fn(),
+    hydrateVcaGroups: vi.fn(),
+    importAudioFile: vi.fn(),
+    importMidiFile: vi.fn(),
+    restoreAdjustmentLayerSnapshot: vi.fn(),
+    restoreArrangementMetadataSnapshot: vi.fn(),
+    restoreTrackSnapshot: vi.fn(),
+    setMarqueeSelection: vi.fn(),
+    setTrackState: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
@@ -89,6 +109,10 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
 
 vi.mock('#/modules/Toaster/useCases', () => ({
     disposeEveryToasterDevice: mocks.disposeEveryToasterDevice,
+    // Names the spec's import graph reaches but never observes (barrel-mock
+    // coverage).
+    getDefaultPadNames: vi.fn(),
+    getStoredDrumVoiceMetadata: vi.fn(),
 }));
 
 vi.mock('#/modules/Grinder/stores', async (importOriginal) => {
