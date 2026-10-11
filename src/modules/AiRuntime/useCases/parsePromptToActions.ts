@@ -24,6 +24,7 @@ import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { type ThreadContext } from '../models/ThreadContext';
+import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 import {
     isWorkflowCapabilityId,
     WORKFLOW_ACTION_TOOL_NAMES,
@@ -1049,8 +1050,9 @@ const planPromptIntent = inject({ logger })(
                         };
                     }
                     if (refinement.status === 'refines') {
+                        const pending = getPendingActionConfirmation(refinement.confirmationId);
                         const preservation = validateRefinedProposalActions({
-                            confirmationId: refinement.confirmationId,
+                            pendingActions: pending?.status === 'proposed' ? pending.approvalSnapshot.actions : null,
                             actions: [stemImport.action],
                             prompt,
                             context,
@@ -1115,8 +1117,9 @@ const planPromptIntent = inject({ logger })(
                 }
                 if (grounded.status === 'grounded') {
                     if (refinement.status === 'refines') {
+                        const pending = getPendingActionConfirmation(refinement.confirmationId);
                         const preservation = validateRefinedProposalActions({
-                            confirmationId: refinement.confirmationId,
+                            pendingActions: pending?.status === 'proposed' ? pending.approvalSnapshot.actions : null,
                             actions: grounded.actions,
                             prompt,
                             context,

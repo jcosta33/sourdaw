@@ -2,7 +2,6 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ThreadContext } from '../models/ThreadContext';
-import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 type ProposalRefinementAdmission =
     { status: 'none' } | { status: 'refines'; confirmationId: string } | { status: 'refused'; reason: string };
@@ -74,6 +73,11 @@ function mentionsOperation(clause: string, actionType: string): boolean {
     return operation !== undefined && new RegExp(`\\b${operation}\\b`, 'i').test(clause);
 }
 
+function isNegatedRemoval(clause: string, removalIndex: number): boolean {
+    const beforeRemoval = clause.slice(0, removalIndex);
+    return /\b(?:not|never|don't|can't|cannot|avoid|without)\s+(?:\w+\s+){0,2}$/i.test(beforeRemoval);
+}
+
 function explicitlyRemovesCommand(prompt: string, command: Command, context: ProjectContext): boolean {
     const payload = payloadOf(command);
     const targetIds = Object.entries(payload)
@@ -81,8 +85,10 @@ function explicitlyRemovesCommand(prompt: string, command: Command, context: Pro
         .map(([, value]) => String(value));
     const clauses = prompt.toLowerCase().split(/[.,;]/);
     if (targetIds.length === 0) {
-        return clauses.some(
-            (clause) => /\b(?:remove|drop|omit|exclude|skip)\b/i.test(clause) && mentionsOperation(clause, command.type)
+        return clauses.some((clause) =>
+            [...clause.matchAll(/\b(?:remove|drop|omit|exclude|skip)\b/g)].some(
+                (removal) => mentionsOperation(clause, command.type) && !isNegatedRemoval(clause, removal.index ?? 0)
+            )
         );
     }
     return targetIds.every((id) => {
@@ -98,6 +104,7 @@ function explicitlyRemovesCommand(prompt: string, command: Command, context: Pro
             const preservation = [...preceding.matchAll(/\b(?:keep|retain|preserve)\b/g)].at(-1);
             return (
                 removal !== undefined &&
+                !isNegatedRemoval(preceding, removal.index ?? 0) &&
                 (preservation === undefined || (removal.index ?? -1) > (preservation.index ?? -1))
             );
         });
@@ -106,23 +113,22 @@ function explicitlyRemovesCommand(prompt: string, command: Command, context: Pro
 
 /**
  * A provider may add or change grounded commands, and may remove a command the user expressly
- * dropped. It may not silently lose a command from the full held card. This reads the stored
- * snapshot: thread_context can omit command arguments to stay inside its provider budget.
+ * dropped. It may not silently lose a command from the full held card. The caller supplies the
+ * stored snapshot: thread_context can omit command arguments to stay inside its provider budget.
  */
 export function validateRefinedProposalActions(input: {
-    confirmationId: string;
+    pendingActions: readonly Command[] | null;
     actions: readonly Command[];
     prompt: string;
     context: ProjectContext;
 }): { status: 'valid' } | { status: 'refused'; reason: string } {
-    const pending = getPendingActionConfirmation(input.confirmationId);
-    // Live authority is rechecked where persistence happens. A card cancelled during planning
-    // receives that authoritative reason there, even when its displayed status has not settled.
-    if (pending?.status !== 'proposed') {
+    // Persistence rechecks live authority. A card cancelled during planning receives that
+    // authoritative reason there, even when its displayed status has not settled.
+    if (input.pendingActions === null) {
         return { status: 'valid' };
     }
     const remaining = [...input.actions];
-    const oldActions = pending.approvalSnapshot.actions;
+    const oldActions = input.pendingActions;
     const changed: Command[] = [];
     for (const old of oldActions) {
         const exact = remaining.findIndex((next) => canonicalJson(next) === canonicalJson(old));

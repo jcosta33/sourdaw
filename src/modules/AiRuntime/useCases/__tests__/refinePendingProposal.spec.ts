@@ -436,6 +436,25 @@ describe('refining the pending proposal', () => {
     });
 
     it.each([
+        'Do not drop Guitar Left pan from the pending proposal. Set Lead Vocal gain to 80%, pan Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.',
+        'Set Lead Vocal gain to 80%, do not drop Guitar Left pan, pan Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.',
+    ])('keeps the pending card when the user explicitly says not to drop its pan: %s', async (prompt) => {
+        let pendingId = '';
+        scriptProvider([
+            { calls: MIX_PLAN },
+            { calls: [REFINED_PLAN[0]!, REFINED_PLAN[2]!, REFINED_PLAN[3]!], refines: () => pendingId },
+        ]);
+        pendingId = await proposeTheMix();
+
+        await sendChatMessage(prompt);
+
+        expect(proposedIds()).toEqual([pendingId]);
+        expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'proposed', supersededBy: null });
+        expect(lastAssistantMessage()?.content).toContain('omits');
+        expectMixUntouched();
+    });
+
+    it.each([
         [
             'wrong value',
             [{ name: 'setTrackGain', arguments: { trackId: 'track-lead-vocal', gain: 0.9 } }, ...MIX_PLAN.slice(1)],
