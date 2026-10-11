@@ -234,7 +234,7 @@ type GhRead = (
 const execGh: GhRead = (args, options) => execFileSync('gh', [...args], options);
 
 function ghOutput(token: string, route: string, runGh: GhRead, paged: boolean, maxBuffer: number): Buffer {
-    const env = { ...process.env, GH_TOKEN: token, GH_HOST: 'github.com' };
+    const env: NodeJS.ProcessEnv = { ...process.env, GH_TOKEN: token, GH_HOST: 'github.com' };
     delete env.GITHUB_TOKEN;
     delete env.GITHUB_ENTERPRISE_TOKEN;
     delete env.GH_ENTERPRISE_TOKEN;
