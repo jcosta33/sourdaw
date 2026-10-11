@@ -9,11 +9,10 @@ type AutomationTempoChange = { beat: number; tempo: number };
 export function compileAutomationSegments(
     points: AutomationPoint[],
     durationSeconds: number,
-    defaultTempo: number,
     changes: AutomationTempoChange[],
     sampleRate: number,
-    regionStartSeconds = 0,
-    projectBeatToSeconds?: (beat: number) => number,
+    regionStartSeconds: number,
+    projectBeatToSeconds: (beat: number) => number,
     compensationDelaySec = 0,
     options?: CompileAutomationEventsOptions
 ): OfflineAutomationSegment[] {
@@ -23,7 +22,6 @@ export function compileAutomationSegments(
     const events = compileAutomationEvents(
         points,
         durationSeconds,
-        defaultTempo,
         changes,
         regionStartSeconds,
         projectBeatToSeconds,
