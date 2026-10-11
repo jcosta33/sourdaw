@@ -1,0 +1,16 @@
+docs/architecture/07-wasm-dsp-pipeline.md
+  h_beb54bf43b47b7 31
+scripts/workletPolyfills.ts
+  h_beb54bf43b47b7 4-8,9-11,12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eecab526bbc60f57606e81048885d3ea97d5682f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
