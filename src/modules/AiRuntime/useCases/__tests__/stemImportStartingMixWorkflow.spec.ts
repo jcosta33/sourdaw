@@ -36,8 +36,8 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
-import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { agentRunStore } from '../../stores/agentRunStore';
+import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
