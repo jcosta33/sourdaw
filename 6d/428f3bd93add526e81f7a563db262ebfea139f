@@ -1,0 +1,14 @@
+scripts/__tests__/e2eShardPartition.spec.ts
+  h_beb54bf43b47b7 2,112-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6d428f3bd93add526e81f7a563db262ebfea139f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
