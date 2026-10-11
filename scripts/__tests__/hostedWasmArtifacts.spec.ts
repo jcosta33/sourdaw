@@ -51,10 +51,10 @@ describe('hosted WASM package selection', () => {
         ).toEqual(['scoring']);
     });
 
-    it('builds both packages when the hosted workflow is introduced', () => {
+    it('builds all supported packages when the hosted workflow is introduced', () => {
         expect(
             selectHostedWasmPackages({ manifest, sourceHashes, changedPaths: ['.github/workflows/wasm-artifacts.yml'] })
-        ).toEqual(['scoring', 'proof-chamber']);
+        ).toEqual(['scoring', 'proof-chamber', 'daw-dsp']);
     });
 
     it.each([
@@ -73,10 +73,11 @@ describe('hosted WASM package selection', () => {
         'rust-toolchain.toml',
         'package.json',
         'pnpm-lock.yaml',
-    ])('selects both for shared input %s', (path) => {
+    ])('selects all supported packages for shared input %s', (path) => {
         expect(selectHostedWasmPackages({ manifest, sourceHashes, changedPaths: [path] })).toEqual([
             'scoring',
             'proof-chamber',
+            'daw-dsp',
         ]);
     });
 
@@ -86,14 +87,30 @@ describe('hosted WASM package selection', () => {
         ).toEqual(['proof-chamber']);
     });
 
-    it('refuses unsupported stale sources without expanding the build', () => {
-        expect(() =>
+    it('selects only stale daw-dsp and never selects unchanged decoder', () => {
+        expect(
             selectHostedWasmPackages({
                 manifest,
                 sourceHashes: { ...sourceHashes, 'daw-dsp': `sha256:${'b'.repeat(64)}` },
                 changedPaths: [],
             })
-        ).toThrow('Unsupported stale WASM package: daw-dsp');
+        ).toEqual(['daw-dsp']);
+    });
+
+    it('selects daw-dsp for its worklet generator', () => {
+        expect(
+            selectHostedWasmPackages({ manifest, sourceHashes, changedPaths: ['scripts/gen-daw-dsp-worklet.ts'] })
+        ).toEqual(['daw-dsp']);
+    });
+
+    it('refuses stale decoder sources without expanding the build', () => {
+        expect(() =>
+            selectHostedWasmPackages({
+                manifest,
+                sourceHashes: { ...sourceHashes, 'daw-wasm-decoder': `sha256:${'b'.repeat(64)}` },
+                changedPaths: [],
+            })
+        ).toThrow('Unsupported stale WASM package: daw-wasm-decoder');
     });
 
     it('refuses missing provenance', () => {
@@ -123,13 +140,13 @@ const identity = readHostedBuildIdentity({
     BUILD_RUN_ATTEMPT: '1',
 });
 
-function fixture() {
+function fixture(selected = ['scoring', 'proof-chamber']) {
     const directory = mkdtempSync(join(tmpdir(), 'hosted-wasm-'));
     temporaryDirectories.push(directory);
     const root = join(directory, 'source');
     mkdirSync(root);
     writeFileSync(join(root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@11.6.0' }));
-    for (const path of hostedArtifactPaths(['scoring', 'proof-chamber'])) {
+    for (const path of hostedArtifactPaths(selected)) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), `generated ${path}`);
     }
@@ -166,7 +183,7 @@ function fixture() {
     return {
         root,
         outputDirectory: join(directory, 'qualified'),
-        selected: ['scoring', 'proof-chamber'],
+        selected,
         identity,
         commands,
         capture,
@@ -178,6 +195,21 @@ function fixture() {
 }
 
 describe('hosted build qualification', () => {
+    it('builds daw-dsp with its worklet generator and qualifies every declared output', () => {
+        const input = fixture(['daw-dsp']);
+        const receipt = buildHostedWasmArtifacts(input);
+        expect(input.commands).toEqual([
+            ['pnpm', 'wasm:dsp'],
+            ['pnpm', 'wasm:manifest', '--package', 'daw-dsp'],
+            ['pnpm', 'wasm:verify'],
+        ]);
+        expect(Object.keys(receipt?.files ?? {}).sort()).toEqual(hostedArtifactPaths(['daw-dsp']));
+        expect(receipt?.packages).toEqual(['daw-dsp']);
+        for (const path of hostedArtifactPaths(['daw-dsp'])) {
+            expect(readFileSync(join(input.outputDirectory, path))).toEqual(readFileSync(join(input.root, path)));
+        }
+    });
+
     it('runs selected scripts sequentially then stamps only those builds and verifies before returning files', () => {
         const input = fixture();
         const receipt = buildHostedWasmArtifacts(input);
@@ -324,8 +356,8 @@ describe('hosted build qualification', () => {
     });
 });
 
-function returnedFixture() {
-    const input = fixture();
+function returnedFixture(selected = ['scoring', 'proof-chamber']) {
+    const input = fixture(selected);
     const receipt = buildHostedWasmArtifacts(input);
     if (!receipt) {
         throw new Error('Expected receipt');
@@ -375,6 +407,15 @@ function returnedFixture() {
 }
 
 describe('verified artifact return', () => {
+    it('accepts a complete daw-dsp archive at the unchanged source head', () => {
+        const input = returnedFixture(['daw-dsp']);
+        const receipt = verifyHostedWasmReturn(input);
+        expect(receipt).toEqual(input.receipt);
+        for (const path of hostedArtifactPaths(['daw-dsp'])) {
+            expect(readFileSync(join(input.outputDirectory, path))).toEqual(input.files[path]);
+        }
+    });
+
     it('accepts streamed ZIP data descriptors and rejects a mismatched descriptor', () => {
         const chunks: Buffer[] = [];
         const archive = new Zip((error, bytes) => {

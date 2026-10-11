@@ -28,7 +28,6 @@ import { compileAutomationEvents } from '../compileAutomationEvents';
  * neighbors from the lane, so no explicit neighbor points are needed here.
  */
 
-const DEFAULT_TEMPO = 120;
 const NO_CHANGES: { beat: number; tempo: number }[] = [];
 const LANE_DURATION_SECONDS = CASE_SECOND_BEAT - CASE_FIRST_BEAT;
 
@@ -85,14 +84,7 @@ describe('automation curve conformance — offline compiler matches the shared k
                     tension: curveCase.tension ?? 0,
                 },
             ];
-            const events = compileAutomationEvents(
-                points,
-                LANE_DURATION_SECONDS,
-                DEFAULT_TEMPO,
-                NO_CHANGES,
-                0,
-                identityProjector
-            );
+            const events = compileAutomationEvents(points, LANE_DURATION_SECONDS, NO_CHANGES, 0, identityProjector);
             expect(events.length).toBeGreaterThan(0);
             for (const event of events) {
                 // Identity projector → event.timeSeconds is the beat.
@@ -124,7 +116,7 @@ describe('automation curve conformance — tied points (hard jump)', () => {
             { beat: 4, value: 0.2, curve: 'linear', tension: 0 },
             { beat: 8, value: 0.2, curve: 'linear', tension: 0 },
         ];
-        const events = compileAutomationEvents(points, 8, DEFAULT_TEMPO, NO_CHANGES, 0, identityProjector);
+        const events = compileAutomationEvents(points, 8, NO_CHANGES, 0, identityProjector);
         expect(events.length).toBeGreaterThan(0);
 
         // Value of the compiled Web Audio event list at `time`: a `set` holds,

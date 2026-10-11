@@ -2,7 +2,6 @@ import { clampStairSteps, evaluateAutomationCurve } from '#/utils/automationCurv
 import { slewStep } from '#/utils/automationSlew';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
-import { beatToSeconds } from '../../services/beatConversion';
 
 type AutomationTempoChange = { beat: number; tempo: number };
 export type CompiledAutomationEvent = { type: 'set' | 'linear'; timeSeconds: number; value: number };
@@ -272,17 +271,15 @@ function slewEvents(
 export function compileAutomationEvents(
     points: AutomationPoint[],
     durationSeconds: number,
-    defaultTempo: number,
     changes: AutomationTempoChange[],
-    regionStartSeconds = 0,
-    projectBeatToSeconds?: BeatProjector,
+    regionStartSeconds: number,
+    projectBeat: BeatProjector,
     options?: CompileAutomationEventsOptions
 ): CompiledAutomationEvent[] {
     if (points.length === 0 || durationSeconds < 0) {
         return [];
     }
 
-    const projectBeat = projectBeatToSeconds ?? ((beat) => beatToSeconds(beat, defaultTempo, changes));
     const normalized = normalizePoints(points);
     const timed = normalized.map((point) => ({ point, time: projectBeat(point.beat) }));
     const regionEndSeconds = regionStartSeconds + durationSeconds;
