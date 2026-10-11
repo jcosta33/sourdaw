@@ -446,7 +446,23 @@
           },
           {
             "name": "Run Browser AI WebGPU admission",
-            "run": "pnpm test:e2e:browser-ai-webgpu-admission"
+            "timeout-minutes": 22,
+            "shell": "bash",
+            "env": {
+              "DEBUG": "pw:api,pw:browser"
+            },
+            "run": "set -o pipefail\nlog=browser-ai-webgpu-admission.log\nprintf '[browser-ai-webgpu] started %s\\n' \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" | tee \"$log\"\nset +e\npnpm test:e2e:browser-ai-webgpu-admission 2>&1 | tee -a \"$log\"\nstatuses=(\"${PIPESTATUS[@]}\")\nset -e\nprintf '[browser-ai-webgpu] completed %s command=%s log=%s\\n' \\\n  \"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\" \"${statuses[0]}\" \"${statuses[1]}\" | tee -a \"$log\"\nif [ \"${statuses[0]}\" -ne 0 ]; then\n  exit \"${statuses[0]}\"\nfi\nexit \"${statuses[1]}\"\n"
+          },
+          {
+            "name": "Upload Browser AI WebGPU diagnostics",
+            "if": "${{ always() }}",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "browser-ai-webgpu-diagnostics",
+              "path": "browser-ai-webgpu-admission.log\ntest-results/**/trace.zip\ntest-results/**/error-context.md\ntest-results/.last-run.json\n",
+              "retention-days": 7,
+              "if-no-files-found": "warn"
+            }
           }
         ]
       },

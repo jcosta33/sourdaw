@@ -204,7 +204,37 @@ jobs:
         run: pnpm exec playwright install chromium
 
       - name: Run Browser AI WebGPU admission
-        run: pnpm test:e2e:browser-ai-webgpu-admission
+        timeout-minutes: 22
+        shell: bash
+        env:
+          DEBUG: pw:api,pw:browser
+        run: |
+          set -o pipefail
+          log=browser-ai-webgpu-admission.log
+          printf '[browser-ai-webgpu] started %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee "$log"
+          set +e
+          pnpm test:e2e:browser-ai-webgpu-admission 2>&1 | tee -a "$log"
+          statuses=("${PIPESTATUS[@]}")
+          set -e
+          printf '[browser-ai-webgpu] completed %s command=%s log=%s\n' \
+            "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${statuses[0]}" "${statuses[1]}" | tee -a "$log"
+          if [ "${statuses[0]}" -ne 0 ]; then
+            exit "${statuses[0]}"
+          fi
+          exit "${statuses[1]}"
+
+      - name: Upload Browser AI WebGPU diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-ai-webgpu-diagnostics
+          path: |
+            browser-ai-webgpu-admission.log
+            test-results/**/trace.zip
+            test-results/**/error-context.md
+            test-results/.last-run.json
+          retention-days: 7
+          if-no-files-found: warn
 
   heavy-gate:
     name: HeavyGate

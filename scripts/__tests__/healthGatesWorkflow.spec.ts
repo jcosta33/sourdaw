@@ -201,6 +201,16 @@ const BROWSER_AI_WEBGPU_CONDITION = 'inputs.browser-ai';
 const BROWSER_AI_WEBGPU_RUNNER = 'macos-14';
 const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
+const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
+const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 20 * 60_000;
+const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 22;
+const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 30;
+const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
+    BROWSER_AI_WEBGPU_LOG,
+    'test-results/**/trace.zip',
+    'test-results/**/error-context.md',
+    'test-results/.last-run.json',
+];
 const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
     'playwright test --config tests/e2e/browserAiWebGpuAdmission.playwright.config.ts';
 // Exact, ordered, and length-checked. This leg is the only runner that reaches
@@ -1894,12 +1904,40 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
         throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
     }
+    if (job['timeout-minutes'] !== BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES) {
+        throw new Error('Browser AI WebGPU job must retain its 30-minute failure limit');
+    }
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
     }
     assertBrowserAiChromiumInstallBounded(job);
-    if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
+    const admission = stepNamed(job, 'Run Browser AI WebGPU admission');
+    if (!stringAt(admission, 'run').includes(BROWSER_AI_WEBGPU_COMMAND)) {
         throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
+    }
+    if (
+        admission['timeout-minutes'] !== BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES ||
+        admission.shell !== 'bash' ||
+        recordAt(admission, 'env').DEBUG !== 'pw:api,pw:browser'
+    ) {
+        throw new Error('Browser AI WebGPU admission must fail before the job limit with Playwright diagnostics');
+    }
+    const upload = stepNamed(job, 'Upload Browser AI WebGPU diagnostics');
+    const uploadOptions = recordAt(upload, 'with');
+    const uploadPaths = stringAt(uploadOptions, 'path')
+        .trim()
+        .split('\n')
+        .map((path) => path.trim());
+    if (
+        upload.if !== '${{ always() }}' ||
+        uploadOptions.name !== 'browser-ai-webgpu-diagnostics' ||
+        uploadOptions['retention-days'] !== 7 ||
+        uploadOptions['if-no-files-found'] !== 'warn' ||
+        JSON.stringify(uploadPaths) !== JSON.stringify(BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS)
+    ) {
+        throw new Error(
+            'Browser AI WebGPU diagnostics must retain only the log and failure traces after a failed step'
+        );
     }
     // The browser summary observes this job, then reaches the required Gate
     // through the pull-request workflow's affected caller.
@@ -1966,6 +2004,11 @@ function assertBrowserAiWebGpuProofChain(manifest: UnknownRecord, config: Unknow
     }
     if (config.globalSetup !== BROWSER_AI_WEBGPU_GLOBAL_SETUP) {
         throw new Error('Browser AI WebGPU config must warm the cold first paint before its specs observe it');
+    }
+    if (config.globalTimeout !== BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS || config.retries !== 0 || config.workers !== 1) {
+        throw new Error(
+            'Browser AI WebGPU config must bound the whole dedicated proof without retries or parallel tests'
+        );
     }
 }
 
@@ -4543,6 +4586,45 @@ describe('health gates workflow contract', () => {
         expect(() => assertBrowserAiWebGpuJob(heavyWorkflow)).not.toThrow();
         expect(() => assertNightlyBrowserAiWebGpuJob(nightly)).not.toThrow();
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, browserAiWebGpuConfig)).not.toThrow();
+        expect(BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS / 60_000).toBeLessThan(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES);
+        expect(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES).toBeLessThan(BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES);
+
+        // Execute the workflow's actual shell block with a fake pnpm. A
+        // pipeline that reports tee's success instead of pnpm's failure would
+        // turn a failed hardware proof into a passing required Gate.
+        const admissionRun = stringAt(
+            stepNamed(jobAt(heavyWorkflow, BROWSER_AI_WEBGPU_JOB), 'Run Browser AI WebGPU admission'),
+            'run'
+        );
+        for (const exitCode of [0, 7]) {
+            const directory = mkdtempSync(join(tmpdir(), 'sourdaw-browser-ai-webgpu-diagnostics-'));
+            try {
+                writeFileSync(
+                    join(directory, 'pnpm'),
+                    '#!/bin/sh\nprintf "pnpm called: %s; DEBUG=%s\\n" "$*" "$DEBUG"\nexit "$FAKE_PNPM_EXIT"\n',
+                    { mode: 0o755 }
+                );
+                const result = spawnSync('bash', ['-c', admissionRun], {
+                    cwd: directory,
+                    encoding: 'utf8',
+                    env: {
+                        ...process.env,
+                        DEBUG: 'pw:api,pw:browser',
+                        FAKE_PNPM_EXIT: String(exitCode),
+                        PATH: `${directory}${delimiter}${process.env.PATH ?? ''}`,
+                    },
+                    timeout: 10_000,
+                });
+                expect(result.error).toBeUndefined();
+                expect(result.status).toBe(exitCode);
+                const log = readFileSync(join(directory, BROWSER_AI_WEBGPU_LOG), 'utf8');
+                expect(log).toContain('pnpm called: test:e2e:browser-ai-webgpu-admission; DEBUG=pw:api,pw:browser');
+                expect(log).toMatch(/\[browser-ai-webgpu\] started \d{4}-\d{2}-\d{2}T/);
+                expect(log).toContain(`command=${exitCode} log=0`);
+            } finally {
+                rmSync(directory, { recursive: true, force: true });
+            }
+        }
 
         for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
             const premiumRunner = asRecord(structuredClone(heavyWorkflow), `${runner} Browser AI heavyWorkflow`);
@@ -4563,6 +4645,21 @@ describe('health gates workflow contract', () => {
             'pnpm test:e2e tests/e2e/browserAiWebGpuAdmission.spec.ts';
         expect(() => assertBrowserAiWebGpuJob(defaultMatrix)).toThrow(
             'Browser AI WebGPU job must run the dedicated hardware command'
+        );
+
+        const unboundedAdmission = asRecord(structuredClone(heavyWorkflow), 'unbounded Browser AI admission');
+        delete stepNamed(jobAt(unboundedAdmission, BROWSER_AI_WEBGPU_JOB), 'Run Browser AI WebGPU admission')[
+            'timeout-minutes'
+        ];
+        expect(() => assertBrowserAiWebGpuJob(unboundedAdmission)).toThrow(
+            'Browser AI WebGPU admission must fail before the job limit with Playwright diagnostics'
+        );
+
+        const skippedDiagnostics = asRecord(structuredClone(heavyWorkflow), 'skipped Browser AI diagnostics');
+        stepNamed(jobAt(skippedDiagnostics, BROWSER_AI_WEBGPU_JOB), 'Upload Browser AI WebGPU diagnostics').if =
+            '${{ success() }}';
+        expect(() => assertBrowserAiWebGpuJob(skippedDiagnostics)).toThrow(
+            'Browser AI WebGPU diagnostics must retain only the log and failure traces after a failed step'
         );
 
         const unboundedHeavyInstall = asRecord(structuredClone(heavyWorkflow), 'unbounded Browser AI heavyWorkflow');
@@ -4639,6 +4736,12 @@ describe('health gates workflow contract', () => {
             'Browser AI WebGPU config must warm the cold first paint before its specs observe it'
         );
 
+        const unboundedProof = asRecord(structuredClone(browserAiWebGpuConfig), 'unbounded Browser AI config');
+        delete unboundedProof.globalTimeout;
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, unboundedProof)).toThrow(
+            'Browser AI WebGPU config must bound the whole dedicated proof without retries or parallel tests'
+        );
+
         const fallbackRequestAdapter = vi.fn().mockResolvedValue({
             info: { isFallbackAdapter: true },
             requestDevice: vi.fn(),
@@ -4712,7 +4815,7 @@ describe('health gates workflow contract', () => {
                         RUN_URL: 'https://github.com/owner/repository/actions/runs/1',
                     },
                 });
-                expect(result.status).toBe(0);
+                expect(result.status, result.stderr).toBe(0);
                 return readFileSync(join(directory, 'gh-calls.txt'), 'utf8')
                     .trim()
                     .split('\n')

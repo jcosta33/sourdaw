@@ -19,6 +19,14 @@ const warmupMocks = vi.hoisted(() => ({
     close: vi.fn(),
 }));
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let release!: (value: T) => void;
+    const promise = new Promise<T>((resolve) => {
+        release = resolve;
+    });
+    return { promise, resolve: release };
+}
+
 vi.mock('@playwright/test', async (importOriginal) => ({
     ...(await importOriginal<typeof import('@playwright/test')>()),
     chromium: { launch: warmupMocks.launch },
@@ -239,6 +247,58 @@ describe('cold first-paint warmup', () => {
                 /\[first-paint warmup\] launch overlay after 35\.0s, boot capabilities after 35\.0s; 145\.0s of the 180s cold allowance remains/
             )
         );
+    });
+
+    it('marks each warmup phase before a pending await and completes it only after that await', async () => {
+        const identity = deferred<void>();
+        const launch = deferred<{ newPage: typeof warmupMocks.newPage; close: typeof warmupMocks.close }>();
+        const page = deferred<{
+            addInitScript: typeof warmupMocks.addInitScript;
+            on: typeof warmupMocks.on;
+            goto: typeof warmupMocks.goto;
+            getByLabel: typeof warmupMocks.getByLabel;
+        }>();
+        const close = deferred<void>();
+        warmupMocks.assertIdentity.mockReturnValue(identity.promise);
+        warmupMocks.launch.mockReturnValue(launch.promise);
+        warmupMocks.newPage.mockReturnValue(page.promise);
+        warmupMocks.close.mockReturnValue(close.promise);
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const marker = (phase: string) =>
+            expect.stringMatching(new RegExp(`^\\[first-paint warmup\\] \\d{4}-\\d{2}-\\d{2}T.* ${phase}$`));
+
+        const warming = warmFirstPaint(config);
+        expect(warmupLog).toHaveBeenCalledWith(marker('checkout identity: start'));
+        expect(warmupLog).not.toHaveBeenCalledWith(marker('checkout identity: complete'));
+        identity.resolve(undefined);
+
+        await vi.waitFor(() => expect(warmupMocks.launch).toHaveBeenCalledOnce());
+        expect(warmupLog).toHaveBeenCalledWith(marker('checkout identity: complete'));
+        expect(warmupLog).toHaveBeenCalledWith(marker('browser launch: start'));
+        expect(warmupLog).not.toHaveBeenCalledWith(marker('browser launch: complete'));
+        launch.resolve({ newPage: warmupMocks.newPage, close: warmupMocks.close });
+
+        await vi.waitFor(() => expect(warmupMocks.newPage).toHaveBeenCalledOnce());
+        expect(warmupLog).toHaveBeenCalledWith(marker('browser launch: complete'));
+        expect(warmupLog).toHaveBeenCalledWith(marker('page creation: start'));
+        expect(warmupLog).not.toHaveBeenCalledWith(marker('page creation: complete'));
+        page.resolve({
+            addInitScript: warmupMocks.addInitScript,
+            on: warmupMocks.on,
+            goto: warmupMocks.goto,
+            getByLabel: warmupMocks.getByLabel,
+        });
+
+        await vi.waitFor(() => expect(warmupMocks.close).toHaveBeenCalledOnce());
+        expect(warmupLog).toHaveBeenCalledWith(marker('page creation: complete'));
+        expect(warmupLog).toHaveBeenCalledWith(marker('readiness: start'));
+        expect(warmupLog).toHaveBeenCalledWith(marker('readiness: complete'));
+        expect(warmupLog).toHaveBeenCalledWith(marker('browser close: start'));
+        expect(warmupLog).not.toHaveBeenCalledWith(marker('browser close: complete'));
+        close.resolve(undefined);
+
+        await warming;
+        expect(warmupLog).toHaveBeenCalledWith(marker('browser close: complete'));
     });
 
     it('bounds a hung navigation by the shared deadline and closes the browser', async () => {
