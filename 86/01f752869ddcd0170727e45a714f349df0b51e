@@ -1,0 +1,16 @@
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  h_beb54bf43b47b7 838-887
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  h_beb54bf43b47b7 496-501,523-528
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8601f752869ddcd0170727e45a714f349df0b51e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
