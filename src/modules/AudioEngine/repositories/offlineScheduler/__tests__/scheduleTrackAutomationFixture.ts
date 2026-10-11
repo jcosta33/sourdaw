@@ -165,6 +165,7 @@ export function scheduleTrackAutomationFixture(input: ScheduleTrackAutomationFix
         deviceParameterLaw: legacyFixtureDeviceLaw(deviceEntries),
         resolveLaneCeiling: declaredCeiling,
         projectBeatToSeconds: constantTempoProjector(defaultTempo),
+        projectSecondsToBeat: (seconds) => (rest.regionStartBeat ?? 0) + (seconds * defaultTempo) / 60,
         ...rest,
         // `contributesAudio` first, so an entry that states its own value wins.
         deviceEntries: deviceEntries.map((entry) => ({ contributesAudio: true, ...entry })),

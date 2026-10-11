@@ -6,6 +6,35 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
+
+The subgraph fixture asserted that the inverse callback received the requested beat-four
+anchor and returned beat six. It never observed the strip's AudioParam writes. The
+orchestrator had prescribed that anchor without tracing history expansion to beat zero,
+so the fixture confirmed the packet while accepting incorrect output.
+
+Request beats four through eight under a 100→200 BPM linear ramp from beats zero through
+eight. Observe terminal gain and pan before and after the crop boundary against the ramp's
+independent integral and a whole render. Use a seed-sensitive history layer with positive
+compensation: sample phase stays unchanged, only write times shift, and the zero-time seed
+comes from the actual render origin. Revert each origin binding independently on a committed
+private probe and require the unchanged regression to fail.
+
+### 2026-10-11 — tempo integration checks observed an older caller population (#5243)
+
+PR #5243's first-attempt run `38050968596` genuinely checked its author head `ba10195e`
+against synthetic main `5823f7f77`, before #5209 added modulation. Its actual landing on
+`83a92c4005` contained that later caller with removed aliases. PR #5273's first-attempt
+run `38157801487` exposed the inherited missing names. Historical stance prompts and tiers
+are unavailable; an obsolete integration and absent terminal-output probe are established.
+
+Compare the checked caller population with the actual integration, then execute the new consumer
+routes at that integration. Do not reproduce a seconds-to-beat helper's own expression in its
+oracle: at 120 BPM half a second is one beat; for a 100→200 BPM ramp over eight beats, elapsed
+seconds from beat four to six are `4.8 * ln(175/150)`. Assert terminal values and compensated
+times/frames, not just captured callback identity or lane presence. Reverting inverse forwarding,
+subregion anchoring or the consumer's inverse must independently turn the relevant case red.
+
 ### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
 
 The installed affected-E2E loader case asserted full selection for opaque runtime dependencies, but the actual alias graph escaped its temporary root into the checkout. The published missing-consumer-or-opaque-edge probe preserved that result without observing resolved sources; requested-root scope isolation was the missing stance and probe.

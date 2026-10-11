@@ -189,6 +189,7 @@ import {
     createMusicalPositionProjector,
     createSamplePositionProjector,
     projectPpqEndpoints,
+    beatAtSecondsFromAnchor,
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
     readNativeEngineCursorBeats,
@@ -334,7 +335,7 @@ configureOfflineDeviceParameterLaw({
     acceptsExternalPluginParameter: acceptsExternalPluginAutomationParameter,
     clampExternalPluginValue: clampExternalPluginAutomationValue,
 });
-configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
+configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat, beatAtSecondsFromAnchor });
 configureOfflineYeastMidiProcessing({
     createProcessor: createOfflineYeastProcessor,
     racks: {

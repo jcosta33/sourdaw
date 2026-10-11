@@ -41,7 +41,15 @@ export type OfflinePpqEndpointProjector = (input: OfflinePpqEndpointProjectionIn
  */
 export type OfflineTempoAtBeatResolver = (input: OfflineTempoAtBeatInput) => number;
 
+export type OfflineBeatAtSecondsFromAnchor = (
+    changes: readonly OfflineTempoChange[],
+    anchorBeat: number,
+    elapsedSeconds: number,
+    defaultTempo: number
+) => number;
+
 export const offlinePpqEndpointProjectorState: {
     project: OfflinePpqEndpointProjector | null;
     resolveTempoAtBeat: OfflineTempoAtBeatResolver | null;
-} = { project: null, resolveTempoAtBeat: null };
+    beatAtSecondsFromAnchor: OfflineBeatAtSecondsFromAnchor | null;
+} = { project: null, resolveTempoAtBeat: null, beatAtSecondsFromAnchor: null };
