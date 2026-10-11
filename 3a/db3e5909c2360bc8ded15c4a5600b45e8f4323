@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/comping/prepareTakeSourceDepthMove.ts
+  s_29d8df116c5b92::t_4af503a0471d8b 107-111
+src/modules/Arrangement/useCases/comping/projectedTakeLaneOwners.ts
+  s_29d8df116c5b92::t_a819ddec7d84dd 1,7,32
+src/modules/Arrangement/useCases/comping/reKeyedTakeLaneOwnersMatchStore.ts
+  s_29d8df116c5b92::t_cbf69288afef41 1,4,7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3adb3e5909c2360bc8ded15c4a5600b45e8f4323",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
