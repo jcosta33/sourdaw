@@ -1,0 +1,23 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_59e31a5c6f3e31::t_cb6679aa6b4777 60,348,397-466,838-1068,1198-1673
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_59e31a5c6f3e31::t_12a44857288d3f 15-25,142-145,258-265
+src/modules/Arrangement/useCases/comping/decodeClipSplitTakeTransitions.ts
+  s_59e31a5c6f3e31::t_2e6988fc5334fa 123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f86039eb69f6e43b10d81e2dbfbfd6e8ae7c7ce0",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
