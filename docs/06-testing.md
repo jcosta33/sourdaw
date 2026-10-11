@@ -744,10 +744,14 @@ This evidence must arrive within the existing proof deadline and never releases 
 or signaling fences. Denied inspection and unavailable or malformed status still retain storage.
 On macOS, an unreaped same-UID process positively sampled in zombie state has already released
 its file table; this exception never releases process-identity or signaling fences.
-If an otherwise valid macOS file catalog lacks only a descriptor type, the guard discards it and
-takes at most one fresh full catalog within the same five-second proof deadline. Only complete
-replacement evidence can permit deletion; a second incomplete catalog or any other inspection
-failure retains storage.
+File inspection checks same-UID process coverage again after reading files, so a process born
+during inspection cannot disappear from the proof. On macOS, an otherwise valid catalog missing
+only a descriptor type, or omitting a newly observed positively live same-UID process, may be
+discarded for one complete replacement. Both conditions share a maximum of two observations
+within the same five-second proof deadline. Only wholly complete replacement evidence permits
+deletion; another uncovered process, ambiguous identity, malformed catalog, denied inspection
+or unavailable evidence retains storage. Processes created after the final proof remain outside
+that observation; this is conservative sampled evidence, not a guarantee of continuous isolation.
 Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
 
 Automatic Unix reclamation covers the guard's own UID and requires private `0700` owned storage.

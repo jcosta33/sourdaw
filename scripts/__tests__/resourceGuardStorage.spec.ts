@@ -10,6 +10,7 @@ import {
     realpathSync,
     rmSync,
     symlinkSync,
+    statSync,
     writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -117,6 +118,18 @@ afterEach(async () => {
     }
     roots.length = 0;
 });
+
+function proofDiagnostic(result: Awaited<ReturnType<typeof runGuardedCommand>>): string {
+    return JSON.stringify({
+        reason: result.reason ?? 'none',
+        evidence: result.output
+            .split('\n')
+            .filter((line) => line.startsWith('guard storage'))
+            .slice(-4)
+            .join('\n')
+            .slice(0, 2048),
+    });
+}
 
 function guarded(root: string, input: Partial<Parameters<typeof runGuardedCommand>[0]> = {}) {
     return runGuardedCommand({
@@ -453,8 +466,9 @@ describe('guard-owned temporary storage', () => {
         await kill(rootPid);
         await kill(started.pid);
         await waitForStorageAbandonment([started.tmp], deadline);
-        expect((await guarded(root)).code).toBe(0);
-        expect(existsSync(started.tmp)).toBe(false);
+        const recovery = await guarded(root);
+        expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
+        expect(existsSync(started.tmp), proofDiagnostic(recovery)).toBe(false);
     }, 30_000);
 
     it.each([
@@ -653,7 +667,7 @@ describe('guard-owned temporary storage', () => {
                     })
                 );
             }
-            expect(existsSync(currentTemp)).toBe(false);
+            expect(existsSync(currentTemp), proofDiagnostic(recovery)).toBe(false);
         },
         20_000
     );
@@ -740,7 +754,7 @@ describe('guard-owned temporary storage', () => {
             ],
         });
         expect(result.code).toBe(0);
-        expect(result.reason).toBeUndefined();
+        expect(result.reason, proofDiagnostic(result)).toBeUndefined();
         const observed: {
             parent: string;
             nested: string;
@@ -1020,12 +1034,13 @@ describe('storage ownership recovery', () => {
             );
             chmodSync(utility, 0o700);
             const resultPath = join(root, 'result.json');
+            const diagnosticPath = join(root, 'proof-diagnostic.json');
             const program = `
             const {writeFileSync,existsSync}=await import('node:fs');
             const {spawn}=await import('node:child_process');
             const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
             const {storageFileState}=await import(${JSON.stringify(guardPath)});
-            const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[])};
+            const reasons=[];const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
             const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
             let holder;let closed;
             try {
@@ -1036,6 +1051,7 @@ describe('storage ownership recovery', () => {
                 }
                 const released=await storage.release(true);
                 writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({released,exists:existsSync(storage.tempDirectory)}));
+                writeFileSync(${JSON.stringify(diagnosticPath)},JSON.stringify(reasons));
             } finally {if(holder){holder.kill('SIGKILL');await closed}}
         `;
             const supervisor = spawn(process.execPath, ['--input-type=module', '-e', program], {
@@ -1048,10 +1064,19 @@ describe('storage ownership recovery', () => {
             }
             childPids.add(supervisor.pid);
             await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1));
-            expect(JSON.parse(readFileSync(resultPath, 'utf8'))).toEqual({ released, exists: !released });
+            expect(JSON.parse(readFileSync(resultPath, 'utf8')), readFileSync(diagnosticPath, 'utf8')).toEqual({
+                released,
+                exists: !released,
+            });
             const samples = readFileSync(count, 'utf8').trim().split('\n');
             expect(samples.slice(0, 2)).toEqual(persistent ? ['incomplete', 'incomplete'] : ['incomplete', 'complete']);
-            expect(samples.length).toBe(released ? 3 : 2);
+            if (released) {
+                expect(samples.length).toBeGreaterThanOrEqual(3);
+                expect(samples.length).toBeLessThanOrEqual(4);
+                expect(samples.slice(2).every((sample) => sample === 'complete')).toBe(true);
+            } else {
+                expect(samples.length).toBe(2);
+            }
         },
         15_000
     );
@@ -1185,6 +1210,133 @@ describe('storage ownership recovery', () => {
         expect(sameUserProcessIds('', 501, 10, [])).toBeUndefined();
     });
 
+    it.skipIf(process.platform !== 'darwin').each([
+        { route: 'local release', consumer: true, missing: false },
+        { route: 'startup recovery', consumer: true, missing: false },
+        { route: 'unrelated newborn', consumer: false, missing: false },
+        { route: 'missing replacement', consumer: false, missing: true },
+    ])(
+        'checks a borrower born during final file inspection: $route',
+        async ({ route, consumer, missing }) => {
+            const root = fixture();
+            const storageRoot = join(root, 'storage');
+            const bin = join(root, 'bin');
+            const marker = join(root, 'borrower.json');
+            const count = join(root, 'catalog-count');
+            const processSamples = join(root, 'process-samples.jsonl');
+            mkdirSync(bin, { mode: 0o700 });
+            const outside = join(root, 'outside');
+            mkdirSync(outside, { mode: 0o700 });
+            writeFileSync(join(bin, 'package.json'), '{}\n', { mode: 0o600 });
+            // Owner identity is controlled; same-UID process discovery and the detached
+            // writer are real. The catalog intentionally freezes before the writer starts.
+            const borrowerProgram = `const fs=require('node:fs');const fd=fs.openSync('held','w');fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,cwd:process.cwd()}));setInterval(()=>fs.writeSync(fd,'x'),20);`;
+            writeFileSync(
+                join(bin, 'lsof'),
+                `#!${process.execPath}
+const {execFileSync,spawn}=require('node:child_process');
+const fs=require('node:fs');const {join}=require('node:path');
+const countPath=${JSON.stringify(count)},marker=${JSON.stringify(marker)};
+const count=fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8'))+1:1;
+fs.writeFileSync(countPath,String(count));
+const uid=process.getuid();let catalog='';
+for(const row of execFileSync('/bin/ps',['-axo','pid=,uid='],{encoding:'utf8'}).trim().split('\\n')){
+ const [pid,user]=row.trim().split(/\\s+/).map(Number);
+ if(user===uid){let path='/';if(fs.existsSync(marker)){const borrower=JSON.parse(fs.readFileSync(marker,'utf8'));if(pid===borrower.pid){if(${missing})continue;path=borrower.cwd;}}
+ catalog+='p'+pid+'\\0\\nfcwd\\0tDIR\\0n'+path+'\\0\\n';}
+}
+if(count===${route === 'startup recovery' ? 3 : 2}){
+ const claims=join(${JSON.stringify(storageRoot)},'.claims');
+ const claim=join(claims,fs.readdirSync(claims)[0]);
+ const run=fs.readdirSync(claim).find(name=>name!=='claim.json');
+ const child=spawn(process.execPath,['-e',${JSON.stringify(borrowerProgram)}],{cwd:${consumer ? "join(claim,run,'tmp')" : JSON.stringify(outside)},detached:true,stdio:'ignore',env:{PATH:process.env.PATH}});child.unref();
+ const deadline=Date.now()+3000;while(!fs.existsSync(marker)&&Date.now()<deadline)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);
+ if(!fs.existsSync(marker))process.exit(88);
+}
+process.stdout.write(catalog);
+`,
+                { mode: 0o700 }
+            );
+            writeFileSync(
+                join(bin, 'ps'),
+                `#!${process.execPath}
+const {execFileSync}=require('node:child_process');const fs=require('node:fs');
+if(process.argv[2]==='-axo'){
+ const marker=${JSON.stringify(marker)};const ids=[${process.pid}];
+ if(fs.existsSync(marker))ids.push(JSON.parse(fs.readFileSync(marker,'utf8')).pid);
+ const output=execFileSync('/bin/ps',['-p',ids.join(','),'-o','pid=,uid='],{encoding:'utf8'});
+ fs.appendFileSync(${JSON.stringify(processSamples)},JSON.stringify({catalogCount:fs.existsSync(${JSON.stringify(count)})?Number(fs.readFileSync(${JSON.stringify(count)},'utf8')):0,pids:output.trim().split('\\n').map(row=>Number(row.trim().split(/\\s+/)[0]))})+'\\n');
+ process.stdout.write(output);
+}else process.stdout.write(execFileSync('/bin/ps',process.argv.slice(2),{encoding:'utf8'}));
+`,
+                { mode: 0o700 }
+            );
+            const ports: StorageRecoveryPorts = {
+                identityState: () => 'dead',
+                sessionState: (_owner, original, current = original) => storageFileState([original, current], []),
+            };
+            const storage = ownedStorage(storageRoot, ports);
+            const identity = statSync(dirname(storage.tempDirectory)).ino;
+            const previousPath = process.env.PATH;
+            process.env.PATH = `${bin}:${previousPath}`;
+            try {
+                let released = false;
+                if (route !== 'startup recovery') {
+                    released = await storage.release(true);
+                } else {
+                    recoverGuardStorage(storageRoot, ports, fakeReclaimer);
+                }
+                const borrower: { pid: number; cwd: string } = JSON.parse(readFileSync(marker, 'utf8'));
+                childPids.add(borrower.pid);
+                expect(isAlive(borrower.pid)).toBe(true);
+                const samples: { catalogCount: number; pids: number[] }[] = readFileSync(processSamples, 'utf8')
+                    .trim()
+                    .split('\n')
+                    .map((line) => JSON.parse(line));
+                expect(samples[0]?.pids).toEqual([process.pid]);
+                expect(
+                    samples.find((sample) => sample.catalogCount === (route === 'startup recovery' ? 3 : 2))?.pids
+                ).toContain(borrower.pid);
+                const reclaimable = !consumer && !missing;
+                expect(released).toBe(reclaimable);
+                const observedCatalogs = Number(readFileSync(count, 'utf8'));
+                if (route !== 'startup recovery') {
+                    expect(observedCatalogs).toBe(3);
+                }
+                const held = join(borrower.cwd, 'held');
+                await waitUntil(() => existsSync(held) && statSync(held).size > 0);
+                const written = statSync(held).size;
+                await waitUntil(() => statSync(held).size > written);
+                const payloads = claimPayloads(storageRoot);
+                if (reclaimable) {
+                    expect(payloads).toHaveLength(0);
+                    expect(existsSync(storage.tempDirectory)).toBe(false);
+                    await kill(borrower.pid);
+                    return;
+                }
+                expect(payloads).toHaveLength(1);
+                const payload = payloads[0];
+                if (payload === undefined) {
+                    throw new Error('retained claim payload missing');
+                }
+                expect(statSync(payload).ino).toBe(identity);
+                if (consumer) {
+                    expect(borrower.cwd).toBe(join(payload, 'tmp'));
+                } else {
+                    expect(borrower.cwd).toBe(outside);
+                }
+                recoverGuardStorage(storageRoot, ports, fakeReclaimer);
+                expect(existsSync(held)).toBe(true);
+                await kill(borrower.pid);
+                recoverGuardStorage(storageRoot, ports, fakeReclaimer);
+                expect(existsSync(payload)).toBe(false);
+            } finally {
+                process.env.PATH = previousPath;
+            }
+        },
+        20_000
+    );
+
     it('accepts complete Darwin fileport records without bypassing uncertain fields', async () => {
         const catalog = 'p10\0\nffp.\0tREG\0n/outside/held\0\n';
         expect(parseLsofCensus(catalog)).toEqual({ pids: new Set([10]), paths: ['/outside/held'] });
@@ -1230,13 +1382,14 @@ describe('storage ownership recovery', () => {
                 { mode: 0o700 }
             );
             const resultPath = join(root, 'result.json');
+            const diagnosticPath = join(root, 'proof-diagnostic.json');
             const program = `
                 const {writeFileSync,existsSync}=await import('node:fs');
                 const {join}=await import('node:path');
                 const {createGuardStorage,reclaimGuardStorage,recoverGuardStorage}=await import(${JSON.stringify(storagePath)});
                 const {storageFileState}=await import(${JSON.stringify(guardPath)});
                 const root=${JSON.stringify(join(root, 'storage'))};
-                const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[])};
+                const reasons=[];const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
                 writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path:${JSON.stringify(root)},type:'REG'}));
                 const storage=createGuardStorage({root,token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
                 let current=storage.tempDirectory;
@@ -1259,6 +1412,7 @@ describe('storage ownership recovery', () => {
                 writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path:${JSON.stringify(root)},type:'REG'}));
                 await recoverGuardStorage(root,ports,${JSON.stringify(fakeReclaimer)});
                 writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({state,released,retained,reclaimed:!existsSync(current)}));
+                writeFileSync(${JSON.stringify(diagnosticPath)},JSON.stringify(reasons));
             `;
             const supervisor = spawn(process.execPath, ['--input-type=module', '-e', program], {
                 cwd: root,
@@ -1270,7 +1424,7 @@ describe('storage ownership recovery', () => {
             }
             childPids.add(supervisor.pid);
             await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1));
-            expect(JSON.parse(readFileSync(resultPath, 'utf8'))).toEqual({
+            expect(JSON.parse(readFileSync(resultPath, 'utf8')), readFileSync(diagnosticPath, 'utf8')).toEqual({
                 state: expected,
                 released: expected === 'dead',
                 retained: expected === 'alive',
@@ -1378,8 +1532,9 @@ describe('storage ownership recovery', () => {
                 })
             ).not.toBe(0);
             expect(existsSync(started.tmp)).toBe(true);
-            expect((await guarded(root)).code).toBe(0);
-            expect(existsSync(started.tmp)).toBe(false);
+            const recovery = await guarded(root);
+            expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
+            expect(existsSync(started.tmp), proofDiagnostic(recovery)).toBe(false);
         },
         15_000
     );

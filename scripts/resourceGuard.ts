@@ -1331,19 +1331,27 @@ export function storageFileState(
                 }
             }
         }
-        const readProcessUsers = () =>
-            spawnSync('ps', ['-axo', 'pid=,uid='], {
+        const readProcessUsers = (): number[] | string => {
+            if (Date.now() >= deadline) {
+                return 'file-census-time-bound';
+            }
+            const users = spawnSync('ps', ['-axo', 'pid=,uid='], {
                 encoding: 'utf8',
                 timeout: Math.max(1, deadline - Date.now()),
                 maxBuffer: 16 * 1024 * 1024,
             });
-        let users = readProcessUsers();
-        if (users.status !== 0 || users.stderr !== '') {
-            return unknown('process-users-unavailable');
-        }
-        let pids = sameUserProcessIds(users.stdout, uid, process.pid, ownedPids);
-        if (pids === undefined || pids.length > 8192) {
-            return unknown('process-users-unusable');
+            if (users.status !== 0 || users.stderr !== '') {
+                return 'process-users-unavailable';
+            }
+            const pids = sameUserProcessIds(users.stdout, uid, process.pid, ownedPids);
+            if (pids === undefined || pids.length > 8192) {
+                return 'process-users-unusable';
+            }
+            return Date.now() >= deadline ? 'file-census-time-bound' : pids;
+        };
+        let pids = readProcessUsers();
+        if (typeof pids === 'string') {
+            return unknown(pids);
         }
         if (platform() === 'darwin') {
             for (let observation = 0; observation < 2; observation += 1) {
@@ -1351,13 +1359,9 @@ export function storageFileState(
                     return unknown('file-census-time-bound');
                 }
                 if (observation === 1) {
-                    users = readProcessUsers();
-                    if (users.status !== 0 || users.stderr !== '') {
-                        return unknown('process-users-unavailable');
-                    }
-                    pids = sameUserProcessIds(users.stdout, uid, process.pid, ownedPids);
-                    if (pids === undefined || pids.length > 8192) {
-                        return unknown('process-users-unusable');
+                    pids = readProcessUsers();
+                    if (typeof pids === 'string') {
+                        return unknown(pids);
                     }
                 }
                 const result = spawnSync('lsof', ['-nP', '-F0pfnt', '-a', '-u', String(uid)], {
@@ -1386,8 +1390,15 @@ export function storageFileState(
                 if (census.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
                     return 'alive';
                 }
+                // lsof can finish a catalog captured before a new borrower starts.
+                // Require coverage of processes observed on both sides of inspection.
+                const currentPids = readProcessUsers();
+                if (typeof currentPids === 'string') {
+                    return unknown(currentPids);
+                }
                 const missing: string[] = [];
-                for (const pid of pids) {
+                let onlyNewLivePids = true;
+                for (const pid of new Set([...pids, ...currentPids])) {
                     if (census.pids.has(pid) || processIsGone(pid)) {
                         continue;
                     }
@@ -1400,7 +1411,19 @@ export function storageFileState(
                     if (snapshot?.uid === uid && snapshot.state === 'Z') {
                         continue;
                     }
+                    onlyNewLivePids &&=
+                        !pids.includes(pid) &&
+                        snapshot?.uid === uid &&
+                        ['R', 'S', 'I', 'T', 'U'].includes(snapshot.state);
                     missing.push(`${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
+                }
+                if (Date.now() >= deadline) {
+                    return unknown('lsof-coverage-time-bound');
+                }
+                if (observation === 0 && missing.length > 0 && onlyNewLivePids) {
+                    // Discard the stale catalog. The shared two-observation limit
+                    // permits one complete replacement, never partial coverage.
+                    continue;
                 }
                 const snapshots = missing.slice(0, 4);
                 return missing.length === 0
@@ -1412,7 +1435,20 @@ export function storageFileState(
         if (platform() !== 'linux') {
             return unknown('file-census-platform-unavailable');
         }
-        return linuxStorageFileState(pids, uid, tempDirectories, deadline, report);
+        const state = linuxStorageFileState(pids, uid, tempDirectories, deadline, report);
+        if (state !== 'dead') {
+            return state;
+        }
+        const currentPids = readProcessUsers();
+        if (typeof currentPids === 'string') {
+            return unknown(currentPids);
+        }
+        for (const pid of currentPids) {
+            if (!pids.includes(pid) && !processIsGone(pid)) {
+                return unknown(`proc-live-pid-uninspected:pid=${pid}`);
+            }
+        }
+        return Date.now() >= deadline ? unknown('proc-time-bound') : 'dead';
     } catch {
         return unknown('file-census-unavailable');
     }
