@@ -31,6 +31,10 @@ function formatWarmupSeconds(milliseconds: number): string {
     return `${(milliseconds / 1000).toFixed(1)}s`;
 }
 
+function logWarmupPhase(phase: string): void {
+    console.log(`[first-paint warmup] ${new Date().toISOString()} ${phase}`);
+}
+
 /**
  * Global setup: navigate to the app once and wait out the cold launch path
  * before the first test observes it, so the dev server's module graph is warm
@@ -55,11 +59,17 @@ export default async function warmFirstPaint(config: FullConfig): Promise<void> 
         throw new Error('First-paint warmup requires the project baseURL naming the app server');
     }
 
+    logWarmupPhase('checkout identity: start');
     await assertServingCheckoutIdentity(baseURL, resolve(import.meta.dirname, '../..'));
+    logWarmupPhase('checkout identity: complete');
 
+    logWarmupPhase('browser launch: start');
     const browser = await chromium.launch();
+    logWarmupPhase('browser launch: complete');
     try {
+        logWarmupPhase('page creation: start');
         const page = await browser.newPage({ baseURL });
+        logWarmupPhase('page creation: complete');
         // Direct composition, as in e2eUtils: the launch overlay then renders
         // in the main frame instead of inside the display-scale host iframe.
         // The name rides the argument channel; an init script's free
@@ -70,11 +80,13 @@ export default async function warmFirstPaint(config: FullConfig): Promise<void> 
         const timeline = attach_first_paint_console(page);
         const startedAtMs = performance.now();
         const deadline = performance.now() + COLD_FIRST_PAINT_TIMEOUT_MS;
+        logWarmupPhase('readiness: start');
         await page.goto('/', { timeout: remainingWarmupTime(deadline) });
         await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({ state: 'visible', timeout: remainingWarmupTime(deadline) });
         const overlayPaidMs = performance.now() - startedAtMs;
         await wait_for_console_marker(timeline, CAPABILITIES_MARKER, remainingWarmupTime(deadline));
         const bootPaidMs = performance.now() - startedAtMs;
+        logWarmupPhase('readiness: complete');
         console.log(
             `[first-paint warmup] launch overlay after ${formatWarmupSeconds(overlayPaidMs)}, ` +
                 `boot capabilities after ${formatWarmupSeconds(bootPaidMs)}; ` +
@@ -82,6 +94,8 @@ export default async function warmFirstPaint(config: FullConfig): Promise<void> 
                 `${COLD_FIRST_PAINT_TIMEOUT_MS / 1000}s cold allowance remains for the tests' own waits`
         );
     } finally {
+        logWarmupPhase('browser close: start');
         await browser.close();
+        logWarmupPhase('browser close: complete');
     }
 }
