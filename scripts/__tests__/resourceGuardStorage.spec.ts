@@ -25,6 +25,7 @@ import {
     storageFileState,
     readStorageDescriptor,
     linuxStorageFileState,
+    linuxStorageFileCensus,
     parseLinuxFileSnapshot,
 } from '../resourceGuard';
 import {
@@ -773,6 +774,113 @@ describe('guard-owned temporary storage', () => {
 });
 
 describe('storage ownership recovery', () => {
+    it.each([
+        { scenario: 'unrelated newborn', released: true, state: 'dead' },
+        { scenario: 'newborn cwd borrower', released: false, state: 'alive' },
+        { scenario: 'newborn descriptor borrower', released: false, state: 'alive' },
+        { scenario: 'previously inspected process becomes a borrower', released: false, state: 'alive' },
+        { scenario: 'repeated process arrival', released: false, state: 'unknown' },
+        { scenario: 'denied replacement census', released: false, state: 'unknown' },
+        { scenario: 'incomplete replacement census', released: false, state: 'unknown' },
+        { scenario: 'denied newborn inspection', released: false, state: 'unknown' },
+        { scenario: 'incomplete newborn descriptors', released: false, state: 'unknown' },
+        { scenario: 'expired first census', released: false, state: 'unknown' },
+        { scenario: 'expired replacement inspection', released: false, state: 'unknown' },
+    ] as const)('bounds complete Linux replacement proof for $scenario', async ({ scenario, released, state }) => {
+        const root = fixture();
+        const reports: string[] = [];
+        const inspections: number[][] = [];
+        const states: string[] = [];
+        const ports: StorageRecoveryPorts = {
+            identityState: () => 'dead',
+            sessionState: (_owner, original, current = original) => {
+                let sampledAt = 0;
+                let lists = 0;
+                const inspected: number[] = [];
+                const observed = linuxStorageFileCensus(
+                    [123],
+                    501,
+                    [original, current],
+                    5_000,
+                    (reason) => reports.push(reason),
+                    {
+                        readProcessUsers: () => {
+                            lists++;
+                            if (lists === 1) {
+                                if (scenario === 'expired first census') {
+                                    sampledAt = 5_000;
+                                }
+                                return [123, 124];
+                            }
+                            if (scenario === 'denied replacement census') {
+                                return 'process-users-unavailable';
+                            }
+                            if (scenario === 'incomplete replacement census') {
+                                return 'process-users-unusable';
+                            }
+                            return scenario === 'repeated process arrival' ? [123, 124, 125] : [123, 124];
+                        },
+                        isGone: () => false,
+                        now: () => sampledAt,
+                        files: {
+                            inspectUid: (pid) => {
+                                inspected.push(pid);
+                                return 501;
+                            },
+                            readCwd: (pid) => {
+                                if (pid === 124 && scenario === 'denied newborn inspection') {
+                                    throw Object.assign(new Error('inspection denied'), { code: 'EACCES' });
+                                }
+                                return (pid === 124 && scenario === 'newborn cwd borrower') ||
+                                    (pid === 123 &&
+                                        inspected.length === 2 &&
+                                        scenario === 'previously inspected process becomes a borrower')
+                                    ? current
+                                    : '/outside-storage';
+                            },
+                            listDescriptors: (pid) =>
+                                pid === 124 && scenario === 'incomplete newborn descriptors' ? ['malformed'] : ['27'],
+                            readDescriptor: (pid) => {
+                                if (pid === 124 && scenario === 'expired replacement inspection') {
+                                    sampledAt = 5_001;
+                                }
+                                if (pid === 124 && scenario === 'newborn descriptor borrower') {
+                                    return join(original, 'held');
+                                }
+                                return '/outside-storage/held';
+                            },
+                            readStatus: () => '',
+                            isGone: () => false,
+                            now: () => sampledAt,
+                        },
+                    }
+                );
+                states.push(observed);
+                inspections.push(inspected);
+                expect(lists).toBeLessThanOrEqual(2);
+                return observed;
+            },
+        };
+        const storage = ownedStorage(root, ports);
+        expect(await storage.release(true), reports.join('; ')).toBe(released);
+        expect(existsSync(storage.tempDirectory)).toBe(!released);
+        expect(states.every((observed) => observed === state)).toBe(true);
+        expect(inspections).not.toHaveLength(0);
+        let expectedInspection = [123, 123, 124];
+        if (scenario === 'expired first census') {
+            expectedInspection = [123];
+        }
+        if (scenario === 'previously inspected process becomes a borrower') {
+            expectedInspection = [123, 123];
+        }
+        for (const observed of inspections) {
+            expect(observed).toEqual(expectedInspection);
+        }
+        if (!released && state === 'unknown') {
+            expect(reports).not.toHaveLength(0);
+        }
+    });
+
     it.each(['original', 'moved claim'] as const)(
         'requires complete file proof before final recovery of %s storage',
         (payload) => {

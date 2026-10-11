@@ -745,12 +745,13 @@ or signaling fences. Denied inspection and unavailable or malformed status still
 On macOS, an unreaped same-UID process positively sampled in zombie state has already released
 its file table; this exception never releases process-identity or signaling fences.
 File inspection checks same-UID process coverage again after reading files, so a process born
-during inspection cannot disappear from the proof. On macOS, an otherwise valid catalog missing
-only a descriptor type, or omitting a newly observed positively live same-UID process, may be
-discarded for one complete replacement. Both conditions share a maximum of two observations
-within the same five-second proof deadline. Only wholly complete replacement evidence permits
-deletion; another uncovered process, ambiguous identity, malformed catalog, denied inspection
-or unavailable evidence retains storage. Processes created after the final proof remain outside
+during inspection cannot disappear from the proof. On Linux, a newly listed live same-UID process
+permits one complete replacement inspection of the full fresh process list. On macOS, an otherwise
+valid catalog missing only a descriptor type, or omitting a newly observed positively live same-UID
+process, may be discarded for one complete replacement. Each platform allows at most two
+observations within the same five-second proof deadline; both macOS conditions share that limit.
+Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
+identity, malformed catalog, denied inspection or unavailable evidence retains storage. Processes created after the final proof remain outside
 that observation; this is conservative sampled evidence, not a guarantee of continuous isolation.
 Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
 

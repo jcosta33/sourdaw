@@ -1302,6 +1302,49 @@ export function linuxStorageFileState(
     return 'dead';
 }
 
+export function linuxStorageFileCensus(
+    pids: number[],
+    uid: number,
+    tempDirectories: string[],
+    deadline: number,
+    report: (reason: string) => void,
+    ports: {
+        readProcessUsers: () => number[] | string;
+        isGone: (pid: number) => boolean;
+        files?: LinuxFilePorts;
+        now?: () => number;
+    }
+): 'alive' | 'dead' | 'unknown' {
+    const unknown = (reason: string): 'unknown' => {
+        report(reason);
+        return 'unknown';
+    };
+    const now = ports.now ?? Date.now;
+    for (let observation = 0; observation < 2; observation++) {
+        const state = linuxStorageFileState(pids, uid, tempDirectories, deadline, report, ports.files);
+        if (state !== 'dead') {
+            return state;
+        }
+        const currentPids = ports.readProcessUsers();
+        if (typeof currentPids === 'string') {
+            return unknown(currentPids);
+        }
+        const uninspectedPid = currentPids.find((pid) => !pids.includes(pid) && !ports.isGone(pid));
+        if (now() >= deadline) {
+            return unknown('proc-time-bound');
+        }
+        if (uninspectedPid === undefined) {
+            return 'dead';
+        }
+        if (observation === 1) {
+            return unknown(`proc-live-pid-uninspected:pid=${uninspectedPid}`);
+        }
+        // Discard the stale inspection once; replacement covers the whole fresh list.
+        pids = currentPids;
+    }
+    return unknown('file-census-unavailable');
+}
+
 export function storageFileState(
     tempDirectories: string[],
     ownedPids: number[],
@@ -1435,20 +1478,10 @@ export function storageFileState(
         if (platform() !== 'linux') {
             return unknown('file-census-platform-unavailable');
         }
-        const state = linuxStorageFileState(pids, uid, tempDirectories, deadline, report);
-        if (state !== 'dead') {
-            return state;
-        }
-        const currentPids = readProcessUsers();
-        if (typeof currentPids === 'string') {
-            return unknown(currentPids);
-        }
-        for (const pid of currentPids) {
-            if (!pids.includes(pid) && !processIsGone(pid)) {
-                return unknown(`proc-live-pid-uninspected:pid=${pid}`);
-            }
-        }
-        return Date.now() >= deadline ? unknown('proc-time-bound') : 'dead';
+        return linuxStorageFileCensus(pids, uid, tempDirectories, deadline, report, {
+            readProcessUsers,
+            isGone: processIsGone,
+        });
     } catch {
         return unknown('file-census-unavailable');
     }
