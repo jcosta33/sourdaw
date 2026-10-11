@@ -221,7 +221,6 @@ function seedDevice(deviceId: string): void {
 
 function makeDeps(autoLoad: typeof autoLoadLevainSamples) {
     return {
-        getAllTracks: vi.fn(() => []),
         persistDeviceParam: vi.fn(),
         writeNativeBuiltinParameters: vi.fn(),
         sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
