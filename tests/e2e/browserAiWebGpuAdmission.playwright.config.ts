@@ -20,8 +20,8 @@ export default defineConfig({
     // observing their first-paint bounds. See ./firstPaintWarmup.ts.
     globalSetup: './firstPaintWarmup.ts',
     // Bound setup, the four 180-second tests, and teardown before the CI step's
-    // 22-minute limit so a stalled phase can still leave a diagnostic artifact.
-    globalTimeout: 20 * 60_000,
+    // 18-minute limit so a stalled phase can still leave a diagnostic artifact.
+    globalTimeout: 17 * 60_000,
     timeout: 60_000,
     fullyParallel: false,
     forbidOnly: true,

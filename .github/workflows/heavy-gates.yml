@@ -176,23 +176,28 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
+        timeout-minutes: 1
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Enable Corepack
+        timeout-minutes: 1
         run: corepack enable
 
       - name: Set up pnpm
+        timeout-minutes: 1
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
+        timeout-minutes: 2
         run: pnpm install --frozen-lockfile
 
       # Bounded like the retried install above: a stalled download fails in
@@ -200,11 +205,11 @@ jobs:
       # runner took 24s at the 99th percentile and 103s at most from
       # 2026-09-20 to 2026-10-08.
       - name: Install Chromium
-        timeout-minutes: 5
+        timeout-minutes: 2
         run: pnpm exec playwright install chromium
 
       - name: Run Browser AI WebGPU admission
-        timeout-minutes: 22
+        timeout-minutes: 18
         shell: bash
         env:
           DEBUG: pw:api,pw:browser
@@ -225,6 +230,7 @@ jobs:
 
       - name: Upload Browser AI WebGPU diagnostics
         if: ${{ always() }}
+        timeout-minutes: 2
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: browser-ai-webgpu-diagnostics
