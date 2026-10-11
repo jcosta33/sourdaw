@@ -65,6 +65,7 @@
         "review:shadow-status": "node scripts/trustedGithubWriteBootstrap.ts review:shadow-status",
         "review:reconstruct": "node scripts/reconstructReviewRounds.ts",
         "ruleset:harden": "node scripts/trustedGithubWriteBootstrap.ts ruleset:harden",
+        "retarget:plan": "node scripts/retargetCapabilitySnapshot.ts",
         "stances:check": "node scripts/checkStancesRecord.ts",
         "pr:supersede": "node scripts/supersedePullRequest.ts",
         "branch:prune": "node scripts/pruneRemoteBranches.ts",
