@@ -1,0 +1,79 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleOfflineAdjustmentCurves.spec.ts
+  s_29d8df116c5b92::t_35d653b6930cf0 56-67
+  s_29d8df116c5b92::t_a24e7f70c0e089 1-48,50-55,68
+  s_29d8df116c5b92::t_634a3b3e14fb2c 49
+  s_29d8df116c5b92::t_dbf4bbc8440144 69-115
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_29d8df116c5b92::t_06bed589eceed1 2169-2170,2173-2197,2206,2211
+  s_29d8df116c5b92::t_634a3b3e14fb2c 2171-2172
+  s_29d8df116c5b92::t_38ca534a3b6462 9
+  s_29d8df116c5b92::t_a7afb3a12fd1f1 2198-2205,2207-2210,2212-2223
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_29d8df116c5b92::t_38ca534a3b6462 1274-1308
+  s_29d8df116c5b92::t_35d653b6930cf0 10
+  s_29d8df116c5b92::t_a3a9cc886e065f 11-14,1309-1354
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineModulatorParity.spec.ts
+  s_29d8df116c5b92::t_197b27e9815a2b 214-215,220,227-229,231-232,239,244,246-248,250-265,271-282,314-316,319-321,323-339,347-349,353-356,364-366
+  s_29d8df116c5b92::t_d1ee5c9bc4bcf2 216-219,221-226,233-238,240-243,357-363
+  s_29d8df116c5b92::t_35d653b6930cf0 114,343-346,350-352,367-368
+  s_29d8df116c5b92::t_a24e7f70c0e089 8-11,127,192-213,230,245,249,266-270,283-313,317-318,322,340-342
+  s_29d8df116c5b92::t_4e941eda6f3f7a 369-380
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineAdjustmentCurves.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 4,35,42-44,67
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 169,379,419
+src/modules/Transport/useCases/index.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 23
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 168
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflinePpqEndpointProjector.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 5,19-20,26,30
+.agents/skills/review-stances/correctness.md
+  s_29d8df116c5b92::t_b040f89e75f402 71-86
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 24,47,112
+src/app/bootstrap.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 192,337
+src/modules/AudioEngine/repositories/offlineScheduler/offlinePpqEndpointProjectorState.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 44-50,54-55
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 39,71,208,375-377
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveRenderContext.spec.ts
+  s_29d8df116c5b92::t_1357f010fdc9e6 8,23,135-154
+  s_29d8df116c5b92::t_4fc9b9d70e892c 155-167
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_29d8df116c5b92::t_634a3b3e14fb2c 406-407
+  s_29d8df116c5b92::t_76b3cce5deece7 8,20,92,405,408-429,436,442,446
+  s_29d8df116c5b92::t_a887431ca8d179 430-435,437-441,443-445,447-454
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_b040f89e75f402 9-23
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 224-225,422,439,520,1113-1115,1124
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_29d8df116c5b92::t_35d653b6930cf0 149-152,640-641,651-655
+  s_29d8df116c5b92::t_297944ad850384 656-660
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 205
+  s_29d8df116c5b92::t_197b27e9815a2b 207-210,230
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineMix.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 67,107
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_29d8df116c5b92::t_790a2d20b2aeb1 202,516
+  s_29d8df116c5b92::t_197b27e9815a2b 455-459,484
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6d4590b35fbc79aeebe6e0127d39b322969a6881",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
