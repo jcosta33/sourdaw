@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, lstatSync, readdirSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
@@ -59,6 +60,7 @@ const REVIEW_TOOLING = new Set([
     'deliveryLockLegacyIncidents',
     'pullRequestReviewState',
     'pullRequestMutationLock',
+    'prValidationScope',
     'pruneLane',
     'removeLane',
     'retargetCapabilityPlan',
@@ -135,6 +137,8 @@ const SEMANTIC_REVIEW_TOOLING = new Set([
 
 const SEMANTIC_MEASUREMENT_TOOLING = new Set(['artifacts.ts', 'contracts.ts', 'gaps.ts', 'record.ts']);
 
+const OPERATIONAL_PACKAGE_SCRIPTS = new Map([['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts']]);
+
 export type BrowserMatrix = { include: { id: number; specs: string[] }[] };
 export type ValidationPlan = {
     version: 1;
@@ -182,6 +186,16 @@ function isReviewTooling(path: string): boolean {
     return REVIEW_TOOLING.has(spec.replace(/\d+$/, ''));
 }
 
+function toolingReason(path: string, packageScriptOnly: boolean): string | null {
+    if (path === 'package.json' && packageScriptOnly) {
+        return 'known operational script route; security/static checks without browser execution';
+    }
+    if (isReviewTooling(path)) {
+        return 'known review tooling; security/static checks without browser execution';
+    }
+    return null;
+}
+
 function isSpec(path: string): boolean {
     const segments = path.split('/');
     return isPlaywrightCollected(path) && !segments.includes('..') && !segments.includes('node_modules');
@@ -221,6 +235,95 @@ export function parseChangedPaths(diff: string): string[] {
     return [...paths].sort();
 }
 
+function packageHasModifiedStatus(diff: string): boolean {
+    const fields = diff.split('\0');
+    let modified = false;
+    for (let index = 0; index < fields.length - 1;) {
+        const status = fields[index++];
+        const firstPath = fields[index++];
+        const secondPath = status?.startsWith('R') || status?.startsWith('C') ? fields[index++] : undefined;
+        if (firstPath !== 'package.json' && secondPath !== 'package.json') {
+            continue;
+        }
+        if (modified || status !== 'M' || firstPath !== 'package.json') {
+            return false;
+        }
+        modified = true;
+    }
+    return modified;
+}
+
+type PackageDocument = Record<string, unknown> & { scripts: Record<string, string> };
+
+function readPackageBlob(revision: string): PackageDocument | null {
+    const tree = execFileSync('git', ['ls-tree', revision, '--', 'package.json'], { encoding: 'utf8' });
+    if (!/^100644 blob [a-f0-9]{40}\tpackage\.json\n$/.test(tree)) {
+        return null;
+    }
+    const source = execFileSync('git', ['show', `${revision}:package.json`], {
+        encoding: 'utf8',
+        maxBuffer: 2 * 1024 * 1024,
+    });
+    const parsed: unknown = JSON.parse(source);
+    if (
+        source !== `${JSON.stringify(parsed, null, 4)}\n` ||
+        !parsed ||
+        typeof parsed !== 'object' ||
+        Array.isArray(parsed)
+    ) {
+        return null;
+    }
+    const scripts: unknown = (parsed as Record<string, unknown>).scripts;
+    if (
+        !scripts ||
+        typeof scripts !== 'object' ||
+        Array.isArray(scripts) ||
+        Object.values(scripts).some((value) => typeof value !== 'string')
+    ) {
+        return null;
+    }
+    return parsed as PackageDocument;
+}
+
+function isOperationalPackageScriptChange(diff: string, base: string, head: string): boolean {
+    if (!packageHasModifiedStatus(diff)) {
+        return false;
+    }
+    try {
+        const mergeBase = execFileSync('git', ['merge-base', base, head], { encoding: 'utf8' }).trim();
+        if (!/^[a-f0-9]{40}$/.test(mergeBase)) {
+            return false;
+        }
+        const basePackage = readPackageBlob(base);
+        const before = readPackageBlob(mergeBase);
+        const after = readPackageBlob(head);
+        if (!basePackage || !before || !after || !isDeepStrictEqual(basePackage, before)) {
+            return false;
+        }
+        const { scripts: oldScripts, ...oldFields } = before;
+        const { scripts: newScripts, ...newFields } = after;
+        if (!isDeepStrictEqual(oldFields, newFields)) {
+            return false;
+        }
+        const changedKeys = Array.from(new Set([...Object.keys(oldScripts), ...Object.keys(newScripts)])).filter(
+            (key) => oldScripts[key] !== newScripts[key]
+        );
+        return (
+            changedKeys.length > 0 &&
+            changedKeys.every((key) => {
+                const allowed = OPERATIONAL_PACKAGE_SCRIPTS.get(key);
+                return (
+                    allowed !== undefined &&
+                    (oldScripts[key] === undefined || oldScripts[key] === allowed) &&
+                    (newScripts[key] === undefined || newScripts[key] === allowed)
+                );
+            })
+        );
+    } catch {
+        return false;
+    }
+}
+
 function browserMatrix(specs: readonly string[], durations: SpecDurations): BrowserMatrix {
     if (specs.length === 0) {
         return { include: [] };
@@ -234,7 +337,8 @@ function browserMatrix(specs: readonly string[], durations: SpecDurations): Brow
 export function selectValidationPlan(
     paths: readonly string[],
     availableSpecs: readonly string[],
-    durations: SpecDurations = new Map()
+    durations: SpecDurations = new Map(),
+    packageScriptOnly = false
 ): ValidationPlan {
     if (paths.length === 0) {
         throw new Error('Changed path list is empty');
@@ -257,9 +361,10 @@ export function selectValidationPlan(
             continue;
         }
         codeql ||= needsCodeql(path);
-        if (isReviewTooling(path)) {
+        const reason = toolingReason(path, packageScriptOnly);
+        if (reason !== null) {
             tooling = true;
-            reasons.push({ path, reason: 'known review tooling; security/static checks without browser execution' });
+            reasons.push({ path, reason });
             continue;
         }
         browser = true;
@@ -352,7 +457,13 @@ function main(): void {
         encoding: 'utf8',
         maxBuffer: 16 * 1024 * 1024,
     });
-    const plan = selectValidationPlan(parseChangedPaths(diff), listSpecs(root), readSpecDurations());
+    const paths = parseChangedPaths(diff);
+    const plan = selectValidationPlan(
+        paths,
+        listSpecs(root),
+        readSpecDurations(),
+        paths.includes('package.json') && isOperationalPackageScriptChange(diff, base, head)
+    );
     writeFileSync('pr-validation-scope.json', `${JSON.stringify(plan, null, 2)}\n`);
     appendFileSync(
         output,

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
     return {
+        buildOfflineModulatorPlans: actual.buildOfflineModulatorPlans,
         clipAutomationMoveStateMatches: mocks.clipAutomationMoveStateMatches,
         getAutomationLanes: mocks.getAutomationLanes,
         getAutomationLaneCeiling: actual.getAutomationLaneCeiling,

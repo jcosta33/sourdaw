@@ -1,0 +1,1440 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
+
+import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import { type ChatMessage } from '../../models/Chat';
+import { type MeasuredPreview } from '../../models/MeasuredPreview';
+import { type ProjectContext } from '../../models/ProjectContext';
+import {
+    THREAD_COMMIT_STANDINGS,
+    THREAD_CONTEXT_MAX_BYTES,
+    THREAD_CONTEXT_MAX_TURNS,
+    type ThreadContext,
+} from '../../models/ThreadContext';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
+import { chatStore, clearChatMessages } from '../../stores/chatStore';
+import {
+    clearPendingActionConfirmations,
+    proposePendingActionConfirmation,
+} from '../../stores/pendingActionConfirmationStore';
+import { buildThreadContext, type ThreadContextSources } from '../../transformers/buildThreadContext';
+import { fitThreadContext, MAX_THREAD_REQUEST_LENGTH } from '../../transformers/fitThreadContext';
+import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
+import { orchestratePromptChatRequest } from '../agentRequestOrchestration/orchestratePromptChatRequest';
+import { agentRunLifecycle } from '../agentRunLifecycle';
+import { buildAgentContext } from '../buildAgentContext';
+import { declareHostedTurnDataCategories } from '../llmOrchestration/declareHostedTurnDataCategories';
+import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { parsePromptToActions } from '../parsePromptToActions';
+import { readChatThreadContext } from '../readChatThreadContext';
+
+import { createFullThreadContext, threadRequest } from './threadContextFixture';
+
+/**
+ * AC-001 (#4380): a request planned while the chat thread holds a pending proposal or a recent
+ * commit carries a bounded `thread_context` section: the thread's earlier requests, the pending
+ * proposal's commands and labels, and the last commit's commands, receipts and measured deltas,
+ * sized under each profile's byte cap by dropping the oldest turns first, and recorded as run
+ * evidence in counts and bytes.
+ */
+
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    captureProjectRevision: vi.fn(() => 'revision-1'),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-1'),
+}));
+
+const mocks = vi.hoisted(() => ({ getProjectContext: vi.fn() }));
+
+vi.mock('../getProjectContext', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../getProjectContext')>()),
+    getProjectContext: mocks.getProjectContext,
+}));
+
+vi.mock('../../repositories/webLlm/getActiveModelId', () => ({ getActiveModelId: () => 'fixture-model' }));
+
+vi.mock('../../transformers/promptParser/parsing', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../transformers/promptParser/parsing')>();
+    return {
+        ...original,
+        tryPresetMatch: vi.fn(original.tryPresetMatch),
+        tryParameterizedPath: vi.fn(original.tryParameterizedPath),
+        tryCompoundFastPath: vi.fn(original.tryCompoundFastPath),
+    };
+});
+
+vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../llmOrchestration/inference')>()),
+    generateToolPlanningOutcome: vi.fn(),
+}));
+
+const context: ProjectContext = {
+    tempo: 120,
+    timeSignature: [4, 4],
+    isPlaying: false,
+    isRecording: false,
+    isLooping: false,
+    loopStart: 0,
+    loopEnd: 0,
+    punchInEnabled: false,
+    punchInBeat: 0,
+    punchOutBeat: 16,
+    metronomeEnabled: false,
+    metronomeVolume: 0.5,
+    masterGain: 0.8,
+    tracks: [],
+    selectedTrackId: null,
+    selectedClipId: null,
+    selectedClipIds: [],
+    activeView: 'arrange',
+    playheadPosition: 0,
+};
+
+const GAIN_ACTION = {
+    type: 'setTrackGain',
+    payload: { trackId: 'track-bass', gainDb: -3, expectedGain: 1 },
+} as const;
+
+const MEASURED_PREVIEW: MeasuredPreview = {
+    scope: { kind: 'master' },
+    range: { startBeat: 0, endBeat: 16, sectionId: null },
+    targets: [
+        {
+            targetId: 'master',
+            targetKind: 'master',
+            baseline: {},
+            preview: {},
+            deltas: {
+                integratedLoudness: { status: 'compared', delta: -1.5, unit: 'LUFS' },
+                stereoWidth: { status: 'incomparable', reason: 'The baseline render is silent.' },
+            },
+        },
+    ],
+    batchContentHash: 'batch-hash-1',
+    revision: 'revision-1',
+};
+
+function message(id: string, role: ChatMessage['role'], content: string, extra: Partial<ChatMessage> = {}) {
+    return { id, role, content, timestamp: 1, ...extra } satisfies ChatMessage;
+}
+
+const OPEN_PROJECT = 'project-open';
+const OTHER_PROJECT = 'project-other';
+
+/**
+ * A confirmation as the store holds it. Its batch id is the one its command batch envelope records;
+ * its group id defaults to that batch id, as on a whole proposal, and differs on a subset re-proposed
+ * by partial acceptance, which keeps the group id of the proposal it replaced.
+ */
+function confirmation(input: {
+    runId: string;
+    assistantMessageId: string;
+    status: 'proposed' | 'executed' | 'cancelled' | 'failed';
+    supersededBy?: string | null;
+    measuredPreview?: MeasuredPreview;
+    batchId?: string;
+    groupId?: string;
+    projectId?: string;
+    actions?: ThreadContextSources['confirmations'][number]['approvalSnapshot']['actions'];
+    actionLabels?: readonly string[];
+    /** What its executed actions changed; a batch that has not executed has none. */
+    executionKind?: 'project' | 'runtime';
+}): ThreadContextSources['confirmations'][number] & { groupId: string } {
+    const approvalSnapshot: ThreadContextSources['confirmations'][number]['approvalSnapshot'] = {
+        actions: input.actions ?? [GAIN_ACTION],
+        actionLabels: input.actionLabels ?? ['Set Bass gain to -3 dB'],
+        commandBatch: { authority: { projectId: input.projectId ?? OPEN_PROJECT } },
+    };
+    if (input.measuredPreview !== undefined) {
+        approvalSnapshot.measuredPreview = input.measuredPreview;
+    }
+    const batchId = input.batchId ?? `${input.runId}:batch-1`;
+    return {
+        runId: input.runId,
+        assistantMessageId: input.assistantMessageId,
+        status: input.status,
+        supersededBy: input.supersededBy ?? null,
+        batchId,
+        groupId: input.groupId ?? batchId,
+        executedActions: input.executionKind === undefined ? [] : [{ executionKind: input.executionKind }],
+        approvalSnapshot,
+    };
+}
+
+/** One batch's receipt: its work is the batch, whose id is also its revert group. */
+function receipt(runId: string, batchId = `${runId}:batch-1`) {
+    return { workId: batchId, receiptIdentity: `command:${batchId}`, revertGroupId: batchId, committedAt: 2 };
+}
+
+function sources(partial: Partial<ThreadContextSources>): ThreadContextSources {
+    return {
+        messages: [],
+        confirmations: [],
+        runs: [],
+        actionGroups: [],
+        projectId: OPEN_PROJECT,
+        pastGroupIds: new Set(),
+        futureGroupIds: new Set(),
+        ...partial,
+    };
+}
+
+/** The serialized batch a confirmation holds, bound to `projectId` as the compiled envelope binds it. */
+function pendingCommandBatch(projectId: string) {
+    return {
+        serialized: '{}',
+        authority: {
+            projectId,
+            baseRevision: 'revision-1',
+            scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            grants: {
+                allowedOperationPrefixes: [],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: {
+                maxCommands: 1,
+                maxCreatedTracks: 0,
+                maxDeletedObjects: 0,
+                maxAffectedTracks: 1,
+                maxAffectedClips: 0,
+                maxAutomationPoints: 0,
+                maxImportedAssets: 0,
+                maxRenderJobs: 0,
+            },
+        },
+    };
+}
+
+/** A command message the chat stamped for a run in the open project, and the batch it committed directly. */
+function commandMessage(id: string, runId: string, projectId = OPEN_PROJECT, batchId = `${runId}:batch-1`) {
+    return message(id, 'assistant', 'Executed.', { agentRunId: runId, agentBatchId: batchId, projectId });
+}
+
+const CONTEXT_INPUT = { fixedPolicy: 'policy', prompt: 'a bit less', context, projectRevision: 'revision-1' };
+
+/** The planning context for one request; with no thread argument, built exactly as before threads existed. */
+function buildContext(...thread: [] | [ThreadContext | null]) {
+    if (thread.length === 0) {
+        return buildAgentContext(CONTEXT_INPUT);
+    }
+    return buildAgentContext({ ...CONTEXT_INPUT, thread: thread[0] });
+}
+
+function readSection(text: string): Record<string, unknown> {
+    const match = /\n\nthread_context:\n(.+)\n\n/u.exec(text);
+    if (match?.[1] === undefined) {
+        throw new Error('Expected a thread_context section.');
+    }
+    return JSON.parse(match[1]) as Record<string, unknown>;
+}
+
+describe('thread context for the planner', () => {
+    describe('reading the thread', () => {
+        it('has no state when nothing is pending or committed, and the message carries no section', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'what is the tempo?'),
+                        message('assistant-1', 'assistant', 'The tempo is 120 BPM.'),
+                        message('user-2', 'user', 'make the bass louder'),
+                        message('assistant-2', 'assistant', 'Executing...', { agentRunId: 'run-cancelled' }),
+                    ],
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-cancelled',
+                            assistantMessageId: 'assistant-2',
+                            status: 'cancelled',
+                        }),
+                        confirmation({
+                            runId: 'run-replaced',
+                            assistantMessageId: 'assistant-2',
+                            status: 'proposed',
+                            supersededBy: 'later-confirmation',
+                        }),
+                    ],
+                    runs: [{ runId: 'run-cancelled', receipts: [] }],
+                })
+            );
+
+            expect(thread).toBeNull();
+            const without = buildContext();
+            const withNull = buildContext(thread);
+            expect(withNull.message).toBe(without.message);
+            expect(withNull.localMessage).toBe(without.localMessage);
+            expect(withNull.message).not.toContain('thread_context');
+            expect(withNull.evidence.included).not.toHaveProperty('thread');
+        });
+
+        it('carries the earlier requests and the pending proposal, with its commands and labels', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'what is the tempo?'),
+                        message('assistant-1', 'assistant', 'The tempo is 120 BPM.'),
+                        message('user-2', 'user', 'make the bass louder'),
+                        message('assistant-2', 'assistant', 'Review the change.', { agentRunId: 'run-pending' }),
+                    ],
+                    confirmations: [
+                        confirmation({ runId: 'run-pending', assistantMessageId: 'assistant-2', status: 'proposed' }),
+                    ],
+                })
+            );
+
+            expect(thread).toEqual({
+                requests: ['what is the tempo?', 'make the bass louder'],
+                pendingProposal: {
+                    runId: 'run-pending',
+                    commands: [
+                        { name: 'setTrackGain', label: 'Set Bass gain to -3 dB', arguments: GAIN_ACTION.payload },
+                    ],
+                },
+                lastCommit: null,
+            });
+            const built = buildContext(thread);
+            for (const text of [built.message, built.localMessage]) {
+                expect(text.indexOf('user_request:')).toBeLessThan(text.indexOf('thread_context:'));
+                expect(readSection(text)).toMatchObject({
+                    requests: [
+                        { trust: 'untrusted_user_string', value: 'what is the tempo?', truncated: false },
+                        { trust: 'untrusted_user_string', value: 'make the bass louder', truncated: false },
+                    ],
+                    omittedRequestCount: 0,
+                    pendingProposal: {
+                        trust: 'untrusted_project_data',
+                        commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
+                        omittedCommandCount: 0,
+                    },
+                    lastCommit: null,
+                });
+            }
+        });
+
+        it('carries the newer of two live proposals on different messages', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'make the bass louder'),
+                        message('assistant-1', 'assistant', 'Review the change.'),
+                        message('user-2', 'user', 'mute the pad'),
+                        message('assistant-2', 'assistant', 'Review the change.'),
+                    ],
+                    confirmations: [
+                        confirmation({ runId: 'run-older', assistantMessageId: 'assistant-1', status: 'proposed' }),
+                        confirmation({
+                            runId: 'run-newer',
+                            assistantMessageId: 'assistant-2',
+                            status: 'proposed',
+                            actions: [{ type: 'muteTrack', payload: { trackId: 'track-pad', muted: true } }],
+                            actionLabels: ['Mute Pad'],
+                        }),
+                    ],
+                })
+            );
+
+            expect(thread?.pendingProposal).toEqual({
+                runId: 'run-newer',
+                commands: [{ name: 'muteTrack', label: 'Mute Pad', arguments: { trackId: 'track-pad', muted: true } }],
+            });
+        });
+
+        it("carries a confirmed commit's commands, receipt id and measured deltas", () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'make the bass louder'),
+                        message('assistant-1', 'assistant', 'Executed.'),
+                    ],
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-committed',
+                            assistantMessageId: 'assistant-1',
+                            status: 'executed',
+                            measuredPreview: MEASURED_PREVIEW,
+                        }),
+                    ],
+                    runs: [{ runId: 'run-committed', receipts: [receipt('run-committed')] }],
+                    actionGroups: [{ groupId: 'run-committed:batch-1', reverted: false, actions: [] }],
+                    pastGroupIds: new Set(['run-committed:batch-1']),
+                })
+            );
+
+            expect(thread?.lastCommit).toEqual({
+                runId: 'run-committed',
+                receiptIds: ['command:run-committed:batch-1'],
+                standing: 'standing',
+                commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB', arguments: GAIN_ACTION.payload }],
+                measuredDeltas: [{ targetId: 'master', metric: 'integratedLoudness', delta: -1.5, unit: 'LUFS' }],
+            });
+            expect(readSection(buildContext(thread).message)).toMatchObject({
+                lastCommit: {
+                    receiptIds: ['command:run-committed:batch-1'],
+                    commands: [{ name: 'setTrackGain' }],
+                    standing: 'standing',
+                    measuredDeltas: [{ metric: 'integratedLoudness', delta: -1.5, unit: 'LUFS' }],
+                },
+            });
+        });
+
+        it('reads a direct commit from its run and its history entry, newest commit first', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'mute the pad'),
+                        commandMessage('assistant-1', 'run-older'),
+                        message('user-2', 'user', 'set the tempo to 128'),
+                        commandMessage('assistant-2', 'run-newer'),
+                    ],
+                    runs: [
+                        { runId: 'run-older', receipts: [receipt('run-older')] },
+                        { runId: 'run-newer', receipts: [receipt('run-newer')] },
+                    ],
+                    actionGroups: [
+                        {
+                            groupId: 'run-newer:batch-1',
+                            reverted: false,
+                            actions: [{ actionType: 'setTempo', label: 'Set tempo to 128 BPM' }],
+                        },
+                    ],
+                    futureGroupIds: new Set(['run-newer:batch-1']),
+                })
+            );
+
+            expect(thread?.lastCommit).toEqual({
+                runId: 'run-newer',
+                receiptIds: ['command:run-newer:batch-1'],
+                standing: 'undone',
+                commands: [{ name: 'setTempo', label: 'Set tempo to 128 BPM' }],
+                measuredDeltas: [],
+            });
+        });
+
+        describe('a run committed in two batches', () => {
+            function twoBatchThread(history: { past: readonly string[]; future: readonly string[] }) {
+                return buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'set every verse track to -6 dB'),
+                            message('assistant-1', 'assistant', 'Batch 1 of 2 executed.'),
+                            message('assistant-2', 'assistant', 'Batch 2 of 2 executed.'),
+                        ],
+                        confirmations: [
+                            confirmation({
+                                runId: 'run-batched',
+                                assistantMessageId: 'assistant-1',
+                                status: 'executed',
+                                batchId: 'run-batched:batch-1',
+                            }),
+                            confirmation({
+                                runId: 'run-batched',
+                                assistantMessageId: 'assistant-2',
+                                status: 'executed',
+                                batchId: 'run-batched:batch-2',
+                                actions: [{ type: 'setTrackGain', payload: { trackId: 'track-pad', gainDb: -6 } }],
+                                actionLabels: ['Set Pad gain to -6 dB'],
+                            }),
+                        ],
+                        runs: [
+                            {
+                                runId: 'run-batched',
+                                receipts: [
+                                    receipt('run-batched', 'run-batched:batch-1'),
+                                    receipt('run-batched', 'run-batched:batch-2'),
+                                ],
+                            },
+                        ],
+                        pastGroupIds: new Set(history.past),
+                        futureGroupIds: new Set(history.future),
+                    })
+                );
+            }
+
+            it('reports the newest batch undone when only that batch was undone', () => {
+                expect(
+                    twoBatchThread({ past: ['run-batched:batch-1'], future: ['run-batched:batch-2'] })?.lastCommit
+                ).toMatchObject({
+                    receiptIds: ['command:run-batched:batch-2'],
+                    standing: 'undone',
+                    commands: [{ label: 'Set Pad gain to -6 dB' }],
+                });
+            });
+
+            it('reports the newest batch standing when only the earlier batch was undone', () => {
+                expect(
+                    twoBatchThread({ past: ['run-batched:batch-2'], future: ['run-batched:batch-1'] })?.lastCommit
+                ).toMatchObject({ receiptIds: ['command:run-batched:batch-2'], standing: 'standing' });
+            });
+        });
+
+        describe("a commit's standing, read from where the undo history holds its group", () => {
+            const GROUP = 'run-single:batch-1';
+
+            function singleCommitThread(input: {
+                past?: readonly string[];
+                future?: readonly string[];
+                panelReverted?: boolean;
+                revertGroupId?: string | null;
+            }) {
+                const batchReceipt = {
+                    ...receipt('run-single'),
+                    revertGroupId: input.revertGroupId === undefined ? GROUP : input.revertGroupId,
+                };
+                return buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'mute the pad'),
+                            commandMessage('assistant-1', 'run-single'),
+                        ],
+                        runs: [{ runId: 'run-single', receipts: [batchReceipt] }],
+                        actionGroups: [
+                            {
+                                groupId: GROUP,
+                                reverted: input.panelReverted ?? false,
+                                actions: [{ actionType: 'muteTrack', label: 'Mute Pad' }],
+                            },
+                        ],
+                        pastGroupIds: new Set(input.past ?? []),
+                        futureGroupIds: new Set(input.future ?? []),
+                    })
+                )?.lastCommit?.standing;
+            }
+
+            it('reads standing while the group is applied in past', () => {
+                expect(singleCommitThread({ past: [GROUP] })).toBe('standing');
+            });
+
+            it('reads undone after an undo moved the group to future', () => {
+                expect(singleCommitThread({ future: [GROUP] })).toBe('undone');
+            });
+
+            it('reads unknown after an undo and a later edit emptied future', () => {
+                expect(singleCommitThread({})).toBe('unknown');
+            });
+
+            it('reads undone after a panel revert, and standing again once a redo puts it back in past', () => {
+                expect(singleCommitThread({ future: [GROUP], panelReverted: true })).toBe('undone');
+                expect(singleCommitThread({ past: [GROUP], panelReverted: true })).toBe('standing');
+            });
+
+            it('reads unknown when a panel revert flag stands but the history holds the group nowhere', () => {
+                expect(singleCommitThread({ panelReverted: true })).toBe('unknown');
+            });
+
+            it('reads unknown for a group split across past and future by a partial undo', () => {
+                expect(singleCommitThread({ past: [GROUP], future: [GROUP] })).toBe('unknown');
+            });
+
+            it('reads unknown for a batch with no revert group, even with ungrouped entries in past', () => {
+                expect(singleCommitThread({ past: [GROUP], revertGroupId: null })).toBe('unknown');
+            });
+        });
+
+        it('reports a batch committed with effects pending as the last commit, though its confirmation failed', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'mute the pad'),
+                        commandMessage('assistant-1', 'run-older'),
+                        message('user-2', 'user', 'render the chorus'),
+                        message('assistant-2', 'assistant', 'Committed; render follow-up failed.'),
+                    ],
+                    confirmations: [
+                        confirmation({ runId: 'run-failed', assistantMessageId: 'assistant-2', status: 'failed' }),
+                    ],
+                    runs: [
+                        { runId: 'run-older', receipts: [receipt('run-older')] },
+                        { runId: 'run-failed', receipts: [receipt('run-failed')] },
+                    ],
+                })
+            );
+
+            expect(thread?.lastCommit).toMatchObject({
+                runId: 'run-failed',
+                receiptIds: ['command:run-failed:batch-1'],
+            });
+        });
+
+        describe('a confirmed batch that only drove the transport', () => {
+            const DRUMS_BATCH = 'run-drums:batch-1';
+
+            function threadAfterTransport(transport: { executionKind: 'project' | 'runtime' }) {
+                return buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'turn the drums down 3 dB'),
+                            commandMessage('assistant-1', 'run-drums'),
+                            message('user-2', 'user', 'play from bar 1'),
+                            message('assistant-2', 'assistant', 'Executed.'),
+                        ],
+                        confirmations: [
+                            confirmation({
+                                runId: 'run-play',
+                                assistantMessageId: 'assistant-2',
+                                status: 'executed',
+                                executionKind: transport.executionKind,
+                                actions: [{ type: 'seekPlayhead', payload: { beat: 0 } }],
+                                actionLabels: ['Seek to beat 0'],
+                            }),
+                        ],
+                        runs: [
+                            { runId: 'run-drums', receipts: [receipt('run-drums')] },
+                            { runId: 'run-play', receipts: [{ ...receipt('run-play'), revertGroupId: null }] },
+                        ],
+                        actionGroups: [
+                            {
+                                groupId: DRUMS_BATCH,
+                                reverted: false,
+                                actions: [{ actionType: 'setTrackGain', label: 'Set Drums gain to -3 dB' }],
+                            },
+                        ],
+                        pastGroupIds: new Set([DRUMS_BATCH]),
+                    })
+                )?.lastCommit;
+            }
+
+            it('is never the last commit, and the project commit before it still is', () => {
+                expect(threadAfterTransport({ executionKind: 'runtime' })).toEqual({
+                    runId: 'run-drums',
+                    receiptIds: [`command:${DRUMS_BATCH}`],
+                    standing: 'standing',
+                    commands: [{ name: 'setTrackGain', label: 'Set Drums gain to -3 dB' }],
+                    measuredDeltas: [],
+                });
+            });
+
+            it('stays a commit, read as unknown, when it changed the project but its entries carry no group', () => {
+                expect(threadAfterTransport({ executionKind: 'project' })).toMatchObject({
+                    runId: 'run-play',
+                    receiptIds: ['command:run-play:batch-1'],
+                    standing: 'unknown',
+                });
+            });
+        });
+
+        it("picks a direct commit's receipt and a confirmed batch's receipt apart within one run", () => {
+            const threadWith = (status: 'executed' | 'proposed', receipts: readonly string[]) =>
+                buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'set every verse track to -6 dB'),
+                            commandMessage('assistant-1', 'run-mixed'),
+                            message('assistant-2', 'assistant', 'Batch 2 of 2.'),
+                        ],
+                        confirmations: [
+                            confirmation({
+                                runId: 'run-mixed',
+                                assistantMessageId: 'assistant-2',
+                                status,
+                                batchId: 'run-mixed:batch-2',
+                            }),
+                        ],
+                        runs: [{ runId: 'run-mixed', receipts: receipts.map((batch) => receipt('run-mixed', batch)) }],
+                    })
+                )?.lastCommit?.receiptIds;
+
+            expect(threadWith('executed', ['run-mixed:batch-2', 'run-mixed:batch-1'])).toEqual([
+                'command:run-mixed:batch-2',
+            ]);
+            expect(threadWith('proposed', ['run-mixed:batch-1'])).toEqual(['command:run-mixed:batch-1']);
+        });
+
+        describe('a run that commits later batches directly, each from its own message', () => {
+            const BATCH_1 = 'run-scheduled:batch-1';
+            const BATCH_2 = 'run-scheduled:batch-2';
+            const ACTION_GROUPS = [
+                { groupId: BATCH_1, reverted: false, actions: [{ actionType: 'muteTrack', label: 'Mute Layer 1' }] },
+                { groupId: BATCH_2, reverted: false, actions: [{ actionType: 'muteTrack', label: 'Mute Layer 2' }] },
+            ];
+
+            /** The first batch's message and confirmations: committed directly, or through its confirmation. */
+            function firstBatchOf(firstBatch: 'direct' | 'confirmed') {
+                if (firstBatch === 'direct') {
+                    return {
+                        message: commandMessage('assistant-1', 'run-scheduled', OPEN_PROJECT, BATCH_1),
+                        confirmations: [],
+                    };
+                }
+                return {
+                    message: message('assistant-1', 'assistant', 'Batch 1 of 2 executed.', {
+                        agentRunId: 'run-scheduled',
+                        projectId: OPEN_PROJECT,
+                    }),
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-scheduled',
+                            assistantMessageId: 'assistant-1',
+                            status: 'executed',
+                            batchId: BATCH_1,
+                        }),
+                    ],
+                };
+            }
+
+            function scheduledThread(input: {
+                firstBatch: 'direct' | 'confirmed';
+                past: readonly string[];
+                future?: readonly string[];
+                receipts?: readonly string[];
+            }) {
+                const first = firstBatchOf(input.firstBatch);
+                return buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'mute every layer track'),
+                            first.message,
+                            commandMessage('assistant-2', 'run-scheduled', OPEN_PROJECT, BATCH_2),
+                        ],
+                        confirmations: first.confirmations,
+                        runs: [
+                            {
+                                runId: 'run-scheduled',
+                                receipts: (input.receipts ?? [BATCH_1, BATCH_2]).map((batch) =>
+                                    receipt('run-scheduled', batch)
+                                ),
+                            },
+                        ],
+                        actionGroups: ACTION_GROUPS,
+                        pastGroupIds: new Set(input.past),
+                        futureGroupIds: new Set(input.future ?? []),
+                    })
+                )?.lastCommit;
+            }
+
+            it('reports the newest directly committed batch by its own receipt and commands', () => {
+                expect(scheduledThread({ firstBatch: 'direct', past: [BATCH_1, BATCH_2] })).toEqual({
+                    runId: 'run-scheduled',
+                    receiptIds: [`command:${BATCH_2}`],
+                    standing: 'standing',
+                    commands: [{ name: 'muteTrack', label: 'Mute Layer 2' }],
+                    measuredDeltas: [],
+                });
+            });
+
+            it('reports the newest direct batch undone after it alone was undone, never the earlier one standing', () => {
+                expect(scheduledThread({ firstBatch: 'direct', past: [BATCH_1], future: [BATCH_2] })).toMatchObject({
+                    receiptIds: [`command:${BATCH_2}`],
+                    standing: 'undone',
+                    commands: [{ label: 'Mute Layer 2' }],
+                });
+            });
+
+            it('reports a later direct batch after a confirmed first batch', () => {
+                expect(scheduledThread({ firstBatch: 'confirmed', past: [BATCH_1, BATCH_2] })).toMatchObject({
+                    receiptIds: [`command:${BATCH_2}`],
+                    standing: 'standing',
+                    commands: [{ label: 'Mute Layer 2' }],
+                });
+            });
+
+            it('falls back to the earlier direct batch when the later one committed nothing', () => {
+                expect(scheduledThread({ firstBatch: 'direct', past: [BATCH_1], receipts: [BATCH_1] })).toMatchObject({
+                    receiptIds: [`command:${BATCH_1}`],
+                    commands: [{ label: 'Mute Layer 1' }],
+                });
+            });
+
+            it('reads no direct commit from a run message stamped with no batch, though its run holds a receipt', () => {
+                const thread = buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'mute the pad'),
+                            message('assistant-1', 'assistant', 'Executing...', {
+                                agentRunId: 'run-unstamped',
+                                projectId: OPEN_PROJECT,
+                            }),
+                        ],
+                        runs: [{ runId: 'run-unstamped', receipts: [receipt('run-unstamped')] }],
+                    })
+                );
+
+                expect(thread).toBeNull();
+            });
+        });
+
+        it('reports the batch a direct commit was stamped with, though another batch of its run is listed first', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'set every verse track to -6 dB'),
+                        message('assistant-1', 'assistant', 'Batch 2 of 2 executed.'),
+                        message('user-2', 'user', 'thanks'),
+                        commandMessage('assistant-2', 'run-direct'),
+                    ],
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-direct',
+                            assistantMessageId: 'assistant-1',
+                            status: 'executed',
+                            batchId: 'run-direct:batch-2',
+                        }),
+                    ],
+                    runs: [
+                        {
+                            runId: 'run-direct',
+                            receipts: [
+                                receipt('run-direct', 'run-direct:batch-2'),
+                                receipt('run-direct', 'run-direct:batch-1'),
+                            ],
+                        },
+                    ],
+                })
+            );
+
+            expect(thread?.lastCommit?.receiptIds).toEqual(['command:run-direct:batch-1']);
+        });
+
+        describe('a subset accepted from a larger proposal, which keeps the replaced group id', () => {
+            const PROPOSAL_BATCH = 'run-subset:proposal';
+            const SUBSET_BATCH = 'run-subset:subset';
+            const SUBSET_COMMIT = {
+                runId: 'run-subset',
+                receiptIds: [`command:${SUBSET_BATCH}`],
+                standing: 'standing',
+                commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB', arguments: GAIN_ACTION.payload }],
+                measuredDeltas: [],
+            };
+
+            function acceptedSubset(assistantMessageId: string) {
+                return confirmation({
+                    runId: 'run-subset',
+                    assistantMessageId,
+                    status: 'executed',
+                    batchId: SUBSET_BATCH,
+                    groupId: PROPOSAL_BATCH,
+                });
+            }
+
+            it('reports the subset by the batch it committed under, not the group it kept', () => {
+                const thread = buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'make the bass louder and pan the guitars'),
+                            message('assistant-1', 'assistant', 'Re-previewed against the current project.'),
+                            message('assistant-2', 'assistant', 'Executed.'),
+                        ],
+                        confirmations: [
+                            confirmation({
+                                runId: 'run-subset',
+                                assistantMessageId: 'assistant-1',
+                                status: 'proposed',
+                                supersededBy: 'confirmation-subset',
+                                batchId: PROPOSAL_BATCH,
+                            }),
+                            acceptedSubset('assistant-2'),
+                        ],
+                        runs: [{ runId: 'run-subset', receipts: [receipt('run-subset', SUBSET_BATCH)] }],
+                        pastGroupIds: new Set([SUBSET_BATCH]),
+                    })
+                );
+
+                expect(thread?.lastCommit).toEqual(SUBSET_COMMIT);
+            });
+
+            it("never lets a later direct commit of the same run take the subset's receipt", () => {
+                const thread = buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'make the bass louder and pan the guitars'),
+                            message('assistant-1', 'assistant', 'Executed.'),
+                            message('user-2', 'user', 'thanks'),
+                            commandMessage('assistant-2', 'run-subset'),
+                        ],
+                        confirmations: [acceptedSubset('assistant-1')],
+                        runs: [{ runId: 'run-subset', receipts: [receipt('run-subset', SUBSET_BATCH)] }],
+                        pastGroupIds: new Set([SUBSET_BATCH]),
+                    })
+                );
+
+                expect(thread?.lastCommit).toEqual(SUBSET_COMMIT);
+            });
+        });
+
+        it('reports no commit from a message whose executed confirmation names a batch its run holds no receipt for', () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'mute the pad'),
+                        commandMessage('assistant-1', 'run-older'),
+                        message('user-2', 'user', 'now the chorus'),
+                        commandMessage('assistant-2', 'run-unreceipted'),
+                    ],
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-unreceipted',
+                            assistantMessageId: 'assistant-2',
+                            status: 'executed',
+                            batchId: 'run-unreceipted:batch-9',
+                        }),
+                    ],
+                    runs: [
+                        { runId: 'run-older', receipts: [receipt('run-older')] },
+                        { runId: 'run-unreceipted', receipts: [receipt('run-unreceipted')] },
+                    ],
+                })
+            );
+
+            expect(thread?.lastCommit).toMatchObject({
+                runId: 'run-older',
+                receiptIds: ['command:run-older:batch-1'],
+            });
+        });
+
+        it('reports no commit for a proposed or cancelled batch, though its run holds an earlier receipt', () => {
+            for (const status of ['proposed', 'cancelled'] as const) {
+                const thread = buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'now the chorus'),
+                            commandMessage('assistant-1', 'run-receipted'),
+                        ],
+                        confirmations: [
+                            confirmation({
+                                runId: 'run-receipted',
+                                assistantMessageId: 'assistant-1',
+                                status,
+                                batchId: 'run-receipted:batch-2',
+                            }),
+                        ],
+                        runs: [{ runId: 'run-receipted', receipts: [receipt('run-receipted')] }],
+                    })
+                );
+
+                expect(thread?.lastCommit ?? null).toBeNull();
+            }
+        });
+
+        it("leaves out another project's pending proposal and commits", () => {
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-1', 'user', 'mute the pad'),
+                        commandMessage('assistant-1', 'run-direct-elsewhere', OTHER_PROJECT),
+                        message('user-2', 'user', 'make the bass louder'),
+                        message('assistant-2', 'assistant', 'Executed.'),
+                        message('user-3', 'user', 'add a reverb'),
+                        message('assistant-3', 'assistant', 'Review the change.'),
+                    ],
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-confirmed-elsewhere',
+                            assistantMessageId: 'assistant-2',
+                            status: 'executed',
+                            projectId: OTHER_PROJECT,
+                        }),
+                        confirmation({
+                            runId: 'run-pending-elsewhere',
+                            assistantMessageId: 'assistant-3',
+                            status: 'proposed',
+                            projectId: OTHER_PROJECT,
+                        }),
+                    ],
+                    runs: [
+                        { runId: 'run-direct-elsewhere', receipts: [receipt('run-direct-elsewhere')] },
+                        { runId: 'run-confirmed-elsewhere', receipts: [receipt('run-confirmed-elsewhere')] },
+                    ],
+                })
+            );
+
+            expect(thread).toBeNull();
+        });
+
+        it('reaches a commit only while it sits inside the window of the last requests', () => {
+            const threadWith = (laterRequests: number) =>
+                buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-0', 'user', 'mute the pad'),
+                            commandMessage('assistant-0', 'run-early'),
+                            ...Array.from({ length: laterRequests }, (_, index) =>
+                                message(`user-${String(index + 1)}`, 'user', `question ${String(index + 1)}`)
+                            ),
+                        ],
+                        runs: [{ runId: 'run-early', receipts: [receipt('run-early')] }],
+                    })
+                );
+
+            expect(threadWith(THREAD_CONTEXT_MAX_TURNS - 1)?.lastCommit).toMatchObject({ runId: 'run-early' });
+            expect(threadWith(THREAD_CONTEXT_MAX_TURNS)).toBeNull();
+        });
+
+        it('reads the requests and the pending proposal from the window alone', () => {
+            const laterRequests = Array.from({ length: THREAD_CONTEXT_MAX_TURNS + 1 }, (_, index) =>
+                message(`user-${String(index + 1)}`, 'user', `question ${String(index + 1)}`)
+            );
+            const thread = buildThreadContext(
+                sources({
+                    messages: [
+                        message('user-0', 'user', 'make the bass louder'),
+                        message('assistant-0', 'assistant', 'Review the change.'),
+                        ...laterRequests,
+                        commandMessage('assistant-last', 'run-late'),
+                    ],
+                    confirmations: [
+                        confirmation({ runId: 'run-stale', assistantMessageId: 'assistant-0', status: 'proposed' }),
+                    ],
+                    runs: [{ runId: 'run-late', receipts: [receipt('run-late')] }],
+                })
+            );
+
+            expect(thread?.pendingProposal).toBeNull();
+            expect(thread?.lastCommit).toMatchObject({ runId: 'run-late' });
+            expect(thread?.requests).toEqual(
+                laterRequests.slice(-THREAD_CONTEXT_MAX_TURNS).map((request) => request.content)
+            );
+        });
+
+        it('reads the chat, confirmation, run and history stores before the request joins the thread', () => {
+            clearChatMessages();
+            clearPendingActionConfirmations();
+            chatStore.set({
+                ...chatStore.value!,
+                messages: [
+                    message('user-1', 'user', 'make the bass louder'),
+                    message('assistant-1', 'assistant', 'Review the change.'),
+                ],
+            });
+            proposePendingActionConfirmation({
+                id: 'confirmation-1',
+                runId: 'run-pending',
+                prompt: 'make the bass louder',
+                assistantMessageId: 'assistant-1',
+                actions: [GAIN_ACTION],
+                actionLabels: ['Set Bass gain to -3 dB'],
+                commandBatch: pendingCommandBatch(captureProjectIdentity()),
+                projectRevision: 'revision-1',
+            });
+
+            expect(readChatThreadContext()).toMatchObject({
+                requests: ['make the bass louder'],
+                pendingProposal: { runId: 'run-pending', commands: [{ label: 'Set Bass gain to -3 dB' }] },
+                lastCommit: null,
+            });
+            clearChatMessages();
+            clearPendingActionConfirmations();
+        });
+    });
+
+    describe('sizing', () => {
+        it('drops the oldest requests first under the cap and keeps the newest', () => {
+            const thread = createFullThreadContext();
+            const local = fitThreadContext(thread, 'local');
+            const section = JSON.parse(local.section.slice('thread_context:\n'.length)) as {
+                requests: Array<{ value: string }>;
+                omittedRequestCount: number;
+            };
+
+            expect(local.evidence.bytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES.local);
+            expect(new TextEncoder().encode(local.section).byteLength).toBe(local.evidence.bytes);
+            expect(section.omittedRequestCount).toBeGreaterThan(0);
+            const kept = section.requests.map((request) => request.value);
+            const newestKept = thread.requests.slice(-kept.length);
+            expect(kept).toEqual(newestKept);
+            expect(kept.at(-1)).toBe(threadRequest(thread.requests.length));
+            expect(kept).not.toContain(threadRequest(1));
+            expect(local.evidence).toMatchObject({
+                requestCount: kept.length,
+                omittedRequestCount: thread.requests.length - kept.length,
+                pendingProposal: true,
+                lastCommit: true,
+            });
+        });
+
+        it('sizes the local section under a smaller cap than the hosted one, each within its own', () => {
+            const thread = createFullThreadContext();
+            const hosted = fitThreadContext(thread, 'hosted');
+            const local = fitThreadContext(thread, 'local');
+
+            expect(THREAD_CONTEXT_MAX_BYTES.local).toBeLessThan(THREAD_CONTEXT_MAX_BYTES.hosted);
+            expect(hosted.evidence.bytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES.hosted);
+            expect(local.evidence.bytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES.local);
+            expect(local.evidence.bytes).toBeGreaterThan(THREAD_CONTEXT_MAX_BYTES.local / 2);
+            expect(hosted.evidence.requestCount).toBeGreaterThan(local.evidence.requestCount);
+            const built = buildContext(thread);
+            expect(built.message).toContain(hosted.section);
+            expect(built.localMessage).toContain(local.section);
+        });
+
+        it('keeps the section within the local cap when nothing but its ids and counts fits', () => {
+            const thread = createFullThreadContext();
+            const oversized = {
+                ...thread,
+                requests: [`${'x'.repeat(THREAD_CONTEXT_MAX_BYTES.local)}`],
+                pendingProposal: {
+                    runId: thread.pendingProposal!.runId,
+                    commands: [{ name: 'addNotes', label: 'Add notes', arguments: { notes: 'n'.repeat(8_192) } }],
+                },
+                lastCommit: {
+                    ...thread.lastCommit!,
+                    receiptIds: thread.lastCommit!.receiptIds.map((id) => `${id}${'r'.repeat(256)}`),
+                    commands: [],
+                    measuredDeltas: [],
+                },
+            };
+
+            const local = fitThreadContext(oversized, 'local');
+
+            expect(local.evidence.bytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES.local);
+            expect(local.evidence).toMatchObject({ requestCount: 1, pendingCommandCount: 1 });
+        });
+
+        it('keeps a command whose arguments alone exceed the cap by its name and label', () => {
+            const notes = Array.from({ length: 96 }, (_, index) => ({
+                pitch: 36 + (index % 24),
+                startBeat: index / 4,
+                durationBeats: 0.25,
+                velocity: 100,
+                releaseVelocity: 64,
+                probability: 1,
+                muted: false,
+            }));
+            const thread: ThreadContext = {
+                requests: ['write a riff', 'make it busier'],
+                pendingProposal: {
+                    runId: 'run-riff',
+                    commands: [
+                        {
+                            name: 'createMidiClip',
+                            label: 'Create MIDI clip "Riff" with 96 notes',
+                            arguments: { trackId: 'track-lead', startBeat: 0, endBeat: 24, notes },
+                        },
+                    ],
+                },
+                lastCommit: null,
+            };
+            expect(JSON.stringify(thread.pendingProposal?.commands[0]?.arguments).length).toBeGreaterThan(
+                THREAD_CONTEXT_MAX_BYTES.local
+            );
+
+            const local = fitThreadContext(thread, 'local');
+
+            expect(readSection(`\n\n${local.section}\n\n`)).toMatchObject({
+                requests: [{ value: 'write a riff' }, { value: 'make it busier' }],
+                pendingProposal: {
+                    commands: [
+                        {
+                            name: 'createMidiClip',
+                            label: 'Create MIDI clip "Riff" with 96 notes',
+                            argumentsOmitted: true,
+                        },
+                    ],
+                    omittedCommandCount: 0,
+                },
+            });
+            expect(local.section).not.toContain('"notes"');
+        });
+
+        it('cuts an earlier request longer than the bound to it and marks it truncated, beside a short one', () => {
+            const long = `${threadRequest(1)}${' and bring the hats down'.repeat(4)}`;
+            expect(long.length).toBeGreaterThan(MAX_THREAD_REQUEST_LENGTH);
+            const thread: ThreadContext = {
+                requests: [long, 'a bit less'],
+                pendingProposal: {
+                    runId: 'run-pending',
+                    commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
+                },
+                lastCommit: null,
+            };
+
+            for (const profile of ['local', 'hosted'] as const) {
+                const fitted = fitThreadContext(thread, profile);
+
+                expect(readSection(`\n\n${fitted.section}\n\n`).requests).toEqual([
+                    {
+                        trust: 'untrusted_user_string',
+                        value: long.slice(0, MAX_THREAD_REQUEST_LENGTH),
+                        truncated: true,
+                    },
+                    { trust: 'untrusted_user_string', value: 'a bit less', truncated: false },
+                ]);
+            }
+        });
+
+        it('measures the cap in UTF-8 bytes, so multi-byte requests stay within it', () => {
+            const thread: ThreadContext = {
+                ...createFullThreadContext(),
+                requests: Array.from(
+                    { length: THREAD_CONTEXT_MAX_TURNS },
+                    (_, index) => `${String(index)}${'低音をもう少し下げて'.repeat(60)}`
+                ),
+            };
+
+            for (const profile of ['local', 'hosted'] as const) {
+                const fitted = fitThreadContext(thread, profile);
+                const encodedBytes = new TextEncoder().encode(fitted.section).byteLength;
+
+                expect(encodedBytes).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES[profile]);
+                expect(fitted.evidence.bytes).toBe(encodedBytes);
+                expect(fitted.evidence.requestCount).toBeGreaterThan(0);
+            }
+        });
+
+        it('keeps a committed command whose arguments alone exceed the cap by its name and label', () => {
+            const notes = Array.from({ length: 96 }, (_, index) => ({
+                pitch: 36 + (index % 24),
+                startBeat: index / 4,
+                durationBeats: 0.25,
+                velocity: 100,
+                releaseVelocity: 64,
+                probability: 1,
+                muted: false,
+            }));
+            const thread: ThreadContext = {
+                requests: ['write a riff'],
+                pendingProposal: null,
+                lastCommit: {
+                    runId: 'run-riff',
+                    receiptIds: ['command:run-riff:batch-1'],
+                    standing: 'standing',
+                    commands: [
+                        {
+                            name: 'createMidiClip',
+                            label: 'Create MIDI clip "Riff" with 96 notes',
+                            arguments: { trackId: 'track-lead', startBeat: 0, endBeat: 24, notes },
+                        },
+                    ],
+                    measuredDeltas: [],
+                },
+            };
+
+            const local = fitThreadContext(thread, 'local');
+
+            expect(readSection(`\n\n${local.section}\n\n`)).toMatchObject({
+                lastCommit: {
+                    commands: [
+                        {
+                            name: 'createMidiClip',
+                            label: 'Create MIDI clip "Riff" with 96 notes',
+                            argumentsOmitted: true,
+                        },
+                    ],
+                    omittedCommandCount: 0,
+                },
+            });
+            expect(local.evidence).toMatchObject({ committedCommandCount: 1, omittedCommittedCommandCount: 0 });
+        });
+
+        it('keeps no older request once a newer one did not fit, however short the older one is', () => {
+            const longRequests = Array.from(
+                { length: THREAD_CONTEXT_MAX_TURNS - 2 },
+                (_, index) => `${String(index).padStart(2, '0')} ${'l'.repeat(600)}`
+            );
+            const thread: ThreadContext = {
+                requests: ['old-1', 'old-2', ...longRequests],
+                pendingProposal: { runId: 'run-pending', commands: [{ name: 'muteTrack', label: 'Mute Pad' }] },
+                lastCommit: null,
+            };
+
+            const local = fitThreadContext(thread, 'local');
+            const section = readSection(`\n\n${local.section}\n\n`) as { requests: Array<{ value: string }> };
+            const kept = section.requests.map((request) => request.value);
+
+            expect(local.evidence.omittedRequestCount).toBeGreaterThan(2);
+            expect(kept).not.toContain('old-1');
+            expect(kept).not.toContain('old-2');
+            expect(kept).toEqual(thread.requests.slice(-kept.length).map((request) => request.slice(0, 512)));
+        });
+    });
+
+    describe('the planning request and its evidence', () => {
+        beforeEach(() => {
+            vi.clearAllMocks();
+            vi.mocked(tryPresetMatch).mockReturnValue([]);
+            vi.mocked(tryParameterizedPath).mockReturnValue([]);
+            vi.mocked(tryCompoundFastPath).mockReturnValue(null);
+            mocks.getProjectContext.mockReturnValue(context);
+            clearPendingActionConfirmations();
+            clearChatMessages();
+            agentRunLifecycle.clear();
+            agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
+            vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'answer-1', name: 'answer.respond', arguments: { text: 'Lowered.', evidenceCallIds: [] } },
+                ],
+            });
+        });
+
+        afterEach(() => {
+            clearPendingActionConfirmations();
+            clearChatMessages();
+            agentRunLifecycle.clear();
+        });
+
+        it('sends the pending proposal to the planner with a chat refinement and records it as run evidence', async () => {
+            chatStore.set({
+                ...chatStore.value!,
+                messages: [
+                    message('user-1', 'user', 'make the bass louder'),
+                    message('assistant-1', 'assistant', 'Review the change.'),
+                ],
+            });
+            proposePendingActionConfirmation({
+                id: 'confirmation-1',
+                runId: 'run-pending',
+                prompt: 'make the bass louder',
+                assistantMessageId: 'assistant-1',
+                actions: [GAIN_ACTION],
+                actionLabels: ['Set Bass gain to -3 dB'],
+                commandBatch: pendingCommandBatch(captureProjectIdentity()),
+                projectRevision: 'revision-1',
+            });
+
+            await orchestratePromptChatRequest({
+                userText: 'a bit less',
+                requestedRoute: 'auto',
+                backend: 'webllm',
+                interactionMode: 'apply',
+                options: undefined,
+            });
+
+            const call = vi.mocked(generateToolPlanningOutcome).mock.calls[0];
+            const hostedMessage = call?.[1];
+            const localMessage = call?.[10];
+            if (typeof hostedMessage !== 'string' || typeof localMessage !== 'string') {
+                throw new TypeError('Expected the planner to receive both messages.');
+            }
+            for (const text of [hostedMessage, localMessage]) {
+                expect(readSection(text)).toMatchObject({
+                    requests: [{ value: 'make the bass louder' }],
+                    pendingProposal: {
+                        runId: 'run-pending',
+                        commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB' }],
+                    },
+                });
+            }
+            const run = readAgentRunState().runs.find((candidate) => candidate.request === 'a bit less');
+            expect(run?.contextEvidence?.included.thread).toEqual({
+                hosted: expect.objectContaining({
+                    requestCount: 1,
+                    pendingProposal: true,
+                    pendingCommandCount: 1,
+                    lastCommit: false,
+                    bytes: new TextEncoder().encode(`thread_context:\n${JSON.stringify(readSection(hostedMessage))}`)
+                        .byteLength,
+                }),
+                local: expect.objectContaining({ requestCount: 1, pendingProposal: true, pendingCommandCount: 1 }),
+            });
+            expect(JSON.stringify(run?.contextEvidence)).not.toContain('make the bass louder');
+        });
+
+        it('declares the measurement category on a hosted request whose thread context carries measured deltas', async () => {
+            const thread = createFullThreadContext();
+
+            await parsePromptToActions({ prompt: 'a bit less', context, projectRevision: 'revision-1', thread });
+            await parsePromptToActions({
+                prompt: 'a bit less',
+                context,
+                projectRevision: 'revision-1',
+                thread: { ...thread, lastCommit: { ...thread.lastCommit!, measuredDeltas: [] } },
+            });
+
+            const [withDeltas, withoutDeltas] = vi.mocked(generateToolPlanningOutcome).mock.calls;
+            expect(withDeltas?.[9]).toMatchObject({ messageDataCategories: ['measurement'] });
+            expect(withoutDeltas?.[9]).not.toHaveProperty('messageDataCategories');
+            expect(declareHostedTurnDataCategories([], ['measurement'])).toContain('measurement');
+            expect(declareHostedTurnDataCategories([])).not.toContain('measurement');
+        });
+
+        it("keeps the thread record through the run store's read, and refuses a malformed one", async () => {
+            chatStore.set({
+                ...chatStore.value!,
+                messages: [
+                    message('user-1', 'user', 'make the bass louder'),
+                    message('assistant-1', 'assistant', 'Review the change.'),
+                ],
+            });
+            proposePendingActionConfirmation({
+                id: 'confirmation-1',
+                runId: 'run-pending',
+                prompt: 'make the bass louder',
+                assistantMessageId: 'assistant-1',
+                actions: [GAIN_ACTION],
+                actionLabels: ['Set Bass gain to -3 dB'],
+                commandBatch: pendingCommandBatch(captureProjectIdentity()),
+                projectRevision: 'revision-1',
+            });
+            await orchestratePromptChatRequest({
+                userText: 'a bit less',
+                requestedRoute: 'auto',
+                backend: 'webllm',
+                interactionMode: 'apply',
+                options: undefined,
+            });
+            const state = readAgentRunState();
+            const run = state.runs.find((candidate) => candidate.request === 'a bit less');
+            const evidence = run?.contextEvidence;
+            const threadEvidence = evidence?.included.thread;
+            if (!run || !evidence || !threadEvidence) {
+                throw new Error('Expected the run to record its thread context.');
+            }
+
+            const reread = sanitizeAgentRunState(structuredClone(state));
+            const malformedRun = {
+                ...run,
+                contextEvidence: {
+                    ...evidence,
+                    included: {
+                        ...evidence.included,
+                        thread: { hosted: threadEvidence.hosted, local: { bytes: -1 } },
+                    },
+                },
+            };
+            const malformed = sanitizeAgentRunState(structuredClone({ ...state, runs: [malformedRun] }));
+
+            const rereadRun = reread.runs.find((candidate) => candidate.runId === run.runId);
+            expect(rereadRun?.contextEvidence?.included.thread).toEqual(threadEvidence);
+            // Malformed evidence refuses its run whole, as every other malformed evidence field does.
+            expect(malformed.runs.map((candidate) => candidate.runId)).not.toContain(run.runId);
+        });
+
+        it("records the commit's standing as evidence that survives the run store's read, and refuses a bogus one", async () => {
+            chatStore.set({
+                ...chatStore.value!,
+                messages: [message('user-1', 'user', 'what is the tempo?')],
+            });
+            await orchestratePromptChatRequest({
+                userText: 'a bit less',
+                requestedRoute: 'auto',
+                backend: 'webllm',
+                interactionMode: 'apply',
+                options: undefined,
+            });
+            const state = readAgentRunState();
+            const run = state.runs.find((candidate) => candidate.request === 'a bit less');
+            if (!run) {
+                throw new Error('Expected the request to admit a run.');
+            }
+            const withEvidence = (contextEvidence: unknown) =>
+                sanitizeAgentRunState(structuredClone({ ...state, runs: [{ ...run, contextEvidence }] })).runs[0];
+
+            for (const standing of THREAD_COMMIT_STANDINGS) {
+                const full = createFullThreadContext();
+                const evidence = buildContext({ ...full, lastCommit: { ...full.lastCommit!, standing } }).evidence;
+
+                expect(evidence.included.thread?.hosted.commitStanding).toBe(standing);
+                expect(evidence.included.thread?.local.commitStanding).toBe(standing);
+                expect(withEvidence(evidence)?.contextEvidence?.included.thread).toEqual(evidence.included.thread);
+            }
+
+            const committed = buildContext(createFullThreadContext()).evidence;
+            const thread = committed.included.thread!;
+            const bogus = {
+                ...committed,
+                included: {
+                    ...committed.included,
+                    thread: { hosted: { ...thread.hosted, commitStanding: 'bogus' }, local: thread.local },
+                },
+            };
+            expect(withEvidence(bogus)).toBeUndefined();
+        });
+    });
+});

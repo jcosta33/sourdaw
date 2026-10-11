@@ -1276,6 +1276,8 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
     expect(push.branches).toEqual(['main']);
     expect(push.paths).toEqual([
         '.github/workflows/cargo-dependency-seed.yml',
+        '.github/workflows/validation.yml',
+        'scripts/ensurePinnedRustToolchain.sh',
         'Cargo.lock',
         '**/Cargo.toml',
         '.cargo/config.toml',
@@ -1305,6 +1307,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
     expect(linuxSeedNames).toEqual([
         'Checkout',
         'Install ALSA development headers',
+        'Restore pinned Rust toolchain',
         'Install the pinned Rust toolchain',
         'Cache cargo build',
         'Cache Cargo dependencies',
@@ -4411,6 +4414,48 @@ describe('health gates workflow contract', () => {
         const reorderedCache = asRecord(structuredClone(seed), 'reordered cache');
         arrayAt(jobAt(reorderedCache, 'rust'), 'steps').reverse();
         expect(() => assertCargoDependencySeed(reorderedCache, validationWorkflow)).toThrow();
+    });
+
+    it('restores only an exact installed Linux compiler before setup and health gates', () => {
+        const seed = loadWorkflow('cargo-dependency-seed.yml').parsed;
+        const expectedKey =
+            "pinned-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}";
+        const expectedRun =
+            'bash scripts/ensurePinnedRustToolchain.sh "${{ steps.pinned-toolchain.outputs.cache-hit }}"';
+        for (const [workflow, jobName, cacheAction] of [
+            [validationWorkflow, 'rust', 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830'],
+            [seed, 'rust', 'actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830'],
+        ] as const) {
+            const job = jobAt(workflow, jobName);
+            const steps = arrayAt(job, 'steps').map((step) => asRecord(step, 'step'));
+            const cache = stepNamed(job, 'Restore pinned Rust toolchain');
+            expect(cache.uses).toBe(cacheAction);
+            expect(cache.id).toBe('pinned-toolchain');
+            expect(recordAt(cache, 'with')).toEqual({ path: '~/.rustup/toolchains', key: expectedKey });
+            expect(stepNamed(job, 'Install the pinned Rust toolchain').run).toBe(expectedRun);
+            expect(steps.indexOf(cache)).toBeLessThan(
+                steps.indexOf(stepNamed(job, 'Install the pinned Rust toolchain'))
+            );
+            expect(steps.indexOf(stepNamed(job, 'Install the pinned Rust toolchain'))).toBeLessThan(
+                steps.indexOf(stepNamed(job, 'Cache cargo build'))
+            );
+        }
+        expect(arrayAt(recordAt(recordAt(seed, 'on'), 'push'), 'paths')).toContain(
+            'scripts/ensurePinnedRustToolchain.sh'
+        );
+        for (const path of [
+            'scripts/ensurePinnedRustToolchain.sh',
+            '.github/workflows/validation.yml',
+            '.github/workflows/cargo-dependency-seed.yml',
+        ]) {
+            expect(scopeFilterPatterns(validationWorkflow, 'rust')).toContain(path);
+        }
+        expect(stepNamed(jobAt(validationWorkflow, 'rust'), 'Server and Rust workspace health gates').run).toBe(
+            'pnpm health:server:full'
+        );
+        expect(stepNamed(jobAt(seed, 'rust'), 'Rust workspace health gates').run).toBe(
+            'sh scripts/health-gates-rust.sh'
+        );
     });
 
     it('invalidates both macOS index identities for every Cargo graph input', () => {

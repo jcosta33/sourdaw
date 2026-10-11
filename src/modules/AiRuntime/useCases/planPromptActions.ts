@@ -7,6 +7,7 @@ import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
+import { type ThreadContext } from '../models/ThreadContext';
 
 import { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';
 import { normalizeAgentFailure } from './agentErrorAndSaga';
@@ -30,6 +31,8 @@ type PlanPromptActionsInput = {
     onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult;
     onLocalWorkAttempt?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean;
     providerPlanning?: 'enabled' | 'disabled';
+    /** The chat thread's state before this request; a request from outside a thread passes none. */
+    thread?: ThreadContext | null;
 };
 
 /**
@@ -186,19 +189,18 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
     };
     let result;
     try {
-        result = await parsePromptToActions(
-            input.prompt,
+        result = await parsePromptToActions({
+            prompt: input.prompt,
             context,
-            input.signal,
+            signal: input.signal,
             projectRevision,
-            undefined,
-            input.onProviderResult,
+            onProviderResult: input.onProviderResult,
             streamIdentity,
             onProviderAttempt,
-            undefined,
-            input.providerPlanning,
-            onMeasurementAttempt
-        );
+            providerPlanning: input.providerPlanning,
+            onMeasurementAttempt,
+            thread: input.thread,
+        });
         const initialCreativeAuthority = result.creativeAuthority ?? null;
         const rejectionEvidence = result.rejectionEvidence;
         const correctableValidationFailure = isCorrectableRejection(result.rejectionReason);
@@ -258,25 +260,25 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                           reason: 'The bounded correction attempt no longer has current application authority.',
                       };
             };
-            result = await parsePromptToActions(
-                input.prompt,
+            result = await parsePromptToActions({
+                prompt: input.prompt,
                 context,
-                input.signal,
+                signal: input.signal,
                 projectRevision,
-                undefined,
-                input.onProviderResult,
+                onProviderResult: input.onProviderResult,
                 streamIdentity,
-                admitCorrectionAttempt,
-                {
+                onProviderAttempt: admitCorrectionAttempt,
+                correction: {
                     creativeAuthority: initialCreativeAuthority,
                     // The correction attempt repairs the named failure; without
                     // this evidence both a missing and an ambiguous target
                     // arrived as the same bare `agent.resolution` code.
                     rejectionEvidence,
                 },
-                input.providerPlanning,
-                onMeasurementAttempt
-            );
+                providerPlanning: input.providerPlanning,
+                onMeasurementAttempt,
+                thread: input.thread,
+            });
         }
         if (result.preparationRequest === 'stem-import') {
             const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
@@ -302,19 +304,19 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 });
                 stemImportResourcesRegistered = true;
             }
-            result = await parsePromptToActions(
-                input.prompt,
+            result = await parsePromptToActions({
+                prompt: input.prompt,
                 context,
-                input.signal,
+                signal: input.signal,
                 projectRevision,
                 stemImportScope,
-                input.onProviderResult,
+                onProviderResult: input.onProviderResult,
                 streamIdentity,
                 onProviderAttempt,
-                undefined,
-                input.providerPlanning,
-                onMeasurementAttempt
-            );
+                providerPlanning: input.providerPlanning,
+                onMeasurementAttempt,
+                thread: input.thread,
+            });
         }
     } catch (error) {
         if (stemImportScope) {

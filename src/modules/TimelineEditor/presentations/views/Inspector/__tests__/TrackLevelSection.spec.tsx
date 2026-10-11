@@ -38,6 +38,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
     return {
+        buildOfflineModulatorPlans: vi.fn(() => []),
         captureAutomationRecordingRollback: vi.fn(),
         clipAutomationMoveStateMatches: vi.fn(),
         cloneClipAutomationLanes: vi.fn(),

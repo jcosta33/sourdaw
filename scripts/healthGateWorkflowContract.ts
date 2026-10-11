@@ -101,6 +101,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         rust: [
             'Checkout',
             'Install ALSA development headers',
+            'Restore pinned Rust toolchain',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
             'Cache Cargo dependencies',
@@ -182,6 +183,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Set up pnpm',
             'Set up Node',
             'Install ALSA development headers',
+            'Restore pinned Rust toolchain',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
             'Cache Cargo dependencies',

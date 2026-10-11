@@ -120,7 +120,7 @@ export function decodeClipSplitTakeTransitions(input: Input): readonly TakeReKey
     }
     const before = expected.rightClip === null ? expected : replacement;
     const split = expected.rightClip === null ? replacement : expected;
-    if (before.rightClip !== null || !split.rightClip || (before.leftClip.type !== 'audio' && from.length > 0)) {
+    if (before.rightClip !== null || !split.rightClip) {
         return null;
     }
     const seam = split.rightClip.startBeat;

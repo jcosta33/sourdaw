@@ -15,6 +15,8 @@ import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatel
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
+import { isSplitTakeReKeyCapture } from './isSplitTakeReKeyCapture';
+
 import type { Clip } from '../../stores/trackStore';
 import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 
@@ -443,8 +445,10 @@ export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
             Object.hasOwn(value.replacement, 'clipAutomationLanes') &&
         (value.expected.clipSatellites === undefined) === (value.replacement.clipSatellites === undefined) &&
         (value.expected.clipAutomationLanes === undefined) === (value.replacement.clipAutomationLanes === undefined) &&
+        typeof value.expected.trackId === 'string' &&
         splitSnapshotCaptureOwnersMatch(value.expected, value.clipId, value.rightClipId) &&
-        splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId)
+        splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId) &&
+        isSplitTakeReKeyCapture(value.reKeyedTakeLanes, value.expected.trackId, value.clipId, value.rightClipId)
     );
 }
 
@@ -478,7 +482,8 @@ function splitReplaySnapshotsMatch(
     return (
         valuesEqual(inverse.expected, redo.replacement) &&
         valuesEqual(inverse.replacement, redo.expected) &&
-        valuesEqual(inverse.retiredTakeLanes, redo.retiredTakeLanes)
+        valuesEqual(inverse.retiredTakeLanes, redo.retiredTakeLanes) &&
+        valuesEqual(inverse.reKeyedTakeLanes, redo.reKeyedTakeLanes)
     );
 }
 

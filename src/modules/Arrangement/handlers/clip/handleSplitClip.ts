@@ -46,6 +46,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
             entry.redoAction?.type === 'restoreClipSplitState'
         ) {
             entry.redoAction.payload.retiredTakeLanes = entry.inverseAction.payload.retiredTakeLanes;
+            entry.redoAction.payload.reKeyedTakeLanes = entry.inverseAction.payload.reKeyedTakeLanes;
         }
         return true;
     },

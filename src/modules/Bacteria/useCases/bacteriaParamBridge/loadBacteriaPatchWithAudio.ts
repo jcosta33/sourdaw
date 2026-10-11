@@ -5,7 +5,7 @@ import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatc
 import { getBacteriaState, loadBacteriaPatch } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
-import { encodePatchValue, NON_SCALAR_BAND_KEYS, NON_SCALAR_GLOBAL_KEYS, paramBatcher } from './helpers';
+import { encodePatchValue, NON_SCALAR_GLOBAL_KEYS, paramBatcher } from './helpers';
 
 import type { DeviceRef, PersistDeviceParamFn, UpdateDeviceParamFn } from './helpers';
 
@@ -81,9 +81,6 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
             const previousBand = bandIndex < previousActiveBandCount ? previousPatch.bands[bandIndex] : undefined;
 
             for (const key of Object.keys(band) as Array<keyof BacteriaBand>) {
-                if (NON_SCALAR_BAND_KEYS.has(key)) {
-                    continue;
-                }
                 const encodedValue = encodePatchValue(key, band[key]);
                 if (encodedValue === null) {
                     continue;

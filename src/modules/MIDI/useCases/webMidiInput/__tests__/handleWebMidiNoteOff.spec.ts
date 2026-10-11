@@ -367,6 +367,50 @@ describe('handleWebMidiNoteOff', () => {
         );
     });
 
+    it('retires the release-triggered idle pump once its Yeast is removed from the chain (#5222)', async () => {
+        let drainEvents: ((events: readonly RealtimeMidiEvent[]) => boolean | void) | undefined;
+        const schedule_note = vi.fn(() => null);
+        let devices = [{ id: 'yeast-1', type: 'yeast' }];
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices }],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                scheduleNote: schedule_note,
+                processRealtimeMidiInput: async (input: RealtimeMidiInput) => {
+                    drainEvents = input.onDrainedEvents;
+                    return [];
+                },
+            })
+        );
+        get_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+            yeastDeviceId: 'yeast-1',
+        });
+
+        await fn(0, 60);
+        devices = [];
+        const retired = drainEvents?.([
+            {
+                timeSamples: 129_840,
+                noteInstanceId: 'arp-1:generated:1',
+                durationSamples: 33_600,
+                kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+            },
+        ]);
+
+        expect(retired).toBe(false);
+        expect(schedule_note).not.toHaveBeenCalled();
+    });
+
     // The key is already up when its release block starts a voice with no
     // note instance, so the voice has no held note to live on; the release
     // session keeps it, and the session's own source-pitch note-off ends it.

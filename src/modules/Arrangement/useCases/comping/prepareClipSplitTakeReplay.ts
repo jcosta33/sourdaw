@@ -1,4 +1,9 @@
-import { type ClipSplitActionSnapshot, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type ClipSplitActionSnapshot,
+    type RetiredTakeLaneSnapshot,
+    type TakeReKeyLaneTransitionSnapshot,
+} from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type Take, type TakeLane } from '../../models/TakeLane';
@@ -6,6 +11,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { decodeClipSplitTakeTransitions } from './decodeClipSplitTakeTransitions';
 import { regionsOverlap } from './regionsOverlap';
+import { reKeyedTakeLaneOwnersMatchStore } from './reKeyedTakeLaneOwnersMatchStore';
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 type Input = {
@@ -14,7 +20,18 @@ type Input = {
     expected: ClipSplitActionSnapshot;
     replacement: ClipSplitActionSnapshot;
     retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
+    reKeyedTakeLanes?: readonly TakeReKeyLaneTransitionSnapshot[];
 };
+
+function reverseTransition(transition: TakeReKeyLaneTransition): TakeReKeyLaneTransition {
+    return {
+        ...transition,
+        takesBefore: transition.takesAfter,
+        takesAfter: transition.takesBefore,
+        regionsBefore: transition.regionsAfter,
+        regionsAfter: transition.regionsBefore,
+    };
+}
 
 function ownedFields(take: Take) {
     return {
@@ -98,7 +115,10 @@ function prepareLaneTransition(
     const fromIds = new Set(transition.takesBefore.map((take) => take.id));
     for (const source of transition.takesBefore) {
         const current = live.takes.find((take) => take.id === source.id);
-        if (!current || !valuesEqual(ownedFields(current), ownedFields(source))) {
+        // A later delete can remove a take this split moved. The transition
+        // writer restores moved takes while retaining a later peer selection;
+        // absent unchanged takes remain absent under its own reconciliation.
+        if (current && !valuesEqual(ownedFields(current), ownedFields(source))) {
             return null;
         }
     }
@@ -110,9 +130,9 @@ function prepareLaneTransition(
     const removed = transition.regionsBefore.filter(
         (region) => !transition.regionsAfter.some((target) => valuesEqual(region, target))
     );
-    if (removed.some((region) => !live.activeCompRegions.some((current) => valuesEqual(region, current)))) {
-        return null;
-    }
+    // A later peer may remove the old region along with its take. Replaying
+    // this split can still restore the moved region when its target span is
+    // free; an occupied target span is rejected by the overlap check below.
     const kept = live.activeCompRegions.filter((region) => !removed.some((source) => valuesEqual(region, source)));
     const added = transition.regionsAfter.filter(
         (region) => !transition.regionsBefore.some((source) => valuesEqual(region, source))
@@ -132,9 +152,24 @@ function prepareLaneTransition(
 }
 
 /** Refuse incomplete split replay before any owner writes; preserve live interaction and naming fields. */
-export function prepareClipSplitTakeReplay(input: Input): readonly TakeReKeyLaneTransition[] | null {
-    const transitions = decodeClipSplitTakeTransitions(input);
-    if (!transitions) {
+export function prepareClipSplitTakeReplay(
+    input: Input,
+    priorActions: readonly AppAction[] = []
+): readonly TakeReKeyLaneTransition[] | null {
+    const captured = decodeClipSplitTakeTransitions(input);
+    if (!captured) {
+        return null;
+    }
+    // Earlier session entries carry the split's re-key in the paired payload
+    // rather than in the exact take snapshots. Both forms replay through the
+    // same owner preflight before any track or take write.
+    let transitions: readonly TakeReKeyLaneTransition[] = captured;
+    if (input.expected.takeLanes === undefined) {
+        transitions = (input.reKeyedTakeLanes ?? []).map((transition) =>
+            input.replacement.rightClip ? transition : reverseTransition(transition)
+        );
+    }
+    if (!reKeyedTakeLaneOwnersMatchStore(transitions, 'apply', priorActions)) {
         return null;
     }
     const lanes = takeLaneStore.value?.lanes ?? [];
@@ -146,7 +181,6 @@ export function prepareClipSplitTakeReplay(input: Input): readonly TakeReKeyLane
     }
     const knownIds = new Set(transitions.flatMap((transition) => transition.takesBefore.map((take) => take.id)));
     if (
-        input.expected.leftClip.type === 'audio' &&
         input.replacement.rightClip &&
         lanes.some(
             (lane) =>

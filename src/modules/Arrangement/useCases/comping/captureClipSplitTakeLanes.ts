@@ -18,9 +18,6 @@ export function captureClipSplitTakeLanes(
 } | null {
     const previous: TakeLane[] = [];
     const next: TakeLane[] = [];
-    if (clip.type !== 'audio') {
-        return { previous: { version: 1, lanes: previous }, next: { version: 1, lanes: next } };
-    }
     const lanes = takeLaneStore.value?.lanes ?? [];
     const usedIds = new Set(lanes.flatMap((lane) => lane.takes.map((take) => take.id)));
     for (const lane of lanes) {

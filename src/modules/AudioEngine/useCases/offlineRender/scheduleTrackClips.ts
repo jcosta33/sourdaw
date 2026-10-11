@@ -1,6 +1,6 @@
 import { getGainEnvelopeSeries, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
+import { buildOfflineModulatorPlans, getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getDrumKitDefByIndex,
@@ -309,9 +309,23 @@ export async function scheduleTrackClips({
     // Offline read no mode at all, so a track the monitor plays flat bounced
     // fully automated. The bounce follows the monitor.
     const trackReadsAutomation = track.automationMode !== 'off';
-    if (includeAutomation && trackReadsAutomation) {
+    if (includeAutomation) {
+        // The modulator rack's mappings resolved once against the project's
+        // tracks; this pass carries only the ones aimed at this track. Live
+        // evaluates the same rack per tick (`applyModulationToEngine`) on top
+        // of the automation below — the scheduler composes them per block in
+        // that same order. The rack rides `includeAutomation` alone: live's
+        // `applyModulationToEngine` has no automationMode gate (mode `off`
+        // stops the track's lanes, never the mappings aimed at it), so a
+        // track automated out still has its mappings evaluated here.
+        const modulatorPlans = buildOfflineModulatorPlans({ tracks: allTracks ?? [track] }).filter(
+            (plan) => plan.targetTrackId === track.id
+        );
         scheduleTrackAutomation({
-            lanes: automationLanes,
+            // The mode gate stops the track's own lanes; passing none is how
+            // the scheduler skips them while the modulator plans — grouped
+            // independently of the lanes below — still schedule.
+            lanes: trackReadsAutomation ? automationLanes : [],
             trackId: track.id,
             trackGainNode,
             trackPanNode,
@@ -354,11 +368,13 @@ export async function scheduleTrackClips({
                     parameterLaw.quantiseValue?.({ deviceType, paramId, value }) ?? value,
             },
             regionStartSeconds: regionStartSec,
+            regionStartBeat,
             projectBeatToSeconds,
             sampleRate: offlineCtx.sampleRate,
             compensationDelaySec: compensationDelay,
             clipBoundsById,
             vcaMultiplier,
+            modulatorPlans,
             // Automation's own law, read here rather than re-derived in the
             // scheduler — the same reason `deviceParameterLaw` is injected.
             resolveLaneCeiling: getAutomationLaneCeiling,
@@ -507,7 +523,7 @@ export async function scheduleTrackClips({
     // Read off the strategy, not `instrumentControls`, like expression: only an
     // instrument whose engine honours a stored controller carries one.
     const dispatchControl = instrumentEntry?.strategy.controlChange;
-    const workletControlEvents: { time: number; controller: number; value: number }[] = [];
+    const workletControlEvents: { time: number; controller: number; value: number; atClipClose: boolean }[] = [];
     let noteCount = 0;
 
     function getScheduledArticulationId(articulation: string | undefined): number | undefined {
@@ -794,9 +810,13 @@ export async function scheduleTrackClips({
             // uses and timed exactly as a note at its beat is. A move before
             // the region start is dropped, as a note that ends before it is:
             // the chase a mid-song start needs belongs to the transport.
+            // The clip's moves at the time its closing-line move plays apply, in its own
+            // order, ahead of a clip starting there, as live playback posts them.
             const storedControllers = dispatchControl ? midi.ccByClipId[clip.id] : undefined;
             if (storedControllers && projectClipControllers) {
                 const regionStartSamples = regionStartSec * offlineCtx.sampleRate;
+                const clipControlEvents: { time: number; controller: number; value: number }[] = [];
+                let closingTime: number | undefined;
                 for (const controller of projectClipControllers({
                     controlChanges: storedControllers,
                     clip,
@@ -818,7 +838,13 @@ export async function scheduleTrackClips({
                     if (time >= durationSeconds) {
                         continue;
                     }
-                    workletControlEvents.push({ time, controller: controller.controller, value: controller.value });
+                    clipControlEvents.push({ time, controller: controller.controller, value: controller.value });
+                    if (controller.closesClip) {
+                        closingTime = time;
+                    }
+                }
+                for (const event of clipControlEvents) {
+                    workletControlEvents.push({ ...event, atClipClose: event.time === closingTime });
                 }
             }
 
@@ -927,8 +953,12 @@ export async function scheduleTrackClips({
     }
 
     if (dispatchControl && pendingWorkletEvents) {
-        for (const event of workletControlEvents) {
-            pendingWorkletEvents.push({ type: 'control', dispatch: dispatchControl, ...event });
+        for (const { atClipClose, ...event } of workletControlEvents) {
+            pendingWorkletEvents.push({
+                type: atClipClose ? 'closing-control' : 'control',
+                dispatch: dispatchControl,
+                ...event,
+            });
         }
     }
 

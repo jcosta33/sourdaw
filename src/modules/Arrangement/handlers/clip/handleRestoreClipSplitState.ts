@@ -10,6 +10,7 @@ import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipR
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { restoreClipSplitState } from '../../useCases/clipEditing/restoreClipSplitState';
 import { prepareClipSplitTakeReplay } from '../../useCases/comping/prepareClipSplitTakeReplay';
+import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
 import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
@@ -69,6 +70,11 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
     return (
         clipSplitCaptureOwnersMatch(action.payload) &&
         retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], priorActions) &&
+        reKeyedTakeLaneOwnersMatchStore(
+            action.payload.reKeyedTakeLanes ?? [],
+            action.payload.replacement.rightClip ? 'apply' : 'restore',
+            priorActions
+        ) &&
         clipSplitStateRestorable(action.payload, { tracks }) &&
         midiClipSplitStateMatches(
             {
@@ -85,7 +91,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         (action.payload.expected.clipSatellites === undefined ||
             clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites, priorActions)) &&
         clipAutomationLanesMatch(action, projected) &&
-        prepareClipSplitTakeReplay(action.payload) !== null
+        prepareClipSplitTakeReplay(action.payload, priorActions) !== null
     );
 }
 
