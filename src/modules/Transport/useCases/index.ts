@@ -64,6 +64,7 @@ export { replaceTimeSignatureMap } from './timeSignatureChanges/replaceTimeSigna
 
 export { getTransportHandlers } from './getTransportHandlers';
 
+export { preferencesSeededTransportState } from './preferencesSeededTransportState';
 export { defaultTransportState } from './transportQueries/helpers';
 export { getTransportState } from './transportQueries/getTransportState';
 export { getTempoMapState } from './transportQueries/getTempoMapState';
