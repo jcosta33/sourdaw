@@ -3857,15 +3857,21 @@ export -f sudo timeout sleep apt-get
                 error: childError,
             };
             if (timedOut || outcome.error !== undefined || outcome.status === null || outcome.signal !== null) {
-                const rawStalledPid = existsSync(stalledPidFile) ? readFileSync(stalledPidFile, 'utf8').trim() : '';
-                const stalledPid = Number(rawStalledPid);
-                throw Object.assign(new Error(describeAlsaProbeFailure(outcome)), {
-                    probeDirectory,
-                    stalledPid: Number.isSafeInteger(stalledPid) && stalledPid > 1 ? stalledPid : undefined,
-                });
+                throw new Error(describeAlsaProbeFailure(outcome));
             }
             const lines = (path: string): string[] => readFileSync(path, 'utf8').split('\n').filter(Boolean);
             return { ...outcome, attempts: lines(attemptLog).length, sleeps: lines(sleepLog) };
+        } catch (error) {
+            if (!(error instanceof Error)) {
+                throw error;
+            }
+            const rawStalledPid = existsSync(stalledPidFile) ? readFileSync(stalledPidFile, 'utf8').trim() : '';
+            const stalledPid = Number(rawStalledPid);
+            throw Object.assign(error, {
+                probeDirectory,
+                groupPid,
+                stalledPid: Number.isSafeInteger(stalledPid) && stalledPid > 1 ? stalledPid : undefined,
+            });
         } finally {
             if (groupPid === undefined || !processGroupAlive(groupPid)) {
                 rmSync(probeDirectory, { force: true, recursive: true });
@@ -3935,13 +3941,14 @@ export -f sudo timeout sleep apt-get
                             : undefined,
                     stalledPid:
                         'stalledPid' in error && typeof error.stalledPid === 'number' ? error.stalledPid : undefined,
+                    groupPid: 'groupPid' in error && typeof error.groupPid === 'number' ? error.groupPid : undefined,
                 };
             }
         })();
-        const killRecordedStalledChild = (pid: number): void => {
+        const killRecordedProcess = (pid: number, group: boolean): void => {
             requireOwnedPid(pid);
             try {
-                process.kill(pid, 'SIGKILL');
+                process.kill(group ? -pid : pid, 'SIGKILL');
             } catch (error) {
                 if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
                     throw error;
@@ -3966,9 +3973,19 @@ export -f sudo timeout sleep apt-get
             }
             const stalledPid = failure.stalledPid;
             expect(() => process.kill(stalledPid, 0)).toThrow();
+            expect(failure.groupPid).toBeDefined();
+            if (failure.groupPid === undefined) {
+                throw new Error('The ALSA probe did not expose its process group');
+            }
+            const groupPid = failure.groupPid;
+            requireOwnedPid(groupPid);
+            expect(() => process.kill(-groupPid, 0)).toThrow();
         } finally {
+            if (failure.groupPid !== undefined) {
+                killRecordedProcess(failure.groupPid, true);
+            }
             if (failure.stalledPid !== undefined) {
-                killRecordedStalledChild(failure.stalledPid);
+                killRecordedProcess(failure.stalledPid, false);
             }
         }
     });
