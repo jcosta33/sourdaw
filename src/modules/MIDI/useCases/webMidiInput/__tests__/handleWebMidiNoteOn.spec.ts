@@ -1891,7 +1891,7 @@ describe('handleWebMidiNoteOn', () => {
             }
         });
 
-        it('releases the voices of a Yeast swapped for another mid-hold, leaving the new rack untouched', async () => {
+        it('releases the voices of a Yeast swapped for another mid-hold and sends its key-up only to the swapped-out rack', async () => {
             const nodes = keyboard_strip();
             const live = live_chain(
                 [
@@ -1910,7 +1910,114 @@ describe('handleWebMidiNoteOn', () => {
 
             expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(67, 100, 96_240, 0);
             expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
-            expect(live.processNoteOff).not.toHaveBeenCalled();
+            // The key-up goes to the rack the key went into, and only while the
+            // worker still runs it; whether the new rack stays untouched is the
+            // real runtime's to show (removedYeastHeldKey.spec.ts).
+            expect(live.processNoteOff).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({
+                    rackId: 'yeast-a',
+                    isNoteOn: false,
+                    note: 60,
+                    onlyWhileRackCurrent: true,
+                })
+            );
+        });
+
+        // The rack outlives the Yeast and still holds the key: the key-up
+        // reaches it under the instance the note-on gave it, and whatever the
+        // rack answers is no longer the musician's to hear.
+        it('delivers the key-up to the removed Yeast’s rack under the key’s instance and voices nothing from it', async () => {
+            const nodes = keyboard_strip();
+            let noteInstanceId: string | undefined;
+            const live = live_chain(
+                [
+                    { id: 'y', type: 'yeast' },
+                    { id: 'lev-1', type: 'levain' },
+                ],
+                async (input) => {
+                    noteInstanceId = input.noteInstanceId;
+                    return [];
+                }
+            );
+            live.processNoteOff.mockImplementation(async (input) => [
+                {
+                    timeSamples: 96_300,
+                    noteInstanceId: input.noteInstanceId,
+                    kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+                },
+            ]);
+
+            await live.noteOn(0, 60, 100);
+            live.chain.devices = [{ id: 'lev-1', type: 'levain' }];
+            await live.noteOff(0, 60);
+
+            expect(noteInstanceId).toBeDefined();
+            expect(live.processNoteOff).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({
+                    rackId: 'y',
+                    routeId: 'track-1',
+                    trackId: 'track-1',
+                    isNoteOn: false,
+                    note: 60,
+                    channel: 0,
+                    noteInstanceId,
+                    onlyWhileRackCurrent: true,
+                })
+            );
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
+        it('gives the removed Yeast’s key-up no drain callback, so notes the rack drains for it sound nowhere', async () => {
+            const nodes = keyboard_strip();
+            const live = live_chain(
+                [
+                    { id: 'y', type: 'yeast' },
+                    { id: 'lev-1', type: 'levain' },
+                ],
+                async () => []
+            );
+            live.processNoteOff.mockImplementation(async (input) => {
+                input.onDrainedEvents?.([
+                    {
+                        timeSamples: 96_300,
+                        noteInstanceId: 'arp:generated:9',
+                        kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+                    },
+                ]);
+                return [];
+            });
+
+            await live.noteOn(0, 60, 100);
+            live.chain.devices = [{ id: 'lev-1', type: 'levain' }];
+            await live.noteOff(0, 60);
+
+            expect(live.processNoteOff).toHaveBeenCalledTimes(1);
+            expect(live.processNoteOff.mock.calls[0]![0].onDrainedEvents).toBeUndefined();
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
+        it('still ends the key’s release when the removed Yeast’s rack rejects the key-up', async () => {
+            const nodes = keyboard_strip();
+            const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+            try {
+                const live = live_chain(
+                    [
+                        { id: 'y', type: 'yeast' },
+                        { id: 'lev-1', type: 'levain' },
+                    ],
+                    async (input) => [generated_from_key(67)(input)]
+                );
+                live.processNoteOff.mockRejectedValue(new Error('worker gone'));
+
+                await live.noteOn(0, 60, 100);
+                live.chain.devices = [{ id: 'lev-1', type: 'levain' }];
+                await live.noteOff(0, 60);
+
+                expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
+                expect(warn).toHaveBeenCalledWith('[MIDI] Removed Yeast key release failed:', expect.any(Error));
+            } finally {
+                warn.mockRestore();
+            }
         });
 
         // Removing a Yeast edits only the track store: its rack keeps

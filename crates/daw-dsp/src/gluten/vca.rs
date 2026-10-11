@@ -100,6 +100,9 @@ pub struct VcaCompressor {
     vca_k2: f32,
     last_output_l: f32,
     last_output_r: f32,
+    /// Gain reduction (dB) each side applied on the last sample.
+    applied_gr_db_l: f32,
+    applied_gr_db_r: f32,
     /// Feed-forward mode (false = feedback/SSL default, true = feed-forward)
     feed_forward: bool,
 }
@@ -124,6 +127,8 @@ impl VcaCompressor {
             vca_k2: 0.003,
             last_output_l: 0.0,
             last_output_r: 0.0,
+            applied_gr_db_l: 0.0,
+            applied_gr_db_r: 0.0,
             feed_forward: false,
         };
         c.update_coeffs();
@@ -230,6 +235,20 @@ impl VcaCompressor {
         }
     }
 
+    /// Whether the detector reads this VCA's input rather than its output.
+    pub(crate) fn is_feed_forward(&self) -> bool {
+        self.feed_forward
+    }
+
+    /// `left`/`right` through the gain and colour this VCA applied last.
+    pub(crate) fn ahead_output(&self, left: f32, right: f32) -> (f32, f32) {
+        let (gr_l, gr_r) = (self.applied_gr_db_l, self.applied_gr_db_r);
+        (
+            vca_distortion(left * db_to_linear(gr_l), self.vca_k2, gr_l),
+            vca_distortion(right * db_to_linear(gr_r), self.vca_k2, gr_r),
+        )
+    }
+
     /// Process one sample pair. Returns (left, right, gain_reduction_db).
     #[inline]
     pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
@@ -260,6 +279,8 @@ impl VcaCompressor {
 
         self.last_output_l = out_l;
         self.last_output_r = out_r;
+        self.applied_gr_db_l = smoothed_l;
+        self.applied_gr_db_r = smoothed_r;
 
         // Report the deeper of the two reductions to the meter — identical to
         // the single value while linked, and the one an engineer reads for.
@@ -272,6 +293,8 @@ impl VcaCompressor {
         self.detector.reset();
         self.last_output_l = 0.0;
         self.last_output_r = 0.0;
+        self.applied_gr_db_l = 0.0;
+        self.applied_gr_db_r = 0.0;
     }
 }
 

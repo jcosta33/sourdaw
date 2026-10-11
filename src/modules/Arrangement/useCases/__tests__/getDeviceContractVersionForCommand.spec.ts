@@ -78,7 +78,9 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     levain: 'descriptor-v1:c5a90e63',
     // Gluten, Bacteria and Grinder carry owner-authored parameter guidance
     // (#4370 AC-001), which is part of the descriptor fingerprint.
-    gluten: 'descriptor-v1:7883bbc4',
+    // Gluten records that lookahead detects ahead of the delay on every
+    // topology (#4958), not only Diode.
+    gluten: 'descriptor-v1:d40becfe',
     // Bacteria records that a band with no stored body plays none, which is
     // what undoing a band's first body restores.
     bacteria: 'descriptor-v1:39845906',

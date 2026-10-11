@@ -82,6 +82,15 @@ const SHARDED_BROWSER_STEPS = [
     'Report shard failure',
     'Upload blob report',
 ] as const;
+const WEBGPU_ADMISSION_STEPS = [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'] as const;
+const NATIVE_MACOS_STEPS = [
+    'Checkout',
+    'Install the pinned Rust toolchain',
+    'Cache cargo build',
+    'Cache the cargo registry index',
+    'Test the audio crates',
+    'Test the native crate',
+] as const;
 const STATIC_SUITE_STEPS = [
     'Artifact freshness',
     'App types',
@@ -109,19 +118,13 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         rust: [
             'Checkout',
             'Install ALSA development headers',
+            'Restore pinned Rust toolchain',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
             'Cache Cargo dependencies',
             'Rust workspace health gates',
         ],
-        'native-macos': [
-            'Checkout',
-            'Install the pinned Rust toolchain',
-            'Cache cargo build',
-            'Cache the cargo registry index',
-            'Test the audio crates',
-            'Test the native crate',
-        ],
+        'native-macos': NATIVE_MACOS_STEPS,
     },
     'quantum-measurements.yml': {
         measure: [
@@ -154,7 +157,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
     },
     'health-gates.yml': {
-        scope: ['Checkout', 'Set up Node', 'Plan affected checks', 'Upload scope manifest'],
+        scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
         'selection-shadow': [
             'Checkout candidate head',
             'Checkout immutable integration commit',
@@ -197,20 +200,14 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         rust: [
             ...NODE_SETUP_ACTIONS,
             'Install ALSA development headers',
+            'Restore pinned Rust toolchain',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
             'Cache Cargo dependencies',
             'Install server dependencies',
             'Server and Rust workspace health gates',
         ],
-        'native-macos': [
-            'Checkout',
-            'Install the pinned Rust toolchain',
-            'Cache cargo build',
-            'Cache the cargo registry index',
-            'Test the audio crates',
-            'Test the native crate',
-        ],
+        'native-macos': NATIVE_MACOS_STEPS,
         'native-windows': [
             'Checkout',
             'Install the pinned Rust toolchain',
@@ -244,7 +241,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     'heavy-gates.yml': {
         e2e: SHARDED_BROWSER_STEPS,
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
-        'browser-ai-webgpu': [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'],
+        'browser-ai-webgpu': [...WEBGPU_ADMISSION_STEPS, 'Upload Browser AI WebGPU diagnostics'],
         'heavy-gate': ['Require selected browser jobs to succeed'],
     },
     'semantic-review.yml': {
@@ -399,6 +396,7 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     ].map((step) => pin('validation.yml', 'static', step, PRODUCT_SCOPE)),
     pin('heavy-gates.yml', 'e2e', 'Report shard failure', SHARD_FAIL),
     pin('heavy-gates.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
+    pin('heavy-gates.yml', 'browser-ai-webgpu', 'Upload Browser AI WebGPU diagnostics', ALWAYS_EXPRESSION),
     pin('nightly.yml', 'unit', 'Report shard failure', SHARD_FAIL),
     pin('nightly.yml', 'desktop-measure', 'Upload the measurement record', ALWAYS),
     pin(

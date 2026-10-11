@@ -7,6 +7,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/cargo-dependency-seed.yml'
+      - '.github/workflows/validation.yml'
+      - 'scripts/ensurePinnedRustToolchain.sh'
       - 'Cargo.lock'
       - '**/Cargo.toml'
       - '.cargo/config.toml'
@@ -43,8 +45,15 @@ jobs:
           done
           exit 1
 
+      - name: Restore pinned Rust toolchain
+        id: pinned-toolchain
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.rustup/toolchains
+          key: pinned-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+
       - name: Install the pinned Rust toolchain
-        run: rustup show
+        run: bash scripts/ensurePinnedRustToolchain.sh "${{ steps.pinned-toolchain.outputs.cache-hit }}"
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

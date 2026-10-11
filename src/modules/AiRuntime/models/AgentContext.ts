@@ -1,3 +1,5 @@
+import { type ThreadContextEvidence } from './ThreadContext';
+
 export const AGENT_CONTEXT_SCHEMA_VERSION = 2 as const;
 
 export type AgentContextGrants = {
@@ -44,6 +46,8 @@ export type AgentContextEvidence = {
         validationFailures: { total: number; retained: number; omitted: number };
         measurementCount: number;
         trackCount: number;
+        /** What each profile's `thread_context` section kept, present only when the request had thread state. */
+        thread?: { hosted: ThreadContextEvidence; local: ThreadContextEvidence };
     };
     snapshot: AgentContextProjectSnapshot;
     delta: { mode: 'full' | 'delta'; baseRevision: string | null; currentRevision: string | null };

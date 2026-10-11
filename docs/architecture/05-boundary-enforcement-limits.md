@@ -34,10 +34,18 @@ own exact known-violations baseline (repaired debt cannot stay silently authoriz
 
 2. **Re-export laundering through a barrel.** A legal contract barrel (or a use-case file) can
    `export { fn } from '../repositories/Y'` and launder a private symbol out through a public
-   surface; dep-cruiser cannot read re-export provenance.
+   surface; dep-cruiser cannot read re-export provenance. The edge rules anchored to
+   `<contract>/index.ts` see only the barrel's own hop, so a carrier file beside the barrel —
+   re-exporting a private symbol and re-exported by the barrel in turn — used to pass clean.
    → **Closed by** `contract-barrel-scope` (a `<contract>/index.ts` may re-export only from its own
    folder), `no-models-repos-transformers-in-index`, `no-usecase-type-exports-on-index` (types
-   cruise), and ESLint `sourdaw/no-usecase-repository-reexport`.
+   cruise), ESLint `sourdaw/no-usecase-repository-reexport`, and the **contract-folder re-export
+   register** in `scripts/check-dependency-boundaries.mjs`, which reads the `export … from` syntax
+   of every file in a contract folder (`useCases|events|stores|presentations/views`, barrel or not)
+   and fails `pnpm deps:validate` on any re-export reaching `models/`, `repositories/`, or
+   `transformers/` that is not an exact registered baseline row. The register is what makes the
+   closure honest: publishing deliberate model vocabulary through a carrier file stays a
+   reviewed, individually registered decision, while any unregistered hop fails by name.
 
 3. **Adapter / bridge-file laundering.** A rule anchored only to a vendor package misses callers
    that reach the same capability _through_ a thin in-repo adapter.

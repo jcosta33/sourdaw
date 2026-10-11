@@ -21,6 +21,11 @@ type ProcessRealtimeMidiInputInput = {
     noteInstanceId?: string;
     blockSize?: number;
     /**
+     * Deliver only while this rack's projection is the one the worker runs;
+     * otherwise do nothing, never switching the worker to the rack.
+     */
+    onlyWhileRackCurrent?: boolean;
+    /**
      * Drained batches from the idle pump this input starts (#4870). While the
      * transport is stopped and this input is the rack's only driver, generated
      * and deferred events reach their block only if empty blocks keep being
@@ -105,6 +110,7 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
         blockStartSamples: input.sampleTime,
         blockEndSamples,
         transport: transportInfo,
+        onlyWhileRackCurrent: input.onlyWhileRackCurrent,
     }).then((processed) => {
         if (onDrainedEvents === undefined || transport.isPlaying || processed.length === 0) {
             return processed;

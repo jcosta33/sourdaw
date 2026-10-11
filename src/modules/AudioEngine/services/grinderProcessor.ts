@@ -215,7 +215,14 @@ type GrinderNeuralPatch =
               recurrentBias?: number | null;
               convWeights?: readonly (readonly [number, number, number])[];
           };
+          /** The imported `.nam` model as JSON (#3774), when the sender proved one. */
+          modelJson?: string;
+          /** The model's digest, when carried — the re-load gate below reads it. */
+          modelDigest?: string;
       };
+
+/** The digest of the model the worklet has already parsed and loaded. */
+type LoadedNeuralModelDigest = { current: string | null };
 
 const NEURAL_TIER_INDEX: Record<string, number> = {
     standard: 0,
@@ -245,10 +252,37 @@ function isPositiveSafeInteger(value: unknown): value is number {
     return isNonNegativeSafeInteger(value) && value > 0;
 }
 
-function applyNeuralPatch(instance: GrinderInstance, patch: GrinderNeuralPatch): void {
+function applyNeuralPatch(
+    instance: GrinderInstance,
+    patch: GrinderNeuralPatch,
+    loadedModelDigest: LoadedNeuralModelDigest
+): void {
     if (patch.neuralModelMode === 'builtin') {
+        // The runtime discards the imported model on the mode write below, so
+        // the gate must forget it too: the next imported patch reloads.
+        loadedModelDigest.current = null;
         instance.set_param('neuralModelMode', 0);
         return;
+    }
+
+    // A model-carrying patch loads the real imported network first (#3774):
+    // the runtime parses the `.nam` JSON and `process_capture` then runs it
+    // directly, ignoring the scalar substitute shaping below. The sender
+    // validated the same document against the mirrored rejection set, so a
+    // rejection here means the two validators diverged — surfaced loudly
+    // through the processor's fault path, never substituted over.
+    //
+    // The parse runs on this render thread, so a patch whose digest matches
+    // the model already loaded is skipped entirely: the sender re-posts the
+    // patch on every patch sync, and only a genuinely new capture justifies
+    // re-parsing and re-arming the warmup. A patch without a digest cannot
+    // prove identity and reloads every time.
+    if (patch.modelJson !== undefined) {
+        const alreadyLoaded = patch.modelDigest !== undefined && patch.modelDigest === loadedModelDigest.current;
+        if (!alreadyLoaded) {
+            instance.load_neural_model(patch.modelJson);
+            loadedModelDigest.current = patch.modelDigest ?? null;
+        }
     }
 
     instance.set_param('neuralCustomTier', NEURAL_TIER_INDEX[patch.profile.preferredTier ?? 'standard'] ?? 0);
@@ -286,11 +320,24 @@ function isGrinderNeuralPatch(value: unknown): value is GrinderNeuralPatch {
     if (value.neuralModelMode === 'builtin') {
         return Object.keys(value).length === 1;
     }
-    if (
-        value.neuralModelMode !== 'imported' ||
-        !hasOnlyKeys(value, ['neuralModelMode', 'profile']) ||
-        !isRecord(value.profile)
-    ) {
+    const payloadKeys = ['neuralModelMode', 'profile'];
+    if (value.modelJson !== undefined) {
+        payloadKeys.push('modelJson');
+    }
+    if (value.modelDigest !== undefined) {
+        payloadKeys.push('modelDigest');
+    }
+    if (value.neuralModelMode !== 'imported' || !hasOnlyKeys(value, payloadKeys) || !isRecord(value.profile)) {
+        return false;
+    }
+    // The compiled model transport (#3774): optional, but present only as a
+    // non-empty string — anything else is a corrupt message, dropped whole.
+    if (value.modelJson !== undefined && (typeof value.modelJson !== 'string' || value.modelJson.length === 0)) {
+        return false;
+    }
+    // The re-load gate's comparison key: same contract as modelJson, optional,
+    // and only ever a non-empty bounded string.
+    if (value.modelDigest !== undefined && !isBoundedId(value.modelDigest)) {
         return false;
     }
     const profile = value.profile;
@@ -367,6 +414,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
     _fallbackControlGeneration: number | null = null;
     _fallbackControlTarget: FallbackControlTarget | null = null;
     _lastFallbackControlSequence = 0;
+    /** Digest of the model already parsed into the instance — the re-load gate's state. */
+    _loadedNeuralModelDigest: LoadedNeuralModelDigest = { current: null };
     _pendingFallbackControls: Array<ScheduledFallbackControl | null> = Array.from(
         { length: MAX_PENDING_FALLBACK_CONTROLS },
         () => null
@@ -557,7 +606,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
         }
         this._lastFallbackControlSequence = message.correlation.controlSequence;
         const oldLatency = this._instance.get_latency_samples();
-        applyNeuralPatch(this._instance, message.patch);
+        applyNeuralPatch(this._instance, message.patch, this._loadedNeuralModelDigest);
         const newLatency = this._instance.get_latency_samples();
         this._refreshWasmViewsIfMemoryChanged();
         if (newLatency !== oldLatency) {

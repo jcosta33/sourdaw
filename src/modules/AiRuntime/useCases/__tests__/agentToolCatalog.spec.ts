@@ -374,7 +374,11 @@ describe('agent tool catalog', () => {
             ...(expect(calls).toEqual([{ name: 'setTempo', arguments: { bpm: 128 } }]), {}),
         }));
 
-        const result = await parsePromptToActions('set the tempo to 128', context, undefined, 'revision-2');
+        const result = await parsePromptToActions({
+            prompt: 'set the tempo to 128',
+            context,
+            projectRevision: 'revision-2',
+        });
 
         const firstTurnSchemas = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstTurnSchemas.some((schema: ToolSchema) => schema.function.name === 'setTempo')).toBe(false);
@@ -517,7 +521,11 @@ describe('agent tool catalog', () => {
             rejections: [],
         });
 
-        const result = await parsePromptToActions('set the tempo to 128', context, undefined, 'revision-2');
+        const result = await parsePromptToActions({
+            prompt: 'set the tempo to 128',
+            context,
+            projectRevision: 'revision-2',
+        });
 
         expect(result).toMatchObject({
             actions: [],
@@ -544,7 +552,11 @@ describe('agent tool catalog', () => {
             rejections: [],
         });
 
-        const result = await parsePromptToActions('set the tempo to 128', context, undefined, 'revision-2');
+        const result = await parsePromptToActions({
+            prompt: 'set the tempo to 128',
+            context,
+            projectRevision: 'revision-2',
+        });
 
         expect(result).toMatchObject({
             actions: [],
@@ -728,7 +740,11 @@ describe('agent tool catalog', () => {
             {}),
         }));
 
-        const result = await parsePromptToActions('render and analyze the chorus', context, undefined, 'revision-2');
+        const result = await parsePromptToActions({
+            prompt: 'render and analyze the chorus',
+            context,
+            projectRevision: 'revision-2',
+        });
 
         expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledTimes(1);
         expect(result.rejectionReason ?? '').not.toContain('unavailable application tool');

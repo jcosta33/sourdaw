@@ -1,5 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+type InstrumentSnapshot = Readonly<{
+    id: string;
+    devices: readonly Readonly<{ id: string; type: string }>[];
+}>;
+
+type RouteYeastNoteOffs = (
+    instrumentTrack: InstrumentSnapshot | null,
+    noteOffs: readonly { channel: number; note: number }[],
+    options: { emitGrandBouleEvent: (deviceId: string, midiNote: number) => void }
+) => void;
+
+type ReleaseHeldYeastVoices = (instrumentTrackId: string, channel: number, pitch: number, sampleFrame?: number) => void;
+
 type ReleaseCapturedYeastVoices = (
     instrumentTrackId: string,
     channel: number,
@@ -7,10 +20,39 @@ type ReleaseCapturedYeastVoices = (
     sampleFrame?: number
 ) => void;
 
+type LifecycleNoteOff = {
+    channel: number;
+    note: number;
+    noteInstanceId?: string;
+    sampleFrame?: number;
+};
+
+type ReleaseCapturedYeastLifecycleVoices = (
+    trackId: string,
+    noteOffs: readonly LifecycleNoteOff[]
+) => LifecycleNoteOff[];
+
 const initializeWebMidiMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const setMidiInputTrackMock = vi.hoisted(() => vi.fn());
 const getMidiInputTrackOwnerIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
+const routeYeastNoteOffsMock = vi.hoisted(() => vi.fn<RouteYeastNoteOffs>());
+// Default passthrough: every identityless off reaches the current-node route,
+// matching the pre-#4873 consumer for payloads without captured owners.
+const releaseCapturedMock = vi.hoisted(() =>
+    vi.fn<ReleaseCapturedYeastLifecycleVoices>((_trackId, noteOffs) => [...noteOffs])
+);
+// The real registry-backed lifecycle release, captured by the mock factory
+// below so the handler-level guard case can drive actual registry populations.
+const actualLifecycleModule = vi.hoisted(() => ({
+    releaseCapturedYeastLifecycleVoices: null as ReleaseCapturedYeastLifecycleVoices | null,
+}));
+const releaseHeldYeastVoicesMock = vi.hoisted(() => vi.fn<ReleaseHeldYeastVoices>());
 const releaseCapturedYeastVoicesMock = vi.hoisted(() => vi.fn<ReleaseCapturedYeastVoices>());
+// The real coarse registry sweep, captured by the mock factory below so the
+// handler-level guard case can run the production path against the registry.
+const actualCoarseModule = vi.hoisted(() => ({
+    releaseCapturedYeastVoices: null as ReleaseCapturedYeastVoices | null,
+}));
 const trackStoreSubscribeMock = vi.hoisted(() => vi.fn());
 const eventBusOnMock = vi.hoisted(() => vi.fn());
 const eventBusEmitMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -57,9 +99,29 @@ vi.mock('../../../repositories/webMidi/lifecycle/initWebMidi', () => ({
     initWebMidi: initializeWebMidiMock,
 }));
 
-vi.mock('../../../repositories/webMidi/releaseCapturedYeastVoices', () => ({
-    releaseCapturedYeastVoices: releaseCapturedYeastVoicesMock,
+vi.mock('../../../repositories/webMidi/releaseCapturedYeastVoices', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../repositories/webMidi/releaseCapturedYeastVoices')>();
+    actualCoarseModule.releaseCapturedYeastVoices = actual.releaseCapturedYeastVoices;
+    return {
+        releaseCapturedYeastVoices: releaseCapturedYeastVoicesMock,
+    };
+});
+
+vi.mock('../../../repositories/webMidi/releaseHeldYeastVoices', () => ({
+    releaseHeldYeastVoices: releaseHeldYeastVoicesMock,
 }));
+
+vi.mock('../../../repositories/webMidi/routeYeastNoteOff', () => ({
+    routeYeastNoteOffsForTargetTrack: routeYeastNoteOffsMock,
+}));
+
+vi.mock('../../../repositories/webMidi/routeYeastLifecycleNoteOff', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../repositories/webMidi/routeYeastLifecycleNoteOff')>();
+    actualLifecycleModule.releaseCapturedYeastLifecycleVoices = actual.releaseCapturedYeastLifecycleVoices;
+    return {
+        releaseCapturedYeastLifecycleVoices: releaseCapturedMock,
+    };
+});
 
 vi.mock('../setMidiInputTrack', () => ({
     setMidiInputTrack: setMidiInputTrackMock,
@@ -69,6 +131,7 @@ vi.mock('../getMidiInputTrackOwnerId', () => ({
     getMidiInputTrackOwnerId: getMidiInputTrackOwnerIdMock,
 }));
 
+import { pendingYeastRelease } from '../../../repositories/webMidi/pendingYeastRelease';
 import { disposeWebMidiSubscriptions } from '../disposeWebMidiSubscriptions';
 import * as subject from '../initWebMidi';
 
@@ -79,7 +142,11 @@ describe('initWebMidi', () => {
         setMidiInputTrackMock.mockClear();
         getMidiInputTrackOwnerIdMock.mockReset();
         getMidiInputTrackOwnerIdMock.mockReturnValue(null);
-        releaseCapturedYeastVoicesMock.mockClear();
+        routeYeastNoteOffsMock.mockClear();
+        releaseCapturedMock.mockClear();
+        releaseCapturedMock.mockImplementation((_trackId, noteOffs) => [...noteOffs]);
+        releaseHeldYeastVoicesMock.mockClear();
+        releaseCapturedYeastVoicesMock.mockReset();
         trackStoreSubscribeMock.mockReset();
         eventBusOnMock.mockReset();
         eventBusEmitMock.mockClear();
@@ -117,8 +184,9 @@ describe('initWebMidi', () => {
         trackSubscription?.({ selectedTrackId: null, tracks: [] });
         expect(setMidiInputTrackMock).toHaveBeenCalledWith(null);
 
-        // Each forced off ends, at once, the captured voices of the rack's
-        // track at that channel and pitch.
+        // Each forced off ends, at once, the held keys' captured voices of the
+        // rack's track at that channel and pitch; the registry voices the offs
+        // name resolve through the lifecycle path above it.
         yeastNotesOffSubscription?.({
             trackId: 'track-a',
             noteOffs: [
@@ -126,10 +194,103 @@ describe('initWebMidi', () => {
                 { channel: 2, note: 64 },
             ],
         });
-        expect(releaseCapturedYeastVoicesMock.mock.calls).toEqual([
+        expect(releaseHeldYeastVoicesMock.mock.calls).toEqual([
             ['track-a', 0, 60],
             ['track-a', 2, 64],
         ]);
+    });
+
+    it('routes a fully captured lifecycle batch without touching the current-node route (#4873)', async () => {
+        eventBusOnMock.mockImplementation(() => () => {});
+        await subject.initWebMidi();
+
+        const handler = eventBusOnMock.mock.calls.find(([event]) => event === 'yeast.notesOff')?.[1] as (payload: {
+            trackId: string;
+            noteOffs: LifecycleNoteOff[];
+        }) => void;
+        releaseCapturedMock.mockReturnValue([]);
+
+        handler({ trackId: 'track-a', noteOffs: [{ channel: 0, note: 60, noteInstanceId: 'voice-a' }] });
+
+        expect(releaseCapturedMock).toHaveBeenCalledWith('track-a', [
+            { channel: 0, note: 60, noteInstanceId: 'voice-a' },
+        ]);
+        expect(routeYeastNoteOffsMock).not.toHaveBeenCalled();
+    });
+
+    it('routes only the leftover identityless offs to the current-node compat route (#4873)', async () => {
+        eventBusOnMock.mockImplementation(() => () => {});
+        await subject.initWebMidi();
+
+        const handler = eventBusOnMock.mock.calls.find(([event]) => event === 'yeast.notesOff')?.[1] as (payload: {
+            trackId: string;
+            noteOffs: LifecycleNoteOff[];
+        }) => void;
+        const leftover: LifecycleNoteOff = { channel: 0, note: 64 };
+        releaseCapturedMock.mockReturnValue([leftover]);
+
+        handler({
+            trackId: 'track-a',
+            noteOffs: [{ channel: 0, note: 60, noteInstanceId: 'voice-a' }, leftover],
+        });
+
+        expect(routeYeastNoteOffsMock).toHaveBeenCalledTimes(1);
+        expect(routeYeastNoteOffsMock.mock.calls[0]?.[1]).toEqual([leftover]);
+    });
+
+    it('releases only the retired voice through the real handler path, never a same-pitch successor on the replacement (#4873)', async () => {
+        eventBusOnMock.mockImplementation(() => () => {});
+        await subject.initWebMidi();
+
+        const realLifecycleRelease = actualLifecycleModule.releaseCapturedYeastLifecycleVoices;
+        if (!realLifecycleRelease) {
+            throw new Error('the routeYeastLifecycleNoteOff mock factory did not capture the actual implementation');
+        }
+        // The handler's lifecycle release resolves against the real registry
+        // here. A coarse pitch-keyed sweep beside it — releasing every captured
+        // voice at each off's track, channel, and pitch — would strike the
+        // successor below; only the instance-keyed path may touch the registry.
+        releaseCapturedMock.mockImplementation((trackId, noteOffs) => realLifecycleRelease(trackId, noteOffs));
+
+        const realCoarseRelease = actualCoarseModule.releaseCapturedYeastVoices;
+        if (!realCoarseRelease) {
+            throw new Error('the releaseCapturedYeastVoices mock factory did not capture the actual implementation');
+        }
+        // The coarse module release runs against the real registry here too:
+        // main's pre-#4873 handler carried it beside the held sweep, and its
+        // pitch-keyed registry release is what a re-add would fire.
+        releaseCapturedYeastVoicesMock.mockImplementation((trackId, channel, pitch, sampleFrame) =>
+            realCoarseRelease(trackId, channel, pitch, sampleFrame)
+        );
+
+        // The registry is module state; start from an empty one.
+        pendingYeastRelease.releaseAllPending();
+
+        const originalRelease = vi.fn();
+        const successorRelease = vi.fn();
+        pendingYeastRelease.registerVoice('track-a:yeast-original', 'track-a', 'voice-old', 60, 0, originalRelease);
+        // The replacement instrument started its own same-pitch voice on the
+        // same track after the swap (#4873).
+        pendingYeastRelease.registerVoice('track-a:yeast-replacement', 'track-a', 'voice-new', 60, 0, successorRelease);
+
+        const handler = eventBusOnMock.mock.calls.find(([event]) => event === 'yeast.notesOff')?.[1] as (payload: {
+            trackId: string;
+            noteOffs: LifecycleNoteOff[];
+        }) => void;
+        handler({
+            trackId: 'track-a',
+            noteOffs: [{ channel: 0, note: 60, noteInstanceId: 'voice-old', sampleFrame: 512 }],
+        });
+
+        // The off retires the voice it names through its captured owner.
+        expect(originalRelease).toHaveBeenCalledExactlyOnceWith(512, 0);
+        // The successor at the same track, channel, and pitch stays sounding.
+        expect(successorRelease).not.toHaveBeenCalled();
+        // The handler's per-pitch sweep is the narrower held-key release only:
+        // the coarse module release must never be part of the notesOff path.
+        expect(releaseCapturedYeastVoicesMock).not.toHaveBeenCalled();
+        // A fully captured batch never reaches the current-node route.
+        expect(routeYeastNoteOffsMock).not.toHaveBeenCalled();
     });
 
     it('drops the live input target when the selection moves to a non-MIDI track', async () => {
@@ -247,6 +408,6 @@ describe('initWebMidi', () => {
         }
 
         expect(setMidiInputTrackMock).toHaveBeenCalledTimes(1);
-        expect(releaseCapturedYeastVoicesMock).toHaveBeenCalledTimes(1);
+        expect(releaseHeldYeastVoicesMock).toHaveBeenCalledTimes(1);
     });
 });
