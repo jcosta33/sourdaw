@@ -1155,21 +1155,18 @@ describe('exportStems — option parsing, validation & control flow', () => {
             const failure = createAppError('Export', 'Track "broken" could not render "Tape Delay"', {
                 failureKind: 'faust-device',
             });
-            offlineRenderMocks.createOfflineTrackStrip.mockImplementation((ctx: unknown, track: { id: string }) => {
-                if (track.id === 'broken') {
-                    return Promise.reject(failure);
+            offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
+                async (ctx: unknown, track: { id: string }) => {
+                    if (track.id === 'broken') {
+                        throw failure;
+                    }
+                    const strip = await construct(ctx, track);
+                    return {
+                        ...strip,
+                        deviceEntries: [{ deviceId: track.id, deviceType: 'faust-ok', strategy: { destroy } }],
+                    };
                 }
-                return construct(ctx, track).then((strip) => ({
-                    ...strip,
-                    deviceEntries: [
-                        {
-                            deviceId: track.id,
-                            deviceType: 'faust-ok',
-                            strategy: { destroy },
-                        },
-                    ],
-                }));
-            });
+            );
             try {
                 await expect(exportStems(4)).rejects.toBe(failure);
                 expect(destroy).toHaveBeenCalledTimes(2);
