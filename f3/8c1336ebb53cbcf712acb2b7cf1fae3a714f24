@@ -1,0 +1,16 @@
+src/modules/MIDI/useCases/midiClipData/projectClipControllerEvents.ts
+  h_beb54bf43b47b7 29-32,110,113-115
+src/modules/Transport/AGENTS.md
+  h_beb54bf43b47b7 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f38c1336ebb53cbcf712acb2b7cf1fae3a714f24",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
