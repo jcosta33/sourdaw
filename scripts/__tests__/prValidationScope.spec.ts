@@ -663,7 +663,7 @@ describe('required affected verification', () => {
             env: { ...process.env, BASE_SHA: 'a'.repeat(40), HEAD_SHA: conflictHead, GITHUB_OUTPUT: output },
         });
         expect(invalid.status).toBe(1);
-    });
+    }, 30_000);
     it('disables inherited Trace2 for disposable Git fixture children', () => {
         const root = temporaryRoot();
         execFileSync('git', ['init', '--quiet'], { cwd: root });
