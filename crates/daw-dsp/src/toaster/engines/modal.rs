@@ -283,6 +283,13 @@ impl ModalEngine {
         self.amp_env > 1e-6
     }
 
+    /// Restore the base mode parameters. `set_param(DECAY)` scales the mode
+    /// decay times that are already in place, so a voice reused across hits
+    /// must start again from the preset or the scaling compounds (#4856).
+    pub fn reset_engine_params(&mut self) {
+        self.apply_preset(self.preset);
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             DECAY => {

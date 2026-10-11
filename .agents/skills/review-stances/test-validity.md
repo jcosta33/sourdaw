@@ -6,6 +6,14 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
+
+The installed affected-E2E loader case asserted full selection for opaque runtime dependencies, but the actual alias graph escaped its temporary root into the checkout. The published missing-consumer-or-opaque-edge probe preserved that result without observing resolved sources; requested-root scope isolation was the missing stance and probe.
+
+Delegate to the installed cruise implementation and inspect its returned graph, rather than substituting a successful graph. Assert the exact fixture source set and root-relative alias edges for explicit, absent, and inherited `baseUrl`, together with the existing opaque-selection assertions. Reverting parsed-config forwarding or implicit-base normalization must fail the graph oracle even when selection still returns full.
+
+The first PR #5291 repair's inherited fixture supplied an explicit `baseUrl`; it could not expose the resolver's implicit inherited-path rebase. The pre-merge regression must place the declaring config and real uncurated consumer in a nested directory, add an unrelated root shadow, and use valid relative imports for surrounding composition code. Require full admission before an unproved traversal or the actual declared graph; an unrelated unresolved alias would mask the omission by selecting full for another reason.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
@@ -823,6 +831,7 @@ For a batch-admitted restored clip preceding a split, compare captured IDs with 
 IDs before reloading and replaying twice; a live execution that remints a preflight capture is not
 replay-stable. Draw is singleton-only, so a rejected draw/split batch proves admission, not prefix
 execution. Read executable entries from the full history owner rather than its label-only UI view.
+
 ### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
 
 PR #5269's successful exact-hit fixture reported rustc, cargo, rustfmt, and clippy, so it
