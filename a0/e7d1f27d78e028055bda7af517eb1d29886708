@@ -1,0 +1,25 @@
+src/modules/AiRuntime/transformers/__tests__/promptNoteWindowLaw.spec.ts
+  s_29d8df116c5b92::t_b3df0dbba6716a 1-143
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_29d8df116c5b92::t_81b3d21f12d59b 1145
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_29d8df116c5b92::t_a8abb018730c45 556-599
+src/modules/Arrangement/handlers/clip/handleSetClipLoop.ts
+  s_29d8df116c5b92::t_c195d82af82d96 16-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0e7d1f27d78e028055bda7af517eb1d29886708",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
