@@ -64,14 +64,15 @@ function loadBank(processor: LevainProcessorLike, loadToken: number, instrumentI
     const data = new Float32Array(SAMPLE_FRAMES).map((_, frame) => Math.sin(frame * 0.05) * 0.5);
     for (let sampleId = 0; sampleId < samples; sampleId++) {
         send(processor, {
-            type: 'addSample',
+            type: 'beginSample',
             loadToken,
             sampleId,
-            data,
             frameCount: SAMPLE_FRAMES,
             channels: 1,
             sampleRate: 48_000,
         });
+        send(processor, { type: 'sampleChunk', loadToken, sampleId, data });
+        send(processor, { type: 'sealSample', loadToken, sampleId });
         send(processor, {
             type: 'addZone',
             loadToken,
