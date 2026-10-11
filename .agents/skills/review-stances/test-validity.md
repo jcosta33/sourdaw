@@ -923,3 +923,19 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+### 2026-10-12 — a sampled modulation state did not prove its terminal write (#5209)
+
+PR #5209 (`54ff77cd1`) had curve and recurrence assertions without a real nonlinear
+AudioParam terminal or two ordered mappings sharing one slot. The compiler's redundant
+quantised [4, 4, 5] oracle also accepted a write live skips; actual delivery is [4, 5],
+with the skipped middle state still feeding the filter. Historical review dispatch is
+unestablished; terminal-output and mapping-order coverage was missing.
+
+Require real gain and both deesser binding taps with schedule counts. Construct a tick
+where automation actually writes 5 and modulation advances to quantised 6 but skips:
+the terminal must be 5 across AudioParam, frame and segment consumers. A competing-lane
+control must force 6. Reverting device-unit composition and ordered slot updates must
+redden these committed-head cases independently. A requested crop callback alone cannot
+prove history: #5323's repair traced `resolveHistoryAwareRenderContext` back to beat zero;
+observe the actual retained crop and the compensated seed through that producer route.
