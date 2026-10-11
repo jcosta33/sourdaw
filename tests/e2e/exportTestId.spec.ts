@@ -4,7 +4,7 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openExportDialog(page: import('@playwright/test').Page): Promise<void> {
     // Open via keyboard shortcut Cmd/Ctrl+Shift+E.
-    const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+    const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
     await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({ timeout: 10_000 });
 }
@@ -51,17 +51,12 @@ test.describe('Export dialog — test-id targeted', () => {
         await expect(page.getByText('The Bakery')).not.toBeVisible({ timeout: 5000 });
     });
 
-    test('start baking button is present and disabled when no format selected', async ({ page }) => {
+    test('start baking is enabled with the default WAV format', async ({ page }) => {
         await openExportDialog(page);
 
         const start = page.getByTestId('export-start');
-        await expect(start).toBeVisible();
-
-        // In mixdown mode with no format selected, the button is disabled.
-        const disabled = await start.isDisabled();
-        // It may or may not be disabled depending on default format selection.
-        // We just verify the button exists and has the right text.
-        const text = (await start.innerText()).trim();
-        expect(text).toContain('Start Baking');
+        await expect(page.getByTestId('export-format-wav')).toHaveAttribute('aria-checked', 'true');
+        await expect(start).toHaveText('Start Baking');
+        await expect(start).toBeEnabled();
     });
 });
