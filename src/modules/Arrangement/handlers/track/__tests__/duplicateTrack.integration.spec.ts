@@ -10,6 +10,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 // here is what project truth holds after undo, so the engine seam is stubbed
 // rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 

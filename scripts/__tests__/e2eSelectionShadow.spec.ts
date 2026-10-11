@@ -164,6 +164,7 @@ function withShadowCliCheckouts(
         'scripts/e2eSelectionShadowCertificate.json',
         'scripts/e2eSelectionShadowIntegration.ts',
         'scripts/e2eShardPartition.ts',
+        'scripts/e2eCollectorInventory.ts',
         'scripts/e2eSpecDurations.json',
         'scripts/prValidationScope.ts',
         'scripts/vitestCollectionPatterns.ts',

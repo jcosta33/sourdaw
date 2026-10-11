@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { duplicateTrack, removeTrack } from '#/modules/Arrangement/useCases';
+import { duplicateTrack } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { promptUser } from '#/utils/Notification/promptUser';
 
@@ -61,7 +61,7 @@ export const trackCommands: CallableCommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                removeTrack(id);
+                void executeUserAppAction({ type: 'removeTrack', payload: { trackId: id } });
             }
         },
     },
