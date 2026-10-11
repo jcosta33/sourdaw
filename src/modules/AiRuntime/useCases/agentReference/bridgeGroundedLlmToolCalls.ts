@@ -1252,6 +1252,15 @@ function mergeLevelContinuation(
 const COORDINATED_TARGET_PROTECTION_CUE =
     /\b(?:not|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|alone|unchanged)\b/iu;
 
+/** A named control other than gain cannot exclude a track from a requested fader change. */
+function protectsAnotherTrackControlFromGain(maskedClause: string): boolean {
+    const normalized = normalizePromptText(maskedClause);
+    const namesGain = /\b(?:gain|volume|level|fader|db)\b/u.test(normalized);
+    const namesOtherControl =
+        /\b(?:pan|panning|mute|muted|muting|unmute|unmuted|solo|soloed|soloing|unsolo|unsoloed)\b/u.test(normalized);
+    return namesOtherControl && !namesGain;
+}
+
 /** A coordinated track list that states this action's level change, and the scope it grounds, if any. */
 type CoordinatedLevelList = {
     firstClauseIndex: number;
@@ -1284,6 +1293,7 @@ function getCoordinatedListTargetRule(
  * removed, whichever clause states it, so an exclusion never reaches a list it was not split from.
  */
 function getProtectedListMemberIds(
+    actionName: string,
     list: CoordinatedTrackList,
     clauses: readonly PromptClauseSpan[],
     context: ProjectContext,
@@ -1312,6 +1322,9 @@ function getProtectedListMemberIds(
                 !hasTrackControlRestriction(restrictionMasked) &&
                 !COORDINATED_TARGET_PROTECTION_CUE.test(restrictionMasked)
             ) {
+                return [];
+            }
+            if (actionName === 'setTrackGain' && protectsAnotherTrackControlFromGain(restrictionMasked)) {
                 return [];
             }
             return collectNamedProjectTracks(restrictionText, context.tracks).filter((id) => memberIds.includes(id));
@@ -1358,6 +1371,7 @@ function getCoordinatedLevelLists(input: {
             return [];
         }
         const protectedIds = getProtectedListMemberIds(
+            input.actionName,
             list,
             input.clauses,
             input.context,

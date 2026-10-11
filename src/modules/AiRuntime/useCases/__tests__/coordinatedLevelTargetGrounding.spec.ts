@@ -360,6 +360,26 @@ describe('a coordinated level list keeps the request exclusions and protections'
         expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 }), gainAction(bass.id, { deltaDb: -3 })]);
     });
 
+    it.each(['leave the Bass gain unchanged', 'leave the Bass fader and pan unchanged'])(
+        'still excludes Bass when the restriction names its gain in "%s"',
+        (restriction) => {
+            const prompt = `turn the Drums and the Bass down 3 dB, but ${restriction}`;
+            const bothCalled = bridge(
+                [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+                prompt
+            );
+            const onlyDrums = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+            expect(bothCalled.actions).toEqual([]);
+            expect(bothCalled.rejections).toMatchObject([
+                { index: 0, name: 'setTrackGain', reason: NOT_GROUNDED },
+                { index: 1, name: 'setTrackGain', reason: NOT_GROUNDED },
+            ]);
+            expect(onlyDrums.rejections).toEqual([]);
+            expect(onlyDrums.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        }
+    );
+
     it.each([
         'except Bass',
         'excluding Bass',
