@@ -26,10 +26,21 @@ const PROJECT_ROOT = path.resolve(SPEC_DIR, '../..');
 const VIRTUAL_ENTRY_ID = 'sourdaw:faust-generators-entry';
 const RESOLVED_VIRTUAL_ENTRY_ID = `\0${VIRTUAL_ENTRY_ID}`;
 
-type ProbeFactory = { shaKey: string; json: string; code: Uint8Array; soundfiles: Record<string, never> };
+type ProbeFactory = {
+    shaKey: string;
+    json: string;
+    code: Uint8Array;
+    soundfiles: Record<string, never>;
+    module: object;
+};
+
+type ProcessorOptions = { processorOptions: Record<string, unknown> };
+type Processor = new (options: ProcessorOptions) => unknown;
 
 type ProbeContext = {
     sampleRate: number;
+    registeredNames: string[];
+    constructProcessor: (name: string, options: ProcessorOptions) => void;
     audioWorklet: { addModule: (url: string) => Promise<void> };
 };
 
@@ -55,6 +66,7 @@ type BundledGenerators = {
 type WorkletProbe = {
     context: ProbeContext;
     registeredNames: string[];
+    constructedNames: string[];
 };
 
 type GeneratorBundle = {
@@ -141,14 +153,15 @@ function isBundledGenerators(value: unknown): value is BundledGenerators {
     );
 }
 
-/** The main-thread side: a node can only be constructed for a registered name, as in Chromium. */
+/** Construct the registered processor when the main-thread node is created, as Chromium does. */
 class ProbeAudioWorkletNode {
     readonly port = { postMessage: () => {}, addEventListener: () => {}, start: () => {} };
 
-    constructor(context: { registeredNames: readonly string[] }, name: string) {
+    constructor(context: ProbeContext, name: string, options: ProcessorOptions) {
         if (!context.registeredNames.includes(name)) {
             throw new Error(`The node name '${name}' is not defined in AudioWorkletGlobalScope.`);
         }
+        context.constructProcessor(name, options);
     }
 }
 
@@ -212,32 +225,70 @@ function evaluateWorkletModule(source: string, scope: vm.Context): void {
  */
 function createWorkletProbe(): WorkletProbe {
     const registeredNames: string[] = [];
+    const constructedNames: string[] = [];
+    const processors = new Map<string, Processor>();
+    class ProbeWasmInstance {
+        readonly exports: Record<string, unknown>;
+
+        constructor(
+            _module: object,
+            imports: { env?: { memory?: WebAssembly.Memory }; memory?: { memory?: WebAssembly.Memory } }
+        ) {
+            this.exports = {
+                memory: imports.env?.memory ?? imports.memory?.memory ?? new WebAssembly.Memory({ initial: 2 }),
+                compute: () => {},
+                getNumInputs: () => 0,
+                getNumOutputs: () => 1,
+                getParamValue: () => 0,
+                getSampleRate: () => 48_000,
+                init: () => {},
+                instanceClear: () => {},
+                instanceConstants: () => {},
+                instanceInit: () => {},
+                instanceResetUserInterface: () => {},
+                setParamValue: () => {},
+            };
+        }
+    }
     const scope = vm.createContext({
-        AudioWorkletProcessor: class {},
+        AudioWorkletProcessor: class {
+            readonly port = { postMessage: () => {}, addEventListener: () => {}, start: () => {} };
+        },
+        WebAssembly: { Memory: WebAssembly.Memory, Table: WebAssembly.Table, Instance: ProbeWasmInstance },
         sampleRate: 48_000,
         currentFrame: 0,
         currentTime: 0,
-        registerProcessor: (name: string, processor: { parameterDescriptors?: unknown }) => {
+        registerProcessor: (name: string, processor: Processor & { parameterDescriptors?: unknown }) => {
             void processor.parameterDescriptors;
+            processors.set(name, processor);
             registeredNames.push(name);
         },
     });
-    const context = {
+    const context: ProbeContext = {
         sampleRate: 48_000,
         registeredNames,
+        constructProcessor: (name, options) => {
+            const processor = processors.get(name);
+            if (!processor) {
+                throw new Error(`The node name '${name}' is not defined in AudioWorkletGlobalScope.`);
+            }
+            new processor(options);
+            constructedNames.push(name);
+        },
         audioWorklet: {
             addModule: async (url: string) => {
                 evaluateWorkletModule(await readBlobUrl(url), scope);
             },
         },
     };
-    return { context, registeredNames };
+    return { context, registeredNames, constructedNames };
 }
 
 function probeFactory(shaKey: string): ProbeFactory {
     const json = JSON.stringify({
         name: 'probe',
         compile_options: '-lang wasm-i -single -ftz 2',
+        size: 64,
         inputs: 0,
         outputs: 1,
         meta: [],
@@ -256,12 +307,13 @@ function probeFactory(shaKey: string): ProbeFactory {
                         min: 0,
                         max: 1,
                         step: 0.01,
+                        meta: [{ acc: '0 0 -1 0 1' }],
                     },
                 ],
             },
         ],
     });
-    return { shaKey, json, code: new Uint8Array(), soundfiles: {} };
+    return { shaKey, json, code: new Uint8Array(), soundfiles: {}, module: {} };
 }
 
 describe('production build keeps Faust worklet processors registrable', () => {
@@ -285,8 +337,10 @@ describe('production build keeps Faust worklet processors registrable', () => {
         );
 
         expect(mono.registeredNames).toEqual(['probe-mono']);
+        expect(mono.constructedNames).toEqual(['probe-mono']);
         expect(monoNode).toBeInstanceOf(ProbeAudioWorkletNode);
         expect(poly.registeredNames).toEqual(['probe-poly']);
+        expect(poly.constructedNames).toEqual(['probe-poly']);
         expect(polyNode).toBeInstanceOf(ProbeAudioWorkletNode);
     }, 60_000);
 });
