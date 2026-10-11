@@ -4,6 +4,8 @@ import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/
 
 import { renderOffline } from '../renderOffline';
 
+import type { BuildDeviceChainContext, BuildDeviceChainOutput } from '../buildDeviceChain';
+
 const offlineRenderMocks = vi.hoisted(() => ({
     isFaustModule: vi.fn<(type: string) => boolean>(() => false),
     createFaustDevice: vi.fn(),
@@ -13,7 +15,15 @@ const offlineRenderMocks = vi.hoisted(() => ({
     getTempoMapState: vi.fn(() => null),
     getAutomationLanes: vi.fn<() => { trackId: string; parameterId: string }[]>(() => []),
     audioBufferCache: { get: vi.fn(() => undefined) },
-    buildDeviceChain: vi.fn<typeof import('../buildDeviceChain').buildDeviceChain>(() => Promise.resolve([])),
+    buildDeviceChain: vi.fn<
+        (
+            ctx: BaseAudioContext,
+            devices: import('../../models/TrackViewTypes').Device[],
+            inputNode: AudioNode,
+            outputNode: AudioNode,
+            context?: BuildDeviceChainContext
+        ) => Promise<BuildDeviceChainOutput>
+    >(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
     beatToSeconds: vi.fn(() => 0),
     resolveDrumKit: vi.fn(() => null),
