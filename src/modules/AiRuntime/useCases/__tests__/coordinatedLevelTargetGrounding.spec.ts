@@ -114,6 +114,7 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         ['turn the Drums and the Bass down 3 dB'],
         ['turn Drums and Bass down 3 dB'],
         ['lower Drums and Bass by 3 dB'],
+        ['please lower Drums and Bass by 3 dB'],
     ])('grounds "%s" on every listed track', (prompt) => {
         const result = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
 
@@ -151,6 +152,19 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         expect(result.rejections).toEqual([]);
         expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: 2 }), gainAction(bass.id, { deltaDb: 2 })]);
     });
+
+    it.each(['turn Drums and track-bass down 3 dB', 'turn track-bass and Drums down 3 dB'])(
+        'binds one shared decibel figure to each whole name or ID in "%s"',
+        (prompt) => {
+            const result = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([
+                gainAction(drums.id, { deltaDb: -3 }),
+                gainAction(bass.id, { deltaDb: -3 }),
+            ]);
+        }
+    );
 
     it('grounds a list beside a single-track level change in the same request', () => {
         const result = bridge(
@@ -304,6 +318,15 @@ describe('a coordinated level list refuses calls that do not match it exactly', 
         expect(result.actions).toEqual([]);
     });
 
+    it('refuses a first member with an unresolved word before a known name', () => {
+        const result = bridge(
+            [gainCall(bass.id, { deltaDb: -3 }), gainCall(drums.id, { deltaDb: -3 })],
+            'lower Acoustic Bass and Drums by 3 dB'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
     it('refuses the whole list when one member names two tracks', () => {
         const result = bridge(
             [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
@@ -377,6 +400,38 @@ describe('a coordinated level list keeps the request exclusions and protections'
             ]);
             expect(onlyDrums.rejections).toEqual([]);
             expect(onlyDrums.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        }
+    );
+
+    it.each(["don't change Bass gain", 'never change Bass gain'])(
+        'protects Bass gain when the restriction says "%s"',
+        (restriction) => {
+            const prompt = `turn Drums and Bass down 3 dB; ${restriction}`;
+            const bothCalled = bridge(
+                [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+                prompt
+            );
+            const onlyDrums = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+            expect(bothCalled.actions).toEqual([]);
+            expect(onlyDrums.rejections).toEqual([]);
+            expect(onlyDrums.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        }
+    );
+
+    it.each(['do not mute Bass at any volume', 'leave Bass pan unchanged while adjusting gain'])(
+        'keeps the separate control restriction scoped in "%s"',
+        (restriction) => {
+            const result = bridge(
+                [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+                `turn Drums and Bass down 3 dB; ${restriction}`
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([
+                gainAction(drums.id, { deltaDb: -3 }),
+                gainAction(bass.id, { deltaDb: -3 }),
+            ]);
         }
     );
 

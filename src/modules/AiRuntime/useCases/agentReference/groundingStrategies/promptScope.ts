@@ -24,5 +24,10 @@ export type ActionPromptScope = PromptClause & {
      * names, and those the change reaches once the request's exclusions and protections are removed.
      * The scope's calls must target exactly `targetIds`, one call each.
      */
-    coordinatedTargets?: { memberIds: readonly string[]; targetIds: readonly string[] };
+    coordinatedTargets?: {
+        memberIds: readonly string[];
+        targetIds: readonly string[];
+        /** Whole resolved member spans relative to this scope's original text. */
+        references: readonly { id: string; start: number; end: number }[];
+    };
 };

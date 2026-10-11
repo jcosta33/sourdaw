@@ -23,6 +23,10 @@ export type CoordinatedTrackList = {
     collapsedMasked: string;
     /** Each member's track, in list order, or null when any member does not name exactly one track. */
     memberIds: string[] | null;
+    /** Original-text spans, in the same order as memberIds. */
+    members: readonly ListMember[];
+    /** Masked words before the first member, excluding optional "both". */
+    lead: string;
 };
 
 /** The first clause: any words, an optional "both" and article, and a reference ending the clause. */
@@ -177,6 +181,8 @@ function readListAt(input: {
             end: clause.end,
             collapsedMasked: `${listHead.lead}${headWithoutBoth}${listTail.tail}`,
             memberIds: resolveMembers({ ...input, members }),
+            members,
+            lead: listHead.lead,
         };
     }
     return null;

@@ -1250,11 +1250,13 @@ function mergeLevelContinuation(
 
 /** A word that keeps the tracks a clause names out of a change stated elsewhere: "but not the Bass". */
 const COORDINATED_TARGET_PROTECTION_CUE =
-    /\b(?:not|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|alone|unchanged)\b/iu;
+    /\b(?:not|never|don't|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|alone|unchanged)\b/iu;
 
 /** A named control other than gain cannot exclude a track from a requested fader change. */
 function protectsAnotherTrackControlFromGain(maskedClause: string): boolean {
-    const normalized = normalizePromptText(maskedClause);
+    // A later purpose or condition does not change the control the restriction names.
+    const operation = maskedClause.split(/\b(?:while|at\s+any)\b/iu, 1)[0] ?? maskedClause;
+    const normalized = normalizePromptText(operation);
     const namesGain = /\b(?:gain|volume|level|fader|db)\b/u.test(normalized);
     const namesOtherControl =
         /\b(?:pan|panning|mute|muted|muting|unmute|unmuted|solo|soloed|soloing|unsolo|unsoloed)\b/u.test(normalized);
@@ -1286,6 +1288,23 @@ function getCoordinatedListTargetRule(
         return undefined;
     }
     return targetRule;
+}
+
+/** The head may contain only the action carrier before the first whole target. */
+function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
+    const commandLead = lead
+        .trim()
+        .replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '')
+        .replace(/^please\s+/iu, '');
+    const normalizedLead = normalizePromptText(commandLead);
+    const normalizedIntent = normalizePromptText(intentPhrase);
+    return (
+        normalizedLead.length > 0 &&
+        (normalizedIntent === normalizedLead ||
+            normalizedIntent.startsWith(`${normalizedLead} `) ||
+            // "set Drums and Bass volume to -6 dB" states its gain intent after the list.
+            (/^(?:set|make)$/u.test(normalizedLead) && /^(?:gain|volume|louder|quieter)$/u.test(normalizedIntent)))
+    );
 }
 
 /**
@@ -1366,6 +1385,7 @@ function getCoordinatedLevelLists(input: {
         const intent = resolveClauseActionIntent(list.collapsedMasked, input.catalog, input.actionName);
         if (
             intent?.actionType !== input.actionName ||
+            !hasCompleteListHead(list.lead, intent.phrase) ||
             namesLevelOutsideActionFader(input.actionName, clause, input.context)
         ) {
             return [];
@@ -1389,7 +1409,15 @@ function getCoordinatedLevelLists(input: {
                       directional: false,
                       matchedIntentPhrase: intent.phrase,
                       referenceSlots: targetIds.length,
-                      coordinatedTargets: { memberIds: list.memberIds, targetIds },
+                      coordinatedTargets: {
+                          memberIds: list.memberIds,
+                          targetIds,
+                          references: list.members.map((member, index) => ({
+                              id: list.memberIds![index]!,
+                              start: member.start - list.start,
+                              end: member.end - list.start,
+                          })),
+                      },
                   };
         return [{ firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex, scope }];
     });
@@ -2620,10 +2648,12 @@ function getReferenceBoundDecibelFigures(
             .filter((targetRule) => targetRule !== anchorRule)
             .map((targetRule) => groundedArguments[targetRule.argument])
     );
-    const references = getTrackReferenceSpans(
-        actionScope.text,
-        context.tracks.filter((track) => !otherTargetIds.has(track.id))
-    );
+    const references =
+        actionScope.coordinatedTargets?.references ??
+        getTrackReferenceSpans(
+            actionScope.text,
+            context.tracks.filter((track) => !otherTargetIds.has(track.id))
+        );
     if (new Set(references.map((reference) => reference.id)).size < 2) {
         return undefined;
     }
