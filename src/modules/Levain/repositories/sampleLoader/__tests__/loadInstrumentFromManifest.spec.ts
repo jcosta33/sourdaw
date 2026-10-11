@@ -769,6 +769,80 @@ describe('loadInstrumentFromManifest', () => {
                 await Promise.allSettled([fresh]);
             }, 5000);
 
+            it.each(['sampleBankError', 'error', 'disposed', 'abort'] as const)(
+                'returns a granted credit without posting PCM when %s ends the waiter before continuation',
+                async (terminal) => {
+                    const holderData = new Float32Array(
+                        new SharedArrayBuffer(
+                            LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT * LEVAIN_SAMPLE_CHUNK_FLOATS * Float32Array.BYTES_PER_ELEMENT
+                        )
+                    );
+                    vi.mocked(fetchAndDecode).mockResolvedValueOnce({
+                        data: holderData,
+                        frameCount: holderData.length,
+                        channels: 1,
+                        sampleRate: 44100,
+                    });
+                    const holder = makePort({ chunkAnswers: 'never', autoComplete: false });
+                    const waiter = makePort({ chunkAnswers: 'never' });
+                    const next = makePort({ chunkAnswers: 'never' });
+                    const holderController = new AbortController();
+                    const waiterController = new AbortController();
+                    const nextController = new AbortController();
+                    const settled: Promise<unknown>[] = [];
+                    const holding = loadOwnBank(holder, `grant-${terminal}-holder`, holderController.signal);
+                    settled.push(holding);
+                    void holding.catch(() => {});
+                    try {
+                        await vi.waitFor(() => {
+                            expect(postedTypes(holder)).toContain('buildZoneMap');
+                        });
+                        stubManyChunks();
+                        const waiting = loadOwnBank(waiter, `grant-${terminal}-waiter`, waiterController.signal);
+                        settled.push(waiting);
+                        void waiting.catch(() => {});
+                        await vi.waitFor(() => {
+                            expect(postedTypes(waiter)).toContain('beginSample');
+                        });
+                        const holderToken = postedMessages(holder)[0]!.loadToken;
+                        const waiterToken = postedMessages(waiter)[0]!.loadToken;
+
+                        // Grant the queued reservation, then end its load in the
+                        // same turn, before the reservation continuation can run.
+                        holder.emit({ type: 'sampleChunkWritten', loadToken: holderToken, sampleId: 0 });
+                        if (terminal === 'abort') {
+                            waiterController.abort();
+                        } else {
+                            waiter.emit({ type: terminal, loadToken: waiterToken, message: 'ended after grant' });
+                        }
+
+                        await expect(waiting).rejects.toBeDefined();
+                        expect(chunkCount(waiter)).toBe(0);
+                        expect(postedTypes(waiter)).not.toContain('sealSample');
+                        holderController.abort();
+                        await expect(holding).rejects.toBeDefined();
+
+                        stubManyChunks();
+                        const fresh = loadOwnBank(next, `grant-${terminal}-next`, nextController.signal);
+                        settled.push(fresh);
+                        void fresh.catch(() => {});
+                        await vi.waitFor(() => {
+                            expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                        });
+                        nextController.abort();
+                        await expect(fresh).rejects.toMatchObject({ name: 'AbortError' });
+                        expect(chunkCount(next)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                        expect(next.peakUnacknowledgedChunks()).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                    } finally {
+                        holderController.abort();
+                        waiterController.abort();
+                        nextController.abort();
+                        await Promise.allSettled(settled);
+                    }
+                },
+                5000
+            );
+
             it('serves loads waiting for a credit in the order they asked', async () => {
                 const holder = makePort({ chunkAnswers: 'never' });
                 const early = makePort({ chunkAnswers: 'never' });

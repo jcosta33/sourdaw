@@ -383,6 +383,12 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
         }
         stopListeningWhenDone();
     }
+    function throwIfStopped(): void {
+        if (failure) {
+            throw failure;
+        }
+        signal?.throwIfAborted();
+    }
     function onMessage(event: MessageEvent<unknown>): void {
         const message = event.data;
         if (!isRecord(message)) {
@@ -415,10 +421,7 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
         }
     }
     async function reserve(): Promise<void> {
-        if (failure) {
-            throw failure;
-        }
-        signal?.throwIfAborted();
+        throwIfStopped();
         if (chunkBudget.credits > 0 && chunkBudget.waiters.length === 0) {
             chunkBudget.credits -= 1;
             held += 1;
@@ -428,11 +431,15 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
         const waiter: BudgetWaiter = { resolve: answered.resolve, granted: false };
         queued = waiter;
         chunkBudget.waiters.push(waiter);
-        let granted: boolean;
         try {
-            granted = await raceAbortSignal(answered.promise, signal);
+            const granted = await raceAbortSignal(answered.promise, signal);
+            if (!granted) {
+                throw failure ?? new Error('Levain sample upload stopped waiting for a chunk credit');
+            }
+            throwIfStopped();
         } catch (error) {
-            // Aborted. A credit already handed over was not used: pass it on.
+            // A load can end after a credit was handed over but before this
+            // continuation used it. Pass that unused credit on exactly once.
             // A waiter a failure removed was handed none, so it has nothing to pass on.
             if (!withdrawFromChunkBudget(waiter) && waiter.granted) {
                 giveBackChunkCredit();
@@ -440,9 +447,6 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
             throw error;
         } finally {
             queued = null;
-        }
-        if (!granted) {
-            throw failure ?? new Error('Levain sample upload stopped waiting for a chunk credit');
         }
         held += 1;
     }

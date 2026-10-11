@@ -287,6 +287,45 @@ describe('shipped LevainProcessor sample upload', () => {
         expect(errors(processor)).toEqual(['Levain sample chunk does not fit the open sample']);
     });
 
+    it('copies every chunk exactly into the shipped engine before acknowledging it', async () => {
+        const processor = await createProcessor();
+        const data = pcm(2 * LEVAIN_SAMPLE_CHUNK_FLOATS + 1_231, 7);
+        beginBank(processor, 1);
+        beginSample(processor, 1, 0, data.length);
+        const address = engineOf(processor).sample_write_ptr(0);
+        const memory = processor._memory;
+        if (!memory || address === 0) {
+            throw new TypeError('Expected reserved sample storage in the shipped engine');
+        }
+        // The reservation contains uninitialized PCM. Poison its whole span so
+        // an omitted copy cannot accidentally match allocator leftovers.
+        new Float32Array(memory.buffer, address, data.length).fill(Number.NaN);
+        let chunks = 0;
+        for (let offset = 0; offset < data.length; offset += LEVAIN_SAMPLE_CHUNK_FLOATS) {
+            const chunk = data.slice(offset, offset + LEVAIN_SAMPLE_CHUNK_FLOATS);
+
+            sendChunk(processor, 1, 0, chunk);
+
+            chunks += 1;
+            expect(posted(processor).filter((message) => message.type === 'sampleChunkWritten')).toHaveLength(chunks);
+            const copied = new Float32Array(
+                memory.buffer,
+                address + offset * Float32Array.BYTES_PER_ELEMENT,
+                chunk.length
+            );
+            expect(
+                copied.findIndex((sample, index) => !Object.is(sample, data[offset + index])),
+                'acknowledged PCM must exactly match the independent input'
+            ).toBe(-1);
+        }
+        send(processor, { type: 'sealSample', loadToken: 1, sampleId: 0 });
+        addLoopingZone(processor, 1, 0, data.length);
+        buildBank(processor, 1);
+        expect(errors(processor)).toEqual([]);
+        expect(posted(processor)).toContainEqual({ type: 'sampleBankLoaded', loadToken: 1 });
+        expect(peak(renderNote(processor, 0, 8))).toBeGreaterThan(1e-6);
+    });
+
     it('renders a sample the same whatever the chunk boundaries fall on', async () => {
         const frames = 2 * LEVAIN_SAMPLE_CHUNK_FLOATS + 1_231;
         const data = pcm(frames);
