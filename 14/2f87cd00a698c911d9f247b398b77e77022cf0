@@ -1,0 +1,59 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/midiStrategy.spec.ts
+  s_29d8df116c5b92::t_7bca159e35e9eb 276-338
+src/modules/AiRuntime/transformers/llmActionStrategies/midiStrategy.ts
+  s_29d8df116c5b92::t_a80db13c5d74d4 70-77,81-82,84,86,91,93-97,100,103-108
+src/modules/AiRuntime/transformers/validateNotesWithinClipWindow.ts
+  s_29d8df116c5b92::t_fd8faeec1af312 6-13,23,28-31,40,47,53,59-76
+src/modules/Arrangement/handlers/clip/__tests__/clipMetadataUndo.spec.ts
+  s_59e31a5c6f3e31::t_5a15bf3638548e 3-4,7,259-322
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_59e31a5c6f3e31::t_01111c05349b9f 79,92-94,103,116-123
+src/modules/Arrangement/handlers/clip/handleRestoreClipLoop.ts
+  s_59e31a5c6f3e31::t_95ace359eab435 28-36
+src/modules/Arrangement/handlers/clip/handleRestoreCrossfadeClips.ts
+  s_59e31a5c6f3e31::t_8e118a2bcb7027 9-15,26,39-41,50-53
+src/modules/Arrangement/handlers/clip/handleSetClipLoop.ts
+  s_59e31a5c6f3e31::t_31764434b224a6 1,16-18,20-24
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_29d8df116c5b92::t_0569496ce1dc66 462-527
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_59e31a5c6f3e31::t_f70ca0c31d2dea 19,454,503-566
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartLoopOrigin.spec.ts
+  s_29d8df116c5b92::t_ada1101eca1f52 5,114-155
+src/modules/Arrangement/useCases/clipEditing/restoreCrossfadeClips.ts
+  s_59e31a5c6f3e31::t_584aa7d82a7e2b 1-2,14,40-42,107-112
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_59e31a5c6f3e31::t_8393eccfc0ecd1 86-94,96-97
+src/modules/Arrangement/useCases/clipLoop/setClipLoop.ts
+  s_59e31a5c6f3e31::t_8c2d0e5cfbe4ff 9-14,16,24
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_59e31a5c6f3e31::t_e2d24d9339a6d8 3,378-389,396-399
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_59e31a5c6f3e31::t_64611d46fcf41f 3356,3787
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_532be4d9577bcd 2154-2161,2170,2403-2427
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "142f87cd00a698c911d9f247b398b77e77022cf0",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
