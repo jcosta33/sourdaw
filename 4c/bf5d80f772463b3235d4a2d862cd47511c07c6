@@ -1,0 +1,29 @@
+src/modules/AiRuntime/transformers/diffProposalCommands.spec.ts
+  s_29d8df116c5b92::t_c004e4739ea2b3 1-45
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_441e828df58f9e::t_0aee35a1661613 36-37,77-79,425-503,517,524-539,545-547,644-699
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4cbf5d80f772463b3235d4a2d862cd47511c07c6",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_441e828df58f9e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2845244a-811e-4f69-a89a-e2b3d9dedcec",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
