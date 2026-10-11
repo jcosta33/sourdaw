@@ -6,6 +6,35 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
+
+The subgraph fixture asserted that the inverse callback received the requested beat-four
+anchor and returned beat six. It never observed the strip's AudioParam writes. The
+orchestrator had prescribed that anchor without tracing history expansion to beat zero,
+so the fixture confirmed the packet while accepting incorrect output.
+
+Request beats four through eight under a 100→200 BPM linear ramp from beats zero through
+eight. Observe terminal gain and pan before and after the crop boundary against the ramp's
+independent integral and a whole render. Use a seed-sensitive history layer with positive
+compensation: sample phase stays unchanged, only write times shift, and the zero-time seed
+comes from the actual render origin. Revert each origin binding independently on a committed
+private probe and require the unchanged regression to fail.
+
+### 2026-10-11 — tempo integration checks observed an older caller population (#5243)
+
+PR #5243's first-attempt run `38050968596` genuinely checked its author head `ba10195e`
+against synthetic main `5823f7f77`, before #5209 added modulation. Its actual landing on
+`83a92c4005` contained that later caller with removed aliases. PR #5273's first-attempt
+run `38157801487` exposed the inherited missing names. Historical stance prompts and tiers
+are unavailable; an obsolete integration and absent terminal-output probe are established.
+
+Compare the checked caller population with the actual integration, then execute the new consumer
+routes at that integration. Do not reproduce a seconds-to-beat helper's own expression in its
+oracle: at 120 BPM half a second is one beat; for a 100→200 BPM ramp over eight beats, elapsed
+seconds from beat four to six are `4.8 * ln(175/150)`. Assert terminal values and compensated
+times/frames, not just captured callback identity or lane presence. Reverting inverse forwarding,
+subregion anchoring or the consumer's inverse must independently turn the relevant case red.
+
 ### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
 
 The installed affected-E2E loader case asserted full selection for opaque runtime dependencies, but the actual alias graph escaped its temporary root into the checkout. The published missing-consumer-or-opaque-edge probe preserved that result without observing resolved sources; requested-root scope isolation was the missing stance and probe.
@@ -98,6 +127,15 @@ attempts reach the final nonzero exit. Separately pin each real attempt and the 
 attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Standing probes
+
+- PR #5091's head `71221839` replaced the registered event bus after earlier deletion
+  cases had cached the injected emitter. Its async-boundary case stayed green when the
+  root guard was disabled. Observe the emitter actually retained by `inject`, using a stable
+  registration across cases and a positive real removal emission. Replace with a root that
+  lacks the outgoing ID so committed-absence checks cannot mask the root-guard mutation.
+  The same named case must fail with `isCurrent = () => true` both alone and after its
+  preceding deletion family. Run that qualification on a committed head in an isolated,
+  owned probe; retain commands, patch, raw output and exit status.
 
 - An aggregation test claiming a stored report route must use the production reader's filename and
   assert that both input records were admitted. An ignored artifact can make a boundary control pass
@@ -796,6 +834,53 @@ Derive the fixture's admitted range from the complete multiline binding; preserv
 independent beyond-hunk fallback case. Require the final unchanged fixture to fail when
 only the committed recognizer is reverted. A full-source screen assertion does not prove
 which region the real scan caller admitted.
+
+PR #5091's head `1297f963` had green single-owner disconnect and direct-root retirement checks,
+but the surrounding sweep could abandon a second deleted owner and the Command tail could reach
+a replacement root. Use two owners for failure isolation and the real Command commit callbacks
+for continuation authority. Assert raw membership, actual owner maps, distinct source edges,
+stream stops and strip effects, including replacement between effects. A green owner-key check
+alone does not prove terminal release or incoming graph preservation.
+
+An already-granted Auto deletion refusal and an absent-row On permission case do not prove
+pending Auto ownership. Settle permission before aborting the real removal transaction; inspect
+retained capture and absent strip before rollback, then the original edge after rollback without
+reacquisition. Genuine denial and committed ineligibility remain separate controls. Controlled
+media and graph ports prove ownership and control flow, not audible input or physical device stop.
+
+PR #5091's head `b2e7491d` covered committed On deletion and pre-commit On admission separately,
+but missed a disarmed Auto owner deleted before the optimistic On gesture committed. Keep the
+stale On projection visible while actual CRDT truth removes that owner, settle the pending grant,
+and assert strip creation, connected edges, capture ownership and exact stream stop count. Pair
+the negative with an existing committed owner and a shared survivor; a projected-row removal
+or a gesture whose On already committed does not exercise the same admission reader.
+
+The follow-up `3b1c0ad9` deletion check covered absence but left a present owner's committed Off
+or input replacement invisible to pre-commit On settlement. Drive these separately through an
+initialized committed provider and actual CRDT mutation while the projected On selector remains
+unchanged. Require no strip/edge/capture/owner and exactly one stop, then pair unchanged committed
+Auto/Off, an unrelated committed rename, shared permission and a current selected-input owner.
+A global document revision check rejects the valid rename control; a presence-only check misses
+both supersessions. Preserve the committed On latch and actual abort controls independently.
+
+Repair `00f4b688` introduced both fixture defects; the follow-up `46caac58` passed runtime cases
+while its test source used quarantined `vca` as a
+persisted `TrackKind` and wrote through an unchecked array lookup. The original hosted test types
+rejected both. Model kind supersession with a supported non-audio kind and committed Auto; require
+that removing kind from the admission's intent comparison makes the unchanged rejection assertion
+fail. Guard the actual raw-document owner before mutation, including deletion, so a missing ID
+cannot silently splice a shared survivor. Runtime execution does not establish typed fixture
+validity; retain the original type failure and verify the repaired source without widening contracts
+or asserting away absence.
+
+PR #5091's head `e9672c7966` tested root replacement during outgoing removal and pending grants
+during same-root intent changes, but never moved the root while permission itself was pending.
+Drive both the optimistic On transaction and real Undo rearm through initialized project access,
+replace the root with an identical clone, and settle permission only after proving the runtime root
+token changed. Assert `headConsumed` before the Undo grant, zero stale strip/edge/capture ownership,
+one orphan-stream stop, then a fresh two-owner successor capture that remains live. Reverting only
+the shared admission's original-root fencing, including its retained reader, must fail both named cases; a root-cleanup case and a
+same-root intent mutation cannot carry that oracle.
 
 ### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
 
