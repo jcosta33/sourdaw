@@ -96,7 +96,7 @@ function parseLsofFile(
         report(reason);
         return undefined;
     };
-    if (!/^f(?:\d+|cwd|twd|txt|mem|rtd|pd)$/.test(fields[0] ?? '')) {
+    if (!/^f(?:\d+|cwd|twd|txt|mem|rtd|pd|fp\.)$/.test(fields[0] ?? '')) {
         return unavailable('invalid-descriptor');
     }
     const type = fields.find((field) => field.startsWith('t'))?.slice(1);
@@ -546,6 +546,7 @@ export function createGuardStorage(input: {
     mkdirSync(path, { mode: 0o700 });
     const tempDirectory = join(path, 'tmp');
     mkdirSync(tempDirectory, { mode: 0o700 });
+    writeFileSync(join(tempDirectory, 'package.json'), '{}\n', { mode: 0o600, flag: 'wx' });
     let owner: StorageOwner = {
         version: 1,
         token: input.token,

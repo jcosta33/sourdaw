@@ -210,6 +210,50 @@ describe('guard-owned temporary storage', () => {
         }
     });
 
+    it('preserves extensionless require and import scripts in repository-owned temp', async () => {
+        expect(JSON.parse(readFileSync(resolve('package.json'), 'utf8')).type).toBe('module');
+        const root = fixture();
+        const result = await guarded(root, {
+            args: [
+                '-e',
+                `const fs = require('node:fs');
+                const path = require('node:path');
+                const tmp = require('node:os').tmpdir();
+                const scripts = [
+                    ['require-probe', 'const fs = require("node:fs"); console.log("require:ok", typeof fs.readFileSync);'],
+                    ['import-probe', 'import { readFileSync } from "node:fs"; console.log("import:ok", typeof readFileSync);'],
+                ];
+                const statuses = scripts.map(([name, source]) => {
+                    const file = path.join(tmp, name);
+                    fs.writeFileSync(file, '#!/usr/bin/env node\\n' + source + '\\n', { mode: 0o700, flag: 'wx' });
+                    const child = require('node:child_process').spawnSync(file, [], { encoding: 'utf8' });
+                    process.stdout.write(child.stdout || '');
+                    process.stdout.write(child.stderr || '');
+                    return child.status;
+                });
+                const boundary = path.join(tmp, 'package.json');
+                console.log(JSON.stringify({ tmp, statuses,
+                    package: fs.existsSync(boundary) ? fs.readFileSync(boundary, 'utf8') : null,
+                    mode: fs.existsSync(boundary) ? fs.statSync(boundary).mode & 0o777 : null }));
+                process.exitCode = statuses.every(status => status === 0) ? 0 : 1;`,
+            ],
+        });
+        expect(result.output).toContain('require:ok function');
+        expect(result.output).toContain('import:ok function');
+        expect(result.reason).toBeUndefined();
+        expect(result.code).toBe(0);
+        const observed = JSON.parse(result.output.trim().split('\n').at(-1) ?? '');
+        expect(observed.statuses).toEqual([0, 0]);
+        expect(observed.package).toBe('{}\n');
+        if (process.platform !== 'win32') {
+            expect(observed.mode).toBe(0o600);
+        }
+        expect(observed.tmp.startsWith(`${join(root, 'storage')}/`)).toBe(true);
+        expect(existsSync(observed.tmp)).toBe(false);
+        expect(existsSync(join(observed.tmp, 'package.json'))).toBe(false);
+        expect(existsSync(root)).toBe(true);
+    });
+
     it('contains spawn errors without an unhandled child error and cleans only its run', async () => {
         const root = fixture();
         const foreign = join(root, 'keep');
@@ -1140,6 +1184,101 @@ describe('storage ownership recovery', () => {
         expect(sameUserProcessIds('10 501\n10 501\n', 501, 10, [])).toBeUndefined();
         expect(sameUserProcessIds('', 501, 10, [])).toBeUndefined();
     });
+
+    it('accepts complete Darwin fileport records without bypassing uncertain fields', async () => {
+        const catalog = 'p10\0\nffp.\0tREG\0n/outside/held\0\n';
+        expect(parseLsofCensus(catalog)).toEqual({ pids: new Set([10]), paths: ['/outside/held'] });
+        for (const fields of [
+            'ffp',
+            'ffp..',
+            'ffp.1',
+            'ffpX',
+            'ffp.\0tREG',
+            'ffp.\0tREG\0nPermission denied',
+            'ffp.\0tunknown\0n/outside/held',
+            'ffp.\0n/outside/held',
+        ]) {
+            const output = `p10\0\n${fields}\0\n`;
+            expect(parseLsofCensus(output)).toBeUndefined();
+            const root = fixture();
+            const storage = ownedStorage(root, {
+                identityState: () => 'dead',
+                sessionState: () => (parseLsofCensus(output) === undefined ? 'unknown' : 'dead'),
+            });
+            expect(await storage.release(true)).toBe(false);
+            expect(existsSync(storage.tempDirectory)).toBe(true);
+        }
+    });
+
+    it.skipIf(process.platform !== 'darwin').each([
+        { payload: 'outside', type: 'REG', expected: 'dead' },
+        { payload: 'original', type: 'REG', expected: 'alive' },
+        { payload: 'moved claim', type: 'REG', expected: 'alive' },
+        { payload: 'original', type: 'DIR', expected: 'alive' },
+        { payload: 'moved claim', type: 'DIR', expected: 'alive' },
+    ])(
+        'inspects complete Darwin fileport paths: $type $payload',
+        async ({ payload, type, expected }) => {
+            const root = fixture();
+            const bin = join(root, 'bin');
+            mkdirSync(bin);
+            const catalogPath = join(root, 'catalog.json');
+            const utility = join(bin, 'lsof');
+            writeFileSync(
+                utility,
+                `#!${process.execPath}\nimport {execFileSync} from 'node:child_process';import {readFileSync} from 'node:fs';const {path,type}=JSON.parse(readFileSync(${JSON.stringify(catalogPath)},'utf8'));const users=execFileSync('ps',['-axo','pid=,uid='],{encoding:'utf8'});for(const row of users.trim().split('\\n')){const [pid,uid]=row.trim().split(/\\s+/).map(Number);if(uid===process.getuid())process.stdout.write('p'+pid+'\\0\\nffp.\\0t'+type+'\\0n'+path+'\\0\\n')}\n`,
+                { mode: 0o700 }
+            );
+            const resultPath = join(root, 'result.json');
+            const program = `
+                const {writeFileSync,existsSync}=await import('node:fs');
+                const {join}=await import('node:path');
+                const {createGuardStorage,reclaimGuardStorage,recoverGuardStorage}=await import(${JSON.stringify(storagePath)});
+                const {storageFileState}=await import(${JSON.stringify(guardPath)});
+                const root=${JSON.stringify(join(root, 'storage'))};
+                const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[])};
+                writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path:${JSON.stringify(root)},type:'REG'}));
+                const storage=createGuardStorage({root,token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
+                let current=storage.tempDirectory;
+                if(${JSON.stringify(payload)}==='moved claim') {
+                    const {readFileSync,readdirSync}=await import('node:fs');
+                    const {dirname}=await import('node:path');
+                    let checks=0;
+                    const owner=JSON.parse(readFileSync(join(dirname(current),'owner.json'),'utf8'));
+                    if(await reclaimGuardStorage({root,owner,reclaimer:${JSON.stringify(fakeReclaimer)},canRemove:()=>checks++===0}))throw Error('claim unexpectedly removed');
+                    const claims=join(root,'.claims');const claim=join(claims,readdirSync(claims)[0]);
+                    current=join(claim,readdirSync(claim).find(name=>name!=='claim.json'),'tmp');
+                }
+                const path=${JSON.stringify(payload)}==='outside'?${JSON.stringify(root)}:${JSON.stringify(type)}==='DIR'?current:join(current,'held');
+                writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path,type:${JSON.stringify(type)}}));
+                const state=storageFileState([storage.tempDirectory,current],[]);
+                let released;
+                if(${JSON.stringify(payload)}==='moved claim'){await recoverGuardStorage(root,ports,${JSON.stringify(fakeReclaimer)});released=!existsSync(current)}
+                else released=await storage.release(true);
+                const retained=existsSync(current);
+                writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path:${JSON.stringify(root)},type:'REG'}));
+                await recoverGuardStorage(root,ports,${JSON.stringify(fakeReclaimer)});
+                writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({state,released,retained,reclaimed:!existsSync(current)}));
+            `;
+            const supervisor = spawn(process.execPath, ['--input-type=module', '-e', program], {
+                cwd: root,
+                stdio: 'ignore',
+                env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+            });
+            if (supervisor.pid === undefined) {
+                throw new Error('fileport proof fixture did not start');
+            }
+            childPids.add(supervisor.pid);
+            await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1));
+            expect(JSON.parse(readFileSync(resultPath, 'utf8'))).toEqual({
+                state: expected,
+                released: expected === 'dead',
+                retained: expected === 'alive',
+                reclaimed: true,
+            });
+        },
+        15_000
+    );
 
     it('parses complete NUL file records and rejects malformed, truncated or opaque file evidence', () => {
         const valid = 'p10\0\nfcwd\0tDIR\0n/owned/tmp\0\nf3\0tREG\0n/owned/tmp/held\0\n';
