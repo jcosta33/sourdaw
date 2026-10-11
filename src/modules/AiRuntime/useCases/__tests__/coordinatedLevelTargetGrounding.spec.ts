@@ -350,6 +350,17 @@ describe('a coordinated level list refuses calls that do not match it exactly', 
 
 describe('a coordinated level list keeps the request exclusions and protections', () => {
     it.each([
+        'turn the Drums and the Bass down 3 dB, but leave the Bass pan unchanged',
+        'turn the Drums and the Bass down 3 dB, but do not mute Bass',
+        'turn the Drums and the Bass down 3 dB; solo everything with the exception of Bass',
+    ])('grounds both gain changes when a separate control protects Bass in "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 }), gainAction(bass.id, { deltaDb: -3 })]);
+    });
+
+    it.each([
         'except Bass',
         'excluding Bass',
         'besides Bass',
