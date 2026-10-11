@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
 import { type Clip, createTrack } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
@@ -8,6 +9,7 @@ import { trimClipStart } from '../../../useCases/clipEditing/trimClipStart';
 import { handleLockClip } from '../handleLockClip';
 import { handleMuteClip } from '../handleMuteClip';
 import { handleRestoreClipLoop } from '../handleRestoreClipLoop';
+import { handleRestoreTrackClipStates } from '../handleRestoreTrackClipStates';
 import { handleSetClipColor } from '../handleSetClipColor';
 import { handleSetClipFade } from '../handleSetClipFade';
 import { handleSetClipLoop } from '../handleSetClipLoop';
@@ -163,14 +165,17 @@ describe('clip metadata handler replay', () => {
                 payload: {
                     clipId: clip.id,
                     expected: { present: true, enabled: true },
-                    replacement: { present: true, enabled: false },
+                    // The enable's inverse records the pre-enable anchor state
+                    // explicitly (#5198): this clip carried none, so the undo
+                    // removes the key the enable minted.
+                    replacement: { present: true, enabled: false, loopOriginBeat: null },
                 },
             },
             redoAction: {
                 type: 'restoreClipLoop',
                 payload: {
                     clipId: clip.id,
-                    expected: { present: true, enabled: false },
+                    expected: { present: true, enabled: false, loopOriginBeat: null },
                     replacement: { present: true, enabled: true },
                 },
             },
@@ -245,7 +250,7 @@ describe('clip metadata handler replay', () => {
             payload: {
                 clipId: clip.id,
                 expected: { present: true, enabled: true },
-                replacement: { present: false, enabled: false },
+                replacement: { present: false, enabled: false, loopOriginBeat: null },
             },
         });
         expect(handleSetClipLoop.execute(action)).toEqual({ status: 'written' });
@@ -318,5 +323,76 @@ describe('clip loop disable undo keeps the pre-disable anchor (#5198)', () => {
         expect(handleRestoreClipLoop.execute(legacyInverse)).toEqual({ status: 'written' });
         const restored = trackStore.value?.tracks[0]?.clips[0];
         expect(restored).toMatchObject({ loopEnabled: true, loopOriginBeat: 4, startBeat: 4 });
+    });
+});
+
+describe('clip loop enable undo removes the minted anchor (#5198)', () => {
+    beforeEach(() => seedClip(false));
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    });
+
+    /** A whole-track restore entry captured while the clip was anchorless and never looped. */
+    function capturedAnchorlessEntry(): TrackClipStateSnapshot {
+        const track = trackStore.value?.tracks[0];
+        const seededClip = track?.clips[0];
+        if (!track || !seededClip) {
+            throw new Error('Expected the seeded anchorless clip');
+        }
+        return {
+            trackId: track.id,
+            clips: [structuredClone(seededClip)],
+            trackFields: {
+                kind: track.kind,
+                devices: structuredClone(track.devices),
+                frozen: track.frozen,
+                freezeState: structuredClone(track.freezeState),
+                activeAlternativeId: track.activeAlternativeId,
+                alternatives: structuredClone(track.alternatives),
+            },
+            midiNotesByClipId: {},
+            midiCcByClipId: {},
+            midiPitchBendByClipId: {},
+            clipSatellites: [],
+            clipAutomationLanes: [],
+        };
+    }
+
+    it('restores the exact pre-enable anchor state and lets an older restore entry execute', () => {
+        // An older whole-track restore captured this never-looped clip
+        // anchorless, before the enable existed.
+        const olderEntry = capturedAnchorlessEntry();
+
+        const action = { type: 'setClipLoop', payload: { clipId: clip.id, enabled: true } } as const;
+        const description = handleSetClipLoop.describe(action);
+        expect(handleSetClipLoop.execute(action)).toEqual({ status: 'written' });
+        expect(trackStore.value?.tracks[0]?.clips[0]?.loopOriginBeat).toBe(0);
+
+        if (description.inverseAction?.type !== 'restoreClipLoop') {
+            throw new Error('Expected exact loop inverse action');
+        }
+        // The inverse records the pre-enable anchor state: the clip carried none.
+        expect(description.inverseAction.payload.replacement).toEqual({
+            present: false,
+            enabled: false,
+            loopOriginBeat: null,
+        });
+
+        expect(handleRestoreClipLoop.execute(description.inverseAction)).toEqual({ status: 'written' });
+        const undone = trackStore.value?.tracks[0]?.clips[0];
+        expect(Object.hasOwn(undone ?? {}, 'loopEnabled')).toBe(false);
+        // The key the enable minted is gone with it.
+        expect(Object.hasOwn(undone ?? {}, 'loopOriginBeat')).toBe(false);
+
+        // The older entry's anchorless snapshot matches live state again, so
+        // it executes instead of returning conflict and leaving a conflicted
+        // entry that bricks the user's next undo.
+        expect(
+            handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: { expected: [olderEntry], replacement: [structuredClone(olderEntry)] },
+            })
+        ).toEqual({ status: 'written' });
     });
 });

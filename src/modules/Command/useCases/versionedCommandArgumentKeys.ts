@@ -1623,6 +1623,7 @@ const schemaDefinitions = [
         properties: {
             clipId: 0,
             newStartBeat: 1,
+            loopOriginBeat: 67,
         },
         required: ['clipId', 'newStartBeat'],
         additionalProperties: false,
@@ -3784,7 +3785,7 @@ const schemaDefinitions = [
         properties: {
             present: 42,
             enabled: 42,
-            loopOriginBeat: 1,
+            loopOriginBeat: 67,
         },
         required: ['present', 'enabled'],
         additionalProperties: false,

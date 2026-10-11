@@ -4,6 +4,7 @@ import { type Clip, type Track, defaultTrackState, trackStore } from '#/modules/
 import { trimClipStart } from '#/modules/Arrangement/useCases';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
+import { handleTrimClipStart } from '../../../handlers/clip/handleTrimClipStart';
 import { setClipLoop } from '../../clipLoop/setClipLoop';
 
 /**
@@ -152,6 +153,85 @@ describe('trimClipStart loop anchoring', () => {
         const extended = readClip('c-extend');
         expect(extended.startBeat).toBe(2);
         expect(Object.hasOwn(extended, 'loopOriginBeat')).toBe(false);
+    });
+
+    it('restores no anchor when the undo of a leftward extension replays rightward (#5198)', () => {
+        // A born-looped anchorless clip extended left to 2; its recorded
+        // inverse carries the pre-action start 4 AND the pre-action anchor
+        // state — none. The replay moves rightward, so the old mint guard
+        // passed and minted at the extension start: anchor 2 under start 4
+        // derives advance 2, a window whose ceiling silences the loop's
+        // second half — material that sounded before the extension. The
+        // exact-anchor leg keeps the restored clip anchorless: advance zero,
+        // the pre-extension reading.
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [midiTrack([loopedClip({ id: 'c-ext', startBeat: 4, endBeat: 16 })])],
+        });
+        const action = { type: 'trimClipStart', payload: { clipId: 'c-ext', newStartBeat: 2 } } as const;
+        const description = handleTrimClipStart.describe(action);
+        expect(handleTrimClipStart.execute(action)).toEqual({ status: 'written' });
+
+        if (description.inverseAction?.type !== 'trimClipStart') {
+            throw new Error('Expected trim inverse action');
+        }
+        // The inverse carries the pre-action anchor state: the clip had none.
+        expect(description.inverseAction.payload.loopOriginBeat).toBeNull();
+        expect(handleTrimClipStart.execute(description.inverseAction)).toEqual({ status: 'written' });
+
+        const restored = readClip('c-ext');
+        expect(restored.startBeat).toBe(4);
+        expect(Object.hasOwn(restored, 'loopOriginBeat')).toBe(false);
+        expect(
+            resolveClipLoopOriginAdvance({
+                startBeat: restored.startBeat,
+                loopOriginBeat: restored.loopOriginBeat,
+                loopEnabled: restored.loopEnabled === true,
+            })
+        ).toBe(0);
+    });
+
+    it('restores the captured anchor when an anchored trim inverse replays in either direction', () => {
+        // An anchored clip's trim-undo keeps its anchor exactly: the inverse
+        // records the value it captured, and the replay writes it back rather
+        // than re-deriving it. The second trim's undo replays RIGHTWARD — the
+        // direction the old guard left to the keep-law — so the recorded
+        // value, not the replay direction, decides the restored anchor.
+        trackStore.set({ ...defaultTrackState, tracks: [midiTrack([loopedClip({ id: 'c-anchored' })])] });
+        expect(trimClipStart('c-anchored', 6)).toBe(true);
+        expect(readClip('c-anchored').loopOriginBeat).toBe(0);
+
+        const secondTrim = { type: 'trimClipStart', payload: { clipId: 'c-anchored', newStartBeat: 2 } } as const;
+        const description = handleTrimClipStart.describe(secondTrim);
+        expect(handleTrimClipStart.execute(secondTrim)).toEqual({ status: 'written' });
+        if (description.inverseAction?.type !== 'trimClipStart') {
+            throw new Error('Expected trim inverse action');
+        }
+        // The inverse captures the anchored pre-action state.
+        expect(description.inverseAction.payload.newStartBeat).toBe(6);
+        expect(description.inverseAction.payload.loopOriginBeat).toBe(0);
+        expect(handleTrimClipStart.execute(description.inverseAction)).toEqual({ status: 'written' });
+
+        const restored = readClip('c-anchored');
+        expect(restored.startBeat).toBe(6);
+        expect(restored.loopOriginBeat).toBe(0);
+    });
+
+    it('replays a legacy extension inverse with the mint the fieldless payload always produced', () => {
+        // An entry recorded before the inverse carried an anchor decodes
+        // without the field and replays the mint law it always did: the
+        // rightward replay of a pre-anchor extension entry still mints at the
+        // pre-action start. The field's absence is the legacy behavior, kept.
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [midiTrack([loopedClip({ id: 'c-legacy-ext', startBeat: 2, endBeat: 16 })])],
+        });
+
+        expect(trimClipStart('c-legacy-ext', 4)).toBe(true);
+
+        const replayed = readClip('c-legacy-ext');
+        expect(replayed.startBeat).toBe(4);
+        expect(replayed.loopOriginBeat).toBe(2);
     });
 });
 

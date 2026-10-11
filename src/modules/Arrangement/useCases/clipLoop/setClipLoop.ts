@@ -8,21 +8,31 @@ import { updateClip } from '../../repositories/track/updateClip';
  * off, and a later enable restamps it.
  *
  * `anchorBeat` is the restore leg's exact-anchor form (#5198): undoing a loop
- * disable must put the pre-disable anchor back, not restamp at the live start,
- * so the recorded inverse carries the anchor it captured. A fresh user enable
- * passes nothing and keeps the restamp law; a legacy restore entry carries no
- * anchor and replays exactly the restamp it always did.
+ * edit must put the pre-action anchor state back, not derive it — a recorded
+ * value restores that anchor, `null` records a clip that carried none and
+ * removes the key the forward action minted (an enable undone on a
+ * never-looped clip must leave no anchor behind, or an older state restore
+ * captured anchorless conflicts and bricks the undo stack). Absent keeps
+ * today's law: a fresh user enable restamps at the live start, and a legacy
+ * restore entry replays exactly the restamp it always did.
  */
-export function setClipLoop(clipId: string, enabled: boolean | undefined, anchorBeat?: number): boolean {
+export function setClipLoop(clipId: string, enabled: boolean | undefined, anchorBeat?: number | null): boolean {
     return updateClip(clipId, (context) => {
         const updatedClip = { ...context };
         if (enabled === undefined) {
             delete updatedClip.loopEnabled;
         } else {
             updatedClip.loopEnabled = enabled;
+        }
+        if (anchorBeat === undefined) {
+            // The fresh-enable restamp law.
             if (enabled === true) {
-                updatedClip.loopOriginBeat = anchorBeat ?? context.startBeat;
+                updatedClip.loopOriginBeat = context.startBeat;
             }
+        } else if (anchorBeat === null) {
+            delete updatedClip.loopOriginBeat;
+        } else {
+            updatedClip.loopOriginBeat = anchorBeat;
         }
         return updatedClip;
     });

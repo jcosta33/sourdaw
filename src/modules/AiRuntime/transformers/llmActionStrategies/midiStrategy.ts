@@ -1,12 +1,10 @@
-import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
-import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { type ProjectContext, type ProjectContextClip } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
-import { type ClipContentWindow, validateNotesWithinClipWindow } from '../validateNotesWithinClipWindow';
+import { type ClipContentWindowInput, validateNotesWithinClipWindow } from '../validateNotesWithinClipWindow';
 
 import { findClip, hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
@@ -64,48 +62,28 @@ function findWritableMidiClip(context: ProjectContext, clipId: unknown) {
 }
 
 /**
- * The span of clip content that actually sounds, in the clip's own media coordinates. The scheduler
- * reads notes at `note.startBeat - midiOffsetBeats` and admits them against the anchored loop
- * window — the half-open region the clip was looped with, carried backwards by the trim advance in
- * offset-relative coordinates (`isBeatInClipLoopWindow`, #4988) — and against each pass's span: a
- * pass enters at the advance's phase and sounds `min(loopLength - advance, visualSpan)` beats of it,
- * and the wrapped region head below the phase segment sounds only when the visual span runs past it
- * (#5198). The window is that union: the phase segment
- * `[offset, offset + min(loopLength - advance, visualSpan))` plus, when it sounds, the wrapped head
- * `[offset - advance, ...)` capped by the span remainder and the anchored window. A zero advance —
- * no anchor, or the anchor inert with the loop off — collapses the union to the single pre-anchor
- * range `[offset, offset + min(loopLength, visualSpan))` exactly.
+ * The clip fields the note-window validation reads, refused when the clip cannot state where its
+ * content is. The window itself is the schedulers' law, applied note-wise in
+ * `validateNotesWithinClipWindow` through the same anchored predicate and pass span they enforce —
+ * not recomputed here, where hand-derived bounds truncated a negative advance's pass at the visual
+ * span and silenced material the schedulers sound (#5198).
  */
-function clipContentWindow(clip: ProjectContextClip): ClipContentWindow | undefined {
+function clipContentWindow(clip: ProjectContextClip): ClipContentWindowInput | undefined {
     const startBeat = clip.midiOffsetBeats ?? 0;
-    const loopEnabled = clip.loopEnabled ?? false;
     const clipSpanBeats = clip.endBeat - clip.startBeat;
-    const { loopLengthBeats } = projectClipLoopExpansion({
-        clipDurationBeats: clipSpanBeats,
-        configuredLoopLengthBeats: clip.loopLength,
-        loopEnabled,
-    });
-    const advance = resolveClipLoopOriginAdvance({
-        startBeat: clip.startBeat,
-        loopOriginBeat: clip.loopOriginBeat,
-        loopEnabled,
-    });
-    const windowFloor = -advance;
-    const windowCeiling = loopLengthBeats - advance;
-    const phaseStart = Math.max(0, windowFloor);
-    const phaseEnd = Math.min(clipSpanBeats, windowCeiling);
-    const headEnd = Math.min(0, clipSpanBeats - loopLengthBeats, windowCeiling);
     // A non-finite bound makes every comparison against it false, so an unguarded window would
     // admit any note at all rather than refusing the clip that cannot state where its content is.
-    if (!Number.isFinite(startBeat) || !Number.isFinite(phaseEnd)) {
+    if (!Number.isFinite(startBeat) || !Number.isFinite(clipSpanBeats)) {
         return undefined;
     }
-    const window: ClipContentWindow = { endBeat: startBeat + phaseEnd, startBeat: startBeat + phaseStart };
-    if (headEnd > windowFloor) {
-        window.wrappedStartBeat = startBeat + windowFloor;
-        window.wrappedEndBeat = startBeat + headEnd;
-    }
-    return window;
+    return {
+        endBeat: clip.endBeat,
+        loopEnabled: clip.loopEnabled,
+        loopLength: clip.loopLength,
+        loopOriginBeat: clip.loopOriginBeat,
+        midiOffsetBeats: clip.midiOffsetBeats,
+        startBeat: clip.startBeat,
+    };
 }
 
 function isIntegerInRange(value: unknown, minimum: number, maximum: number): value is number {

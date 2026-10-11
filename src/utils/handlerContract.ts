@@ -1406,7 +1406,23 @@ export type AppAction =
               reKeyedTakeLanes?: TakeReKeyLaneTransitionSnapshot[];
           };
       }
-    | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
+    | {
+          type: 'trimClipStart';
+          payload: {
+              clipId: string;
+              newStartBeat: number;
+              /**
+               * The exact pre-action loop anchor the recorded inverse restores
+               * (#5198): a value puts that anchor back and `null` restores "no
+               * anchor", removing a key the action minted, so both replay
+               * directions restore the pre-action state. Optional so entries
+               * persisted before the field existed still decode; absent replays
+               * the mint law they always did. AiRuntime-produced trims never
+               * set it.
+               */
+              loopOriginBeat?: number | null;
+          };
+      }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
     | { type: 'slipClipContent'; payload: { clipId: string; clipType: 'audio' | 'midi'; offset: number } }
     | {
@@ -2409,9 +2425,10 @@ export type AppAction =
                    * before. The compare-and-swap guard reads only present and
                    * enabled: the anchor is inert while the loop is off, and a
                    * legacy expected snapshot must not conflict with a live
-                   * anchor a later edit minted.
+                   * anchor a later edit minted. `null` rides on entries whose
+                   * captured clip carried none.
                    */
-                  loopOriginBeat?: number;
+                  loopOriginBeat?: number | null;
               };
               replacement: {
                   present: boolean;
@@ -2419,11 +2436,13 @@ export type AppAction =
                   /**
                    * The anchor to put back: the inverse of a loop disable
                    * restores the pre-disable anchor instead of the enable
-                   * branch's restamp (#5198). Absent — legacy entries, or a
-                   * captured clip that carried none — replays the enable's
-                   * restamp exactly as before.
+                   * branch's restamp (#5198). `null` records a captured clip
+                   * that carried no anchor, so the inverse of an enable
+                   * removes the key the enable minted instead of leaving it on
+                   * a never-looped clip. Absent — legacy entries — replays the
+                   * enable's restamp exactly as before.
                    */
-                  loopOriginBeat?: number;
+                  loopOriginBeat?: number | null;
               };
           };
       }
