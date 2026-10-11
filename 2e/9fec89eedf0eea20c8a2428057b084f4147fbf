@@ -1,0 +1,29 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_59e31a5c6f3e31::t_8042083d7333e8 2480-2573
+src/modules/Project/models/ProjectData.ts
+  s_59e31a5c6f3e31::t_b55c0b9de2855d 803-806
+src/modules/Project/stores/arrangementStore.ts
+  s_59e31a5c6f3e31::t_d6be89eaa1ea38 231-234
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateArrangementStoreFromProjectData.spec.ts
+  s_59e31a5c6f3e31::t_67cddd90747123 106-144
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_59e31a5c6f3e31::t_95a7bab179e798 176-233
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_59e31a5c6f3e31::t_8bd9b220b9e38f 664-670,674-683
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2e9fec89eedf0eea20c8a2428057b084f4147fbf",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
