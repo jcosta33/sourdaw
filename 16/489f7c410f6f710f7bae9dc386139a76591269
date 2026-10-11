@@ -1,0 +1,21 @@
+scripts/__tests__/viteBuildFaustWorkletRegistration.spec.ts
+  s_29d8df116c5b92::t_9b9709b019ce7a 37-38,42-43,69,156,160,164,228-232,237-252,254-257,261,263,267,270-277,284,291,310,316,340,343
+  s_29d8df116c5b92::t_58120c773827bc 29-35,233-236
+  s_29d8df116c5b92::t_111b15de0b5795 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16489f7c410f6f710f7bae9dc386139a76591269",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
