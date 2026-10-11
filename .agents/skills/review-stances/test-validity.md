@@ -24,6 +24,8 @@ Drive the stalled child through the same helper and fixture boundary used by the
 
 The timeout probe must also own the nested Bash process after its direct child exits. `spawnSync` can report `ETIMEDOUT` and allow fixture cleanup while that nested shell continues spinning. Record the nested shell's positive PID from Bash 3.2-compatible `$$`, then require it and the helper's detached process group to be gone before cleanup; a direct-PID-only termination mutation must fail the same case. Validate every recorded PID before probing or signaling it: an empty `BASHPID` on macOS coerced to PID 0 and killed the test runner's process group instead of observing the child.
 
+Await process-group shutdown independently of Node's `close` event: a surviving grandchild can keep the inherited stderr pipe open after the direct child dies. On macOS, a group-zero probe may briefly return `EPERM` after `SIGTERM`; only `ESRCH` establishes that the group is gone. Keep the fixture until that observation, with a bounded `SIGKILL` escalation.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992

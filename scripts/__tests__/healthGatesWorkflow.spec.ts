@@ -3742,10 +3742,14 @@ export -f sudo timeout sleep apt-get
             process.kill(-pid, 0);
             return true;
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ESRCH') {
                 return false;
             }
-            throw error;
+            if (code === 'EPERM') {
+                return true;
+            }
+            throw new Error(`ALSA probe cannot inspect owned process group ${pid}: ${String(error)}`, { cause: error });
         }
     };
 
@@ -3754,8 +3758,11 @@ export -f sudo timeout sleep apt-get
         try {
             process.kill(-pid, signal);
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
-                throw error;
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code !== 'ESRCH' && code !== 'EPERM') {
+                throw new Error(`ALSA probe cannot signal owned process group ${pid}: ${String(error)}`, {
+                    cause: error,
+                });
             }
         }
     };
@@ -3818,11 +3825,16 @@ export -f sudo timeout sleep apt-get
             const closed = new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolve) => {
                 child.once('close', (status, signal) => resolve({ status, signal }));
             });
+            let resolveDeadline: (() => void) | undefined;
+            const deadlineReached = new Promise<void>((resolve) => {
+                resolveDeadline = resolve;
+            });
             const timeout = setTimeout(() => {
                 timedOut = true;
                 if (groupPid !== undefined) {
                     signalProcessGroup(groupPid, 'SIGTERM');
                 }
+                resolveDeadline?.();
             }, options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS);
             const killAfter = setTimeout(
                 () => {
@@ -3834,10 +3846,17 @@ export -f sudo timeout sleep apt-get
             );
             let closedResult: Awaited<typeof closed>;
             try {
-                closedResult = await closed;
+                const closedBeforeDeadline = await Promise.race([
+                    closed.then(() => true),
+                    deadlineReached.then(() => false),
+                ]);
+                if (closedBeforeDeadline) {
+                    clearTimeout(timeout);
+                }
                 if (timedOut && groupPid !== undefined) {
                     await waitForProcessGroupExit(groupPid);
                 }
+                closedResult = await closed;
                 if (!timedOut && groupPid !== undefined && processGroupAlive(groupPid)) {
                     signalProcessGroup(groupPid, 'SIGKILL');
                     await waitForProcessGroupExit(groupPid);
@@ -3986,6 +4005,12 @@ export -f sudo timeout sleep apt-get
             }
             if (failure.stalledPid !== undefined) {
                 killRecordedProcess(failure.stalledPid, false);
+            }
+            if (failure.groupPid !== undefined) {
+                await waitForProcessGroupExit(failure.groupPid);
+            }
+            if (failure.probeDirectory !== undefined) {
+                rmSync(failure.probeDirectory, { force: true, recursive: true });
             }
         }
     });
