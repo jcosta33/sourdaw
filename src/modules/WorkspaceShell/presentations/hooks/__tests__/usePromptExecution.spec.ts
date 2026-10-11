@@ -157,7 +157,11 @@ describe('usePromptExecution', () => {
             const context = getProjectContext();
             return {
                 context,
-                result: await executionUseCaseMocks.parsePromptToActions(input.prompt, context, input.signal),
+                result: await executionUseCaseMocks.parsePromptToActions({
+                    prompt: input.prompt,
+                    context,
+                    signal: input.signal,
+                }),
                 projectRevision: 'revision-1',
             };
         });

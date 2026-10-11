@@ -15,6 +15,8 @@ export { recordAutomationValue } from './automationRecording/recordAutomationVal
 export { captureAutomationRecordingRollback } from './automationRecording/captureAutomationRecordingRollback';
 export { setAutomationRecordingDependencies } from './automationRecording/recordingDependencies';
 export { setModulationDependencies } from './modulation/modulationDependencies';
+export { buildOfflineModulatorPlans } from './modulation/offlineModulatorSchedule';
+export { computeModulatorValue } from './modulation/computeModulatorValue';
 export { removeAutomationLane } from './automation/removeAutomationLane';
 export { removeAutomationLanesForTrack } from './automation/removeAutomationLanesForTrack';
 export { removeAutomationPoint } from './automation/removeAutomationPoint';

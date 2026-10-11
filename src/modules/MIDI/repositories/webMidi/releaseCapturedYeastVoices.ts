@@ -1,5 +1,5 @@
 import { pendingYeastRelease } from './pendingYeastRelease';
-import { activeNotes } from './state';
+import { releaseHeldYeastVoices } from './releaseHeldYeastVoices';
 
 /**
  * End every voice a Yeast rack started on an instrument track at one channel
@@ -18,15 +18,5 @@ export function releaseCapturedYeastVoices(
     sampleFrame?: number
 ): void {
     pendingYeastRelease.releaseTrackPitch(instrumentTrackId, channel, pitch, sampleFrame, 0);
-    for (const held of activeNotes.values()) {
-        if (held.instrumentTrackId !== instrumentTrackId || held.channel !== channel) {
-            continue;
-        }
-        const release = held.yeastVoiceReleases?.get(pitch);
-        if (!release) {
-            continue;
-        }
-        held.yeastVoiceReleases?.delete(pitch);
-        release(sampleFrame, 0);
-    }
+    releaseHeldYeastVoices(instrumentTrackId, channel, pitch, sampleFrame);
 }

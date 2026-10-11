@@ -15,6 +15,7 @@ import {
     executeAppAction,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
+    undo,
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
@@ -51,6 +52,7 @@ import { deriveMatchSelectorPredicates } from '../deriveMatchSelectorPredicates'
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
 import { planAgentRun } from '../planAgentRun';
+import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage } from '../sendChatMessage';
 import { splitCompiledCommandList } from '../splitCompiledCommandList';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
@@ -66,6 +68,7 @@ import {
     emptyMidiState,
     proposeDiscoveredCalls,
     scriptProviderTurns,
+    searchCalls,
 } from './highLevelIntentWorkflowFixture';
 
 const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn() }));
@@ -1623,11 +1626,19 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
-async function seedLayerTracks(): Promise<string[]> {
-    for (let index = 0; index < LAYER_COUNT; index += 1) {
-        await executeAppAction({ type: 'addTrack', payload: { name: `Layer ${String(index + 1)}`, kind: 'audio' } });
+function layerNames(count: number): string[] {
+    return Array.from({ length: count }, (_unused, index) => `Layer ${String(index + 1)}`);
+}
+
+async function seedTracks(names: readonly string[]): Promise<string[]> {
+    for (const name of names) {
+        await executeAppAction({ type: 'addTrack', payload: { name, kind: 'audio' } });
     }
     return (trackStore.value?.tracks ?? []).map((track) => track.id);
+}
+
+async function seedLayerTracks(count = LAYER_COUNT): Promise<string[]> {
+    return seedTracks(layerNames(count));
 }
 
 /** One intent wide enough that the index page carries muteTrack among its matches. */
@@ -1636,12 +1647,12 @@ const MUTE_SEARCH_CALL = {
     arguments: { intent: 'mute track', page: { limit: 8 } },
 };
 
-function muteLayersItem() {
+function muteLayersItem(count = LAYER_COUNT) {
     return {
         id: 'mute-layers',
         name: 'muteTrack',
         arguments: { muted: true },
-        selector: matchTracks('layer', LAYER_COUNT),
+        selector: matchTracks('layer', count),
     };
 }
 
@@ -1674,6 +1685,14 @@ function requireOnlyProposedConfirmation() {
 
 function mutedTrackIds(): string[] {
     return (trackStore.value?.tracks ?? []).filter((track) => track.muted).map((track) => track.id);
+}
+
+function mutedTrackNames(): string[] {
+    return (trackStore.value?.tracks ?? []).filter((track) => track.muted).map((track) => track.name);
+}
+
+function pannedTrackNames(): string[] {
+    return (trackStore.value?.tracks ?? []).filter((track) => track.pan !== 0).map((track) => track.name);
 }
 
 describe('a bulk request confirmed one batch at a time', () => {
@@ -1743,6 +1762,126 @@ describe('a bulk request confirmed one batch at a time', () => {
         expect(mutedTrackIds()).toEqual(layerIds);
         expect(agentRunLifecycle.get(first.runId)?.phase).toBe('completed');
         expect(proposedConfirmations()).toEqual([]);
+    });
+
+    describe('the last commit the next chat request reads', () => {
+        /** The run's newest batch and the receipt it committed under. */
+        function readNewestBatchReceipt(runId: string) {
+            const run = agentRunLifecycle.get(runId);
+            const batchId = run?.batches.at(-1)?.batchId;
+            const receipt = run?.receipts.find((candidate) => candidate.workId === batchId);
+            if (batchId === undefined || receipt === undefined) {
+                throw new Error(`Expected run ${runId} to hold a receipt for its newest batch.`);
+            }
+            return receipt;
+        }
+
+        it('reads a later batch committed directly after a confirmed first batch, and undone after one undo', async () => {
+            const layerCount = MAX_LLM_ACTIONS_PER_BATCH + 1;
+            const layerIds = await seedLayerTracks(layerCount);
+            scriptMuteLayersProposal(muteLayersItem(layerCount));
+            await requestMuteLayers();
+            const first = requireOnlyProposedConfirmation();
+            expect(first.approvalSnapshot.batchPosition).toEqual({ index: 1, total: 2 });
+
+            // The one-command second batch needs no confirmation, so approving the first commits both.
+            await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({
+                status: 'executed',
+            });
+
+            expect(mutedTrackIds()).toEqual(layerIds);
+            expect(proposedConfirmations()).toEqual([]);
+            const secondReceipt = readNewestBatchReceipt(first.runId);
+            expect(agentRunLifecycle.get(first.runId)?.receipts).toHaveLength(2);
+            expect(readChatThreadContext()?.lastCommit).toEqual({
+                runId: first.runId,
+                receiptIds: [secondReceipt.receiptIdentity],
+                standing: 'standing',
+                commands: [{ name: 'muteTrack', label: 'Mute track' }],
+                measuredDeltas: [],
+            });
+
+            await undo();
+
+            expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
+            expect(readChatThreadContext()?.lastCommit).toMatchObject({
+                receiptIds: [secondReceipt.receiptIdentity],
+                standing: 'undone',
+            });
+        });
+
+        // Every batch of more than one command needs a confirmation, and the schedule packs batches
+        // greedily, so two directly committed batches of one run are never adjacent: here a binding
+        // span fills the middle batch and leaves a one-command batch on either side of it.
+        it('reads the newest of two directly committed batches of one run, never the earlier one', async () => {
+            await seedTracks(['Intro', ...layerNames(MAX_LLM_ACTIONS_PER_BATCH - 1), 'Outro']);
+            const commandNames = ['muteTrack', 'createBus', 'addSend', 'setTrackPan'];
+            scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+                () => searchCalls(['mute track', 'create a bus', 'add a send to a bus', 'pan track']),
+                discoverSearchedCalls(commandNames),
+                proposeDiscoveredCalls(
+                    [
+                        {
+                            id: 'mute-intro',
+                            name: 'muteTrack',
+                            arguments: { muted: true },
+                            selector: matchTracks('intro', 1),
+                        },
+                        { id: 'make-bus', name: 'createBus', arguments: { name: 'Parallel', binding: 'par' } },
+                        {
+                            id: 'send-layers',
+                            name: 'addSend',
+                            arguments: { busId: '$par', levelDb: -6 },
+                            selector: matchTracks('layer', MAX_LLM_ACTIONS_PER_BATCH - 1),
+                            dependsOn: ['make-bus'],
+                        },
+                        {
+                            id: 'pan-outro',
+                            name: 'setTrackPan',
+                            arguments: { pan: -20 },
+                            selector: matchTracks('outro', 1),
+                        },
+                    ],
+                    commandNames
+                ),
+            ]);
+
+            flushAutomergeStorageWrites();
+            await sendChatMessage(
+                'Mute the Intro track, create a bus named Parallel, send every layer track to the Parallel bus at -6 dB, and pan Outro 20% left'
+            );
+
+            const middle = requireOnlyProposedConfirmation();
+            expect(middle.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 3 });
+            expect(mutedTrackNames()).toEqual(['Intro']);
+            const [firstReceipt, ...laterReceipts] = agentRunLifecycle.get(middle.runId)?.receipts ?? [];
+            expect(laterReceipts).toEqual([]);
+            expect(readChatThreadContext()?.lastCommit).toMatchObject({ receiptIds: [firstReceipt?.receiptIdentity] });
+
+            await expect(confirmPendingChatActions({ confirmationId: middle.id })).resolves.toEqual({
+                status: 'executed',
+            });
+
+            expect(pannedTrackNames()).toEqual(['Outro']);
+            const lastReceipt = readNewestBatchReceipt(middle.runId);
+            expect(agentRunLifecycle.get(middle.runId)?.receipts).toHaveLength(3);
+            expect(readChatThreadContext()?.lastCommit).toEqual({
+                runId: middle.runId,
+                receiptIds: [lastReceipt.receiptIdentity],
+                standing: 'standing',
+                commands: [{ name: 'setTrackPan', label: expect.any(String) }],
+                measuredDeltas: [],
+            });
+
+            await undo();
+
+            expect(pannedTrackNames()).toEqual([]);
+            expect(mutedTrackNames()).toEqual(['Intro']);
+            expect(readChatThreadContext()?.lastCommit).toMatchObject({
+                receiptIds: [lastReceipt.receiptIdentity],
+                standing: 'undone',
+            });
+        });
     });
 
     it('refuses at approval a later batch whose where-only set gained a member while it waited', async () => {

@@ -6,6 +6,7 @@ import { assertServingCheckoutIdentity } from '../../scripts/e2eServerIdentity';
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
 import { LAUNCH_SCREEN_NAME } from './e2eUtils';
+import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
 
 /**
  * One-time bound for the dev server's cold module transform. Playwright's
@@ -26,9 +27,25 @@ function remainingWarmupTime(deadline: number): number {
     return remaining;
 }
 
+function formatWarmupSeconds(milliseconds: number): string {
+    return `${(milliseconds / 1000).toFixed(1)}s`;
+}
+
+function logWarmupPhase(phase: string): void {
+    console.log(`[first-paint warmup] ${new Date().toISOString()} ${phase}`);
+}
+
 /**
- * Global setup: navigate to the app once and wait for the launch overlay, so
- * the dev server's module graph is warm before the first test observes it.
+ * Global setup: navigate to the app once and wait out the cold launch path
+ * before the first test observes it, so the dev server's module graph is warm
+ * and the per-test first-paint bounds measure warm mounting. Readiness is the
+ * app's own `[capabilities]` boot marker, not merely the overlay being
+ * visible: the overlay is the first paint, while the cold launch path keeps
+ * building and booting WASM past that point — work a first test's timed
+ * allowance must not have to measure (#4781: an offline smoke run whose
+ * warmup had finished still spent its first test's whole 90s allowance on the
+ * cold build tail and never reached `[capabilities]`).
+ *
  * The web server plugin starts (and health-checks) the server before global
  * setup runs, so the navigation always has a live origin to hit. Before any
  * of that, the serving-checkout identity is asserted: when the URL answers
@@ -42,11 +59,17 @@ export default async function warmFirstPaint(config: FullConfig): Promise<void> 
         throw new Error('First-paint warmup requires the project baseURL naming the app server');
     }
 
+    logWarmupPhase('checkout identity: start');
     await assertServingCheckoutIdentity(baseURL, resolve(import.meta.dirname, '../..'));
+    logWarmupPhase('checkout identity: complete');
 
+    logWarmupPhase('browser launch: start');
     const browser = await chromium.launch();
+    logWarmupPhase('browser launch: complete');
     try {
+        logWarmupPhase('page creation: start');
         const page = await browser.newPage({ baseURL });
+        logWarmupPhase('page creation: complete');
         // Direct composition, as in e2eUtils: the launch overlay then renders
         // in the main frame instead of inside the display-scale host iframe.
         // The name rides the argument channel; an init script's free
@@ -54,10 +77,25 @@ export default async function warmFirstPaint(config: FullConfig): Promise<void> 
         await page.addInitScript((viewportName: string) => {
             window.name = viewportName;
         }, DIRECT_E2E_VIEWPORT_NAME);
+        const timeline = attach_first_paint_console(page);
+        const startedAtMs = performance.now();
         const deadline = performance.now() + COLD_FIRST_PAINT_TIMEOUT_MS;
+        logWarmupPhase('readiness: start');
         await page.goto('/', { timeout: remainingWarmupTime(deadline) });
         await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({ state: 'visible', timeout: remainingWarmupTime(deadline) });
+        const overlayPaidMs = performance.now() - startedAtMs;
+        await wait_for_console_marker(timeline, CAPABILITIES_MARKER, remainingWarmupTime(deadline));
+        const bootPaidMs = performance.now() - startedAtMs;
+        logWarmupPhase('readiness: complete');
+        console.log(
+            `[first-paint warmup] launch overlay after ${formatWarmupSeconds(overlayPaidMs)}, ` +
+                `boot capabilities after ${formatWarmupSeconds(bootPaidMs)}; ` +
+                `${formatWarmupSeconds(Math.max(COLD_FIRST_PAINT_TIMEOUT_MS - bootPaidMs, 0))} of the ` +
+                `${COLD_FIRST_PAINT_TIMEOUT_MS / 1000}s cold allowance remains for the tests' own waits`
+        );
     } finally {
+        logWarmupPhase('browser close: start');
         await browser.close();
+        logWarmupPhase('browser close: complete');
     }
 }
