@@ -2793,6 +2793,137 @@ describe('contract-carrying admission', () => {
         expect(set.excluded.some((entry) => entry.path === 'src/modules/Project/undo.ts')).toBe(false);
     });
 
+    it('supplies the real ledger and root contract under the local profile, truncated when they exceed it', () => {
+        // The decision ledger outgrew the local profile's 16 KiB region budget, and the root contract
+        // was already past it, so every local scan lost both contract documents whole (#5235): the
+        // charge ranked them at zero bytes and admission withheld them. A context document over the
+        // ceiling is now admitted as its leading whole lines with a visible marker, bounded to the
+        // lines it kept and recorded as truncated. Reading the real files keeps this case honest about
+        // whichever side of the ceiling each document sits on today.
+        const ledger = readFileSync(join(repositoryRoot, '.agents/decisions/README.md'), 'utf8');
+        const contract = readFileSync(join(repositoryRoot, 'AGENTS.md'), 'utf8');
+        const readerPath = 'src/modules/Project/undo.ts';
+        const local = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(readerPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:AGENTS.md`]: contract,
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: ledger,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: local.maxStatePlusQuestionBytes,
+                maxTotalBytes: local.maxTotalSubmittedBytes,
+            },
+            includeDefaultContractContext: true,
+        });
+        // At least one default document is over the local ceiling today, so the truncation path this
+        // case pins is exercised, not merely permitted.
+        expect(set.truncated.some((entry) => entry.reason === 'context-region-truncated-to-budget')).toBe(true);
+        for (const [path, text] of [
+            ['.agents/decisions/README.md', ledger],
+            ['AGENTS.md', contract],
+        ] as const) {
+            const totalLines = text.split('\n').length;
+            const fits = regionFitsRequest({ path, side: 'context', content: text }, local.maxStatePlusQuestionBytes);
+            const reference = set.references.find(
+                (candidate) => candidate.path === path && candidate.side === 'context'
+            );
+            expect(reference).toBeDefined();
+            if (!reference) {
+                continue;
+            }
+            const admitted = set.contents.get(reference.evidenceId) ?? '';
+            if (fits) {
+                expect(admitted).toBe(text);
+                expect(set.truncated.some((entry) => entry.path === path)).toBe(false);
+            } else {
+                expect(reference.startLine).toBe(1);
+                expect(reference.endLine).toBeLessThan(totalLines);
+                expect(admitted.endsWith(`first ${String(reference.endLine)} of ${String(totalLines)} lines]`)).toBe(
+                    true
+                );
+                expect(admitted.startsWith(text.split('\n')[0] ?? '')).toBe(true);
+                expect(
+                    set.truncated.some(
+                        (entry) => entry.path === path && entry.reason === 'context-region-truncated-to-budget'
+                    )
+                ).toBe(true);
+                expect(
+                    set.limitations.some((entry) => entry.startsWith(`contract ${path} was supplied truncated`))
+                ).toBe(true);
+            }
+        }
+    });
+
+    it('truncates an over-budget context document on whole lines and keeps a fitting one whole', () => {
+        // The truncation keeps only whole leading lines, names what it kept in a closing marker line,
+        // and records the loss; a context document under the ceiling in the same change is admitted
+        // byte-for-byte with no marker and no truncation record.
+        const readerPath = 'src/modules/Project/undo.ts';
+        const overBudget = Array.from(
+            { length: 60 },
+            (_, row) =>
+                `| [00${String(row).padStart(2, '0')}] | a decision row that pads the table wide enough to bind |`
+        ).join('\n');
+        const fitting = '# Short contract\n';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(readerPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:zzz-wide-ledger.md`]: overBudget,
+                    [`${MERGE_BASE}:aaa-short-contract.md`]: fitting,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 600, maxTotalBytes: 1_000_000 },
+            contractPaths: ['zzz-wide-ledger.md', 'aaa-short-contract.md'],
+        });
+        const truncated = set.references.find(
+            (reference) => reference.path === 'zzz-wide-ledger.md' && reference.side === 'context'
+        );
+        expect(truncated).toBeDefined();
+        if (truncated) {
+            expect(truncated.startLine).toBe(1);
+            expect(truncated.endLine).toBeGreaterThan(0);
+            expect(truncated.endLine).toBeLessThan(60);
+            const admitted = set.contents.get(truncated.evidenceId) ?? '';
+            expect(admitted.startsWith('| [0000] |')).toBe(true);
+            expect(
+                admitted.endsWith(
+                    `[semantic review: context truncated to the per-region budget: first ${String(
+                        truncated.endLine
+                    )} of 60 lines]`
+                )
+            ).toBe(true);
+            expect(set.truncated).toContainEqual({
+                path: 'zzz-wide-ledger.md',
+                reason: 'context-region-truncated-to-budget',
+            });
+            expect(
+                set.limitations.some((entry) => entry.startsWith('contract zzz-wide-ledger.md was supplied truncated'))
+            ).toBe(true);
+        }
+        const whole = set.references.find(
+            (reference) => reference.path === 'aaa-short-contract.md' && reference.side === 'context'
+        );
+        expect(whole).toBeDefined();
+        if (whole) {
+            expect(set.contents.get(whole.evidenceId)).toBe(fitting);
+            expect(set.truncated.some((entry) => entry.path === 'aaa-short-contract.md')).toBe(false);
+        }
+    });
+
     it('excludes a path whose before side is credential-shaped and charges no contract context', () => {
         // The before-side arm: a rotation replaces the credential, so the after side is clean and a screen
         // reading only it would keep the path and charge context for it. The before hunk is what admission
