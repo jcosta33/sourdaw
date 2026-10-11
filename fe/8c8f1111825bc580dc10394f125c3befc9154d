@@ -1,0 +1,21 @@
+scripts/__tests__/e2eShardPartition.spec.ts
+  s_29d8df116c5b92::t_5b64ba7a7ad9c0 114,118-119
+scripts/__tests__/prValidationScope.spec.ts
+  s_29d8df116c5b92::t_b6abd55db6b6ed 3,5,9,159,191,383-397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe8c8f1111825bc580dc10394f125c3befc9154d",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
