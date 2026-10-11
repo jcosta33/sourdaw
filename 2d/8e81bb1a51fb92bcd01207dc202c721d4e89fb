@@ -1,0 +1,14 @@
+eslint.config.mjs
+  h_beb54bf43b47b7 2824-2830,2832
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d8e81bb1a51fb92bcd01207dc202c721d4e89fb",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
