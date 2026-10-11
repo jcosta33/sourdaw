@@ -20,6 +20,9 @@ const CHUNK: usize = LEVAIN_SAMPLE_CHUNK_FLOATS;
 const TOTAL_FLOATS: usize = 3 * CHUNK + 777;
 const BLOCK: u32 = 4096;
 const STEP_ENTRIES: u32 = 4;
+/// The small release-budget fixtures reserve exactly this PCM allocation size.
+const BUDGET_SAMPLE_FLOATS: usize = 64;
+const BUDGET_SAMPLE_BYTES: usize = BUDGET_SAMPLE_FLOATS * std::mem::size_of::<f32>();
 
 struct CountingAllocator;
 
@@ -27,6 +30,7 @@ thread_local! {
     static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
     static DEALLOCATIONS: Cell<usize> = const { Cell::new(0) };
     static DEALLOCATED_BYTES: Cell<usize> = const { Cell::new(0) };
+    static BUDGET_SAMPLE_FREES: Cell<usize> = const { Cell::new(0) };
 }
 
 unsafe impl GlobalAlloc for CountingAllocator {
@@ -38,6 +42,9 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         DEALLOCATIONS.with(|count| count.set(count.get() + 1));
         DEALLOCATED_BYTES.with(|bytes| bytes.set(bytes.get() + layout.size()));
+        if layout.size() == BUDGET_SAMPLE_BYTES {
+            BUDGET_SAMPLE_FREES.with(|count| count.set(count.get() + 1));
+        }
         System.dealloc(ptr, layout)
     }
 }
@@ -50,18 +57,21 @@ struct Counted<T> {
     allocations: usize,
     deallocations: usize,
     deallocated_bytes: usize,
+    budget_sample_frees: usize,
 }
 
 fn counted<T>(run: impl FnOnce() -> T) -> Counted<T> {
     ALLOCATIONS.with(|count| count.set(0));
     DEALLOCATIONS.with(|count| count.set(0));
     DEALLOCATED_BYTES.with(|bytes| bytes.set(0));
+    BUDGET_SAMPLE_FREES.with(|count| count.set(0));
     let value = run();
     Counted {
         value,
         allocations: ALLOCATIONS.with(Cell::get),
         deallocations: DEALLOCATIONS.with(Cell::get),
         deallocated_bytes: DEALLOCATED_BYTES.with(Cell::get),
+        budget_sample_frees: BUDGET_SAMPLE_FREES.with(Cell::get),
     }
 }
 
@@ -370,6 +380,98 @@ fn an_abort_mid_sample_frees_nothing_and_the_release_steps_free_the_open_sample(
         "the release freed {freed_bytes} bytes, so the open sample's storage was not freed by it"
     );
     assert!(!instance.has_retired_bank());
+}
+
+#[test]
+fn an_open_sample_consumes_the_minimum_release_budget_before_sealed_pcm() {
+    for budget in [0, 1] {
+        let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+        instance.begin_sample_bank("violin-1");
+        upload(&mut instance, &pcm(BUDGET_SAMPLE_FLOATS), 1);
+        assert_eq!(
+            instance.begin_sample(BUDGET_SAMPLE_FLOATS as u32, 1, SAMPLE_RATE),
+            Some(1)
+        );
+
+        let abort = counted(|| instance.abort_sample_bank());
+        assert!(abort.value);
+        assert_eq!((abort.allocations, abort.deallocations), (0, 0));
+
+        let open = counted(|| instance.release_retired_bank(budget));
+        assert!(
+            !open.value,
+            "the sealed PCM entry must remain after budget {budget}"
+        );
+        assert_eq!(open.allocations, 0);
+        assert_eq!(open.budget_sample_frees, 1);
+        assert!(instance.has_retired_bank());
+
+        let sealed = counted(|| instance.release_retired_bank(budget));
+        assert!(sealed.value);
+        assert_eq!(sealed.allocations, 0);
+        assert_eq!(sealed.budget_sample_frees, 1);
+        assert!(!instance.has_retired_bank());
+        let empty = counted(|| instance.release_retired_bank(budget));
+        assert!(empty.value);
+        assert_eq!((empty.allocations, empty.deallocations), (0, 0));
+    }
+}
+
+#[test]
+fn an_open_only_bank_finishes_in_one_minimum_budget_step() {
+    for budget in [0, 1] {
+        let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+        instance.begin_sample_bank("violin-1");
+        assert_eq!(
+            instance.begin_sample(BUDGET_SAMPLE_FLOATS as u32, 1, SAMPLE_RATE),
+            Some(0)
+        );
+        let abort = counted(|| instance.abort_sample_bank());
+        assert!(abort.value);
+        assert_eq!((abort.allocations, abort.deallocations), (0, 0));
+
+        let release = counted(|| instance.release_retired_bank(budget));
+        assert!(
+            release.value,
+            "an empty sealed pool must not require another step"
+        );
+        assert_eq!(release.allocations, 0);
+        assert_eq!(release.budget_sample_frees, 1);
+        assert!(!instance.has_retired_bank());
+    }
+}
+
+#[test]
+fn minimum_budget_release_of_shared_pcm_preserves_the_sounding_owner() {
+    let mut owner = LevainInstance::new(SAMPLE_RATE, 8);
+    owner.begin_sample_bank("violin-1");
+    let sample = upload(&mut owner, &pcm(BUDGET_SAMPLE_FLOATS), 1);
+    add_looping_zone(&mut owner, sample, BUDGET_SAMPLE_FLOATS as u32);
+    assert!(owner.build_zone_map(1, 1));
+    assert!(owner.publish_sample_bank("levain-minimum-budget-shared-pcm"));
+    let commit = counted(|| owner.commit_sample_bank());
+    assert!(commit.value);
+    assert_eq!((commit.allocations, commit.deallocations), (0, 0));
+    assert!(owner.release_retired_bank(1));
+    let bytes = owner.sample_bank_bytes();
+    owner.note_on(69, 100);
+
+    let mut follower = LevainInstance::new(SAMPLE_RATE, 8);
+    follower.begin_sample_bank("violin-1");
+    assert!(follower.attach_sample_bank("levain-minimum-budget-shared-pcm"));
+    let abort = counted(|| follower.abort_sample_bank());
+    assert!(abort.value);
+    assert_eq!((abort.allocations, abort.deallocations), (0, 0));
+    let release = counted(|| follower.release_retired_bank(0));
+    assert!(release.value);
+    assert_eq!(release.allocations, 0);
+    assert_eq!(release.budget_sample_frees, 0);
+    assert_eq!(owner.sample_bank_bytes(), bytes);
+
+    let left = owner.process(BLOCK);
+    // SAFETY: process filled BLOCK frames and no intervening call moved them.
+    let rendered = unsafe { std::slice::from_raw_parts(left, BLOCK as usize) };
+    assert!(rendered.iter().any(|value| value.abs() > 1e-6));
 }
 
 #[test]

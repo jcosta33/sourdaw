@@ -154,8 +154,11 @@ impl RetiredBank {
     /// unwrapped first (a registry `Weak` does not block that, and once
     /// unwrapped it can no longer be attached), then drained in steps.
     fn release_step(&mut self, max_entries: usize) -> bool {
-        // One free, whatever the sample's size.
-        drop(self.open_sample.take());
+        let mut remaining = max_entries.max(1);
+        if let Some(open) = self.open_sample.take() {
+            drop(open);
+            remaining -= 1;
+        }
         if let Some(shared) = self.sample_pool.take() {
             match Arc::try_unwrap(shared) {
                 Ok(pool) => self.draining = Some(pool),
@@ -163,7 +166,10 @@ impl RetiredBank {
             }
         }
         match self.draining.as_mut() {
-            Some(pool) => pool.release_entries(max_entries) == 0,
+            // release_entries normalizes zero to one, so an exhausted budget
+            // only observes the pool; it must not ask it to release anything.
+            Some(pool) if remaining == 0 => pool.len() == 0,
+            Some(pool) => pool.release_entries(remaining) == 0,
             None => true,
         }
     }
