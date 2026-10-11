@@ -1,0 +1,28 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  h_beb54bf43b47b7 71,714-766,1588-1626,4374-4602
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  h_beb54bf43b47b7 377,384-388,390
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  h_beb54bf43b47b7 1-5,116-131,163-164,171,182-186
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  h_beb54bf43b47b7 5,13-61,71-78
+src/modules/Arrangement/useCases/rippleDelete/__tests__/planRippleDelete.spec.ts
+  h_beb54bf43b47b7 21-48
+src/modules/Arrangement/useCases/rippleDelete/planRippleDelete.ts
+  h_beb54bf43b47b7 2,14-15,17,27-39,69
+src/modules/MIDI/useCases/midiClipData/__tests__/midiClipSplitStateMatches.spec.ts
+  h_beb54bf43b47b7 3,23-94,96-153
+src/modules/MIDI/useCases/midiClipData/midiClipSplitStateMatches.ts
+  h_beb54bf43b47b7 2,7-8,42,44-50,79-122,131,135,141-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a7428b7cad73a01f80d2322b68b7c66974f6be05",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
