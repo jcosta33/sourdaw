@@ -237,8 +237,9 @@ for (const input of CASES) {
                     },
                 ],
                 durationSeconds,
-                changes: [],
                 // Empty tempo map at 120 BPM: a beat is half a second.
+                defaultTempo: 120,
+                changes: [],
                 projectBeatToSeconds: (beat) => (beat / 120) * 60,
                 slewTickSeconds: automationSlewTickSecondsForGrain(10),
                 deviceParameterLaw: {
