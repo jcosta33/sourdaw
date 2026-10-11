@@ -151,6 +151,21 @@ describe('midiClipSplitStateMatches', () => {
         expect(midiClipSplitStateMatches(redoInput, crossKindPeer)).toBe(false);
     });
 
+    it('reserves and releases earlier replay owners in their actual removal and restore order', () => {
+        const live = {
+            ...state({ source: [], peer: [note] }),
+            ccByClipId: { source: [] },
+            pitchBendByClipId: { source: [] },
+        };
+        const removePeer: AppAction = { type: 'removeClip', payload: { clipId: 'peer' } };
+        const removeRight: AppAction = { type: 'removeClip', payload: { clipId: 'peer-right' } };
+        const restored = restorePeerSplit({ ...absent, notes: captured.notes });
+        expect(midiClipSplitStateMatches(redoInput, live, [removePeer, restored])).toBe(false);
+        expect(midiClipSplitStateMatches(redoInput, live, [removePeer, restored, removeRight])).toBe(true);
+        expect(midiClipSplitStateMatches(redoInput, live, [removePeer, removeRight, restored])).toBe(false);
+        expect(live.notesByClipId.peer).toEqual([note]);
+    });
+
     it('accepts matching note objects rebuilt with different key insertion order', () => {
         const capturedNote = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
         const rebuiltNote = { velocity: 100, duration: 1, startBeat: 0, pitch: 60, id: 'note-1' };
