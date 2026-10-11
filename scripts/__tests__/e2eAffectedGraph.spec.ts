@@ -330,21 +330,19 @@ describe('affected E2E graph', () => {
                     [CRUST_BARREL]: "export * from './CrustPanel';",
                     [SHELL]:
                         "import '#/modules/Tuner/presentations/views'; import '#/modules/Crust/presentations/views';",
+                    'public/wasm/decoder.js': 'export const decoder = true;',
                 };
                 for (const [path, content] of Object.entries(sources)) {
                     mkdirSync(dirname(join(root, path)), { recursive: true });
                     writeFileSync(join(root, path), content);
+                    mkdirSync(dirname(join(shadow, path)), { recursive: true });
+                    writeFileSync(join(shadow, path), 'export const shadow = 0;');
                 }
                 mkdirSync(join(root, 'scripts'));
-                mkdirSync(join(root, 'public'));
                 writeFileSync(join(root, 'scripts/e2eSuiteOwners.json'), JSON.stringify(manifest));
                 const config = { compilerOptions: { baseUrl: '.', paths: { '#/*': ['./src/*'] } } };
                 writeFileSync(join(root, 'tsconfig.json'), JSON.stringify(config));
                 writeFileSync(join(shadow, 'tsconfig.json'), JSON.stringify(config));
-                const shadowTuner = join(shadow, TUNER);
-                mkdirSync(dirname(shadowTuner), { recursive: true });
-                writeFileSync(shadowTuner, 'export const tuner = 2;');
-
                 expect(await loadAffectedE2e(root, [TUNER], inventory)).toEqual({
                     kind: 'narrow',
                     specs: [CRUST_SPEC, MIXED_SPEC, NEW_SPEC, TUNER_SPEC],
