@@ -1,9 +1,10 @@
-import { type AppAction, type TakeReKeyLaneTransitionSnapshot } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';
+import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 export function reKeyedTakeLaneOwnersMatchStore(
-    transitions: readonly TakeReKeyLaneTransitionSnapshot[],
+    transitions: readonly TakeReKeyLaneTransition[],
     direction: 'apply' | 'restore',
     priorActions: readonly AppAction[] = []
 ): boolean {

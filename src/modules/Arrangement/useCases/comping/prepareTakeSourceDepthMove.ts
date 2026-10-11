@@ -104,6 +104,11 @@ function resolveMaterializedTakeSources(
         if (!Number.isFinite(seconds) || seconds < 0 || !Number.isFinite(beats) || beats < 0) {
             return null;
         }
+        // A same-tempo move leaves a valid legacy depth unchanged; retain its absent seconds field.
+        if (source.sourceOffsetSeconds === null && Object.is(oldTempo, newTempo)) {
+            after.push(source);
+            continue;
+        }
         after.push({ ...source, sourceOffsetSeconds: seconds, sourceOffsetBeats: beats });
     }
     return after;
