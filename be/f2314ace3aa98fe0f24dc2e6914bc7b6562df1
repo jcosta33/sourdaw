@@ -1,0 +1,25 @@
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_29d8df116c5b92::t_b0f83b9f6aab8a 198,457-458,460,484
+.agents/skills/review-stances/correctness.md
+  s_29d8df116c5b92::t_2ca5faf484f52a 71-84
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_0b3cffea245a11 9-22
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_29d8df116c5b92::t_883296c7f77063 107-108,2171-2190,2192-2280,2282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bef2314ace3aa98fe0f24dc2e6914bc7b6562df1",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
