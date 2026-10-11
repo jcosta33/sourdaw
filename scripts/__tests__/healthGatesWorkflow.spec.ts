@@ -3738,7 +3738,13 @@ export -f sudo timeout sleep apt-get
         }
     };
 
-    const processGroupAlive = (pid: number): boolean => {
+    type OwnedProcessGroup = { pid: number | undefined };
+
+    const processGroupAlive = (group: OwnedProcessGroup): boolean => {
+        const pid = group.pid;
+        if (pid === undefined) {
+            return false;
+        }
         requireOwnedPid(pid);
         try {
             process.kill(-pid, 0);
@@ -3746,6 +3752,7 @@ export -f sudo timeout sleep apt-get
         } catch (error) {
             const code = (error as NodeJS.ErrnoException).code;
             if (code === 'ESRCH') {
+                group.pid = undefined;
                 return false;
             }
             if (code === 'EPERM') {
@@ -3755,13 +3762,21 @@ export -f sudo timeout sleep apt-get
         }
     };
 
-    const signalProcessGroup = (pid: number, signal: NodeJS.Signals): void => {
+    const signalProcessGroup = (group: OwnedProcessGroup, signal: NodeJS.Signals): void => {
+        const pid = group.pid;
+        if (pid === undefined) {
+            return;
+        }
         requireOwnedPid(pid);
         try {
             process.kill(-pid, signal);
         } catch (error) {
             const code = (error as NodeJS.ErrnoException).code;
-            if (code !== 'ESRCH' && code !== 'EPERM') {
+            if (code === 'ESRCH') {
+                group.pid = undefined;
+                return;
+            }
+            if (code !== 'EPERM') {
                 throw new Error(`ALSA probe cannot signal owned process group ${pid}: ${String(error)}`, {
                     cause: error,
                 });
@@ -3769,13 +3784,13 @@ export -f sudo timeout sleep apt-get
         }
     };
 
-    const waitForProcessGroupExit = async (pid: number): Promise<void> => {
+    const waitForProcessGroupExit = async (group: OwnedProcessGroup): Promise<void> => {
         const deadline = Date.now() + 2_000;
-        while (processGroupAlive(pid) && Date.now() < deadline) {
+        while (processGroupAlive(group) && Date.now() < deadline) {
             await new Promise((resolve) => setTimeout(resolve, 25));
         }
-        if (processGroupAlive(pid)) {
-            throw new Error(`ALSA probe process group ${pid} survived SIGKILL; fixture retained`);
+        if (processGroupAlive(group)) {
+            throw new Error(`ALSA probe process group ${group.pid} survived SIGKILL; fixture retained`);
         }
     };
 
@@ -3788,7 +3803,7 @@ export -f sudo timeout sleep apt-get
     const runAlsaInstall = async (
         run: string,
         succeedOnAttempt: number,
-        options: { stallChild?: boolean; timeoutMs?: number } = {}
+        options: { stallChild?: boolean; timeoutMs?: number; ownedGroup?: OwnedProcessGroup } = {}
     ): Promise<AlsaProbeResult> => {
         const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
         const attemptLog = join(probeDirectory, 'attempts.log');
@@ -3796,6 +3811,7 @@ export -f sudo timeout sleep apt-get
         const stalledPidFile = join(probeDirectory, 'stalled.pid');
         const preludePath = join(probeDirectory, 'functions.bash');
         let groupPid: number | undefined;
+        const ownedGroup = options.ownedGroup ?? { pid: undefined };
         try {
             writeFileSync(preludePath, alsaCommandFunctions);
             writeFileSync(attemptLog, '');
@@ -3814,6 +3830,7 @@ export -f sudo timeout sleep apt-get
                 },
             });
             groupPid = child.pid;
+            ownedGroup.pid = groupPid;
             let stderr = '';
             let childError: NodeJS.ErrnoException | undefined;
             let timedOut = false;
@@ -3833,15 +3850,13 @@ export -f sudo timeout sleep apt-get
             });
             const timeout = setTimeout(() => {
                 timedOut = true;
-                if (groupPid !== undefined) {
-                    signalProcessGroup(groupPid, 'SIGTERM');
-                }
+                signalProcessGroup(ownedGroup, 'SIGTERM');
                 resolveDeadline?.();
             }, options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS);
             const killAfter = setTimeout(
                 () => {
-                    if (timedOut && groupPid !== undefined && processGroupAlive(groupPid)) {
-                        signalProcessGroup(groupPid, 'SIGKILL');
+                    if (timedOut && processGroupAlive(ownedGroup)) {
+                        signalProcessGroup(ownedGroup, 'SIGKILL');
                     }
                 },
                 (options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS) + 200
@@ -3855,13 +3870,13 @@ export -f sudo timeout sleep apt-get
                 if (closedBeforeDeadline) {
                     clearTimeout(timeout);
                 }
-                if (timedOut && groupPid !== undefined) {
-                    await waitForProcessGroupExit(groupPid);
+                if (timedOut) {
+                    await waitForProcessGroupExit(ownedGroup);
                 }
                 closedResult = await closed;
-                if (!timedOut && groupPid !== undefined && processGroupAlive(groupPid)) {
-                    signalProcessGroup(groupPid, 'SIGKILL');
-                    await waitForProcessGroupExit(groupPid);
+                if (!timedOut && processGroupAlive(ownedGroup)) {
+                    signalProcessGroup(ownedGroup, 'SIGKILL');
+                    await waitForProcessGroupExit(ownedGroup);
                     throw new Error(`ALSA probe process group ${groupPid} outlived its direct child`);
                 }
             } finally {
@@ -3894,7 +3909,7 @@ export -f sudo timeout sleep apt-get
                 stalledPid: Number.isSafeInteger(stalledPid) && stalledPid > 1 ? stalledPid : undefined,
             });
         } finally {
-            if (groupPid === undefined || !processGroupAlive(groupPid)) {
+            if (!processGroupAlive(ownedGroup)) {
                 rmSync(probeDirectory, { force: true, recursive: true });
             }
         }
@@ -3942,13 +3957,36 @@ export -f sudo timeout sleep apt-get
     }
 
     it('reports a stalled ALSA child timeout, stops its process tree, and cleans up its fixture', async () => {
+        const ownedGroup: OwnedProcessGroup = { pid: undefined };
+        const kill = process.kill.bind(process);
+        const retiredIds = new Set<number>();
+        const retiredIdSignals: number[] = [];
+        const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+            if (signal !== 0 && retiredIds.has(pid)) {
+                // Model identifier reuse without ever signaling an unrelated process.
+                retiredIdSignals.push(pid);
+                return true;
+            }
+            try {
+                return kill(pid, signal);
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+                    retiredIds.add(pid);
+                }
+                throw error;
+            }
+        });
         const failure = await (async () => {
             try {
                 const alsaRun = stringAt(
                     stepNamed(jobAt(validationWorkflow, 'rust'), 'Install ALSA development headers'),
                     'run'
                 );
-                await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER, { stallChild: true, timeoutMs: 100 });
+                await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER, {
+                    stallChild: true,
+                    timeoutMs: 100,
+                    ownedGroup,
+                });
                 throw new Error('Expected the stalled ALSA child to fail with a bounded timeout');
             } catch (error) {
                 if (!(error instanceof Error)) {
@@ -3966,16 +4004,6 @@ export -f sudo timeout sleep apt-get
                 };
             }
         })();
-        const killRecordedProcess = (pid: number, group: boolean): void => {
-            requireOwnedPid(pid);
-            try {
-                process.kill(group ? -pid : pid, 'SIGKILL');
-            } catch (error) {
-                if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
-                    throw error;
-                }
-            }
-        };
         try {
             expect(failure.message).toContain('error=ETIMEDOUT; status=null; signal=SIGTERM');
             expect(failure.message.length).toBeLessThanOrEqual(
@@ -3993,28 +4021,30 @@ export -f sudo timeout sleep apt-get
                 throw new Error('The ALSA probe did not expose its stalled child PID');
             }
             const stalledPid = failure.stalledPid;
-            expect(() => process.kill(stalledPid, 0)).toThrow();
+            expect(() => process.kill(stalledPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
             expect(failure.groupPid).toBeDefined();
             if (failure.groupPid === undefined) {
                 throw new Error('The ALSA probe did not expose its process group');
             }
             const groupPid = failure.groupPid;
             requireOwnedPid(groupPid);
-            expect(() => process.kill(-groupPid, 0)).toThrow();
+            expect(() => process.kill(-groupPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+            expect(retiredIds).toContain(-groupPid);
+            expect(ownedGroup.pid).toBeUndefined();
         } finally {
-            if (failure.groupPid !== undefined) {
-                killRecordedProcess(failure.groupPid, true);
-            }
-            if (failure.stalledPid !== undefined) {
-                killRecordedProcess(failure.stalledPid, false);
-            }
-            if (failure.groupPid !== undefined) {
-                await waitForProcessGroupExit(failure.groupPid);
-            }
-            if (failure.probeDirectory !== undefined) {
-                rmSync(failure.probeDirectory, { force: true, recursive: true });
+            try {
+                if (processGroupAlive(ownedGroup)) {
+                    signalProcessGroup(ownedGroup, 'SIGKILL');
+                    await waitForProcessGroupExit(ownedGroup);
+                }
+                if (failure.probeDirectory !== undefined) {
+                    rmSync(failure.probeDirectory, { force: true, recursive: true });
+                }
+            } finally {
+                killSpy.mockRestore();
             }
         }
+        expect(retiredIdSignals).toEqual([]);
     });
 
     it('fails every Linux browser install step after its third failed attempt', () => {

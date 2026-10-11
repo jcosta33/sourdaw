@@ -57,6 +57,14 @@ Await process-group shutdown independently of Node's `close` event: a surviving 
 
 PR #5320's plain spinning grandchild died on the initial group `SIGTERM`, so deleting the independent group-exit wait still passed the stalled-child case. Make the nested published apt fixture ignore `TERM` and close its inherited stderr before spinning: the direct child and Node's `close` can finish while the owned grandchild remains. The unchanged case must fail separately when only the timeout path's group-exit wait is deleted and when group signaling is replaced with direct-PID signaling; its final rescue must kill and await the owned group before removing the fixture.
 
+The first #5320 stalled-case rescue signaled the recorded group and descendant again after
+its assertions observed `ESRCH`. Numeric validation bounded the identifiers but did not
+preserve ownership after absence; a reused identifier could target another process. Retire
+the owned group on its first `ESRCH`, share that ownership through helper shutdown and final
+rescue, and never signal the raw descendant PID. Intercept every nonzero signal after a real
+absence observation, model reuse without forwarding it, and require zero retired-ID signals.
+Keep live-group rescue and fixture removal after independently observed group exit.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
