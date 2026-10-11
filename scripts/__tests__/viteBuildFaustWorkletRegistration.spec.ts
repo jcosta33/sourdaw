@@ -86,13 +86,14 @@ async function loadShippingConfig(): Promise<UserConfig> {
 }
 
 /**
- * Bundle and minify the generators with the shipping `build`, `esbuild`, `oxc`,
- * and `resolve` settings. Only the entry and the output format differ: CommonJS
+ * Bundle and minify the generators with the shipping plugins, `build`, `esbuild`,
+ * `oxc`, and `resolve` settings. Only the entry and the output format differ: CommonJS
  * lets `node:vm` evaluate the chunks as scripts, and it mangles top-level names
  * as the ES chunks the app ships do.
  */
 async function bundleGenerators(config: UserConfig): Promise<GeneratorBundle> {
     const shippingBuild = config.build ?? {};
+    const shippingPlugins = config.plugins ?? [];
     const shippingRolldown = shippingBuild.rolldownOptions ?? {};
     const shippingOutput = shippingRolldown.output ?? {};
     if (Array.isArray(shippingOutput)) {
@@ -107,6 +108,7 @@ async function bundleGenerators(config: UserConfig): Promise<GeneratorBundle> {
         esbuild: config.esbuild,
         oxc: config.oxc,
         plugins: [
+            ...shippingPlugins,
             {
                 name: 'sourdaw-faust-generators-entry',
                 resolveId: (id: string) => (id === VIRTUAL_ENTRY_ID ? RESOLVED_VIRTUAL_ENTRY_ID : null),
@@ -227,6 +229,7 @@ function createWorkletProbe(): WorkletProbe {
     const registeredNames: string[] = [];
     const constructedNames: string[] = [];
     const processors = new Map<string, Processor>();
+    const processorNames = new Map<Processor, string>();
     class ProbeWasmInstance {
         readonly exports: Record<string, unknown>;
 
@@ -253,6 +256,14 @@ function createWorkletProbe(): WorkletProbe {
     const scope = vm.createContext({
         AudioWorkletProcessor: class {
             readonly port = { postMessage: () => {}, addEventListener: () => {}, start: () => {} };
+
+            constructor() {
+                const name = processorNames.get(new.target);
+                if (!name) {
+                    throw new Error('constructed an unregistered AudioWorkletProcessor');
+                }
+                constructedNames.push(name);
+            }
         },
         WebAssembly: { Memory: WebAssembly.Memory, Table: WebAssembly.Table, Instance: ProbeWasmInstance },
         sampleRate: 48_000,
@@ -261,6 +272,7 @@ function createWorkletProbe(): WorkletProbe {
         registerProcessor: (name: string, processor: Processor & { parameterDescriptors?: unknown }) => {
             void processor.parameterDescriptors;
             processors.set(name, processor);
+            processorNames.set(processor, name);
             registeredNames.push(name);
         },
     });
@@ -273,7 +285,6 @@ function createWorkletProbe(): WorkletProbe {
                 throw new Error(`The node name '${name}' is not defined in AudioWorkletGlobalScope.`);
             }
             new processor(options);
-            constructedNames.push(name);
         },
         audioWorklet: {
             addModule: async (url: string) => {
