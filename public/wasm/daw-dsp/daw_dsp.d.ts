@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:bbf22dada12bff6426bb01f827e34bbcbe8e15ef81dc066a22a476acaf1c6583
+// @wasm-bindgen-dts crate-source: sha256:5aa276f905bdf922690034e899bbdc2c31ddef73e06b8ebd2d70b801ca71b625
 /* tslint:disable */
 /* eslint-disable */
 
@@ -716,8 +716,15 @@ export class LevainInstance {
      */
     add_legato_transition(interval: number, transition_type: number, dynamic: number, sample_id: number, crossfade_out_ms: number): void;
     /**
-     * Add a sample to the uniquely-owned loading bank. `data` is interleaved
-     * f32 PCM. Returns `None` if the bank is already shared or exceeds limits.
+     * Add a whole sample to the uniquely-owned loading bank in one call. `data`
+     * is interleaved f32 PCM. Returns `None` if the bank is already shared or
+     * exceeds limits.
+     *
+     * Not what the worklet calls: copying a whole sample is one message-sized
+     * cost on the render thread, which `begin_sample`, `sample_write_ptr` and
+     * `commit_sample_frames` bound to one chunk. The native host (which builds
+     * banks on a control thread) and the pinned wasm measurement recipes
+     * (`benches/wasm/deviceRecipes.js`) still use this one.
      */
     add_sample(data: Float32Array, frame_count: number, channels: number, sample_rate: number): number | undefined;
     /**
@@ -744,6 +751,17 @@ export class LevainInstance {
      */
     attach_sample_bank(bank_key: string): boolean;
     /**
+     * Start uploading a sample into the staged bank, reserving storage for
+     * all of its PCM. Returns the id the sample will have once sealed, or
+     * `None` when the engine refuses (no staged bank, a sample already open,
+     * a shared bank, or limits exceeded).
+     *
+     * This is the one allocation of the upload: the chunks that follow
+     * (`sample_write_ptr`, `commit_sample_frames`) allocate nothing and each
+     * copies at most `LEVAIN_SAMPLE_CHUNK_FLOATS` floats.
+     */
+    begin_sample(frame_count: number, channels: number, sample_rate: number): number | undefined;
+    /**
      * Reset this device to a uniquely-owned empty loading bank.
      */
     begin_sample_bank(instrument_id: string): void;
@@ -763,6 +781,18 @@ export class LevainInstance {
      * that slot still holds an earlier bank.
      */
     commit_sample_bank(): boolean;
+    /**
+     * Count `float_count` floats the host wrote at `sample_write_ptr` as part
+     * of the open sample. Allocates nothing. Refuses (false) for another
+     * sample id or a count above `sample_write_floats`.
+     *
+     * # Safety
+     *
+     * The caller must have written `float_count` floats at the address
+     * `sample_write_ptr` returned for this sample. Nothing in Rust can check
+     * that the host did.
+     */
+    commit_sample_frames(sample_id: number, float_count: number): boolean;
     /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
@@ -841,6 +871,26 @@ export class LevainInstance {
      * Decoded PCM bytes retained by this instance's current shared bank.
      */
     sample_bank_bytes(): number;
+    /**
+     * Floats the host may write at `sample_write_ptr` next: what the open
+     * sample still needs, at most `LEVAIN_SAMPLE_CHUNK_FLOATS`. Zero when
+     * `sample_id` is not the open sample.
+     */
+    sample_write_floats(sample_id: number): number;
+    /**
+     * Address in this module's linear memory where the next chunk of the open
+     * sample goes, or 0 when `sample_id` is not the open sample. Write at most
+     * `sample_write_floats` floats there, then call `commit_sample_frames`.
+     * Read the module's `memory.buffer` after this call: growing it
+     * elsewhere detaches earlier buffers.
+     */
+    sample_write_ptr(sample_id: number): number;
+    /**
+     * Publish the open sample once every one of its floats is written.
+     * Allocates and frees nothing. Returns false, leaving the sample open,
+     * for another id or a short sample.
+     */
+    seal_sample(sample_id: number): boolean;
     /**
      * Tell the engine which instrument id is now loaded (e.g. `violin-1`,
      * `cello`, `trumpet`). The realism layer uses this to pick its body
@@ -999,6 +1049,25 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
+    readonly gluteninstance_get_crest: (a: number) => number;
+    readonly gluteninstance_get_gr_db: (a: number) => number;
+    readonly gluteninstance_get_input_db: (a: number) => number;
+    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_latency_samples: (a: number) => number;
+    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
+    readonly gluteninstance_get_output_db: (a: number) => number;
+    readonly gluteninstance_get_phase_corr: (a: number) => number;
+    readonly gluteninstance_get_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
+    readonly gluteninstance_new: (a: number) => number;
+    readonly gluteninstance_process: (a: number, b: number) => number;
+    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
+    readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number];
+    readonly init_panic_hook: () => void;
     readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
     readonly __wbg_crumbsinstance_free: (a: number, b: number) => void;
     readonly __wbg_levaininstance_free: (a: number, b: number) => void;
@@ -1039,10 +1108,12 @@ export interface InitOutput {
     readonly levaininstance_add_zone: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number) => void;
     readonly levaininstance_all_notes_off: (a: number) => void;
     readonly levaininstance_attach_sample_bank: (a: number, b: number, c: number) => number;
+    readonly levaininstance_begin_sample: (a: number, b: number, c: number, d: number) => number;
     readonly levaininstance_begin_sample_bank: (a: number, b: number, c: number) => void;
     readonly levaininstance_build_zone_map: (a: number, b: number, c: number) => number;
     readonly levaininstance_clear_zones: (a: number) => void;
     readonly levaininstance_commit_sample_bank: (a: number) => number;
+    readonly levaininstance_commit_sample_frames: (a: number, b: number, c: number) => number;
     readonly levaininstance_get_nan_flush_count: (a: number) => number;
     readonly levaininstance_get_right_ptr: (a: number) => number;
     readonly levaininstance_handle_cc: (a: number, b: number, c: number) => void;
@@ -1059,6 +1130,9 @@ export interface InitOutput {
     readonly levaininstance_release_retired_bank: (a: number, b: number) => number;
     readonly levaininstance_retire_sample_bank: (a: number) => number;
     readonly levaininstance_sample_bank_bytes: (a: number) => number;
+    readonly levaininstance_sample_write_floats: (a: number, b: number) => number;
+    readonly levaininstance_sample_write_ptr: (a: number, b: number) => number;
+    readonly levaininstance_seal_sample: (a: number, b: number) => number;
     readonly levaininstance_set_instrument: (a: number, b: number, c: number) => void;
     readonly levaininstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbg_crustinstance_free: (a: number, b: number) => void;
@@ -1117,7 +1191,6 @@ export interface InitOutput {
     readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
     readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
     readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
-    readonly init_panic_hook: () => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly __wbg_toasterinstance_free: (a: number, b: number) => void;
@@ -1177,8 +1250,6 @@ export interface InitOutput {
     readonly toasterinstance_set_pad_param_lock_by_id: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-    readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
-    readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number];
     readonly __wbg_proofinstance_free: (a: number, b: number) => void;
     readonly proofinstance_get_ab_gain_offset: (a: number) => number;
     readonly proofinstance_get_correlation: (a: number) => number;
@@ -1203,22 +1274,6 @@ export interface InitOutput {
     readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly proofinstance_reset_integrated: (a: number) => void;
     readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
-    readonly gluteninstance_get_crest: (a: number) => number;
-    readonly gluteninstance_get_gr_db: (a: number) => number;
-    readonly gluteninstance_get_input_db: (a: number) => number;
-    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_latency_samples: (a: number) => number;
-    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
-    readonly gluteninstance_get_output_db: (a: number) => number;
-    readonly gluteninstance_get_phase_corr: (a: number) => number;
-    readonly gluteninstance_get_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
-    readonly gluteninstance_new: (a: number) => number;
-    readonly gluteninstance_process: (a: number, b: number) => number;
-    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
