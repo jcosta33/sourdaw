@@ -191,6 +191,8 @@ export type ScheduleTrackAutomationInput = {
     sendAutomationParams?: ReadonlyMap<string, AudioParam>;
     deviceEntries: ScheduleTrackAutomationDeviceEntry[];
     durationSeconds: number;
+    /** The tempo before the first tempo change; the modulator path's seconds-to-beat inverse consumes it. */
+    defaultTempo: number;
     changes: AutomationTempoChange[];
     /**
      * Seconds between live slew ticks — `scheduleGrainMs / 1000`, read off the
@@ -515,6 +517,7 @@ export function scheduleTrackAutomation({
     sendAutomationParams,
     deviceEntries,
     durationSeconds,
+    defaultTempo,
     changes,
     slewTickSeconds,
     deviceParameterLaw,
@@ -1126,7 +1129,7 @@ export function scheduleTrackAutomation({
             changes,
             regionStartBeat,
             regionStartSeconds,
-            projectBeatToSeconds: projectBeat,
+            projectBeatToSeconds,
             sampleRate,
             compensationDelaySec,
             clampStep: (value) =>

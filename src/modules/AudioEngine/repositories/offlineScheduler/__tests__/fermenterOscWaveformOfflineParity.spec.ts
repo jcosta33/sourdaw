@@ -106,6 +106,7 @@ function runOfflineSchedule(lanes: AutomationLane[]): ScheduledCall[] {
         trackPanNode: { pan: {} } as unknown as StereoPannerNode,
         deviceEntries: [{ deviceId: DEVICE_ID, deviceType: 'fermenter', contributesAudio: true, strategy }],
         durationSeconds: 2,
+        defaultTempo: 120,
         changes: [],
         projectBeatToSeconds: constantTempoProjector(120),
         slewTickSeconds: SLEW_TICK_SECONDS,

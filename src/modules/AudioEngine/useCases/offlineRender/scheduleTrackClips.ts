@@ -332,6 +332,7 @@ export async function scheduleTrackClips({
             sendAutomationParams,
             deviceEntries,
             durationSeconds,
+            defaultTempo,
             changes,
             // The live slew runs one step per scheduler tick, and the scheduler
             // ticks every `scheduleGrainMs`. Reading the same state is what keeps

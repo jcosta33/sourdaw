@@ -140,7 +140,12 @@ const FIXTURE_FLAT_TEMPO_BPM = 120;
 
 export type ScheduleTrackAutomationFixtureInput = Omit<
     ScheduleTrackAutomationInput,
-    'slewTickSeconds' | 'deviceParameterLaw' | 'resolveLaneCeiling' | 'deviceEntries' | 'projectBeatToSeconds'
+    | 'slewTickSeconds'
+    | 'deviceParameterLaw'
+    | 'resolveLaneCeiling'
+    | 'deviceEntries'
+    | 'projectBeatToSeconds'
+    | 'defaultTempo'
 > &
     Partial<
         Pick<
@@ -151,8 +156,10 @@ export type ScheduleTrackAutomationFixtureInput = Omit<
         deviceEntries: ReadonlyArray<FixtureDeviceEntry>;
         /**
          * The flat tempo of the beat projection a case that passes no
-         * `projectBeatToSeconds` rides. The scheduler owns no tempo integrator,
-         * so a case about a tempo map states its projection explicitly.
+         * `projectBeatToSeconds` rides, and the scheduler's own `defaultTempo` —
+         * the modulator path's seconds-to-beat inverse. The scheduler owns no
+         * tempo integrator, so a case about a tempo map states its projection
+         * explicitly.
          */
         defaultTempo?: number;
     };
@@ -164,6 +171,7 @@ export function scheduleTrackAutomationFixture(input: ScheduleTrackAutomationFix
         slewTickSeconds: SHIPPING_GRAIN_SLEW_TICK_SECONDS,
         deviceParameterLaw: legacyFixtureDeviceLaw(deviceEntries),
         resolveLaneCeiling: declaredCeiling,
+        defaultTempo,
         projectBeatToSeconds: constantTempoProjector(defaultTempo),
         ...rest,
         // `contributesAudio` first, so an entry that states its own value wins.
