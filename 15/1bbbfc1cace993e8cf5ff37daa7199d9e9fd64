@@ -1,0 +1,14 @@
+tests/e2e/transportDeep.spec.ts
+  h_1228e573df1f42 98-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "151bbbfc1cace993e8cf5ff37daa7199d9e9fd64",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
