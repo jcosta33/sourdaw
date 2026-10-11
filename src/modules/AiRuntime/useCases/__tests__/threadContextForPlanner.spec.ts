@@ -352,9 +352,21 @@ describe('thread context for the planner', () => {
                 confirmationId: 'confirmation:run-scheduled:assistant-1',
                 batchPosition: { index: 2, total: 3 },
             });
-            expect(readSection(buildContext(thread).message)).toMatchObject({
-                pendingProposal: { confirmationId: 'confirmation:run-scheduled:assistant-1' },
-            });
+            const context = buildContext(thread);
+            for (const profile of ['local', 'hosted'] as const) {
+                const message = profile === 'local' ? context.localMessage : context.message;
+                const section = readSection(message);
+                expect(section).toMatchObject({
+                    pendingProposal: {
+                        trust: 'untrusted_project_data',
+                        confirmationId: 'confirmation:run-scheduled:assistant-1',
+                        batchPosition: { index: 2, total: 3 },
+                    },
+                });
+                expect(
+                    new TextEncoder().encode(fitThreadContext(thread!, profile).section).byteLength
+                ).toBeLessThanOrEqual(THREAD_CONTEXT_MAX_BYTES[profile]);
+            }
         });
 
         it('carries the newer of two live proposals on different messages', () => {

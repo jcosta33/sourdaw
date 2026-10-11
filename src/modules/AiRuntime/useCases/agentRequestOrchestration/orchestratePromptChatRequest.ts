@@ -19,6 +19,7 @@ import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { appendChatMessage, setActiveAborter, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
 import { describePlanningOutcome } from '../../transformers/describePlanningOutcome';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
+import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
@@ -276,26 +277,38 @@ function proposesForApproval(request: PromptChatRequestInput): boolean {
  * A preview or plan of a request that spans several batches could show only its first batch, which
  * would read as the whole change, so the run refuses it instead.
  */
-function refuseScheduledPlanInMode(
+async function refuseScheduledPlanInMode(
     request: PromptChatRequestInput,
     admission: PromptRequestAdmission,
-    batchCount: number
-): void {
-    refusePlannedRequest(
+    batchCount: number,
+    actions: PromptPlanResult['actions']
+): Promise<void> {
+    await refusePlannedRequest(
         request,
         admission,
         `This request runs as ${String(batchCount)} successive batches, which only apply mode can run one approval at a time.`,
-        'authorization'
+        'authorization',
+        actions
     );
 }
 
+/** Before confirmation owns them, prepared import stems still belong to their planning run. */
+async function discardUntransferredPreparedStems(runId: string, actions: PromptPlanResult['actions']): Promise<void> {
+    const stems = actions.flatMap((action) => (action.type === 'importStemSet' ? action.payload.stems : []));
+    if (stems.length > 0) {
+        await preparedStemImportResources.discard({ runId, stems });
+    }
+}
+
 /** Ends the run on a plan it will not carry out and tells the user why, beside their request. */
-function refusePlannedRequest(
+async function refusePlannedRequest(
     request: PromptChatRequestInput,
     admission: PromptRequestAdmission,
     reason: string,
-    category: 'authorization' | 'conflict'
-): void {
+    category: 'authorization' | 'conflict',
+    actions: PromptPlanResult['actions']
+): Promise<void> {
+    await discardUntransferredPreparedStems(admission.runId, actions);
     tryRecordTerminalFailure({
         runId: admission.runId,
         error: normalizeAgentFailure({ category, source: 'provider-planning', knownDomain: true }),
@@ -317,7 +330,7 @@ function refusePlannedRequest(
 }
 
 type RefinementAdmission =
-    | { status: 'refused' }
+    | { status: 'refused'; reason: string; category: 'authorization' | 'conflict' }
     | Extract<ReturnType<typeof refinedProposalSupersession.admit>, { status: 'admitted' }>
     | { status: 'none' };
 
@@ -328,27 +341,20 @@ type RefinementAdmission =
  * left behind by a project switch while the planner ran, it is refused and the run ends with that
  * reason instead of leaving a second applicable card for the same change.
  */
-function admitRefinement(
-    request: PromptChatRequestInput,
-    admission: PromptRequestAdmission,
-    refines: string | undefined
-): RefinementAdmission {
+function admitRefinement(request: PromptChatRequestInput, refines: string | undefined): RefinementAdmission {
     if (refines === undefined) {
         return { status: 'none' };
     }
     if (!proposesForApproval(request)) {
-        refusePlannedRequest(
-            request,
-            admission,
-            `Refining a pending proposal replaces it with a new one for approval, which ${request.interactionMode} mode never proposes.`,
-            'authorization'
-        );
-        return { status: 'refused' };
+        return {
+            status: 'refused',
+            reason: `Refining a pending proposal replaces it with a new one for approval, which ${request.interactionMode} mode never proposes.`,
+            category: 'authorization',
+        };
     }
     const refined = refinedProposalSupersession.admit(refines);
     if (refined.status === 'refused') {
-        refusePlannedRequest(request, admission, refined.reason, 'conflict');
-        return { status: 'refused' };
+        return { status: 'refused', reason: refined.reason, category: 'conflict' };
     }
     return refined;
 }
@@ -421,11 +427,12 @@ async function dispatchPromptPlan(input: {
         return undefined;
     }
     if (result.actions.length > 0 && result.batchSchedule !== undefined && !runsScheduledBatches(request)) {
-        refuseScheduledPlanInMode(request, admission, result.batchSchedule.total);
+        await refuseScheduledPlanInMode(request, admission, result.batchSchedule.total, result.actions);
         return undefined;
     }
-    const refinement = result.actions.length > 0 ? admitRefinement(request, admission, result.refines) : null;
+    const refinement = result.actions.length > 0 ? admitRefinement(request, result.refines) : null;
     if (refinement?.status === 'refused') {
+        await refusePlannedRequest(request, admission, refinement.reason, refinement.category, result.actions);
         return undefined;
     }
     if (result.actions.length > 0) {

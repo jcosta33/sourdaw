@@ -42,4 +42,33 @@ describe('diffProposalCommands', () => {
             unchangedCount: 1,
         });
     });
+
+    it('does not assign a fresh clip to either old clip when both share one target', () => {
+        const first = {
+            type: 'addClip',
+            payload: { trackId: 'midi-1', clipId: 'clip-old-a', name: 'Verse', startBeat: 0, endBeat: 4 },
+        };
+        const second = {
+            type: 'addClip',
+            payload: { trackId: 'midi-1', clipId: 'clip-old-b', name: 'Chorus', startBeat: 4, endBeat: 8 },
+        };
+        const replacement = {
+            type: 'addClip',
+            payload: { trackId: 'midi-1', clipId: 'clip-fresh', name: 'Bridge', startBeat: 0, endBeat: 8 },
+        };
+
+        expect(
+            diffProposalCommands(
+                { actions: [first, second], actionLabels: ['Verse clip', 'Chorus clip'] },
+                { actions: [replacement], actionLabels: ['Bridge clip'] }
+            )
+        ).toEqual({
+            changes: [
+                { kind: 'added', actionType: 'addClip', label: 'Bridge clip' },
+                { kind: 'removed', actionType: 'addClip', label: 'Verse clip' },
+                { kind: 'removed', actionType: 'addClip', label: 'Chorus clip' },
+            ],
+            unchangedCount: 0,
+        });
+    });
 });

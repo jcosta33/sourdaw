@@ -75,7 +75,9 @@ function mentionsOperation(clause: string, actionType: string): boolean {
 
 function isNegatedRemoval(clause: string, removalIndex: number): boolean {
     const beforeRemoval = clause.slice(0, removalIndex);
-    return /\b(?:not|never|don't|can't|cannot|avoid|without)\s+(?:\w+\s+){0,2}$/i.test(beforeRemoval);
+    return /\b(?:(?:do not|don't)\s+want(?:\s+you)?\s+to\s+|(?:not|never|don't|can't|cannot|avoid|without)\s+(?:\w+\s+){0,2})$/i.test(
+        beforeRemoval
+    );
 }
 
 function explicitlyRemovesCommand(prompt: string, command: Command, context: ProjectContext): boolean {

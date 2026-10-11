@@ -16,9 +16,8 @@ type ProposalCommandChange =
 type ProposalCommandDiff = { changes: ProposalCommandChange[]; unchangedCount: number };
 
 /**
- * The payload fields that say which object a command acts on, as the payload carries them. Two
- * commands of one type on the same targets are the same command changed; anything else in the
- * payload is a value the refinement may have changed.
+ * The payload fields that say which object a command acts on, as the payload carries them.
+ * Repeated commands on one target still need occurrence evidence before a changed-value pairing.
  */
 const TARGET_IDENTITY_FIELDS = ['trackId', 'busId', 'deviceId', 'parameterId', 'sendId'] as const;
 
@@ -83,9 +82,9 @@ function changedFields(
 
 /**
  * What a replacement proposal changes against the proposal it replaced, command by command. A
- * command is matched by its action type and the targets its payload names; a match whose payload
- * differs is changed, with each differing field's previous and new value, and an unmatched command
- * was added or removed. Commands left exactly as they were are counted, not listed.
+ * Exact command occurrences match first. A differing command is paired by type and target only
+ * when one unmatched occurrence remains on each side; otherwise its lineage is ambiguous and the
+ * comparison reports additions and removals without claiming which old value changed.
  */
 export function diffProposalCommands(previous: ProposalCommands, next: ProposalCommands): ProposalCommandDiff {
     const previousCommands = keyCommands(previous);
@@ -111,13 +110,17 @@ export function diffProposalCommands(previous: ProposalCommands, next: ProposalC
         if (exactNext.has(nextIndex)) {
             continue;
         }
-        const previousIndex = previousCommands.findIndex(
-            (candidate, index) => !matchedPrevious.has(index) && candidate.identity === command.identity
+        const previousCandidates = previousCommands.flatMap((candidate, index) =>
+            !matchedPrevious.has(index) && candidate.identity === command.identity ? [index] : []
         );
-        if (previousIndex < 0) {
+        const nextCandidates = nextCommands.filter(
+            (candidate, index) => !exactNext.has(index) && candidate.identity === command.identity
+        );
+        if (previousCandidates.length !== 1 || nextCandidates.length !== 1) {
             changes.push({ kind: 'added', actionType: command.actionType, label: command.label });
             continue;
         }
+        const previousIndex = previousCandidates[0]!;
         matchedPrevious.add(previousIndex);
         const fields = changedFields(previousCommands[previousIndex]!.payload, command.payload);
         if (fields.length === 0) {

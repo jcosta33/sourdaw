@@ -37,11 +37,14 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { agentRunStore } from '../../stores/agentRunStore';
 import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
+    pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
@@ -968,6 +971,74 @@ describe('stem import and starting mix workflow', () => {
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expectPreparedStemResourcesReleased(1);
         expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('releases the newly prepared stems when the predecessor is cancelled during refinement planning', async () => {
+        const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
+        await sendChatMessage(PROMPT);
+        const predecessorId = confirmationId();
+        const predecessorRunId = getPendingActionConfirmation(predecessorId)?.runId;
+        expect(predecessorRunId).toBeTruthy();
+        const priorRunIds = new Set(agentRunStore.value?.runs.map((run) => run.runId) ?? []);
+
+        const nextFile = new File(['replacement stem'], 'Replacement_120.wav', { type: 'audio/wav' });
+        mocks.pickFiles.mockImplementationOnce(async () => {
+            expect(await cancelPendingChatActions({ confirmationId: predecessorId })).toEqual({ status: 'cancelled' });
+            return [nextFile];
+        });
+        let capturedPendingId: string | undefined;
+        mocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) => {
+            const thread = getProviderSection(userMessage, 'thread_context');
+            const pending = thread.pendingProposal;
+            if (isRecord(pending) && typeof pending.confirmationId === 'string') {
+                capturedPendingId = pending.confirmationId;
+            }
+            const receipts = hasApplicationToolReceiptContext(userMessage)
+                ? getApplicationToolReceipts(userMessage)
+                : [];
+            const calls = getProviderCallsForUserMessage(userMessage, (plan) => plan, receipts);
+            return Promise.resolve(
+                JSON.stringify(
+                    calls.map((call) =>
+                        call.name === 'command.batch.propose'
+                            ? { ...call, arguments: { ...call.arguments, refines: predecessorId } }
+                            : call
+                    )
+                )
+            );
+        });
+
+        await sendChatMessage(PROMPT);
+
+        expect(capturedPendingId).toBe(predecessorId);
+        expect(getPendingActionConfirmation(predecessorId)).toMatchObject({
+            status: 'cancelled',
+            supersededBy: null,
+        });
+        expect(
+            (pendingActionConfirmationStore.value?.confirmations ?? []).filter((item) => item.status === 'proposed')
+        ).toEqual([]);
+        expect(trackStore.value?.tracks).toEqual(originalTracks);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-Replacement_120.wav');
+        expect(
+            mocks.prepareDurableCleanupRecovery.mock.calls.some(([, bindings]) =>
+                bindings.some(
+                    (binding: { leaseId: string; expectedHash: string }) =>
+                        binding.leaseId === 'lease-Replacement_120.wav' &&
+                        binding.expectedHash === 'hash-Replacement_120.wav'
+                )
+            )
+        ).toBe(true);
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledWith('stem-cleanup:["lease-Replacement_120.wav"]');
+        const refinementRun = agentRunStore.value?.runs.find((run) => !priorRunIds.has(run.runId));
+        expect(refinementRun).toMatchObject({
+            phase: 'failed',
+            temporaryAssets: [expect.objectContaining({ assetId: 'buffer-Replacement_120.wav', status: 'released' })],
+        });
+        expect(agentRunLifecycle.get(predecessorRunId!)?.phase).toBe('cancelled');
+        expect(chatStore.value?.messages.findLast((message) => message.role === 'assistant')?.error).toContain(
+            'The proposal this request refines is no longer pending'
+        );
     });
 
     it('asks for reapproval instead of discarding a stale proposal, keeping prepared resources and the locally added track intact until the second confirm commits', async () => {

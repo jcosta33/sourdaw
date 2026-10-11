@@ -437,6 +437,7 @@ describe('refining the pending proposal', () => {
 
     it.each([
         'Do not drop Guitar Left pan from the pending proposal. Set Lead Vocal gain to 80%, pan Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.',
+        'I do not want you to drop Guitar Left pan from the pending proposal. Set Lead Vocal gain to 80%, pan Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.',
         'Set Lead Vocal gain to 80%, do not drop Guitar Left pan, pan Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.',
     ])('keeps the pending card when the user explicitly says not to drop its pan: %s', async (prompt) => {
         let pendingId = '';
