@@ -1,0 +1,18 @@
+scripts/__tests__/prValidationScope.spec.ts
+  h_beb54bf43b47b7 380-388,509,512-516,633-635,762-771,910-912,1255-1256,1274,1464,1466,1491-1611
+scripts/e2eCollectorInventory.ts
+  h_beb54bf43b47b7 1-113
+scripts/prValidationScope.ts
+  h_beb54bf43b47b7 7,170-172,577-582
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d9f11cd2dd111811f67410dcd5ab190221dc5bc",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
