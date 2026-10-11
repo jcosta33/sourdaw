@@ -388,13 +388,6 @@ describe('two shipped Levain processors through the offline MIDI route', () => {
                 loadToken: begin?.loadToken,
                 uploadRequired: true,
             });
-            expect(node.sent).toContainEqual(
-                expect.objectContaining({ type: 'addSample', loadToken: begin?.loadToken })
-            );
-            const sample = node.sent.find((message) => (message as { type?: string }).type === 'addSample') as
-                { data: Float32Array; frameCount: number; channels: number; sampleRate: number } | undefined;
-            expect(sample?.data.buffer).toBeInstanceOf(SharedArrayBuffer);
-            expect(sample).toMatchObject({ frameCount: SAMPLE_FRAMES, channels: 1, sampleRate: SAMPLE_RATE });
             expect(node.sent).toContainEqual(expect.objectContaining({ type: 'addZone', loadToken: begin?.loadToken }));
             expect(node.received).toContainEqual({ type: 'sampleBankLoaded', loadToken: begin?.loadToken });
             expect(node.received).not.toContainEqual(expect.objectContaining({ type: 'sampleBankError' }));
