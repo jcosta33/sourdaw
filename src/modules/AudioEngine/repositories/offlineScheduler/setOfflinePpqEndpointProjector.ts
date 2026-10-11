@@ -2,6 +2,7 @@ import {
     offlinePpqEndpointProjectorState,
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
+    type OfflineBeatAtSecondsFromAnchor,
 } from './offlinePpqEndpointProjectorState';
 
 type SetOfflinePpqEndpointProjectorInput = {
@@ -15,12 +16,16 @@ type SetOfflinePpqEndpointProjectorInput = {
      * one until someone listens, so the composition root must name it.
      */
     resolveTempoAtBeat: OfflineTempoAtBeatResolver;
+    /** Required for moving modulation/layers; lane-only recording needs only the forward map. */
+    beatAtSecondsFromAnchor?: OfflineBeatAtSecondsFromAnchor;
 };
 
 export function setOfflinePpqEndpointProjector({
     project,
     resolveTempoAtBeat,
+    beatAtSecondsFromAnchor,
 }: SetOfflinePpqEndpointProjectorInput): void {
     offlinePpqEndpointProjectorState.project = project;
     offlinePpqEndpointProjectorState.resolveTempoAtBeat = resolveTempoAtBeat;
+    offlinePpqEndpointProjectorState.beatAtSecondsFromAnchor = beatAtSecondsFromAnchor ?? null;
 }

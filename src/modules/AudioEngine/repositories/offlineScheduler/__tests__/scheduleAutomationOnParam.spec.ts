@@ -3,6 +3,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { scheduleAutomationOnParam } from '../scheduleAutomationOnParam';
 
+import { constantTempoProjector } from './constantTempoProjector';
+
+const AT_120_BPM = constantTempoProjector(120);
+
 function makeParam() {
     return {
         value: 0,
@@ -16,7 +20,7 @@ function point(overrides: Partial<AutomationPoint> & { beat: number; value: numb
     return { curve: 'linear', tension: 0, ...overrides };
 }
 
-// 120 bpm, no tempo changes → beatToSeconds(beat) === beat / 2.
+// 120 bpm, no tempo changes → the projection is beat / 2.
 describe('scheduleAutomationOnParam — latency compensation (M-038)', () => {
     /// Regression: clip scheduling shifts audio by the track's compensation
     /// delay while automation stayed at uncompensated times, so automation
@@ -27,10 +31,9 @@ describe('scheduleAutomationOnParam — latency compensation (M-038)', () => {
             param as unknown as AudioParam,
             [point({ beat: 0, value: 0.2 }), point({ beat: 4, value: 0.8 })],
             10,
-            120,
             [],
             0,
-            undefined,
+            AT_120_BPM,
             0.25
         );
 
@@ -49,8 +52,9 @@ describe('scheduleAutomationOnParam — latency compensation (M-038)', () => {
             param as unknown as AudioParam,
             [point({ beat: 0, value: 0.2 }), point({ beat: 4, value: 0.8 })],
             10,
-            120,
-            []
+            [],
+            0,
+            AT_120_BPM
         );
 
         expect(param.setValueAtTime).toHaveBeenCalledWith(0.2, 0);
@@ -65,10 +69,9 @@ describe('scheduleAutomationOnParam — latency compensation (M-038)', () => {
             param as unknown as AudioParam,
             [point({ beat: 0, value: 0 }), point({ beat: 8, value: 1 })],
             10,
-            120,
             [],
             2, // regionStartSeconds — beat 4 at 120bpm
-            undefined,
+            AT_120_BPM,
             0.5
         );
 
@@ -82,7 +85,7 @@ describe('scheduleAutomationOnParam — latency compensation (M-038)', () => {
 
     it('schedules nothing for an empty lane', () => {
         const param = makeParam();
-        scheduleAutomationOnParam(param as unknown as AudioParam, [], 10, 120, [], 0, undefined, 0.25);
+        scheduleAutomationOnParam(param as unknown as AudioParam, [], 10, [], 0, AT_120_BPM, 0.25);
 
         expect(param.setValueAtTime).not.toHaveBeenCalled();
         expect(param.linearRampToValueAtTime).not.toHaveBeenCalled();
