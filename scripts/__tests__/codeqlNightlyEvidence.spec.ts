@@ -117,6 +117,7 @@ describe('trusted nightly evidence consumer', () => {
         });
         expect(workflow.jobs.publish.permissions).toEqual({ contents: 'read', issues: 'write' });
         expect(workflow.jobs.publish.if).toContain("needs.validate.outputs.supported == 'true'");
+        expect(workflow.jobs.validate.steps.at(-1).env).toEqual({ GH_TOKEN: '${{ github.token }}' });
         for (const job of Object.values(workflow.jobs) as Array<{
             steps: Array<{ uses?: string; with?: { ref?: string } }>;
         }>) {
@@ -130,15 +131,88 @@ describe('trusted nightly evidence consumer', () => {
             { total_count: 101, artifacts: Array.from({ length: 100 }, (_, id) => ({ id, name: 'other' })) },
             { total_count: 101, artifacts: [{ id: 101, name: 'nightly-evidence-v1' }] },
         ];
-        const fetcher = vi.fn(async () => new Response(JSON.stringify(responses.shift()), { status: 200 }));
-        vi.stubGlobal('fetch', fetcher);
-        try {
-            const artifacts = await githubEvidencePort('fixture-token').listArtifacts(42);
-            expect(artifacts).toHaveLength(101);
-            expect(fetcher.mock.calls).toHaveLength(2);
-        } finally {
-            vi.unstubAllGlobals();
+        const runGh = vi.fn(
+            (_args: readonly string[], _options: { env: NodeJS.ProcessEnv; maxBuffer: number; timeout: number }) =>
+                Buffer.from(JSON.stringify(responses))
+        );
+        const artifacts = await githubEvidencePort('fixture-token', runGh).listArtifacts(42);
+        expect(artifacts).toHaveLength(101);
+        expect(runGh).toHaveBeenCalledOnce();
+        const call = runGh.mock.calls.at(0);
+        if (call === undefined) {
+            throw new Error('Fake GitHub CLI was not called');
         }
+        const [args, options] = call;
+        expect(args).toEqual([
+            'api',
+            '--hostname',
+            'github.com',
+            '--method',
+            'GET',
+            '--paginate',
+            '--slurp',
+            'repos/jcosta33/sourdaw/actions/runs/42/artifacts?per_page=100',
+        ]);
+        expect(options.env.GH_TOKEN).toBe('fixture-token');
+        expect(options.env.GITHUB_TOKEN).toBeUndefined();
+        expect(args).not.toContain('fixture-token');
+        expect(options.timeout).toBe(120_000);
+        expect(options.maxBuffer).toBe(10 * 1024 * 1024);
+        const incompleteGh = vi.fn(() =>
+            Buffer.from(JSON.stringify([{ total_count: 2, artifacts: [{ id: 1, name: 'other' }] }]))
+        );
+        await expect(githubEvidencePort('fixture-token', incompleteGh).listArtifacts(42)).rejects.toThrow('Incomplete');
+    });
+
+    it('uses fixed read-only routes for every API read and a bounded immutable artifact download', async () => {
+        const f = fixture();
+        const outputByRoute = new Map<string, Buffer>([
+            ['repos/jcosta33/sourdaw/actions/runs/42', Buffer.from(JSON.stringify(f.run))],
+            [
+                `repos/jcosta33/sourdaw/compare/${HEAD}...main`,
+                Buffer.from(JSON.stringify({ status: 'ahead', merge_base_commit: { sha: HEAD } })),
+            ],
+            ['repos/jcosta33/sourdaw/actions/artifacts/99/zip', f.bytes],
+            [
+                'repos/jcosta33/sourdaw/actions/runs/42/attempts/1/jobs?per_page=100',
+                Buffer.from(JSON.stringify([{ total_count: 2, jobs: f.jobs }])),
+            ],
+            [
+                'repos/jcosta33/sourdaw/code-scanning/analyses?ref=refs%2Fheads%2Fmain&per_page=100',
+                Buffer.from(JSON.stringify([f.analyses])),
+            ],
+        ]);
+        const runGh = vi.fn(
+            (args: readonly string[], _options: { env: NodeJS.ProcessEnv; maxBuffer: number; timeout: number }) => {
+                const route = args.at(-1);
+                const output = route === undefined ? undefined : outputByRoute.get(route);
+                if (output === undefined) {
+                    throw new Error('Unexpected fake route');
+                }
+                return output;
+            }
+        );
+        const port = githubEvidencePort('fixture-token', runGh);
+        await expect(port.getRun(42)).resolves.toEqual(f.run);
+        await expect(port.compareMain(HEAD)).resolves.toMatchObject({ status: 'ahead' });
+        await expect(port.listJobs(42, 1)).resolves.toEqual(f.jobs);
+        await expect(port.listAnalyses('refs/heads/main')).resolves.toEqual(f.analyses);
+        await expect(port.downloadArtifact(99)).resolves.toEqual(f.bytes);
+        expect(
+            runGh.mock.calls.every(([args]) => args.slice(0, 5).join(' ') === 'api --hostname github.com --method GET')
+        ).toBe(true);
+        expect(runGh.mock.calls.every(([args]) => !args.includes('fixture-token'))).toBe(true);
+        const artifactCall = runGh.mock.calls.find(
+            ([args]) => args.at(-1) === 'repos/jcosta33/sourdaw/actions/artifacts/99/zip'
+        );
+        expect(artifactCall?.[1].maxBuffer).toBe(10 * 1024 * 1024 + 1);
+        await expect(port.listAnalyses('refs/heads/foreign')).rejects.toThrow('Unsupported analysis ref');
+        await expect(port.downloadArtifact(0)).rejects.toThrow('Invalid artifact ID');
+        expect(runGh).toHaveBeenCalledTimes(5);
+        const oversizedGh = vi.fn(() => Buffer.alloc(10 * 1024 * 1024 + 1));
+        await expect(githubEvidencePort('fixture-token', oversizedGh).downloadArtifact(99)).rejects.toThrow(
+            'Artifact download exceeds bound'
+        );
     });
 
     it('retains a sole end-to-end report failure and independently binds CodeQL', async () => {

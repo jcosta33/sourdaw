@@ -4,6 +4,7 @@
  * The JSON binds the run identity; jobs and CodeQL analysis are read again from
  * GitHub. This consumer is deliberately inert until that producer exists.
  */
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync } from 'node:fs';
 
@@ -225,75 +226,111 @@ export async function validateNightlyEvidence(eventValue: unknown, port: Evidenc
     return { kind: 'validated', runId, attempt: 1, ...result };
 }
 
-async function apiJson(path: string, token: string): Promise<unknown> {
-    const response = await fetch(`https://api.github.com/repos/${REPOSITORY}/${path}`, {
-        headers: {
-            Accept: 'application/vnd.github+json',
-            Authorization: `Bearer ${token}`,
-            'X-GitHub-Api-Version': '2022-11-28',
-        },
-    });
-    if (!response.ok) {
-        throw new Error(`GitHub API ${path} returned ${response.status}`);
+type GhRead = (
+    args: readonly string[],
+    options: { env: NodeJS.ProcessEnv; maxBuffer: number; timeout: number }
+) => Buffer;
+
+const execGh: GhRead = (args, options) => execFileSync('gh', [...args], options);
+
+function ghOutput(token: string, route: string, runGh: GhRead, paged: boolean, maxBuffer: number): Buffer {
+    const env = { ...process.env, GH_TOKEN: token, GH_HOST: 'github.com' };
+    delete env.GITHUB_TOKEN;
+    delete env.GITHUB_ENTERPRISE_TOKEN;
+    delete env.GH_ENTERPRISE_TOKEN;
+    delete env.GH_DEBUG;
+    delete env.GH_CONFIG_DIR;
+    const args = ['api', '--hostname', 'github.com', '--method', 'GET'];
+    if (paged) {
+        args.push('--paginate', '--slurp');
     }
-    const body = await response.text();
-    if (body.length > 5 * 1024 * 1024) {
-        throw new Error('GitHub API response exceeds bound');
+    args.push(route);
+    try {
+        return runGh(args, { env, maxBuffer, timeout: 120_000 });
+    } catch {
+        // Child stderr can contain request details. Refuse without relaying it.
+        throw new Error('GitHub CLI read failed');
     }
-    return JSON.parse(body);
 }
 
-async function allPages(path: string, token: string, key?: string): Promise<unknown[]> {
+function ghJson(token: string, route: string, runGh: GhRead): unknown {
+    const output = ghOutput(token, route, runGh, false, 5 * 1024 * 1024);
+    return JSON.parse(output.toString('utf8'));
+}
+
+function ghPages(token: string, route: string, runGh: GhRead, key?: string): unknown[] {
+    const output = ghOutput(token, route, runGh, true, 10 * 1024 * 1024);
+    const pages: unknown = JSON.parse(output.toString('utf8'));
+    if (!Array.isArray(pages) || pages.length === 0) {
+        throw new TypeError('Invalid paginated GitHub response');
+    }
     const values: unknown[] = [];
-    for (let page = 1; page <= 100; page++) {
-        const value = await apiJson(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, token);
-        const list = key ? record(value, 'paged response')[key] : value;
+    let totalCount: number | undefined;
+    for (const page of pages as unknown[]) {
+        const response = key ? record(page, 'paged response') : undefined;
+        const list: unknown = key ? response?.[key] : page;
         if (!Array.isArray(list)) {
-            throw new TypeError('Invalid paged response');
+            throw new TypeError('Invalid paginated GitHub response');
+        }
+        if (response) {
+            const count = response.total_count;
+            if (
+                !Number.isSafeInteger(count) ||
+                Number(count) < 0 ||
+                (totalCount !== undefined && count !== totalCount)
+            ) {
+                throw new Error('Inconsistent GitHub pagination count');
+            }
+            totalCount = Number(count);
         }
         values.push(...(list as unknown[]));
-        if (list.length < 100) {
-            if (key && record(value, 'paged response').total_count !== values.length) {
-                throw new Error('Incomplete paged response');
-            }
-            return values;
-        }
     }
-    throw new Error('Pagination exceeds supported bound');
+    if (totalCount !== undefined && values.length !== totalCount) {
+        throw new Error('Incomplete GitHub pagination');
+    }
+    return values;
 }
 
-async function artifactZip(id: number, token: string): Promise<Buffer> {
-    const response = await fetch(`https://api.github.com/repos/${REPOSITORY}/actions/artifacts/${id}/zip`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
-    });
-    if (!response.ok || !response.body) {
-        throw new Error(`Artifact download failed: ${response.status}`);
+function ghArtifact(token: string, id: number, runGh: GhRead): Buffer {
+    const route = `repos/${REPOSITORY}/actions/artifacts/${integer(id, 'artifact ID')}/zip`;
+    const output = ghOutput(token, route, runGh, false, hostedWasmOutputLimit + 1);
+    if (output.length > hostedWasmOutputLimit) {
+        throw new Error('Artifact download exceeds bound');
     }
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    for await (const chunk of response.body) {
-        size += chunk.length;
-        if (size > hostedWasmOutputLimit) {
-            throw new Error('Artifact download exceeds bound');
-        }
-        chunks.push(chunk);
-    }
-    return Buffer.concat(chunks);
+    return output;
 }
 
-export function githubEvidencePort(token: string): EvidencePort {
+export function githubEvidencePort(token: string, runGh: GhRead = execGh): EvidencePort {
+    const prefix = `repos/${REPOSITORY}`;
     return {
-        getRun: (id) => apiJson(`actions/runs/${id}`, token),
-        compareMain: (headSha) => apiJson(`compare/${headSha}...main`, token),
-        listArtifacts: (id) => allPages(`actions/runs/${id}/artifacts`, token, 'artifacts'),
-        downloadArtifact: (id) => artifactZip(id, token),
-        listJobs: (id, attempt) => allPages(`actions/runs/${id}/attempts/${attempt}/jobs`, token, 'jobs'),
-        listAnalyses: (ref) => allPages(`code-scanning/analyses?ref=${encodeURIComponent(ref)}`, token),
+        getRun: async (id) => ghJson(token, `${prefix}/actions/runs/${integer(id, 'run ID')}`, runGh),
+        compareMain: async (headSha) => ghJson(token, `${prefix}/compare/${sha(headSha, 'head SHA')}...main`, runGh),
+        listArtifacts: async (id) =>
+            ghPages(
+                token,
+                `${prefix}/actions/runs/${integer(id, 'run ID')}/artifacts?per_page=100`,
+                runGh,
+                'artifacts'
+            ),
+        downloadArtifact: async (id) => ghArtifact(token, id, runGh),
+        listJobs: async (id, attempt) =>
+            ghPages(
+                token,
+                `${prefix}/actions/runs/${integer(id, 'run ID')}/attempts/${integer(attempt, 'attempt')}/jobs?per_page=100`,
+                runGh,
+                'jobs'
+            ),
+        listAnalyses: async (ref) => {
+            if (ref !== 'refs/heads/main') {
+                throw new Error('Unsupported analysis ref');
+            }
+            return ghPages(token, `${prefix}/code-scanning/analyses?ref=refs%2Fheads%2Fmain&per_page=100`, runGh);
+        },
     };
 }
 
 if (process.argv[1]?.endsWith('/codeqlNightlyEvidence.ts')) {
-    const token = process.env.GITHUB_TOKEN;
+    const token = process.env.GH_TOKEN;
     const eventPath = process.env.GITHUB_EVENT_PATH;
     const outputPath = process.env.GITHUB_OUTPUT;
     if (!token || !eventPath || !outputPath) {

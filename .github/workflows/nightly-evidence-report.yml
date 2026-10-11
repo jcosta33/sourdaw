@@ -43,7 +43,7 @@ jobs:
       - name: Validate independent run, artifact, jobs and CodeQL analysis
         id: evidence
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/codeqlNightlyEvidence.ts
 
   publish:
