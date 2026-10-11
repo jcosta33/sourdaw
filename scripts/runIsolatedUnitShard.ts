@@ -7,6 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { assertIndependentUnitObjects, copyUnitCheckout, unitAccessBootstrap } from './unitExecutionCopy.ts';
 import { ownCheckoutDirectories } from './unitShardCheckoutOwnership.ts';
 
+const sequentialGuardSpecs = [
+    'scripts/__tests__/resourceGuardStorage.spec.ts',
+    'scripts/__tests__/resourceGuard.spec.ts',
+    'scripts/__tests__/resourceGuardShowOutput.spec.ts',
+] as const;
+
 type CommandResult = { status: number | null; stdout: string; stderr: string };
 type CommandOptions = { env?: NodeJS.ProcessEnv; cwd?: string; inheritOutput?: boolean };
 type Command = (file: string, args: string[], options?: CommandOptions) => CommandResult;
@@ -508,31 +514,27 @@ export function runUnitPhase(
     if (phase === 'shard' && !/^[1-4]\/4$/.test(shard ?? '')) {
         throw new Error('unit shard must remain one of four');
     }
+    const options = { cwd: context.workspace, env: safeEnvironment(context), inheritOutput: true };
     if (phase === 'shard') {
         console.info(
             `unit isolation admitted: uid=${context.uid} gid=${context.gid} groups=empty caps=empty no-new-privs=1 phase=storage`
         );
-        const storageStatus =
-            ports.run(context.pnpm, ['run', 'test:run', 'scripts/__tests__/resourceGuardStorage.spec.ts'], {
-                cwd: context.workspace,
-                env: { ...safeEnvironment(context), VITEST_MAX_WORKERS: '1' },
-                inheritOutput: true,
-            }).status ?? 1;
-        if (storageStatus !== 0) {
-            return storageStatus;
+        const guardOptions = { ...options, env: { ...options.env, VITEST_MAX_WORKERS: '1' } };
+        for (const spec of sequentialGuardSpecs) {
+            const guardStatus = ports.run(context.pnpm, ['run', 'test:run', spec], guardOptions).status ?? 1;
+            if (guardStatus !== 0) {
+                return guardStatus;
+            }
         }
     }
     console.info(
         `unit isolation admitted: uid=${context.uid} gid=${context.gid} groups=empty caps=empty no-new-privs=1 phase=${phase}${shard === undefined ? '' : ` shard=${shard}`}`
     );
-    let args = ['run', 'test:run', `--shard=${shard}`, '--exclude=scripts/__tests__/resourceGuardStorage.spec.ts'];
+    let args = ['run', 'test:run', `--shard=${shard}`, ...sequentialGuardSpecs.map((spec) => `--exclude=${spec}`)];
     if (phase === 'install') {
         args = ['install', '--frozen-lockfile', '--store-dir', context.store];
     }
-    return (
-        ports.run(context.pnpm, args, { cwd: context.workspace, env: safeEnvironment(context), inheritOutput: true })
-            .status ?? 1
-    );
+    return ports.run(context.pnpm, args, options).status ?? 1;
 }
 
 export function launchUnitPhase(

@@ -775,12 +775,16 @@ and unavailable access fail. Runtime admission repeats identity and private stor
 tools or authority fail the job. The account uses its own frozen-install store.
 
 Before each required unit shard starts parallel workers, the admitted helper runs the whole
-`scripts/__tests__/resourceGuardStorage.spec.ts` through the zero-assertion wrapper with one worker.
-Its conservative complete same-UID file-use proof needs a sequential boundary: unrelated concurrent
-process transitions can make a later cleanup sample unavailable. Failed or unavailable storage
-verification blocks the parallel shard. After success, the shard excludes exactly that already-run
-file and keeps its normal worker setting. This sequencing applies to the required fresh-account
-helper route; the global shard exclusions and nightly/tooling collection routes stay unchanged.
+`scripts/__tests__/resourceGuardStorage.spec.ts`, `scripts/__tests__/resourceGuard.spec.ts`, and
+`scripts/__tests__/resourceGuardShowOutput.spec.ts` sequentially through the zero-assertion wrapper,
+with one worker for each command. These real guard callers share conservative complete same-UID
+file-use proof: unrelated concurrent process transitions can make a later cleanup sample unavailable.
+Each command must finish successfully before the next starts. Failed or unavailable guard verification
+blocks the remaining commands and parallel shard with the original failure status. After success,
+the shard excludes exactly those three already-run files and keeps its normal worker setting.
+All other selected specs still run once across the four shards. This sequencing applies to the
+required fresh-account helper route; the global shard exclusions and nightly/tooling collection
+routes stay unchanged.
 
 Before install or Vitest concurrency, mandatory native verification starts a nondumpable same-UID
 Python consumer with cwd and an open file in owned storage. It requires denied cwd inspection and
