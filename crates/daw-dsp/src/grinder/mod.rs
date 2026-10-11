@@ -9,6 +9,7 @@
 pub mod cabinet;
 pub mod engine;
 pub mod input;
+pub mod nam;
 pub mod neural;
 pub mod oversample;
 pub mod params;
@@ -72,6 +73,22 @@ impl GrinderInstance {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         self.engine.set_param(name, value);
+    }
+
+    /// Load a real .nam capture into the neural stage. Control-path only:
+    /// parses the full model (weights, config, architecture) and prewarms it.
+    /// Returns the named rejection reason for unsupported or inconsistent
+    /// files — nothing is ever substituted.
+    pub fn load_neural_model(&mut self, json: &str) -> Result<(), JsValue> {
+        self.engine
+            .load_neural_model(json)
+            .map_err(|error| JsValue::from_str(&error))
+    }
+
+    /// Whether a real imported .nam model is loaded (distinct from the
+    /// builtin slots and the legacy derived profile).
+    pub fn has_loaded_neural_model(&self) -> bool {
+        self.engine.has_loaded_neural_model()
     }
 
     /// Clear every amp stage's runtime state without disturbing parameters,

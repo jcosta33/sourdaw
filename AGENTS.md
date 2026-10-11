@@ -86,7 +86,18 @@ set in the bundle's `stances.json` before dispatch, one line per stance naming t
 that admits it — the input or state that breaks — never the path the diff touches; as each draw
 reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
 The caller writes it, no script generates it, and the orchestrator confirms its presence and
-substance before publication. `pnpm stances:check <bundle>` tests each admission line with a typed
+substance before publication. For a fresh plan-carrying reviewer POST, `stances.json` uses
+`format: "stances-admission-v1"` and binds `pr`, `headSha`, and `baseSha` to the risk plan. Its
+`stances` array has at least three unique names; each `{ stance, admittedBy, draws }` row holds
+one draw per completed `(stance, reviewerModel)` pair. Each draw records `reviewerModel`, optional
+`exhaustion` matching the dossier draw, and a `baselineProbe` with bounded, single-line,
+evidence-safe `spec`, `mutation`, `observed`, and `result`. Only `result: "mutation-detected"`
+admits publication; `still-green` and `not-run` record failures but do not discharge the probe.
+Specialist plans (`native-security`, `realtime-audio`, `undo`) also require one completed
+`strongest` dossier draw, on any recorded stance. This checks caller evidence structurally;
+the orchestrator still verifies that the probe ran and the stances address independent risks.
+Published exact replay and recovered binding retain their historical caller-record rules.
+`pnpm stances:check <bundle>` tests each admission line with a typed
 judgment and fails lines that name touched paths instead of failure modes. The checker pins a
 versioned model rather than a moving alias — environment and provider defaults cannot silently select
 another, its run names the model that answered, validated against that pin, in its summary line, and
@@ -571,11 +582,15 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
 
 No job outside `health-gates.yml` may be named `Gate`.
 
-`scripts/prValidationScope.ts` records the affected browser plan with reasons. Product changes,
-including presentation surfaces, select smoke and the complete browser suite; direct browser spec
-changes select those specs. Deleted and renamed paths retain their old effects. Documentation and
-explicitly known review tooling avoid browser runs. Required selected jobs must succeed, and scope
-resolution or missing evidence fails closed. Nightly remains the unconditional full-load gate.
+`scripts/prValidationScope.ts` records the affected browser plan with reasons. A clean integration
+checkout may narrow feature-presentation changes through the resolved file dependency graph and
+explicit suite owners in `scripts/e2eSuiteOwners.json`; unowned suites remain selected. Unknown,
+shared, deleted, renamed, and unsupported graph inputs select the complete browser suite. Direct
+browser spec changes select those specs. Documentation and explicitly known review tooling avoid
+browser runs. Smoke runs separately for every browser plan; Browser AI hardware admission follows
+selected browser-AI suites. Required selected jobs must succeed, and scope resolution or missing
+evidence fails closed. Nightly remains the unconditional full-load gate. The maintenance contract is
+in [affected E2E](./docs/affected-e2e.md).
 The ruleset requires the single `Gate`; review must catch heads weakening their own workflow.
 
 Resource Safety governs local checks; never rerun repository-wide pipeline gates locally.

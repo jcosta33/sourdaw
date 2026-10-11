@@ -1161,6 +1161,77 @@ describe('MidiRack', () => {
         });
     });
 
+    describe('lifecycle note-off identity (#4873)', () => {
+        it('stamps the originating voice instance on the offs a panic settles', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            rack.processBlock(
+                [
+                    {
+                        timeSamples: 0,
+                        trackId: 'track-a',
+                        noteInstanceId: 'voice-a',
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                    {
+                        timeSamples: 0,
+                        trackId: 'track-a',
+                        kind: { type: 'noteOn', channel: 1, note: 64, velocity: 100 },
+                    },
+                ],
+                0,
+                128,
+                transport,
+                'track-a'
+            );
+
+            const offs = rack.allNotesOff(256);
+
+            expect(offs).toMatchObject([
+                {
+                    trackId: 'track-a',
+                    timeSamples: 256,
+                    noteInstanceId: 'voice-a',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+                { trackId: 'track-a', timeSamples: 256, kind: { type: 'noteOff', channel: 1, note: 64 } },
+            ]);
+            const identitylessOff = offs.find((off) => off.kind.type === 'noteOff' && off.kind.note === 64);
+            expect(identitylessOff).toBeDefined();
+            expect('noteInstanceId' in identitylessOff!).toBe(false);
+        });
+
+        it('carries the originating voice instance through a mid-playback processor removal', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            rack.processBlock(
+                [
+                    {
+                        timeSamples: 0,
+                        trackId: 'track-a',
+                        noteInstanceId: 'arp:step-3',
+                        kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+                    },
+                ],
+                0,
+                128,
+                transport,
+                'track-a'
+            );
+
+            const offs = rack.removeProcessor('p1', 256);
+
+            expect(offs).toMatchObject([
+                {
+                    trackId: 'track-a',
+                    timeSamples: 256,
+                    noteInstanceId: 'arp:step-3',
+                    kind: { type: 'noteOff', channel: 0, note: 67 },
+                },
+            ]);
+        });
+    });
+
     describe('replaceProjection', () => {
         it('settles a held note exactly when sameYeastProcessorTopology says the rack topology changed', () => {
             const transposer = (id: string, bypassed = false, semitones = 12): YeastProcessorProjectionItem => ({
