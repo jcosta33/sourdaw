@@ -1,0 +1,33 @@
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_29d8df116c5b92::t_acea273b6a5b38 18-26
+  s_29d8df116c5b92::t_d3c441dde857b6 7
+  s_59e31a5c6f3e31::t_e8e4e4d765b203 8
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_29d8df116c5b92::t_d3c441dde857b6 13
+  s_29d8df116c5b92::t_acea273b6a5b38 24-32
+  s_59e31a5c6f3e31::t_d8176f977f6657 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef101847eaa2e78e7ea9b1924d283615e3dc426a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
