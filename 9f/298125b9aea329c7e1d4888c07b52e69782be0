@@ -1,0 +1,31 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_29d8df116c5b92::t_6f26f2f084956d 1,719-727,753-763,784-795,874-893,1052-1070,1111,1116,1133-1135
+public/wasm/daw-dsp/daw_dsp.js
+  s_29d8df116c5b92::t_9c186c903beff7 1520-1528,1597-1614,1652-1669,1827-1861
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_29d8df116c5b92::t_f8156447086c99 1,5-23,64,69,86-88
+public/wasm/manifest.json
+  s_29d8df116c5b92::t_e7f562af8349b9 12,15-18,20-21
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_7b1dae36f43add 1345,1351,1771
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_29d8df116c5b92::t_f60620a6c4c895 1,719-727,753-763,784-795,874-893,1052-1070,1111,1116,1133-1135
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_29d8df116c5b92::t_160afdca2da2c5 1697-1705,1774-1791,1829-1846,2004-2038
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f298125b9aea329c7e1d4888c07b52e69782be0",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
