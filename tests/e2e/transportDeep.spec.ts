@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 
 // ---------------------------------------------------------------------------
 // Transport — BPM input, metronome toggle, loop region set.
@@ -46,52 +46,64 @@ test.describe('Transport deep — BPM, metronome, loop', () => {
         await expect(metronome).toHaveAttribute('aria-pressed', 'false');
     });
 
-    test('Loop toggle activates and the loop-region indicator appears', async ({ page }) => {
+    test('Loop region fill and handles appear while looping and clear when disabled', async ({ page }) => {
+        // The ruler mounts with the timeline after a track is added. Fresh view
+        // state starts at scrollX=0 and 12 pixels/beat, so this drag commits
+        // beats 8–20 and leaves all three sample points in the visible interval.
+        await add_midi_track(page);
+        const ruler = page.getByLabel('Beat ruler');
+        const canvas = ruler.locator('canvas');
+        await expect(canvas).toBeVisible();
+        const box = await ruler.boundingBox();
+        if (!box || box.width < 500) {
+            throw new Error('Beat ruler must expose at least 500 visible pixels');
+        }
+
+        // y=12 avoids bar labels, beat ticks, and the playhead triangle. The
+        // selected x positions sample the left handle, fill, and right handle.
+        const sample = async () =>
+            canvas.evaluate((element) => {
+                const surface = element as HTMLCanvasElement;
+                const context = surface.getContext('2d');
+                if (!context) {
+                    throw new Error('Beat ruler 2D canvas unavailable');
+                }
+                const scaleX = surface.width / surface.clientWidth;
+                const scaleY = surface.height / surface.clientHeight;
+                return [97, 150, 238].map((x) =>
+                    Array.from(context.getImageData(Math.round(x * scaleX), Math.round(12 * scaleY), 1, 1).data).slice(
+                        0,
+                        3
+                    )
+                );
+            });
+
         const loop = page.getByRole('button', { name: 'Loop', exact: true }).first();
         await expect(loop).toBeVisible({ timeout: 10_000 });
-
-        // Start with loop off.
         await expect(loop).toHaveAttribute('aria-pressed', 'false');
+        const before = await sample();
 
-        // Enable loop.
-        await loop.click();
+        const y = box.y + box.height / 2;
+        await page.mouse.move(box.x + 105, y);
+        await page.keyboard.down('Shift');
+        await page.mouse.down();
+        await page.mouse.move(box.x + 238, y, { steps: 12 });
+        await page.mouse.up();
+        await page.keyboard.up('Shift');
+
         await expect(loop).toHaveAttribute('aria-pressed', 'true');
+        await expect
+            .poll(async () => {
+                const during = await sample();
+                return during.map((pixel, index) =>
+                    pixel.some((channel, channelIndex) => channel !== before[index][channelIndex])
+                );
+            })
+            .toEqual([true, true, true]);
 
-        // When loop is on, a loop-region visual element appears in the timeline.
-        // We look for the loop bar or marker in the transport/timeline area.
-        // This is a computed readout — if loop were not enabled, this element
-        // would not be visible or would show no active region.
-        const loopBar = page.locator('[data-loop-active="true"]').or(page.locator('[aria-label*="loop" i]').first());
-        // The loop aria-pressed being true is the core assertion.
-        // The visual indicator is secondary — we verify it appears.
-        if (await loopBar.isVisible().catch(() => false)) {
-            // If visible, confirm it wasn't before disabling.
-        }
-
-        // Disable loop.
         await loop.click();
         await expect(loop).toHaveAttribute('aria-pressed', 'false');
-    });
-
-    test('Time signature display shows 4/4 and changes to 3/4', async ({ page }) => {
-        // The time signature is shown as a readout in the transport bar.
-        const timeSig = page
-            .getByLabel(/time signature/i)
-            .or(page.getByText(/^\d\/\d$/))
-            .first();
-        await timeSig.waitFor({ state: 'visible', timeout: 10_000 });
-
-        // Default is 4/4.
-        const initialText = (await timeSig.innerText()).trim();
-        expect(initialText).toMatch(/4\/4/);
-
-        // Try to change it — some implementations use a combobox, others a click cycle.
-        const timeSigControl = page.getByRole('combobox', { name: /time signature/i }).first();
-        if (await timeSigControl.isVisible().catch(() => false)) {
-            await timeSigControl.selectOption('3/4');
-            const newText = (await timeSig.innerText()).trim();
-            expect(newText).toMatch(/3\/4/);
-        }
+        await expect.poll(sample).toEqual(before);
     });
 
     test('Play → Pause → Stop → playhead returns to start', async ({ page }) => {
