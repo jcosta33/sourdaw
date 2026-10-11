@@ -276,7 +276,13 @@ function outputPathObstruction(
     return stripObstruction(target.kind === 'bus' ? target.busId : target.trackId, context, visited);
 }
 
-/** This strip's own chain, then whatever its own output reaches, recursively. */
+/**
+ * This strip's own chain, then whatever its output and its sends reach,
+ * recursively. A bus's sends are paths out of it exactly as its output is: the
+ * native engine plays a bus's send into the bus it lands on (#5067), so a
+ * track feeding a bus whose send reaches a chain the engine cannot build would
+ * be heard natively through that chain minus the device.
+ */
 function stripObstruction(
     stripId: string,
     context: CarrierContext,
@@ -287,15 +293,26 @@ function stripObstruction(
     }
     const strip = context.stripById.get(stripId);
     if (!strip) {
-        // `resolveOutputTarget` only names strips this session built, so an id
-        // it returned is always one of them.
+        // `resolveOutputTarget` and `admittedSendBusIds` only name strips this
+        // session built, so an id either returned is always one of them.
         return null;
     }
     const device = chainObstruction(strip, context);
     if (device) {
         return { kind: 'device', stripName: strip.name, device };
     }
-    return outputPathObstruction(strip, context, new Set(visited).add(stripId));
+    const seen = new Set(visited).add(stripId);
+    const routed = outputPathObstruction(strip, context, seen);
+    if (routed) {
+        return routed;
+    }
+    for (const busId of admittedSendBusIds({ track: strip, busStripIds: context.busStripIds })) {
+        const sent = stripObstruction(busId, context, seen);
+        if (sent) {
+            return sent;
+        }
+    }
+    return null;
 }
 
 function obstructionReason(obstruction: PathObstruction, lead: string): string {

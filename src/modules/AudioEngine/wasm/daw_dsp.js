@@ -1437,6 +1437,30 @@ export class GrinderInstance {
         return ret;
     }
     /**
+     * Whether a real imported .nam model is loaded (distinct from the
+     * builtin slots and the legacy derived profile).
+     * @returns {boolean}
+     */
+    has_loaded_neural_model() {
+        const ret = wasm.grinderinstance_has_loaded_neural_model(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Load a real .nam capture into the neural stage. Control-path only:
+     * parses the full model (weights, config, architecture) and prewarms it.
+     * Returns the named rejection reason for unsupported or inconsistent
+     * files — nothing is ever substituted.
+     * @param {string} json
+     */
+    load_neural_model(json) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.grinderinstance_load_neural_model(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
      * @param {number} sample_rate
      */
     constructor(sample_rate) {
@@ -1619,9 +1643,14 @@ export class LevainInstance {
     }
     /**
      * Discard a failed staged bank without changing the sounding bank.
+     *
+     * Allocates and frees nothing: the staged bank moves to the retired slot
+     * for `release_retired_bank` to free. Returns true when it retired a bank.
+     * @returns {boolean}
      */
     abort_sample_bank() {
-        wasm.levaininstance_abort_sample_bank(this.__wbg_ptr);
+        const ret = wasm.levaininstance_abort_sample_bank(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Get number of currently sounding voices.
@@ -1762,6 +1791,10 @@ export class LevainInstance {
     }
     /**
      * Atomically activate a successfully built staged PCM bank and zone map.
+     *
+     * Allocates and frees nothing: the displaced bank moves to a retired slot
+     * instead of being dropped. Returns false, leaving the bank staged, while
+     * that slot still holds an earlier bank.
      * @returns {boolean}
      */
     commit_sample_bank() {
@@ -1793,6 +1826,14 @@ export class LevainInstance {
      */
     handle_cc(cc, value) {
         wasm.levaininstance_handle_cc(this.__wbg_ptr, cc, value);
+    }
+    /**
+     * Whether a bank displaced by a commit is still waiting to be freed.
+     * @returns {boolean}
+     */
+    has_retired_bank() {
+        const ret = wasm.levaininstance_has_retired_bank(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * @param {number} sample_rate
@@ -1885,6 +1926,28 @@ export class LevainInstance {
         const ptr0 = passStringToWasm0(bank_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.levaininstance_publish_sample_bank(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * Free the displaced bank in bounded steps of at most `max_entries` PCM
+     * entries each. Returns true once nothing is left to free. Call it from a
+     * message of its own, never from `process` or alongside a commit.
+     * @param {number} max_entries
+     * @returns {boolean}
+     */
+    release_retired_bank(max_entries) {
+        const ret = wasm.levaininstance_release_retired_bank(this.__wbg_ptr, max_entries);
+        return ret !== 0;
+    }
+    /**
+     * Move the sounding bank into the retired slot so `release_retired_bank`
+     * can free it in bounded steps before the instance is freed. For a
+     * disposed instance that will never render again. Frees nothing. Returns
+     * false, retiring nothing, while the slot is occupied or no bank sounds.
+     * @returns {boolean}
+     */
+    retire_sample_bank() {
+        const ret = wasm.levaininstance_retire_sample_bank(this.__wbg_ptr);
         return ret !== 0;
     }
     /**
@@ -2353,6 +2416,11 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
+        __wbindgen_cast_0000000000000001: function(arg0, arg1) {
+            // Cast intrinsic for `Ref(String) -> Externref`.
+            const ret = getStringFromWasm0(arg0, arg1);
+            return ret;
+        },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
             const offset = table.grow(4);
@@ -2483,6 +2551,12 @@ function passStringToWasm0(arg, malloc, realloc) {
 
     WASM_VECTOR_LEN = offset;
     return ptr;
+}
+
+function takeFromExternrefTable0(idx) {
+    const value = wasm.__wbindgen_externrefs.get(idx);
+    wasm.__externref_table_dealloc(idx);
+    return value;
 }
 
 let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });

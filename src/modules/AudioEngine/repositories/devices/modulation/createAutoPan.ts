@@ -1,9 +1,12 @@
+import { configureDualMonoPannerInput } from '#/utils/audioLevelLaw';
+
 import { type OfflineDeviceNode } from '../types';
 
 // ── AutoPan ──────────────────────────────────────────────────────────────
 
 export function createAutoPan(ctx: BaseAudioContext): OfflineDeviceNode {
     const input = ctx.createGain();
+    configureDualMonoPannerInput(input);
     const splitterNode = ctx.createChannelSplitter(2);
     const mergerNode = ctx.createChannelMerger(2);
     const leftGain = ctx.createGain();

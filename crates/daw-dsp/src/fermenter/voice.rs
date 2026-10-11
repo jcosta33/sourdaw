@@ -317,6 +317,14 @@ impl Voice {
         self.drift_amount = amount.clamp(0.0, 1.0);
     }
 
+    /// The drift amount this voice will play with. Drift is a few cents of
+    /// slow pitch wander, too small for a short render to separate from zero,
+    /// so layer tests read the state instead.
+    #[cfg(test)]
+    pub(super) fn drift_amount(&self) -> f32 {
+        self.drift_amount
+    }
+
     /// Set additive engine parameters.
     pub fn set_additive_partials(&mut self, n: usize) {
         if let Some(ad) = &mut self.additive {
@@ -424,20 +432,7 @@ impl Voice {
             self.fm_engine.set_level(i, levels[i]);
         }
         self.fm_engine.set_feedback(0, feedback);
-        // Scale all non-zero modulation matrix entries by mod_amount
-        for from in 0..4 {
-            for to in 0..4 {
-                if self.fm_engine.matrix[from][to].abs() > 0.001 {
-                    // The algorithm sets 1.0 as base; scale by mod_amount
-                    let base = if self.fm_engine.matrix[from][to] > 0.0 {
-                        1.0
-                    } else {
-                        -1.0
-                    };
-                    self.fm_engine.matrix[from][to] = base * mod_amount;
-                }
-            }
-        }
+        self.fm_engine.set_mod_amount(mod_amount);
     }
 
     /// Set the pulse width on the PolyBLEP oscillator.

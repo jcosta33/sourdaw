@@ -23,11 +23,14 @@ import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { describePlannedAction } from './describePlannedAction';
 import { executePromptActionGroup } from './executePromptActionGroup';
 import { getProjectContext } from './getProjectContext';
+import { notifyAiAnswer } from './notifyAiAnswer';
 import { notifyAiChange } from './notifyAiChange';
 import { type PlannedPromptActions, planPromptActions } from './planPromptActions';
 import { recordAgentProviderUsage } from './recordAgentProviderUsage';
 
 export type PromptRequestSource = 'prompt-bar' | 'preset';
+
+const NO_PROMPT_ACTIONS_NOTICE = 'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.';
 
 type SubmitAdmittedPromptRequestInput = {
     prompt: string;
@@ -246,6 +249,20 @@ export async function submitAdmittedPromptRequest(
             return { status: 'rejected', runId };
         }
 
+        // The outcome kind is read before the actions: an answer says the run changes nothing, so no
+        // batch that arrived beside it may run.
+        const planningOutcome = planned.result.planningOutcome;
+        if (planningOutcome?.kind === 'answer') {
+            transitionTerminalRun(runId, 'completed');
+            await releasePlanOwnedStemResources();
+            const answerText = describePlanningOutcome(planningOutcome);
+            if (answerText === null) {
+                notifyAiChange(NO_PROMPT_ACTIONS_NOTICE, []);
+            } else {
+                notifyAiAnswer({ prompt, text: answerText, evidence: planningOutcome.evidence });
+            }
+            return { status: 'no-op', runId };
+        }
         if (planned.result.rejectionReason) {
             transitionTerminalRun(runId, 'failed');
             await releasePlanOwnedStemResources();
@@ -266,11 +283,7 @@ export async function submitAdmittedPromptRequest(
         if (planned.result.actions.length === 0) {
             transitionTerminalRun(runId, 'completed');
             await releasePlanOwnedStemResources();
-            notifyAiChange(
-                describePlanningOutcome(planned.result.planningOutcome) ??
-                    'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
-                []
-            );
+            notifyAiChange(describePlanningOutcome(planned.result.planningOutcome) ?? NO_PROMPT_ACTIONS_NOTICE, []);
             return { status: 'no-op', runId };
         }
 

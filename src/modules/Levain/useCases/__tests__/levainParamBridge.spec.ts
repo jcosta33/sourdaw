@@ -33,10 +33,11 @@ describe('levainParamBridge', () => {
         });
 
         const mockDevice = { setParam: vi.fn(), handleCc: vi.fn() };
-        await registerLevainDevice('levain-device-1', mockDevice, undefined);
+        const port = {} as MessagePort;
+        await registerLevainDevice('levain-device-1', mockDevice, port);
 
         const bridge = levainBridge();
         expect(bridge).toBeDefined();
-        unregisterLevainDevice('levain-device-1');
+        unregisterLevainDevice('levain-device-1', port);
     });
 });

@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { batchStoreUpdates } from '#/infra/store/createStore';
 import { audioEngine, stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 
@@ -23,7 +24,7 @@ function captureTeardown(teardown: () => void | Promise<void>): Promise<void> {
     }
 }
 
-export function stopPlayback(): Promise<void> {
+function haltTransport(): Promise<void> {
     // Runtime recording can still be flushing after transport state turns false,
     // and this also cancels a pending count-in.
     const recordingFlush = captureTeardown(stopActiveRecording);
@@ -82,4 +83,16 @@ export function stopPlayback(): Promise<void> {
     // parked capture reads the store, never the count.
     playheadWrapCountRef.current = 0;
     return Promise.all([recordingFlush, yeastTeardown]).then(() => undefined);
+}
+
+/**
+ * One Stop gesture is one transport publication. Stopping from a recording
+ * clears `isRecording` inside `stopActiveRecording` and `isPlaying` below, so
+ * subscribers would otherwise see a rolling, not-recording transport in
+ * between — the one state in which an armed Auto track is not heard — and
+ * close and reopen its monitor edge. Notifications are held to the end of the
+ * synchronous teardown and each store notifies once with its final value.
+ */
+export function stopPlayback(): Promise<void> {
+    return batchStoreUpdates(haltTransport);
 }

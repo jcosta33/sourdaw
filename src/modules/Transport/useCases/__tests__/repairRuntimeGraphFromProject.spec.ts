@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     ensureTrackStrips: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
     getTransportState: vi.fn(),
+    reconcileAutoInputMonitoring: vi.fn(),
     panicYeastRuntime: vi.fn(() => Promise.resolve()),
     resetAudioGraph: vi.fn(),
     resetExternalPluginRuntimeForGraphRebuild: vi.fn(() => Promise.resolve()),
@@ -32,6 +33,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     return {
         ...actual,
         forgetProjectLatchedPedals: mocks.forgetProjectLatchedPedals,
+        reconcileAutoInputMonitoring: mocks.reconcileAutoInputMonitoring,
         resetAudioGraph: mocks.resetAudioGraph,
         startInputMonitoring: mocks.startInputMonitoring,
         stopAllScheduled: mocks.stopAllScheduled,
@@ -97,6 +99,7 @@ describe('repairRuntimeGraphFromProject', () => {
         mocks.getTransportState.mockReturnValue({ isPlaying: true, isRecording: false, playheadPosition: 4 });
         mocks.ensureTrackStrips.mockReturnValue({ status: 'ready', externalPluginActivations: [] });
         mocks.startInputMonitoring.mockReset();
+        mocks.reconcileAutoInputMonitoring.mockReset();
         mocks.startInputMonitoring.mockResolvedValue(true);
         mocks.trackStoreValue.value = null;
     });
@@ -210,8 +213,8 @@ describe('repairRuntimeGraphFromProject', () => {
             tracks: [
                 monitoredTrack('t-off', 'off', 'in-off'),
                 monitoredTrack('t-auto', 'auto', 'in-auto'),
-                // `auto` is engine-driven by arm state and engages no monitor
-                // here, so even an armed `auto` track must not re-arm.
+                // `auto` belongs to the Auto monitoring owner, so even an armed
+                // `auto` track is never started by the re-arm itself.
                 monitoredTrack('t-auto-armed', 'auto', 'in-auto-armed', true),
             ],
             selectedTrackId: null,
@@ -220,6 +223,7 @@ describe('repairRuntimeGraphFromProject', () => {
         await repairRuntimeGraphFromProject();
 
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.reconcileAutoInputMonitoring).toHaveBeenCalledOnce();
     });
 
     it('does not re-arm when the repair itself fails', async () => {

@@ -94,6 +94,13 @@ the classifier. Probe: classify the full changed-path set, including root specs 
 require tooling-only paths to retain CodeQL and the tooling suite while mixed, unknown, lookalike,
 and rename paths remain broad.
 
+PRs #4484 (`4504a698`, `checkStancesRecord`), #4932 (`33c27947`, semantic corpus and change facts),
+and #4933 (`d03336ec`, measurement) added Node-only files without completing those explicit tooling
+sets. The missing probe was to classify each complete changed-path set, including root and nested
+specs, helpers, and corpus inputs, then require static and security checks without browser jobs for
+known tooling while mixed product, config, and unknown paths stay broad. The historical reviewer
+stance and tier are unavailable; this records the missing probe, not a claimed review outcome.
+
 ### 2026-09-28 — the semantic review's own budget had two expressions, and one unit's refusal starved the plan (escaped via PR #4491; merge `9effe3689c`)
 
 PR #4491 shipped the advisory scan with its planner reserving a hand-rolled wrapper — `JSON.stringify({unit, evidence: {}})` plus the serialized questions — while the provider refuses a request by measuring `JSON.stringify({state, questions})`. The envelope (the outer braces and the `state`/`questions` key names) was never paid for, so an admitted unit measured `22 − fittedRegions` bytes over the cap. On the run that surfaced it, one unit measured 24,585 bytes against a 24,576-byte cap — nine bytes over, at an upper bound of thirteen fitted regions (the overage is `22 − fittedRegions` only when the fitter left no slack, so any slack lowers the count) — and because both per-request size refusals shared `budget_exhausted`, which the admission loop reads as "the run cannot continue", the oversized unit's own refusal began the cascade: the scan attempted 5 of 42 planned units in 3.4 seconds of a 120-second deadline and reported 37 unassessed, 36 as `budget-exhausted-before-admission` plus the oversized unit itself under `budget_exhausted`.
@@ -473,6 +480,7 @@ The bulk MIDI remediation commit widened `joinNotes`' run-extension tolerance fr
 Blind spot: the remediation's review tested the tolerance against the cases that motivated it — jitter gaps and genuine rests — and never enumerated what the old value refused that the new one accepts.
 
 Probe that would have caught it: for any widening of a tolerance or threshold on an admission predicate, construct an input inside the newly admitted band and outside every case the change names — here two same-pitch notes sharing `startBeat` whose first duration sits under the new tolerance — and require the changed behavior for it to be stated. A band a widening adds is a behavior change in its own right.
+
 ### 2026-09-30 — strict provider schema closed open command arguments (introduced by PR #4393; fixed in #4882)
 
 The canonical proposal accepted nonempty typed command arguments, but the hosted strict projector
@@ -485,3 +493,20 @@ the actual provider advertisement for both primitive and semantic-list proposal 
 each through the common provider admission and canonical decoder. Verify the proposal reaches the
 normal catalogue and approval path; reject an unknown command there. Include a non-strict compatible
 and local WebLLM control so wire repair does not change their canonical arguments.
+
+### 2026-10-07 — mono input vanished at stereo modulation splitters (introduced in 0249a95cc52; fixed for #5034)
+
+Auto Pan and Stereo Widener fed a default-mode GainNode into a two-output ChannelSplitterNode.
+The splitter uses explicit, discrete channel mixing, so a mono source reached its left output while
+its right output was silent. The strip's later dual-mono panner feed from PR #5006 could not repair
+the signal before either effect: Auto Pan lost its right side, and Widener treated the missing right
+side as stereo difference.
+
+Blind spot: graph-construction checks counted splitters and mergers, and a Widener matrix test
+supplied equal left and right arrays itself. Neither rendered a one-channel source through the
+actual factory input, where Web Audio decides the channel count.
+
+Probe: render a mono buffer through each real factory in Chromium OfflineAudioContext. Auto Pan
+must produce a right-channel peak; Widener at non-unity width must emit equal left and right
+samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
+Removing the explicit speakers upmix at either input must turn its mono assertion red.

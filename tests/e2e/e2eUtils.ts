@@ -3,14 +3,19 @@ import { stringify as superjsonStringify } from 'superjson';
 
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
+import { attach_first_paint_console, format_first_paint_timeout_diagnosis } from './firstPaintDiagnostics';
+
 export const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
 const PLAYBACK_CONTROLS_NAME = 'Playback controls';
 /**
  * The launch overlay is the application's first paint, so it is bounded
  * independently of the suite ceiling: it admits a cold Vite transform while a
  * genuine hang still fails well before the multi-step allowance. Every spec
- * that waits on that overlay itself, rather than through the helpers below,
- * owes the same bound.
+ * that waits on that overlay should do so through
+ * `wait_for_launch_first_paint` — a bare wait that times out carries only
+ * "element(s) not found", while the helper fails with the boot-phase diagnosis
+ * the run's log keeps (#4781: a red smoke leg whose page state was
+ * unrecoverable because the job uploads no trace).
  */
 export const LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS = 45_000;
 
@@ -72,6 +77,10 @@ export async function enable_direct_e2e_viewport(page: Page): Promise<void> {
 export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions = {}): Promise<void> {
     page.on('console', (msg) => console.log(`[Browser Console] ${msg.text()}`));
     page.on('pageerror', (err) => console.log(`[Browser Error] ${err}`));
+    // Attached before the navigation so the first-paint wait's timeout
+    // diagnosis (see wait_for_launch_first_paint) covers the whole boot, not
+    // just the wait's own window.
+    attach_first_paint_console(page);
 
     // The alpha-notice flag is read through `createLocalStorage` (superjson),
     // so the value must be in superjson's serialized form for the store to
@@ -128,22 +137,44 @@ export async function wait_for_workspace_ready(page: Page): Promise<void> {
     await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible();
 }
 
-export async function launch_new_project(
+/**
+ * Wait for the launch overlay — the app's first paint — bounded independently
+ * of the suite ceiling: it admits a cold Vite transform while a genuine hang
+ * still fails before the multi-step allowance. When the bound expires the
+ * error carries the page's boot-phase progress from its own console (Vite
+ * handshake, React render, WASM boot, `[capabilities]`), so a red leg
+ * diagnoses itself instead of surfacing as an opaque "element(s) not found".
+ */
+export async function wait_for_launch_first_paint(
     page: Page,
     { firstPaintTimeoutMs = LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS }: LaunchNewProjectOptions = {}
 ): Promise<void> {
-    // Bounded independently of the suite ceiling: the overlay is the app's
-    // first paint. It admits a cold Vite transform while a genuine hang still
-    // fails before the multi-step allowance.
-    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: firstPaintTimeoutMs });
+    const timeline = attach_first_paint_console(page);
+    const startedAtMs = performance.now();
+    try {
+        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: firstPaintTimeoutMs });
+    } catch (error) {
+        throw new Error(
+            format_first_paint_timeout_diagnosis({
+                timeline,
+                timeoutMs: firstPaintTimeoutMs,
+                waitedMs: performance.now() - startedAtMs,
+                underlyingMessage: error instanceof Error ? error.message : String(error),
+            }),
+            { cause: error }
+        );
+    }
+}
+
+export async function launch_new_project(page: Page, options: LaunchNewProjectOptions = {}): Promise<void> {
+    await wait_for_launch_first_paint(page, options);
 
     await page.locator('#launch-new-project').click();
     await wait_for_workspace_ready(page);
 }
 
 export async function launch_from_template({ page, template_name }: LaunchFromTemplateInput): Promise<void> {
-    // Same fast-fail bound as launch_new_project — see comment there.
-    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
+    await wait_for_launch_first_paint(page);
 
     await page.locator('#launch-from-template').click();
     await expect(page.getByText('Start a new project')).toBeVisible();

@@ -1,7 +1,12 @@
 import { expect, test, type Page, type Locator } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-import { launch_new_project, RECENT_PROJECTS_STORAGE_KEY, setupWorkspace } from './e2eUtils';
+import {
+    LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+    launch_new_project,
+    RECENT_PROJECTS_STORAGE_KEY,
+    setupWorkspace,
+} from './e2eUtils';
 
 /**
  * Two controls the final audit found with zero e2e hits:
@@ -143,7 +148,7 @@ test.describe('LaunchScreen recent-project cards', () => {
         await setupWorkspace(page);
 
         const launch_screen = page.getByLabel('Sourdaw — start a project');
-        await expect(launch_screen).toBeVisible({ timeout: 15_000 });
+        await expect(launch_screen).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
 
         // No `sourdaw-recent-projects` entry exists, so the whole recents block
         // (list plus cards) stays unmounted while the primary actions render.
@@ -163,7 +168,7 @@ test.describe('LaunchScreen recent-project cards', () => {
         });
 
         const launch_screen = page.getByLabel('Sourdaw — start a project');
-        await expect(launch_screen).toBeVisible({ timeout: 15_000 });
+        await expect(launch_screen).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
 
         const recent_card = page.getByRole('button', { name: 'Open recent project Recent Mix' });
         await expect(recent_card).toBeVisible();

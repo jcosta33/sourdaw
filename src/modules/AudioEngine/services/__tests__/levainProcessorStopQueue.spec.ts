@@ -91,8 +91,10 @@ class LevainInstanceMock {
         calls.push({ method: 'build_zone_map', args: [numArticulations, numMics] });
         return zoneMapShouldBuild;
     }
+    bankStaged = false;
     begin_sample_bank(instrumentId: string): void {
         calls.push({ method: 'begin_sample_bank', args: [instrumentId] });
+        this.bankStaged = true;
     }
     attach_sample_bank(bankKey: string): boolean {
         calls.push({ method: 'attach_sample_bank', args: [bankKey] });
@@ -103,14 +105,18 @@ class LevainInstanceMock {
         sharedBanks.add(bankKey);
         return true;
     }
-    abort_sample_bank(): void {
+    abort_sample_bank(): boolean {
         calls.push({ method: 'abort_sample_bank', args: [] });
         if (abortSampleBankShouldThrow) {
             throw new Error('abort trapped');
         }
+        const retired = this.bankStaged;
+        this.bankStaged = false;
+        return retired;
     }
     commit_sample_bank(): boolean {
         calls.push({ method: 'commit_sample_bank', args: [] });
+        this.bankStaged = false;
         return true;
     }
     sample_bank_bytes(): number {

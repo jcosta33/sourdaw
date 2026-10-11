@@ -59,7 +59,16 @@
                 return ((endTick - startTick) | 0) / (nowMs - startMs);
             }
 
-            async function measure({ deviceId, clockBuffer, dspBytes, chamberBytes, scoringBytes, warmupQuanta, measureQuanta, segmentTargetMs }) {
+            async function measure({
+                deviceId,
+                clockBuffer,
+                dspBytes,
+                chamberBytes,
+                scoringBytes,
+                warmupQuanta,
+                measureQuanta,
+                segmentTargetMs,
+            }) {
                 // Length covers warm-up plus the timed run plus slack; the
                 // processor posts its result and returns false well before the
                 // context reaches the end, and the render promise is never awaited.
@@ -116,14 +125,18 @@
             }
 
             window.runQuantumCostTable = async ({ warmupQuanta, measureQuanta, segmentTargetMs, deviceIds }) => {
-                // A subset run is for investigating one question, never for
-                // publishing the table: the rows are measured in a fixed order
-                // and a partial run cannot be pasted into
-                // `quantum-cost-table.md` beside rows taken in another one.
+                // Every row is self-contained: its own OfflineAudioContext,
+                // worklet, wasm compile, harness floor and warm-up, timed
+                // against this call's own clock worker and calibrated in its
+                // own window. A single-row call therefore measures that row
+                // under the conditions row 0 of a full pass has, which is why
+                // the runner may re-measure one drifting row this way inside
+                // the same run. What a subset cannot carry is the machine state
+                // of another moment: a separate `--devices` run is for
+                // investigating one question, and its rows are never pasted
+                // into `quantum-cost-table.md` beside rows taken in another run.
                 const selectedDeviceIds =
-                    deviceIds && deviceIds.length > 0
-                        ? DEVICE_IDS.filter((id) => deviceIds.includes(id))
-                        : DEVICE_IDS;
+                    deviceIds && deviceIds.length > 0 ? DEVICE_IDS.filter((id) => deviceIds.includes(id)) : DEVICE_IDS;
                 const unknown = (deviceIds ?? []).filter((id) => !DEVICE_IDS.includes(id));
                 if (unknown.length > 0) {
                     throw new Error(`--devices names ids that are not in DEVICE_IDS: ${unknown.join(', ')}`);
@@ -176,7 +189,12 @@
                     ticksPerMsAfter,
                     userAgent: navigator.userAgent,
                     userAgentData: navigator.userAgentData
-                        ? await navigator.userAgentData.getHighEntropyValues(['platform', 'platformVersion', 'architecture', 'fullVersionList'])
+                        ? await navigator.userAgentData.getHighEntropyValues([
+                              'platform',
+                              'platformVersion',
+                              'architecture',
+                              'fullVersionList',
+                          ])
                         : null,
                     hardwareConcurrency: navigator.hardwareConcurrency,
                     deviceMemoryGb: navigator.deviceMemory ?? null,

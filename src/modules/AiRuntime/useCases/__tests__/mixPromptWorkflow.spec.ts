@@ -15,6 +15,8 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
+    parseVersionedCommandBatchEnvelope,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -28,17 +30,22 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
-import { clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { agentRunStore } from '../../stores/agentRunStore';
+import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { revertAiActionGroup } from '../aiHistoryActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { readChatThreadContext } from '../readChatThreadContext';
+import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
@@ -226,7 +233,12 @@ function asCommandBatchProposal(plan: readonly ProviderCall[]): ProviderCall[] {
                                 )
                             ),
                         ],
-                        targetRanges: [],
+                        // A seek's target is the beat it moves the playhead to.
+                        targetRanges: plan.flatMap((call) =>
+                            typeof call.arguments.beat === 'number'
+                                ? [{ startBeat: call.arguments.beat, endBeat: call.arguments.beat }]
+                                : []
+                        ),
                         protectedTargetIds: ['track-drum-bus'],
                         protectedRanges: [],
                     },
@@ -563,6 +575,223 @@ describe('mix prompt workflow', () => {
         expectExactMix();
         expect(getTrack('track-drum-bus')).toEqual(protectedBefore);
         expect(getTrack('track-bass')).toEqual(unrelatedBefore);
+    });
+
+    // The thread the next chat request reads is the live stores', so a commit through the chat
+    // route and every undo-history move after it must each show in its standing.
+    async function commitTheMixThroughTheChat(): Promise<void> {
+        await sendChatMessage(PROMPT);
+        expect(readChatThreadContext()?.pendingProposal?.commands).toHaveLength(4);
+        await confirmPendingChatActions({ confirmationId: getConfirmationId() });
+    }
+
+    function readCommitStanding() {
+        return readChatThreadContext()?.lastCommit?.standing;
+    }
+
+    it('reads the confirmed commit into the thread: undone by an undo, standing after a redo', async () => {
+        await commitTheMixThroughTheChat();
+
+        const committed = readChatThreadContext();
+        expect(committed?.pendingProposal).toBeNull();
+        expect(committed?.lastCommit).toMatchObject({
+            standing: 'standing',
+            commands: [
+                { name: 'setTrackGain' },
+                { name: 'setTrackPan' },
+                { name: 'setTrackPan' },
+                { name: 'muteTrack' },
+            ],
+        });
+        expect(committed?.lastCommit?.receiptIds).toHaveLength(1);
+
+        await undo();
+
+        expect(readCommitStanding()).toBe('undone');
+
+        await redo();
+
+        expect(readCommitStanding()).toBe('standing');
+
+        clearUndoHistory();
+
+        expect(readCommitStanding()).toBe('unknown');
+    });
+
+    it('reads the commit as unknown, never standing, once an edit after its undo clears the redo stack', async () => {
+        await commitTheMixThroughTheChat();
+        await undo();
+        expect(readCommitStanding()).toBe('undone');
+
+        await executeAppAction({
+            type: 'muteTrack',
+            payload: { trackId: 'track-bass', muted: true, expectedMuted: false },
+        });
+
+        expect(getTrack('track-bass')).toMatchObject({ muted: true });
+        expect(undoStore.value?.future).toHaveLength(0);
+        expect(readCommitStanding()).toBe('unknown');
+    });
+
+    it('reads the commit as undone after a panel revert, and standing once a redo re-applies it', async () => {
+        await commitTheMixThroughTheChat();
+        const group = aiActionHistoryStore.value?.groups.at(-1);
+        if (group === undefined) {
+            throw new Error('Expected the commit to record its history group.');
+        }
+
+        await revertAiActionGroup(group);
+
+        expect(aiActionHistoryStore.value?.groups.at(-1)?.reverted).toBe(true);
+        expect(readCommitStanding()).toBe('undone');
+
+        await redo();
+
+        expectExactMix();
+        expect(aiActionHistoryStore.value?.groups.at(-1)?.reverted).toBe(true);
+        expect(readCommitStanding()).toBe('standing');
+
+        // The panel flag outlives the redo; once the history holds the group nowhere, it must not
+        // make an applied commit read as undone.
+        clearUndoHistory();
+
+        expect(aiActionHistoryStore.value?.groups.at(-1)?.reverted).toBe(true);
+        expect(readCommitStanding()).toBe('unknown');
+    });
+
+    function readRecordedBatch(confirmationId: string) {
+        const commandBatch = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.commandBatch;
+        if (commandBatch === undefined) {
+            throw new Error(`Expected confirmation ${confirmationId} to record a command batch.`);
+        }
+        const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsed.status !== 'valid') {
+            throw new Error(parsed.reason);
+        }
+        return parsed.envelope;
+    }
+
+    // Partial acceptance previews the proposal in an isolated workspace, which only commands with an
+    // isolated-project preview can enter, so this proposal sets automation modes rather than the mix.
+    it('reads a subset accepted from the proposal as the commit, by the batch it committed under', async () => {
+        setProviderPlan([
+            { name: 'setAutomationMode', arguments: { trackId: 'track-lead-vocal', mode: 'touch' } },
+            { name: 'setAutomationMode', arguments: { trackId: 'track-guitar-left', mode: 'latch' } },
+            { name: 'setAutomationMode', arguments: { trackId: 'track-guitar-right', mode: 'latch' } },
+            { name: 'setAutomationMode', arguments: { trackId: 'track-room-mic', mode: 'write' } },
+        ]);
+        await sendChatMessage(
+            'Set automation mode of Lead Vocal to touch, set automation mode of Guitar Left to latch, set automation mode of Guitar Right to latch, and set automation mode of Room Mic to write, leaving the Drum Bus unchanged.'
+        );
+        const proposalId = getConfirmationId();
+        const [vocalCommand, guitarCommand] = readRecordedBatch(proposalId).commands;
+        if (vocalCommand === undefined || guitarCommand === undefined) {
+            throw new Error('Expected the proposal to carry the Lead Vocal and Guitar Left commands.');
+        }
+
+        const reproposed = await reproposePendingChatActions({
+            confirmationId: proposalId,
+            selectedIntentGroupIds: [vocalCommand.commandId, guitarCommand.commandId],
+        });
+        if (reproposed.status !== 'reproposed') {
+            throw new Error(`Expected the subset to be re-proposed, got ${JSON.stringify(reproposed)}.`);
+        }
+        const subset = getPendingActionConfirmation(reproposed.confirmationId);
+        const subsetBatchId = readRecordedBatch(reproposed.confirmationId).batchId;
+        // The subset keeps the replaced proposal's group id but commits under its own batch id.
+        expect(subset?.groupId).toBeDefined();
+        expect(subset?.groupId).not.toBe(subsetBatchId);
+
+        await expect(confirmPendingChatActions({ confirmationId: reproposed.confirmationId })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(getTrack('track-lead-vocal')).toMatchObject({ automationMode: 'touch' });
+        expect(getTrack('track-guitar-left')).toMatchObject({ automationMode: 'latch' });
+        expect(getTrack('track-guitar-right')).toMatchObject({ automationMode: 'read' });
+        expect(getTrack('track-room-mic')).toMatchObject({ automationMode: 'read' });
+        const subsetReceipt = agentRunStore.value?.runs
+            .find((run) => run.runId === subset?.runId)
+            ?.receipts.find((receipt) => receipt.workId === subsetBatchId);
+        expect(subsetReceipt?.revertGroupId).toBe(subsetBatchId);
+        const committed = readChatThreadContext();
+        expect(committed?.pendingProposal).toBeNull();
+        expect(committed?.lastCommit).toMatchObject({
+            runId: subset?.runId,
+            receiptIds: [subsetReceipt?.receiptIdentity],
+            standing: 'standing',
+            commands: [
+                { name: 'setAutomationMode', arguments: { trackId: 'track-lead-vocal', mode: 'touch' } },
+                { name: 'setAutomationMode', arguments: { trackId: 'track-guitar-left', mode: 'latch' } },
+            ],
+        });
+
+        await undo();
+
+        expect(getTrack('track-lead-vocal')).toMatchObject({ automationMode: 'read' });
+        expect(readCommitStanding()).toBe('undone');
+    });
+
+    it('reads a direct commit into the thread through the run its chat message names', async () => {
+        setProviderPlan([{ name: 'setTrackGain', arguments: { trackId: 'track-room-mic', gain: 0.5 } }]);
+
+        await sendChatMessage('Set Room Mic gain to 50%, leaving the Drum Bus unchanged.');
+
+        expect(getTrack('track-room-mic')).toMatchObject({ gain: 0.5 });
+        expect(chatStore.value?.messages.some((message) => message.pendingActionConfirmationId)).toBe(false);
+        expect(readChatThreadContext()).toMatchObject({
+            requests: ['Set Room Mic gain to 50%, leaving the Drum Bus unchanged.'],
+            pendingProposal: null,
+            lastCommit: { standing: 'standing', commands: [{ name: 'setTrackGain' }] },
+        });
+
+        await undo();
+
+        expect(readCommitStanding()).toBe('undone');
+    });
+
+    // A transport request after a mix change changes no project state: the thread the next
+    // request reads must still name the mix change, never the seek.
+    async function commitRoomMicGainThenSeek(): Promise<void> {
+        registerHandlerMap(getTransportHandlers());
+        setProviderPlan([{ name: 'setTrackGain', arguments: { trackId: 'track-room-mic', gain: 0.5 } }]);
+        await sendChatMessage('Set Room Mic gain to 50%, leaving the Drum Bus unchanged.');
+        expect(getTrack('track-room-mic')).toMatchObject({ gain: 0.5 });
+
+        setProviderPlan([{ name: 'seekPlayhead', arguments: { beat: 8 } }]);
+        await sendChatMessage('Move the playhead to beat 8, leaving the Drum Bus unchanged.');
+        await expect(confirmPendingChatActions({ confirmationId: getConfirmationId() })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(transportStore.value?.playheadPosition).toBe(8);
+        const seek = getPendingActionConfirmation(getConfirmationId());
+        expect(seek?.executedActions.map((execution) => execution.executionKind)).toEqual(['runtime']);
+        expect(
+            agentRunStore.value?.runs
+                .find((run) => run.runId === seek?.runId)
+                ?.receipts.map((receipt) => receipt.revertGroupId)
+        ).toEqual([null]);
+    }
+
+    it('keeps the mix change as the last commit after a seek the user confirmed', async () => {
+        await commitRoomMicGainThenSeek();
+
+        expect(readChatThreadContext()?.lastCommit).toMatchObject({
+            standing: 'standing',
+            commands: [{ name: 'setTrackGain' }],
+        });
+    });
+
+    it('reads the mix change undone after an undo, though the seek is the newer message', async () => {
+        await commitRoomMicGainThenSeek();
+
+        await undo();
+
+        expect(getTrack('track-room-mic')).toMatchObject({ gain: 1 });
+        expect(readChatThreadContext()?.lastCommit).toMatchObject({
+            standing: 'undone',
+            commands: [{ name: 'setTrackGain' }],
+        });
     });
 
     it('grounds the hosted OpenAI-compatible fixture to the same terminal result', async () => {

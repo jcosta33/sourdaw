@@ -1,4 +1,4 @@
-import { clearReportedLatency, removeTrackStrip } from '#/modules/AudioEngine/useCases';
+import { clearReportedLatency, deactivateTrackStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -153,7 +153,8 @@ export function prepareRemoveDevice(
 
         if (!stripRemovalFinalized) {
             try {
-                removeTrackStrip(track.id);
+                // The folder and its remaining devices stay in the project.
+                deactivateTrackStrip(track.id);
                 stripRemovalFinalized = true;
             } catch (error) {
                 throw manualRepairFailure(`Runtime strip removal failed for track ${track.id}`, error);

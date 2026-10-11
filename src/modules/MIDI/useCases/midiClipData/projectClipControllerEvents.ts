@@ -1,6 +1,7 @@
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type MidiCC } from '../../models/MidiNote';
+import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 
 import { projectMidiClipWindow } from './projectMidiClipWindow';
 
@@ -22,21 +23,66 @@ type ProjectClipControllerEventsInput = {
 
 type IterationRange = { startIndex: number; endIndex: number };
 
-/** The loop passes whose visible span can reach the window; a clip that does not loop has exactly one. */
+/** A controller move a clip plays, at its absolute beat. */
+export type ProjectedClipControllerMove = MidiCC & {
+    /**
+     * Whether the move is a switch-controller release on the clip's closing line, at exactly
+     * `clip.endBeat`. Such a move is owned by the window `[fromBeat, toBeat)` with
+     * `fromBeat < endBeat <= toBeat` (the last window the clip plays in). At its sample frame the
+     * clip's moves apply, in the clip's own order, before the moves of a clip that starts there,
+     * so the clip that follows has the last word.
+     */
+    closesClip: boolean;
+};
+
+/**
+ * The loop passes the clip plays. A pass whose head sits within float noise of the
+ * clip end is the rounding overshoot of `ceil(duration / length)`, not a pass: its
+ * window would carry a held value onto the clip's closing line. A genuine short
+ * final pass is longer than the tolerance and stays.
+ */
+function countPasses(
+    clip: ControllerProjectionClip,
+    expansion: { iterationCount: number; loopLengthBeats: number }
+): number {
+    if (!clip.loopEnabled || expansion.iterationCount === 0) {
+        return Math.min(1, expansion.iterationCount);
+    }
+    const playedBeats = clip.endBeat - clip.startBeat - SAME_BEAT_TOLERANCE;
+    const passesByHead = Math.max(1, Math.ceil(playedBeats / expansion.loopLengthBeats));
+    return Math.min(expansion.iterationCount, passesByHead);
+}
+
+/**
+ * The loop passes whose events can reach the window; a clip that does not loop has exactly one.
+ * A pass head row lands within float noise of the pass head, either side of it, so the range
+ * widens by the tolerance and the event's own beat decides which of two abutting windows owns it.
+ */
 function resolveIterationRange(
     clip: ControllerProjectionClip,
     expansion: { iterationCount: number; loopLengthBeats: number },
     window: { fromBeat: number; toBeat: number }
 ): IterationRange {
+    const passCount = countPasses(clip, expansion);
     if (!clip.loopEnabled) {
-        return { startIndex: 0, endIndex: Math.min(1, expansion.iterationCount) };
+        return { startIndex: 0, endIndex: passCount };
     }
-    const startIndex = Math.max(0, Math.floor((window.fromBeat - clip.startBeat) / expansion.loopLengthBeats));
+    const startIndex = Math.max(
+        0,
+        Math.floor((window.fromBeat - clip.startBeat - SAME_BEAT_TOLERANCE) / expansion.loopLengthBeats)
+    );
     const endIndex = Math.min(
-        expansion.iterationCount,
-        Math.ceil((window.toBeat - clip.startBeat) / expansion.loopLengthBeats)
+        passCount,
+        Math.ceil((window.toBeat - clip.startBeat + SAME_BEAT_TOLERANCE) / expansion.loopLengthBeats)
     );
     return { startIndex: Math.min(startIndex, endIndex), endIndex };
+}
+
+function ownsMove(move: ProjectedClipControllerMove, fromBeat: number, toBeat: number): boolean {
+    if (move.closesClip) {
+        return move.beat > fromBeat && move.beat <= toBeat;
+    }
+    return move.beat >= fromBeat && move.beat < toBeat;
 }
 
 /**
@@ -58,13 +104,25 @@ function resolveIterationRange(
  * which the window cannot restore on its own: `projectClipControllerRestore`
  * names what a relocation must send, and the window that opens at the
  * destination still emits the rows sitting on it.
+ *
+ * A switch-controller release (a pedal lift) on the clip's closing line plays at the
+ * clip end, as the last thing the clip does, so a lift drawn on the final bar line ends
+ * the sustain there before the next clip starts (Cubase's own reset events after a
+ * recording sit on a part's end). Any other row there stays dropped: a press would
+ * hold past the clip end with nothing of the clip left to hold (a comp cut or a trim
+ * landing on a press would leave the pedal down until stop), and a continuous
+ * controller would set a value for whatever follows. Only the last pass has that line: an inner loop seam stays half-open, so a row on the
+ * loop end is not replayed at every wrap, and notes keep the half-open end everywhere.
+ * The move is placed at exactly `clip.endBeat` and owned by the window that closes at
+ * or past it: the clip plays in that window and in no later one, so a window that
+ * opens on the clip end, where the clip is not scheduled, owes it nothing.
  */
 export function projectClipControllerEvents({
     controlChanges,
     clip,
     fromBeat,
     toBeat,
-}: ProjectClipControllerEventsInput): MidiCC[] {
+}: ProjectClipControllerEventsInput): ProjectedClipControllerMove[] {
     if (controlChanges.length === 0) {
         return [];
     }
@@ -75,7 +133,8 @@ export function projectClipControllerEvents({
     });
     const { startIndex, endIndex } = resolveIterationRange(clip, expansion, { fromBeat, toBeat });
     const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-    const events: MidiCC[] = [];
+    const lastPassIndex = countPasses(clip, expansion) - 1;
+    const events: ProjectedClipControllerMove[] = [];
 
     for (let iteration = startIndex; iteration < endIndex; iteration++) {
         const iterationStartBeat = clip.startBeat + iteration * expansion.loopLengthBeats;
@@ -88,11 +147,16 @@ export function projectClipControllerEvents({
                 beatOffset: iterationStartBeat - midiOffsetBeats,
                 visibleStartBeat: midiOffsetBeats,
                 visibleEndBeat: midiOffsetBeats + (iterationEndBeat - iterationStartBeat),
+                closingLineBeat: iteration === lastPassIndex ? clip.endBeat : undefined,
             },
         });
-        for (const event of projected.controlChanges) {
-            if (event.beat >= fromBeat && event.beat < toBeat) {
-                events.push(event);
+        const moves = [
+            ...projected.controlChanges.map((event) => ({ ...event, closesClip: false })),
+            ...projected.closingControlChanges.map((event) => ({ ...event, closesClip: true })),
+        ];
+        for (const move of moves) {
+            if (ownsMove(move, fromBeat, toBeat)) {
+                events.push(move);
             }
         }
     }

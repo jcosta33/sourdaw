@@ -66,6 +66,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    getTrackEligibility: vi.fn(),
     readMusicalRangeInputs: vi.fn(() => []),
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),

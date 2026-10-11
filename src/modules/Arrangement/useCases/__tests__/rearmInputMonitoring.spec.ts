@@ -7,10 +7,12 @@ type MonitorTrack = Pick<Track, 'id' | 'inputMonitoring' | 'inputId'>;
 
 const mocks = vi.hoisted(() => ({
     startInputMonitoring: vi.fn(() => Promise.resolve(true)),
+    reconcileAutoInputMonitoring: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     startInputMonitoring: mocks.startInputMonitoring,
+    reconcileAutoInputMonitoring: mocks.reconcileAutoInputMonitoring,
 }));
 
 function track(
@@ -51,6 +53,13 @@ describe('rearmInputMonitoring', () => {
         expect(mocks.startInputMonitoring).toHaveBeenCalledTimes(2);
         expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', 'in-1');
         expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t3', 'in-3');
+    });
+
+    it('reconciles Auto tracks through their owner instead of starting them itself', async () => {
+        await rearmInputMonitoring([track('t4', 'auto', 'in-4')]);
+
+        expect(mocks.reconcileAutoInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
     });
 
     it('settles a refusal without rejecting', async () => {

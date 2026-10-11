@@ -22,7 +22,8 @@ export function describePlanningOutcome(outcome: PlanningOutcome | undefined): s
         return [`Not supported: ${outcome.reason}`, ...searched].join(' ');
     }
     if (outcome?.kind === 'answer') {
-        return outcome.text;
+        // An empty answer has nothing to say; a blank notice would read as a reply that went missing.
+        return outcome.text.trim() === '' ? null : outcome.text;
     }
     if (outcome?.kind === 'no-match') {
         return NO_MATCH_PLANNING_OUTCOME_TEXT;

@@ -20,6 +20,11 @@ type TestRecordingClip = {
     audioBufferId?: string;
 };
 
+type TestRecordedCapture = {
+    provisionalStartBeat: number;
+    mediaOriginSeconds: number;
+};
+
 type TestTrack = {
     id: string;
     kind: 'audio' | 'midi' | 'vca';
@@ -47,7 +52,9 @@ const mocks = vi.hoisted(() => {
         ensureTrackStrips: vi.fn<() => void>(),
         getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
-        commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
+        commitRecording: vi.fn<(clip: TestRecordingClip, capture?: TestRecordedCapture) => Promise<void>>(() =>
+            Promise.resolve()
+        ),
         discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<() => Promise<void>>(),
@@ -432,6 +439,40 @@ describe('toggleRecording', () => {
             throw new Error('Expected the recording clip to be committed');
         }
         expect(clipUpdate.startBeat).toBeCloseTo(3.8, 9);
+    });
+
+    it('hands the commit the media origin its takes are placed against', async () => {
+        // The recorder minted every take against the record point (beat 4); the
+        // first sample sits 0.1 s earlier, which at 120 BPM is 0.2 beats.
+        const recordingClip = { id: 'clip-recording', trackId: 'track-audio', startBeat: 4, endBeat: 4 };
+        audioClock.currentTime = 10;
+        audioClock.baseLatency = 0.1;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            tempo: 120,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([recordingClip]);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
+
+        const captured = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!captured) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        captured({ kind: 'completed', buffer: { duration: 2 } });
+        await vi.waitFor(() => expect(mocks.commitRecording).toHaveBeenCalledOnce());
+
+        const capture = mocks.commitRecording.mock.calls[0]?.[1];
+        expect(capture).toEqual({ provisionalStartBeat: 4, mediaOriginSeconds: expect.any(Number) });
+        expect(capture?.mediaOriginSeconds).toBeCloseTo(secondsBetweenBeats([], 0, 3.8, 120), 9);
     });
 
     it('places a take stopped inside the hold against the clock at its stop', async () => {

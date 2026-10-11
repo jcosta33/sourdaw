@@ -105,6 +105,15 @@ type ToasterPadOutputControls = ToasterDeviceControls & {
     connectPadOutput: NonNullable<ToasterDeviceControls['connectPadOutput']>;
 };
 
+/**
+ * Why a strip is torn down. Only a strip whose track left the project takes its
+ * devices out of the project. A deactivated strip's track keeps its devices
+ * without a live strip (a folder whose last Toaster was removed); a graph reset
+ * rebuilds the same project, or one a project load commits later, whose own
+ * store reset ends the outgoing devices.
+ */
+type StripTeardown = 'track-removed' | 'strip-deactivated' | 'graph-reset';
+
 type RuntimeGraphMutation<TValue> = Readonly<{
     value: TValue;
     changed: boolean;
@@ -1738,7 +1747,7 @@ class AudioEngineImpl implements AudioEngine {
         return this.mutateRuntimeGraph(() => this.ensureTrackStripInGraph(trackId)).value;
     }
 
-    private removeTrackStripFromGraph(trackId: string): boolean {
+    private removeTrackStripFromGraph(trackId: string, teardown: StripTeardown): boolean {
         const node = this.trackNodes.get(trackId);
         // TrackNode.dispose() clears deviceNodes. Capture the ids first so all
         // live and pending sidechains targeting this strip can be identified.
@@ -1788,13 +1797,27 @@ class AudioEngineImpl implements AudioEngine {
                 sourceNode.setOutput('hw_out');
             }
         }
-        node.dispose();
+        if (teardown === 'track-removed') {
+            node.disposeLeavingProject();
+        } else {
+            node.dispose();
+        }
         this.trackNodes.delete(trackId);
         return !this.fallbackMode;
     }
 
     public removeTrackStrip(trackId: string): void {
-        this.mutateRuntimeGraph(() => ({ value: undefined, changed: this.removeTrackStripFromGraph(trackId) }));
+        this.mutateRuntimeGraph(() => ({
+            value: undefined,
+            changed: this.removeTrackStripFromGraph(trackId, 'track-removed'),
+        }));
+    }
+
+    public deactivateTrackStrip(trackId: string): void {
+        this.mutateRuntimeGraph(() => ({
+            value: undefined,
+            changed: this.removeTrackStripFromGraph(trackId, 'strip-deactivated'),
+        }));
     }
 
     public getTrackStrip(trackId: string): TrackChannelStrip | undefined {
@@ -1939,7 +1962,7 @@ class AudioEngineImpl implements AudioEngine {
         return this.mutateRuntimeGraph(() => this.ensureBusStripInGraph(busId)).value;
     }
 
-    private removeBusStripFromGraph(busId: string): boolean {
+    private removeBusStripFromGraph(busId: string, teardown: StripTeardown): boolean {
         const node = this.busNodes.get(busId);
         if (!node) {
             return false;
@@ -1949,7 +1972,7 @@ class AudioEngineImpl implements AudioEngine {
                 this.removeSendFromGraph(send.sourceTrackId, send.busId);
             }
         }
-        const removedTrack = this.removeTrackStripFromGraph(busId);
+        const removedTrack = this.removeTrackStripFromGraph(busId, teardown);
         node.dispose();
         this.busNodes.delete(busId);
         // BusNode is a facade over its paired TrackNode and owns no AudioNodes.
@@ -1959,7 +1982,10 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public removeBusStrip(busId: string): void {
-        this.mutateRuntimeGraph(() => ({ value: undefined, changed: this.removeBusStripFromGraph(busId) }));
+        this.mutateRuntimeGraph(() => ({
+            value: undefined,
+            changed: this.removeBusStripFromGraph(busId, 'track-removed'),
+        }));
     }
 
     public setBusGain(busId: string, gain: number): void {
@@ -2650,10 +2676,10 @@ class AudioEngineImpl implements AudioEngine {
                 this.removeSendFromGraph(send.sourceTrackId, send.busId);
             }
             for (const [id] of this.busNodes) {
-                this.removeBusStripFromGraph(id);
+                this.removeBusStripFromGraph(id, 'graph-reset');
             }
             for (const [id] of this.trackNodes) {
-                this.removeTrackStripFromGraph(id);
+                this.removeTrackStripFromGraph(id, 'graph-reset');
             }
             this.toasterPadRoutes.clear();
             this.pendingDevicePromises.clear();

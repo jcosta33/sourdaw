@@ -390,6 +390,124 @@ describe('hosted quantum measurement workflow contract', () => {
         expect(() => assertHostedQuantumMeasurementWorkflow(wrongUpload)).toThrow('qualified artifact upload');
     });
 
+    it('refuses removal of any bound on the Google Chrome install', () => {
+        const rootCommand =
+            'sudo env "PATH=$PATH" timeout --kill-after=15s 5m node_modules/.bin/playwright install --force chrome';
+        const installRun = (candidate: UnknownRecord): string => {
+            const run = namedStep(candidate, 'Install Google Chrome').run;
+            if (typeof run !== 'string') {
+                throw new TypeError('Expected the Chrome install run script');
+            }
+            return run;
+        };
+        const rewriteInstall = (rewrite: (run: string) => string): UnknownRecord => {
+            const clone = structuredClone(workflow);
+            const step = namedStep(clone, 'Install Google Chrome');
+            step.run = rewrite(installRun(clone));
+            return clone;
+        };
+        const attempts = 'three Google Chrome install attempts that fail after the third';
+        const rootTimeout = 'Google Chrome install under a root-side sudo timeout';
+        const forced = 'the forced Google Chrome install';
+        const stepLimit = 'above its three timed-out attempts';
+        const jobLimit = 'a job limit that holds three timed-out Google Chrome install attempts';
+
+        expect(installRun(workflow)).toContain(rootCommand);
+
+        // sudo's env_reset drops CI, so without --force Playwright skips the
+        // channel the runner image already ships and exits 0 without installing.
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(
+                rewriteInstall((run) => run.replace('playwright install --force chrome', 'playwright install chrome'))
+            )
+        ).toThrow(forced);
+
+        // The bound must be root-side: a timeout owned by the runner user cannot
+        // signal the sudo'd apt and curl tree.
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(
+                rewriteInstall((run) =>
+                    run.replace(rootCommand, 'sudo node_modules/.bin/playwright install --force chrome')
+                )
+            )
+        ).toThrow(rootTimeout);
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(
+                rewriteInstall((run) =>
+                    run.replace(
+                        rootCommand,
+                        'timeout --kill-after=15s 5m node_modules/.bin/playwright install --force chrome'
+                    )
+                )
+            )
+        ).toThrow(rootTimeout);
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(
+                rewriteInstall((run) => run.replace('--kill-after=15s 5m', '--kill-after=15s 50m'))
+            )
+        ).toThrow(rootTimeout);
+
+        const unbounded = structuredClone(workflow);
+        namedStep(unbounded, 'Install Google Chrome').run = 'pnpm exec playwright install chrome';
+        expect(() => assertHostedQuantumMeasurementWorkflow(unbounded)).toThrow(attempts);
+
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(
+                rewriteInstall((run) => run.replace('for attempt in 1 2 3', 'for attempt in 1'))
+            )
+        ).toThrow(attempts);
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(
+                rewriteInstall((run) => run.replace('sleep $((attempt * 5))', 'sleep 0'))
+            )
+        ).toThrow(attempts);
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(
+                rewriteInstall((run) =>
+                    run.replace('if [ "$attempt" -eq 3 ]; then\n    exit 1', 'if false; then\n    exit 1')
+                )
+            )
+        ).toThrow(attempts);
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(rewriteInstall((run) => run.replace('exit 1', 'exit 0')))
+        ).toThrow(attempts);
+        expect(() =>
+            assertHostedQuantumMeasurementWorkflow(
+                rewriteInstall((run) => `${run}pnpm exec playwright install chrome\n`)
+            )
+        ).toThrow('the complete bounded Google Chrome install loop');
+
+        const unlimitedStep = structuredClone(workflow);
+        delete namedStep(unlimitedStep, 'Install Google Chrome')['timeout-minutes'];
+        expect(() => assertHostedQuantumMeasurementWorkflow(unlimitedStep)).toThrow(stepLimit);
+
+        const tightStep = structuredClone(workflow);
+        namedStep(tightStep, 'Install Google Chrome')['timeout-minutes'] = 16;
+        expect(() => assertHostedQuantumMeasurementWorkflow(tightStep)).toThrow(stepLimit);
+
+        const widenedStep = structuredClone(workflow);
+        namedStep(widenedStep, 'Install Google Chrome')['timeout-minutes'] = 360;
+        expect(() => assertHostedQuantumMeasurementWorkflow(widenedStep)).toThrow(stepLimit);
+
+        // 24 minutes is the derived floor: three timed-out attempts and the
+        // longest observed time of every other step.
+        const belowFloor = structuredClone(workflow);
+        measurementJob(belowFloor)['timeout-minutes'] = 23;
+        expect(() => assertHostedQuantumMeasurementWorkflow(belowFloor)).toThrow(jobLimit);
+
+        const unlimitedJob = structuredClone(workflow);
+        delete measurementJob(unlimitedJob)['timeout-minutes'];
+        expect(() => assertHostedQuantumMeasurementWorkflow(unlimitedJob)).toThrow(jobLimit);
+
+        for (const minutes of [31, 60, 360]) {
+            const widenedJob = structuredClone(workflow);
+            measurementJob(widenedJob)['timeout-minutes'] = minutes;
+            expect(() => assertHostedQuantumMeasurementWorkflow(widenedJob)).toThrow(
+                'must keep its job limit at exactly 30 minutes'
+            );
+        }
+    });
+
     it('tracks the complete census, runtime, and producer contract inputs', () => {
         expect(HOSTED_QUANTUM_MEASUREMENT_TRIGGER_PATHS).toEqual(
             expect.arrayContaining([

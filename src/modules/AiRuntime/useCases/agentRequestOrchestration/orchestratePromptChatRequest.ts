@@ -1,5 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
-import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectIdentity,
+    captureProjectRevision,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
@@ -21,8 +25,10 @@ import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoo
 import { agentRunCancellation } from '../cancelAgentRun';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
 import { planPromptActions } from '../planPromptActions';
+import { readChatThreadContext } from '../readChatThreadContext';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
+import { appendAnswerChatMessages } from './appendAnswerChatMessages';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
 import { executePromptCommandPreview } from './executePromptCommandPreview';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
@@ -287,21 +293,31 @@ function refuseScheduledPlanInMode(
     });
 }
 
-/** An answer is an ordinary reply: no error, no pending confirmation, and the receipts it rests on. */
-function appendAnswerMessages(userText: string, outcome: Extract<PlanningOutcome, { kind: 'answer' }>): void {
-    appendChatMessage({
-        id: `msg-${crypto.randomUUID()}`,
-        role: 'user',
-        content: userText,
-        timestamp: Date.now(),
-    });
-    appendChatMessage({
-        id: `msg-${crypto.randomUUID()}`,
-        role: 'assistant',
-        content: outcome.text,
-        timestamp: Date.now(),
-        answerEvidence: outcome.evidence,
-    });
+/**
+ * An answer completes its run the same way on a first turn and on a decision resume: the receipts
+ * it read are recorded, a resumed decision counts as settled by the replacement attempt, and the
+ * reply is an ordinary assistant message.
+ */
+async function completeAnsweredRun(input: {
+    request: PromptChatRequestInput;
+    admission: PromptRequestAdmission;
+    aborter: AbortController;
+    receipts: readonly ApplicationToolReceipt[];
+    projectRevision: string;
+    outcome: Extract<PlanningOutcome, { kind: 'answer' }>;
+}): Promise<void> {
+    const { request, admission, aborter, receipts, projectRevision, outcome } = input;
+    recordApplicationToolOnlyPlan({ runId: admission.runId, revision: projectRevision, receipts });
+    if (aborter.signal.aborted) {
+        await agentRunCancellation.cancel({
+            runId: admission.runId,
+            reason: 'User cancelled the run before planning completed.',
+        });
+        return;
+    }
+    request.options?.onResumedPlanAccepted?.();
+    agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
+    appendAnswerChatMessages(request.userText, outcome);
 }
 
 async function dispatchPromptPlan(input: {
@@ -314,6 +330,19 @@ async function dispatchPromptPlan(input: {
     projectRevision: string;
 }): Promise<AgentApplyReceipt | undefined> {
     const { request, admission, aborter, state, context, result, projectRevision } = input;
+    // The outcome kind is read before the actions: an answer says the run changes nothing, so no
+    // batch that arrived beside it may run.
+    if (result.planningOutcome?.kind === 'answer') {
+        await completeAnsweredRun({
+            request,
+            admission,
+            aborter,
+            receipts: result.applicationToolReceipts ?? [],
+            projectRevision,
+            outcome: result.planningOutcome,
+        });
+        return undefined;
+    }
     if (request.options?.resume && result.actions.length === 0) {
         throw new Error('The replacement provider returned no plan for the selected decision interpretation.');
     }
@@ -351,6 +380,8 @@ async function dispatchPromptPlan(input: {
             content: 'Executing...',
             timestamp: Date.now(),
             isCommandAction: true,
+            agentRunId: admission.runId,
+            projectId: captureProjectIdentity(),
         });
         const confirmationDescription = describePendingActionConfirmation({
             actions: result.actions,
@@ -466,10 +497,6 @@ async function dispatchPromptPlan(input: {
         return undefined;
     }
     agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
-    if (result.planningOutcome?.kind === 'answer') {
-        appendAnswerMessages(request.userText, result.planningOutcome);
-        return undefined;
-    }
     appendChatMessage({
         id: `msg-${crypto.randomUUID()}`,
         role: 'user',
@@ -676,6 +703,8 @@ export async function orchestratePromptChatRequest(
                 );
             },
             providerPlanning: admission.providerPlanning ? 'enabled' : 'disabled',
+            // Read before this request joins the thread, so the thread holds only its earlier turns.
+            thread: readChatThreadContext(),
         });
         if (!settleCompletedPlanning(admission, input.userText)) {
             return undefined;

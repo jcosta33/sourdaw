@@ -1,6 +1,6 @@
 import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatch';
 
-import { encodePatchValue, NON_SCALAR_BAND_KEYS, NON_SCALAR_GLOBAL_KEYS } from './helpers';
+import { encodePatchValue, NON_MORPHED_BAND_KEYS, NON_SCALAR_GLOBAL_KEYS } from './helpers';
 
 /**
  * Flatten a patch into the engine-keyed scalar values a morph corner stores:
@@ -11,7 +11,8 @@ import { encodePatchValue, NON_SCALAR_BAND_KEYS, NON_SCALAR_GLOBAL_KEYS } from '
  *
  * Non-scalar keys (the patch name, the band array, morph metadata, the morph
  * position itself) and values with no numeric encoding are skipped, exactly as
- * a patch load skips them.
+ * a patch load skips them. The band's body choice is skipped too, though a load
+ * pushes it: a morph interpolates, and a body is not a value between two others.
  */
 export function flattenPatchParams(patch: BacteriaPatch): Record<string, number> {
     const values: Record<string, number> = {};
@@ -36,7 +37,7 @@ export function flattenPatchParams(patch: BacteriaPatch): Record<string, number>
             continue;
         }
         for (const key of Object.keys(band) as Array<keyof BacteriaBand>) {
-            if (NON_SCALAR_BAND_KEYS.has(key)) {
+            if (NON_MORPHED_BAND_KEYS.has(key)) {
                 continue;
             }
             const encodedValue = encodePatchValue(key, band[key]);

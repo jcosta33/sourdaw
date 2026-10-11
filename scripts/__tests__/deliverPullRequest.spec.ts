@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import {
     chmodSync,
     existsSync,
@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import {
+    coordinateDelivery,
     DeliveryMergeRejectedError,
     deliverPullRequest as deliverPullRequestWithTracker,
     deliverPullRequestWithRequiredCi as deliverPullRequestWithRequiredCiAndTracker,
@@ -28,6 +29,8 @@ import {
     runDeliverCli,
     shellPort,
     withPullRequestDeliveryLock,
+    type DeliveryAuthentication,
+    type DeliveryCoordinatorDependencies,
     type DeliveryReceiptAuthorityExpectation,
     type DeliveryReceiptProof,
     type DeliveryPort,
@@ -43,16 +46,33 @@ import {
 } from '../deliverPullRequest';
 import {
     AUTHOR_BOT_NODE_ID,
+    AUTHOR_MINT_PERMISSIONS,
+    DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     ORCHESTRATOR_USER_NODE_ID,
     GITHUB_HTTPS_REMOTE,
     REQUIRED_BASE_BRANCH,
     REVIEWER_BOT_NODE_ID,
+    authenticateRole,
+    type GitHubJsonClient,
+    type MintPermissions,
 } from '../githubAppIdentity.ts';
 import { composeDeliveryReceipt } from '../prContract.ts';
 import { reviewBundlePath } from '../reviewBundleLocator.ts';
 import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
 
 const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
+
+// Cases that spawn git or node, or create and remove real fixture directories, pass an explicit 30 s ceiling
+// because they measured up to ~6 s on a loaded machine (#5229). In-memory cases keep vitest's 5 s default so an
+// injected delay in them still fails.
+
+/**
+ * A throwaway mint key composed at runtime, so no credential-shaped literal is committed: the
+ * real `authenticateRole` under test signs its app JWT with it before the stubbed request client
+ * records the mint body.
+ */
+const { privateKey: mintKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const mintPem = mintKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 
 /**
  * The launcher's own parse, serialized exactly as it reaches the snapshot. Going through it rather
@@ -1364,12 +1384,12 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it.each([
         ['releases the lock after definitive HTTP 422', '422', false],
         ['retains the lock and refuses reacquisition after ambiguous HTTP 409', '409', true],
-    ] as const)('%s', async (_label, status, retainsLock) => {
+    ] as const)('%s', { timeout: 30_000 }, async (_label, status, retainsLock) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-rejection-lock-'));
         initializeDeliveryLockRepository(root);
         const restorePs = writeTrustedPsFixture(root);
@@ -6837,7 +6857,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head whose required checks are all green, blaming a review thread or another ruleset rule rather than a check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-green-lock-'));
@@ -6866,7 +6886,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head whose required check turned red after an older green attempt, naming the check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-newest-red-lock-'));
@@ -6895,7 +6915,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('reads a BLOCKED head whose required check recovered after an older red attempt as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-newest-green-lock-'));
@@ -6927,7 +6947,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head whose required check has a newer attempt still in flight, naming the check whether the newest attempt is pending or failed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-inflight-lock-'));
@@ -6956,7 +6976,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('reads a BLOCKED head whose required check failed between two green attempts as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-retired-mid-lock-'));
@@ -6989,7 +7009,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head whose required check has a failure and a success sharing one start, naming the check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-tied-start-lock-'));
@@ -7018,7 +7038,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('reads a BLOCKED head whose required check ended skipped after an older failure as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-skipped-lock-'));
@@ -7052,7 +7072,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('reads a BLOCKED head whose only newer failure belongs to a different check name as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-other-name-lock-'));
@@ -7084,7 +7104,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     // An attempt GitHub reports no start for supersedes nothing: the green
     // attempt cannot be proven newer than the settled failure beside it, so
@@ -7117,7 +7137,7 @@ describe('pull-request delivery', () => {
             restorePs();
             removeTemporaryGitRepository(root);
         }
-    });
+    }, 30_000);
 
     it('refuses a BLOCKED head even when the live ruleset cannot be read, naming the check(s) as unlistable', () => {
         const { port, calls } = fakePort({
@@ -9475,6 +9495,390 @@ describe('delivery CLI', () => {
     });
 });
 
+describe('delivery author authentication', () => {
+    const PR_NUMBER = 42;
+
+    function classificationDependencies(input: {
+        root: string;
+        baseSha: string;
+        headSha: string;
+        events: string[];
+        authorMints: MintPermissions[];
+        /** Fails the author mint that carries the workflow set, exercising a failure before tracker auth. */
+        workflowMintFailure?: Error;
+        /**
+         * Replaces the recording author seam with a real backing (e.g. `authenticateRole` over a
+         * stubbed request client), so the coordinator's permission request is observed through the
+         * actual mint rather than a stub.
+         */
+        authenticateAuthorOverride?: (
+            primaryRoot: string,
+            permissions: MintPermissions
+        ) => Promise<DeliveryAuthentication>;
+    }): {
+        dependencies: DeliveryCoordinatorDependencies;
+        deliveredAuthentication: () => DeliveryAuthentication | undefined;
+    } {
+        const events = input.events;
+        const builtPorts: Array<{ authentication: DeliveryAuthentication; port: DeliveryPort }> = [];
+        let delivered: DeliveryAuthentication | undefined;
+        const authentication = (permissions: MintPermissions): DeliveryAuthentication => {
+            input.authorMints.push(permissions);
+            events.push(Object.hasOwn(permissions, 'workflows') ? 'mint:author-workflow' : 'mint:author-ordinary');
+            if (input.workflowMintFailure !== undefined && Object.hasOwn(permissions, 'workflows')) {
+                throw input.workflowMintFailure;
+            }
+            return {
+                minted: {
+                    token: 'ghs_classification',
+                    login: 'author[bot]',
+                    actorNodeId: AUTHOR_BOT_NODE_ID,
+                    permissions,
+                },
+                session: { configDir: '', env: {}, dispose: () => events.push('dispose') },
+            };
+        };
+        const buildPort = (): DeliveryPort => ({
+            gateRequiredCheckNames: () => new Set(['Gate']),
+            gateRequiredSkipAliases: () => new Map(),
+            headCheckRuns: () => [],
+            requiredStatusCheckContexts: () => ['Gate'],
+            fetch: () => {
+                events.push('fetch');
+            },
+            pullRequest: (number) => {
+                events.push('snapshot');
+                expect(number).toBe(PR_NUMBER);
+                return pullRequest({ baseRefOid: input.baseSha, headRefOid: input.headSha });
+            },
+            reviewState: () => {
+                throw new Error('classification never reads review state');
+            },
+            reviewBundleDeliveryAuthorization: () => {
+                throw new Error('classification never reads a review bundle');
+            },
+            dependents: () => {
+                throw new Error('classification never reads dependents');
+            },
+            repositoryDeletesMergedBranches: () => {
+                throw new Error('classification never reads merge policy');
+            },
+            merge: () => {
+                throw new Error('classification never merges');
+            },
+            retarget: () => {
+                throw new Error('classification never retargets');
+            },
+            deliveryReceipts: () => {
+                throw new Error('classification never reads receipts');
+            },
+            deliveryReceiptProof: () => {
+                throw new Error('classification never reads receipt proof');
+            },
+            addDeliveryReceipt: () => {
+                throw new Error('classification never adds a receipt');
+            },
+            readDeliveryReceiptAuthority: () => {
+                throw new Error('classification never reads receipt authority');
+            },
+            writeDeliveryReceiptAuthority: () => {
+                throw new Error('classification never writes receipt authority');
+            },
+            clearDeliveryReceiptAuthority: () => {
+                throw new Error('classification never clears receipt authority');
+            },
+            log: () => {
+                throw new Error('classification never logs');
+            },
+        });
+        const dependencies: DeliveryCoordinatorDependencies = {
+            primaryRoot: () => input.root,
+            serializeDelivery: (_primaryRoot, _number, operation) =>
+                operation({
+                    markRemoteMutationAttempt: () => events.push('mutate-attempt'),
+                    markRemoteMutationKnownAbsent: () => events.push('mutate-known-absent'),
+                    ownerOid: '',
+                    registerSuccessfulCompletion: () => undefined,
+                }),
+            authenticateAuthor:
+                input.authenticateAuthorOverride ?? (async (_primaryRoot, permissions) => authentication(permissions)),
+            authenticateTracker: async () => {
+                events.push('auth:tracker');
+                return {
+                    minted: {
+                        token: 'ghs_tracker',
+                        login: 'author[bot]',
+                        actorNodeId: AUTHOR_BOT_NODE_ID,
+                        permissions: { issues: 'write' },
+                    },
+                    session: { configDir: '', env: {}, dispose: () => events.push('dispose') },
+                };
+            },
+            repositoryName: () => {
+                events.push('repository');
+                return 'jcosta33/sourdaw';
+            },
+            deliveryPort: (_repository, portAuthentication) => {
+                events.push('port');
+                const port = buildPort();
+                builtPorts.push({ authentication: portAuthentication, port });
+                return port;
+            },
+            trackerPort: () => ({
+                withMutationLease: <Value>(operation: () => Value) => operation(),
+                inspect: () => {
+                    throw new Error('classification never inspects an issue');
+                },
+                update: () => {
+                    throw new Error('classification never updates an issue');
+                },
+                comment: () => {
+                    throw new Error('classification never comments on an issue');
+                },
+                log: () => {
+                    throw new Error('classification never logs');
+                },
+            }),
+            completeIssue: () => {
+                throw new Error('classification never completes an issue');
+            },
+            deliver: (number, deliveredPort) => {
+                events.push(`deliver:${number}`);
+                delivered = builtPorts.find((entry) => entry.port === deliveredPort)?.authentication;
+            },
+        };
+        return { dependencies, deliveredAuthentication: () => delivered };
+    }
+
+    function commitRange(root: string, changedPath: string | undefined): { baseSha: string; headSha: string } {
+        const run = (args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        run(['init', '-b', 'main']);
+        run(['config', 'user.name', 'Fixture']);
+        run(['config', 'user.email', 'fixture@example.com']);
+        writeFileSync(join(root, 'base.txt'), 'base\n');
+        run(['add', 'base.txt']);
+        run(['commit', '--no-gpg-sign', '-m', 'chore: base']);
+        const baseSha = run(['rev-parse', 'HEAD']);
+        if (changedPath !== undefined) {
+            const target = join(root, changedPath);
+            mkdirSync(dirname(target), { recursive: true });
+            writeFileSync(target, 'change\n');
+            run(['add', '--', changedPath]);
+            run(['commit', '--no-gpg-sign', '-m', 'feat: change']);
+        }
+        return { baseSha, headSha: run(['rev-parse', 'HEAD']) };
+    }
+
+    /**
+     * Records every mint request and answers like GitHub would: the installation token carries
+     * exactly the permissions the request body asked for, so a reverted or dropped permission
+     * forwarding reaches the recorded bodies instead of being laundered by the stub's own echo.
+     */
+    function mintRecordingClient(): {
+        requests: Array<{ url: string; body?: string }>;
+        request: GitHubJsonClient;
+    } {
+        const requests: Array<{ url: string; body?: string }> = [];
+        const request: GitHubJsonClient = async (url, init) => {
+            requests.push({ url, body: init.body });
+            if (url.endsWith('/access_tokens')) {
+                return {
+                    status: 201,
+                    body: {
+                        token: `ghs_deliver_${requests.length}`,
+                        permissions: JSON.parse(init.body ?? '{}').permissions,
+                    },
+                };
+            }
+            if (url === 'https://api.github.com/app') {
+                return { status: 200, body: { slug: 'hplovecraft208' } };
+            }
+            return {
+                status: 200,
+                body: { login: 'hplovecraft208[bot]', node_id: AUTHOR_BOT_NODE_ID, type: 'Bot' },
+            };
+        };
+        return { requests, request };
+    }
+
+    function authorCredentialFile(primaryRoot: string): (path: string) => string {
+        return (path) => {
+            if (path === join(primaryRoot, '.env.sourdaw-author')) {
+                return [
+                    'SOURDAW_GITHUB_APP_ID=4650613',
+                    'SOURDAW_GITHUB_APP_INSTALLATION_ID=154969409',
+                    `SOURDAW_GITHUB_APP_PRIVATE_KEY="${mintPem.replaceAll('\n', '\\n')}"`,
+                    '',
+                ].join('\n');
+            }
+            throw new Error(`unexpected credential read in test: ${path}`);
+        };
+    }
+
+    it('re-mints the author session with workflows write when the merge diff changes a workflow', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        let deliveredAuthentication: DeliveryAuthentication | undefined;
+        try {
+            const { baseSha, headSha } = commitRange(root, '.github/workflows/health-gates.yml');
+            const harness = classificationDependencies({ root, baseSha, headSha, events, authorMints });
+            await coordinateDelivery(PR_NUMBER, harness.dependencies);
+            deliveredAuthentication = harness.deliveredAuthentication();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        expect(authorMints[0]).toEqual({ contents: 'write', pull_requests: 'write' });
+        expect(authorMints[1]).toEqual({ contents: 'write', pull_requests: 'write', workflows: 'write' });
+        expect(authorMints).toHaveLength(2);
+        expect(authorMints[0]).not.toHaveProperty('workflows');
+        expect(authorMints[1]).not.toHaveProperty('issues');
+        expect(deliveredAuthentication?.minted.permissions).toEqual({
+            contents: 'write',
+            pull_requests: 'write',
+            workflows: 'write',
+        });
+        expect(events).toEqual([
+            'mint:author-ordinary',
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'mint:author-workflow',
+            'dispose',
+            'auth:tracker',
+            'port',
+            'deliver:42',
+            'dispose',
+            'dispose',
+        ]);
+    }, 30_000);
+
+    it('keeps the ordinary author mint when the merge diff touches no workflow', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        let deliveredAuthentication: DeliveryAuthentication | undefined;
+        try {
+            const { baseSha, headSha } = commitRange(root, 'scripts/deliverPullRequest.ts');
+            const harness = classificationDependencies({ root, baseSha, headSha, events, authorMints });
+            await coordinateDelivery(PR_NUMBER, harness.dependencies);
+            deliveredAuthentication = harness.deliveredAuthentication();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        expect(authorMints).toEqual([{ contents: 'write', pull_requests: 'write' }]);
+        expect(authorMints[0]).not.toHaveProperty('workflows');
+        expect(deliveredAuthentication?.minted.permissions).toEqual({ contents: 'write', pull_requests: 'write' });
+        expect(events).toEqual([
+            'mint:author-ordinary',
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'auth:tracker',
+            'port',
+            'deliver:42',
+            'dispose',
+            'dispose',
+        ]);
+    }, 30_000);
+
+    it('mints the deliver workflow set through the real author role when the coordinator classifies a workflow diff', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        const { requests, request } = mintRecordingClient();
+        let deliveredAuthentication: DeliveryAuthentication | undefined;
+        try {
+            const { baseSha, headSha } = commitRange(root, WORKFLOW_PATH);
+            const harness = classificationDependencies({
+                root,
+                baseSha,
+                headSha,
+                events,
+                authorMints,
+                authenticateAuthorOverride: (primaryRoot, permissions) =>
+                    authenticateRole({
+                        primaryRoot,
+                        role: 'author',
+                        permissions,
+                        readFile: authorCredentialFile(primaryRoot),
+                        request,
+                        env: {},
+                    }),
+            });
+            await coordinateDelivery(PR_NUMBER, harness.dependencies);
+            deliveredAuthentication = harness.deliveredAuthentication();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        const mintBodies = requests.filter((entry) => entry.url.endsWith('/access_tokens'));
+        expect(mintBodies).toHaveLength(2);
+        expect(DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS).toEqual({
+            contents: 'write',
+            pull_requests: 'write',
+            workflows: 'write',
+        });
+        expect(JSON.parse(mintBodies[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
+        expect(JSON.parse(mintBodies[1]?.body ?? '{}')).toEqual({
+            permissions: DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+        });
+        expect(mintBodies[1]?.body).not.toContain('issues');
+        expect(deliveredAuthentication?.minted.permissions).toEqual({
+            contents: 'write',
+            pull_requests: 'write',
+            workflows: 'write',
+        });
+        expect(deliveredAuthentication?.minted.permissions).not.toHaveProperty('issues');
+        expect(events).toEqual([
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'auth:tracker',
+            'port',
+            'deliver:42',
+            'dispose',
+        ]);
+    }, 30_000);
+
+    it('disposes the ordinary author session exactly once when the workflow re-mint fails before the tracker mint', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-classification-'));
+        const events: string[] = [];
+        const authorMints: MintPermissions[] = [];
+        try {
+            const { baseSha, headSha } = commitRange(root, WORKFLOW_PATH);
+            const harness = classificationDependencies({
+                root,
+                baseSha,
+                headSha,
+                events,
+                authorMints,
+                workflowMintFailure: new Error('workflow mint is unavailable'),
+            });
+            await expect(coordinateDelivery(PR_NUMBER, harness.dependencies)).rejects.toThrow(
+                'workflow mint is unavailable'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+        expect(authorMints).toEqual([
+            { contents: 'write', pull_requests: 'write' },
+            { contents: 'write', pull_requests: 'write', workflows: 'write' },
+        ]);
+        expect(events).toEqual([
+            'mint:author-ordinary',
+            'repository',
+            'port',
+            'fetch',
+            'snapshot',
+            'mint:author-workflow',
+            'dispose',
+        ]);
+    }, 30_000);
+});
+
 describe('delivery shell boundary', () => {
     afterEach(() => {
         vi.unstubAllEnvs();
@@ -10101,7 +10505,7 @@ describe('delivery shell boundary', () => {
         }
 
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it('fails merged shellPort recovery when GraphQL marks a same-timestamp author receipt as edited', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10173,7 +10577,7 @@ describe('delivery shell boundary', () => {
             expect.stringContaining(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT),
         ]);
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it.each([
         {
@@ -10298,7 +10702,7 @@ describe('delivery shell boundary', () => {
         expect(captures[0]).toContain('pr view 42');
         expect(captures[1]).toContain('mergedBy{__typename');
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it('ignores legacy v1 persisted authority until shellPort proves the complete stable merged lineage', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10368,7 +10772,7 @@ describe('delivery shell boundary', () => {
         }
 
         expect(effects).toEqual(['complete:2372']);
-    });
+    }, 30_000);
 
     it('round-trips prepared shellPort authority with a skipped advisory receiptBody and post-merge validation across fresh instances', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10403,7 +10807,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort authority CAS when the ref changes before the expected-old update', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10484,7 +10888,7 @@ describe('delivery shell boundary', () => {
             removeTemporaryGitRepository(primaryRoot);
             removeTemporaryGitRepository(wrapperRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort adapter writes when expectedCurrent mismatches the newer stored authority', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10543,7 +10947,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort adapter writes when expected authority must still be absent and a newer authority already exists', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10587,7 +10991,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort adapter clears when expectedCurrent mismatches the newer stored authority', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10641,7 +11045,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort clear when a hostile authority is recreated after the delete succeeds but before readback', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10719,7 +11123,7 @@ describe('delivery shell boundary', () => {
             removeTemporaryGitRepository(primaryRoot);
             removeTemporaryGitRepository(wrapperRoot);
         }
-    });
+    }, 30_000);
 
     it('fails before merge when a shellPort authority ref changes immediately after the prepared-authority CAS succeeds', () => {
         const closes = relationshipBody('Closes #2372');
@@ -10877,7 +11281,7 @@ describe('delivery shell boundary', () => {
             removeTemporaryGitRepository(primaryRoot);
             removeTemporaryGitRepository(wrapperRoot);
         }
-    });
+    }, 30_000);
 
     it.each([
         {
@@ -10923,6 +11327,7 @@ describe('delivery shell boundary', () => {
         },
     ])(
         'rejects a raw v2 authority ref with malformed nested postMergeValidation: $label',
+        { timeout: 30_000 },
         ({ postMergeValidation }) => {
             const closes = relationshipBody('Closes #2372');
             const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
@@ -10980,7 +11385,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects a raw v2 authority ref with duplicate nested postMergeValidation members before JSON.parse collapses them', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11007,7 +11412,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects an exact symlink delivery receipt authority ref path', () => {
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
@@ -11045,7 +11450,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects a delivery receipt authority ref that becomes symbolic after the path check but before the bound git read', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11118,7 +11523,7 @@ describe('delivery shell boundary', () => {
             removeTemporaryGitRepository(primaryRoot);
             removeTemporaryGitRepository(wrapperRoot);
         }
-    });
+    }, 30_000);
 
     it('reads an exact packed delivery receipt authority ref when no loose ref path exists', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11149,7 +11554,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('never accepts a packed descendant delivery receipt authority ref when the exact ref does not exist', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11193,7 +11598,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects an exact loose directory that conflicts with a packed delivery receipt authority ref', () => {
         const closes = relationshipBody('Closes #2372');
@@ -11230,12 +11635,12 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it.each([
         { label: 'loose', pack: false },
         { label: 'packed', pack: true },
-    ])('rejects a $label annotated-tag delivery receipt authority ref', ({ pack }) => {
+    ])('rejects a $label annotated-tag delivery receipt authority ref', { timeout: 30_000 }, ({ pack }) => {
         const closes = relationshipBody('Closes #2372');
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
@@ -11294,7 +11699,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('treats an exact delivery receipt authority child-prefix directory as absent', () => {
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
@@ -11317,95 +11722,117 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('fails shellPort merged recovery when proof count exceeds the complete REST lineage even if the latest id matches', () => {
         const bodyX = relationshipBody('Closes #2372');
         const effects: string[] = [];
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) => {
-                const joined = args.join(' ');
-                if (joined.includes('pr view')) {
-                    return JSON.stringify(
-                        shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
-                    );
-                }
-                if (joined.includes('mergedBy{__typename')) {
-                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
-                }
-                if (joined.includes('issues/42/comments?per_page=100')) {
-                    return JSON.stringify([
-                        [
-                            {
-                                node_id: 'IC_x',
-                                body: deliveryReceiptBody(42, 'head', bodyX, 2372),
-                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
-                                created_at: '2026-08-21T00:00:00Z',
-                                updated_at: '2026-08-21T00:00:00Z',
-                            },
-                        ],
-                    ]);
-                }
-                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
-                    return shellDeliveryReceiptProofResponse(['IC_x', 'IC_hidden_y']);
-                }
-                effects.push(`capture:${joined}`);
-                throw new Error(`unexpected capture: ${joined}`);
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(
+                            shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                        );
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [
+                                {
+                                    node_id: 'IC_x',
+                                    body: deliveryReceiptBody(42, 'superseded-head', bodyX, 2372),
+                                    user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                    created_at: '2026-08-21T00:00:00Z',
+                                    updated_at: '2026-08-21T00:00:00Z',
+                                },
+                            ],
+                        ]);
+                    }
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                        return shellDeliveryReceiptProofResponse(['IC_x', 'IC_hidden_y']);
+                    }
+                    effects.push(`capture:${joined}`);
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
             },
-            run: () => undefined,
-        });
+            { primaryRoot }
+        );
 
-        expect(() =>
-            deliverPullRequest(42, port, {
-                complete: (issue) => effects.push(`complete:${issue}`),
-            })
-        ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        try {
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it('fails shellPort merged recovery when proof latest id differs despite an equal comment count', () => {
         const bodyX = relationshipBody('Closes #2372');
         const effects: string[] = [];
-        const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) => {
-                const joined = args.join(' ');
-                if (joined.includes('pr view')) {
-                    return JSON.stringify(
-                        shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
-                    );
-                }
-                if (joined.includes('mergedBy{__typename')) {
-                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
-                }
-                if (joined.includes('issues/42/comments?per_page=100')) {
-                    return JSON.stringify([
-                        [
-                            {
-                                node_id: 'IC_x',
-                                body: deliveryReceiptBody(42, 'head', bodyX, 2372),
-                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
-                                created_at: '2026-08-21T00:00:00Z',
-                                updated_at: '2026-08-21T00:00:00Z',
-                            },
-                        ],
-                    ]);
-                }
-                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
-                    return shellDeliveryReceiptProofResponse(['IC_hidden_y']);
-                }
-                effects.push(`capture:${joined}`);
-                throw new Error(`unexpected capture: ${joined}`);
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(
+                            shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                        );
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [
+                                {
+                                    node_id: 'IC_x',
+                                    body: deliveryReceiptBody(42, 'superseded-head', bodyX, 2372),
+                                    user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                    created_at: '2026-08-21T00:00:00Z',
+                                    updated_at: '2026-08-21T00:00:00Z',
+                                },
+                            ],
+                        ]);
+                    }
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                        return shellDeliveryReceiptProofResponse(['IC_hidden_y']);
+                    }
+                    effects.push(`capture:${joined}`);
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
             },
-            run: () => undefined,
-        });
+            { primaryRoot }
+        );
 
-        expect(() =>
-            deliverPullRequest(42, port, {
-                complete: (issue) => effects.push(`complete:${issue}`),
-            })
-        ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        try {
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+
         expect(effects).toEqual([]);
-    });
+    }, 30_000);
 
     it('fails shellPort receipt proof when the first GraphQL page already reaches totalCount but still claims another page', () => {
         const port = shellPort('jcosta33/sourdaw', {
@@ -11770,6 +12197,7 @@ describe('delivery shell boundary', () => {
         const port = shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture });
 
         expect(port.reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'head',
             latestReviewerReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
@@ -11954,7 +12382,7 @@ describe('delivery shell boundary', () => {
         } finally {
             removeTemporaryGitRepository(primaryRoot);
         }
-    });
+    }, 30_000);
 
     it('rejects malformed repository merge settings', () => {
         let attempted = false;
@@ -11996,7 +12424,7 @@ describe('delivery shell boundary', () => {
             expect(runs).toHaveLength(1);
             const args = runs[0]?.args ?? [];
             expect(args.slice(0, 3)).toEqual(['-c', 'credential.helper=', '-c']);
-            expect(args[3]).toMatch(/^credential\.helper=\//);
+            expect(args[3]).toMatch(/^credential\.helper=!'\//);
             expect(args[3]).not.toContain('ghs_minted');
             expect(args.slice(4)).toEqual([
                 'fetch',
@@ -12011,7 +12439,7 @@ describe('delivery shell boundary', () => {
         } finally {
             rmSync(helperDir, { recursive: true, force: true });
         }
-    });
+    }, 30_000);
 
     it('fetches origin heads and authorship notes when unauthenticated', () => {
         const runs: Array<{ command: string; args: string[] }> = [];
@@ -12166,7 +12594,7 @@ describe('delivery shell boundary', () => {
         } finally {
             rmSync(helperDir, { recursive: true, force: true });
         }
-    });
+    }, 30_000);
 
     it('swallows errors and logs a warning when authorship note sync throws, without failing delivery', () => {
         const warnings: string[] = [];
@@ -12252,6 +12680,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'other-head',
             latestReviewerReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
@@ -12331,6 +12760,7 @@ describe('delivery shell boundary', () => {
             expect(
                 shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
             ).toEqual({
+                latestReviewerCommitOid: 'head',
                 latestReviewerReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                 unresolvedThreads: 0,
@@ -12390,6 +12820,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'head',
             latestReviewerReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
@@ -12439,6 +12870,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'head',
             latestReviewerReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
@@ -12692,6 +13124,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: null,
             latestReviewerReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
@@ -12795,6 +13228,7 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'head',
             latestReviewerReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
@@ -12843,6 +13277,7 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            latestReviewerCommitOid: 'other-head',
             latestReviewerReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
@@ -12927,5 +13362,5 @@ describe('trusted child run', () => {
         expect(() => run(process.execPath, ['-e', "console.error('trusted-child-boom'); process.exit(1)"])).toThrow(
             /trusted-child-boom/
         );
-    });
+    }, 30_000);
 });

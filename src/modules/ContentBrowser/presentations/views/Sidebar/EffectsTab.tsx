@@ -102,11 +102,14 @@ export const EffectsTab = ({
     const uncategorized: EffectPlugin[] = [];
 
     for (const plugin of effects) {
-        const idKey = plugin.id
-            .replace(/^builtin-/, '')
-            .replace(/^native-/, '')
-            .toLowerCase();
-        const group = EFFECT_GROUPS.find((g) => g.categories.some((gc) => idKey === gc || idKey.includes(gc)));
+        const fullId = plugin.id.toLowerCase();
+        const idKey = fullId.replace(/^builtin-/, '').replace(/^native-/, '');
+        // A category key may name the full catalog id (`native-scoring`), so
+        // the unstripped id joins the comparison; `builtin-` ids keep
+        // classifying by their stripped key.
+        const group = EFFECT_GROUPS.find((g) =>
+            g.categories.some((gc) => fullId === gc || fullId.includes(gc) || idKey === gc || idKey.includes(gc))
+        );
         if (group) {
             const existing = groupedEffects.get(group.id) ?? [];
             existing.push(plugin);

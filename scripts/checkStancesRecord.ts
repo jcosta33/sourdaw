@@ -48,6 +48,9 @@ import { fail } from './prContract.ts';
 import { parseReviewStancesRecord } from './reviewDossierPublication.ts';
 import { TYPESAFE_MODEL } from './semanticReview/provider.ts';
 import { sensitiveContentReason } from './semanticReview/sensitive.ts';
+import { prepareTypeSafeRequest, sendTypeSafeRequest } from './typesafeRequest.ts';
+
+import type { Fetch } from '@typesafe-ai/sdk';
 
 export const TYPESAFE_STANCES_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 /**
@@ -354,38 +357,24 @@ function readStancesJson(path: string): unknown {
     return parsed;
 }
 
-async function requestStancesVerdicts(body: StancesCheckBody, apiKey: string): Promise<unknown> {
-    let response: Response;
-    try {
-        response = await fetch(TYPESAFE_STANCES_ENDPOINT, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(body),
-        });
-    } catch (error) {
-        fail(
-            `TypeSafe request to ${TYPESAFE_STANCES_ENDPOINT} failed: ${error instanceof Error ? error.message : String(error)}`
-        );
-    }
-    let text: string;
-    try {
-        text = await response.text();
-    } catch (error) {
-        fail(`TypeSafe response body could not be read: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if (!response.ok) {
-        fail(`TypeSafe request returned HTTP ${String(response.status)}: ${truncateAdmission(text.trim())}`);
-    }
-    let payload: unknown;
-    try {
-        payload = JSON.parse(text) as unknown;
-    } catch {
-        fail('TypeSafe response is not valid JSON');
-    }
-    return payload;
+export async function requestStancesVerdicts(
+    body: StancesCheckBody,
+    apiKey: string,
+    options: { signal: AbortSignal; fetch?: Fetch }
+): Promise<unknown> {
+    const prepared = prepareTypeSafeRequest({
+        payload: body,
+        maxStatePlusQuestionBytes: 96 * 1024,
+        maxRequestBytes: 128 * 1024,
+        signal: options.signal,
+    });
+    return sendTypeSafeRequest({
+        prepared,
+        apiKey,
+        signal: options.signal,
+        timeoutMs: 20_000,
+        fetch: options.fetch,
+    });
 }
 
 /**
@@ -413,7 +402,17 @@ async function runCheck(argv: readonly string[]): Promise<number> {
     const apiKey = readApiKey(process.env);
     const stancesPath = join(bundlePath, STANCES_FILE_NAME);
     const record = readStancesCheckRecord(readStancesJson(stancesPath), stancesPath);
-    const payload = await requestStancesVerdicts(buildStancesCheckBody(record), apiKey);
+    const controller = new AbortController();
+    const cancel = (): void => controller.abort();
+    process.once('SIGINT', cancel);
+    process.once('SIGTERM', cancel);
+    let payload: unknown;
+    try {
+        payload = await requestStancesVerdicts(buildStancesCheckBody(record), apiKey, { signal: controller.signal });
+    } finally {
+        process.removeListener('SIGINT', cancel);
+        process.removeListener('SIGTERM', cancel);
+    }
     const response = readStancesCheckAnswers(payload);
     const evaluation = evaluateStancesCheck(response.answers, threshold, record.admissions, response.model);
     const outcome = renderStancesCheckOutcome(evaluation, threshold);

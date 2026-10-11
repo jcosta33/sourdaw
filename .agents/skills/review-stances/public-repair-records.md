@@ -29,6 +29,10 @@ author reviews governed rounds.
   containing those separators at the same logging boundary.
 - Retain the ordinary eligible and idempotent flows. Use offline injected ports for these probes;
   they establish local admission and mutation ordering, not live GitHub behavior or repair truth.
+- For both compact and legacy confirmations, make the selected author repair comment ID precede
+  the reviewer confirmation ID through selection and replay. Shuffle reply arrays, test earlier
+  and equal IDs, and put an invalid later thread after a valid one; the whole batch must refuse
+  before any confirmation post or resolution. Preserve valid descendant-head replay exactly once.
 
 ## Escape: a foreign marker becomes a publication blocker
 
@@ -65,3 +69,30 @@ the persisted finding path verbatim. A canonical path `scripts/first.ts\nforged`
 contract. The required probe preserves the whole-batch refusal while asserting one prefixed physical
 record with the escaped separator and retained cause; rejecting the persisted path would hide the
 logging defect and change the repair-record contract.
+
+## Escape: reviewer confirmations copy and reconstruct the repair as a second record
+
+[PR #4411](https://github.com/jcosta33/sourdaw/pull/4411) introduced reviewer confirmation replies
+with the complete `sourdaw-repair-v1` payload. [PR #4565](https://github.com/jcosta33/sourdaw/pull/4565)
+introduced cold reconstruction that admitted both the immutable author and reviewer into the same
+repair collection; [PR #5078](https://github.com/jcosta33/sourdaw/pull/5078) later preserved actor
+identity without separating those roles. The public result duplicated the full evidence bytes and
+reported a reviewer confirmation as another author repair. This is an observable wire and
+reconstruction cost, not a preference about shorter prose.
+
+The missed probe uses a populated, safe V1 record and proves that a new reviewer marker carries a
+digest of the canonical whole record without copying its evidence, while cold reconstruction retains
+one author repair and a separate confirmation linked to that digest. It also replays a posted
+confirmation after a resolve failure and refuses mixed or doubled confirmations before any remote
+mutation. The historical final-head bundles for #4411 and #4565 are unavailable, so their precise
+stance and reviewer tier cannot be established; no historical tier is inferred here.
+
+## Escape: a reviewer marker predates its selected author repair
+
+[PR #4411](https://github.com/jcosta33/sourdaw/pull/4411) introduced live confirmation
+replay. A matching reviewer marker with comment ID 9001 could be treated as confirmation of a
+selected author record with ID 9002, because the selected reply ID was dropped before both live
+admission and replay. The missing probe compares public comment IDs for compact and legacy
+markers through every route, regardless of array order, and asserts a later invalid thread
+aborts the full batch without mutations. The historical final-head bundle is unavailable, so
+its exact stance and reviewer tier remain unknown.

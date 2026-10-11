@@ -82,11 +82,33 @@ function collectTargetFingerprints(
     }
 }
 
+/**
+ * The root `arrangements` slot stores one snapshot per arrangement, each a copy
+ * of the tracks, devices, clips and automation lanes it arranges, written by
+ * `syncCurrentArrangementToStore` on save and carried by every loaded project
+ * file. The live project is always the root `tracks`, `automation`, `markers`
+ * and sibling slots: switching arrangements loads the target snapshot into
+ * those stores, so the active arrangement's stored copy goes stale rather than
+ * authoritative. Walking the stored copies would fingerprint an object deleted
+ * from the live project, and divergence would read the deletion as an edit.
+ */
+function selectLiveProjectDocument(document: unknown): unknown {
+    if (!isRecord(document)) {
+        return document;
+    }
+    return Object.fromEntries(Object.entries(document).filter(([slot]) => slot !== 'arrangements'));
+}
+
 export function captureCommandTargetFingerprints(
     input: CaptureCommandTargetFingerprintsInput
 ): Readonly<Record<string, string>> {
     const fingerprintMatches = new Map<string, string[]>();
-    collectTargetFingerprints(input.document, new Set(input.targetIds), fingerprintMatches, new WeakSet<object>());
+    collectTargetFingerprints(
+        selectLiveProjectDocument(input.document),
+        new Set(input.targetIds),
+        fingerprintMatches,
+        new WeakSet<object>()
+    );
     if (isRecord(input.document) && isRecord(input.document.markers)) {
         if (input.targetIds.includes(COMMAND_MARKERS_TARGET_ID)) {
             appendFingerprint(

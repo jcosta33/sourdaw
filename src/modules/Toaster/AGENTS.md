@@ -4,7 +4,7 @@
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `compileToasterTrackStackActions`, `getDefaultPadNames`, `getToasterPresetDeviceState`, `prepareOfflineToaster`, `setToasterEventBus`, `initToasterSubscribers`, `initToasterKitPersistence`, `getToasterPresets`, `setToasterGrooveAssignmentExecutor`.
+- **Use Cases** (`useCases/index.ts`): `compileToasterTrackStackActions`, `disposeEveryToasterDevice`, `getDefaultPadNames`, `getToasterPresetDeviceState`, `prepareOfflineToaster`, `setToasterEventBus`, `initToasterSubscribers`, `initToasterKitPersistence`, `getToasterPresets`, `setToasterGrooveAssignmentExecutor`.
 - **Stores** (`stores/index.ts`): `defaultToasterState`, `toasterStore`, `resetToasterDeviceLifecycleState`.
 - **Views** (`presentations/views/index.ts`): `ToasterPanel`.
 - **Events** (`events/index.ts`): No public events.
@@ -21,6 +21,7 @@
 - Sound locks permit per-step parameter and sample overrides without permanently altering the pad's base kit configuration.
 - 16-levels mode temporarily distributes a single pad's pitch or velocity across all 16 pads; exiting restores the root kit layout.
 - Playback scheduling coordinates with global Transport lookahead ticks via `toasterSubscriber` without introducing timing jitter.
+- A device's module state ends when the device leaves the project: on `audioDevice.removed`, or for every device at a project switch through `disposeEveryToasterDevice`. An engine rebuild of the same device (runtime recovery, chain replacement, graph repair) announces nothing, so the record and the edits queued while it loads survive it.
 
 ## Verification
 

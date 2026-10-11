@@ -5,6 +5,7 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { prepareTimelineMapTimeOperation } from '../prepareTimelineMapTimeOperation';
 import { projectEngineTransportMaps } from '../projectEngineTransportMaps';
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
@@ -156,6 +157,160 @@ describe('projectEngineTransportMaps', () => {
             startSeconds: 2,
             endSeconds: 4,
         });
+    });
+
+    it('opens one segment on a beat shared by an arrival and a governing change, stating the governing ramp', () => {
+        // The ramp from beat 0 arrives at 140 on beat 4; the change that governs
+        // from there ramps 160 -> 200 to beat 8. Both sit on one second, and the
+        // engine refuses a map whose segments do not start on strictly
+        // increasing frames.
+        tempoMapStore.set({
+            changes: [
+                tempoChange(0, 100, 'linear'),
+                { id: 'arrival', beat: 4, tempo: 140, curve: 'instant' },
+                { id: 'governing', beat: 4, tempo: 160, curve: 'linear' },
+                tempoChange(8, 200),
+            ],
+        });
+
+        const { tempo } = projectEngineTransportMaps();
+
+        const starts = tempo.map((segment) => segment.startSeconds);
+        expect(starts.every((second, index) => index === 0 || second > starts[index - 1]!)).toBe(true);
+        const cutSeconds = 6 * Math.log(1.4);
+        const cutIndex = starts.findIndex((second) => Math.abs(second - cutSeconds) < 1e-9);
+        expect(cutIndex).toBeGreaterThan(0);
+        // Before the cut the ramp tops out at the arrival tempo.
+        expect(tempo.slice(0, cutIndex).every((segment) => segment.beatsPerMinute <= 140)).toBe(true);
+        // The governing 160 -> 200 ramp is sampled after the cut, so beats 4..8 are
+        // several segments and not one step at the arrival.
+        const afterCut = tempo.slice(cutIndex);
+        expect(afterCut.length).toBeGreaterThan(4);
+        // The segment opening at the cut states the mean of the ramp's first quarter-beat step.
+        const firstStepMean = 2.5 / Math.log(162.5 / 160);
+        expect(afterCut[0]!.beatsPerMinute).toBeCloseTo(firstStepMean, 6);
+        const afterTempos = afterCut.map((segment) => segment.beatsPerMinute);
+        expect(afterTempos.every((value, index) => index === 0 || value > afterTempos[index - 1]!)).toBe(true);
+        expect(afterTempos.at(-1)).toBe(200);
+    });
+
+    it('projects a Delete Time over a non-dyadic span onto strictly increasing segment starts stating the change at the cut', () => {
+        tempoMapStore.set({
+            changes: [tempoChange(0, 100, 'linear'), tempoChange(3, 200)],
+        });
+        const transaction = prepareTimelineMapTimeOperation({
+            operation: { type: 'delete', startBeat: 1 / 3, endBeat: 3 },
+        });
+        expect(transaction.status).toBe('ready');
+        expect(transaction.apply()).toBe(true);
+
+        const { tempo } = projectEngineTransportMaps();
+
+        // The engine places a segment on a whole frame and refuses equal frames, so
+        // a float step between two starts is no separation.
+        const startFrames = tempo.map((segment) => Math.round(segment.startSeconds * 48_000));
+        expect(startFrames.every((frame, index) => index === 0 || frame > startFrames[index - 1]!)).toBe(true);
+        expect(tempo.at(-1)?.beatsPerMinute).toBe(200);
+    });
+
+    describe('a Delete Time projected onto strictly increasing engine frames', () => {
+        const SAMPLE_RATE = 48_000;
+
+        function deleteTime(startBeat: number, endBeat: number): void {
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'delete', startBeat, endBeat },
+            });
+            expect(transaction.status).toBe('ready');
+            expect(transaction.apply()).toBe(true);
+        }
+
+        function frames(segments: readonly { startSeconds: number }[]): number[] {
+            return segments.map((segment) => Math.round(segment.startSeconds * SAMPLE_RATE));
+        }
+
+        function expectStrictlyIncreasing(values: readonly number[]): void {
+            expect(values.every((frame, index) => index === 0 || frame > values[index - 1]!)).toBe(true);
+        }
+
+        it('opens no ramp sample on the frame of the instant change it ramps toward', () => {
+            tempoMapStore.set({ changes: [tempoChange(4, 100, 'linear'), tempoChange(5, 140)] });
+
+            deleteTime(1 / 3, 4);
+
+            const startFrames = frames(projectEngineTransportMaps().tempo);
+            expect(startFrames.length).toBeGreaterThan(1);
+            expectStrictlyIncreasing(startFrames);
+        });
+
+        it('opens no ramp sample a float step below the shifted change it ramps toward', () => {
+            tempoMapStore.set({ changes: [tempoChange(0, 163, 'linear'), tempoChange(29 / 7, 54)] });
+
+            deleteTime(0, 8 / 7);
+
+            const startFrames = frames(projectEngineTransportMaps().tempo);
+            expect(startFrames.length).toBeGreaterThan(1);
+            expectStrictlyIncreasing(startFrames);
+        });
+
+        it('opens one meter segment where a carried meter sits a float step after beat zero', () => {
+            timeSignatureMapStore.set({ changes: [{ id: 'ts-0', beat: 0, numerator: 2, denominator: 16 }] });
+            tempoMapStore.set({ changes: [tempoChange(0, 84)] });
+
+            deleteTime(0, 8 / 3);
+            deleteTime(0, 19 / 3);
+
+            const { timeSignature } = projectEngineTransportMaps();
+            expectStrictlyIncreasing(frames(timeSignature));
+            expect(timeSignature).toHaveLength(1);
+            expect(timeSignature[0]?.startSeconds).toBe(0);
+        });
+    });
+
+    it('opens the map with the first change when it sits a float step after beat zero', () => {
+        tempoMapStore.set({ changes: [tempoChange(5e-7, 90), tempoChange(4, 140)] });
+
+        const { tempo } = projectEngineTransportMaps();
+
+        // A second segment at beat zero would start on the frame the first one does.
+        expect(tempo).toHaveLength(2);
+        expect(tempo[0]?.startSeconds).toBe(0);
+        expect(tempo[0]?.beatsPerMinute).toBeCloseTo(90, 9);
+        expect(tempo[1]?.beatsPerMinute).toBeCloseTo(140, 9);
+    });
+
+    it('opens one segment where two changes sit a float step apart', () => {
+        tempoMapStore.set({
+            changes: [
+                tempoChange(0, 100),
+                { id: 'arrival', beat: 1 / 3, tempo: 120, curve: 'instant' },
+                { id: 'governing', beat: 1 / 3 + 2e-16, tempo: 200, curve: 'instant' },
+            ],
+        });
+
+        const { tempo } = projectEngineTransportMaps();
+
+        expect(tempo).toHaveLength(2);
+        expect(tempo[0]?.beatsPerMinute).toBeCloseTo(100, 9);
+        expect(tempo[1]?.beatsPerMinute).toBeCloseTo(200, 9);
+    });
+
+    it('opens one meter segment where two meter changes sit a float step apart, stating the last', () => {
+        timeSignatureMapStore.set({
+            changes: [
+                { id: 'ts-0', beat: 0, numerator: 4, denominator: 4 },
+                { id: 'ts-first', beat: 1 / 3, numerator: 3, denominator: 4 },
+                { id: 'ts-last', beat: 1 / 3 + 2e-16, numerator: 7, denominator: 8 },
+            ],
+        });
+
+        const { timeSignature } = projectEngineTransportMaps();
+
+        const startFrames = timeSignature.map((segment) => Math.round(segment.startSeconds * 48_000));
+        expect(startFrames.every((frame, index) => index === 0 || frame > startFrames[index - 1]!)).toBe(true);
+        expect(timeSignature.map(({ numerator, denominator }) => [numerator, denominator])).toEqual([
+            [4, 4],
+            [7, 8],
+        ]);
     });
 
     it('integrates the meter map through the same tempo map as the tempo map itself', () => {

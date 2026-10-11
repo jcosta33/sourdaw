@@ -288,6 +288,20 @@ async function executeMacroAction(
         return;
     }
 
+    if (replayAction.type === 'glueClips' || replayAction.type === 'stripSilence') {
+        // The recorded plan names the ids the recorded gesture created and the
+        // project it read; the handler keeps a carried plan and refuses it once
+        // stale. A replay is a new gesture, so clear the plan and let the
+        // handler plan it against the project as it now is.
+        delete replayAction.payload.expected;
+        delete replayAction.payload.replacement;
+        if (replayAction.type === 'glueClips') {
+            delete replayAction.payload.targetClipId;
+        }
+        await executeAppAction(replayAction, options);
+        return;
+    }
+
     if (replayAction.type === 'addAdjustmentRegion') {
         replayAction.payload.layerId = remapLayerId(replayAction.payload.layerId, mappings);
         const recordedRegionId = replayAction.payload.regionId;

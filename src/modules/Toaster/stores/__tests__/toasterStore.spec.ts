@@ -4,6 +4,8 @@ import { createDefaultKit } from '../../models/ToasterKit';
 import {
     toasterStore,
     defaultToasterState,
+    getToasterViewState,
+    pendingPadSelectionStore,
     registerToasterDevice,
     unregisterToasterDevice,
     resetToasterDeviceLifecycleState,
@@ -237,5 +239,100 @@ describe('updateKit defers writes made while the device is still loading', () =>
         updateKit('dev-retired', { swing: 0.37 });
         registerToasterDevice('dev-retired', reloadKit);
         expect(toasterStore.value?.['dev-retired']?.kit.swing).toBe(0.37);
+    });
+});
+
+describe('selectPad defers a selection made while the device is still loading', () => {
+    beforeEach(() => {
+        toasterStore.set({});
+        pendingPadSelectionStore.set({});
+        resetToasterDeviceLifecycleState();
+    });
+
+    const viewIndex = (deviceId: string): number =>
+        getToasterViewState(toasterStore.value ?? {}, pendingPadSelectionStore.value ?? {}, deviceId).selectedPadIndex;
+
+    it('shows the selected pad to the panel at once and keeps it through registration', () => {
+        // The panel mounts before `audioDevice.loaded` registers the device; a click in
+        // that window used to be dropped, leaving Kick pressed.
+        expect(viewIndex('dev-loading')).toBe(0);
+
+        selectPad('dev-loading', 1);
+
+        expect(toasterStore.value?.['dev-loading']).toBeUndefined();
+        expect(viewIndex('dev-loading')).toBe(1);
+
+        registerToasterDevice('dev-loading');
+
+        expect(toasterStore.value?.['dev-loading']?.selectedPadIndex).toBe(1);
+        expect(viewIndex('dev-loading')).toBe(1);
+        expect(pendingPadSelectionStore.value).toEqual({});
+    });
+
+    it('the latest selection before registration wins', () => {
+        selectPad('dev-loading', 1);
+        selectPad('dev-loading', 5);
+
+        registerToasterDevice('dev-loading');
+
+        expect(toasterStore.value?.['dev-loading']?.selectedPadIndex).toBe(5);
+    });
+
+    it('selections stay per device', () => {
+        selectPad('dev-a', 2);
+        selectPad('dev-b', 7);
+
+        registerToasterDevice('dev-a');
+
+        expect(toasterStore.value?.['dev-a']?.selectedPadIndex).toBe(2);
+        expect(viewIndex('dev-b')).toBe(7);
+    });
+
+    it('ignores an out-of-range or non-integer index', () => {
+        selectPad('dev-loading', -1);
+        selectPad('dev-loading', defaultToasterState.kit.pads.length);
+        selectPad('dev-loading', 1.5);
+
+        expect(pendingPadSelectionStore.value).toEqual({});
+        registerToasterDevice('dev-loading');
+        expect(toasterStore.value?.['dev-loading']?.selectedPadIndex).toBe(0);
+    });
+
+    it('drops a pending selection the registration kit has no pad for', () => {
+        selectPad('dev-loading', 9);
+
+        registerToasterDevice('dev-loading', { ...createDefaultKit(), pads: createDefaultKit().pads.slice(0, 4) });
+
+        expect(toasterStore.value?.['dev-loading']?.selectedPadIndex).toBe(0);
+    });
+
+    it('teardown during the load window drops the selection, and a reload does not inherit it', () => {
+        selectPad('dev-loading', 3);
+        unregisterToasterDevice('dev-loading');
+
+        expect(viewIndex('dev-loading')).toBe(0);
+
+        registerToasterDevice('dev-loading');
+        expect(toasterStore.value?.['dev-loading']?.selectedPadIndex).toBe(0);
+    });
+
+    it('a selection arriving after teardown stays refused and never reaches the next reload', () => {
+        registerToasterDevice('dev-loading');
+        unregisterToasterDevice('dev-loading');
+
+        selectPad('dev-loading', 4);
+
+        expect(pendingPadSelectionStore.value).toEqual({});
+        registerToasterDevice('dev-loading');
+        expect(toasterStore.value?.['dev-loading']?.selectedPadIndex).toBe(0);
+    });
+
+    it('resetToasterDeviceLifecycleState drops pending selections at the project boundary', () => {
+        selectPad('dev-shared', 6);
+
+        resetToasterDeviceLifecycleState();
+
+        registerToasterDevice('dev-shared');
+        expect(toasterStore.value?.['dev-shared']?.selectedPadIndex).toBe(0);
     });
 });

@@ -74,6 +74,7 @@ import {
 import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from '../offlineRender/admitNativeClipExpansion';
 import { projectNativeClipFade } from '../offlineRender/projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from '../offlineRender/projectOfflineAudioClipPlaybacks';
+import { renderTempoTimeline } from '../offlineRender/renderTempoTimeline';
 import { resolveTrackClipsWithComping } from '../offlineRender/resolveTrackClipsWithComping';
 
 import { frozenBake } from './frozenBake';
@@ -183,6 +184,8 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
     function resolveClipTempo(beat: number): number {
         return resolveTempoAtBeat({ changes, beat, defaultTempo });
     }
+    // The map comp resolution writes each fragment's offset against.
+    const tempoTimeline = renderTempoTimeline(projectBeatToSeconds, resolveClipTempo);
 
     const regionStartSec = projectBeatToSeconds(LIVE_REGION_START_BEAT);
     const durationSeconds = programmeHorizonSeconds({ stripTracks, projectBeatToSeconds, readBuffer });
@@ -249,7 +252,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
         // clip's expansion is what spends it.
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
 
-        for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
+        for (const clip of resolveTrackClipsWithComping(track.id, track.clips, undefined, tempoTimeline)) {
             if (!isLiveClip(clip)) {
                 continue;
             }

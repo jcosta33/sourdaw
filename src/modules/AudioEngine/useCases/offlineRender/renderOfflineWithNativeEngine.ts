@@ -104,6 +104,7 @@ import {
     REFUSE_DEVICE_AUTOMATION,
     type StripAutomationDeviceEntry,
 } from './projectStripAutomationWrites';
+import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
 
@@ -172,19 +173,13 @@ function nativeBodyDeviceEntries(track: Track): readonly StripAutomationDeviceEn
 }
 
 /**
- * The sends the native graph has a path for — the same drop as live
- * `sendCommands` in `projectLiveGraphTopology`: no `add-send` from a bus, and
- * no send naming a bus this render did not build.
- *
- * Dropping a bus-origin send loses its audio, so `selectOfflineRenderEngine`
- * keeps a render with a bus-origin send that would contribute off the native
- * engine; only a send that carries nothing reaches this drop.
+ * The sends the native graph has a path for, from a track or a bus alike — the
+ * same admission as live `sendCommands` in `projectLiveGraphTopology`: no send
+ * naming a bus this render did not build, which the Web Audio render does not
+ * wire either.
  */
 function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> }): AudioGraphAddSendCommand[] {
     const { track, busStripIds } = input;
-    if (track.kind === 'bus') {
-        return [];
-    }
     return track.sends
         .filter((send) => busStripIds.has(send.busId))
         .map((send): AudioGraphAddSendCommand => ({
@@ -379,7 +374,13 @@ export async function renderOfflineWithNativeEngine(
         // the two schedule the same expansion into the same ceiling.
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
 
-        for (const clip of resolveTrackClipsWithComping(track.id, track.clips, input.captured?.scheduling.takeLanes)) {
+        const tempoTimeline = renderTempoTimeline(projectBeatToSeconds, resolveClipTempo);
+        for (const clip of resolveTrackClipsWithComping(
+            track.id,
+            track.clips,
+            input.captured?.scheduling.takeLanes,
+            tempoTimeline
+        )) {
             if (clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }

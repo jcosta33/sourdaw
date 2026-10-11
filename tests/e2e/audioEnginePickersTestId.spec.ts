@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
@@ -22,6 +22,37 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 // attribute tracks that flag, so the refresh-driven loading → loaded round-trip
 // is a real, DOM-observable state change — not a static existence check.
 // ---------------------------------------------------------------------------
+
+const ENUMERATION_RELEASE_KEY = '__sourdawReleaseHeldEnumeration';
+
+// Wraps `enumerateDevices` so every call made after this point waits on one
+// gate before delegating to the browser's real implementation. Install it only
+// once the mount-time enumeration has settled, so that call is never held.
+async function holdNextEnumeration(page: Page): Promise<void> {
+    await page.evaluate((releaseKey) => {
+        const mediaDevices = navigator.mediaDevices;
+        const original = mediaDevices.enumerateDevices.bind(mediaDevices);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        mediaDevices.enumerateDevices = async () => {
+            await gate;
+            return original();
+        };
+        Reflect.set(window, releaseKey, release);
+    }, ENUMERATION_RELEASE_KEY);
+}
+
+async function releaseHeldEnumeration(page: Page): Promise<void> {
+    await page.evaluate((releaseKey) => {
+        const release: unknown = Reflect.get(window, releaseKey);
+        if (typeof release !== 'function') {
+            throw new TypeError('No held enumeration to release');
+        }
+        release();
+    }, ENUMERATION_RELEASE_KEY);
+}
 
 test.describe('AudioEngine pickers', () => {
     test.beforeEach(async ({ page }) => {
@@ -49,12 +80,17 @@ test.describe('AudioEngine pickers', () => {
 
         // Clicking refresh sets `loading=true` synchronously (AudioDevicePicker
         // line 28), which disables the select; enumeration then resolves and
-        // flips loading back to false. Capturing both halves of that round-trip
-        // — disabled immediately after the click, enabled again once it settles
-        // — proves the loading flag actually drives the select, instead of a
-        // trivial always-enabled assertion that would pass with the flag removed.
+        // flips loading back to false. Real enumeration can finish before
+        // Playwright samples the select, so the gate installed below holds the
+        // refresh's `navigator.mediaDevices.enumerateDevices()` open until the
+        // disabled half has been asserted, then delegates to the real call.
+        // Capturing both halves of that round-trip proves the loading flag
+        // actually drives the select, instead of a trivial always-enabled
+        // assertion that would pass with the flag removed.
+        await holdNextEnumeration(page);
         await refresh.click();
         await expect(outputSelect).toBeDisabled();
+        await releaseHeldEnumeration(page);
         await expect(outputSelect).toBeEnabled({ timeout: 10_000 });
     });
 

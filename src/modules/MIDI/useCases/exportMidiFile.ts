@@ -3,6 +3,7 @@ import { clampMidiData7, clampVelocity } from '#/utils/midiData';
 import { SAME_FRAME_EVENT_ORDER, type SameFrameEventKind } from '#/utils/sameFrameEventOrder';
 
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
+import { SAME_BEAT_TOLERANCE } from '../models/SameBeatTolerance';
 import {
     MIDI_FILE_EXTENSION,
     MIDI_FILE_MIME_TYPE,
@@ -49,9 +50,6 @@ function write32(value: number): number[] {
 function write16(value: number): number[] {
     return [(value >> 8) & 0xff, value & 0xff];
 }
-
-// Beats closer than this are one instant: projected beats differ by float noise.
-const SAME_BEAT_TOLERANCE = 1e-9;
 
 type MidiEvent = {
     tick: number;
@@ -148,6 +146,8 @@ type TickedNote = {
     endBeat: number;
     startTick: number;
     endTick: number;
+    /** The written release sits a tick past this note's true end (the one-tick floor moved it). */
+    subTick: boolean;
     pitch: number;
     velocity: number;
     channel: number;
@@ -214,6 +214,7 @@ function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
             endBeat,
             startTick,
             endTick: writtenEndTick,
+            subTick: endTick <= startTick,
             pitch: clampMidiData7(note.pitch),
             velocity: clampVelocity(Math.round(note.velocity)),
             channel: (note.channel ?? 0) & 0x0f,
@@ -237,10 +238,35 @@ function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
     return [...sounded, ...survivingSubTick];
 }
 
+/**
+ * A sub-tick note's release writes a tick past its true end, so an event on its start
+ * tick that follows that end — a pedal press that trails the note, a pass-head pedal
+ * carry, a later strike — would land in the file ahead of the release, where it holds
+ * or glides the note for beats while playback posts the release first. Such an event
+ * moves onto the release tick, where the tick order (release first, then rising sort
+ * beats) writes it behind the release, as playback sent it. An event at the true end
+ * instant moves too: playback orders one frame release-first. Ordinary notes never
+ * qualify: an event on a start tick sits within half a tick of the strike, and an
+ * ordinary true end is at least half a tick past it, so nothing can follow one there.
+ */
+function moveFollowingEventsBehindSubTickReleases(events: MidiEvent[], notes: TickedNote[]): MidiEvent[] {
+    const subTickNotes = notes.filter((note) => note.subTick);
+    if (subTickNotes.length === 0) {
+        return events;
+    }
+    return events.map((event) => {
+        const release = subTickNotes.find(
+            (note) => event.tick === note.startTick && snapToBeatGrid(event.beat) >= snapToBeatGrid(note.endBeat)
+        );
+        return release === undefined ? event : { ...event, tick: release.endTick };
+    });
+}
+
 function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: number, trackName: string): number[] {
     const events: MidiEvent[] = [];
+    const tickedNotes = toTickedNotes(notes, clipStartBeat);
 
-    for (const note of toTickedNotes(notes, clipStartBeat)) {
+    for (const note of tickedNotes) {
         events.push({
             tick: note.startTick,
             beat: note.startBeat,
@@ -269,7 +295,9 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
         });
     }
 
-    const sortedEvents = toSortableEvents(events).sort(compareEvents);
+    const sortedEvents = toSortableEvents(moveFollowingEventsBehindSubTickReleases(events, tickedNotes)).sort(
+        compareEvents
+    );
 
     const nameBytes = writeString(trackName);
     const trackNameEvent = {

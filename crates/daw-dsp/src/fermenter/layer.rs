@@ -110,6 +110,11 @@ pub struct Layer {
     pub additive_odd: f32,
     pub additive_inharm: f32,
 
+    /// Analog drift amount 0-1. Held on the layer as well as pushed to the
+    /// sounding voices, because a steal swaps in a pooled voice that never saw
+    /// the write; `note_on_with_channel` re-applies it to every voice it starts.
+    drift: f32,
+
     // Sampler params
     pub sampler_mode: u8,
     pub sampler_start: f32,
@@ -211,6 +216,7 @@ impl Layer {
             additive_tilt: 0.0,
             additive_odd: 0.0,
             additive_inharm: 0.0,
+            drift: 0.0,
             sampler_mode: 0,
             sampler_start: 0.0,
             sampler_end: 1.0,
@@ -359,6 +365,7 @@ impl Layer {
             voice.set_additive_tilt(self.additive_tilt);
             voice.set_additive_odd(self.additive_odd);
             voice.set_additive_inharm(self.additive_inharm);
+            voice.set_drift(self.drift);
             voice.set_sampler_params(self.sampler_mode, self.sampler_start, self.sampler_end);
             voice.note_on(note, channel, vel, glide_origin, self.sample_rate);
             voice.set_envelopes(
@@ -754,8 +761,9 @@ impl Layer {
             "layer_mute" => self.muted = value > 0.5,
             "layer_solo" => self.solo = value > 0.5,
             "drift" => {
+                self.drift = value.clamp(0.0, 1.0);
                 for voice in &mut self.voices {
-                    voice.set_drift(value);
+                    voice.set_drift(self.drift);
                 }
             }
             "additive_partials" => {
@@ -864,6 +872,132 @@ mod tests {
         assert_eq!(layer.warp_mode, 6);
         assert_eq!(layer.audio_mod_target, 3);
         assert_eq!(layer.chaos_amount, 0.4);
+    }
+
+    // ── FM amount and drift reach every voice (#5026) ──────────────────────
+
+    const FM_SR: f32 = 48_000.0;
+    const FM_BLOCK: usize = 128;
+
+    fn fm_layer(amount: f32) -> Layer {
+        let mut layer = Layer::new(FM_SR, 1);
+        layer.set_param("engine", 2.0);
+        layer.set_param("fm_algorithm", 0.0);
+        layer.set_param("fm_mod_amount", amount);
+        layer.set_param("amp_sustain", 1.0);
+        layer
+    }
+
+    /// One host block the way the synth renders it: block params first, then
+    /// the voices.
+    fn render_block(layer: &mut Layer) -> Vec<f32> {
+        let mut left = vec![0.0f32; FM_BLOCK];
+        let mut right = vec![0.0f32; FM_BLOCK];
+        layer.advance_block_params();
+        layer.render(&mut left, &mut right, &[], FM_SR);
+        left
+    }
+
+    /// Samples before `settled_from` are skipped, so a block may be compared
+    /// after the voice filter has forgotten what it was fed earlier.
+    fn assert_blocks_match(actual: &[f32], expected: &[f32], settled_from: usize, tolerance: f32) {
+        let worst = actual[settled_from..]
+            .iter()
+            .zip(&expected[settled_from..])
+            .map(|(a, e)| (a - e).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            worst <= tolerance,
+            "blocks diverge by up to {worst} against a peak of {}",
+            expected.iter().fold(0.0f32, |peak, s| peak.max(s.abs()))
+        );
+    }
+
+    #[test]
+    fn raising_fm_amount_from_zero_reaches_a_held_voice() {
+        let mut held = fm_layer(0.0);
+        held.note_on(57, 100, note_frequency(57));
+        render_block(&mut held);
+        held.set_param("fm_mod_amount", 0.8);
+        let after_raise = render_block(&mut held);
+
+        let mut reference = fm_layer(0.8);
+        reference.note_on(57, 100, note_frequency(57));
+        render_block(&mut reference);
+        let expected = render_block(&mut reference);
+
+        let mut still_silent = fm_layer(0.0);
+        still_silent.note_on(57, 100, note_frequency(57));
+        render_block(&mut still_silent);
+        let unraised = render_block(&mut still_silent);
+
+        assert_ne!(after_raise, unraised, "raising the amount must be heard");
+        // The held voice's filter still holds the unmodulated signal for the
+        // first few dozen samples (measured: 0.13 apart at the block start,
+        // 2e-8 by sample 32, identical by 64), so compare once it has settled.
+        assert_blocks_match(&after_raise, &expected, 64, 1.0e-6);
+    }
+
+    #[test]
+    fn a_note_started_after_raising_fm_amount_from_zero_is_modulated() {
+        let mut layer = fm_layer(0.0);
+        layer.note_on(57, 100, note_frequency(57));
+        render_block(&mut layer);
+        layer.kill_voice(0);
+
+        layer.set_param("fm_mod_amount", 0.8);
+        layer.note_on(57, 100, note_frequency(57));
+        let actual = render_block(&mut layer);
+
+        let mut reference = fm_layer(0.8);
+        reference.note_on(57, 100, note_frequency(57));
+        let expected = render_block(&mut reference);
+
+        assert_blocks_match(&actual, &expected, 0, 0.0);
+        let mut unmodulated = fm_layer(0.0);
+        unmodulated.note_on(57, 100, note_frequency(57));
+        assert_ne!(actual, render_block(&mut unmodulated));
+    }
+
+    #[test]
+    fn fm_amount_does_not_change_an_algorithm_without_routing() {
+        let render_at = |amount: f32| {
+            let mut layer = fm_layer(amount);
+            layer.set_param("fm_algorithm", 3.0);
+            layer.note_on(57, 100, note_frequency(57));
+            render_block(&mut layer);
+            render_block(&mut layer)
+        };
+
+        let silent = render_at(0.0);
+        assert!(silent.iter().any(|sample| sample.abs() > 0.01));
+        assert_eq!(silent, render_at(0.8));
+    }
+
+    #[test]
+    fn a_stolen_voice_carries_the_current_drift() {
+        let mut layer = Layer::new(FM_SR, 2);
+        layer.set_param("drift", 0.7);
+        layer.note_on(60, 100, note_frequency(60));
+        layer.note_on(64, 100, note_frequency(64));
+        layer.note_on(67, 100, note_frequency(67));
+
+        assert_eq!(
+            layer.fading_steal_tail_count(),
+            1,
+            "the third note must have stolen a voice"
+        );
+        let drifts: Vec<f32> = layer.voices.iter().map(|v| v.drift_amount()).collect();
+        assert_eq!(drifts, vec![0.7, 0.7]);
+    }
+
+    #[test]
+    fn drift_is_clamped_like_the_voice_clamps_it() {
+        let mut layer = Layer::new(FM_SR, 1);
+        layer.set_param("drift", 5.0);
+        layer.note_on(60, 100, note_frequency(60));
+
+        assert_eq!(layer.voices[0].drift_amount(), 1.0);
     }
 
     // ── Per-note expression targeting (audit MD-2, review round 1) ─────────

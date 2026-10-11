@@ -108,7 +108,7 @@ async function planWith(
     for (const turn of turns) {
         mocked.mockResolvedValueOnce(turn);
     }
-    return parsePromptToActions(prompt, context, undefined, 'revision-adversarial');
+    return parsePromptToActions({ prompt, context, projectRevision: 'revision-adversarial' });
 }
 
 const track = (id: string, name: string): ProjectContextTrack => ({

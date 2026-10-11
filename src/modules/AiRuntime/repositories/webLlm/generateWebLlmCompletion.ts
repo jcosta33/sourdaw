@@ -12,6 +12,10 @@ type GenerateWebLlmCompletionOptions = {
     maxTokens?: number;
     signal?: AbortSignal;
     requireComplete?: boolean;
+    /** `false` sends Qwen3's empty thinking block, so the reply starts at the answer. */
+    enableThinking?: boolean;
+    /** The caller's prompt-token estimate, logged beside the count the engine reports. */
+    estimatedPromptTokens?: number;
 };
 
 /**
@@ -37,6 +41,9 @@ export async function generateWebLlmCompletion(
         max_tokens: options?.maxTokens ?? 2048,
         seed: 0,
     };
+    if (options?.enableThinking === false) {
+        payload.extra_body = { enable_thinking: false };
+    }
 
     // WebLLM's native `tools` API only works on Hermes builds — not the Qwen3
     // model we ship. Log payload keys (never contents) so a stray `tools:`
@@ -47,6 +54,7 @@ export async function generateWebLlmCompletion(
         signal: options?.signal,
         execute: () => eng.chat.completions.create(payload),
     });
+    logReportedPromptTokens(response, options?.estimatedPromptTokens);
 
     let raw: string;
     if (options?.requireComplete) {
@@ -83,6 +91,21 @@ function readCompleteToolPlanningResponse(response: unknown): string {
         );
     }
     return choice.message.content;
+}
+
+// The engine's own prompt count is what an estimate is calibrated against, so it is logged
+// beside the estimate whenever the engine reports it.
+function logReportedPromptTokens(response: unknown, estimatedPromptTokens: number | undefined): void {
+    if (estimatedPromptTokens === undefined || !isRecord(response) || !isRecord(response.usage)) {
+        return;
+    }
+    const reported = response.usage.prompt_tokens;
+    if (typeof reported !== 'number') {
+        return;
+    }
+    logger.info(
+        `[WebLLM] prompt tokens reported=${String(reported)} estimated=${String(estimatedPromptTokens)} margin=${String(estimatedPromptTokens - reported)}`
+    );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

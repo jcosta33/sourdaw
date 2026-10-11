@@ -22,6 +22,7 @@ import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRunti
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
+import { createRenderCancelSource } from './offlineRender/createRenderCancelSource';
 import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDeviceStrategies';
 import { endExportCancellationScope } from './offlineRender/endExportCancellationScope';
@@ -240,8 +241,15 @@ export const exportStems: ExportStemsFn = async function exportStems(
         // every stem that already rendered.
         const failures: { trackId: string; reason: string }[] = [];
 
+        // Every read of "was this export cancelled" goes through this stem set's own scope signal
+        // beside the shared flag. The export's finally lowers the flag, and a stem task still in
+        // flight, or a settling task starting the next one, would otherwise read it lowered and
+        // render on. The signal stays aborted for as long as those tasks live.
+        const stemCancelSource = createRenderCancelSource(cancellationSignal);
+        const isStemExportCancelled = (): boolean => isCancelRequested() || cancellationSignal.aborted;
+
         const tasks = eligible.map((track) => async () => {
-            checkCancel();
+            checkCancel(cancellationSignal);
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
             // The frame scheduler for this stem's context. One instance per
@@ -449,6 +457,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     offlineCtx,
                     durationSeconds,
                     timeoutMs: stemTimeoutMs,
+                    cancelSource: stemCancelSource,
                     ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
                     onRenderProgress: onProgress
                         ? (fraction) => onProgress(fractAfterSchedule + fraction * (stemSpan * 0.6))
@@ -469,7 +478,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
 
         await new Promise<void>((resolve, reject) => {
             function next(): void {
-                if (isCancelRequested()) {
+                if (isStemExportCancelled()) {
                     reject(new Error('Export cancelled'));
                     return;
                 }
@@ -499,7 +508,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             }
                             // A cancel is the whole export stopping, not this
                             // stem failing, so it still rejects the pool.
-                            if (isCancelRequested()) {
+                            if (isStemExportCancelled()) {
                                 reject(failure);
                                 return;
                             }

@@ -385,11 +385,18 @@ export class MidiRack {
             if (voice.generation !== generation || voice.event.kind.type !== 'noteOn' || routeId === undefined) {
                 return;
             }
-            output.push({
+            // The off keeps the voice instance its note-on carried (#4873) so
+            // routing can release the instrument control that voice was
+            // captured on, even after the track's instrument changed.
+            const off: MidiEvent = {
                 timeSamples: nowSamples,
                 trackId: routeId,
                 kind: { type: 'noteOff', channel: voice.event.kind.channel, note: voice.event.kind.note },
-            });
+            };
+            if (voice.event.noteInstanceId !== undefined) {
+                off.noteInstanceId = voice.event.noteInstanceId;
+            }
+            output.push(off);
         });
         this.activeNotes.clear();
         this.scheduled.clear();
@@ -442,6 +449,7 @@ export class MidiRack {
         return output;
     }
 
+    /** Mirrors `sameYeastProcessorTopology`, which the Yeast runtime uses to predict a settle; `MidiRack.spec.ts` pins the two. */
     private topologyMatches(projection: readonly YeastProcessorProjectionItem[]): boolean {
         if (projection.length !== this.processors.length) {
             return false;

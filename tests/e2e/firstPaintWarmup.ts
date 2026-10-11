@@ -6,6 +6,7 @@ import { assertServingCheckoutIdentity } from '../../scripts/e2eServerIdentity';
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
 import { LAUNCH_SCREEN_NAME } from './e2eUtils';
+import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
 
 /**
  * One-time bound for the dev server's cold module transform. Playwright's
@@ -18,9 +19,29 @@ import { LAUNCH_SCREEN_NAME } from './e2eUtils';
  */
 const COLD_FIRST_PAINT_TIMEOUT_MS = 180_000;
 
+function remainingWarmupTime(deadline: number): number {
+    const remaining = Math.floor(deadline - performance.now());
+    if (remaining <= 0) {
+        throw new Error('First-paint warmup exceeded its deadline before the launch overlay appeared');
+    }
+    return remaining;
+}
+
+function formatWarmupSeconds(milliseconds: number): string {
+    return `${(milliseconds / 1000).toFixed(1)}s`;
+}
+
 /**
- * Global setup: navigate to the app once and wait for the launch overlay, so
- * the dev server's module graph is warm before the first test observes it.
+ * Global setup: navigate to the app once and wait out the cold launch path
+ * before the first test observes it, so the dev server's module graph is warm
+ * and the per-test first-paint bounds measure warm mounting. Readiness is the
+ * app's own `[capabilities]` boot marker, not merely the overlay being
+ * visible: the overlay is the first paint, while the cold launch path keeps
+ * building and booting WASM past that point — work a first test's timed
+ * allowance must not have to measure (#4781: an offline smoke run whose
+ * warmup had finished still spent its first test's whole 90s allowance on the
+ * cold build tail and never reached `[capabilities]`).
+ *
  * The web server plugin starts (and health-checks) the server before global
  * setup runs, so the navigation always has a live origin to hit. Before any
  * of that, the serving-checkout identity is asserted: when the URL answers
@@ -46,8 +67,20 @@ export default async function warmFirstPaint(config: FullConfig): Promise<void> 
         await page.addInitScript((viewportName: string) => {
             window.name = viewportName;
         }, DIRECT_E2E_VIEWPORT_NAME);
-        await page.goto('/');
-        await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({ state: 'visible', timeout: COLD_FIRST_PAINT_TIMEOUT_MS });
+        const timeline = attach_first_paint_console(page);
+        const startedAtMs = performance.now();
+        const deadline = performance.now() + COLD_FIRST_PAINT_TIMEOUT_MS;
+        await page.goto('/', { timeout: remainingWarmupTime(deadline) });
+        await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({ state: 'visible', timeout: remainingWarmupTime(deadline) });
+        const overlayPaidMs = performance.now() - startedAtMs;
+        await wait_for_console_marker(timeline, CAPABILITIES_MARKER, remainingWarmupTime(deadline));
+        const bootPaidMs = performance.now() - startedAtMs;
+        console.log(
+            `[first-paint warmup] launch overlay after ${formatWarmupSeconds(overlayPaidMs)}, ` +
+                `boot capabilities after ${formatWarmupSeconds(bootPaidMs)}; ` +
+                `${formatWarmupSeconds(Math.max(COLD_FIRST_PAINT_TIMEOUT_MS - bootPaidMs, 0))} of the ` +
+                `${COLD_FIRST_PAINT_TIMEOUT_MS / 1000}s cold allowance remains for the tests' own waits`
+        );
     } finally {
         await browser.close();
     }

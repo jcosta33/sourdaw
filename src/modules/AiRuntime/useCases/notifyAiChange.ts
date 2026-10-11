@@ -20,7 +20,7 @@ export type { AiChangeNotification };
  */
 let notificationSeq = 0;
 
-const resolveAiChangeNotificationKind = (summary: string, details: string[]): AiChangeNotification['kind'] => {
+const resolveAiChangeNotificationKind = (summary: string, details: string[]): 'applied-change' | 'notice' => {
     if (details.length === 0) {
         return 'notice';
     }

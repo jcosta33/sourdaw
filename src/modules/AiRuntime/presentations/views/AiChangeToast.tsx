@@ -1,11 +1,13 @@
 import { type ReactElement, useState, useEffect } from 'react';
 
-import { Check, Undo2, X } from 'lucide-react';
+import { Check, MessageSquare, Undo2, X } from 'lucide-react';
 
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { cn } from '#/utils/Styles/cn';
 
+import { openAnswerInChat } from '../../useCases/aiPanelActions/openAnswerInChat';
 import { undoLastAction } from '../../useCases/aiPanelActions/undoLastAction';
 import { type AiChangeNotification } from '../../useCases/notifyAiChange';
 import { subscribeAiChangeNotification } from '../../useCases/subscribeAiChangeNotification';
@@ -21,7 +23,8 @@ export const AiChangeToast = (): ReactElement | null => {
     }, []);
 
     useEffect(() => {
-        if (changes.length === 0) {
+        // An answer is something to read, not a confirmation to glance at, so it stays until dismissed.
+        if (changes.length === 0 || changes[0]!.kind === 'answer') {
             return undefined;
         }
         const timer = setTimeout(() => {
@@ -36,6 +39,10 @@ export const AiChangeToast = (): ReactElement | null => {
 
     const latest = changes[0]!;
     const isAppliedChange = latest.kind === 'applied-change';
+    const isAnswer = latest.kind === 'answer';
+    // A long answer is clamped here; "Open in chat" shows it whole.
+    const summaryClassName = cn('text-xs font-medium text-foreground', isAnswer && 'line-clamp-4 whitespace-pre-line');
+    const dismissLatest = () => setChanges((prev) => prev.slice(1));
     const detailRows = latest.details.map((detail, detail_position) => {
         const occurrence = latest.details
             .slice(0, detail_position)
@@ -63,7 +70,7 @@ export const AiChangeToast = (): ReactElement | null => {
                     </Row>
                 ) : null}
                 <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground">{latest.summary}</p>
+                    <p className={summaryClassName}>{latest.summary}</p>
                     {latest.details.length > 0 ? (
                         <Stack gap={0.5} className="mt-1">
                             {detailRows.map((detail_row) => (
@@ -80,13 +87,25 @@ export const AiChangeToast = (): ReactElement | null => {
                                 size="xs"
                                 onClick={() => {
                                     undoLastAction();
-                                    setChanges((prev) => prev.slice(1));
+                                    dismissLatest();
                                 }}
                             >
                                 <Undo2 className="size-3 mr-1" /> Undo
                             </Button>
                         ) : null}
-                        <Button variant="ghost" size="xs" onClick={() => setChanges((prev) => prev.slice(1))}>
+                        {latest.kind === 'answer' ? (
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => {
+                                    openAnswerInChat(latest.answer);
+                                    dismissLatest();
+                                }}
+                            >
+                                <MessageSquare className="size-3 mr-1" /> Open in chat
+                            </Button>
+                        ) : null}
+                        <Button variant="ghost" size="xs" onClick={dismissLatest}>
                             <X className="size-3 mr-1" /> Dismiss
                         </Button>
                     </Row>

@@ -20,6 +20,7 @@ import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabili
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { AGENT_CATALOG_CATEGORIES, type AgentCatalogCategory } from '../models/AgentToolCatalogNames';
 import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
+import { type PlanningAnswer } from '../models/AnswerRespond';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
@@ -44,6 +45,7 @@ import {
     type HostedToolChoiceDirective,
 } from '../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
+import { parseAnswerRespond } from '../transformers/parseAnswerRespond';
 import { parseCommandBatchDecline } from '../transformers/parseCommandBatchDecline';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
@@ -54,6 +56,7 @@ import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANSWER_RESPOND_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
@@ -121,6 +124,8 @@ export type ApplicationOwnedToolLoopOutcome =
           toolCalls: ToolCallResult[];
           /** The parsed decline when the run refused, so no caller parses the arguments again. */
           decline: CommandBatchDecline | null;
+          /** The answer, its evidence resolved against this run's receipts, when the run answered. */
+          answer: PlanningAnswer | null;
           /** The intents this run looked up in the command index, in the order it looked them up. */
           searchedIntents: string[];
           proposal: AgentPlanProposal | null;
@@ -1501,7 +1506,7 @@ function validateCommandBatchProposal(
  * A decline says the run produced no batch, so it may not ride alongside a call that produces one:
  * admitting both would leave the outcome of the turn ambiguous between refusal and proposal.
  */
-function validateDeclineIsAlone(calls: readonly { call: ToolCallResult }[]): ValidatedTerminalCalls {
+function validateDeclineIsAlone(calls: readonly { call: ToolCallResult }[]): ValidatedDecline {
     const declineCalls = calls.filter(({ call }) => call.name === COMMAND_BATCH_DECLINE_TOOL_NAME);
     if (declineCalls.length === 0) {
         return { status: 'accepted', decline: null };
@@ -1516,11 +1521,51 @@ function validateDeclineIsAlone(calls: readonly { call: ToolCallResult }[]): Val
 }
 
 /**
- * The decline is parsed here and nowhere else. A caller that re-parsed it would own a rejection
- * branch this validation has already made unreachable, and would have to guess what to do in it.
+ * An answer says the run changes nothing, so like a decline it may not ride alongside another
+ * terminal call: a batch beside it would run while the reply claiming no change was shown. Its
+ * evidence is resolved here against this run's own receipts, and only a call that succeeded can be
+ * cited, so the answer never rests on a read that failed or never happened.
+ */
+function validateAnswerIsAlone(
+    calls: readonly { call: ToolCallResult }[],
+    receipts: readonly ApplicationToolReceipt[]
+): ValidatedAnswer {
+    const answerCalls = calls.filter(({ call }) => call.name === ANSWER_RESPOND_TOOL_NAME);
+    if (answerCalls.length === 0) {
+        return { status: 'accepted', answer: null };
+    }
+    if (calls.length > 1) {
+        return { status: 'rejected', reason: 'Provider combined an answer with another terminal call.' };
+    }
+    const parsed = parseAnswerRespond(answerCalls[0]!.call.arguments);
+    if (parsed.status === 'rejected') {
+        return parsed;
+    }
+    const evidence: PlanningAnswer['evidence'] = [];
+    for (const callId of parsed.answer.evidenceCallIds) {
+        const receipt = receipts.find((entry) => entry.callId === callId && entry.status === 'success');
+        if (receipt === undefined) {
+            return {
+                status: 'rejected',
+                reason: 'Provider answer cited a call id that names no successful call of this run.',
+            };
+        }
+        evidence.push({ callId, toolName: receipt.toolName, summary: receipt.summary });
+    }
+    return { status: 'accepted', answer: { text: parsed.answer.text, evidence } };
+}
+
+type TerminalCallRejection = { status: 'rejected'; reason: string };
+type ValidatedDecline = { status: 'accepted'; decline: CommandBatchDecline | null } | TerminalCallRejection;
+type ValidatedAnswer = { status: 'accepted'; answer: PlanningAnswer | null } | TerminalCallRejection;
+
+/**
+ * The decline and the answer are parsed here and nowhere else. A caller that re-parsed them would
+ * own a rejection branch this validation has already made unreachable, and would have to guess what
+ * to do in it.
  */
 type ValidatedTerminalCalls =
-    { status: 'accepted'; decline: CommandBatchDecline | null } | { status: 'rejected'; reason: string };
+    { status: 'accepted'; decline: CommandBatchDecline | null; answer: PlanningAnswer | null } | TerminalCallRejection;
 
 /**
  * One turn proposes one batch. Two proposals leave no answer to which one the run made, and the
@@ -1536,11 +1581,16 @@ function validateCatalogTerminalCalls(
     calls: readonly { call: ToolCallResult }[],
     disclosedCommandSchemas: ReadonlyMap<string, string>,
     retainedCompilations: ReadonlyMap<string, RetainedCompilation>,
-    compilationRevisions: Readonly<Record<RetainedCompilation['kind'], string | undefined>>
+    compilationRevisions: Readonly<Record<RetainedCompilation['kind'], string | undefined>>,
+    receipts: readonly ApplicationToolReceipt[]
 ): ValidatedTerminalCalls {
     const declineValidation = validateDeclineIsAlone(calls);
     if (declineValidation.status === 'rejected') {
         return declineValidation;
+    }
+    const answerValidation = validateAnswerIsAlone(calls, receipts);
+    if (answerValidation.status === 'rejected') {
+        return answerValidation;
     }
     const proposalCountRejection = validateOneProposalPerTurn(calls);
     if (proposalCountRejection !== null) {
@@ -1568,7 +1618,7 @@ function validateCatalogTerminalCalls(
             };
         }
     }
-    return declineValidation;
+    return { status: 'accepted', decline: declineValidation.decline, answer: answerValidation.answer };
 }
 
 function normalizeTerminalProposalCall(call: ToolCallResult): ToolCallResult {
@@ -2025,6 +2075,7 @@ export async function runApplicationOwnedToolLoop(
                         reason: admission.reason,
                         questions: [admission.reason],
                     },
+                    answer: null,
                     searchedIntents: [...searchedIntents],
                     proposal: null,
                     receipts,
@@ -2105,7 +2156,8 @@ export async function runApplicationOwnedToolLoop(
                 transform: input.transform?.revision,
                 recipe: input.recipe?.revision,
                 preview: input.measurement?.revision,
-            }
+            },
+            receipts
         );
         if (terminalValidation.status === 'rejected') {
             return {
@@ -2130,6 +2182,7 @@ export async function runApplicationOwnedToolLoop(
                 status: 'complete',
                 toolCalls: terminalCalls.map(({ call }) => normalizeTerminalProposalCall(call)),
                 decline: terminalValidation.decline,
+                answer: terminalValidation.answer,
                 searchedIntents: [...searchedIntents],
                 proposal: outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls),
                 receipts,

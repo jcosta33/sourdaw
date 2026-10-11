@@ -164,6 +164,14 @@ function makeSequencedPort(replies: ReplyMode[]): {
             });
             return;
         }
+        if (message.type === 'releaseRetiredBank') {
+            // The real processor answers every release request, and the loader
+            // holds the next load's begin until it reports done.
+            queueMicrotask(() => {
+                emit({ type: 'retiredBankReleased', loadToken: message.loadToken, done: true });
+            });
+            return;
+        }
         if (message.type === 'abortSampleBank') {
             if (message.loadToken !== pendingToken) {
                 // Already committed (token cleared) or a stale token: the

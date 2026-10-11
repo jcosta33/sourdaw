@@ -41,6 +41,30 @@ sibling `proof-chamber` crate guards its own in `tests/reverb_process_rt.rs`.
   control-rate check and says nothing about the render path. A grep hit for `assert_no_alloc` in a
   module is not evidence that its audio path is covered — read what the call actually wraps.
 
+## A Levain bank commit or abort allocates and frees nothing
+
+`LevainEngine::commit_sample_bank` runs in the worklet's message handler, on the render thread. It
+swaps the zone map, PCM pool and legato store with the staged bank's and parks the displaced bank in
+one retired slot, so it neither allocates nor frees. `abort_sample_bank` does the same with the
+staged bank itself: it moves the whole bank into the slot and returns whether it retired one.
+`release_retired_bank(max_entries)` frees the slot in bounded steps from a message of its own; the
+host must run it to done before the next `begin_sample_bank`, which otherwise frees whatever is left
+in one unbounded call (a safety net, not a path to rely on). A commit that finds the slot occupied
+returns false and leaves the bank staged; an abort that finds it occupied, which the API cannot
+reach, frees the older bank in that call as `begin_sample_bank` would. `attach_sample_bank` refuses
+once the staged bank holds PCM, so it can only ever replace an empty placeholder pool.
+`device_process_rt.rs` guards the commit and the abort with `assert_no_alloc`, which also aborts on a
+free; `levain_bank_retirement.rs` counts allocations to show the frees land in the release. Add
+nothing to the commit or the abort that builds, pushes or drops
+([ADR 0051](../../.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md)).
+
+A disposed instance drains the same way. `retire_sample_bank` moves the sounding bank into the
+retired slot and silences the voices; it frees nothing and allocates only the empty replacement
+pool's `Arc`, and it refuses while the slot is occupied or no PCM sounds. The host releases the slot
+in bounded steps, retires, releases again, and only then frees the instance, so dropping a drained
+engine frees the same bytes whatever the bank's size; `levain_bank_retirement.rs` pins that
+([ADR 0052](../../.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md)).
+
 ## Output level at the engine boundary is pinned
 
 `tests/engine_output_level.rs` drives device families' `*Instance` render exports with a fixed

@@ -8,6 +8,7 @@ import { chatStore, clearChatMessages } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
+    pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { preparedStemImportCleanup } from '../agentReference/discardPreparedStemImportResources';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
     describePlannedAction: vi.fn(() => 'Toggle playback'),
     executePromptActionGroup: vi.fn(),
     getProjectContext: vi.fn(() => ({ tracks: [] })),
+    notifyAiAnswer: vi.fn(),
     notifyAiChange: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
     planPromptActions: vi.fn(),
@@ -69,6 +71,7 @@ vi.mock('../compileAgentActionExecution', () => ({
 vi.mock('../describePlannedAction', () => ({ describePlannedAction: mocks.describePlannedAction }));
 vi.mock('../executePromptActionGroup', () => ({ executePromptActionGroup: mocks.executePromptActionGroup }));
 vi.mock('../getProjectContext', () => ({ getProjectContext: mocks.getProjectContext }));
+vi.mock('../notifyAiAnswer', () => ({ notifyAiAnswer: mocks.notifyAiAnswer }));
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: mocks.notifyAiChange }));
 vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
 
@@ -343,9 +346,62 @@ describe('submitAdmittedPromptRequest', () => {
             submitAdmittedPromptRequest({ prompt: 'How loud is the mix?', source: 'prompt-bar' })
         ).resolves.toEqual({ status: 'no-op', runId: RUN_ID });
 
-        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith('The mix peaks at -1.2 dBFS.', []);
+        expect(mocks.notifyAiAnswer).toHaveBeenCalledExactlyOnceWith({
+            prompt: 'How loud is the mix?',
+            text: 'The mix peaks at -1.2 dBFS.',
+            evidence: [{ callId: 'call-1', toolName: 'analysis.measure', summary: 'Peak -1.2 dBFS.' }],
+        });
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'completed' });
         expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+    });
+
+    it('reads an answer before the actions, so a batch beside an answer never runs', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions: [action],
+                rawText: 'How loud is the mix?',
+                requiresConfirmation: false,
+                planningOutcome: { kind: 'answer', text: 'The mix peaks at -1.2 dBFS.', evidence: [] },
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'How loud is the mix?', source: 'prompt-bar' })
+        ).resolves.toEqual({ status: 'no-op', runId: RUN_ID });
+
+        expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+        expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([]);
+        expect(mocks.notifyAiAnswer).toHaveBeenCalledExactlyOnceWith({
+            prompt: 'How loud is the mix?',
+            text: 'The mix peaks at -1.2 dBFS.',
+            evidence: [],
+        });
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'completed' });
+    });
+
+    it('never shows an empty answer as a blank notice', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions: [],
+                rawText: 'How loud is the mix?',
+                requiresConfirmation: false,
+                planningOutcome: { kind: 'answer', text: '  ', evidence: [] },
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await submitAdmittedPromptRequest({ prompt: 'How loud is the mix?', source: 'prompt-bar' });
+
+        expect(mocks.notifyAiAnswer).not.toHaveBeenCalled();
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
+            []
+        );
     });
 
     it('says a searched-for capability is unsupported instead of the generic no-match advice', async () => {

@@ -2,7 +2,28 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import warmFirstPaint from '../../tests/e2e/firstPaintWarmup';
+
+const clock = vi.hoisted(() => ({ now: 0 }));
+const warmupMocks = vi.hoisted(() => ({
+    assertIdentity: vi.fn(),
+    launch: vi.fn(),
+    newPage: vi.fn(),
+    addInitScript: vi.fn(),
+    on: vi.fn(),
+    goto: vi.fn(),
+    getByLabel: vi.fn(),
+    waitFor: vi.fn(),
+    close: vi.fn(),
+}));
+
+vi.mock('@playwright/test', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@playwright/test')>()),
+    chromium: { launch: warmupMocks.launch },
+}));
+vi.mock('../e2eServerIdentity', () => ({ assertServingCheckoutIdentity: warmupMocks.assertIdentity }));
 
 /**
  * Structural pins for the lane-isolation wiring itself
@@ -154,5 +175,148 @@ describe('e2e serving-identity wiring', () => {
     it('agent ui-scripts await assertServingCheckoutIdentity before navigating (source pin: no TS project covers .agents)', () => {
         const utilsPath = join(repositoryRoot, '.agents/ui-scripts/utils.ts');
         expect(readFileSync(utilsPath, 'utf8')).toMatch(/await\s+assertServingCheckoutIdentity\(/);
+    });
+});
+
+describe('cold first-paint warmup', () => {
+    const config = { projects: [{ use: { baseURL: 'http://localhost:4173' } }] } as Parameters<
+        typeof warmFirstPaint
+    >[0];
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        clock.now = 0;
+        vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
+        warmupMocks.assertIdentity.mockResolvedValue(undefined);
+        warmupMocks.launch.mockResolvedValue({ newPage: warmupMocks.newPage, close: warmupMocks.close });
+        warmupMocks.newPage.mockResolvedValue({
+            addInitScript: warmupMocks.addInitScript,
+            on: warmupMocks.on,
+            goto: warmupMocks.goto,
+            getByLabel: warmupMocks.getByLabel,
+        });
+        // A healthy boot logs the [capabilities] marker right after the warmup
+        // subscribes to the console; deliver it so the readiness gate passes.
+        warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
+            queueMicrotask(() => handler({ text: () => '[DEV][INFO] [capabilities] {"isDesktopRuntime":false}' }));
+        });
+        warmupMocks.getByLabel.mockReturnValue({ waitFor: warmupMocks.waitFor });
+        warmupMocks.goto.mockResolvedValue(null);
+        warmupMocks.waitFor.mockResolvedValue(undefined);
+        warmupMocks.close.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('shares 180 seconds between a 35-second navigation and prompt overlay', async () => {
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+        await warmFirstPaint(config);
+
+        expect(warmupMocks.assertIdentity).toHaveBeenCalledWith('http://localhost:4173', expect.any(String));
+        const identityCallOrder = warmupMocks.assertIdentity.mock.invocationCallOrder[0];
+        const launchCallOrder = warmupMocks.launch.mock.invocationCallOrder[0];
+        if (typeof identityCallOrder !== 'number' || typeof launchCallOrder !== 'number') {
+            throw new TypeError('Expected identity validation and browser launch to have invocation order values');
+        }
+        expect(identityCallOrder).toBeLessThan(launchCallOrder);
+        expect(warmupMocks.newPage).toHaveBeenCalledWith({ baseURL: 'http://localhost:4173' });
+        expect(warmupMocks.addInitScript).toHaveBeenCalledWith(expect.any(Function), 'sourdaw-e2e-direct');
+        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 180_000 });
+        expect(warmupMocks.getByLabel).toHaveBeenCalledWith('Sourdaw — start a project');
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        // The cold cost is reported so a slow warmup is visible in the CI log
+        // instead of surfacing inside the first test's timed allowance (#4781).
+        expect(warmupLog).toHaveBeenCalledWith(
+            expect.stringMatching(
+                /\[first-paint warmup\] launch overlay after 35\.0s, boot capabilities after 35\.0s; 145\.0s of the 180s cold allowance remains/
+            )
+        );
+    });
+
+    it('bounds a hung navigation by the shared deadline and closes the browser', async () => {
+        warmupMocks.goto.mockImplementation(async (_url: string, options: { timeout: number }) => {
+            clock.now += options.timeout;
+            throw new Error('navigation timed out');
+        });
+
+        await expect(warmFirstPaint(config)).rejects.toThrow('navigation timed out');
+
+        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 180_000 });
+        expect(warmupMocks.waitFor).not.toHaveBeenCalled();
+        expect(clock.now).toBe(180_000);
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('bounds a late overlay by navigation time already spent and closes the browser', async () => {
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+        warmupMocks.waitFor.mockImplementation(async (options: { timeout: number }) => {
+            clock.now += options.timeout;
+            throw new Error('overlay timed out');
+        });
+
+        await expect(warmFirstPaint(config)).rejects.toThrow('overlay timed out');
+
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
+        expect(clock.now).toBe(180_000);
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a depleted budget before passing timeout zero to the overlay', async () => {
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 179_999.5;
+            return null;
+        });
+
+        await expect(warmFirstPaint(config)).rejects.toThrow(/warmup.*deadline/i);
+
+        expect(warmupMocks.waitFor).not.toHaveBeenCalled();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('refuses to hand a cold server to the timed waits when boot never completes', async () => {
+        // The warmup page never logs [capabilities]: the launch path's boot
+        // did not finish, so finishing global setup would start the timed
+        // first-paint waits against a cold server (#4781).
+        warmupMocks.on.mockImplementation(() => {});
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 1_000;
+            return null;
+        });
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const warming = warmFirstPaint(config);
+            // Flush the navigation and overlay microtasks so the readiness
+            // wait is polling, then let its deadline pass. The rejection
+            // expectation attaches before the rejection fires so the failure
+            // is never unhandled.
+            await vi.advanceTimersByTimeAsync(0);
+            clock.now = 400_000;
+            const refusal = expect(warming).rejects.toThrow('never logged "[capabilities]"');
+            await vi.advanceTimersByTimeAsync(100);
+            await refusal;
+        } finally {
+            vi.useRealTimers();
+        }
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a different serving checkout before launching or navigating', async () => {
+        warmupMocks.assertIdentity.mockRejectedValue(new Error('wrong serving checkout'));
+
+        await expect(warmFirstPaint(config)).rejects.toThrow('wrong serving checkout');
+
+        expect(warmupMocks.launch).not.toHaveBeenCalled();
+        expect(warmupMocks.goto).not.toHaveBeenCalled();
     });
 });

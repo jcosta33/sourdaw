@@ -210,14 +210,15 @@ describe('createLevainBridge', () => {
                 const bridge = createLevainBridge(deps);
                 const device = makeDevice();
                 seedDevice('d1');
-                void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+                const port = {} as MessagePort;
+                void bridge.registerLevainDevice('d1', device, port);
                 flushRaf();
                 deps.persistDeviceParam.mockClear();
                 bridge.setLevainParamWithAudio('d1', 'masterGain', 0.42);
                 deps.setResolutionStatus(status);
                 deps.resolveEligibleDeviceWriteTarget.mockClear();
 
-                bridge.unregisterLevainDevice('d1');
+                bridge.unregisterLevainDevice('d1', port);
                 flushRaf();
 
                 expect(deps.resolveEligibleDeviceWriteTarget).not.toHaveBeenCalled();
@@ -441,10 +442,11 @@ describe('createLevainBridge', () => {
             }
             const deps = makeDeps(autoLoad);
             const bridge = createLevainBridge(deps);
-            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            const port = {} as MessagePort;
+            void bridge.registerLevainDevice('d1', makeDevice(), port);
 
             expect(signals[0]?.aborted).toBe(false);
-            bridge.unregisterLevainDevice('d1');
+            bridge.unregisterLevainDevice('d1', port);
             expect(signals[0]?.aborted).toBe(true);
         });
 
@@ -488,7 +490,7 @@ describe('createLevainBridge', () => {
             loads[1]!.progress(0.1);
             expect(observed).toHaveBeenLastCalledWith(2, 0.1);
 
-            bridge.unregisterLevainDevice('d1');
+            bridge.unregisterLevainDevice('d1', port);
             loads[1]!.progress(0.2);
             expect(observed).toHaveBeenCalledTimes(2);
             loads[0]!.settle.resolve(null);
@@ -695,9 +697,10 @@ describe('createLevainBridge', () => {
             );
             const bridge = createLevainBridge(deps);
             seedDevice('d1');
-            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            const port = {} as MessagePort;
+            await bridge.registerLevainDevice('d1', makeDevice(), port);
 
-            bridge.unregisterLevainDevice('d1');
+            bridge.unregisterLevainDevice('d1', port);
             levainStore.set({ d1: { ...defaultLevainState, patch: createDefaultPatch('cello') } });
             await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
 
@@ -818,9 +821,10 @@ describe('createLevainBridge', () => {
             );
             const bridge = createLevainBridge(deps);
             seedDevice('d1');
-            const registration = bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            const port = {} as MessagePort;
+            const registration = bridge.registerLevainDevice('d1', makeDevice(), port);
 
-            bridge.unregisterLevainDevice('d1');
+            bridge.unregisterLevainDevice('d1', port);
             deps.setLoadedMicPositions.mockClear();
 
             deferred.resolve(['close']);
@@ -868,7 +872,8 @@ describe('createLevainBridge', () => {
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
             seedDevice('d1');
-            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            const port = {} as MessagePort;
+            void bridge.registerLevainDevice('d1', device, port);
             // Drain the register-time batched params so the assertion below only
             // sees the post-register write we schedule next.
             flushRaf();
@@ -878,7 +883,7 @@ describe('createLevainBridge', () => {
             // the device down in the same frame before the rAF fires.
             bridge.setLevainParamWithAudio('d1', 'masterGain', 0.42);
             expect(paramBatcherHasPending(rafCallbacks)).toBe(true);
-            bridge.unregisterLevainDevice('d1');
+            bridge.unregisterLevainDevice('d1', port);
 
             // The rAF still fires — its entry must have been cancelled so the
             // post-teardown flush never reaches persistDeviceParam.

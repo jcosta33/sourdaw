@@ -23,7 +23,8 @@ import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum'
 
 import { TOASTER_PAD_COUNT, type PadState, withActivePatternId } from '../../models/ToasterKit';
 import {
-    defaultToasterState,
+    getToasterViewState,
+    pendingPadSelectionStore,
     selectPad,
     setStepVelocity,
     toasterStore,
@@ -130,7 +131,8 @@ const Knob = ({
 export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // §209.1 — Typed defaults instead of non-null assertion on live values.
     const instances = useStore(toasterStore, {});
-    const state = instances[deviceId] ?? defaultToasterState;
+    const pendingSelections = useStore(pendingPadSelectionStore, {});
+    const state = getToasterViewState(instances, pendingSelections, deviceId);
     const trackState = useStore(trackStore, defaultTrackState);
     const grooveState = useStore(grooveTemplateStore, defaultGrooveTemplateState);
     const selectedTrackId = trackState?.selectedTrackId ?? null;

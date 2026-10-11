@@ -315,7 +315,11 @@ const TRIM_EDIT = { deviceId: DRUMS_TRIM_ID, paramId: 'gain-level', value: -12 }
 
 /** Plan, persist for approval, and read the measured preview the approval shows. */
 async function approvalMeasuredPreview(revision: string) {
-    const planned = await parsePromptToActions(PROMPT, getProjectContext(), undefined, revision);
+    const planned = await parsePromptToActions({
+        prompt: PROMPT,
+        context: getProjectContext(),
+        projectRevision: revision,
+    });
     const failedReads = (planned.applicationToolReceipts ?? []).flatMap((receipt) =>
         receipt.error === null ? [] : [receipt.error.safeMessage]
     );
@@ -541,7 +545,11 @@ describe('a measured preview through proposal and approval', () => {
         const revision = captureProjectRevision();
         scriptMeasureThenAdoptTurns(revision, proposalOf(lowerGain(DRUMS_GAIN_ID, -6)));
 
-        const planned = await parsePromptToActions(PROMPT, getProjectContext(), undefined, revision);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: revision,
+        });
 
         expect(planned.rejectionReason).toBeUndefined();
         const measured = planned.applicationToolReceipts?.find((receipt) => receipt.callId === 'measure-1');
@@ -718,7 +726,11 @@ describe('a measured preview through proposal and approval', () => {
     it('drops the measured preview from a subset re-proposal', async () => {
         const revision = captureProjectRevision();
         scriptMeasureThenAdoptTurns(revision, proposalOf(lowerGain(DRUMS_GAIN_ID, -6), lowerGain(DRUMS_TRIM_ID, -3)));
-        const planned = await parsePromptToActions(PROMPT, getProjectContext(), undefined, revision);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: revision,
+        });
         expect(planned.rejectionReason).toBeUndefined();
         const confirmationId = persistForApproval(planned, revision);
         expect(getPendingActionConfirmation(confirmationId)?.approvalSnapshot.measuredPreview).toBeDefined();

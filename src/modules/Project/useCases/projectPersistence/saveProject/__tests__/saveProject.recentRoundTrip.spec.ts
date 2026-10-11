@@ -94,6 +94,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
@@ -143,6 +144,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeMidiFxFromStrip: vi.fn(),
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
+    deactivateTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),

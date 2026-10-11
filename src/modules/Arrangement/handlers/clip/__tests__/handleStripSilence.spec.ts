@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { handleStripSilence } from '../handleStripSilence';
 
 const mocks = vi.hoisted(() => ({
@@ -47,22 +49,36 @@ describe('handleStripSilence', () => {
         expect(result).toEqual({ status: 'no-write' });
     });
 
-    it('clears stale internal replay fields when fresh preflight rejects the action', () => {
-        mocks.stripSilence.mockReturnValue(false);
+    it('refuses a carried plan the project no longer yields and leaves it as recorded', () => {
         const stale = { trackId: 't1', clips: [], clipOrder: [], clipSatellites: [], clipAutomationLanes: [] };
         const action = {
             type: 'stripSilence' as const,
             payload: { clipId: 'c1', expected: stale, replacement: stale },
         };
+        const recorded = structuredClone(action.payload);
+
+        handleStripSilence.materializeCommandArguments?.(action);
+        const description = handleStripSilence.describe(action);
+        const result = handleStripSilence.execute(action);
+
+        expect(description.inverseAction).toBeNull();
+        expect(action.payload).toEqual(recorded);
+        expect(mocks.stripSilence).not.toHaveBeenCalled();
+        expect(mocks.restoreStripSilenceState).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'conflict', reason: expect.any(String) });
+    });
+
+    it('refuses a partial carried plan without planning a new one', () => {
+        const snapshot = { trackId: 't1', clips: [], clipOrder: [], clipSatellites: [], clipAutomationLanes: [] };
+        const action = { type: 'stripSilence' as const, payload: { clipId: 'c1', expected: snapshot } };
 
         const description = handleStripSilence.describe(action);
         const result = handleStripSilence.execute(action);
 
         expect(description.inverseAction).toBeNull();
-        expect(action.payload).toEqual({ clipId: 'c1' });
-        expect(mocks.stripSilence).toHaveBeenCalledWith('c1', undefined, undefined);
-        expect(mocks.restoreStripSilenceState).not.toHaveBeenCalled();
-        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.prepareStripSilence).not.toHaveBeenCalled();
+        expect(mocks.stripSilence).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'conflict', reason: expect.any(String) });
     });
 
     it('provides a description', () => {
@@ -78,19 +94,27 @@ describe('handleStripSilence', () => {
         const previous = { trackId: 't1', clips: [], clipOrder: ['c1'], clipSatellites: [], clipAutomationLanes: [] };
         const next = { trackId: 't1', clips: [], clipOrder: ['s1', 's2'], clipSatellites: [], clipAutomationLanes: [] };
         mocks.prepareStripSilence.mockReturnValue({ previous, next, newClipIds: ['s1', 's2'] });
-        const action = {
-            type: 'stripSilence' as const,
-            payload: { clipId: 'c1', expected: next, replacement: previous },
+        const action: Extract<AppAction, { type: 'stripSilence' }> = {
+            type: 'stripSilence',
+            payload: { clipId: 'c1' },
         };
 
+        handleStripSilence.materializeCommandArguments?.(action);
         const desc = handleStripSilence.describe(action);
 
-        expect(mocks.prepareStripSilence).toHaveBeenCalledWith({
+        expect(mocks.prepareStripSilence).toHaveBeenNthCalledWith(1, {
             clipId: 'c1',
             threshold: undefined,
             minDuration: undefined,
         });
-        expect(action.payload).toMatchObject({ expected: previous, replacement: next });
+        expect(mocks.prepareStripSilence).toHaveBeenNthCalledWith(2, {
+            clipId: 'c1',
+            threshold: undefined,
+            minDuration: undefined,
+            segmentClipIds: [],
+            automationLaneIds: [],
+        });
+        expect(action.payload).toEqual({ clipId: 'c1', expected: previous, replacement: next });
         expect(desc.inverseAction).toEqual({
             type: 'restoreStripSilenceState',
             payload: { expected: next, replacement: previous },

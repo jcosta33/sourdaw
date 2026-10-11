@@ -20,13 +20,34 @@ vi.mock('../../repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary
 const pick_files_mock = vi.mocked(pickFiles);
 const persist_library_mock = vi.mocked(persistGrinderNeuralLibrary);
 
+// A complete, valid WaveNet model (single layer array, channels 2, kernel 3,
+// dilations [1, 2], head_size 1, head_bias true → 50 weights): the parser
+// validates the whole file against the native runtime's contract.
 function make_nam_file(input: { file_name: string; display_name: string }): File {
     return new File(
         [
             JSON.stringify({
+                version: '0.5.4',
                 architecture: 'WaveNet',
-                config: { sample_rate: 48_000 },
-                weights: [0.14, -0.21, 0.32, 0.08, -0.11, 0.27],
+                config: {
+                    layers: [
+                        {
+                            input_size: 1,
+                            condition_size: 1,
+                            head_size: 1,
+                            channels: 2,
+                            kernel_size: 3,
+                            dilations: [1, 2],
+                            activation: 'Tanh',
+                            gated: false,
+                            head_bias: true,
+                        },
+                    ],
+                    head: null,
+                    head_scale: 0.02,
+                },
+                weights: Array.from({ length: 50 }, (_, index) => Math.sin(index * 12.9898) * 0.5),
+                sample_rate: 48_000,
                 metadata: { name: input.display_name },
             }),
         ],

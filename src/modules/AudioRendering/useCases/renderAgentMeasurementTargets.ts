@@ -83,8 +83,9 @@ function renderMixdownBuffer(
 
 /**
  * The measurement's own stop reaches the render as its `abortSignal`, never as `cancelExport`: the
- * export cancel flag is process-wide and a freeze or bounce running beside this render reads it, so
- * raising it would fail them with "Export cancelled" for a stop nobody asked them to take.
+ * export cancel flag is process-wide and would also stop a musician's export or another mixdown
+ * running beside this render, which read it, for a stop nobody asked them to take. A freeze or
+ * bounce reads none of it.
  */
 function renderMixdown(input: RenderAgentMeasurementTargetsInput): Promise<AudioBuffer> {
     return renderMixdownBuffer(

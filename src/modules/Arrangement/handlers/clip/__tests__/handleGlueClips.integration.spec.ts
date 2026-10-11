@@ -214,6 +214,115 @@ describe('handleGlueClips atomic integration', () => {
         expect(midiStore.value!.migratedAbsoluteNoteClipIds).toEqual([glued.id]);
     });
 
+    describe('a glue carrying its plan', () => {
+        function planGlue(): Extract<AppAction, { type: 'glueClips' }> {
+            const action: Extract<AppAction, { type: 'glueClips' }> = {
+                type: 'glueClips',
+                payload: { clipIds: ['clip-a', 'clip-b'] },
+            };
+            handleGlueClips.materializeCommandArguments?.(action);
+            if (!action.payload.targetClipId || !action.payload.expected || !action.payload.replacement) {
+                throw new Error('Expected a planned glue');
+            }
+            return action;
+        }
+
+        function seedSourceLane(): void {
+            automationStore.set({
+                lanes: [
+                    {
+                        id: 'lane-a-gain',
+                        trackId: 'track-midi',
+                        clipId: 'clip-a',
+                        parameterId: 'gain',
+                        parameterName: 'Gain',
+                        points: [{ id: 'point-a', beat: 9, value: 0.5, curve: 'linear', tension: 0 }],
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        minValue: 0,
+                        maxValue: 1,
+                    },
+                ],
+            });
+        }
+
+        // Red when materialize or describe plan again: each pass would draw a new glued clip id
+        // and new lane ids, so the arguments would drift from what the command recorded.
+        it('names the recorded glued clip and lane ids on every later materialize and describe', () => {
+            seedSourceLane();
+            const action = planGlue();
+            const recorded = structuredClone(action);
+
+            handleGlueClips.materializeCommandArguments?.(action);
+            const description = handleGlueClips.describe(action);
+
+            expect(action).toEqual(recorded);
+            expect(recorded.payload.replacement?.clipAutomationLanes).toHaveLength(1);
+            expect(description.redoAction).toEqual({
+                type: 'restoreClipGlueState',
+                payload: { expected: recorded.payload.expected, replacement: recorded.payload.replacement },
+            });
+        });
+
+        // Red when the carried plan is applied without proving the project still yields it: the
+        // altered glued clip would commit under the approved command's name.
+        it('refuses a carried plan whose replacement was altered, leaving the project unchanged', async () => {
+            const action = planGlue();
+            action.payload.replacement = {
+                ...action.payload.replacement!,
+                clips: action.payload.replacement!.clips.map((clip) => ({ ...clip, name: 'Altered' })),
+            };
+            const tracksBefore = structuredClone(trackStore.value!.tracks);
+            const midiBefore = structuredClone(midiStore.value);
+
+            const result = await executeAppActionBatch([action], { source: 'prompt' });
+
+            expect(result).toMatchObject({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: glueClips: The glue this command recorded no longer matches the project',
+            });
+            expect(trackStore.value!.tracks).toEqual(tracksBefore);
+            expect(midiStore.value).toEqual(midiBefore);
+        });
+
+        it('refuses a carried plan whose lane id another lane took since it compiled', async () => {
+            seedSourceLane();
+            const action = planGlue();
+            const recordedLaneId = action.payload.replacement!.clipAutomationLanes[0]!.id;
+            automationStore.set({
+                lanes: [
+                    ...automationStore.value!.lanes,
+                    {
+                        id: recordedLaneId,
+                        trackId: 'track-midi',
+                        parameterId: 'pan',
+                        parameterName: 'Pan',
+                        points: [],
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        minValue: 0,
+                        maxValue: 1,
+                    },
+                ],
+            });
+            const tracksBefore = structuredClone(trackStore.value!.tracks);
+            const lanesBefore = structuredClone(automationStore.value!.lanes);
+
+            const result = await executeAppActionBatch([action], { source: 'prompt' });
+
+            expect(result).toMatchObject({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: glueClips: The glue this command recorded no longer matches the project',
+            });
+            expect(trackStore.value!.tracks).toEqual(tracksBefore);
+            expect(automationStore.value!.lanes).toEqual(lanesBefore);
+        });
+    });
+
     it('re-preflights a legacy macro instead of replaying stale snapshots over probabilistic notes', async () => {
         const persistedAction = persistLegacyGlueMacro(50);
         midiStore.set({

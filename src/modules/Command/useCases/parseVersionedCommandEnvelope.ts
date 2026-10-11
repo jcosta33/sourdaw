@@ -7,6 +7,7 @@ import {
     type VersionedCommandEnvelope,
 } from '../models/VersionedCommandEnvelope';
 
+import { collectCommandIdReferences } from './collectCommandIdReferences';
 import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
@@ -246,6 +247,11 @@ function namesReferencedTarget(
     return getVersionedCommandReferencedTargets({ operation, objectReferences }).some(({ id }) => assigned.has(id));
 }
 
+/**
+ * The recorded object references are the current compilation, or the every-id list an envelope
+ * persisted before parameter ids stopped counting as objects recorded, so a pending approval or a
+ * recovery continuation written then still parses.
+ */
 function hasCanonicalArgumentMetadata(
     operation: string,
     argumentsValue: Record<string, unknown>,
@@ -254,8 +260,10 @@ function hasCanonicalArgumentMetadata(
     time: readonly CommandTimeReference[]
 ): boolean {
     const expected = compileCommandArgumentMetadata(argumentsValue, operation);
+    const recordedReferences = JSON.stringify(references);
     return (
-        JSON.stringify(references) === JSON.stringify(expected.objectReferences) &&
+        (recordedReferences === JSON.stringify(expected.objectReferences) ||
+            recordedReferences === JSON.stringify(collectCommandIdReferences(argumentsValue))) &&
         JSON.stringify(parameterUnits) === JSON.stringify(expected.parameterUnits) &&
         JSON.stringify(time) === JSON.stringify(expected.time)
     );

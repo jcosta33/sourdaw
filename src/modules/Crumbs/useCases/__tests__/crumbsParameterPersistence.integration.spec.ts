@@ -48,6 +48,7 @@ import { setCrumbsParamWithAudio } from '../setCrumbsParamWithAudio';
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),
@@ -88,6 +89,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeMidiFxFromStrip: vi.fn(),
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
+    deactivateTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),

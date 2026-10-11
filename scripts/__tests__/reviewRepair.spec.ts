@@ -7,8 +7,11 @@ import {
     REVIEW_REPAIR_SUMMARY_MAX_BYTES,
     assertReviewRepairRecord,
     confirmClientMutationId,
+    parseReviewRepairReplyForRole,
     parseReviewRepairReply,
+    renderReviewRepairConfirmationMarker,
     renderReviewRepairReply,
+    reviewRepairRecordDigest,
     selectEligibleRepairs,
 } from '../reviewRepair.ts';
 
@@ -228,6 +231,51 @@ describe('review repair reply round trip', () => {
     });
 });
 
+describe('compact repair confirmation binding', () => {
+    it('should digest every canonical author-record field, including populated evidence', () => {
+        const digest = reviewRepairRecordDigest(VALID_RECORD);
+        expect(digest).toMatch(/^[0-9a-f]{64}$/u);
+        for (const changed of [
+            repairRecord({ summary: 'a different summary' }),
+            repairRecord({ evidence: [{ ...EVIDENCE_ENTRY, observed: 'different evidence' }] }),
+            repairRecord({ finding: { ...VALID_RECORD.finding, line: FINDING_LINE + 1 } }),
+            repairRecord({ commit: 'c'.repeat(40) }),
+            repairRecord({ head: 'd'.repeat(40) }),
+        ]) {
+            expect(reviewRepairRecordDigest(changed)).not.toBe(digest);
+        }
+    });
+
+    it('should render one canonical compact reviewer marker bound to the entire author record', () => {
+        const marker = renderReviewRepairConfirmationMarker(VALID_RECORD, HEAD);
+        const prefix = 'sourdaw-repair-confirmation-v1 ';
+        expect(marker.startsWith(prefix)).toBe(true);
+        const payload = marker.slice(prefix.length);
+        const parsed = JSON.parse(payload) as Record<string, unknown>;
+        expect(canonicalJson(parsed)).toBe(payload);
+        expect(parsed).toEqual({
+            confirmationHead: HEAD,
+            format: 'repair-confirmation-v1',
+            pr: PR,
+            recordDigest: reviewRepairRecordDigest(VALID_RECORD),
+            thread: THREAD,
+        });
+        expect(marker).not.toContain(EVIDENCE_ENTRY.observed);
+    });
+
+    it('should admit compact content only on the reviewer route and refuse doubled reviewer markers', () => {
+        const marker = renderReviewRepairConfirmationMarker(VALID_RECORD, HEAD);
+        expect(parseReviewRepairReplyForRole(marker, 'author')).toBeUndefined();
+        expect(parseReviewRepairReplyForRole(marker, 'reviewer')).toMatchObject({
+            kind: 'confirmation',
+            confirmation: { pr: PR, thread: THREAD, confirmationHead: HEAD },
+        });
+        expect(() => parseReviewRepairReplyForRole(`${marker}\n${marker}`, 'reviewer')).toThrow(
+            /ambiguous or duplicate/u
+        );
+    });
+});
+
 describe('parseReviewRepairReply discipline', () => {
     it('should return undefined for prose that carries no marker line', () => {
         expect(parseReviewRepairReply('Thanks. The fix is already on the branch.')).toBeUndefined();
@@ -401,6 +449,39 @@ describe('selectEligibleRepairs', () => {
             refused: [],
             ignored: [],
         });
+    });
+
+    it.each([
+        ['compact', 9_001, false],
+        ['compact', 9_002, false],
+        ['compact', 9_003, true],
+        ['legacy', 9_001, false],
+        ['legacy', 9_002, false],
+        ['legacy', 9_003, true],
+    ] as const)('requires %s reviewer confirmation %i to follow the selected author reply', (format, id, admitted) => {
+        const record = repairRecord();
+        const reviewerBody =
+            format === 'compact' ? renderReviewRepairConfirmationMarker(record, HEAD) : renderReviewRepairReply(record);
+        const thread = threadState({
+            // The array places the author first even when the reviewer comment ID is earlier.
+            replies: [repairReply(9_002, record), { id, body: reviewerBody, authorNodeId: FOREIGN_NODE_ID }],
+        });
+        const selection = selectRepairs([thread]);
+        if (admitted) {
+            expect(selection).toEqual({
+                eligible: [{ thread: THREAD, record, replyId: 9_002 }],
+                refused: [],
+                ignored: [],
+            });
+        } else {
+            expect(selection).toEqual({
+                eligible: [],
+                refused: [
+                    { thread: THREAD, reason: 'reviewer confirmation does not follow the selected author repair' },
+                ],
+                ignored: [],
+            });
+        }
     });
 
     it('should refuse a finding that does not match the thread root', () => {

@@ -249,11 +249,12 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
     });
 
     /**
-     * #3658 — the native strip has no send tap on a bus, so the native producer
-     * drops a bus-origin send and the mix would print without it. A send the
-     * Web Audio render would wire therefore keeps the render on Web Audio.
+     * #5067 — the native bus strip carries pre- and post-fader send taps, so a
+     * bus-origin send is no longer a reason to leave the native engine (the
+     * #3658 gate is retired). Every shape that gate used to degrade renders
+     * natively now.
      */
-    describe('bus-origin sends — a send that would contribute degrades, one that cannot does not', () => {
+    describe('bus-origin sends — the native engine takes every shape', () => {
         /** Track → bus A → master, bus A optionally sending to bus B (routed to master). */
         function busSendProject(send: Partial<Track['sends'][number]> | null, source: Partial<Track> = {}) {
             const { renderableTracks, scheduledTracks } = cleanProject();
@@ -272,94 +273,18 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             };
         }
 
-        it('degrades a bus that sends to another bus, naming both', async () => {
-            mocks.availability = { available: true, transport: stubTransport };
-
-            const selection = await selectOfflineRenderEngine(busSendProject({}));
-
-            expect(selection).toEqual({
-                engine: 'web-audio/offline',
-                reason: 'bus "Bus A" sends to bus "Bus B", which the native engine has no bus send tap for',
-                degraded: true,
-            });
-        });
-
-        it('does not call it a degradation in a browser, where Web Audio is the platform', async () => {
-            const selection = await selectOfflineRenderEngine(busSendProject({}));
-
-            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: false });
-        });
-
-        it('hands the same project without the bus-to-bus send to the native engine', async () => {
-            mocks.availability = { available: true, transport: stubTransport };
-
-            const selection = await selectOfflineRenderEngine(busSendProject(null));
-
-            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
-        });
-
         it.each([
-            { name: 'a send to a bus this render does not build', send: { busId: 'bus-gone' }, source: {} },
+            { name: 'a post-fader send from a bus to another bus', send: {}, source: {} },
+            { name: 'a pre-fader send from a muted bus', send: { preFader: true }, source: { muted: true } },
+            { name: 'a send at zero level that a lane may raise', send: { level: 0 }, source: {} },
             { name: 'a post-fader send from a muted bus', send: { preFader: false }, source: { muted: true } },
-        ])('hands $name to the native engine, because Web Audio carries nothing through it', async (shape) => {
+            { name: 'a send to a bus this render does not build', send: { busId: 'bus-gone' }, source: {} },
+        ])('hands $name to the native engine', async (shape) => {
             mocks.availability = { available: true, transport: stubTransport };
 
             const selection = await selectOfflineRenderEngine(busSendProject(shape.send, shape.source));
 
             expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
-        });
-
-        it('degrades a send at zero level, because a send automation lane can raise it during the render', async () => {
-            mocks.availability = { available: true, transport: stubTransport };
-
-            const selection = await selectOfflineRenderEngine(busSendProject({ level: 0 }));
-
-            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
-        });
-
-        it('degrades a pre-fader send from a muted bus, which a cue mix keeps feeding', async () => {
-            mocks.availability = { available: true, transport: stubTransport };
-
-            const selection = await selectOfflineRenderEngine(busSendProject({ preFader: true }, { muted: true }));
-
-            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
-        });
-
-        // A skipped send must not end the scan: the sends after it are still the
-        // gate's to read.
-        it('degrades a bus whose first send names an unbuilt bus and whose second names a built one', async () => {
-            mocks.availability = { available: true, transport: stubTransport };
-            const sends: Track['sends'] = [
-                { busId: 'bus-gone', level: 0.4, preFader: false },
-                { busId: 'bus-b', level: 0.4, preFader: false },
-            ];
-
-            const selection = await selectOfflineRenderEngine(busSendProject(null, { sends }));
-
-            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
-        });
-
-        it('degrades a muted bus whose post-fader send is followed by a pre-fader send', async () => {
-            mocks.availability = { available: true, transport: stubTransport };
-            const sends: Track['sends'] = [
-                { busId: 'bus-b', level: 0.4, preFader: false },
-                { busId: 'bus-b', level: 0.4, preFader: true },
-            ];
-
-            const selection = await selectOfflineRenderEngine(busSendProject(null, { sends, muted: true }));
-
-            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
-        });
-
-        it('degrades a sending bus that comes after a bus with no sends', async () => {
-            mocks.availability = { available: true, transport: stubTransport };
-            const { renderableTracks, ...rest } = busSendProject({});
-            const [track, busA, busB] = renderableTracks;
-
-            // Order is the point: the scan must read past the send-less Bus B.
-            const selection = await selectOfflineRenderEngine({ ...rest, renderableTracks: [track!, busB!, busA!] });
-
-            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
         });
 
         it('hands a track-origin send to a bus to the native engine', async () => {
@@ -505,6 +430,142 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
     });
 
     /**
+     * The modulator rack and the adjustment-layer stack are web-only
+     * vocabulary. One case per gate clause — each with the reason the user
+     * reads on `onWarning` — plus the non-gate shapes that must keep native.
+     */
+    describe('modulators and adjustment layers — every layer gates, steady or moving', () => {
+        const modulator = (overrides: Partial<{ name: string; enabled: boolean; mappings: unknown[] }> = {}) => ({
+            name: 'LFO 1',
+            enabled: true,
+            mappings: [{ parameterId: 'gain' }],
+            ...overrides,
+        });
+        const layer = (
+            overrides: Partial<{
+                name: string;
+                enabled: boolean;
+                effectType: string;
+                regions: { startBeat: number; endBeat: number }[];
+                affectedTrackIds: string[];
+                insertionIndex: number;
+            }> = {}
+        ) => ({
+            name: 'Trim',
+            enabled: true,
+            effectType: 'volume',
+            regions: [],
+            affectedTrackIds: [],
+            insertionIndex: 0,
+            ...overrides,
+        });
+
+        const cases: { name: string; input: () => SelectOfflineRenderEngineInput; reason: string }[] = [
+            {
+                name: 'an enabled modulator with mappings',
+                input: () => ({ ...cleanProject(), modulators: [modulator()] }),
+                reason: 'modulator "LFO 1" drives device parameters, which the native render does not carry',
+            },
+            {
+                name: 'a DSP adjustment layer',
+                input: () => ({ ...cleanProject(), adjustmentLayers: [layer({ effectType: 'reverb', name: 'Wide' })] }),
+                reason: 'adjustment layer "Wide" routes DSP the native engine has no bus for',
+            },
+            {
+                name: 'a moving volume layer',
+                input: () => ({
+                    ...cleanProject(),
+                    adjustmentLayers: [layer({ name: 'Lift', regions: [{ startBeat: 0, endBeat: 4 }] })],
+                }),
+                reason: 'adjustment layer "Lift" moves across the export, which only the Web Audio render schedules',
+            },
+            {
+                // The native render seeds raw track.gain and implements no
+                // layer handling at all: a steady layer would print as if it
+                // did not exist, so it gates like a moving one.
+                name: 'a steady volume layer',
+                input: () => ({ ...cleanProject(), adjustmentLayers: [layer({ name: 'Trim' })] }),
+                reason: 'adjustment layer "Trim" adjusts the mix, which the native render does not apply',
+            },
+            {
+                name: 'a steady pan layer',
+                input: () => ({ ...cleanProject(), adjustmentLayers: [layer({ effectType: 'pan', name: 'Pan' })] }),
+                reason: 'adjustment layer "Pan" adjusts the mix, which the native render does not apply',
+            },
+        ];
+
+        it.each(cases)('degrades $name with its own reason', async ({ input, reason }) => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine(input());
+
+            expect(selection).toEqual({ engine: 'web-audio/offline', reason, degraded: true });
+        });
+
+        it.each([
+            { name: 'a disabled modulator', modulator: modulator({ enabled: false }) },
+            { name: 'a modulator without mappings', modulator: modulator({ mappings: [] }) },
+        ])('hands $name to the native engine', async ({ modulator: shape }) => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine({ ...cleanProject(), modulators: [shape] });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+
+        it.each([
+            { name: 'a disabled layer', layer: layer({ enabled: false }) },
+            {
+                name: 'a layer with explicit targets off every renderable track',
+                layer: layer({ affectedTrackIds: ['track-gone'] }),
+            },
+        ])('hands $name to the native engine', async ({ layer: shape }) => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine({ ...cleanProject(), adjustmentLayers: [shape] });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+
+        /**
+         * An implicit layer position resolves against the full ordered
+         * project track list — live's `resolveAffectedTrackIds` slices that,
+         * not the renderable subset. A folder track ahead of the stack shifts
+         * every index: at project position 2 the layer's implicit targets are
+         * [bus-1] — a renderable track, so the gate holds — while slicing the
+         * renderable subset at 2 finds nothing and would hand a layer live
+         * applies to the native renderer that ignores it.
+         */
+        it('resolves an implicit layer position against the full project track list', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine({
+                ...cleanProject(),
+                projectTrackIds: ['folder-1', 'track-a', 'bus-1'],
+                adjustmentLayers: [layer({ insertionIndex: 2 })],
+            });
+
+            expect(selection).toEqual({
+                engine: 'web-audio/offline',
+                reason: 'adjustment layer "Trim" adjusts the mix, which the native render does not apply',
+                degraded: true,
+            });
+        });
+
+        it('hands a layer whose implicit targets miss every renderable track to the native engine', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine({
+                ...cleanProject(),
+                projectTrackIds: ['folder-1', 'track-a', 'bus-1'],
+                adjustmentLayers: [layer({ insertionIndex: 3 })],
+            });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+    });
+
+    /**
      * #3776 — a chain made only of native built-in bodies renders natively;
      * every other chain names the device that keeps it on Web Audio. One case
      * per exclusion, each with the reason the user reads on `onWarning`.
@@ -569,7 +630,37 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                 keyedDeviceId: 'glue-1',
                 reason: 'track "Chained A" carries device "gluten" keyed by a sidechain, which the native render does not wire',
             },
+            {
+                // The digest words in the record are the only marker the
+                // selection sees: they mean the device is running a real
+                // imported .nam model (#3774), which the numeric-record-built
+                // native body cannot load — it would sound the substitute.
+                name: 'a Grinder running an imported neural model',
+                devices: [
+                    device({
+                        id: 'grind-1',
+                        type: 'grinder',
+                        parameterValues: { neuralModelMode: 1, neuralCustomModelDigest0: 1234 },
+                    }),
+                ],
+                reason: 'track "Chained A" carries device "grinder" running an imported neural model, which the native render cannot load',
+            },
         ];
+
+        it('hands a Grinder whose record carries no model digest to the native engine', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+            const track = chainedTrack('Chained A', [
+                device({ id: 'grind-1', type: 'grinder', parameterValues: { neuralModelMode: 1 } }),
+            ]);
+
+            const selection = await selectOfflineRenderEngine({
+                renderableTracks: [track],
+                scheduledTracks: [track],
+                sidechainRoutes: [],
+            });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
 
         it.each(cases)('degrades $name with its own reason', async ({ devices, keyedDeviceId, reason }) => {
             mocks.availability = { available: true, transport: stubTransport };

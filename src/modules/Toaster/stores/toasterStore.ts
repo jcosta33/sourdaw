@@ -54,6 +54,44 @@ export const toasterStore = createStore<ToasterInstances>({
 // persistence records it as an edit rather than first sight.
 const pendingKitUpdates = new Map<string, Partial<ToasterKit>>();
 
+// Pad selections made while the device is still loading, by device id. A store
+// rather than a plain map because the panel renders in that window and must show
+// the pressed pad at once: it reads this through `getToasterViewState`, and
+// registration moves the entry onto the new record.
+export const pendingPadSelectionStore = createStore<Record<string, number>>({
+    initialData: {},
+});
+
+function clearPendingPadSelection(deviceId: string): void {
+    const pending = pendingPadSelectionStore.value ?? {};
+    if (!(deviceId in pending)) {
+        return;
+    }
+    const next = { ...pending };
+    delete next[deviceId];
+    pendingPadSelectionStore.set(next);
+}
+
+/**
+ * What a panel shows for a device: its record once registered, otherwise the
+ * defaults carrying any pad the user already selected while it loaded.
+ */
+export function getToasterViewState(
+    instances: ToasterInstances,
+    pendingSelections: Record<string, number>,
+    deviceId: string
+): ToasterState {
+    const registered = instances[deviceId];
+    if (registered) {
+        return registered;
+    }
+    const pendingIndex = pendingSelections[deviceId];
+    if (pendingIndex === undefined) {
+        return defaultToasterState;
+    }
+    return { ...defaultToasterState, selectedPadIndex: pendingIndex };
+}
+
 // Ids torn down by `unregisterToasterDevice`. A write arriving after teardown
 // must not reach the device's next reload: a reload rehydrates project truth,
 // and a stale queued write would corrupt it. Only never-seen ids may queue.
@@ -87,7 +125,16 @@ export function registerToasterDevice(deviceId: string, initialKit?: ToasterKit)
     // here rather than loading it in a second write matters: the record is created
     // holding its saved kit, so nothing ever observes this device carrying a default
     // kit it did not have, and a load produces no store change that looks like an edit.
-    toasterStore.set({ ...instances, [deviceId]: { ...defaultToasterState, kit: initialKit ?? createDefaultKit() } });
+    const kit = initialKit ?? createDefaultKit();
+    const pendingSelection = pendingPadSelectionStore.value?.[deviceId];
+    // A selection made while loading was checked against the default kit's pad
+    // count; the registered kit may be shorter, so it is checked again here.
+    const selectedPadIndex =
+        pendingSelection !== undefined && pendingSelection < kit.pads.length
+            ? pendingSelection
+            : defaultToasterState.selectedPadIndex;
+    clearPendingPadSelection(deviceId);
+    toasterStore.set({ ...instances, [deviceId]: { ...defaultToasterState, kit, selectedPadIndex } });
 
     // Kit edits the user made while the device was still loading land here, on
     // top of the registration kit. Applied through `updateKit` (record now
@@ -112,6 +159,7 @@ export function unregisterToasterDevice(deviceId: string): void {
     // removed while still loading has queued writes and no record, and the
     // same id's next registration rehydrates project truth either way.
     pendingKitUpdates.delete(deviceId);
+    clearPendingPadSelection(deviceId);
     retiredDeviceIds.add(deviceId);
 }
 
@@ -123,14 +171,28 @@ export function unregisterToasterDevice(deviceId: string): void {
  */
 export function resetToasterDeviceLifecycleState(): void {
     pendingKitUpdates.clear();
+    pendingPadSelectionStore.set({});
     retiredDeviceIds.clear();
+}
+
+function queuePadSelection(deviceId: string, index: number): void {
+    if (retiredDeviceIds.has(deviceId)) {
+        return;
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= defaultToasterState.kit.pads.length) {
+        return;
+    }
+    pendingPadSelectionStore.set({ ...pendingPadSelectionStore.value, [deviceId]: index });
 }
 
 export function selectPad(deviceId: string, index: number): void {
     const instances = toasterStore.value ?? {};
     const state = instances[deviceId];
-    // Unknown deviceId → no-op; selecting a pad must not resurrect a torn-down device.
+    // No record. A torn-down device stays refused so selecting a pad cannot
+    // resurrect it; a device still loading keeps the selection until
+    // registration creates the record, as `updateKit` does for kit writes.
     if (!state) {
+        queuePadSelection(deviceId, index);
         return;
     }
     if (index >= 0 && index < state.kit.pads.length) {

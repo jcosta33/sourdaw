@@ -1,9 +1,10 @@
+// @vitest-environment node
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     DEFAULT_STANCES_THRESHOLD,
@@ -15,6 +16,7 @@ import {
     readStancesCheckAnswers,
     readStancesCheckRecord,
     renderStancesCheckOutcome,
+    requestStancesVerdicts,
 } from '../checkStancesRecord.ts';
 import { TYPESAFE_MODEL } from '../semanticReview/provider.ts';
 
@@ -22,7 +24,78 @@ import type { StanceAdmission, StancesCheckRecord } from '../checkStancesRecord.
 
 const STANCES_PATH = 'bundles/2999-head/stances.json';
 
-function runOfflineCheck(raw: unknown) {
+afterEach(() => vi.restoreAllMocks());
+
+describe('stance prepared transport', () => {
+    it('sends the projected body through the SDK unchanged and uses one attempt', async () => {
+        const timeout = vi.spyOn(globalThis, 'setTimeout');
+        const body = buildStancesCheckBody(checkRecord());
+        const expected = JSON.stringify(body);
+        const fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+            expect(init?.body).toBe(expected);
+            expect(init?.signal).toBeInstanceOf(AbortSignal);
+            return new Response(JSON.stringify({ model: TYPESAFE_STANCES_MODEL, answers: {} }));
+        });
+        await expect(
+            requestStancesVerdicts(body, 'unused-offline-key', { signal: new AbortController().signal, fetch })
+        ).resolves.toMatchObject({ model: TYPESAFE_STANCES_MODEL });
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(timeout).toHaveBeenCalledWith(expect.any(Function), 20_000);
+    });
+
+    it('admits the exact stance state/question cap and refuses one extra byte', async () => {
+        const body = buildStancesCheckBody(checkRecord());
+        body.state.stances[0]!.admittedBy = '';
+        const emptyBytes = Buffer.byteLength(JSON.stringify({ state: body.state, questions: body.questions }), 'utf8');
+        body.state.stances[0]!.admittedBy = 'x'.repeat(96 * 1024 - emptyBytes);
+        const fetch = vi.fn(async () => new Response(JSON.stringify({ model: TYPESAFE_STANCES_MODEL, answers: {} })));
+        const options = { signal: new AbortController().signal, fetch };
+        await expect(requestStancesVerdicts(body, 'unused-offline-key', options)).resolves.toMatchObject({
+            model: TYPESAFE_STANCES_MODEL,
+        });
+        body.state.stances[0]!.admittedBy += 'x';
+        await expect(requestStancesVerdicts(body, 'unused-offline-key', options)).rejects.toMatchObject({
+            code: 'request_too_large',
+        });
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a stance request above its new state/question cap before fetch', async () => {
+        const body = buildStancesCheckBody(checkRecord());
+        body.state.stances[0]!.admittedBy = 'x'.repeat(96 * 1024);
+        const fetch = vi.fn(async () => new Response('{}'));
+        await expect(
+            requestStancesVerdicts(body, 'unused-offline-key', { signal: new AbortController().signal, fetch })
+        ).rejects.toMatchObject({ code: 'request_too_large' });
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('pre-abort reaches no SDK fetch', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        const fetch = vi.fn(async () => new Response('{}'));
+        await expect(
+            requestStancesVerdicts(buildStancesCheckBody(checkRecord()), 'unused-offline-key', {
+                signal: controller.signal,
+                fetch,
+            })
+        ).rejects.toMatchObject({ code: 'cancelled' });
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not retry a transient HTTP response', async () => {
+        const fetch = vi.fn(async () => new Response('{}', { status: 503 }));
+        await expect(
+            requestStancesVerdicts(buildStancesCheckBody(checkRecord()), 'unused-offline-key', {
+                signal: new AbortController().signal,
+                fetch,
+            })
+        ).rejects.toMatchObject({ status: 503 });
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+});
+
+function runOfflineCheck(raw: unknown, cancel = false) {
     const bundle = mkdtempSync(join(tmpdir(), 'sourdaw-stances-egress-'));
     const hookPath = join(bundle, 'offline-fetch.mjs');
     writeFileSync(join(bundle, 'stances.json'), JSON.stringify(raw));
@@ -30,6 +103,10 @@ function runOfflineCheck(raw: unknown) {
         hookPath,
         `globalThis.fetch = async (_url, options) => {
             console.log('OFFLINE_REQUEST ' + options.body);
+            if (${String(cancel)}) {
+                queueMicrotask(() => process.kill(process.pid, 'SIGTERM'));
+                return new Response(new ReadableStream({ start() {} }));
+            }
             return new Response(JSON.stringify({
                 model: ${JSON.stringify(TYPESAFE_STANCES_MODEL)},
                 answers: { stance_0: { noul: 0.9 }, stance_1: { noul: 0.9 } }
@@ -198,6 +275,13 @@ describe('buildStancesCheckBody', () => {
 });
 
 describe('offline CLI request boundary', () => {
+    it('turns process cancellation during body delivery into a failed check', () => {
+        const result = runOfflineCheck(genuineRecord(), true);
+        expect(result.signal).toBeNull();
+        expect(result.status).toBe(1);
+        expect(result.stdout.match(/OFFLINE_REQUEST/gu)).toHaveLength(1);
+        expect(result.stderr).toMatch(/abort|cancel/iu);
+    });
     it('sends only admissions while retaining the indexed questions and verdicts', () => {
         const privateValue = ['gh', 'p_', 'A1b2C3d4'.repeat(5)].join('');
         const result = runOfflineCheck({
@@ -487,4 +571,196 @@ describe('parseStancesCheckThreshold', () => {
     it.each(['0', '-1', '1.5', 'abc'])('refuses %s', (raw) => {
         expect(() => parseStancesCheckThreshold(raw)).toThrow(/threshold must be a number in \(0, 1\]/);
     });
+});
+
+describe('opaque bearer stance admission', () => {
+    const opaque = ['A1b2C3d4', 'E5f6G7h8', 'I9j0K1l2', 'M3n4O5p6', 'Q7r8S9t0'].join('');
+    const header = ['Authorization:', 'Bearer', opaque].join(' ');
+    const fields = ['stance', 'admittedBy'] as const;
+    function explicitHeaderForms(value: string, padding = '', separator = ' ') {
+        const scheme = `${padding}${['Bearer', value].join(separator)}${padding}`;
+        return [
+            { shape: 'template-bracket', value: `headers[\`Authorization\`] = \`${scheme}\`;` },
+            { shape: 'bracket-assignment', value: `headers['Authorization'] = '${scheme}';` },
+            { shape: 'computed-key', value: `const headers = { ['Authorization']: '${scheme}' };` },
+            { shape: 'quoted-object', value: JSON.stringify({ Authorization: scheme }) },
+            { shape: 'assignment', value: `headers.Authorization = '${scheme}';` },
+            { shape: 'setter', value: `headers.set('Authorization', '${scheme}');` },
+            { shape: 'append', value: `headers.append("Authorization", "${scheme}");` },
+            { shape: 'tuple', value: JSON.stringify(['Authorization', scheme]) },
+            { shape: 'escaped-tuple', value: JSON.stringify(JSON.stringify(['Authorization', scheme])) },
+            { shape: 'escaped-setter', value: JSON.stringify(`headers.set("Authorization", "${scheme}");`) },
+            { shape: 'template-assignment', value: `headers.Authorization = \`${scheme}\`;` },
+        ];
+    }
+    function additionalHeaderForms(value: string) {
+        const scheme = ['Bearer', value].join(' ');
+        const comments = [
+            { kind: 'block', gap: '/* retained */' },
+            { kind: 'line', gap: '// retained\n' },
+        ];
+        const setters = comments.flatMap(({ kind, gap }) =>
+            [
+                { quote: "'", before: '', after: gap },
+                { quote: '"', before: gap, after: '' },
+                { quote: '`', before: gap, after: gap },
+            ].map(({ quote, before, after }, index) => ({
+                shape: `commented-setter-${kind}-${String(index)}`,
+                value: `headers.set(${quote}Authorization${quote} ${before}, ${after} ${quote}${scheme}${quote});`,
+            }))
+        );
+        const arrays = [
+            [scheme],
+            ['Bearer <token>', scheme],
+            [scheme, 'Bearer <token>'],
+            ['Bearer <token>', 'ordinary [note]', scheme],
+            ['Bearer <token>', 'ordinary ]note', scheme],
+            ['Bearer <token>', 'ordinary [note', scheme],
+            ['Bearer <token>', 'ordinary "[note]" and \\path', scheme],
+            ['Bearer <token>', 'ordinary [note]\\', scheme],
+        ].flatMap((values, index) => [
+            { shape: `array-record-${String(index)}`, value: JSON.stringify({ Authorization: values }) },
+            { shape: `array-tuple-${String(index)}`, value: JSON.stringify([['Authorization', values]]) },
+        ]);
+        return [...setters, ...arrays].flatMap((form) => [
+            { ...form, shape: `${form.shape}-raw` },
+            { shape: `${form.shape}-serialized`, value: JSON.stringify(form.value) },
+        ]);
+    }
+    function whitespaceHeaderForms(value: string) {
+        return [
+            { whitespace: 'space', padding: ' ', separator: ' ' },
+            { whitespace: 'tab', padding: String.fromCharCode(9), separator: ' ' },
+            { whitespace: 'mixed', padding: ` ${String.fromCharCode(9)}`, separator: ' ' },
+            { whitespace: 'scheme-tab', padding: '', separator: String.fromCharCode(9) },
+        ].flatMap(({ whitespace, padding, separator }) =>
+            explicitHeaderForms(value, padding, separator).flatMap((form) => [
+                { ...form, shape: `${form.shape}-${whitespace}-raw` },
+                { shape: `${form.shape}-${whitespace}-escaped`, value: JSON.stringify(form.value) },
+            ])
+        );
+    }
+    const literals = [
+        ...[String.fromCharCode(81), ['Q1w2E3', 'r4T5y6', 'U7i'].join('')].flatMap((value, index) =>
+            additionalHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-short-${String(index)}` }))
+        ),
+        ...[String.fromCharCode(81), ['Q1w2E3', 'r4T5y6', 'U7i'].join('')].flatMap((value, index) =>
+            whitespaceHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-short-${String(index)}` }))
+        ),
+        ...[
+            { shape: 'one-character', value: String.fromCharCode(81) },
+            { shape: 'fifteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7i'].join('') },
+            { shape: 'sixteen-character', value: ['Q1w2E3', 'r4T5y6', 'U7iO'].join('') },
+            { shape: 'rfc-example', value: ['mF_9', 'B5f-4', '1JqM'].join('.') },
+        ].flatMap(({ shape, value }) => [
+            { shape: `explicit-header-${shape}`, value: ['Authorization:', 'Bearer', value].join(' ') },
+            ...explicitHeaderForms(value).map((form) => ({ ...form, shape: `${form.shape}-${shape}` })),
+        ]),
+        {
+            shape: 'quoted-header',
+            value: JSON.stringify({ Authorization: ['Bearer', String.fromCharCode(81)].join(' ') }),
+        },
+        {
+            shape: 'escaped-header',
+            value: JSON.stringify(JSON.stringify({ Authorization: ['Bearer', String.fromCharCode(81)].join(' ') })),
+        },
+        { shape: 'alphanumeric', value: header },
+        { shape: 'dotted', value: ['Bearer', ['abcde', 'fghij', 'klmnop'].join('.')].join(' ') },
+        { shape: 'alphabetic', value: ['Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join('')].join(' ') },
+        { shape: 'header-tail', value: `${header} expired` },
+        {
+            shape: 'hyphenated-prose',
+            value: ['Reviewer saw Bearer', ['qzxvpmrt', 'ncbwksjg'].join('-'), 'expire'].join(' '),
+        },
+        {
+            shape: 'dotted-tail',
+            value: ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),
+        },
+        {
+            shape: 'alphabetic-tail',
+            value: ['finding: Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''), 'was logged'].join(' '),
+        },
+    ];
+    const cases = fields.flatMap((field) => literals.map((literal) => ({ field, ...literal })));
+
+    it.each(cases)('opaque bearer $shape $field refuses parser and manual builder safely', ({ field, value }) => {
+        const admission = { ...GENUINE_ADMISSIONS[0]!, [field]: value };
+        for (const operation of [
+            () => readStancesCheckRecord({ stances: [admission] }, STANCES_PATH),
+            () => buildStancesCheckBody(checkRecord([admission])),
+        ]) {
+            let failure: unknown;
+            try {
+                operation();
+            } catch (error) {
+                failure = error;
+            }
+            expect(failure).toBeInstanceOf(Error);
+            expect(String(failure)).toContain(`stances[0].${field} contains`);
+            expect(String(failure)).not.toContain(opaque);
+        }
+    });
+
+    it.each(cases)(
+        'opaque bearer $shape $field refuses a direct request bypassing the builder',
+        async ({ field, value }) => {
+            const body = buildStancesCheckBody(checkRecord());
+            body.state.stances[0]![field] = value;
+            const fetch = vi.fn(async () => new Response('{}'));
+            let failure: unknown;
+            try {
+                await requestStancesVerdicts(body, 'unused-offline-key', {
+                    signal: new AbortController().signal,
+                    fetch,
+                });
+            } catch (error) {
+                failure = error;
+            }
+            expect(fetch).not.toHaveBeenCalled();
+            expect(failure).toMatchObject({ code: 'sensitive_content_excluded' });
+            expect(String(failure)).not.toContain(opaque);
+        }
+    );
+
+    it.each(cases)('opaque bearer $shape $field refuses actual offline CLI admission', ({ field, value }) => {
+        const result = runOfflineCheck({ stances: [{ ...GENUINE_ADMISSIONS[0]!, [field]: value }] });
+        expect(result.error).toBeUndefined();
+        expect(result.stdout).not.toContain('OFFLINE_REQUEST');
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(`stances[0].${field} contains`);
+        expect(result.stderr).not.toContain(opaque);
+    });
+
+    it.each(
+        fields.flatMap((field) =>
+            [
+                ...explicitHeaderForms('<token>'),
+                ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap(
+                    additionalHeaderForms
+                ),
+                ...['<token>', '${runtimeCredentialReference}', 'RUNTIME_CREDENTIAL_REFERENCE_PLACEHOLDER'].flatMap(
+                    whitespaceHeaderForms
+                ),
+            ].map((form) => ({ field, ...form }))
+        )
+    )(
+        'opaque bearer $shape $field placeholder reaches one installed SDK delegate unchanged',
+        async ({ field, value }) => {
+            const admission = { ...GENUINE_ADMISSIONS[0]!, [field]: value };
+            const record = readStancesCheckRecord({ stances: [admission] }, STANCES_PATH);
+            const body = buildStancesCheckBody(record);
+            const expected = JSON.stringify(body);
+            const fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+                expect(init?.body).toBe(expected);
+                return new Response(JSON.stringify({ model: TYPESAFE_STANCES_MODEL, answers: {} }));
+            });
+            await expect(
+                requestStancesVerdicts(body, 'unused-offline-key', {
+                    signal: new AbortController().signal,
+                    fetch,
+                })
+            ).resolves.toMatchObject({ model: TYPESAFE_STANCES_MODEL });
+            expect(fetch).toHaveBeenCalledTimes(1);
+        }
+    );
 });

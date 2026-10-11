@@ -87,6 +87,19 @@ describe('captureBacteriaSnapshot', () => {
         expect(corner.paramValues.bands).toBeUndefined();
     });
 
+    // A body is one physical choice with nothing between two of them, so a
+    // corner never carries it and a pad move can never switch it.
+    it('leaves each band’s body out of the corner while keeping its other Body values', () => {
+        setBacteriaBandParam('dev-1', 0, 'convolutionIr', 'metal');
+        setBacteriaBandParam('dev-1', 0, 'convolutionMix', 0.6);
+
+        captureBacteriaSnapshot('dev-1', 1);
+
+        const cornerKeys = Object.keys(getBacteriaState('dev-1').patch.snapshots[1]!.paramValues);
+        expect(cornerKeys).toContain('band0_convolutionMix');
+        expect(cornerKeys.filter((key) => /^band\d+_convolutionIr$/.test(key))).toEqual([]);
+    });
+
     it('replaces only the captured corner and keeps the others', () => {
         setBacteriaParam('dev-1', 'mix', 0.75);
         captureBacteriaSnapshot('dev-1', 0);

@@ -2,8 +2,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, lstatSync, readdirSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
+import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
+
+import type { AffectedSelection } from './e2eAffectedGraph.ts';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
@@ -12,6 +16,7 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
+    'checkStancesRecord',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -20,20 +25,35 @@ const REVIEW_TOOLING = new Set([
     'publishLane',
     'publishReview',
     'reconcileTrackerIssue',
+    'reconstructReviewRounds',
     'recoverDeliveryLock',
     'recoverPublishReviewLock',
     'repairReviewFinding',
+    'resolveThread',
     'reviewApprovalFormat',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',
+    'reviewDossierChain',
+    'reviewDossierPublication',
+    'reviewDossierReassessed',
+    'reviewDossierSemanticAssessment',
+    'reviewDossierViews',
+    'reviewPublicationBinding',
+    'reviewPublicationLegacyIncidents',
+    'reviewPublicationReceiptAdoption',
+    'reviewPublicationRecoveryReceipt',
+    'reviewPublicationRemoteInspection',
     'reviewerModelDiversity',
     'reviewRoundEscalation',
     'reviewRiskPolicy',
+    'reviewRepair',
     'reviewShadowStatus',
     'savedProjectStatePaths',
     'semanticReview',
     'semanticReviewContext',
+    'semanticReviewEvaluation',
+    'semanticReviewMeasurement',
     'reviewDiffSummary',
     'reviewCommentDiffPreflight',
     'reviewBundleLocator',
@@ -42,29 +62,55 @@ const REVIEW_TOOLING = new Set([
     'deliveryLockLegacyIncidents',
     'pullRequestReviewState',
     'pullRequestMutationLock',
+    'prValidationScope',
     'pruneLane',
     'removeLane',
+    'retargetCapabilityPlan',
+    'retargetCapabilitySnapshot',
+    'rulesetHardening',
     'stackedLanes',
     'stampLaneIdentity',
     'supersedePullRequest',
     'supersedePullRequestGh',
     'syncParentLane',
     'trustedGithubWriteBootstrap',
+    'typesafeRequest',
     'trackerIssueReconciliation',
+]);
+
+const REVIEW_TOOLING_SPEC_ONLY = new Set([
+    'deliveryRiskPlanLoss',
+    'orchestratorReviewState',
+    'recoverDeliveryLockGeneral',
+    'recoverPublishReviewLockReceiptReplay',
+    'threeRoleTransitions',
+]);
+
+const RELEASE_TOOLING_METADATA = new Set([
+    'release/open-source-inventory.json',
+    'release/dependency-license-proofs.json',
 ]);
 
 const SEMANTIC_REVIEW_TOOLING = new Set([
     '__tests__/admissionScheduling.spec.ts',
+    '__tests__/candidateFindings.spec.ts',
+    '__tests__/changeFacts.spec.ts',
+    '__tests__/digestProbes.ts',
     '__tests__/egressVendorShapeExtraction.spec.ts',
     '__tests__/multiPassTransport.spec.ts',
     '__tests__/semanticReview.spec.ts',
     'admissionBytes.ts',
     'candidateFindings.ts',
+    'changeFacts.ts',
     'contractCarrying.ts',
     'contracts.ts',
     'egressVendorShapeExtraction.ts',
     'egressVendorShapes.ts',
     'egressVendorToml.ts',
+    'evaluation/__tests__/semanticEvaluation.spec.ts',
+    'evaluation/corpus.ts',
+    'evaluation/runEvaluation.ts',
+    'evaluation/semanticEvaluationCorpus.json',
     'evidence.ts',
     'evidenceOrdering.ts',
     'fit.ts',
@@ -91,6 +137,10 @@ const SEMANTIC_REVIEW_TOOLING = new Set([
     'withheldReasons.ts',
 ]);
 
+const SEMANTIC_MEASUREMENT_TOOLING = new Set(['artifacts.ts', 'contracts.ts', 'gaps.ts', 'record.ts']);
+
+const OPERATIONAL_PACKAGE_SCRIPTS = new Map([['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts']]);
+
 export type BrowserMatrix = { include: { id: number; specs: string[] }[] };
 export type ValidationPlan = {
     version: 1;
@@ -115,12 +165,37 @@ function needsCodeql(path: string): boolean {
 }
 
 function isReviewTooling(path: string): boolean {
+    if (RELEASE_TOOLING_METADATA.has(path)) {
+        return true;
+    }
     if (path.startsWith('scripts/semanticReview/')) {
         return SEMANTIC_REVIEW_TOOLING.has(path.slice('scripts/semanticReview/'.length));
     }
-    const match = /^scripts\/(?:__tests__\/)?([A-Za-z]+)(?:\.spec)?\.ts$/.exec(path);
-    const scriptName = match?.[1];
-    return scriptName !== undefined && REVIEW_TOOLING.has(scriptName);
+    if (path.startsWith('scripts/semanticReviewMeasurement/')) {
+        return SEMANTIC_MEASUREMENT_TOOLING.has(path.slice('scripts/semanticReviewMeasurement/'.length));
+    }
+    const source = /^scripts\/([A-Za-z]+)\.ts$/.exec(path)?.[1];
+    if (source !== undefined) {
+        return REVIEW_TOOLING.has(source);
+    }
+    const spec = /^scripts\/__tests__\/([A-Za-z0-9]+)\.spec\.ts$/.exec(path)?.[1];
+    if (spec === undefined) {
+        return false;
+    }
+    if (REVIEW_TOOLING_SPEC_ONLY.has(spec)) {
+        return true;
+    }
+    return REVIEW_TOOLING.has(spec.replace(/\d+$/, ''));
+}
+
+function toolingReason(path: string, packageScriptOnly: boolean): string | null {
+    if (path === 'package.json' && packageScriptOnly) {
+        return 'known operational script route; security/static checks without browser execution';
+    }
+    if (isReviewTooling(path)) {
+        return 'known review tooling; security/static checks without browser execution';
+    }
+    return null;
 }
 
 function isSpec(path: string): boolean {
@@ -162,7 +237,141 @@ export function parseChangedPaths(diff: string): string[] {
     return [...paths].sort();
 }
 
-export function selectValidationPlan(paths: readonly string[], availableSpecs: readonly string[]): ValidationPlan {
+function packageHasModifiedStatus(diff: string): boolean {
+    const fields = diff.split('\0');
+    let modified = false;
+    for (let index = 0; index < fields.length - 1;) {
+        const status = fields[index++];
+        const firstPath = fields[index++];
+        const secondPath = status?.startsWith('R') || status?.startsWith('C') ? fields[index++] : undefined;
+        if (firstPath !== 'package.json' && secondPath !== 'package.json') {
+            continue;
+        }
+        if (modified || status !== 'M' || firstPath !== 'package.json') {
+            return false;
+        }
+        modified = true;
+    }
+    return modified;
+}
+
+type PackageDocument = Record<string, unknown> & { scripts: Record<string, string> };
+
+function readPackageBlob(revision: string): PackageDocument | null {
+    const tree = execFileSync('git', ['ls-tree', revision, '--', 'package.json'], { encoding: 'utf8' });
+    if (!/^100644 blob [a-f0-9]{40}\tpackage\.json\n$/.test(tree)) {
+        return null;
+    }
+    const source = execFileSync('git', ['show', `${revision}:package.json`], {
+        encoding: 'utf8',
+        maxBuffer: 2 * 1024 * 1024,
+    });
+    const parsed: unknown = JSON.parse(source);
+    if (
+        source !== `${JSON.stringify(parsed, null, 4)}\n` ||
+        !parsed ||
+        typeof parsed !== 'object' ||
+        Array.isArray(parsed)
+    ) {
+        return null;
+    }
+    const scripts: unknown = (parsed as Record<string, unknown>).scripts;
+    if (
+        !scripts ||
+        typeof scripts !== 'object' ||
+        Array.isArray(scripts) ||
+        Object.values(scripts).some((value) => typeof value !== 'string')
+    ) {
+        return null;
+    }
+    return parsed as PackageDocument;
+}
+
+function isOperationalPackageScriptChange(diff: string, base: string, head: string): boolean {
+    if (!packageHasModifiedStatus(diff)) {
+        return false;
+    }
+    try {
+        const mergeBase = execFileSync('git', ['merge-base', base, head], { encoding: 'utf8' }).trim();
+        if (!/^[a-f0-9]{40}$/.test(mergeBase)) {
+            return false;
+        }
+        const basePackage = readPackageBlob(base);
+        const before = readPackageBlob(mergeBase);
+        const after = readPackageBlob(head);
+        if (!basePackage || !before || !after || !isDeepStrictEqual(basePackage, before)) {
+            return false;
+        }
+        const { scripts: oldScripts, ...oldFields } = before;
+        const { scripts: newScripts, ...newFields } = after;
+        if (!isDeepStrictEqual(oldFields, newFields)) {
+            return false;
+        }
+        const changedKeys = Array.from(new Set([...Object.keys(oldScripts), ...Object.keys(newScripts)])).filter(
+            (key) => oldScripts[key] !== newScripts[key]
+        );
+        return (
+            changedKeys.length > 0 &&
+            changedKeys.every((key) => {
+                const allowed = OPERATIONAL_PACKAGE_SCRIPTS.get(key);
+                return (
+                    allowed !== undefined &&
+                    (oldScripts[key] === undefined || oldScripts[key] === allowed) &&
+                    (newScripts[key] === undefined || newScripts[key] === allowed)
+                );
+            })
+        );
+    } catch {
+        return false;
+    }
+}
+
+function browserMatrix(specs: readonly string[], durations: SpecDurations): BrowserMatrix {
+    if (specs.length === 0) {
+        return { include: [] };
+    }
+    const count = Math.min(12, Math.ceil(specs.length / 12));
+    return {
+        include: partitionByDuration(specs, durations, count).map((group, index) => ({ id: index + 1, specs: group })),
+    };
+}
+
+function browserPathSelection(
+    path: string,
+    available: ReadonlySet<string>,
+    affected?: AffectedSelection
+): { specs: readonly string[]; browserAi: boolean; broad: boolean; reason: string } {
+    if (isSpec(path) && available.has(path)) {
+        return {
+            specs: [path],
+            browserAi: path.startsWith('tests/e2e/browserAi'),
+            broad: false,
+            reason: 'changed browser spec',
+        };
+    }
+    if (affected?.kind === 'narrow' && path.startsWith('src/modules/')) {
+        return {
+            specs: affected.specs,
+            browserAi: affected.browserAi,
+            broad: false,
+            reason: `affected feature owners: ${affected.owners.join(', ')}`,
+        };
+    }
+    return {
+        specs: [],
+        browserAi: true,
+        broad: true,
+        reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+    };
+}
+
+export function selectValidationPlan(
+    paths: readonly string[],
+    availableSpecs: readonly string[],
+    durations: SpecDurations = new Map(),
+    packageScriptOnly = false,
+    affected?: AffectedSelection
+): ValidationPlan {
     if (paths.length === 0) {
         throw new Error('Changed path list is empty');
     }
@@ -184,27 +393,20 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
             continue;
         }
         codeql ||= needsCodeql(path);
-        if (isReviewTooling(path)) {
+        const reason = toolingReason(path, packageScriptOnly);
+        if (reason !== null) {
             tooling = true;
-            reasons.push({ path, reason: 'known review tooling; security/static checks without browser execution' });
+            reasons.push({ path, reason });
             continue;
         }
         browser = true;
-        if (isSpec(path) && available.has(path)) {
-            selected.add(path);
-            // Hardware policy is shared by these browser proofs; keep both host branches.
-            if (path.startsWith('tests/e2e/browserAi')) {
-                browserAi = true;
-            }
-            reasons.push({ path, reason: 'changed browser spec' });
-        } else {
-            broad = true;
-            browserAi = true;
-            reasons.push({
-                path,
-                reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
-            });
+        const selection = browserPathSelection(path, available, affected);
+        for (const spec of selection.specs) {
+            selected.add(spec);
         }
+        broad ||= selection.broad;
+        browserAi ||= selection.browserAi;
+        reasons.push({ path, reason: selection.reason });
     }
     if (browser && !available.has(SMOKE_SPEC)) {
         throw new Error(`Required smoke spec is missing: ${SMOKE_SPEC}`);
@@ -213,17 +415,7 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
     if (broad && specs.length === 0) {
         throw new Error('Full browser coverage has no specs');
     }
-    const count = Math.min(12, Math.ceil(specs.length / 12));
-    const matrix: BrowserMatrix = {
-        include: Array.from({ length: count }, (_, index) => ({ id: index + 1, specs: [] })),
-    };
-    for (const [index, spec] of specs.entries()) {
-        const group = matrix.include[index % count];
-        if (group === undefined) {
-            throw new Error('Invalid E2E partition');
-        }
-        group.specs.push(spec);
-    }
+    const matrix = browserMatrix(specs, durations);
     let profile: ValidationPlan['profile'] = 'docs';
     if (browser) {
         profile = 'broad';
@@ -267,7 +459,81 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
-function main(): void {
+async function affectedFromCheckout(
+    root: string,
+    base: string,
+    head: string,
+    diff: string,
+    candidatePaths: readonly string[],
+    specs: readonly string[]
+): Promise<{ paths: string[]; packageScriptOnly: boolean; affected?: AffectedSelection }> {
+    const checkout = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const integrated =
+        checkout === head ||
+        (spawnSync('git', ['merge-base', '--is-ancestor', base, checkout]).status === 0 &&
+            spawnSync('git', ['merge-base', '--is-ancestor', head, checkout]).status === 0);
+    let integrationDiff = '';
+    if (integrated && checkout !== head) {
+        integrationDiff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', base, checkout, '--'], {
+            encoding: 'utf8',
+            maxBuffer: 16 * 1024 * 1024,
+        });
+    }
+    const allPaths = new Set(candidatePaths);
+    if (integrationDiff !== '') {
+        for (const path of parseChangedPaths(integrationDiff)) {
+            allPaths.add(path);
+        }
+    }
+    const paths = [...allPaths].sort();
+    const packageUnchangedAtCheckout =
+        checkout === head || spawnSync('git', ['diff', '--quiet', head, checkout, '--', 'package.json']).status === 0;
+    const packageScriptOnly =
+        paths.includes('package.json') &&
+        packageUnchangedAtCheckout &&
+        isOperationalPackageScriptChange(diff, base, head);
+    const productPaths = paths.filter(
+        (path) =>
+            !isDocumentation(path) &&
+            toolingReason(path, packageScriptOnly) === null &&
+            !(isSpec(path) && specs.includes(path))
+    );
+    const historicalChange = [diff, integrationDiff].some((value) => /(?:^|\0)(?:D|R\d+|C\d+|T)\0/.test(value));
+    const graphInputsDirty = spawnSync(
+        'git',
+        [
+            'status',
+            '--porcelain',
+            '--untracked-files=all',
+            '--',
+            'src',
+            'public',
+            'scripts/e2eSuiteOwners.json',
+            'scripts/e2eAffectedGraph.ts',
+            'tsconfig.json',
+        ],
+        { encoding: 'utf8' }
+    );
+    const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
+    let affected: AffectedSelection | undefined;
+    if (
+        integrated &&
+        cleanGraphInputs &&
+        !historicalChange &&
+        productPaths.length > 0 &&
+        productPaths.every((path) => path.startsWith('src/modules/'))
+    ) {
+        try {
+            const { loadAffectedE2e } = await import('./e2eAffectedGraph.ts');
+            affected = await loadAffectedE2e(root, productPaths, specs);
+        } catch {
+            affected = { kind: 'full', reason: 'dependency graph helper unavailable' };
+        }
+    }
+    return { paths, packageScriptOnly, affected };
+}
+
+async function main(): Promise<void> {
     const root = process.cwd();
     if (process.argv[2] === 'run') {
         const args = selectedSpecArguments(JSON.parse(process.env.E2E_SPECS ?? 'null'), root);
@@ -289,7 +555,20 @@ function main(): void {
         encoding: 'utf8',
         maxBuffer: 16 * 1024 * 1024,
     });
-    const plan = selectValidationPlan(parseChangedPaths(diff), listSpecs(root));
+    const candidatePaths = parseChangedPaths(diff);
+    const specs = listSpecs(root);
+    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(
+        root,
+        base,
+        head,
+        diff,
+        candidatePaths,
+        specs
+    );
+    const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
+    if (affected?.kind === 'full') {
+        plan.reasons.push({ path: 'affected graph', reason: affected.reason });
+    }
     writeFileSync('pr-validation-scope.json', `${JSON.stringify(plan, null, 2)}\n`);
     appendFileSync(
         output,
@@ -299,5 +578,8 @@ function main(): void {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    main();
+    main().catch((error: unknown) => {
+        console.error(error);
+        process.exitCode = 1;
+    });
 }

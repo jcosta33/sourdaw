@@ -57,10 +57,13 @@ test('offers browser model onboarding once a WebGPU device is admitted', async (
     const downloadButton = page.getByRole('button', { name: /Download & Load /i });
     await expect(downloadButton).toHaveText(/Download & Load Standard/);
 
-    await cards.filter({ hasText: 'Pro' }).first().click();
+    // A card is picked by its title alone: the title is the only element whose whole text is the
+    // display name, while a description may contain it as a substring ("project" holds "Pro").
+    // Strict mode makes a second match fail rather than pick a card silently.
+    await cards.filter({ has: page.getByText('Pro', { exact: true }) }).click();
     await expect(downloadButton).toHaveText(/Download & Load Pro/);
 
-    await cards.filter({ hasText: 'Light' }).first().click();
+    await cards.filter({ has: page.getByText('Light', { exact: true }) }).click();
     await expect(downloadButton).toHaveText(/Download & Load Light/);
 
     await expect(page.getByText(/Downloads and verifies this model/i)).toBeVisible();
