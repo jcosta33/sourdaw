@@ -14,6 +14,12 @@ Delegate to the installed cruise implementation and inspect its returned graph, 
 
 The first PR #5291 repair's inherited fixture supplied an explicit `baseUrl`; it could not expose the resolver's implicit inherited-path rebase. The pre-merge regression must place the declaring config and real uncurated consumer in a nested directory, add an unrelated root shadow, and use valid relative imports for surrounding composition code. Require full admission before an unproved traversal or the actual declared graph; an unrelated unresolved alias would mask the omission by selecting full for another reason.
 
+### 2026-10-11 — ALSA retry probes hid child outcomes behind Vitest's deadline (introduced by PR #5115)
+
+The validation and nightly retry probes executed the published loop through four executable command shims and an external `wc` per attempt. Retained #5240 output shows their four cases timing out at Vitest's 5-second limit after 5439–7671 ms, while the child deadline was 10 seconds; the failed run did not retain child status, signal, error, or stderr. A later diagnostic observed the same loop complete correctly, so the original child outcomes and external cause remain unknown.
+
+Probe the actual published loop with exported Bash functions loaded in its nested `bash -c`, a Bash-builtin attempt count, and a child deadline below Vitest's limit. Preserve exact three-attempt, 15/30-second backoff, early-success, and fatal-final-failure observations; remove later retries and force a successful final exit in separate mutations and require the corresponding assertions to fail. Stall a direct child deliberately and require `ETIMEDOUT`/`SIGTERM`, bounded child diagnostics, and fixture cleanup before the outer test limit. Do not infer machine load, add wall-time assertions, or raise Vitest's deadline.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992

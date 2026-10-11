@@ -3696,51 +3696,77 @@ describe('health gates workflow contract', () => {
         }
     });
 
-    // Executes the ALSA run script with shims standing in for the privileged
-    // and slow commands, so a loop edit that keeps the contract's substrings
-    // but changes what the loop does is observed (#5072).
-    const runAlsaInstall = (
-        run: string,
-        succeedOnAttempt: number
-    ): { attempts: number; sleeps: string[]; status: number | null; stderr: string } => {
+    const MAX_ALSA_PROBE_STDERR_CHARACTERS = 1_000;
+    const ALSA_PROBE_TIMEOUT_MS = 1_000;
+    const alsaCommandFunctions = `
+sudo() { "$@"; }
+timeout() { shift 2; "$@"; }
+sleep() { printf '%s\\n' "$1" >> "$SLEEP_LOG"; }
+apt-get() {
+  if [ "$1" = update ]; then
+    attempt_count=0
+    while IFS= read -r _; do attempt_count=$((attempt_count + 1)); done < "$ATTEMPT_LOG"
+    attempt_count=$((attempt_count + 1))
+    printf 'attempt\\n' >> "$ATTEMPT_LOG"
+    [ "$attempt_count" -ge "$SUCCEED_ON_ATTEMPT" ] || return 100
+  fi
+}
+export -f sudo timeout sleep apt-get
+`;
+
+    type AlsaProbeResult = {
+        attempts: number;
+        sleeps: string[];
+        status: number | null;
+        signal: NodeJS.Signals | null;
+        errorCode: string | null;
+        stderr: string;
+        error: Error | undefined;
+    };
+
+    const boundedAlsaProbeStderr = (stderr: string): string => stderr.slice(0, MAX_ALSA_PROBE_STDERR_CHARACTERS);
+
+    const describeAlsaProbeFailure = (result: AlsaProbeResult): string =>
+        `ALSA probe child failed: error=${result.errorCode ?? 'none'}; status=${result.status ?? 'null'}; ` +
+        `signal=${result.signal ?? 'none'}; stderr=${boundedAlsaProbeStderr(result.stderr) || '(empty)'}`;
+
+    // Executes the published ALSA loop with exported Bash functions so every
+    // command stays hermetic while the real nested `bash -c` and retry branches run.
+    const runAlsaInstall = (run: string, succeedOnAttempt: number): AlsaProbeResult => {
         const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
         const attemptLog = join(probeDirectory, 'attempts.log');
         const sleepLog = join(probeDirectory, 'sleeps.log');
-        const shim = (name: string, lines: string[]): void => {
-            writeFileSync(join(probeDirectory, name), ['#!/usr/bin/env bash', ...lines].join('\n'), { mode: 0o755 });
-        };
+        const preludePath = join(probeDirectory, 'functions.bash');
         try {
-            shim('sudo', ['exec "$@"']);
-            // Drops the --kill-after and duration operands, then runs the command.
-            shim('timeout', ['shift 2', 'exec "$@"']);
-            shim('sleep', ['printf "%s\\n" "$1" >> "$SLEEP_LOG"']);
-            // Each attempt runs `apt-get update` once; that call is the attempt count.
-            shim('apt-get', [
-                'if [ "$1" = update ]; then',
-                '  printf "attempt\\n" >> "$ATTEMPT_LOG"',
-                '  [ "$(wc -l < "$ATTEMPT_LOG")" -ge "$SUCCEED_ON_ATTEMPT" ] || exit 100',
-                'fi',
-            ]);
+            writeFileSync(preludePath, alsaCommandFunctions);
+            writeFileSync(attemptLog, '');
+            writeFileSync(sleepLog, '');
             const result = spawnSync('bash', ['-c', run], {
                 encoding: 'utf8',
                 env: {
                     ...process.env,
+                    BASH_ENV: preludePath,
                     ATTEMPT_LOG: attemptLog,
                     SLEEP_LOG: sleepLog,
                     SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
-                    PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
                 },
-                timeout: 10_000,
+                timeout: ALSA_PROBE_TIMEOUT_MS,
             });
-            expect(result.error).toBeUndefined();
-            const lines = (path: string): string[] =>
-                existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n') : [];
-            return {
-                attempts: lines(attemptLog).length,
-                sleeps: lines(sleepLog),
+            const error = result.error;
+            const outcome: AlsaProbeResult = {
+                attempts: 0,
+                sleeps: [],
                 status: result.status,
+                signal: result.signal,
+                errorCode: error?.code ?? null,
                 stderr: result.stderr,
+                error,
             };
+            if (outcome.error !== undefined || outcome.status === null || outcome.signal !== null) {
+                throw new Error(describeAlsaProbeFailure(outcome));
+            }
+            const lines = (path: string): string[] => readFileSync(path, 'utf8').split('\n').filter(Boolean);
+            return { ...outcome, attempts: lines(attemptLog).length, sleeps: lines(sleepLog) };
         } finally {
             rmSync(probeDirectory, { force: true, recursive: true });
         }
@@ -3751,13 +3777,16 @@ describe('health gates workflow contract', () => {
         { label: 'the nightly Rust job', workflow: nightly },
     ]) {
         const alsaRun = stringAt(stepNamed(jobAt(workflow, 'rust'), 'Install ALSA development headers'), 'run');
-
-        it(`${label} makes three ALSA install attempts, then fails the step`, () => {
-            const outcome = runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
+        const assertExhaustionContract = (outcome: AlsaProbeResult): void => {
             expect(outcome.attempts).toBe(3);
             expect(outcome.sleeps).toEqual(['15', '30']);
             expect(outcome.status).toBe(1);
             expect(outcome.stderr).toContain('ALSA header install failed (attempt 3/3)');
+        };
+
+        it(`${label} makes three ALSA install attempts, then fails the step`, () => {
+            const outcome = runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
+            assertExhaustionContract(outcome);
         });
 
         it(`${label} stops retrying the ALSA install once an attempt succeeds`, () => {
@@ -3766,7 +3795,54 @@ describe('health gates workflow contract', () => {
             expect(outcome.sleeps).toEqual(['15']);
             expect(outcome.status).toBe(0);
         });
+
+        it(`${label} retry oracle rejects a loop with its later attempts removed`, () => {
+            const oneAttempt = alsaRun.replace('for attempt in 1 2 3; do', 'for attempt in 1; do');
+            expect(oneAttempt).not.toBe(alsaRun);
+            const outcome = runAlsaInstall(oneAttempt, Number.MAX_SAFE_INTEGER);
+            expect(() => assertExhaustionContract(outcome)).toThrow();
+        });
+
+        it(`${label} retry oracle rejects a successful exit after the third failed attempt`, () => {
+            const swallowedFailure = alsaRun.replace(/\n\s*exit 1\s*$/, '\n  exit 0');
+            expect(swallowedFailure).not.toBe(alsaRun);
+            const outcome = runAlsaInstall(swallowedFailure, Number.MAX_SAFE_INTEGER);
+            expect(outcome.attempts).toBe(3);
+            expect(outcome.sleeps).toEqual(['15', '30']);
+            expect(() => assertExhaustionContract(outcome)).toThrow();
+        });
     }
+
+    it('reports a stalled ALSA child timeout and cleans up its fixture before the test deadline', () => {
+        const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-stall-'));
+        const preludePath = join(probeDirectory, 'functions.bash');
+        try {
+            writeFileSync(preludePath, alsaCommandFunctions);
+            const result = spawnSync('bash', ['-c', 'while :; do :; done'], {
+                encoding: 'utf8',
+                env: { ...process.env, BASH_ENV: preludePath },
+                timeout: 100,
+            });
+            const error = result.error;
+            const outcome: AlsaProbeResult = {
+                attempts: 0,
+                sleeps: [],
+                status: result.status,
+                signal: result.signal,
+                errorCode: error?.code ?? null,
+                stderr: result.stderr,
+                error,
+            };
+            if (outcome.errorCode !== 'ETIMEDOUT' || outcome.signal !== 'SIGTERM') {
+                throw new Error(`Expected a bounded stalled-child timeout; ${describeAlsaProbeFailure(outcome)}`);
+            }
+            expect(outcome.errorCode).toBe('ETIMEDOUT');
+            expect(outcome.signal).toBe('SIGTERM');
+        } finally {
+            rmSync(probeDirectory, { force: true, recursive: true });
+        }
+        expect(existsSync(probeDirectory)).toBe(false);
+    });
 
     it('fails every Linux browser install step after its third failed attempt', () => {
         const installs = [
