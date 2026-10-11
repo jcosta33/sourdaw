@@ -1,0 +1,25 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_29d8df116c5b92::t_10ba63115dd0bc 1,3739,3741-3752,3754-3772,3783,3789,3794-3796,3807-3810,3813-3826,3835-3838,3843,3845-3849,3853-3857,3859,3870-3872
+  s_29d8df116c5b92::t_f0dc6fec519bbc 3733-3738,3740,3753,3827-3834,3839-3842,3844,3936-3937,3941-3950,3971
+  s_29d8df116c5b92::t_9382de4921557f 3779,3811-3812,3888-3889,3893-3894,3900,3903,3907,3910,3917-3918,3924
+  s_29d8df116c5b92::t_5c164a6dc85ef6 3787,3804,3862-3863,3865,3951-3952,3962-3966,3969-3970,3972
+  s_29d8df116c5b92::t_fdbfd8656de047 3708,3860-3861,3864,3953-3961,3967-3968
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_72c831ede1b5f4 25-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "286e07a348ca3059166d9bc427525b940e98fa68",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
