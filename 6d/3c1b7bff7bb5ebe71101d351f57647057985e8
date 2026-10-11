@@ -1,0 +1,16 @@
+crates/sourdaw-native/src/commands/engine_transport.rs
+  h_beb54bf43b47b7 582-612
+crates/sourdaw-native/src/commands/graph.rs
+  h_beb54bf43b47b7 1964-1971,5454-5476
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6d3c1b7bff7bb5ebe71101d351f57647057985e8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
