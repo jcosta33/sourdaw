@@ -6,8 +6,9 @@
  * `TextEncoder.encodeInto`, and anything returning a `String` from Rust comes back
  * through `TextDecoder.decode`. The glue's finalizer needs `FinalizationRegistry`, and
  * Chromium's AudioWorklet scope provides it (measured in both live and offline
- * contexts), so that finalizer is live on the render thread — the premise ADR 0052's
- * paced disposal drain builds on. The registry block below stays only as a guarded
+ * contexts), so that finalizer is live — the premise ADR 0052's paced disposal drain
+ * builds on. The record deliberately establishes nothing about the finalizer's thread;
+ * the design does not depend on it. The registry block below stays only as a guarded
  * fallback for a target that lacks it.
  *
  * The previous implementation was latin1, not UTF-8 — `decode` did
