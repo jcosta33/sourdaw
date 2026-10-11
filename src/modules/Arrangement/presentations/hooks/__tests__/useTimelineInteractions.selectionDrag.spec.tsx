@@ -133,6 +133,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     // Read-only lookups pulled in by the dispatched handlers' guard modules.
     getAutomationLanes: mocks.getAutomationLanes,
     getAutomationLaneCeiling: mocks.getAutomationLaneCeiling,
+    buildOfflineModulatorPlans: vi.fn(() => []),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     // Full factory, not importOriginal: the spec never exercises the inline
