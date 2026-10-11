@@ -1,5 +1,4 @@
 import { MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
-import { beatToSeconds } from '../../services/beatConversion';
 
 import { type OfflineRenderProjectSource } from './OfflineRenderSource';
 import { resolveRenderContext, type ResolveRenderContextInput } from './resolveRenderContext';
@@ -41,17 +40,14 @@ export function resolveHistoryAwareRenderContext(
         startBeat: 0,
     });
     const sampleRate = input.sampleRate ?? 44_100;
-    const historyProjection = renderContext.projectPpqEndpoints?.({
+    const historyProjection = renderContext.projectPpqEndpoints({
         startPpq: 0,
         endPpq: startBeat,
         defaultTempo: renderContext.defaultTempo,
         sampleRate,
         changes: renderContext.changes,
     });
-    const legacyHistorySeconds =
-        beatToSeconds(startBeat, renderContext.defaultTempo, renderContext.changes) -
-        beatToSeconds(0, renderContext.defaultTempo, renderContext.changes);
-    const historySeconds = Math.max(0, historyProjection?.durationSeconds ?? legacyHistorySeconds);
+    const historySeconds = Math.max(0, historyProjection.durationSeconds);
     const outputDurationSeconds = Math.max(0, renderContext.durationSeconds - historySeconds);
     const retainedFrameCount =
         Math.ceil(renderContext.durationSeconds * sampleRate) + Math.ceil(outputDurationSeconds * sampleRate);

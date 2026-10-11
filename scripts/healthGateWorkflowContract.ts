@@ -74,6 +74,7 @@ export const JOB_LEVEL_PERMISSION_FREE_FILES = [
 
 const SETUP_NODE = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
 const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+const WEBGPU_ADMISSION_STEPS = [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'] as const;
 const STATIC_SUITE_STEPS = [
     'Artifact freshness',
     'App types',
@@ -237,7 +238,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Upload blob report',
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
-        'browser-ai-webgpu': [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'],
+        'browser-ai-webgpu': [...WEBGPU_ADMISSION_STEPS, 'Upload Browser AI WebGPU diagnostics'],
         'heavy-gate': ['Require selected browser jobs to succeed'],
     },
     'semantic-review.yml': {
@@ -398,6 +399,7 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     ].map((step) => pin('validation.yml', 'static', step, PRODUCT_SCOPE)),
     pin('heavy-gates.yml', 'e2e', 'Report shard failure', SHARD_FAIL),
     pin('heavy-gates.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
+    pin('heavy-gates.yml', 'browser-ai-webgpu', 'Upload Browser AI WebGPU diagnostics', ALWAYS_EXPRESSION),
     pin('nightly.yml', 'unit', 'Report shard failure', SHARD_FAIL),
     pin('nightly.yml', 'desktop-measure', 'Upload the measurement record', ALWAYS),
     pin(

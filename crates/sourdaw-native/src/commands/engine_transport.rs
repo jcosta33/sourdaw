@@ -579,6 +579,39 @@ mod tests {
         );
     }
 
+    /// Segments past the frame range must be refused by the conversion itself,
+    /// naming the field. Pre-fix this payload was refused too — but only by
+    /// accident of structure: both later starts saturated to `u64::MAX`, and
+    /// `TempoMap::new` rejected the collapsed map for breaking its
+    /// strictly-increasing-frames rule, an error that names no range breach.
+    /// The assertion below pins the conversion's own refusal.
+    #[test]
+    fn a_map_with_segments_past_the_frame_range_is_refused() {
+        let payload = TransportMapsPayload {
+            tempo: vec![
+                TempoSegmentPayload {
+                    start_seconds: 0.0,
+                    beats_per_minute: 120.0,
+                },
+                TempoSegmentPayload {
+                    start_seconds: 1e30,
+                    beats_per_minute: 90.0,
+                },
+                TempoSegmentPayload {
+                    start_seconds: 2e30,
+                    beats_per_minute: 60.0,
+                },
+            ],
+            ..maps_payload()
+        };
+
+        let Err(error) = transport_maps_commands(&payload, 48_000.0) else {
+            panic!("segments past the frame range must refuse the whole map");
+        };
+
+        assert_eq!(error, "tempo segment start exceeds the frame range");
+    }
+
     /// The frontend mirror type is hand-maintained (crates/sourdaw-native/AGENTS.md),
     /// so the wire shape is a contract: pin every key.
     #[test]
