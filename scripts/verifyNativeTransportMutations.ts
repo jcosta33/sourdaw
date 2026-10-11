@@ -1,8 +1,11 @@
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { NativeCommandOwnershipError, runCommand, type NativeTestResult } from './nativeCommand.ts';
+
+export { NativeCommandOwnershipError, runCommand, type NativeTestResult } from './nativeCommand.ts';
 
 const SOURCE = 'crates/sourdaw-native/src/commands/engine_transport.rs';
 const PREFIX = 'commands::engine_transport::tests::';
@@ -44,18 +47,7 @@ const MUTATIONS: readonly TransportMutation[] = [
     },
 ];
 
-export type NativeTestResult = { code: number | null; signal: string | null; output: string; failure?: string };
 type CaseRecord = { phase: string; spec: string; code: number | null; signal: string | null; log: string };
-
-export class NativeCommandOwnershipError extends Error {
-    readonly reason: string;
-
-    constructor(reason: string, cause?: unknown) {
-        super(`Native command ownership unconfirmed after SIGKILL: ${reason}`, { cause });
-        this.name = 'NativeCommandOwnershipError';
-        this.reason = reason;
-    }
-}
 
 function digest(value: string): string {
     return createHash('sha256').update(value).digest('hex');
@@ -108,7 +100,13 @@ export function mutateTransportSource(source: string, mutation: string): string 
 export function assertNativeTestResult(result: NativeTestResult, spec: string, panic?: string): void {
     const output = result.output.replaceAll('\r', '');
     if (result.failure !== undefined || result.signal !== null || !/^running 1 test$/mu.test(output)) {
-        throw new Error(`Incomplete owning test execution: ${spec}`);
+        const details = {
+            code: result.code,
+            signal: result.signal,
+            failure: result.failure,
+            ownershipDiagnostic: result.ownershipDiagnostic,
+        };
+        throw new Error(`Incomplete owning test execution: ${spec}; ${JSON.stringify(details)}`);
     }
     if (panic === undefined) {
         if (
@@ -229,174 +227,6 @@ function childEnvironment(): NodeJS.ProcessEnv {
     return environment;
 }
 
-function spawnNativeCommand(
-    command: string,
-    args: string[],
-    options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean; stdio: ['ignore', 'pipe', 'pipe'] }
-) {
-    return spawn(command, args, options);
-}
-
-type NativeCommandPorts = {
-    spawn: typeof spawnNativeCommand;
-    setTimeout: typeof setTimeout;
-    clearTimeout: typeof clearTimeout;
-    process: Pick<NodeJS.Process, 'kill' | 'once' | 'removeListener'>;
-};
-
-function isAbsentProcessGroup(error: unknown): boolean {
-    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH';
-}
-
-export function runCommand(
-    command: string,
-    args: string[],
-    cwd: string,
-    env: NodeJS.ProcessEnv,
-    ports: NativeCommandPorts = { spawn: spawnNativeCommand, setTimeout, clearTimeout, process }
-): Promise<NativeTestResult> {
-    return new Promise((resolve, reject) => {
-        const child = ports.spawn(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-        const pid = child.pid;
-        const ownsGroup = pid !== undefined && Number.isSafeInteger(pid) && pid > 1;
-        const buffers: Buffer[] = [];
-        let size = 0;
-        let failure: string | undefined;
-        let terminationFailure: string | undefined;
-        let ownershipCause: unknown;
-        let closed: { code: number | null; signal: NodeJS.Signals | null } | undefined;
-        let groupAbsent = false;
-        let terminating = false;
-        let settled = false;
-        let killTimer: ReturnType<typeof setTimeout> | undefined;
-        let confirmationTimer: ReturnType<typeof setTimeout> | undefined;
-        let pollTimer: ReturnType<typeof setTimeout> | undefined;
-        const groupAlive = () => {
-            if (pid === undefined || groupAbsent) {
-                return false;
-            }
-            if (!ownsGroup) {
-                terminationFailure = 'child-pid-invalid';
-                return true;
-            }
-            try {
-                ports.process.kill(-pid, 0);
-                return true;
-            } catch (error) {
-                if (isAbsentProcessGroup(error)) {
-                    groupAbsent = true;
-                    return false;
-                }
-                terminationFailure = 'child-group-inspection-failed';
-                ownershipCause = error;
-                return true;
-            }
-        };
-        const kill = (signal: NodeJS.Signals) => {
-            if (!ownsGroup || !groupAlive() || pid === undefined) {
-                return;
-            }
-            try {
-                ports.process.kill(-pid, signal);
-            } catch (error) {
-                if (isAbsentProcessGroup(error)) {
-                    groupAbsent = true;
-                } else {
-                    terminationFailure = 'child-termination-failed';
-                    ownershipCause = error;
-                }
-            }
-        };
-        const cleanup = () => {
-            ports.clearTimeout(timeout);
-            ports.clearTimeout(killTimer);
-            ports.clearTimeout(confirmationTimer);
-            ports.clearTimeout(pollTimer);
-            ports.process.removeListener('SIGINT', interrupt);
-            ports.process.removeListener('SIGTERM', interrupt);
-        };
-        const finish = () => {
-            if (settled) {
-                return true;
-            }
-            if (closed === undefined || groupAlive()) {
-                return false;
-            }
-            settled = true;
-            cleanup();
-            const result: NativeTestResult = { ...closed, output: Buffer.concat(buffers).toString('utf8') };
-            if (failure !== undefined) {
-                result.failure = terminationFailure === undefined ? failure : `${failure}: ${terminationFailure}`;
-            }
-            resolve(result);
-            return true;
-        };
-        const waitForGroup = () => {
-            if (finish() || pollTimer !== undefined) {
-                return;
-            }
-            pollTimer = ports.setTimeout(() => {
-                pollTimer = undefined;
-                waitForGroup();
-            }, 50);
-        };
-        const stop = (reason: string) => {
-            if (settled) {
-                return;
-            }
-            failure ??= reason;
-            if (terminating) {
-                return;
-            }
-            terminating = true;
-            kill('SIGTERM');
-            killTimer = ports.setTimeout(() => {
-                kill('SIGKILL');
-                if (finish()) {
-                    return;
-                }
-                confirmationTimer = ports.setTimeout(() => {
-                    if (finish()) {
-                        return;
-                    }
-                    settled = true;
-                    cleanup();
-                    reject(new NativeCommandOwnershipError(failure ?? reason, ownershipCause));
-                }, 5_000);
-            }, 5_000);
-            waitForGroup();
-        };
-        const interrupt = () => stop('interrupted');
-        ports.process.once('SIGINT', interrupt);
-        ports.process.once('SIGTERM', interrupt);
-        const timeout = ports.setTimeout(() => stop('timeout'), 180_000);
-        const collect = (buffer: Buffer) => {
-            if (settled) {
-                return;
-            }
-            size += buffer.length;
-            if (size > 16 * 1024 * 1024) {
-                stop('output-limit');
-            } else {
-                buffers.push(buffer);
-            }
-        };
-        child.stdout.on('data', collect);
-        child.stderr.on('data', collect);
-        child.on('error', () => {
-            stop('child-start-failed');
-        });
-        child.on('close', (code, signal) => {
-            closed = { code, signal };
-            if (finish()) {
-                return;
-            }
-            stop('child-descendants-survived');
-            waitForGroup();
-        });
-    });
-}
-
 type GitCommand = (...args: string[]) => Promise<string>;
 
 async function nativeGraphDigest(git: GitCommand, sha: string): Promise<string> {
@@ -512,7 +342,15 @@ async function hostedProbe(): Promise<void> {
     const git = async (...args: string[]) => {
         const result = await runCommand('git', args, root, env);
         if (result.code !== 0 || result.signal !== null || result.failure !== undefined) {
-            throw new Error(`Git source admission failed: ${args[0]}`);
+            const diagnostic = {
+                operation: args[0],
+                commit: args.find((argument) => /^[a-f0-9]{40}(?:\^\{commit\})?$/u.test(argument)),
+                code: result.code,
+                signal: result.signal,
+                failure: result.failure,
+                ownershipDiagnostic: result.ownershipDiagnostic,
+            };
+            throw new Error(`Git source admission failed: ${JSON.stringify(diagnostic)}`);
         }
         return result.output.trim();
     };

@@ -1,11 +1,14 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
+import { types } from 'node:util';
+import { runInNewContext } from 'node:vm';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseDocument } from 'yaml';
 
 import {
     assertNativeSourceBinding,
@@ -95,6 +98,81 @@ describe('native transport source mutations', () => {
 });
 
 describe('source and warm-graph admission', () => {
+    it('loads the hosted runner through Node native TypeScript without starting a probe', () => {
+        const result = spawnSync(
+            process.execPath,
+            ['--input-type=module', '-e', "await import('./scripts/verifyNativeTransportMutations.ts')"],
+            {
+                cwd: join(import.meta.dirname, '../..'),
+                encoding: 'utf8',
+                env: { PATH: process.env.PATH },
+            }
+        );
+        expect(result.stderr).toBe('');
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe('');
+    });
+    it('fetches the immutable event base when the integration parent has advanced', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-native-checkout-'));
+        roots.push(root);
+        const origin = join(root, 'origin');
+        mkdirSync(origin);
+        const git = (cwd: string, args: string[]) => {
+            const result = spawnSync('git', args, {
+                cwd,
+                encoding: 'utf8',
+                env: {
+                    PATH: process.env.PATH,
+                    HOME: root,
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_AUTHOR_NAME: 'fixture',
+                    GIT_AUTHOR_EMAIL: 'fixture@example.invalid',
+                    GIT_COMMITTER_NAME: 'fixture',
+                    GIT_COMMITTER_EMAIL: 'fixture@example.invalid',
+                },
+            });
+            if (result.status !== 0) {
+                throw new Error(`Fixture Git ${args[0]} failed: ${result.stderr}`);
+            }
+            return result.stdout.trim();
+        };
+        git(origin, ['init', '--initial-branch=main']);
+        git(origin, ['commit', '--allow-empty', '-m', 'event base']);
+        const base = git(origin, ['rev-parse', 'HEAD']);
+        git(origin, ['checkout', '-b', 'candidate']);
+        git(origin, ['commit', '--allow-empty', '-m', 'candidate']);
+        const head = git(origin, ['rev-parse', 'HEAD']);
+        git(origin, ['checkout', 'main']);
+        git(origin, ['commit', '--allow-empty', '-m', 'main advanced']);
+        git(origin, ['merge', '--no-ff', 'candidate', '-m', 'integration']);
+        const integration = git(origin, ['rev-parse', 'HEAD']);
+        const document = parseDocument(
+            readFileSync(join(import.meta.dirname, '../../.github/workflows/validation.yml'), 'utf8')
+        );
+        const depth: unknown = document.getIn(['jobs', 'native-macos', 'steps', 0, 'with', 'fetch-depth']);
+        if (typeof depth !== 'number' || !Number.isSafeInteger(depth) || depth < 0) {
+            throw new Error('Native checkout has no numeric fetch depth');
+        }
+        const fetch = (name: string, fetchDepth: number) => {
+            const checkout = join(root, name);
+            mkdirSync(checkout);
+            git(checkout, ['init']);
+            git(checkout, ['remote', 'add', 'origin', origin]);
+            const args = ['-c', 'protocol.version=2', 'fetch', '--no-tags', '--no-recurse-submodules'];
+            if (fetchDepth > 0) {
+                args.push(`--depth=${fetchDepth}`);
+            }
+            args.push('origin', `+${integration}:refs/remotes/pull/fixture/merge`);
+            git(checkout, args);
+            return checkout;
+        };
+        const shallow = fetch('shallow', 2);
+        expect(() => git(shallow, ['rev-parse', '--verify', `${base}^{commit}`])).toThrow();
+        const checkout = fetch('configured', depth);
+        expect(git(checkout, ['rev-parse', '--verify', `${base}^{commit}`])).toBe(base);
+        expect(git(checkout, ['rev-parse', '--verify', `${head}^{commit}`])).toBe(head);
+        expect(git(checkout, ['rev-parse', '--verify', `${integration}^{commit}`])).toBe(integration);
+    });
     const input = {
         head: 'a'.repeat(40),
         base: 'b'.repeat(40),
@@ -196,6 +274,70 @@ function fileReceipt(root: string, name: string) {
 }
 
 describe('owned command process-group completion', () => {
+    it('retains a bounded termination error after the group is later absent', async () => {
+        let inspections = 0;
+        const signal = vi.fn((_pid: number, requested: string | number | undefined): true => {
+            if (requested !== 0) {
+                throw Object.assign(new Error('private termination message'), { code: 'EACCES', errno: -13 });
+            }
+            inspections += 1;
+            if (inspections > 2) {
+                throw Object.assign(new Error('absent'), { code: 'ESRCH' });
+            }
+            return true;
+        });
+        const result = await runCommand(process.execPath, ['-e', 'process.exit(0)'], tmpdir(), process.env, {
+            spawn,
+            setTimeout,
+            clearTimeout,
+            process: {
+                kill: signal,
+                once: process.once.bind(process),
+                removeListener: process.removeListener.bind(process),
+            },
+        });
+        expect(result.failure).toBe('child-descendants-survived: child-termination-failed');
+        expect(result.ownershipDiagnostic).toEqual({
+            operation: 'terminate',
+            signal: 'SIGTERM',
+            code: 'EACCES',
+            errno: -13,
+        });
+        expect(() => assertNativeTestResult(result, 'unexecuted')).toThrow('EACCES');
+        expect(JSON.stringify(result)).not.toContain('private termination message');
+    });
+    it.each([
+        ['EIO', -5, { code: 'EIO', errno: -5 }],
+        ['unsafe diagnostic text', Number.POSITIVE_INFINITY, {}],
+    ] satisfies Array<[string, number, { code?: string; errno?: number }]>)(
+        'retains only bounded inspection diagnostics after later absence: %s',
+        async (code, errno, details) => {
+            let inspections = 0;
+            const signal = vi.fn((_pid: number, requested: string | number | undefined): true => {
+                expect(requested).toBe(0);
+                inspections += 1;
+                throw Object.assign(new Error('private diagnostic message'), {
+                    code: inspections === 1 ? code : 'ESRCH',
+                    errno,
+                });
+            });
+            const result = await runCommand(process.execPath, ['-e', 'process.exit(0)'], tmpdir(), process.env, {
+                spawn,
+                setTimeout,
+                clearTimeout,
+                process: {
+                    kill: signal,
+                    once: process.once.bind(process),
+                    removeListener: process.removeListener.bind(process),
+                },
+            });
+            expect(result.failure).toBe('child-descendants-survived: child-group-inspection-failed');
+            expect(result.ownershipDiagnostic).toEqual({ operation: 'inspect', signal: 0, ...details });
+            expect(JSON.stringify(result)).not.toContain('private diagnostic message');
+            expect(signal.mock.calls).toHaveLength(2);
+            expect(() => assertNativeTestResult(result, 'unexecuted')).toThrow('Incomplete owning test execution');
+        }
+    );
     it.each(['interrupted', 'timeout', 'output-limit'])(
         'waits past direct-child close for a TERM-resistant descendant after %s',
         async (reason) => {
@@ -260,6 +402,7 @@ describe('owned command process-group completion', () => {
                 ) {
                     throw new Error('Owned fixture did not start');
                 }
+                const directPid = directChild.pid;
                 let settled = false;
                 void completed.then(() => {
                     settled = true;
@@ -297,9 +440,12 @@ describe('owned command process-group completion', () => {
                 await waitForProcessExit(descendantPid);
                 vi.advanceTimersByTime(50);
                 const result = await completed;
+                console.info(
+                    `native-command-fixture ${reason}: result ${JSON.stringify({ failure: result.failure, ownershipDiagnostic: result.ownershipDiagnostic })}`
+                );
                 expect(result.failure).toBe(reason);
                 expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(16 * 1024 * 1024);
-                expect(() => process.kill(-directChild.pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+                expect(() => process.kill(-directPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
                 expect(processIsAlive(unrelated.pid)).toBe(true);
                 expect(signals.mock.calls.filter(([pid, signal]) => pid < 0 && signal !== 0)).toEqual([
                     [-directChild.pid, 'SIGTERM'],
@@ -349,7 +495,12 @@ describe('owned command process-group completion', () => {
     it('recognizes an ESRCH code across error prototypes and retires the group without signaling it', async () => {
         const observed: { pid?: number } = {};
         const signal = vi.fn((_pid: number, _signal: number | NodeJS.Signals | undefined) => {
-            throw { code: 'ESRCH' };
+            const error: unknown = runInNewContext("new Error('absent group')");
+            if (!types.isNativeError(error)) {
+                throw new Error('Cross-realm fixture did not create an Error');
+            }
+            expect(error instanceof Error).toBe(false);
+            throw Object.assign(error, { code: 'ESRCH' });
         });
         const result = await runCommand(
             process.execPath,
@@ -384,9 +535,12 @@ describe('source restoration and completed observable', () => {
         const options = fixture();
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         let groupPresent = true;
-        const signal = vi.fn((_pid: number, requested: number | NodeJS.Signals | undefined) => {
+        const signal = vi.fn((_pid: number, requested: string | number | undefined): true => {
             if (requested === 0 && !groupPresent) {
                 throw Object.assign(new Error('absent group'), { code: 'ESRCH' });
+            }
+            if (requested === 0) {
+                throw Object.assign(new Error('private diagnostic message'), { code: 'EIO', errno: -5 });
             }
             return true;
         });
@@ -437,6 +591,9 @@ describe('source restoration and completed observable', () => {
             const error = await completed;
             expect(error).toBeInstanceOf(NativeCommandOwnershipError);
             expect(error).toMatchObject({ reason: 'child-descendants-survived' });
+            expect(error).toMatchObject({
+                ownershipDiagnostic: { operation: 'inspect', signal: 0, code: 'EIO', errno: -5 },
+            });
             expect(readFileSync(options.sourcePath, 'utf8')).toBe(mutated);
             expect(existsSync(join(options.evidencePath, 'adjacent-keep-first.source.sha256'))).toBe(true);
             const cases = readFileSync(join(options.evidencePath, 'cases.json'), 'utf8');

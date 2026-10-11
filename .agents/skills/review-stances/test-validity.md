@@ -20,6 +20,18 @@ Exhaust confirmation through injected liveness ports and require the same owners
 mutated source and partial evidence, and no restored cases. Independently reject the correct panic
 transcript with exit zero; widening admission to 101 or zero must fail that case.
 
+The immutable event base can precede both synthetic integration parents when main advances. Drive
+the native job's configured checkout depth through a tiny real Git fetch topology; require the
+event base, candidate head and integration commit to resolve. A literal depth assertion alone does
+not prove object availability. Typecheck the real-process fixture, including callback-captured PIDs
+and the process signal port's literal return type, and recognize coded ESRCH from a foreign Error realm.
+
+Preserve bounded operation, signal and conventional errno metadata after a non-ESRCH inspection or
+termination failure, including when later ESRCH permits completion. Inject EIO followed by ESRCH
+and persistent EIO separately: the first still refuses mutation proof, the second retains mutated
+source and partial evidence without restoration. Never infer the first intermittent failure's cause
+from a later pass or retain raw error text in public diagnostics.
+
 ### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
 
 The subgraph fixture asserted that the inverse callback received the requested beat-four
