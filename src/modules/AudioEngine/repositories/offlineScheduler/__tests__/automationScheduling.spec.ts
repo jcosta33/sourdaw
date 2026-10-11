@@ -15,7 +15,10 @@ import { type OfflineAutomationSegment } from '../../deviceStrategy/AudioDeviceS
 import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
 import { scheduleAutomationOnParam } from '../scheduleAutomationOnParam';
 
+import { constantTempoProjector } from './constantTempoProjector';
 import { SHIPPING_GRAIN_SLEW_TICK_SECONDS, scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
+
+const AT_120_BPM = constantTempoProjector(120);
 
 type ParamProperty = 'frequency' | 'Q' | 'gain';
 type ExpectedParamTarget = readonly [node: string | number, property: ParamProperty, scale: number, offset: number];
@@ -145,13 +148,14 @@ function webAudioEntry(deviceId: string, deviceType: string, node: OfflineDevice
 describe('scheduleAutomationOnParam', () => {
     it('seeds the param at the first point value at time 0', () => {
         const param = makeParam();
-        // 120 bpm, no tempo changes → beatToSeconds(beat) === beat / 2.
+        // 120 bpm, no tempo changes → the projection is beat / 2.
         scheduleAutomationOnParam(
             param as unknown as AudioParam,
             [{ beat: 0, value: 0.25, curve: 'linear', tension: 0 }],
             10,
-            120,
-            []
+            [],
+            0,
+            AT_120_BPM
         );
 
         expect(param.setValueAtTime).toHaveBeenCalledWith(0.25, 0);
@@ -166,8 +170,9 @@ describe('scheduleAutomationOnParam', () => {
                 { beat: 4, value: 1, curve: 'linear', tension: 0 },
             ],
             10,
-            120,
-            []
+            [],
+            0,
+            AT_120_BPM
         );
 
         // beat 4 @ 120bpm → 2 seconds.
@@ -183,9 +188,9 @@ describe('scheduleAutomationOnParam', () => {
                 { beat: 4, value: 1, curve: 'linear', tension: 0 },
             ],
             0.5,
-            120,
             [],
-            1
+            1,
+            AT_120_BPM
         );
 
         expect(param.setValueAtTime.mock.calls[0]?.[0]).toBeCloseTo(0.5, 10);
@@ -203,7 +208,6 @@ describe('scheduleAutomationOnParam', () => {
                 { beat: 130, value: 1, curve: 'linear', tension: 0 },
             ],
             1,
-            120,
             [],
             64,
             (beat) => (beat / 130) ** 2 * 65
@@ -226,7 +230,6 @@ describe('scheduleAutomationOnParam', () => {
                 { beat: 4, value: 1, curve: 'linear', tension: 0 },
             ],
             5,
-            120,
             [],
             4,
             (beat) => beat * beat
@@ -252,8 +255,9 @@ describe('scheduleAutomationOnParam', () => {
                 { beat: 2, value: 0.9, curve: 'linear', tension: 0 },
             ],
             1,
-            120,
-            []
+            [],
+            0,
+            AT_120_BPM
         );
 
         expect(param.linearRampToValueAtTime).toHaveBeenLastCalledWith(0.5, 1);
@@ -269,8 +273,9 @@ describe('scheduleAutomationOnParam', () => {
                 { beat: 2, value: 1, curve: 'step', tension: 0 },
             ],
             10,
-            120,
-            []
+            [],
+            0,
+            AT_120_BPM
         );
 
         expect(param.linearRampToValueAtTime).not.toHaveBeenCalled();
@@ -287,8 +292,9 @@ describe('scheduleAutomationOnParam', () => {
                 { beat: 4, value: 1, curve: 'linear', tension: 0 },
             ],
             2,
-            120,
-            []
+            [],
+            0,
+            AT_120_BPM
         );
 
         expect(param.linearRampToValueAtTime).not.toHaveBeenCalled();
@@ -304,8 +310,9 @@ describe('scheduleAutomationOnParam', () => {
                 { beat: 4, value: 1, curve: 'linear', tension: 0 },
             ],
             2,
-            120,
-            []
+            [],
+            0,
+            AT_120_BPM
         );
 
         expect(param.setValueAtTime.mock.calls.flat().every(Number.isFinite)).toBe(true);
@@ -314,7 +321,7 @@ describe('scheduleAutomationOnParam', () => {
 
     it('schedules nothing for an empty point list', () => {
         const param = makeParam();
-        scheduleAutomationOnParam(param as unknown as AudioParam, [], 10, 120, []);
+        scheduleAutomationOnParam(param as unknown as AudioParam, [], 10, [], 0, AT_120_BPM);
 
         expect(param.setValueAtTime).not.toHaveBeenCalled();
         expect(param.linearRampToValueAtTime).not.toHaveBeenCalled();

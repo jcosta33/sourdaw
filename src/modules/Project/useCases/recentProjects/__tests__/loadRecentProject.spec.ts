@@ -34,6 +34,7 @@ vi.mock('../../../repositories/project/writeProjectJson', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
     startFaustNote: vi.fn(),
@@ -119,7 +120,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
-
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
     resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {

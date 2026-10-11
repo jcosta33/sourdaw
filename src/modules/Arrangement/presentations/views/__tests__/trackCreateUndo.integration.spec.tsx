@@ -160,6 +160,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     saveProjectBeforeReplacement: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 

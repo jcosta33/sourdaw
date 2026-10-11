@@ -103,6 +103,7 @@ vi.mock('#/infra/store/createStore', async (importOriginal) => {
 });
 // Four hoisted bindings stay live; newly listed names are unread graph-coverage stubs.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
@@ -189,7 +190,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
-
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectRevision: vi.fn(),
     compactProject: mockCompactProject,
     createCrdtDoc: vi.fn(),
