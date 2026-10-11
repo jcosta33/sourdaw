@@ -1,0 +1,147 @@
+scripts/__tests__/viteBuildFaustWorkletRegistration.spec.ts
+  s_d257b09300b1ad::t_ee5fe30a27d13f 91-92,94
+  s_d257b09300b1ad::t_3c6c828d4fac34 13,15-16
+  s_d257b09300b1ad::t_cc017d894e211f 170-171,173-189,191-194,196-199,201
+  s_d257b09300b1ad::t_737d995d17b05e 190
+  s_d257b09300b1ad::t_6046cd385af2cf 213-216,219-221,224-226
+  s_d257b09300b1ad::t_f85ee42ce3bca5 217-218
+  s_d257b09300b1ad::t_7206364cba0f8c 72-78
+  s_d257b09300b1ad::t_0a3911adb940dd 100
+  s_d257b09300b1ad::t_a977c4f4b7c7d8 332
+  s_d257b09300b1ad::t_2929c31be37fea 1-12,14,17-28,39-41,44-68,70-71,79-88,93,95,97-99,101-110,112-136,140,145-157,159-161,163-165,167-169,172,195,200,202-212,222-223,227-229,256,269-271,273,276-278,280-281,289-290,292-294,296-301,303-320,322-326,328-331,333-350,352-353,355-357
+  s_d257b09300b1ad::t_d3cc42c77bcda6 137-139,141-144
+  s_d257b09300b1ad::t_922c5462992a16 291
+  s_29d8df116c5b92::t_9b9709b019ce7a 37-38,42-43,69,158,162,166,230-231,233-235,240-255,257-258,267-268,272,274,279,282-287,288,295,302,321,327,351,354
+  s_29d8df116c5b92::t_58120c773827bc 29-35,236-239
+  s_29d8df116c5b92::t_111b15de0b5795 36
+  s_29d8df116c5b92::t_e90504c5f267ad 96,111,261
+  s_29d8df116c5b92::t_09414f925016b0 89-90,232,259-260,262-266,275
+vite.config.ts
+  s_d257b09300b1ad::t_c6447b062a4b8f 166
+  s_d257b09300b1ad::t_1ca12ae6bbf474 164,167
+  s_d257b09300b1ad::t_62b66383caaeb8 165
+  s_d257b09300b1ad::t_d326d0c7482699 17-34
+  s_d257b09300b1ad::t_2875ddfce0fdaa 16
+.agents/skills/review-stances/browser-inventory.md
+  s_29d8df116c5b92::t_4ffd4fb9892090 12-19
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_2a085eaa90ae87 38-45
+.github/workflows/heavy-gates.yml
+  s_29d8df116c5b92::t_c7740461b9eca1 179,183,187,193,200,208,212-243
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_29d8df116c5b92::t_3ab5d5948c30d5 582-614
+crates/sourdaw-native/src/commands/graph.rs
+  s_29d8df116c5b92::t_db41409cce58c1 1964-1971,5454-5494
+scripts/__tests__/e2eAffectedGraph.spec.ts
+  s_29d8df116c5b92::t_f9b05f5003a186 5,9-69,239-249,251-253,257-387,391-392,394-395,397,399-402,406,408,414-441
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  s_29d8df116c5b92::t_fafad2d70cc8c5 22-29,252-316
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_29d8df116c5b92::t_39d416b1cccdcf 417,422,427,435,444,449,454-471
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_29d8df116c5b92::t_a304d90a6ab541 204-223,1906-1929,1941-1943,1947-1948,1951-1975,2042-2046,4623-4671,4694-4708,4712,4783-4788,4862
+scripts/e2eAffectedGraph.ts
+  s_29d8df116c5b92::t_107e49729345d1 2,479-521,523-535
+scripts/healthGateWorkflowContract.ts
+  s_29d8df116c5b92::t_2e0e0e78a155f1 77,241,402
+src/infra/store/storage/__tests__/createAutomergeStorage.deferredBaseline.spec.ts
+  s_29d8df116c5b92::t_cf9c5d9e2d9afb 4,9,34-42,167-458
+src/infra/store/storage/createAutomergeStorage.ts
+  s_29d8df116c5b92::t_28f3de9780dd9d 1290-1292,1314-1319,1768-1771,1788,1916,1991,2092-2094,2274,2523,2597,2626
+src/modules/Arrangement/handlers/clip/__tests__/handleInsertTime.integration.spec.ts
+  s_29d8df116c5b92::t_6bde71f70ff894 1-137
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/FaustDeviceStrategy.spec.ts
+  s_29d8df116c5b92::t_6c9b32f48ae092 264
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationCurveConformance.spec.ts
+  s_29d8df116c5b92::t_96e1ca4514ad2d 87,119
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationLaneGating.spec.ts
+  s_29d8df116c5b92::t_3dc3c86507f4cd 32
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_29d8df116c5b92::t_69719f8084f4c9 18,21-22,151,156-158,173-175,192-193,258-260,276-278,295-297,313-315,324
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEvents.spec.ts
+  s_29d8df116c5b92::t_080534c597b3db 6-7,9,18,22,26,31,39,47,57-63,77,91,104,121,138,156,169,188-194,203-209,215-216,224,228-229,238,249,251,259,265,284,298,308,323,338,353,366,376
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEventsHardJump.spec.ts
+  s_29d8df116c5b92::t_603b14a601b218 41
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts
+  s_29d8df116c5b92::t_c06b16975305cf 5-6,17-18,26-27,31,38,49,63,74,88-90,109,122-123,144,161,177,196
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/constantTempoProjector.ts
+  s_29d8df116c5b92::t_ada0b5b653dc17 1-11
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/fermenterOscWaveformOfflineParity.spec.ts
+  s_29d8df116c5b92::t_a4007b765efbd2 16-17,110
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleAutomationOnParam.spec.ts
+  s_29d8df116c5b92::t_eac2ac1efc4aad 6-9,23,36,55-57,74,88
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture.ts
+  s_29d8df116c5b92::t_2500bbfc93eb35 10-11,139-140,143,145-150,152-157,160,162,167
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/trackLaneSinglePointDuplicateParity.spec.ts
+  s_29d8df116c5b92::t_e39a40af310246 21-23,39-41,45-46,65
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_29d8df116c5b92::t_a5654e9ba13848 217-223,589-590
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_29d8df116c5b92::t_ed0429cc325001 275-276
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts
+  s_29d8df116c5b92::t_238314769921d5 14-15
+src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts
+  s_29d8df116c5b92::t_e83e7cd40117df 16-17
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_29d8df116c5b92::t_0bc09bbd7851ad 153-160
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_29d8df116c5b92::t_3ccaf39d55b498 18-19,21-25,346-372,599-672,958-1070
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveHistoryAwareRenderContext.spec.ts
+  s_29d8df116c5b92::t_20abeca22b84d6 1,3-8,10-11,13-14,16-23,26,28-29,31-37,39-45,48-56,58-64
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveRenderContext.spec.ts
+  s_29d8df116c5b92::t_ae4bccb3e351b7 7,11,68-109,118-121
+src/modules/AudioEngine/useCases/offlineRender/resolveHistoryAwareRenderContext.ts
+  s_29d8df116c5b92::t_7e0fe23b8d44fe 43,50
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_29d8df116c5b92::t_7def01cfdcaa27 46,84-87,89-92,99
+src/modules/AudioRendering/useCases/__tests__/previewMeasurementRender.spec.ts
+  s_29d8df116c5b92::t_8d2dd9ccc2acc5 14,35,277-281,283
+src/modules/Command/useCases/__tests__/compensateAbortedActions.spec.ts
+  s_29d8df116c5b92::t_8adc61e19fc91b 1-143
+src/modules/Command/useCases/__tests__/rollbackAbortedActions.spec.ts
+  s_29d8df116c5b92::t_52a14ce1c29be3 1-103
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionCost.spec.ts
+  s_29d8df116c5b92::t_454be5580c9b5b 171-184,194
+src/modules/Transport/AGENTS.md
+  s_29d8df116c5b92::t_0196bdf7d5b589 23-24,28
+src/modules/Transport/useCases/tempoMap/__tests__/deleteTimeLaw.property.spec.ts
+  s_29d8df116c5b92::t_a37f8703f1390b 238-253,255,267,274
+src/modules/Transport/useCases/tempoMap/__tests__/insertTimeLaw.property.spec.ts
+  s_29d8df116c5b92::t_66951458f87934 1-646
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_29d8df116c5b92::t_3a5500bf145210 445-459,701,703-704,706-707,709,1053-1217
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_29d8df116c5b92::t_61c55a78584cf5 44,53-73,182-189,314-320,323,336-342,346-376,396,463,525,531-569,571,574,585,588,590,605-608,613-616
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  s_29d8df116c5b92::t_488248397e19f0 22-24
+tests/e2e/builtinDeviceAutomationOffline.spec.ts
+  s_29d8df116c5b92::t_ec6bfc1845b8d0 241-242
+tests/e2e/firstPaintWarmup.ts
+  s_29d8df116c5b92::t_664168a1f9c5b4 34-37,62,64,66,68,70,72,83,89,97,99
+tests/e2e/transportDeep.spec.ts
+  s_29d8df116c5b92::t_292e99fdd20e7f 3,49-80,84,86-92,94-107,111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90e2f4013ffd9f4dd0ecb9bb3a314e2a6104ff50",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
