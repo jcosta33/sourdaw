@@ -1,0 +1,19 @@
+scripts/__tests__/runIsolatedUnitShard.spec.ts
+  s_29d8df116c5b92::t_759f2445165eba 23-27,353,356-358,364,366,372,379,398-420,422,424,426-428,431-432,436,440-445,487-491,494-495,498-500,503,595
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7dc83cc9d7bf515e2fc9cdd961274cdaf35ef4d6",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
