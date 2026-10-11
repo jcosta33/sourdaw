@@ -110,6 +110,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
  * barrel the scheduler calls through and read through `vi.mocked` below.
  */
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => {
         punchClock.start.push(ctxTime.now);

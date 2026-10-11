@@ -1,5 +1,6 @@
 import { stopRecording } from '#/modules/Arrangement/useCases';
 
+import { captureRecordingEnd } from './captureRecordingEnd';
 import { recordingLifecycle } from './recordingLifecycle';
 
 /**
@@ -14,5 +15,7 @@ import { recordingLifecycle } from './recordingLifecycle';
  * sites never await it, so the tick path stays unblocked.
  */
 export function finalizeAutomaticRecording(atBeat: number): void {
-    recordingLifecycle.trackCommit(stopRecording(atBeat));
+    const ending = captureRecordingEnd();
+    recordingLifecycle.endRecording();
+    recordingLifecycle.trackCommit(stopRecording(atBeat, ending));
 }
