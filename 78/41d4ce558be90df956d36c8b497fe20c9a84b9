@@ -1,0 +1,27 @@
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_29d8df116c5b92::t_58927795258e71 6-7,129-132,191-201,216-254
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_29d8df116c5b92::t_cb3c3b1bdb5f4c 18,63-66
+src/modules/Transport/useCases/__tests__/preferencesSeededTransportState.spec.ts
+  s_29d8df116c5b92::t_fb47cda1d3442d 1-55
+src/modules/Transport/useCases/index.ts
+  s_29d8df116c5b92::t_3f5a98bc751961 67
+src/modules/Transport/useCases/preferencesSeededTransportState.ts
+  s_29d8df116c5b92::t_66166e9bd911b0 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7841d4ce558be90df956d36c8b497fe20c9a84b9",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
