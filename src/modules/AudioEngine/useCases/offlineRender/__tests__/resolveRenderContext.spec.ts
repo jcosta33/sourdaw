@@ -5,6 +5,7 @@ import {
     restoreTimelineMapSnapshot,
     restoreTransportSnapshot,
     secondsBetweenBeats,
+    beatAtSecondsFromAnchor,
 } from '#/modules/Transport/useCases';
 
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -19,6 +20,7 @@ describe('resolveRenderContext', () => {
         configureOfflinePpqEndpointProjection({
             project: projectPpqEndpoints,
             resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+            beatAtSecondsFromAnchor,
         });
     });
 
@@ -129,5 +131,38 @@ describe('resolveRenderContext', () => {
         });
 
         expect(context.projectPpqEndpoints).toBe(firstProjector);
+    });
+
+    it('retains the inverse and captured tempo when configuration and live stores change', () => {
+        const changes = [
+            { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' as const },
+            { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+        ];
+        restoreTimelineMapSnapshot({ tempoMap: { changes } });
+        const first = vi.fn(beatAtSecondsFromAnchor);
+        const replacement = vi.fn(() => -1);
+        configureOfflinePpqEndpointProjection({
+            project: projectPpqEndpoints,
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+            beatAtSecondsFromAnchor: first,
+        });
+        const context = resolveRenderContext({ startBeat: 4, durationBeats: 2 });
+        configureOfflinePpqEndpointProjection({
+            project: projectPpqEndpoints,
+            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+            beatAtSecondsFromAnchor: replacement,
+        });
+        restoreTimelineMapSnapshot({ tempoMap: { changes: [] } });
+        restoreTransportSnapshot({ tempo: 240 });
+        expect(context.beatAtSecondsFromAnchor).toBe(first);
+        expect(
+            context.beatAtSecondsFromAnchor?.(
+                context.changes,
+                context.startBeat,
+                4.8 * Math.log(175 / 150),
+                context.defaultTempo
+            )
+        ).toBeCloseTo(6, 10);
+        expect(replacement).not.toHaveBeenCalled();
     });
 });

@@ -4,6 +4,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
@@ -228,6 +229,7 @@ export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSe
             return { status: 'conflict' };
         }
 
+        const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const orderedIds = [...action.payload.stemTrackIds, action.payload.folderId];
         const removals = orderedIds.map((trackId) => ({
             trackId,
@@ -242,8 +244,8 @@ export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSe
         const finalize = () =>
             runAllAsyncEffects(
                 completedRemovals.flatMap(({ trackId, finalizeRuntimeRemoval }) => [
-                    finalizeRuntimeRemoval,
-                    () => publishTrackRemoved({ trackId }),
+                    runtimeAuthority.guardAbsent(trackId, finalizeRuntimeRemoval),
+                    runtimeAuthority.guardAbsent(trackId, () => publishTrackRemoved({ trackId })),
                 ])
             );
         return {
