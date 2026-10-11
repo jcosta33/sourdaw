@@ -14,6 +14,7 @@ import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
+    configureOfflinePpqEndpointProjection,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
@@ -99,6 +100,8 @@ type TunerReadingUnderTest = {
 
 const {
     noop,
+    configureOfflinePpqProjectionMock,
+    beatAtSecondsFromAnchorMock,
     sentinelHandlers,
     assertCanonicalLlmActionStrategiesMock,
     getExecutableAppActionGroundingCatalogMock,
@@ -183,6 +186,8 @@ const {
     const executableAppActionGroundingCatalog = [{ actionType: 'addMarker', intentPhrases: [] }];
     return {
         noop,
+        configureOfflinePpqProjectionMock: vi.fn<typeof configureOfflinePpqEndpointProjection>(),
+        beatAtSecondsFromAnchorMock: vi.fn(() => -1),
         sentinelHandlers,
         assertCanonicalLlmActionStrategiesMock: vi.fn(),
         getExecutableAppActionGroundingCatalogMock: vi.fn(() => executableAppActionGroundingCatalog),
@@ -390,7 +395,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
     configureOfflineDeviceParameterLaw: noop,
     configureOfflineMidiEventProjection: noop,
-    configureOfflinePpqEndpointProjection: noop,
+    configureOfflinePpqEndpointProjection: configureOfflinePpqProjectionMock,
     configureOfflineYeastMidiProcessing: noop,
     stopAllScheduled: noop,
     compileAudioGraphTopology: noop,
@@ -674,6 +679,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     createMusicalPositionProjector: noop,
     createSamplePositionProjector: noop,
     projectPpqEndpoints: noop,
+    beatAtSecondsFromAnchor: beatAtSecondsFromAnchorMock,
     resolveTempoAtBeat: noop,
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
@@ -816,6 +822,14 @@ describe('bootstrap', () => {
         expect(assertCanonicalLlmActionStrategiesMock.mock.invocationCallOrder[0] ?? Infinity).toBeLessThan(
             registerProductionCommandHandlersMock.mock.invocationCallOrder[0] ?? Infinity
         );
+    });
+
+    it('configures both offline tempo directions through Transport', () => {
+        expect(configureOfflinePpqProjectionMock).toHaveBeenCalledExactlyOnceWith({
+            project: noop,
+            resolveTempoAtBeat: noop,
+            beatAtSecondsFromAnchor: beatAtSecondsFromAnchorMock,
+        });
     });
 
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {
