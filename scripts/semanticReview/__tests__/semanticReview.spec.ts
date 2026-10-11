@@ -2886,7 +2886,7 @@ describe('contract-carrying admission', () => {
             mergeBaseSha: MERGE_BASE,
             headSha: HEAD,
             contractSourceSha: MERGE_BASE,
-            limits: { maxRegionBytes: 600, maxTotalBytes: 1_000_000 },
+            limits: { maxRegionBytes: 2_400, maxTotalBytes: 1_000_000 },
             contractPaths: ['zzz-wide-ledger.md', 'aaa-short-contract.md'],
         });
         const truncated = set.references.find(
@@ -2901,11 +2901,25 @@ describe('contract-carrying admission', () => {
             expect(admitted.startsWith('| [0000] |')).toBe(true);
             expect(
                 admitted.endsWith(
-                    `[semantic review: context truncated to the per-region budget: first ${String(
+                    `[semantic review: context truncated to a bounded share of the request budget: first ${String(
                         truncated.endLine
                     )} of 60 lines]`
                 )
             ).toBe(true);
+            // Maximality: one more line than was kept would not fit the share the region is sized
+            // against, so an over-truncating regression cannot pass as a fitting prefix.
+            const markerFor = (kept: number) =>
+                `[semantic review: context truncated to a bounded share of the request budget: first ${String(kept)} of 60 lines]`;
+            const nextLineCandidate = `${overBudget
+                .split('\n')
+                .slice(0, truncated.endLine + 1)
+                .join('\n')}\n${markerFor(truncated.endLine + 1)}`;
+            expect(
+                regionFitsRequest(
+                    { path: 'zzz-wide-ledger.md', side: 'context', content: nextLineCandidate },
+                    Math.floor(2_400 / 4)
+                )
+            ).toBe(false);
             expect(set.truncated).toContainEqual({
                 path: 'zzz-wide-ledger.md',
                 reason: 'context-region-truncated-to-budget',
@@ -2921,6 +2935,134 @@ describe('contract-carrying admission', () => {
         if (whole) {
             expect(set.contents.get(whole.evidenceId)).toBe(fitting);
             expect(set.truncated.some((entry) => entry.path === 'aaa-short-contract.md')).toBe(false);
+        }
+    });
+
+    it('withholds an over-budget credential-bearing context document whole instead of truncating past the screen', () => {
+        // The pre-screen is the module's first-documented constraint: a credential anywhere in the
+        // document keeps the region withheld whole, because the truncated prefix would egress text
+        // the screen never fully examined. The credential sits in the document's tail, past every
+        // line a truncation would keep.
+        const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const rows = Array.from(
+            { length: 60 },
+            (_, row) =>
+                `| [00${String(row).padStart(2, '0')}] | a decision row that pads the table wide enough to bind |`
+        );
+        const document = `${rows.join('\n')}\nexport const key = '${awsShaped}';\n`;
+        const readerPath = 'src/modules/Project/undo.ts';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(readerPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:zzz-credentialed-ledger.md`]: document,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 2_400, maxTotalBytes: 1_000_000 },
+            contractPaths: ['zzz-credentialed-ledger.md'],
+        });
+        expect(
+            set.references.some(
+                (reference) => reference.path === 'zzz-credentialed-ledger.md' && reference.side === 'context'
+            )
+        ).toBe(false);
+        expect(
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'zzz-credentialed-ledger.md' &&
+                    entry.reason.startsWith('evidence-withheld-credential-shaped')
+            )
+        ).toBe(true);
+        expect(
+            set.limitations.some((entry) =>
+                entry.startsWith('contract zzz-credentialed-ledger.md was supplied truncated')
+            )
+        ).toBe(false);
+    });
+
+    it('records no truncation disclosure when the total budget withholds the truncated region', () => {
+        // The disclosure must follow admission: when the collector's total gate omits the truncated
+        // document, the withhold path already records the omission, and a supply claim beside it
+        // would state both outcomes for one region.
+        const readerPath = 'src/modules/Project/undo.ts';
+        const overBudget = `${'a decision row that pads the document wide enough to bind the share\n'.repeat(60)}`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(readerPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:zzz-wide-ledger.md`]: overBudget,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 2_400, maxTotalBytes: 100 },
+            contractPaths: ['zzz-wide-ledger.md'],
+        });
+        expect(
+            set.references.some((reference) => reference.path === 'zzz-wide-ledger.md' && reference.side === 'context')
+        ).toBe(false);
+        expect(
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'zzz-wide-ledger.md' && entry.reason.startsWith('total-evidence-budget-exhausted')
+            )
+        ).toBe(true);
+        expect(
+            set.truncated.some(
+                (entry) => entry.path === 'zzz-wide-ledger.md' && entry.reason === 'context-region-truncated-to-budget'
+            )
+        ).toBe(false);
+        expect(
+            set.limitations.some((entry) => entry.startsWith('contract zzz-wide-ledger.md was supplied truncated'))
+        ).toBe(false);
+    });
+
+    it('carries both truncated default documents inside a local-profile unit the planner admits', () => {
+        // The acceptance that matters is the request, not the collector: the truncated regions must
+        // fit a unit's evidence budget beside its own sides after the reservation, which is why the
+        // prefix is sized against a bounded share of the ceiling rather than the ceiling itself.
+        const ledger = readFileSync(join(repositoryRoot, '.agents/decisions/README.md'), 'utf8');
+        const contract = readFileSync(join(repositoryRoot, 'AGENTS.md'), 'utf8');
+        const readerPath = 'src/modules/Project/undo.ts';
+        const files = [changedFile(readerPath)];
+        const local = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:AGENTS.md`]: contract,
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: ledger,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: local.maxStatePlusQuestionBytes,
+                maxTotalBytes: local.maxTotalSubmittedBytes,
+            },
+            includeDefaultContractContext: true,
+        });
+        const { units, excluded } = planUnits(files, set, local.maxStatePlusQuestionBytes);
+        const unit = units.find((candidate) => candidate.path === readerPath);
+        expect(unit).toBeDefined();
+        expect(excluded).not.toContainEqual({ path: readerPath, reason: 'no-evidence-region-within-budget' });
+        const carried = unit?.evidence.context.map((reference) => reference.path) ?? [];
+        expect(carried).toContain('.agents/decisions/README.md');
+        expect(carried).toContain('AGENTS.md');
+        for (const reference of unit?.evidence.context ?? []) {
+            const text = reference.path === 'AGENTS.md' ? contract : ledger;
+            expect(reference.endLine).toBeLessThan(text.split('\n').length);
         }
     });
 

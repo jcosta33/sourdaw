@@ -53,7 +53,7 @@
  * ahead of a purely bulk path.
  */
 
-import { CONTEXT_REGION_TRUNCATED_CODE, prepareContractContext } from './contextRegion.ts';
+import { CONTEXT_REGION_TRUNCATED_CODE, prepareContractContext, type ContextTruncation } from './contextRegion.ts';
 import {
     assertLineRange,
     semanticTextDigest,
@@ -503,6 +503,26 @@ function createRegionAdmission(
 }
 
 /**
+ * Discloses a prepared truncation only for a region that actually left the machine: admission can
+ * still withhold a truncated document at the total gate, and the withhold paths already record that
+ * outcome — a supply claim beside an omission record would state both.
+ */
+function discloseContextTruncations(
+    truncations: readonly ContextTruncation[],
+    admission: ReturnType<typeof createRegionAdmission>
+): void {
+    for (const truncation of truncations) {
+        const supplied = admission.references.some(
+            (reference) => reference.path === truncation.path && reference.side === 'context'
+        );
+        if (supplied) {
+            admission.truncated.push({ path: truncation.path, reason: CONTEXT_REGION_TRUNCATED_CODE });
+            admission.limitations.push(truncation.limitation);
+        }
+    }
+}
+
+/**
  * Records every screened-out path into the admission result, so an excluded path stays visible rather
  * than vanishing from the report. A withheld secret is evidence that never left the machine, not an
  * irrelevant path like a binary or a lockfile; it must reach the completion layer exactly as the
@@ -731,10 +751,6 @@ export function collectEvidence(input: {
     const admission = createRegionAdmission(input.limits, contractCarryingSides);
 
     recordScreenExclusions(screened, admission);
-    for (const truncation of preparedContext.truncations) {
-        admission.truncated.push({ path: truncation.path, reason: CONTEXT_REGION_TRUNCATED_CODE });
-        admission.limitations.push(truncation.limitation);
-    }
 
     for (const unit of units) {
         admitUnit(unit, {
@@ -748,6 +764,9 @@ export function collectEvidence(input: {
             contractSourceSha: input.contractSourceSha,
         });
     }
+
+    // A truncation is disclosed only for a region that actually left the machine.
+    discloseContextTruncations(preparedContext.truncations, admission);
 
     if (admission.references.length === 0) {
         admission.limitations.push('no source region was eligible for assessment');

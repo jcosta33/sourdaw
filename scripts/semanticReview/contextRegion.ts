@@ -18,6 +18,15 @@ import { splitLines, type LineRange } from './slicing.ts';
 /** The scope-exclusion reason a contract-context region admitted as a truncated prefix carries. */
 export const CONTEXT_REGION_TRUNCATED_CODE = 'context-region-truncated-to-budget';
 
+/**
+ * The share of the per-region ceiling a truncated context region may cost. The scan sets the ceiling
+ * to the whole request budget, but every unit's evidence budget is that ceiling minus its question
+ * reservation, so a region trimmed to within one line of the ceiling fits no request at all: the
+ * collector would admit it while the fitter drops it whole and the recorded supply never happens. A
+ * quarter share leaves a context-carrying unit room for both default documents beside its own sides.
+ */
+const CONTEXT_REGION_BUDGET_SHARE = 4;
+
 /** One truncation the collector must disclose: the path and the limitation line naming what was kept. */
 export type ContextTruncation = { readonly path: string; readonly limitation: string };
 
@@ -33,13 +42,15 @@ export type PreparedContractContext = {
 
 /** The closing line a truncated context region carries, so the model can never read it as the whole document. */
 function contextTruncationMarker(keptLines: number, totalLines: number): string {
-    return `[semantic review: context truncated to the per-region budget: first ${String(keptLines)} of ${String(totalLines)} lines]`;
+    return `[semantic review: context truncated to a bounded share of the request budget: first ${String(keptLines)} of ${String(totalLines)} lines]`;
 }
 
 /**
- * The leading whole lines of an over-budget contract-context region, plus a marker naming what was
- * kept, sized by the serialized measure every other gate shares — or `undefined` when not even one
- * line plus its marker fits, in which case the caller keeps the whole-region withhold.
+ * The longest prefix of whole leading lines of an over-budget contract-context region — plus a
+ * marker naming what was kept — that fits the bounded share a request can carry beside its own
+ * material, or `undefined` when not even one line plus its marker fits, in which case the caller
+ * keeps the whole-region withhold. The fit oracle is the serialized measure every other gate
+ * shares, so the fitter that later carries the region cannot disagree about its size.
  *
  * Lines are kept from the start because the ledger and the root contract open with the table headers
  * and the rules every later row elaborates.
@@ -49,10 +60,11 @@ function truncateContextRegion(
     raw: string,
     maxRegionBytes: number
 ): { text: string; keptLines: number; totalLines: number } | undefined {
+    const targetBytes = Math.floor(maxRegionBytes / CONTEXT_REGION_BUDGET_SHARE);
     const lines = splitLines(raw);
     for (let kept = lines.length; kept > 0; kept -= 1) {
         const candidate = `${lines.slice(0, kept).join('\n')}\n${contextTruncationMarker(kept, lines.length)}`;
-        if (regionFitsRequest({ path, side: 'context', content: candidate }, maxRegionBytes)) {
+        if (regionFitsRequest({ path, side: 'context', content: candidate }, targetBytes)) {
             return { text: candidate, keptLines: kept, totalLines: lines.length };
         }
     }
