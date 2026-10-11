@@ -827,6 +827,7 @@ For a batch-admitted restored clip preceding a split, compare captured IDs with 
 IDs before reloading and replaying twice; a live execution that remints a preflight capture is not
 replay-stable. Draw is singleton-only, so a rejected draw/split batch proves admission, not prefix
 execution. Read executable entries from the full history owner rather than its label-only UI view.
+
 ### 2026-10-10 — exact Rust cache fixture omitted rust-std (escaped via PR #5269)
 
 PR #5269's successful exact-hit fixture reported rustc, cargo, rustfmt, and clippy, so it
