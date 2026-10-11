@@ -5,6 +5,7 @@ import {
     type PendingAppActionConfirmation,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 
 import { retireSupersededConfirmation } from './retireSupersededConfirmation';
@@ -38,7 +39,15 @@ function admitRefinedProposal(confirmationId: string): RefinedProposalAdmission 
     if (APPLIED_STATUSES.has(confirmation.status)) {
         return { status: 'refused', reason: ALREADY_APPLIED_REASON };
     }
-    if (confirmation.status !== 'proposed' || confirmation.supersededBy !== null) {
+    // Cancellation revokes the run before cleanup and card settlement finish. During that gap the
+    // card can still say "proposed", but it has no live authority to replace.
+    const run = agentRunLifecycle.get(confirmation.runId);
+    if (
+        confirmation.status !== 'proposed' ||
+        confirmation.supersededBy !== null ||
+        run?.phase !== 'waiting-for-approval' ||
+        run.cancellation.requestedAt !== null
+    ) {
         return { status: 'refused', reason: NO_LONGER_PENDING_REASON };
     }
     return { status: 'admitted', confirmation };

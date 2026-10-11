@@ -646,6 +646,32 @@ describe('getAgentApprovalView', () => {
             });
         });
 
+        it('shows Bar 2 as retained when Bar 1 is removed from two clips on one track', () => {
+            const bar1 = {
+                type: 'addClip',
+                payload: { trackId: 'midi-1', startBeat: 0, endBeat: 4, name: 'Bar 1', type: 'midi' },
+            } satisfies AppAction;
+            const bar2 = {
+                type: 'addClip',
+                payload: { trackId: 'midi-1', startBeat: 4, endBeat: 8, name: 'Bar 2', type: 'midi' },
+            } satisfies AppAction;
+            propose('confirmation-clips-before', {
+                actions: [bar1, bar2],
+                actionLabels: ['Add Bar 1', 'Add Bar 2'],
+            });
+            propose('confirmation-clips-after', {
+                supersedes: 'confirmation-clips-before',
+                actions: [bar2],
+                actionLabels: ['Add Bar 2'],
+            });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-clips-after' })?.previousProposalDiff).toEqual({
+                previousConfirmationId: 'confirmation-clips-before',
+                changes: [{ kind: 'removed', actionType: 'addClip', label: 'Add Bar 1' }],
+                unchangedCount: 1,
+            });
+        });
+
         // Red when a proposal that replaced none, or one whose predecessor the store let go, is shown a diff.
         it('shows no diff for an original proposal or one whose predecessor is no longer held', () => {
             propose('confirmation-original');

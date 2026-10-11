@@ -33,6 +33,8 @@ import {
     pendingActionConfirmationStore,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
@@ -72,6 +74,9 @@ const MIX_PLAN: readonly ProviderCall[] = [
  */
 const REFINEMENT_PROMPT =
     'Set Lead Vocal gain to 80%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.';
+const INCOMPLETE_REFINEMENT_PLAN: readonly ProviderCall[] = [
+    { name: 'setTrackGain', arguments: { trackId: 'track-lead-vocal', gain: 0.8 } },
+];
 
 const BASS_GAIN_PROMPT = 'Set Bass gain to 50%, leaving the Drum Bus unchanged.';
 const BASS_GAIN_PLAN: readonly ProviderCall[] = [
@@ -417,6 +422,85 @@ describe('refining the pending proposal', () => {
         expectMixUntouched();
     });
 
+    it('keeps the four-command card when a full refinement reply omits three requested commands', async () => {
+        let pendingId = '';
+        scriptProvider([{ calls: MIX_PLAN }, { calls: INCOMPLETE_REFINEMENT_PLAN, refines: () => pendingId }]);
+        pendingId = await proposeTheMix();
+
+        await sendChatMessage(REFINEMENT_PROMPT);
+
+        expect(proposedIds()).toEqual([pendingId]);
+        expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'proposed', supersededBy: null });
+        expect(lastAssistantMessage()?.content).toContain('omits');
+        expectMixUntouched();
+    });
+
+    it.each([
+        [
+            'wrong value',
+            [{ name: 'setTrackGain', arguments: { trackId: 'track-lead-vocal', gain: 0.9 } }, ...MIX_PLAN.slice(1)],
+        ],
+        [
+            'wrong target',
+            [{ name: 'setTrackGain', arguments: { trackId: 'track-bass', gain: 0.8 } }, ...MIX_PLAN.slice(1)],
+        ],
+    ] as const)('keeps the pending card when a refinement uses the %s', async (_case, calls) => {
+        let pendingId = '';
+        scriptProvider([{ calls: MIX_PLAN }, { calls, refines: () => pendingId }]);
+        pendingId = await proposeTheMix();
+
+        await sendChatMessage(REFINEMENT_PROMPT);
+
+        expect(proposedIds()).toEqual([pendingId]);
+        expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'proposed', supersededBy: null });
+        expectMixUntouched();
+    });
+
+    it('admits an expressly added command with one expressly removed command', async () => {
+        let pendingId = '';
+        scriptProvider([
+            { calls: MIX_PLAN },
+            { calls: [MIX_PLAN[0]!, MIX_PLAN[2]!, MIX_PLAN[3]!, BASS_GAIN_PLAN[0]!], refines: () => pendingId },
+        ]);
+        pendingId = await proposeTheMix();
+
+        await sendChatMessage(
+            'Drop Guitar Left pan from the pending proposal. Set Lead Vocal gain to 70%, pan Guitar Right 20% right, mute Room Mic, and set Bass gain to 50%, leaving Drum Bus unchanged.'
+        );
+
+        const [replacementId] = proposedIds();
+        expect(getPendingActionConfirmation(replacementId ?? '')).toMatchObject({
+            status: 'proposed',
+            supersedes: pendingId,
+        });
+        expect(getPendingActionConfirmation(replacementId ?? '')?.actions).toHaveLength(4);
+        expect(getPendingActionConfirmation(pendingId)?.supersededBy).toBe(replacementId);
+    });
+
+    it('admits an expressly removed command without dropping the others', async () => {
+        let pendingId = '';
+        scriptProvider([
+            { calls: MIX_PLAN },
+            { calls: [REFINED_PLAN[0]!, REFINED_PLAN[2]!, REFINED_PLAN[3]!], refines: () => pendingId },
+        ]);
+        pendingId = await proposeTheMix();
+
+        await sendChatMessage(
+            'Drop Guitar Left pan from the pending proposal. Set Lead Vocal gain to 80%, pan Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.'
+        );
+
+        const [replacementId] = proposedIds();
+        expect(getPendingActionConfirmation(replacementId ?? '')).toMatchObject({
+            status: 'proposed',
+            supersedes: pendingId,
+        });
+        expect(getPendingActionConfirmation(replacementId ?? '')?.actions.map((action) => action.type)).toEqual([
+            'setTrackGain',
+            'setTrackPan',
+            'muteTrack',
+        ]);
+    });
+
     it('leaves the pending card as it is when the proposal does not name it', async () => {
         scriptProvider([{ calls: MIX_PLAN }, { calls: BASS_GAIN_PLAN }]);
         const pendingId = await proposeTheMix();
@@ -430,25 +514,37 @@ describe('refining the pending proposal', () => {
         expect(proposedIds()).toEqual([pendingId]);
     });
 
-    it('puts a low-risk single-command refinement to the user and supersedes the card it refines', async () => {
+    it('refuses a Bass-only replacement that silently drops the pending mix', async () => {
         let pendingId = '';
         scriptProvider([{ calls: MIX_PLAN }, { calls: BASS_GAIN_PLAN, refines: () => pendingId }]);
         pendingId = await proposeTheMix();
 
         await sendChatMessage(BASS_GAIN_PROMPT);
 
+        expect(proposedIds()).toEqual([pendingId]);
+        expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'proposed', supersededBy: null });
+        expect(lastAssistantMessage()?.content).toContain('omits');
+        expect(getTrack('track-bass')).toMatchObject({ gain: 1 });
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
+    });
+
+    it('puts a low-risk one-command refinement to the user after explicit removals', async () => {
+        let pendingId = '';
+        scriptProvider([{ calls: MIX_PLAN }, { calls: INCOMPLETE_REFINEMENT_PLAN, refines: () => pendingId }]);
+        pendingId = await proposeTheMix();
+
+        await sendChatMessage(
+            'Set Lead Vocal gain to 80%, leaving Drum Bus unchanged. Drop Guitar Left pan, drop Guitar Right pan, and drop Room Mic mute from the pending proposal.'
+        );
+
         const [replacementId] = proposedIds();
         expect(getPendingActionConfirmation(replacementId ?? '')).toMatchObject({
             status: 'proposed',
             supersedes: pendingId,
-            actions: [{ type: 'setTrackGain', payload: { trackId: 'track-bass', gain: 0.5 } }],
         });
-        expect(getPendingActionConfirmation(pendingId)).toMatchObject({
-            status: 'invalidated',
-            supersededBy: replacementId,
-        });
-        expect(getTrack('track-bass')).toMatchObject({ gain: 1 });
-        expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
+        expect(getPendingActionConfirmation(replacementId ?? '')?.actions).toHaveLength(1);
+        expect(getPendingActionConfirmation(pendingId)?.supersededBy).toBe(replacementId);
+        expectMixUntouched();
     });
 
     describe('refuses a refinement the planner may not make, and keeps the pending card', () => {
@@ -543,6 +639,62 @@ describe('refining the pending proposal', () => {
                 error: expect.stringContaining(NO_LONGER_PENDING) as string,
             });
             expectMixUntouched();
+        });
+
+        it('refuses a replacement while cancellation waits on temporary-asset cleanup', async () => {
+            let pendingId = '';
+            let releaseCleanup!: () => void;
+            const cleanupGate = new Promise<void>((resolve) => {
+                releaseCleanup = resolve;
+            });
+            scriptProvider([
+                { calls: MIX_PLAN },
+                {
+                    calls: REFINED_PLAN,
+                    refines: () => pendingId,
+                    beforeProposal: async () => {
+                        expect(await cancelPendingChatActions({ confirmationId: pendingId })).toEqual({
+                            status: 'cleanup-pending',
+                        });
+                        expect(getPendingActionConfirmation(pendingId)?.status).toBe('proposed');
+                    },
+                },
+            ]);
+            pendingId = await proposeTheMix();
+            const originalRunId = getPendingActionConfirmation(pendingId)?.runId;
+            if (!originalRunId) {
+                throw new Error('Expected the pending card to own a run.');
+            }
+            agentRunLifecycle.registerTemporaryAsset({
+                runId: originalRunId,
+                assetId: 'refinement-cancellation-gate',
+                kind: 'other',
+                cleanupOwner: 'refinement-test',
+            });
+            const unregister = agentRunCancellation.registerTemporaryAssetCleanup({
+                runId: originalRunId,
+                assetId: 'refinement-cancellation-gate',
+                cleanupOwner: 'refinement-test',
+                cleanup: () => cleanupGate,
+            });
+
+            try {
+                await sendChatMessage(REFINEMENT_PROMPT);
+
+                expect(readRun(originalRunId)?.phase).toBe('cancelled');
+                expect(proposedIds()).toEqual([pendingId]);
+                expect(getPendingActionConfirmation(pendingId)).toMatchObject({
+                    status: 'proposed',
+                    supersededBy: null,
+                });
+                expect(lastAssistantMessage()).toMatchObject({
+                    error: expect.stringContaining(NO_LONGER_PENDING) as string,
+                });
+                expectMixUntouched();
+            } finally {
+                releaseCleanup();
+                unregister();
+            }
         });
 
         it('replaced by a re-preview', async () => {

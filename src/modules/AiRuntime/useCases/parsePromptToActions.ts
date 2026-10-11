@@ -40,7 +40,7 @@ import {
     tryCompoundFastPath,
 } from '../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../transformers/toolCallParser';
-import { admitProposalRefinement } from '../validators/admitProposalRefinement';
+import { admitProposalRefinement, validateRefinedProposalActions } from '../validators/admitProposalRefinement';
 
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
@@ -1048,6 +1048,23 @@ const planPromptIntent = inject({ logger })(
                             rejectionReason: 'Provider action conflicts with locked production intent.',
                         };
                     }
+                    if (refinement.status === 'refines') {
+                        const preservation = validateRefinedProposalActions({
+                            confirmationId: refinement.confirmationId,
+                            actions: [stemImport.action],
+                            prompt,
+                            context,
+                        });
+                        if (preservation.status === 'refused') {
+                            return {
+                                actions: [],
+                                rawText: prompt,
+                                requiresConfirmation: false,
+                                ...applicationToolReceiptFields,
+                                rejectionReason: `Provider action rejected: ${preservation.reason}`,
+                            };
+                        }
+                    }
                     return {
                         actions: [stemImport.action],
                         rawText: prompt,
@@ -1097,6 +1114,23 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
                 if (grounded.status === 'grounded') {
+                    if (refinement.status === 'refines') {
+                        const preservation = validateRefinedProposalActions({
+                            confirmationId: refinement.confirmationId,
+                            actions: grounded.actions,
+                            prompt,
+                            context,
+                        });
+                        if (preservation.status === 'refused') {
+                            return {
+                                actions: [],
+                                rawText: prompt,
+                                requiresConfirmation: false,
+                                ...applicationToolReceiptFields,
+                                rejectionReason: `Provider action rejected: ${preservation.reason}`,
+                            };
+                        }
+                    }
                     return {
                         actions: grounded.actions,
                         ...(grounded.actionCommandGraph === undefined

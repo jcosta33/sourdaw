@@ -22,7 +22,7 @@ type ProposalCommandDiff = { changes: ProposalCommandChange[]; unchangedCount: n
  */
 const TARGET_IDENTITY_FIELDS = ['trackId', 'busId', 'deviceId', 'parameterId', 'sendId'] as const;
 
-type KeyedCommand = { key: string; actionType: string; label: string; payload: Readonly<Record<string, unknown>> };
+type KeyedCommand = { identity: string; actionType: string; label: string; payload: Readonly<Record<string, unknown>> };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -35,16 +35,12 @@ function targetIdentity(actionType: string, payload: Readonly<Record<string, unk
     return [actionType, ...targets].join('|');
 }
 
-/** Each command under its identity, numbered within it, so two alike commands pair in order. */
+/** Keep the command's target identity and payload separate so exact occurrences can pair first. */
 function keyCommands(proposal: ProposalCommands): KeyedCommand[] {
-    const occurrences = new Map<string, number>();
     return proposal.actions.map((action, index) => {
         const payload = isRecord(action.payload) ? action.payload : {};
-        const identity = targetIdentity(action.type, payload);
-        const occurrence = occurrences.get(identity) ?? 0;
-        occurrences.set(identity, occurrence + 1);
         return {
-            key: `${identity}#${String(occurrence)}`,
+            identity: targetIdentity(action.type, payload),
             actionType: action.type,
             label: proposal.actionLabels[index] ?? action.type,
             payload,
@@ -92,25 +88,47 @@ function changedFields(
  * was added or removed. Commands left exactly as they were are counted, not listed.
  */
 export function diffProposalCommands(previous: ProposalCommands, next: ProposalCommands): ProposalCommandDiff {
-    const unmatchedPrevious = new Map(keyCommands(previous).map((command) => [command.key, command]));
+    const previousCommands = keyCommands(previous);
+    const nextCommands = keyCommands(next);
+    const matchedPrevious = new Set<number>();
+    const exactNext = new Set<number>();
+    // Preserve exact occurrences before pairing changed peers. Removing the first of two clips on
+    // one track must leave the second clip unchanged even though its occurrence number shifted.
+    for (const [nextIndex, command] of nextCommands.entries()) {
+        const previousIndex = previousCommands.findIndex(
+            (candidate, index) =>
+                !matchedPrevious.has(index) &&
+                candidate.identity === command.identity &&
+                canonicalJson(candidate.payload) === canonicalJson(command.payload)
+        );
+        if (previousIndex >= 0) {
+            matchedPrevious.add(previousIndex);
+            exactNext.add(nextIndex);
+        }
+    }
     const changes: ProposalCommandChange[] = [];
-    let unchangedCount = 0;
-    for (const command of keyCommands(next)) {
-        const counterpart = unmatchedPrevious.get(command.key);
-        if (counterpart === undefined) {
+    for (const [nextIndex, command] of nextCommands.entries()) {
+        if (exactNext.has(nextIndex)) {
+            continue;
+        }
+        const previousIndex = previousCommands.findIndex(
+            (candidate, index) => !matchedPrevious.has(index) && candidate.identity === command.identity
+        );
+        if (previousIndex < 0) {
             changes.push({ kind: 'added', actionType: command.actionType, label: command.label });
             continue;
         }
-        unmatchedPrevious.delete(command.key);
-        const fields = changedFields(counterpart.payload, command.payload);
+        matchedPrevious.add(previousIndex);
+        const fields = changedFields(previousCommands[previousIndex]!.payload, command.payload);
         if (fields.length === 0) {
-            unchangedCount += 1;
             continue;
         }
         changes.push({ kind: 'changed', actionType: command.actionType, label: command.label, fields });
     }
-    for (const command of unmatchedPrevious.values()) {
-        changes.push({ kind: 'removed', actionType: command.actionType, label: command.label });
+    for (const [index, command] of previousCommands.entries()) {
+        if (!matchedPrevious.has(index)) {
+            changes.push({ kind: 'removed', actionType: command.actionType, label: command.label });
+        }
     }
-    return { changes, unchangedCount };
+    return { changes, unchangedCount: exactNext.size };
 }

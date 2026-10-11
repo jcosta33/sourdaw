@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest';
+
+import { diffProposalCommands } from './diffProposalCommands';
+
+describe('diffProposalCommands', () => {
+    it('retains the actual unchanged occurrence when an earlier clip on the same track is removed', () => {
+        const bar1 = { type: 'addClip', payload: { trackId: 'midi-1', startBeat: 0, endBeat: 4 } };
+        const bar2 = { type: 'addClip', payload: { trackId: 'midi-1', startBeat: 4, endBeat: 8 } };
+
+        expect(
+            diffProposalCommands(
+                { actions: [bar1, bar2], actionLabels: ['Bar 1', 'Bar 2'] },
+                { actions: [bar2], actionLabels: ['Bar 2'] }
+            )
+        ).toEqual({
+            changes: [{ kind: 'removed', actionType: 'addClip', label: 'Bar 1' }],
+            unchangedCount: 1,
+        });
+    });
+
+    it('pairs repeated reordered commands exactly before reporting changed and added peers', () => {
+        const first = { type: 'addClip', payload: { trackId: 'midi-1', startBeat: 0, endBeat: 4 } };
+        const second = { type: 'addClip', payload: { trackId: 'midi-1', startBeat: 4, endBeat: 8 } };
+        const changed = { type: 'addClip', payload: { trackId: 'midi-1', startBeat: 0, endBeat: 6 } };
+        const added = { type: 'addClip', payload: { trackId: 'midi-2', startBeat: 8, endBeat: 12 } };
+
+        expect(
+            diffProposalCommands(
+                { actions: [first, second], actionLabels: ['Bar 1', 'Bar 2'] },
+                { actions: [second, changed, added], actionLabels: ['Bar 2', 'Long bar 1', 'New clip'] }
+            )
+        ).toEqual({
+            changes: [
+                {
+                    kind: 'changed',
+                    actionType: 'addClip',
+                    label: 'Long bar 1',
+                    fields: [{ field: 'endBeat', previous: '4', next: '6' }],
+                },
+                { kind: 'added', actionType: 'addClip', label: 'New clip' },
+            ],
+            unchangedCount: 1,
+        });
+    });
+});
