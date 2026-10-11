@@ -3704,6 +3704,9 @@ timeout() { shift 2; "$@"; }
 sleep() { printf '%s\\n' "$1" >> "$SLEEP_LOG"; }
 apt-get() {
   if [ "$1" = update ]; then
+    if [ "\${STALL_ALSA_CHILD:-false}" = true ]; then
+      while :; do :; done
+    fi
     attempt_count=0
     while IFS= read -r _; do attempt_count=$((attempt_count + 1)); done < "$ATTEMPT_LOG"
     attempt_count=$((attempt_count + 1))
@@ -3732,7 +3735,11 @@ export -f sudo timeout sleep apt-get
 
     // Executes the published ALSA loop with exported Bash functions so every
     // command stays hermetic while the real nested `bash -c` and retry branches run.
-    const runAlsaInstall = (run: string, succeedOnAttempt: number): AlsaProbeResult => {
+    const runAlsaInstall = (
+        run: string,
+        succeedOnAttempt: number,
+        options: { stallChild?: boolean; timeoutMs?: number } = {}
+    ): AlsaProbeResult => {
         const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
         const attemptLog = join(probeDirectory, 'attempts.log');
         const sleepLog = join(probeDirectory, 'sleeps.log');
@@ -3749,8 +3756,9 @@ export -f sudo timeout sleep apt-get
                     ATTEMPT_LOG: attemptLog,
                     SLEEP_LOG: sleepLog,
                     SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
+                    STALL_ALSA_CHILD: String(options.stallChild ?? false),
                 },
-                timeout: ALSA_PROBE_TIMEOUT_MS,
+                timeout: options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS,
             });
             const error = result.error;
             const outcome: AlsaProbeResult = {
@@ -3763,7 +3771,7 @@ export -f sudo timeout sleep apt-get
                 error,
             };
             if (outcome.error !== undefined || outcome.status === null || outcome.signal !== null) {
-                throw new Error(describeAlsaProbeFailure(outcome));
+                throw Object.assign(new Error(describeAlsaProbeFailure(outcome)), { probeDirectory });
             }
             const lines = (path: string): string[] => readFileSync(path, 'utf8').split('\n').filter(Boolean);
             return { ...outcome, attempts: lines(attemptLog).length, sleeps: lines(sleepLog) };
@@ -3814,34 +3822,38 @@ export -f sudo timeout sleep apt-get
     }
 
     it('reports a stalled ALSA child timeout and cleans up its fixture before the test deadline', () => {
-        const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-stall-'));
-        const preludePath = join(probeDirectory, 'functions.bash');
-        try {
-            writeFileSync(preludePath, alsaCommandFunctions);
-            const result = spawnSync('bash', ['-c', 'while :; do :; done'], {
-                encoding: 'utf8',
-                env: { ...process.env, BASH_ENV: preludePath },
-                timeout: 100,
-            });
-            const error = result.error;
-            const outcome: AlsaProbeResult = {
-                attempts: 0,
-                sleeps: [],
-                status: result.status,
-                signal: result.signal,
-                errorCode: error?.code ?? null,
-                stderr: result.stderr,
-                error,
-            };
-            if (outcome.errorCode !== 'ETIMEDOUT' || outcome.signal !== 'SIGTERM') {
-                throw new Error(`Expected a bounded stalled-child timeout; ${describeAlsaProbeFailure(outcome)}`);
+        const failure = (() => {
+            try {
+                const alsaRun = stringAt(
+                    stepNamed(jobAt(validationWorkflow, 'rust'), 'Install ALSA development headers'),
+                    'run'
+                );
+                runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER, { stallChild: true, timeoutMs: 100 });
+                throw new Error('Expected the stalled ALSA child to fail with a bounded timeout');
+            } catch (error) {
+                if (!(error instanceof Error)) {
+                    throw error;
+                }
+                return {
+                    message: error.message,
+                    probeDirectory:
+                        'probeDirectory' in error && typeof error.probeDirectory === 'string'
+                            ? error.probeDirectory
+                            : undefined,
+                };
             }
-            expect(outcome.errorCode).toBe('ETIMEDOUT');
-            expect(outcome.signal).toBe('SIGTERM');
-        } finally {
-            rmSync(probeDirectory, { force: true, recursive: true });
+        })();
+        expect(failure.message).toContain('error=ETIMEDOUT; status=null; signal=SIGTERM');
+        expect(failure.message.length).toBeLessThanOrEqual(
+            'ALSA probe child failed: error=ETIMEDOUT; status=null; signal=SIGTERM; stderr='.length +
+                MAX_ALSA_PROBE_STDERR_CHARACTERS +
+                '(empty)'.length
+        );
+        expect(failure.probeDirectory).toBeDefined();
+        if (failure.probeDirectory === undefined) {
+            throw new Error('The ALSA probe did not expose its fixture directory');
         }
-        expect(existsSync(probeDirectory)).toBe(false);
+        expect(existsSync(failure.probeDirectory)).toBe(false);
     });
 
     it('fails every Linux browser install step after its third failed attempt', () => {

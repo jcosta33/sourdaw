@@ -20,6 +20,8 @@ The validation and nightly retry probes executed the published loop through four
 
 Probe the actual published loop with exported Bash functions loaded in its nested `bash -c`, a Bash-builtin attempt count, and a child deadline below Vitest's limit. Preserve exact three-attempt, 15/30-second backoff, early-success, and fatal-final-failure observations; remove later retries and force a successful final exit in separate mutations and require the corresponding assertions to fail. Stall a direct child deliberately and require `ETIMEDOUT`/`SIGTERM`, bounded child diagnostics, and fixture cleanup before the outer test limit. Do not infer machine load, add wall-time assertions, or raise Vitest's deadline.
 
+Drive the stalled child through the same helper and fixture boundary used by the successful retry probes. A standalone child with a separate fixture can report timeout and cleanup while the retry helper's timeout guard is deleted. On the committed head, deleting that guard and deleting its cleanup must each fail the stalled-child case.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
