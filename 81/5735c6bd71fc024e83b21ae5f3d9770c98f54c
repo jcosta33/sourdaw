@@ -1,0 +1,22 @@
+scripts/__tests__/prValidationScope.spec.ts
+  h_beb54bf43b47b7 383,399-405,526,529-533,650-652,779-788,927-929,1272-1273,1291,1481,1483,1508-1628
+scripts/e2eCollectorInventory.ts
+  h_beb54bf43b47b7 1-113
+scripts/prValidationScope.ts
+  h_beb54bf43b47b7 7,170-172,577-582
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  h_beb54bf43b47b7 167
+scripts/__tests__/e2eShardPartition.spec.ts
+  h_beb54bf43b47b7 2,112-113,115-117,120-125,126-127,130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "815735c6bd71fc024e83b21ae5f3d9770c98f54c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
