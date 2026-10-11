@@ -374,16 +374,20 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
         retiredTakeIds: ['take-1'],
     };
 
-    it('undo leg retires the right half takes and captures them into the shared payload array', () => {
+    it('undo leg stages right half takes without mutating shared history before commit', () => {
         mockedRemoveTakes.mockReturnValue([retiredLane]);
         const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
         const action = makeTakeLaneAction(makeSnapshot(), makeSnapshot({ rightClip: null }), retiredTakeLanes);
 
         const result = handleRestoreClipSplitState.execute(action);
 
-        expect(result).toEqual({ status: 'written' });
+        expect(result).toMatchObject({
+            status: 'written',
+            afterCommit: expect.any(Function),
+            afterAmbiguousCommit: expect.any(Function),
+        });
         expect(mockedRemoveTakes).toHaveBeenCalledWith(['c2']);
-        expect(retiredTakeLanes).toEqual([retiredLane]);
+        expect(retiredTakeLanes).toEqual([]);
         expect(mockedRestoreTakes).not.toHaveBeenCalled();
     });
 

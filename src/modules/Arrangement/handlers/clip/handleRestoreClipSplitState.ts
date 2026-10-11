@@ -1,3 +1,8 @@
+import {
+    captureDurableDocumentWitness,
+    captureProjectMutationAuthorization,
+    getCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
@@ -108,6 +113,22 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         if (!clipSplitStateMatches(action)) {
             return { status: 'conflict' };
         }
+        const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
+        const documentBeforeReplay = capture ? captureDurableDocumentWitness() : null;
+        const ownsPublication = capture ? captureProjectMutationAuthorization() : null;
+        // Bind inside this handler's storage transaction, before any owner writes.
+        ownsPublication?.();
+        let stagedRetired: ReturnType<typeof removeTakesForClips> = [];
+        const installCapture = () => {
+            if (
+                capture &&
+                getCrdtDoc('root') &&
+                captureDurableDocumentWitness() !== documentBeforeReplay &&
+                ownsPublication?.()
+            ) {
+                capture.splice(0, capture.length, ...stagedRetired);
+            }
+        };
         const trackRestored = replaceClipSplitTrackState(action.payload);
         if (!trackRestored) {
             return { status: 'conflict' };
@@ -139,16 +160,15 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             }
         }
         // Undo leg: the replacement carries no right clip, so the track restore
-        // just filtered it out — retire its take lanes too, capturing them into
-        // the shared payload array so the paired redo can put back a take that
+        // just filtered it out — retire its take lanes too, staging their capture
+        // so the paired redo can put back a take that
         // landed on the right half after the split. Runs only after every
         // conflict-prone step passed, so a conflict retires nothing. The type is
         // `ClipStateSnapshot | null` and `prepareClipSplit` writes `null`, so the
         // discriminator is falsiness — `=== undefined` never fires on a real
         // payload, which is how the first cut of this leg silently never ran.
         if (!action.payload.replacement.rightClip) {
-            const retired = removeTakesForClips([action.payload.rightClipId]);
-            action.payload.retiredTakeLanes?.splice(0, action.payload.retiredTakeLanes.length, ...retired);
+            stagedRetired = removeTakesForClips([action.payload.rightClipId]);
             // The split's re-key (#5048) rides the shared payload array: with
             // the clips back on the track, the pre-split take/comp-region
             // facets go back over the fragmented ones.
@@ -158,6 +178,11 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             // the undo retired from it and re-apply the split's re-key.
             restoreTakesForClip(action.payload.retiredTakeLanes ?? []);
             applyTakeReKeyTransitions(action.payload.reKeyedTakeLanes ?? []);
+        }
+        // The paired arrays belong to history, outside the project transaction.
+        // Publish their staged capture only once this exact owner committed.
+        if (capture) {
+            return { status: 'written', afterCommit: installCapture, afterAmbiguousCommit: installCapture };
         }
         return { status: 'written' };
     },

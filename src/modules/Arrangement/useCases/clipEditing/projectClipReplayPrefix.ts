@@ -2,6 +2,7 @@ import { getAutomationLanes, isExactAutomationLaneSnapshots } from '#/modules/Au
 import { type AppAction, type ClipAutomationLaneSnapshot, type ClipSnapshot } from '#/utils/handlerContract';
 
 import { getTrackStoreState } from '../getTrackStoreState';
+import { planRippleDelete } from '../rippleDelete/planRippleDelete';
 
 type LocatedClip = { owningTrackId: string; clip: ClipSnapshot };
 type ShiftedOwnerState = {
@@ -9,7 +10,55 @@ type ShiftedOwnerState = {
     lanes: readonly ClipAutomationLaneSnapshot[];
 };
 
-/** Exactly the geometry and automation `undoRippleDelete` writes, in group order.
+function projectRemoval(state: ShiftedOwnerState, clipId: string): ShiftedOwnerState | null {
+    const target = state.clips.find((owner) => owner.clip.id === clipId);
+    if (!target) {
+        return null;
+    }
+    const plan = planRippleDelete(
+        { trackId: target.owningTrackId, clipIds: [clipId] },
+        {
+            tracks: [
+                {
+                    id: target.owningTrackId,
+                    clips: state.clips
+                        .filter((owner) => owner.owningTrackId === target.owningTrackId)
+                        .map((owner) => owner.clip),
+                },
+            ],
+        }
+    );
+    if (!plan) {
+        return null;
+    }
+    const remaining = new Map(plan.nextClips.map((clip) => [clip.id, clip]));
+    const shifts = new Map(plan.shiftedClips.map((shift) => [shift.clipId, shift.automationDelta]));
+    return {
+        clips: state.clips.flatMap((owner) => {
+            if (owner.owningTrackId !== target.owningTrackId) {
+                return [owner];
+            }
+            const clip = remaining.get(owner.clip.id);
+            return clip ? [{ ...owner, clip }] : [];
+        }),
+        lanes: state.lanes
+            .filter((lane) => lane.clipId !== clipId)
+            .map((lane) => {
+                const delta = lane.clipId === undefined ? undefined : shifts.get(lane.clipId);
+                if (delta === undefined || delta === 0) {
+                    return lane;
+                }
+                return {
+                    ...lane,
+                    points: lane.points
+                        .map((point) => ({ ...point, beat: Math.max(0, point.beat + delta) }))
+                        .sort((left, right) => left.beat - right.beat),
+                };
+            }),
+    };
+}
+
+/** Exactly the geometry and automation clip removal and `undoRippleDelete` write, in group order.
  * Restored lanes matter even when that earlier removal did not ripple: a later
  * inverse may shift the clip the earlier inverse just brought back. */
 export function projectClipReplayPrefix(priorActions: readonly AppAction[] = []): ShiftedOwnerState | null {
@@ -19,6 +68,14 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
         lanes: getAutomationLanes(),
     };
     for (const action of priorActions) {
+        if (action.type === 'removeClip') {
+            const removal = projectRemoval(state, action.payload.clipId);
+            if (!removal) {
+                return null;
+            }
+            state = removal;
+            continue;
+        }
         if (action.type === 'restoreClipSplitState') {
             const { clipId, rightClipId, replacement } = action.payload;
             const trackClips = state.clips
