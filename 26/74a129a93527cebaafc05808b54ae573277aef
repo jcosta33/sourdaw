@@ -1,0 +1,39 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/fermenterOscWaveformOfflineParity.spec.ts
+  s_29d8df116c5b92::t_256935cc4a33e5 109
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture.ts
+  s_441e828df58f9e::t_be8bd7ff945c27 143-148,159-162,174
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_29d8df116c5b92::t_0a752df7e848e3 94
+src/modules/AudioEngine/useCases/livePlayback/projectLiveAutomationWrites.ts
+  s_29d8df116c5b92::t_338ab5e1c7a2d6 118-119,179,241
+src/modules/AudioEngine/useCases/livePlayback/readLiveAutomationWrites.ts
+  s_29d8df116c5b92::t_52f264be95b55c 241
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts
+  s_29d8df116c5b92::t_52149f9bb1366e 100
+src/modules/AudioEngine/useCases/offlineRender/projectStripAutomationWrites.ts
+  s_29d8df116c5b92::t_537276ed79a890 116-117,279,324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2674a129a93527cebaafc05808b54ae573277aef",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_441e828df58f9e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2845244a-811e-4f69-a89a-e2b3d9dedcec",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
