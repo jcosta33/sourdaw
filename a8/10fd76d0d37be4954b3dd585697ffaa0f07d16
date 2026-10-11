@@ -1,0 +1,19 @@
+scripts/test-health-gate-scripts.sh
+  s_29d8df116c5b92::t_3a00047af6298c 975-979,982,989-990,995-996,998,1000-1005,1007-1024
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a810fd76d0d37be4954b3dd585697ffaa0f07d16",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
