@@ -24,13 +24,13 @@ import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { type ThreadContext } from '../models/ThreadContext';
-import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 import {
     isWorkflowCapabilityId,
     WORKFLOW_ACTION_TOOL_NAMES,
     WORKFLOW_CAPABILITY_TOOL_NAME,
     type WorkflowCapabilityId,
 } from '../models/WorkflowCapability';
+import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 import { buildPlanningSystemPrompt } from '../transformers/buildPlanningSystemPrompt';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
