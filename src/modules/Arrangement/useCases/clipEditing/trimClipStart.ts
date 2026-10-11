@@ -83,11 +83,18 @@ export function trimClipStart(clipId: string, newStartBeat: number): boolean {
                 // A trim advances the content offset but never the loop anchor:
                 // the loop window and the pass count stay anchored to the source
                 // (#4988). A clip born looped gets its anchor at this first trim;
-                // an already-anchored clip keeps theirs. The key is written only
-                // when an anchor results — an explicit-undefined key is a shape
-                // no clip writer may leave behind (#4988).
+                // an already-anchored clip keeps theirs. The mint only fires when
+                // the trim advances the head (the start moves right): the inverse
+                // leg of a pre-anchor undo entry replays `trimClipStart` at the
+                // pre-trim start — a leftward move — and anchoring there derives a
+                // negative advance whose window silences the restored head
+                // (#5198), so a replayed entry stays anchorless at the pre-anchor
+                // reading, advance zero. The key is written only when an anchor
+                // results — an explicit-undefined key is a shape no clip writer
+                // may leave behind (#4988).
                 ...loopOriginEntry(
-                    context.loopOriginBeat ?? (context.loopEnabled === true ? context.startBeat : undefined)
+                    context.loopOriginBeat ??
+                        (context.loopEnabled === true && startBeat >= context.startBeat ? context.startBeat : undefined)
                 ),
             };
             if (context.type === 'midi') {

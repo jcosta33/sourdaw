@@ -16,6 +16,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip, type Track } from '../../../models/Track';
 import { crossfadeClips } from '../crossfadeClips';
+import { restoreCrossfadeClips } from '../restoreCrossfadeClips';
 
 import type * as trackStateRepo from '../../../repositories/track/getTrackState';
 import type * as mapAllTracksRepo from '../../../repositories/track/mapAllTracks';
@@ -450,7 +451,7 @@ describe('crossfadeClips', () => {
     it('keeps an unstretched looped clip B anchor and region exactly', () => {
         // Stretch off ignores the dormant ratio: contentDelta equals
         // clipBDelta, the anchor shift is zero, and the carried anchor keeps
-        // the advance at −0.25 so the region stays the source's own.
+        // the advance at −0.5 so the region stays the source's own.
         const clips = [
             makeClip('a', 0, 8),
             makeClip('b', 8, 16, {
@@ -497,5 +498,69 @@ describe('crossfadeClips', () => {
         const result = capturedMapper()(makeTrack(clips));
         const clipB = result.clips.find((context) => context.id === 'b');
         expect(clipB).toMatchObject({ startBeat: 7.5, midiOffsetBeats: 3.5, loopOriginBeat: 8 });
+    });
+});
+
+describe('restoreCrossfadeClips — the undo leg restores the captured anchor (#5198)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'a' });
+    });
+
+    function postCrossfadeClips(): Clip[] {
+        // What the forward leg left: start 7.5, offset 3, anchor shifted to
+        // 8.5 (advance -0.5, region still 4).
+        return [
+            makeClip('a', 0, 8.5, { fadeOutBeats: 1 }),
+            makeClip('b', 7.5, 16, {
+                stretchMode: 'timestretch',
+                stretchRatio: 2.0,
+                audioOffsetBeats: 3,
+                fadeInBeats: 1,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 8.5,
+            }),
+        ];
+    }
+
+    it('round-trips the anchor and region of a stretched crossfade to the pre-crossfade values', () => {
+        const replacement = {
+            clipAEndBeat: 8,
+            clipAFadeOutBeats: 0,
+            clipBStartBeat: 8,
+            clipBFadeInBeats: 0,
+            clipBAudioOffsetBeats: 4,
+            clipBLoopOriginBeat: 8,
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(postCrossfadeClips())], selectedTrackId: 't1' });
+
+        expect(restoreCrossfadeClips({ clipAId: 'a', clipBId: 'b', replacement })).toBe(true);
+
+        const result = capturedMapper()(makeTrack(postCrossfadeClips()));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        if (!clipB) {
+            throw new Error('expected clip B in the mapper result');
+        }
+        expect(clipB).toMatchObject({ startBeat: 8, audioOffsetBeats: 4, loopOriginBeat: 8 });
+        const advance = clipB.startBeat - (clipB.loopOriginBeat ?? clipB.startBeat);
+        expect((clipB.audioOffsetBeats ?? 0) - advance).toBe(4);
+    });
+
+    it('decodes a legacy replacement without the anchor and leaves the live anchor untouched', () => {
+        const replacement = {
+            clipAEndBeat: 8,
+            clipAFadeOutBeats: 0,
+            clipBStartBeat: 8,
+            clipBFadeInBeats: 0,
+            clipBAudioOffsetBeats: 4,
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(postCrossfadeClips())], selectedTrackId: 't1' });
+
+        expect(restoreCrossfadeClips({ clipAId: 'a', clipBId: 'b', replacement })).toBe(true);
+
+        const result = capturedMapper()(makeTrack(postCrossfadeClips()));
+        const clipB = result.clips.find((context) => context.id === 'b');
+        expect(clipB).toMatchObject({ startBeat: 8, audioOffsetBeats: 4, loopOriginBeat: 8.5 });
     });
 });

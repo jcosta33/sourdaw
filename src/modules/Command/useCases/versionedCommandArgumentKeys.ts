@@ -3353,6 +3353,7 @@ const schemaDefinitions = [
             clipBFadeInBeats: 1,
             clipBAudioOffsetBeats: 1,
             clipBMidiOffsetBeats: 1,
+            clipBLoopOriginBeat: 1,
         },
         required: ['clipAEndBeat', 'clipAFadeOutBeats', 'clipBStartBeat', 'clipBFadeInBeats'],
         additionalProperties: false,
@@ -3783,6 +3784,7 @@ const schemaDefinitions = [
         properties: {
             present: 42,
             enabled: 42,
+            loopOriginBeat: 1,
         },
         required: ['present', 'enabled'],
         additionalProperties: false,

@@ -67,36 +67,45 @@ function findWritableMidiClip(context: ProjectContext, clipId: unknown) {
  * The span of clip content that actually sounds, in the clip's own media coordinates. The scheduler
  * reads notes at `note.startBeat - midiOffsetBeats` and admits them against the anchored loop
  * window — the half-open region the clip was looped with, carried backwards by the trim advance in
- * offset-relative coordinates (`isBeatInClipLoopWindow`, #4988) — so a start trim opens the window
- * `advance` beats below the offset: notes in the trimmed-away head range sit outside it and are
- * dropped, and the wrapped region head below the pre-anchor floor is played. This window follows
- * that law; the span cap stays the pre-anchor one, because a clip shorter than its own loop never
- * plays a whole iteration: every scheduler truncates one at the clip end, so the content the first
- * pass sounds is whichever of the two is shorter. A four-beat clip looping every sixty-four beats
- * would otherwise accept a note at beat sixty that no route ever reaches.
- *
- * An absent anchor — or a stale one with the loop off, the anchor being inert there — advances zero,
- * which reproduces the pre-anchor window `[offset, offset + min(loop, span))` exactly.
+ * offset-relative coordinates (`isBeatInClipLoopWindow`, #4988) — and against each pass's span: a
+ * pass enters at the advance's phase and sounds `min(loopLength - advance, visualSpan)` beats of it,
+ * and the wrapped region head below the phase segment sounds only when the visual span runs past it
+ * (#5198). The window is that union: the phase segment
+ * `[offset, offset + min(loopLength - advance, visualSpan))` plus, when it sounds, the wrapped head
+ * `[offset - advance, ...)` capped by the span remainder and the anchored window. A zero advance —
+ * no anchor, or the anchor inert with the loop off — collapses the union to the single pre-anchor
+ * range `[offset, offset + min(loopLength, visualSpan))` exactly.
  */
 function clipContentWindow(clip: ProjectContextClip): ClipContentWindow | undefined {
     const startBeat = clip.midiOffsetBeats ?? 0;
+    const loopEnabled = clip.loopEnabled ?? false;
+    const clipSpanBeats = clip.endBeat - clip.startBeat;
     const { loopLengthBeats } = projectClipLoopExpansion({
-        clipDurationBeats: clip.endBeat - clip.startBeat,
+        clipDurationBeats: clipSpanBeats,
         configuredLoopLengthBeats: clip.loopLength,
-        loopEnabled: clip.loopEnabled ?? false,
+        loopEnabled,
     });
     const advance = resolveClipLoopOriginAdvance({
         startBeat: clip.startBeat,
         loopOriginBeat: clip.loopOriginBeat,
-        loopEnabled: clip.loopEnabled ?? false,
+        loopEnabled,
     });
-    const endBeat = startBeat - advance + Math.min(loopLengthBeats, clip.endBeat - clip.startBeat);
+    const windowFloor = -advance;
+    const windowCeiling = loopLengthBeats - advance;
+    const phaseStart = Math.max(0, windowFloor);
+    const phaseEnd = Math.min(clipSpanBeats, windowCeiling);
+    const headEnd = Math.min(0, clipSpanBeats - loopLengthBeats, windowCeiling);
     // A non-finite bound makes every comparison against it false, so an unguarded window would
     // admit any note at all rather than refusing the clip that cannot state where its content is.
-    if (!Number.isFinite(startBeat) || !Number.isFinite(endBeat)) {
+    if (!Number.isFinite(startBeat) || !Number.isFinite(phaseEnd)) {
         return undefined;
     }
-    return { endBeat, startBeat: startBeat - advance };
+    const window: ClipContentWindow = { endBeat: startBeat + phaseEnd, startBeat: startBeat + phaseStart };
+    if (headEnd > windowFloor) {
+        window.wrappedStartBeat = startBeat + windowFloor;
+        window.wrappedEndBeat = startBeat + headEnd;
+    }
+    return window;
 }
 
 function isIntegerInRange(value: unknown, minimum: number, maximum: number): value is number {

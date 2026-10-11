@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { type Clip, type Track, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { trimClipStart } from '#/modules/Arrangement/useCases';
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 import { setClipLoop } from '../../clipLoop/setClipLoop';
 
@@ -109,6 +110,48 @@ describe('trimClipStart loop anchoring', () => {
     it('stamps no anchor on a clip that was never looped', () => {
         expect(trimClipStart('c-plain', 2)).toBe(true);
         expect(readClip('c-plain').loopOriginBeat).toBeUndefined();
+    });
+
+    it('mints no anchor when a legacy undo entry replays the pre-trim start (#5198)', () => {
+        // A pre-anchor build left this born-looped clip trimmed to 4 and
+        // anchorless; its recorded inverse replays `trimClipStart(clipId, 0)`.
+        // Minting at the pre-restore start would derive advance 0 - 4 = -4,
+        // a window whose floor sits 4 beats above the head and silences the
+        // restored head. A replayed entry must stay anchorless: advance zero,
+        // the window opening at the head.
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [midiTrack([loopedClip({ id: 'c-legacy', startBeat: 4, endBeat: 16 })])],
+        });
+
+        expect(trimClipStart('c-legacy', 0)).toBe(true);
+
+        const restored = readClip('c-legacy');
+        expect(restored.startBeat).toBe(0);
+        expect(Object.hasOwn(restored, 'loopOriginBeat')).toBe(false);
+        expect(
+            resolveClipLoopOriginAdvance({
+                startBeat: restored.startBeat,
+                loopOriginBeat: restored.loopOriginBeat,
+                loopEnabled: restored.loopEnabled === true,
+            })
+        ).toBe(0);
+    });
+
+    it('mints no anchor when a born-looped clip is first extended leftward', () => {
+        // The same guard: a first start move that does not advance the head —
+        // a fresh extension leftward — keeps the pre-anchor reading instead of
+        // stamping a negative advance that silences the extension.
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [midiTrack([loopedClip({ id: 'c-extend', startBeat: 4, endBeat: 16 })])],
+        });
+
+        expect(trimClipStart('c-extend', 2)).toBe(true);
+
+        const extended = readClip('c-extend');
+        expect(extended.startBeat).toBe(2);
+        expect(Object.hasOwn(extended, 'loopOriginBeat')).toBe(false);
     });
 });
 

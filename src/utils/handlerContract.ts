@@ -2151,6 +2151,14 @@ export type AppAction =
                   clipBFadeInBeats: number;
                   clipBAudioOffsetBeats?: number;
                   clipBMidiOffsetBeats?: number;
+                  /**
+                   * The loop anchor the captured clip B carried, so the undo
+                   * of a stretched crossfade restores the pre-crossfade anchor
+                   * the forward leg displaced (#5198). Absent on legacy
+                   * entries, which decode and restore exactly as before: the
+                   * live anchor is left untouched.
+                   */
+                  clipBLoopOriginBeat?: number;
               };
               replacement: {
                   clipAEndBeat: number;
@@ -2159,6 +2167,7 @@ export type AppAction =
                   clipBFadeInBeats: number;
                   clipBAudioOffsetBeats?: number;
                   clipBMidiOffsetBeats?: number;
+                  clipBLoopOriginBeat?: number;
               };
           };
       }
@@ -2391,8 +2400,31 @@ export type AppAction =
           type: 'restoreClipLoop';
           payload: {
               clipId: string;
-              expected: { present: boolean; enabled: boolean };
-              replacement: { present: boolean; enabled: boolean };
+              expected: {
+                  present: boolean;
+                  enabled: boolean;
+                  /**
+                   * The loop anchor the captured clip carried (#5198). Absent
+                   * on legacy entries, which decode and behave exactly as
+                   * before. The compare-and-swap guard reads only present and
+                   * enabled: the anchor is inert while the loop is off, and a
+                   * legacy expected snapshot must not conflict with a live
+                   * anchor a later edit minted.
+                   */
+                  loopOriginBeat?: number;
+              };
+              replacement: {
+                  present: boolean;
+                  enabled: boolean;
+                  /**
+                   * The anchor to put back: the inverse of a loop disable
+                   * restores the pre-disable anchor instead of the enable
+                   * branch's restamp (#5198). Absent — legacy entries, or a
+                   * captured clip that carried none — replays the enable's
+                   * restamp exactly as before.
+                   */
+                  loopOriginBeat?: number;
+              };
           };
       }
     | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }

@@ -273,6 +273,69 @@ describe('midiStrategy', () => {
         });
     });
 
+    it('addNotes validates against the pass segment law when the visual span sits below the loop (#5198)', () => {
+        // A clip [5, 8) looping every 8 beats, anchor 0, offset 5: the trim
+        // advance is 5, the visual span 3. The schedulers sound the pass's
+        // phase segment [offset, offset + min(loop - advance, span)) = [5, 8)
+        // — the span never reaches the loop end, so the wrapped head below is
+        // silent. The old single range [offset - advance, offset - advance +
+        // min(loop, span)) = [0, 3) admitted exactly the silent material and
+        // refused the sounding phase segment.
+        const belowLoopContext: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                {
+                    ...projectContext.tracks[0]!,
+                    clips: [
+                        {
+                            id: 'clip-loop-below-span',
+                            name: 'Looped',
+                            type: 'midi',
+                            startBeat: 5,
+                            endBeat: 8,
+                            locked: false,
+                            muted: false,
+                            gain: 1,
+                            loopEnabled: true,
+                            loopLength: 8,
+                            loopOriginBeat: 0,
+                            midiOffsetBeats: 5,
+                            noteCount: 1,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        // Media 6 sits inside the phase segment the scheduler plays.
+        expect(
+            bridgeMidiToolCall({
+                call: {
+                    name: 'addNotes',
+                    arguments: { clipId: 'clip-loop-below-span', notes: [{ pitch: 60, startBeat: 6, duration: 1 }] },
+                },
+                context: belowLoopContext,
+                index: 0,
+            })
+        ).toEqual({
+            type: 'addNotes',
+            payload: { clipId: 'clip-loop-below-span', notes: [{ pitch: 60, startBeat: 6, duration: 1 }] },
+        });
+
+        // Media 1 sits in the wrapped head region the span never reaches: the
+        // scheduler is silent on it, so validation rejects it.
+        expect(
+            bridgeMidiToolCall({
+                call: {
+                    name: 'addNotes',
+                    arguments: { clipId: 'clip-loop-below-span', notes: [{ pitch: 62, startBeat: 1, duration: 1 }] },
+                },
+                context: belowLoopContext,
+                index: 0,
+            })
+        ).toMatchObject({ name: 'addNotes', reason: expect.stringContaining('falls outside') });
+    });
+
     it('addNotes keeps the pre-anchor window for an unanchored looped clip', () => {
         // Loop on but never anchored: the advance is zero and the window
         // stays `[offset, offset + min(loop, span))` = [0, 4) — the exact

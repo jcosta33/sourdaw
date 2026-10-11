@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+
 import { type Clip, createTrack } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
+import { trimClipStart } from '../../../useCases/clipEditing/trimClipStart';
 import { handleLockClip } from '../handleLockClip';
 import { handleMuteClip } from '../handleMuteClip';
 import { handleRestoreClipLoop } from '../handleRestoreClipLoop';
@@ -251,5 +254,69 @@ describe('clip metadata handler replay', () => {
         }
         expect(handleRestoreClipLoop.execute(description.inverseAction)).toEqual({ status: 'written' });
         expect(Object.hasOwn(trackStore.value?.tracks[0]?.clips[0] ?? {}, 'loopEnabled')).toBe(false);
+    });
+});
+
+describe('clip loop disable undo keeps the pre-disable anchor (#5198)', () => {
+    beforeEach(seedClip);
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    });
+
+    function runEnableTrimDisable() {
+        // Enable at 0 (anchor 0), trim the start to 4 (advance 4, region
+        // offset 4 - advance 4 = 0), then disable — the document now holds
+        // {loopEnabled: false, anchor 0, startBeat 4}.
+        expect(handleSetClipLoop.execute({ type: 'setClipLoop', payload: { clipId: clip.id, enabled: true } })).toEqual(
+            { status: 'written' }
+        );
+        expect(trimClipStart(clip.id, 4)).toBe(true);
+        const disableAction = { type: 'setClipLoop', payload: { clipId: clip.id, enabled: false } } as const;
+        const description = handleSetClipLoop.describe(disableAction);
+        expect(handleSetClipLoop.execute(disableAction)).toEqual({ status: 'written' });
+        return description;
+    }
+
+    it('restores the pre-disable anchor, advance, and loop window on undo', () => {
+        const description = runEnableTrimDisable();
+        if (description.inverseAction?.type !== 'restoreClipLoop') {
+            throw new Error('Expected exact loop inverse action');
+        }
+        // The inverse records the anchor the clip carried before the disable.
+        expect(description.inverseAction.payload.replacement).toEqual({
+            present: true,
+            enabled: true,
+            loopOriginBeat: 0,
+        });
+
+        expect(handleRestoreClipLoop.execute(description.inverseAction)).toEqual({ status: 'written' });
+        const restored = trackStore.value?.tracks[0]?.clips[0];
+        expect(restored).toMatchObject({ loopEnabled: true, loopOriginBeat: 0, startBeat: 4 });
+        const advance = resolveClipLoopOriginAdvance({
+            startBeat: restored!.startBeat,
+            loopOriginBeat: restored!.loopOriginBeat,
+            loopEnabled: restored!.loopEnabled === true,
+        });
+        expect(advance).toBe(4);
+        expect((restored!.audioOffsetBeats ?? 0) - advance).toBe(0);
+    });
+
+    it('replays a legacy entry recorded without the anchor exactly as before (enable restamp)', () => {
+        runEnableTrimDisable();
+        // A legacy inverse carries no anchor field: decoding it must behave
+        // exactly as before the field existed — the enable restamps at the
+        // live start.
+        const legacyInverse = {
+            type: 'restoreClipLoop',
+            payload: {
+                clipId: clip.id,
+                expected: { present: true, enabled: false },
+                replacement: { present: true, enabled: true },
+            },
+        } as const;
+        expect(handleRestoreClipLoop.execute(legacyInverse)).toEqual({ status: 'written' });
+        const restored = trackStore.value?.tracks[0]?.clips[0];
+        expect(restored).toMatchObject({ loopEnabled: true, loopOriginBeat: 4, startBeat: 4 });
     });
 });
