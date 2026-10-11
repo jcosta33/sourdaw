@@ -377,6 +377,15 @@ function temporaryRoot(): string {
     return folder;
 }
 
+function fixturePlaywright(root: string): void {
+    symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
+    writeFileSync(join(root, 'playwright.config.mjs'), "export default { testDir: './tests/e2e' };\n");
+}
+
+function fixtureBrowserCase(root: string, path: string): void {
+    writeFileSync(join(root, path), "import { test } from '@playwright/test';\ntest('fixture', () => {});\n");
+}
+
 function allSelected(plan: ReturnType<typeof selectValidationPlan>): string[] {
     return plan.matrix.include.flatMap((group) => group.specs).sort();
 }
@@ -497,10 +506,14 @@ describe('required affected verification', () => {
         }
     });
 
-    it('keeps the required planner source and spec in the Node tooling suite', () => {
+    it('keeps the planner, collector helper, and owning spec in the Node tooling suite', () => {
         expect(
             selectValidationPlan(
-                ['scripts/prValidationScope.ts', 'scripts/__tests__/prValidationScope.spec.ts'],
+                [
+                    'scripts/prValidationScope.ts',
+                    'scripts/e2eCollectorInventory.ts',
+                    'scripts/__tests__/prValidationScope.spec.ts',
+                ],
                 INVENTORY
             )
         ).toMatchObject({
@@ -617,8 +630,9 @@ describe('required affected verification', () => {
         git(['config', 'user.name', 'Scope test']);
         writeFileSync(join(root, '.gitignore'), 'output\npr-validation-scope.json\n');
         mkdirSync(join(root, 'tests/e2e'), { recursive: true });
-        writeFileSync(join(root, SMOKE_SPEC), '// smoke\n');
-        writeFileSync(join(root, 'tests/e2e/undo.spec.ts'), '// browser\n');
+        fixturePlaywright(root);
+        fixtureBrowserCase(root, SMOKE_SPEC);
+        fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
         writePackage(packageText(baseline));
         const base = commit('base');
 
@@ -745,6 +759,16 @@ describe('required affected verification', () => {
                 writeFileSync(fullPath, '// mixed change\n');
             }
             const caseHead = commit(testCase.name);
+            if (testCase.name === 'malformed JSON') {
+                const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    env: { ...process.env, BASE_SHA: caseBase, HEAD_SHA: caseHead, GITHUB_OUTPUT: output },
+                });
+                expect(result.status).toBe(1);
+                expect(result.stderr).toContain('Playwright collection failed');
+                continue;
+            }
             expectBroad(caseBase, caseHead);
         }
 
@@ -883,8 +907,9 @@ describe('required affected verification', () => {
         const root = temporaryRoot();
         const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
         mkdirSync(join(root, 'tests/e2e'), { recursive: true });
-        writeFileSync(join(root, SMOKE_SPEC), '// smoke fixture\n');
-        writeFileSync(join(root, 'tests/e2e/undo.spec.ts'), '// browser fixture\n');
+        fixturePlaywright(root);
+        fixtureBrowserCase(root, SMOKE_SPEC);
+        fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
         git(['init', '--quiet']);
         git(['config', 'user.email', 'ci@example.invalid']);
         git(['config', 'user.name', 'Scope test']);
@@ -1227,7 +1252,8 @@ describe('required affected verification', () => {
         const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
         mkdirSync(join(root, 'tests/e2e/nested/__tests__'), { recursive: true });
         mkdirSync(join(root, 'tests/e2e/__TESTS__'), { recursive: true });
-        writeFileSync(join(root, SMOKE_SPEC), '// smoke fixture\n');
+        fixturePlaywright(root);
+        fixtureBrowserCase(root, SMOKE_SPEC);
         writeFileSync(join(root, 'tests/e2e/nested/__tests__/excluded.test.ts'), '// excluded fixture\n');
         writeFileSync(join(root, 'tests/e2e/__TESTS__/ignored.test.ts'), '// excluded fixture\n');
         mkdirSync(join(root, 'tests/e2e/fake.spec.ts'));
@@ -1245,7 +1271,7 @@ describe('required affected verification', () => {
             'tests/e2e/nested/fourth.TEST.ts',
         ];
         for (const spec of added) {
-            writeFileSync(join(root, spec), '// new Playwright test\n');
+            fixtureBrowserCase(root, spec);
         }
         git(['add', '.']);
         git(['commit', '--quiet', '-m', 'add Playwright test']);
@@ -1435,8 +1461,9 @@ describe('required affected verification', () => {
         const root = temporaryRoot();
         const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
         mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        fixturePlaywright(root);
         for (const spec of INVENTORY) {
-            writeFileSync(join(root, spec), '// fixture\n');
+            fixtureBrowserCase(root, spec);
         }
         git(['init', '--quiet']);
         git(['config', 'user.email', 'ci@example.invalid']);
@@ -1460,5 +1487,126 @@ describe('required affected verification', () => {
         ]);
         expect(plan.browserAi).toBe(true);
         expect(readFileSync(output, 'utf8')).toContain('browser=true\n');
+    });
+
+    it('does not load unavailable Playwright for a browser-free plan', () => {
+        const root = temporaryRoot();
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        mkdirSync(join(root, 'scripts'), { recursive: true });
+        writeFileSync(join(root, SMOKE_SPEC), '// deliberately has no case\n');
+        writeFileSync(join(root, 'playwright.config.mjs'), "throw new Error('poison config loaded');\n");
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Scope test']);
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        const base = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, 'scripts/prValidationScope.ts'), 'export const changed = true;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'change planner']);
+        const output = join(root, 'output');
+        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+            browser: false,
+        });
+    });
+
+    it.each([
+        {
+            name: 'matching configured cases',
+            config: "testMatch: '**/*.spec.ts'",
+            extra: false,
+            cases: true,
+            passes: true,
+        },
+        {
+            name: 'matching cases repeated across projects',
+            config: "testMatch: '**/*.spec.ts', projects: [{ name: 'first' }, { name: 'second' }]",
+            extra: false,
+            cases: true,
+            passes: true,
+        },
+        {
+            name: 'configured testMatch omits a planned spec',
+            config: "testMatch: '**/smoke.spec.ts'",
+            extra: false,
+            cases: true,
+            passes: false,
+            diagnostic: 'absent=["tests/e2e/undo.spec.ts"]',
+        },
+        {
+            name: 'configured testIgnore omits a planned spec',
+            config: "testMatch: '**/*.spec.ts', testIgnore: '**/undo.spec.ts'",
+            extra: false,
+            cases: true,
+            passes: false,
+            diagnostic: 'absent=["tests/e2e/undo.spec.ts"]',
+        },
+        {
+            name: 'configured testMatch admits an unplanned case',
+            config: "testMatch: '**/*.ts'",
+            extra: true,
+            cases: true,
+            passes: false,
+            diagnostic: 'extra=["tests/e2e/bonus.ts"]',
+        },
+        {
+            name: 'zero collected cases',
+            config: "testMatch: '**/*.spec.ts'",
+            extra: false,
+            cases: false,
+            passes: false,
+            diagnostic: 'Playwright collection failed',
+        },
+    ])('$name is admitted only when the real collector agrees', ({ config, extra, cases, passes, diagnostic }) => {
+        const root = temporaryRoot();
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        mkdirSync(join(root, 'src/app'), { recursive: true });
+        fixturePlaywright(root);
+        writeFileSync(join(root, 'playwright.config.mjs'), `export default { testDir: './tests/e2e', ${config} };\n`);
+        for (const spec of [SMOKE_SPEC, 'tests/e2e/undo.spec.ts']) {
+            if (cases) {
+                fixtureBrowserCase(root, spec);
+            } else {
+                writeFileSync(join(root, spec), '// no Playwright cases\n');
+            }
+        }
+        if (extra) {
+            fixtureBrowserCase(root, 'tests/e2e/bonus.ts');
+        }
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const version = 1;\n');
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Scope test']);
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        const base = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const version = 2;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'change product']);
+        const output = join(root, 'output');
+        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+        });
+        expect(result.status === 0, result.stderr).toBe(passes);
+        if (passes) {
+            expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+                browser: true,
+            });
+            expect(readFileSync(output, 'utf8')).toContain('browser=true\n');
+        } else {
+            expect(result.stderr).toContain(diagnostic);
+            expect(() => readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')).toThrow();
+            expect(() => readFileSync(output, 'utf8')).toThrow();
+        }
     });
 });
