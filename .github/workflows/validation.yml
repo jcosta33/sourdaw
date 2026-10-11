@@ -484,6 +484,14 @@ jobs:
           # implementation source through `git show <revision>:<path>`.
           # The unit matrix therefore needs the immutable source history.
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare unit tool directory
+        id: unit_tools
+        run: |
+          tool_root="/var/tmp/sourdaw-unit-tools-$(cat /proc/sys/kernel/random/uuid)"
+          mkdir -m 755 "$tool_root"
+          printf 'root=%s\n' "$tool_root" >> "$GITHUB_OUTPUT"
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a
@@ -493,16 +501,22 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
+          dest: ${{ steps.unit_tools.outputs.root }}
           package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+
+      - name: Prepare isolated unit account
+        id: unit_isolation
+        env:
+          SOURDAW_UNIT_TOOL_ROOT: ${{ steps.unit_tools.outputs.root }}
+        run: node scripts/runIsolatedUnitShard.ts prepare
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"
 
       # The suite is dominated by jsdom construction and module loading rather
       # than assertions, so worker count is the lever that matters. The local
@@ -511,7 +525,7 @@ jobs:
         id: run_shard
         env:
           VITEST_MAX_WORKERS: 4
-        run: pnpm run test:run --shard=${{ matrix.shard }}/4
+        run: node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4
 
       # The shard failure is already fatal above; this only names which of the
       # four it was, in the annotation list and the run summary, so a reader

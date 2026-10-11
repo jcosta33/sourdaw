@@ -22,6 +22,41 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-10 — verification temporary storage lacked an owned deletion boundary
+
+The original resource guard (`0e20269791`, retained through PR #2449) contained processes without
+owning their temporary storage. PR #4899's Vitest upgrade review omitted the killed-run storage
+lifecycle risk. An RSS ceiling does not limit disk use, and process termination does not grant
+authority to delete an arbitrary system-temp cache.
+
+Probe: place an unowned sibling beside a UUID-bound run, then attack owner JSON, symlinked roots,
+metadata and temp directories, reused PID identities, missing process census, and competing
+scavengers. Only a proven-dead owned payload may disappear. Keep claim metadata outside recursive
+deletion and kill its reclaimer twice; a later owner must recover it without deleting live or
+uncertain state. Inject low and unavailable disk samples on each monitored volume and require
+admission refusal or contained runtime termination with an explicit nonzero failure reason.
+A session token is not a complete storage-user census: repeat lifecycle probes with a detached
+child retaining only `TMPDIR`/`TMP`/`TEMP`, whose parent exits between samples, and with a supervisor
+crash before descendant tracking publication. Unix temp-path references must veto deletion.
+Repeat with no temp variables or token and only cwd or an open file under owned storage, including
+after the payload moves into a claim. Require OS file-use evidence, complete same-UID coverage,
+and uncertainty retention for empty process output, missing utilities, denied or partial fields.
+For Linux descriptor closure, include the scanner's own enumeration descriptor and a genuinely
+recreated slot. Check presence without re-enumerating the directory; unavailable metadata retains.
+Probe Linux terminal file proof with a real unreaped child and a zombie leader with live threads.
+Require matching PID/thread-group/four UIDs and one thread; denied, incomplete or expired status
+retains. File release never grants authority to treat a registered PID as gone.
+UID equality does not grant `/proc` readlink access: dumpability and access policy can deny a live
+same-UID cwd or file descriptor. Keep denial unknown and retain storage. For hosted test isolation,
+prove the account's UID unused before install, all runtime identity fields unprivileged, groups and
+capabilities cleared, and private storage owned. Attack denied same-test-UID consumers before worker
+concurrency and require actual retention followed by reclamation after reaping. Account isolation
+must not excuse production inspection failures, mutate hardlinked files, or weaken shard execution.
+Root or runner loading a helper does not prove the dropped identity can search its ancestry: Node
+may report a negative stat as a missing module. Admit source and the full tool closure under the
+actual identity before importing source. A private execution copy must retain exact checked-out HEAD,
+all refs and history without shared object inodes; leave runner ancestry and action cleanup unchanged.
+
 ### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 
 PR #4586 first appended `delivery-authorized` after reading review state without a final PR state
