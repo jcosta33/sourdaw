@@ -430,6 +430,240 @@ beforeEach(() => {
 });
 
 describe('required affected verification', () => {
+    it('plans a verified integration from its first parent instead of concurrent main changes', () => {
+        const root = temporaryRoot();
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        mkdirSync(join(root, 'scripts'), { recursive: true });
+        mkdirSync(join(root, 'src/app'), { recursive: true });
+        fixturePlaywright(root);
+        appendFileSync(join(root, '.gitignore'), 'github-output\npr-validation-scope.json\n');
+        fixtureBrowserCase(root, SMOKE_SPEC);
+        fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
+        writeFileSync(join(root, 'scripts/claimTrackerIssue.ts'), 'export const claim = 0;\n');
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 0;\n');
+        const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        git('init', '-q', '-b', 'main');
+        git('config', 'user.email', 'ci@example.invalid');
+        git('config', 'user.name', 'Scope test');
+        git('add', '.');
+        git('commit', '-q', '-m', 'base');
+        const base = git('rev-parse', 'HEAD');
+        git('checkout', '-q', '-b', 'candidate');
+        writeFileSync(join(root, 'scripts/claimTrackerIssue.ts'), 'export const claim = 1;\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'tooling candidate');
+        const head = git('rev-parse', 'HEAD');
+        git('checkout', '-q', 'main');
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 1;\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'concurrent product');
+        git('merge', '-q', '--no-ff', '-m', 'integration', 'candidate');
+        const output = join(root, 'github-output');
+        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+            reasons: [{ path: 'scripts/claimTrackerIssue.ts' }],
+        });
+        const firstIntegration = git('rev-parse', 'HEAD');
+        git('checkout', '-q', '-b', 'product-candidate');
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 2;\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'candidate product');
+        const productHead = git('rev-parse', 'HEAD');
+        git('checkout', '-q', 'main');
+        mkdirSync(join(root, 'docs'), { recursive: true });
+        writeFileSync(join(root, 'docs/next.md'), '# Concurrent documentation\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'concurrent documentation');
+        git('merge', '-q', '--no-ff', '-m', 'product integration', 'product-candidate');
+        const productPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: firstIntegration, HEAD_SHA: productHead, GITHUB_OUTPUT: output },
+        });
+        expect(productPlan.status, productPlan.stderr).toBe(0);
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+            profile: 'broad',
+            browser: true,
+            browserAi: true,
+            codeql: true,
+            matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] },
+            reasons: [{ path: 'src/app/bootstrap.ts' }],
+        });
+        const productIntegration = git('rev-parse', 'HEAD');
+        git('checkout', '-q', '-b', 'direct-candidate');
+        fixtureBrowserCase(root, 'tests/e2e/undo.spec.ts');
+        appendFileSync(join(root, 'tests/e2e/undo.spec.ts'), '// direct changed spec\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'candidate direct browser spec');
+        const directHead = git('rev-parse', 'HEAD');
+        git('checkout', '-q', 'main');
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 3;\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'second concurrent product');
+        git('merge', '-q', '--no-ff', '-m', 'direct integration', 'direct-candidate');
+        const directPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: productIntegration, HEAD_SHA: directHead, GITHUB_OUTPUT: output },
+        });
+        expect(directPlan.status, directPlan.stderr).toBe(0);
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+            profile: 'broad',
+            browser: true,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] },
+            reasons: [{ path: 'tests/e2e/undo.spec.ts', reason: 'changed browser spec' }],
+        });
+        const tunerSource = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
+        mkdirSync(join(root, 'src/modules/Tuner/presentations/views'), { recursive: true });
+        mkdirSync(join(root, 'public'), { recursive: true });
+        writeFileSync(join(root, 'public/fixture.js'), 'export const fixture = true;\n');
+        writeFileSync(join(root, tunerSource), 'export const panel = 0;\n');
+        fixtureBrowserCase(root, 'tests/e2e/tuner.spec.ts');
+        writeFileSync(
+            join(root, 'tsconfig.json'),
+            JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '#/*': ['src/*'] } } })
+        );
+        writeFileSync(
+            join(root, 'scripts/e2eSuiteOwners.json'),
+            JSON.stringify({
+                version: 1,
+                owners: ['Tuner'],
+                entries: [{ spec: 'tests/e2e/tuner.spec.ts', owners: ['Tuner'] }],
+            })
+        );
+        git('add', '.');
+        git('commit', '-q', '-m', 'graph fixture baseline');
+        const graphBase = git('rev-parse', 'HEAD');
+        git('checkout', '-q', '-b', 'graph-candidate');
+        writeFileSync(join(root, tunerSource), 'export const panel = 1;\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'candidate tuner');
+        const graphHead = git('rev-parse', 'HEAD');
+        git('checkout', '-q', 'main');
+        writeFileSync(join(root, 'docs/next.md'), '# Concurrent documentation again\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'third concurrent documentation');
+        git('merge', '-q', '--no-ff', '-m', 'graph integration', 'graph-candidate');
+        const graphPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: graphBase, HEAD_SHA: graphHead, GITHUB_OUTPUT: output },
+        });
+        expect(graphPlan.status, graphPlan.stderr).toBe(0);
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+            profile: 'broad',
+            browser: true,
+            browserAi: false,
+            codeql: true,
+            reasons: [{ path: tunerSource, reason: 'affected feature owners: Tuner' }],
+        });
+        expect(allSelected(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')))).toEqual([
+            'tests/e2e/tuner.spec.ts',
+            'tests/e2e/undo.spec.ts',
+        ]);
+        const graphIntegration = git('rev-parse', 'HEAD');
+        git('checkout', '-q', '-b', 'rename-candidate');
+        git('mv', 'scripts/claimTrackerIssue.ts', 'scripts/checkStancesRecord.ts');
+        git('commit', '-q', '-m', 'candidate tooling rename');
+        const renameHead = git('rev-parse', 'HEAD');
+        git('checkout', '-q', 'main');
+        writeFileSync(join(root, 'docs/next.md'), '# Concurrent rename documentation\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'rename concurrent documentation');
+        git('merge', '-q', '--no-ff', '-m', 'rename integration', 'rename-candidate');
+        const renamePlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: graphIntegration, HEAD_SHA: renameHead, GITHUB_OUTPUT: output },
+        });
+        expect(renamePlan.status, renamePlan.stderr).toBe(0);
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+            profile: 'broad',
+            browser: true,
+            browserAi: true,
+            codeql: true,
+        });
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')).reasons).toContainEqual({
+            path: 'changed path history',
+            reason: 'deleted, renamed, or type-changed path; full browser coverage',
+        });
+        const renameIntegration = git('rev-parse', 'HEAD');
+        git('checkout', '-q', '-b', 'delete-candidate');
+        git('rm', 'scripts/checkStancesRecord.ts');
+        git('commit', '-q', '-m', 'candidate tooling deletion');
+        const deleteHead = git('rev-parse', 'HEAD');
+        git('checkout', '-q', 'main');
+        writeFileSync(join(root, 'docs/next.md'), '# Concurrent deletion documentation\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'deletion concurrent documentation');
+        git('merge', '-q', '--no-ff', '-m', 'deletion integration', 'delete-candidate');
+        const deletionPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: renameIntegration, HEAD_SHA: deleteHead, GITHUB_OUTPUT: output },
+        });
+        expect(deletionPlan.status, deletionPlan.stderr).toBe(0);
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+            profile: 'broad',
+            browser: true,
+            browserAi: true,
+            codeql: true,
+        });
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')).reasons).toContainEqual({
+            path: 'changed path history',
+            reason: 'deleted, renamed, or type-changed path; full browser coverage',
+        });
+        const deletionIntegration = git('rev-parse', 'HEAD');
+        git('checkout', '-q', '-b', 'conflict-candidate');
+        writeFileSync(join(root, 'docs/next.md'), '# Candidate conflict\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'candidate conflict');
+        const conflictHead = git('rev-parse', 'HEAD');
+        git('checkout', '-q', 'main');
+        writeFileSync(join(root, 'docs/next.md'), '# Concurrent conflict\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'main conflict');
+        const conflictMerge = spawnSync('git', ['merge', '--no-ff', 'conflict-candidate'], {
+            cwd: root,
+            encoding: 'utf8',
+        });
+        expect(conflictMerge.status).toBe(1);
+        writeFileSync(join(root, 'docs/next.md'), '# Resolved conflict\n');
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), 'export const app = 4;\n');
+        git('add', '.');
+        git('commit', '-q', '-m', 'conflict integration with product resolution');
+        const conflictPlan = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: deletionIntegration, HEAD_SHA: conflictHead, GITHUB_OUTPUT: output },
+        });
+        expect(conflictPlan.status, conflictPlan.stderr).toBe(0);
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'))).toMatchObject({
+            profile: 'broad',
+            browser: true,
+            browserAi: true,
+            codeql: true,
+            reasons: [{ path: 'docs/next.md' }, { path: 'src/app/bootstrap.ts' }],
+        });
+        const invalid = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: 'a'.repeat(40), HEAD_SHA: conflictHead, GITHUB_OUTPUT: output },
+        });
+        expect(invalid.status).toBe(1);
+    });
     it('disables inherited Trace2 for disposable Git fixture children', () => {
         const root = temporaryRoot();
         execFileSync('git', ['init', '--quiet'], { cwd: root });
@@ -676,7 +910,7 @@ describe('required affected verification', () => {
             'profile=tooling\nbrowser=false\nbrowser-ai=false\ncodeql=true\nmatrix={"include":[]}\n'
         );
         writePackage(packageText({ ...known, surprise: 'node scripts/other.ts' }, { dependencies: { new: '1.0.0' } }));
-        expect(planAt(base, head).profile).toBe('tooling');
+        expect(planAt(base, head).profile).toBe('broad');
         writePackage(packageText(baseline));
         const removalHead = commit('remove known route');
         expect(planAt(head, removalHead)).toMatchObject({
@@ -686,14 +920,18 @@ describe('required affected verification', () => {
             codeql: true,
             matrix: { include: [] },
         });
-        expectBroad(base, head);
-
         writePackage(packageText({ ...baseline, 'retarget:plan': 'node scripts/unknown.ts' }));
         const unsafeCandidate = commit('unsafe candidate package command');
         writePackage(packageText(known));
         const safeCheckout = commit('safe checkout after candidate');
         expect(git(['rev-parse', 'HEAD'])).toBe(safeCheckout);
-        expectBroad(removalHead, unsafeCandidate);
+        const unverifiedCheckout = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: removalHead, HEAD_SHA: unsafeCandidate, GITHUB_OUTPUT: output },
+        });
+        expect(unverifiedCheckout.status).toBe(1);
+        expect(unverifiedCheckout.stderr).toContain('Integration commit is not a two-parent merge');
 
         const cases: { name: string; before: string; after: string | null; extra?: string }[] = [
             {
@@ -1270,6 +1508,7 @@ describe('required affected verification', () => {
         mkdirSync(join(root, 'tests/e2e/nested/__tests__'), { recursive: true });
         mkdirSync(join(root, 'tests/e2e/__TESTS__'), { recursive: true });
         fixturePlaywright(root);
+        appendFileSync(join(root, '.gitignore'), 'pr-validation-scope.json\noutput\n');
         fixtureBrowserCase(root, SMOKE_SPEC);
         writeFileSync(join(root, 'tests/e2e/nested/__tests__/excluded.test.ts'), '// excluded fixture\n');
         writeFileSync(join(root, 'tests/e2e/__TESTS__/ignored.test.ts'), '// excluded fixture\n');
@@ -1501,6 +1740,7 @@ describe('required affected verification', () => {
         expect(plan.reasons.map((entry: { path: string }) => entry.path)).toEqual([
             'tests/e2e/renamed.spec.ts',
             'tests/e2e/undo.spec.ts',
+            'changed path history',
         ]);
         expect(plan.browserAi).toBe(true);
         expect(readFileSync(output, 'utf8')).toContain('browser=true\n');

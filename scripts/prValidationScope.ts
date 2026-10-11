@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Keep selection policy and verified checkout context in the same producer source. */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, lstatSync, readdirSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
@@ -5,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
+import { verifyIntegrationCheckout } from './e2eSelectionShadowIntegration.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
@@ -262,12 +264,13 @@ function packageHasModifiedStatus(diff: string): boolean {
 
 type PackageDocument = Record<string, unknown> & { scripts: Record<string, string> };
 
-function readPackageBlob(revision: string): PackageDocument | null {
-    const tree = execFileSync('git', ['ls-tree', revision, '--', 'package.json'], { encoding: 'utf8' });
+function readPackageBlob(root: string, revision: string): PackageDocument | null {
+    const tree = execFileSync('git', ['ls-tree', revision, '--', 'package.json'], { cwd: root, encoding: 'utf8' });
     if (!/^100644 blob [a-f0-9]{40}\tpackage\.json\n$/.test(tree)) {
         return null;
     }
     const source = execFileSync('git', ['show', `${revision}:package.json`], {
+        cwd: root,
         encoding: 'utf8',
         maxBuffer: 2 * 1024 * 1024,
     });
@@ -292,18 +295,18 @@ function readPackageBlob(revision: string): PackageDocument | null {
     return parsed as PackageDocument;
 }
 
-function isOperationalPackageScriptChange(diff: string, base: string, head: string): boolean {
+function isOperationalPackageScriptChange(root: string, diff: string, base: string, head: string): boolean {
     if (!packageHasModifiedStatus(diff)) {
         return false;
     }
     try {
-        const mergeBase = execFileSync('git', ['merge-base', base, head], { encoding: 'utf8' }).trim();
+        const mergeBase = execFileSync('git', ['merge-base', base, head], { cwd: root, encoding: 'utf8' }).trim();
         if (!/^[a-f0-9]{40}$/.test(mergeBase)) {
             return false;
         }
-        const basePackage = readPackageBlob(base);
-        const before = readPackageBlob(mergeBase);
-        const after = readPackageBlob(head);
+        const basePackage = readPackageBlob(root, base);
+        const before = readPackageBlob(root, mergeBase);
+        const after = readPackageBlob(root, head);
         if (!basePackage || !before || !after || !isDeepStrictEqual(basePackage, before)) {
             return false;
         }
@@ -464,46 +467,103 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
-async function affectedFromCheckout(
+function verifiedCheckoutDiff(
+    root: string,
+    base: string,
+    head: string
+): {
+    checkout: string;
+    firstParent: string;
+    diff: string;
+} {
+    const checkout = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    let firstParent = base;
+    let left = `${base}...${head}`;
+    let right: string | undefined;
+    if (checkout !== head) {
+        verifyIntegrationCheckout(root, checkout, head, base);
+        const parents = execFileSync('git', ['rev-list', '--parents', '-n', '1', checkout], {
+            cwd: root,
+            encoding: 'utf8',
+        })
+            .trim()
+            .split(' ');
+        firstParent = parents[1] ?? '';
+        left = firstParent;
+        right = checkout;
+    }
+    const diffArgs = ['diff', '--name-status', '-z', '--find-renames', left];
+    if (right) {
+        diffArgs.push(right);
+    }
+    diffArgs.push('--');
+    const diff = execFileSync('git', diffArgs, {
+        cwd: root,
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024,
+    });
+    return { checkout, firstParent, diff };
+}
+
+function widenForUnprovenHistory(
+    plan: ValidationPlan,
+    specs: readonly string[],
+    durations: SpecDurations,
+    historicalChange: boolean,
+    dirtyTracked: boolean
+): void {
+    if (!historicalChange && !dirtyTracked) {
+        return;
+    }
+    const full = specs.filter((path) => path !== SMOKE_SPEC);
+    if (!specs.includes(SMOKE_SPEC) || full.length === 0) {
+        throw new Error('Unproven checkout requires a complete browser inventory');
+    }
+    plan.profile = 'broad';
+    plan.browser = true;
+    plan.browserAi = true;
+    plan.matrix = browserMatrix(full, durations);
+    plan.reasons.push({
+        path: dirtyTracked ? 'dirty checkout' : 'changed path history',
+        reason: dirtyTracked
+            ? 'tracked checkout differs from its Git commit; full browser coverage'
+            : 'deleted, renamed, or type-changed path; full browser coverage',
+    });
+}
+
+export async function resolveCheckoutSelection(
     root: string,
     base: string,
     head: string,
-    diff: string,
-    candidatePaths: readonly string[],
-    specs: readonly string[]
-): Promise<{ paths: string[]; packageScriptOnly: boolean; affected?: AffectedSelection }> {
-    const checkout = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-    const integrated =
-        checkout === head ||
-        (spawnSync('git', ['merge-base', '--is-ancestor', base, checkout]).status === 0 &&
-            spawnSync('git', ['merge-base', '--is-ancestor', head, checkout]).status === 0);
-    let integrationDiff = '';
-    if (integrated && checkout !== head) {
-        integrationDiff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', base, checkout, '--'], {
-            encoding: 'utf8',
-            maxBuffer: 16 * 1024 * 1024,
-        });
+    specs: readonly string[],
+    durations: SpecDurations = readSpecDurations()
+): Promise<{ plan: ValidationPlan; firstParent: string; checkout: string; diff: string }> {
+    const { checkout, firstParent, diff } = verifiedCheckoutDiff(root, base, head);
+    const paths = parseChangedPaths(diff);
+    const trackedStatus = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+        cwd: root,
+        encoding: 'utf8',
+    });
+    if (trackedStatus.status !== 0) {
+        throw new Error('Cannot verify integration checkout cleanliness');
     }
-    const allPaths = new Set(candidatePaths);
-    if (integrationDiff !== '') {
-        for (const path of parseChangedPaths(integrationDiff)) {
-            allPaths.add(path);
-        }
-    }
-    const paths = [...allPaths].sort();
-    const packageUnchangedAtCheckout =
-        checkout === head || spawnSync('git', ['diff', '--quiet', head, checkout, '--', 'package.json']).status === 0;
+    const dirtyTracked = trackedStatus.stdout !== '';
+    const packageStatus = spawnSync('git', ['status', '--porcelain', '--untracked-files=all', '--', 'package.json'], {
+        cwd: root,
+        encoding: 'utf8',
+    });
     const packageScriptOnly =
         paths.includes('package.json') &&
-        packageUnchangedAtCheckout &&
-        isOperationalPackageScriptChange(diff, base, head);
+        packageStatus.status === 0 &&
+        packageStatus.stdout === '' &&
+        isOperationalPackageScriptChange(root, diff, firstParent, checkout);
     const productPaths = paths.filter(
         (path) =>
             !isDocumentation(path) &&
             toolingReason(path, packageScriptOnly) === null &&
             !(isSpec(path) && specs.includes(path))
     );
-    const historicalChange = [diff, integrationDiff].some((value) => /(?:^|\0)(?:D|R\d+|C\d+|T)\0/.test(value));
+    const historicalChange = /(?:^|\0)(?:D|R\d+|C\d+|T)\0/.test(diff);
     const graphInputsDirty = spawnSync(
         'git',
         [
@@ -517,12 +577,11 @@ async function affectedFromCheckout(
             'scripts/e2eAffectedGraph.ts',
             'tsconfig.json',
         ],
-        { encoding: 'utf8' }
+        { cwd: root, encoding: 'utf8' }
     );
     const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
     let affected: AffectedSelection | undefined;
     if (
-        integrated &&
         cleanGraphInputs &&
         !historicalChange &&
         productPaths.length > 0 &&
@@ -535,7 +594,12 @@ async function affectedFromCheckout(
             affected = { kind: 'full', reason: 'dependency graph helper unavailable' };
         }
     }
-    return { paths, packageScriptOnly, affected };
+    const plan = selectValidationPlan(paths, specs, durations, packageScriptOnly, affected);
+    widenForUnprovenHistory(plan, specs, durations, historicalChange, dirtyTracked);
+    if (affected?.kind === 'full') {
+        plan.reasons.push({ path: 'affected graph', reason: affected.reason });
+    }
+    return { plan, firstParent, checkout, diff };
 }
 
 async function main(): Promise<void> {
@@ -556,24 +620,11 @@ async function main(): Promise<void> {
     if (!base || !head || !/^[a-f0-9]{40}$/.test(base) || !/^[a-f0-9]{40}$/.test(head) || !output) {
         throw new Error('Plan requires immutable base/head SHAs and GITHUB_OUTPUT');
     }
-    const diff = execFileSync('git', ['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--'], {
-        encoding: 'utf8',
-        maxBuffer: 16 * 1024 * 1024,
-    });
-    const candidatePaths = parseChangedPaths(diff);
     const specs = listSpecs(root);
-    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(
-        root,
-        base,
-        head,
-        diff,
-        candidatePaths,
-        specs
+    const { plan, firstParent, checkout } = await resolveCheckoutSelection(root, base, head, specs);
+    console.log(
+        JSON.stringify({ eventBase: base, candidateHead: head, integrationFirstParent: firstParent, checkout })
     );
-    const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
-    if (affected?.kind === 'full') {
-        plan.reasons.push({ path: 'affected graph', reason: affected.reason });
-    }
     if (plan.browser) {
         assertCollectedBrowserInventory(root, specs, [
             SMOKE_SPEC,
@@ -594,3 +645,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         process.exitCode = 1;
     });
 }
+/* eslint-enable max-lines */
