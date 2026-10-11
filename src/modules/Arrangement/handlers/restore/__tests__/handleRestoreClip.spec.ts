@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type MidiStoreState } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { createTrack } from '../../../models/Track';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
 import { type undoRippleDelete } from '../../../useCases/rippleDelete/undoRippleDelete';
 import { type updateTrack } from '../../../useCases/updateTrack';
 import { handleRestoreClip } from '../handleRestoreClip';
@@ -56,9 +60,14 @@ vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
     restoreTakesForClip: mocks.restoreTakesForClip,
 }));
 
-vi.mock('#/modules/MIDI/useCases', () => ({
-    restoreMidiClipData: mocks.restoreMidiClipData,
-}));
+vi.mock('#/modules/MIDI/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+    return {
+        ...actual,
+        getMidiStoreState: () => null,
+        restoreMidiClipData: mocks.restoreMidiClipData,
+    };
+});
 
 function createRestoreClipAction(overrides: Partial<RestoreClipAction['payload']> = {}): RestoreClipAction {
     return {
@@ -66,21 +75,32 @@ function createRestoreClipAction(overrides: Partial<RestoreClipAction['payload']
         payload: {
             clipId: 'c1',
             trackId: 't1',
-            clipSnapshot: { id: 'c1', trackId: 't1', startBeat: 0, endBeat: 1 },
+            clipSnapshot: ClipDummy.create({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 1 }),
             ripplePlan: null,
             midiNotesSnapshot: null,
             midiCcSnapshot: null,
             midiPitchBendSnapshot: null,
+            retiredTakeLanes: [],
             ...overrides,
         },
     };
 }
 
 function createMidiSnapshots({ notes, controlChanges, pitchBends }: SnapshotPresence): MidiSnapshotInput {
+    const notesSnapshot: MidiStoreState['notesByClipId'][string] = [
+        { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 },
+    ];
+    const controlChangesSnapshot: MidiStoreState['ccByClipId'][string] = [
+        { id: 'cc-1', controller: 1, value: 64, beat: 0.5, channel: 1 },
+    ];
+    const pitchBendsSnapshot: MidiStoreState['pitchBendByClipId'][string] = [
+        { id: 'pitch-1', value: 256, beat: 0.75, channel: 1 },
+    ];
+
     return {
-        midiNotesSnapshot: notes ? [{ id: 'note-1' }] : null,
-        midiCcSnapshot: controlChanges ? [{ id: 'cc-1' }] : null,
-        midiPitchBendSnapshot: pitchBends ? [{ id: 'pitch-1' }] : null,
+        midiNotesSnapshot: notes ? notesSnapshot : null,
+        midiCcSnapshot: controlChanges ? controlChangesSnapshot : null,
+        midiPitchBendSnapshot: pitchBends ? pitchBendsSnapshot : null,
     };
 }
 
@@ -175,6 +195,16 @@ function expectMidiRestoreFromAction(action: RestoreClipAction): number {
 describe('handleRestoreClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        takeLaneStore.set({ lanes: [] });
+        trackStore.set({
+            tracks: [
+                {
+                    ...createTrack({ id: 't1', name: 'Track 1', kind: 'midi' }),
+                    clips: [ClipDummy.create({ id: 'c2', trackId: 't1', startBeat: 0, endBeat: 1 })],
+                },
+            ],
+            selectedTrackId: 't1',
+        });
     });
 
     describe.each(['ripple', 'track'] as const)('%s restore path', (path) => {
@@ -186,7 +216,7 @@ describe('handleRestoreClip', () => {
                     ripplePlan:
                         path === 'ripple'
                             ? {
-                                  removedClips: [{ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 1 }],
+                                  removedClips: [createRestoreClipAction().payload.clipSnapshot],
                                   shiftedClips: [
                                       { clipId: 'c2', origStartBeat: 1, origEndBeat: 2, automationDelta: -1 },
                                   ],
@@ -229,12 +259,133 @@ describe('handleRestoreClip', () => {
         expect(mocks.restoreTakesForClip).toHaveBeenCalledWith([]);
     });
 
+    describe.each(['ripple', 'track'] as const)('%s restore MIDI admission', (path) => {
+        it.each(['midiNotesSnapshot', 'midiCcSnapshot', 'midiPitchBendSnapshot'] as const)(
+            'refuses malformed or missing %s before any owner writes',
+            (field) => {
+                for (const malformed of [[{ id: 'incomplete-row' }], undefined]) {
+                    const action = createRestoreClipAction({
+                        ripplePlan:
+                            path === 'ripple'
+                                ? {
+                                      removedClips: [createRestoreClipAction().payload.clipSnapshot],
+                                      shiftedClips: [],
+                                      clipSatellites: [],
+                                      clipAutomationLanes: [],
+                                  }
+                                : null,
+                    });
+                    if (malformed === undefined) {
+                        Reflect.deleteProperty(action.payload, field);
+                    } else {
+                        action.payload[field] = malformed;
+                    }
+                    expect(handleRestoreClip.validateSessionActionArguments?.(action.payload)).toBe(false);
+                    expect(handleRestoreClip.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+                    expect(handleRestoreClip.execute(action)).toEqual({ status: 'conflict' });
+                    expect(mocks.updateTrack).not.toHaveBeenCalled();
+                    expect(mocks.undoRippleDelete).not.toHaveBeenCalled();
+                    expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+                    expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+                }
+            }
+        );
+
+        it('preserves present empty MIDI arrays separately from null captures', () => {
+            const action = createRestoreClipAction({
+                ripplePlan:
+                    path === 'ripple'
+                        ? {
+                              removedClips: [createRestoreClipAction().payload.clipSnapshot],
+                              shiftedClips: [],
+                              clipSatellites: [],
+                              clipAutomationLanes: [],
+                          }
+                        : null,
+                midiNotesSnapshot: [],
+                midiCcSnapshot: [],
+                midiPitchBendSnapshot: [],
+            });
+            expect(handleRestoreClip.validateSessionActionArguments?.(action.payload)).toBe(true);
+            expect(handleRestoreClip.execute(action)).toEqual({ status: 'written' });
+            expectMidiRestoreFromAction(action);
+        });
+    });
+
     it('provides a description', () => {
         const desc = handleRestoreClip.describe(createRestoreClipAction());
         expect(desc.label).toBe('Restore clip');
     });
 
+    it.each([false, true])('refuses a captured lane id owned by another track before writes, ripple=%s', (ripple) => {
+        takeLaneStore.set({ lanes: [{ id: 'lane-1', trackId: 'other-track', takes: [], activeCompRegions: [] }] });
+        const action = createRestoreClipAction({
+            retiredTakeLanes: RETIRED_TAKE_LANES,
+            ripplePlan: ripple
+                ? {
+                      removedClips: [createRestoreClipAction().payload.clipSnapshot],
+                      shiftedClips: [],
+                      clipSatellites: [],
+                      clipAutomationLanes: [],
+                  }
+                : null,
+        });
+        expect(handleRestoreClip.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+        expect(handleRestoreClip.execute(action)).toEqual({ status: 'conflict' });
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.undoRippleDelete).not.toHaveBeenCalled();
+        expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+        expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+    });
+
     it('is not undoable', () => {
         expect(handleRestoreClip.undoable).toBe(false);
     });
+
+    it.each(['moved', 'missing', 'foreign-track'] as const)(
+        'refuses a %s shifted clip in preflight and single execution before writes',
+        (change) => {
+            const action = createRestoreClipAction({
+                ripplePlan: {
+                    removedClips: [createRestoreClipAction().payload.clipSnapshot],
+                    shiftedClips: [
+                        {
+                            clipId: 'c2',
+                            origStartBeat: 1,
+                            origEndBeat: 2,
+                            automationDelta: -1,
+                            expectedAutomationLanes: [],
+                        },
+                    ],
+                    clipSatellites: [],
+                    clipAutomationLanes: [],
+                },
+            });
+            const clip = ClipDummy.create({
+                id: 'c2',
+                trackId: change === 'foreign-track' ? 'other-track' : 't1',
+                startBeat: change === 'moved' ? 0.25 : 0,
+                endBeat: change === 'moved' ? 1.25 : 1,
+            });
+            trackStore.set({
+                tracks: [
+                    {
+                        ...createTrack({ id: 't1', kind: 'midi', name: 'Track 1' }),
+                        clips: change === 'missing' || change === 'foreign-track' ? [] : [clip],
+                    },
+                    {
+                        ...createTrack({ id: 'other-track', kind: 'midi', name: 'Other Track' }),
+                        clips: change === 'foreign-track' ? [clip] : [],
+                    },
+                ],
+                selectedTrackId: 't1',
+            });
+            expect(handleRestoreClip.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+            expect(handleRestoreClip.execute(action)).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+            expect(mocks.undoRippleDelete).not.toHaveBeenCalled();
+            expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+            expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+        }
+    );
 });

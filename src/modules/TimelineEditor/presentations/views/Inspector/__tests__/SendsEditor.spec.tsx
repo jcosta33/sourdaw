@@ -12,6 +12,8 @@ const mockExecuteUserAppAction = vi.fn().mockResolvedValue(undefined);
 // The action-routed graph pulls more of the barrel in than the view itself
 // calls, so the mock has to supply every name the graph imports.
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn().mockResolvedValue(undefined),

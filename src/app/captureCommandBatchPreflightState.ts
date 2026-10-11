@@ -108,10 +108,16 @@ function recordId(id: unknown, ids: Set<string>, duplicates: Set<string>): void 
     ids.add(id);
 }
 
-function findDuplicateIds(value: unknown, ids: Set<string>, duplicates: Set<string>, visited: WeakSet<object>): void {
+function findDuplicateIds(
+    value: unknown,
+    ids: Set<string>,
+    duplicates: Set<string>,
+    visited: WeakSet<object>,
+    clipGainEnvelopePoints?: WeakSet<object>
+): void {
     if (Array.isArray(value)) {
         for (const item of value) {
-            findDuplicateIds(item, ids, duplicates, visited);
+            findDuplicateIds(item, ids, duplicates, visited, clipGainEnvelopePoints);
         }
         return;
     }
@@ -120,9 +126,11 @@ function findDuplicateIds(value: unknown, ids: Set<string>, duplicates: Set<stri
     }
     visited.add(value);
     const record = value as Record<string, unknown>;
-    recordId(record.id, ids, duplicates);
+    if (!clipGainEnvelopePoints?.has(record)) {
+        recordId(record.id, ids, duplicates);
+    }
     for (const child of Object.values(record)) {
-        findDuplicateIds(child, ids, duplicates, visited);
+        findDuplicateIds(child, ids, duplicates, visited, clipGainEnvelopePoints);
     }
 }
 
@@ -131,6 +139,28 @@ function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
         return null;
     }
     return value as Readonly<Record<string, unknown>>;
+}
+
+function collectClipGainEnvelopePoints(
+    document: Readonly<Record<string, unknown>>,
+    duplicates: Set<string>
+): WeakSet<object> {
+    const points = new WeakSet<object>();
+    const envelopes = asRecord(asRecord(document.gainEnvelopes)?.envelopes);
+    for (const envelope of Object.values(envelopes ?? {})) {
+        const envelopePoints = asRecord(envelope)?.points;
+        const pointIds = new Set<string>();
+        for (const point of Array.isArray(envelopePoints) ? envelopePoints : []) {
+            const record = asRecord(point);
+            if (!record) {
+                continue;
+            }
+            // Split and duplicate retain these ids; gain-point edits address clipId plus pointId.
+            recordId(record.id, pointIds, duplicates);
+            points.add(record);
+        }
+    }
+    return points;
 }
 
 /**
@@ -436,8 +466,8 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
 }
 
 /**
- * Duplicate ids across the project, counting each arrangement as its own id
- * namespace.
+ * Duplicate ids across the project, with arrangement snapshots and canonical
+ * clip gain-envelope points counted in their owning namespaces.
  *
  * An arrangement snapshot holds a copy of the track state it arranges, so it
  * repeats the live `tracks` slot's track, clip, alternative and device ids by
@@ -448,8 +478,12 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
  * `inspectCurrentAgentProjectRepairState` then holds the project in
  * repair-required: every mutation is refused and every save fails.
  *
- * A collision within the live project, or within one snapshot, is still a real
- * defect and is still reported. So is a repeated arrangement `id`: it is the
+ * Gain-point ids are local to each clip envelope, so copying them to another
+ * clip is valid. Only those canonical point rows leave the global id set; a
+ * repeated point within one envelope is still reported.
+ *
+ * Other collisions within the live project, or within one snapshot, are still
+ * reported. So is a repeated arrangement `id`: it is the
  * one field `duplicateArrangement` remints, so two snapshots may share every
  * track, clip, alternative and device id but never their own. Two snapshots
  * under one id are indistinguishable to `syncCurrentArrangementToStore`, which
@@ -460,7 +494,8 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
 function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): Set<string> {
     const duplicateIds = new Set<string>();
     const { arrangements, ...liveDocument } = document;
-    findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>());
+    const clipGainEnvelopePoints = collectClipGainEnvelopePoints(document, duplicateIds);
+    findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>(), clipGainEnvelopePoints);
     const snapshots = asRecord(arrangements)?.arrangements;
     const arrangementIds = new Set<string>();
     for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {

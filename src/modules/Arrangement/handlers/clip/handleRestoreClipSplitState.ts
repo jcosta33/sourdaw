@@ -1,16 +1,29 @@
+import {
+    captureDurableDocumentWitness,
+    captureProjectMutationAuthorization,
+    getCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { clipSplitStateRestorable } from '../../useCases/clipEditing/clipSplitStateRestorable';
+import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
+import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
 import { applyTakeReKeyTransitions } from '../../useCases/comping/applyTakeReKeyTransitions';
+import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { restoreTakeReKeyTransitions } from '../../useCases/comping/restoreTakeReKeyTransitions';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
+import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+
+import { clipSplitCaptureOwnersMatch, isRestoreClipSplitSessionPayload } from './validateClipEditSessionEntries';
 
 type RestoreClipSplitStateAction = Extract<AppAction, { type: 'restoreClipSplitState' }>;
 
@@ -20,16 +33,30 @@ type RestoreClipSplitStateAction = Extract<AppAction, { type: 'restoreClipSplitS
  * precondition to check. The guard is scoped to the right clip id — the left
  * half keeps its id and its lanes untouched on both legs of the transition.
  */
-function clipAutomationLanesMatch(action: RestoreClipSplitStateAction): boolean {
+function clipAutomationLanesMatch(
+    action: RestoreClipSplitStateAction,
+    projected: NonNullable<ReturnType<typeof projectClipReplayPrefix>>
+): boolean {
     const expectedLanes = action.payload.expected.clipAutomationLanes;
     const replacementLanes = action.payload.replacement.clipAutomationLanes;
     if (expectedLanes === undefined && replacementLanes === undefined) {
         return true;
     }
+    // Captured IDs are stable across replay. A later peer may claim one after
+    // Undo, so refuse instead of reminting or duplicating another owner's ID.
+    const retainedIds = readClipSplitIdentityIds(
+        projected.lanes.filter((lane) => lane.clipId !== action.payload.rightClipId),
+        projected.clips.map((owner) => owner.clip)
+    );
+    const replacementIds = collectClipSplitIdentityIds(replacementLanes ?? []);
+    if (new Set(replacementIds).size !== replacementIds.length || replacementIds.some((id) => retainedIds.has(id))) {
+        return false;
+    }
     return clipAutomationLaneTransitionMatchesStore(
         [action.payload.rightClipId],
         expectedLanes ?? [],
-        replacementLanes ?? []
+        replacementLanes ?? [],
+        projected.lanes
     );
 }
 
@@ -38,38 +65,70 @@ function clipAutomationLanesMatch(action: RestoreClipSplitStateAction): boolean 
  *  `restoreMidiClipSplitState` and `execute`'s own satellite guard exactly, reused by
  *  `validate` so a batch preflight refuses a diverged clip instead of executing into a
  *  conflict. */
-function clipSplitStateMatches(action: RestoreClipSplitStateAction): boolean {
+function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: HandlerValidationContext): boolean {
+    const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
+    const projected = projectClipReplayPrefix(priorActions);
+    if (!projected) {
+        return false;
+    }
+    const tracks =
+        getTrackStoreState()?.tracks.map((track) => ({
+            id: track.id,
+            clips: projected.clips.filter((owner) => owner.owningTrackId === track.id).map((owner) => owner.clip),
+        })) ?? [];
     return (
-        clipSplitStateRestorable(action.payload) &&
-        midiClipSplitStateMatches({
-            sourceClipId: action.payload.clipId,
-            rightClipId: action.payload.rightClipId,
-            expectedSource: action.payload.expected.sourceMidi,
-            expectedRight: action.payload.expected.rightMidi,
-            replacementSource: action.payload.replacement.sourceMidi,
-            replacementRight: action.payload.replacement.rightMidi,
-        }) &&
+        clipSplitCaptureOwnersMatch(action.payload) &&
+        retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], priorActions) &&
+        reKeyedTakeLaneOwnersMatchStore(
+            action.payload.reKeyedTakeLanes ?? [],
+            action.payload.replacement.rightClip ? 'apply' : 'restore',
+            priorActions
+        ) &&
+        clipSplitStateRestorable(action.payload, { tracks }) &&
+        midiClipSplitStateMatches(
+            {
+                sourceClipId: action.payload.clipId,
+                rightClipId: action.payload.rightClipId,
+                expectedSource: action.payload.expected.sourceMidi,
+                expectedRight: action.payload.expected.rightMidi,
+                replacementSource: action.payload.replacement.sourceMidi,
+                replacementRight: action.payload.replacement.rightMidi,
+            },
+            undefined,
+            priorActions
+        ) &&
         (action.payload.expected.clipSatellites === undefined ||
-            clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites)) &&
-        clipAutomationLanesMatch(action)
+            clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites, priorActions)) &&
+        clipAutomationLanesMatch(action, projected)
     );
 }
 
 export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'>({
+    validateSessionActionArguments: isRestoreClipSplitSessionPayload,
     // `expected`/`replacement` are mandatory on this payload, so every instance carries a real
     // precondition `validate` re-checks.
     canReapplyAfterDivergence: () => true,
     validate: clipSplitStateMatches,
     execute: (action) => {
-        // Undefined stays permissive: split actions captured before satellites joined
-        // the snapshot decode without the field and carry no precondition to check.
-        const expectedSatellites = action.payload.expected.clipSatellites;
-        if (expectedSatellites !== undefined && !clipSatelliteEntriesMatchSnapshot(expectedSatellites)) {
+        if (!clipSplitStateMatches(action)) {
             return { status: 'conflict' };
         }
-        if (!clipAutomationLanesMatch(action)) {
-            return { status: 'conflict' };
-        }
+        const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
+        const documentBeforeReplay = capture ? captureDurableDocumentWitness() : null;
+        const ownsPublication = capture ? captureProjectMutationAuthorization() : null;
+        // Bind inside this handler's storage transaction, before any owner writes.
+        ownsPublication?.();
+        let stagedRetired: ReturnType<typeof removeTakesForClips> = [];
+        const installCapture = () => {
+            if (
+                capture &&
+                getCrdtDoc('root') &&
+                captureDurableDocumentWitness() !== documentBeforeReplay &&
+                ownsPublication?.()
+            ) {
+                capture.splice(0, capture.length, ...stagedRetired);
+            }
+        };
         const trackRestored = replaceClipSplitTrackState(action.payload);
         if (!trackRestored) {
             return { status: 'conflict' };
@@ -101,16 +160,15 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             }
         }
         // Undo leg: the replacement carries no right clip, so the track restore
-        // just filtered it out — retire its take lanes too, capturing them into
-        // the shared payload array so the paired redo can put back a take that
+        // just filtered it out — retire its take lanes too, staging their capture
+        // so the paired redo can put back a take that
         // landed on the right half after the split. Runs only after every
         // conflict-prone step passed, so a conflict retires nothing. The type is
         // `ClipStateSnapshot | null` and `prepareClipSplit` writes `null`, so the
         // discriminator is falsiness — `=== undefined` never fires on a real
         // payload, which is how the first cut of this leg silently never ran.
         if (!action.payload.replacement.rightClip) {
-            const retired = removeTakesForClips([action.payload.rightClipId]);
-            action.payload.retiredTakeLanes?.splice(0, action.payload.retiredTakeLanes.length, ...retired);
+            stagedRetired = removeTakesForClips([action.payload.rightClipId]);
             // The split's re-key (#5048) rides the shared payload array: with
             // the clips back on the track, the pre-split take/comp-region
             // facets go back over the fragmented ones.
@@ -120,6 +178,11 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             // the undo retired from it and re-apply the split's re-key.
             restoreTakesForClip(action.payload.retiredTakeLanes ?? []);
             applyTakeReKeyTransitions(action.payload.reKeyedTakeLanes ?? []);
+        }
+        // The paired arrays belong to history, outside the project transaction.
+        // Publish their staged capture only once this exact owner committed.
+        if (capture) {
+            return { status: 'written', afterCommit: installCapture, afterAmbiguousCommit: installCapture };
         }
         return { status: 'written' };
     },

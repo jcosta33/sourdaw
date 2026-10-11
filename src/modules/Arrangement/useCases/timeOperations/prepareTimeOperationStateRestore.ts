@@ -263,6 +263,13 @@ function validateCombinedPlan(value: unknown): CombinedStateRestorePlan | null {
     }
 }
 
+/** Validate a persisted replay plan without consulting or writing live project state. */
+export const timeOperationRestorePlan = {
+    isValid(value: unknown): boolean {
+        return validateCombinedPlan(value) !== null;
+    },
+};
+
 function prepareLocalState(plan: CombinedStateRestorePlan): PreparedLocalState | null {
     const capturedTrackState = getTrackState();
     if (!capturedTrackState) {
@@ -274,10 +281,11 @@ function prepareLocalState(plan: CombinedStateRestorePlan): PreparedLocalState |
     if (!timeOperationStateCodec.trackStateMatchesSnapshot(capturedTrackState, expectedTrackSnapshot)) {
         return null;
     }
-    const replacementTrackState = timeOperationStateCodec.decodeTrackState(replacementTrackSnapshot);
-    if (!replacementTrackState) {
+    const decodedReplacement = timeOperationStateCodec.decodeTrackState(replacementTrackSnapshot);
+    if (!decodedReplacement) {
         return null;
     }
+    const replacementTrackState = { ...capturedTrackState, tracks: decodedReplacement.tracks };
 
     let capturedMarkerState: MarkerStoreState | null = null;
     let replacementMarkerState: MarkerStoreState | null = null;
@@ -306,7 +314,7 @@ function prepareLocalState(plan: CombinedStateRestorePlan): PreparedLocalState |
         capturedMarkerSnapshot: plan.local.expected.markerState,
         replacementMarkerState,
         replacementMarkerSnapshot: plan.local.replacement.markerState,
-        trackHasChanges: !timeOperationStateCodec.valuesEqual(expectedTrackSnapshot, replacementTrackSnapshot),
+        trackHasChanges: !timeOperationStateCodec.valuesEqual(capturedTrackState.tracks, replacementTrackState.tracks),
         markerHasChanges,
     };
 }
