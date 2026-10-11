@@ -1,0 +1,25 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/levainMultiInstancePcm.spec.ts
+  s_59e31a5c6f3e31::t_9ab1f0a6865e73 307-309,312-314,323-327,387-394
+  s_59e31a5c6f3e31::t_440f06a858da95 7,49,78-87
+  s_59e31a5c6f3e31::t_5c28d10db348e3 186-189,191-222,237,244,254-257,259-289,299,306,310-311,315,320-322,328,335,340-343,345-346,348-353,355-358,369-375,386,400
+  s_59e31a5c6f3e31::t_3e4659d27cd1a6 347,354
+  s_59e31a5c6f3e31::t_7d5ff9f1ff6df3 384-385
+  s_59e31a5c6f3e31::t_dae6d5a4416e13 252,258,376-383,395-399
+  s_59e31a5c6f3e31::t_edd2a88507f7d0 403
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97742c400f514ec0ab50e0a3ef149bae3562bf6a",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
