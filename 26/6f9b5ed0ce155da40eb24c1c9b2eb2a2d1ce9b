@@ -1,0 +1,33 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/createAlternativeClips.spec.ts
+  s_29d8df116c5b92::t_2fb7b7757b23e1 224-260
+src/modules/Arrangement/useCases/clipEditing/createAlternativeClips.ts
+  s_29d8df116c5b92::t_76cb6c14d27ec4 2,226-229
+src/modules/AudioAnalysis/useCases/audioToMidi.ts
+  s_29d8df116c5b92::t_10db15f34fff6a 5,83,88-90,92,107-116,135,137-152,154-189,197,304
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineAudioClipPlaybacks.ts
+  s_ae18a0d7b01a92::t_95aeae1399f115 233-236,308-319,345-368
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "266f9b5ed0ce155da40eb24c1c9b2eb2a2d1ce9b",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ae18a0d7b01a92": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2d2e2b05-b95a-4814-9d16-a40894f0d808",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
