@@ -1,0 +1,14 @@
+tests/e2e/transportDeep.spec.ts
+  h_beb54bf43b47b7 98-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6df6424a7ae21d12123287c8938dca04d46c9a8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
