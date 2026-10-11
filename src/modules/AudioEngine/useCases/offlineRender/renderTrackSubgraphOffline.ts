@@ -199,6 +199,7 @@ export async function renderTrackSubgraphOffline({
     const {
         projectMidiEvents,
         projectPpqEndpoints,
+        beatAtSecondsFromAnchor,
         selectMidiEventProbability,
         projectChordPitch,
         resolveTempoAtBeat,
@@ -451,6 +452,11 @@ export async function renderTrackSubgraphOffline({
                 transportStore.value?.scheduleGrainMs ??
                 defaultTransportState.scheduleGrainMs
         );
+        let projectSecondsToBeat: ((elapsedSeconds: number) => number) | undefined;
+        if (beatAtSecondsFromAnchor) {
+            projectSecondsToBeat = (elapsedSeconds) =>
+                beatAtSecondsFromAnchor(changes, startBeat, elapsedSeconds, defaultTempo);
+        }
         for (const track of renderTracks) {
             const strip = trackStripsById.get(track.id);
             const composition = compositionsByTrackId.get(track.id);
@@ -475,8 +481,7 @@ export async function renderTrackSubgraphOffline({
                 durationSeconds,
                 regionStartBeat: startBeat,
                 tickSeconds: adjustmentTickSeconds,
-                defaultTempo,
-                changes,
+                projectSecondsToBeat,
                 compensationDelaySec: getCompensationDelay(track.id),
             });
         }
@@ -508,6 +513,7 @@ export async function renderTrackSubgraphOffline({
                 projections: {
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    beatAtSecondsFromAnchor,
                     resolveTempoAtBeat,
                     processYeastMidi: projections.processYeastMidi,
                     selectMidiEventProbability,

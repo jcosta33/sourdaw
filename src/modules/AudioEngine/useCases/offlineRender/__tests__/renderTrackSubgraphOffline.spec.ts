@@ -6,6 +6,7 @@ import { adjustmentLayerStore, trackStore, vcaGroupStore, type Device, type Trac
 import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import { defaultTransportState } from '#/modules/Transport/stores';
+import { beatAtSecondsFromAnchor, projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 
 import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { type AudioDeviceStrategy } from '../../../repositories/deviceStrategy/setupDeviceStrategies';
@@ -2163,6 +2164,61 @@ describe('renderTrackSubgraphOffline', () => {
 
         afterEach(() => {
             setAudioDeviceRuntimeSink({});
+        });
+
+        it('projects moving layers from the supplied ramp at the subregion anchor', async () => {
+            const tickSeconds = 4.8 * Math.log(175 / 150);
+            const changes = [
+                { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' as const },
+                { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+            ];
+            const inverse = vi.fn(beatAtSecondsFromAnchor);
+            const { configureOfflinePpqEndpointProjection } =
+                await import('../../configureOfflinePpqEndpointProjection');
+            configureOfflinePpqEndpointProjection({
+                project: projectPpqEndpoints,
+                resolveTempoAtBeat,
+                beatAtSecondsFromAnchor: inverse,
+            });
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio', gain: 0.8, clips: [], devices: [] });
+            adjustmentLayerStore.set({
+                layers: [
+                    {
+                        id: 'fade',
+                        name: 'Fade',
+                        effectType: 'volume',
+                        enabled: true,
+                        mix: 1,
+                        parameters: [{ name: 'Gain', value: -12, min: -60, max: 12, unit: 'dB' }],
+                        affectedTrackIds: [track.id],
+                        insertionIndex: 0,
+                        color: 'red',
+                        regions: [
+                            { id: 'region', startBeat: 4, endBeat: 8, blend: 1, fadeInBeats: 4, fadeOutBeats: 0 },
+                        ],
+                    },
+                ],
+            });
+            try {
+                await renderTrackSubgraphOffline({
+                    targetTrackId: track.id,
+                    renderTracks: [track],
+                    startBeat: 4,
+                    endBeat: 8,
+                    source: {
+                        project: suppliedDocument([track], {
+                            tempoMap: { changes },
+                            transport: { ...defaultTransportState, tempo: TEMPO, scheduleGrainMs: tickSeconds * 1000 },
+                        }),
+                    },
+                });
+                expect(inverse).toHaveBeenCalledWith(changes, 4, tickSeconds, TEMPO);
+                expect(inverse.mock.calls.every(([, anchor]) => anchor === 4)).toBe(true);
+                const callIndex = inverse.mock.calls.findIndex(([, , seconds]) => seconds === tickSeconds);
+                expect(inverse.mock.results[callIndex]?.value).toBeCloseTo(6, 9);
+            } finally {
+                adjustmentLayerStore.set({ layers: [] });
+            }
         });
 
         it('plays the supplied document’s notes at its VCA levels, never the live project’s', async () => {
