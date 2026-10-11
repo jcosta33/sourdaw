@@ -1,0 +1,18 @@
+scripts/__tests__/retargetCapabilityPlan.spec.ts
+  h_beb54bf43b47b7 314-366
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  h_beb54bf43b47b7 763-794
+scripts/retargetCapabilityPlan.ts
+  h_beb54bf43b47b7 142-156,182-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d3d02a74679580d4bc9aed5974945b7ecfd87ef",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
