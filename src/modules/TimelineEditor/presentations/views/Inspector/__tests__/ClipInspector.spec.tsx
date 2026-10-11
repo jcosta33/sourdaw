@@ -425,6 +425,30 @@ describe('ClipInspector', () => {
         });
     });
 
+    it('dispatches no trimClipStart action when the commit lands on the current start bound', () => {
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, startBeat: 2 }} />);
+        const slider = screen.getByLabelText('Trim clip start') as HTMLInputElement;
+
+        fireEvent.change(slider, { target: { value: '4' } });
+        fireEvent.blur(slider, { target: { value: '2' } });
+
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        // The gesture still ends cleanly: the drag state cleared and the thumb re-anchors on the store bound.
+        expect(slider.value).toBe('2');
+    });
+
+    it('dispatches no trimClipEnd action when the commit lands on the current end bound', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Trim clip end') as HTMLInputElement;
+
+        fireEvent.change(slider, { target: { value: '6' } });
+        fireEvent.blur(slider, { target: { value: '8' } });
+
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        // The gesture still ends cleanly: the drag state cleared and the thumb re-anchors on the store bound.
+        expect(slider.value).toBe('8');
+    });
+
     it('should render time stretch select for audio clips and dispatch setClipStretchMode on change', () => {
         const { container } = render(<ClipInspector {...defaultProps} />);
         const select = container.querySelector<HTMLSelectElement>('#stretch-mode-select');
