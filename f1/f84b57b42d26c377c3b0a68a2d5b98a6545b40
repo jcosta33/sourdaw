@@ -1,0 +1,34 @@
+.github/workflows/validation.yml
+  s_29d8df116c5b92::t_ecefd8fc6e1dc6 794-795
+scripts/__tests__/verifyNativeTransportMutations.spec.ts
+  s_29d8df116c5b92::t_5809ab9aa07eab 157-162,286-293,296-301,500,542
+  s_29d8df116c5b92::t_ecefd8fc6e1dc6 444-445,448,498-499
+  s_29d8df116c5b92::t_9b0aba081bc023 277-285,294-295,302-304
+  s_29d8df116c5b92::t_d2d8e8b9ee94f6 1,3,7-8,11,111-156,163-171,305-307,319,538
+  s_29d8df116c5b92::t_cc2eee4ed6ab02 101-110,308-318,320-336,405
+  s_29d8df116c5b92::t_0fc660e1e4c6b5 172-175,337-340,443,501-503,543-544,594-596
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_8a058c1781ce83 23-34
+scripts/verifyNativeTransportMutations.ts
+  s_29d8df116c5b92::t_8a058c1781ce83 103-109
+  s_29d8df116c5b92::t_76caf256daf0b0 6-9
+  s_29d8df116c5b92::t_ecefd8fc6e1dc6 345-353
+scripts/nativeCommand.ts
+  s_29d8df116c5b92::t_9e6bb93b284a37 1-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f1f84b57b42d26c377c3b0a68a2d5b98a6545b40",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
