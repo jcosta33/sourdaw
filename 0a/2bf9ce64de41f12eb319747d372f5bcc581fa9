@@ -1,0 +1,14 @@
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  h_beb54bf43b47b7 47,71,358-359,988,991,994,1007-1013,1018-1030,1033,1043-1054,1056-1061,1064
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a2bf9ce64de41f12eb319747d372f5bcc581fa9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
