@@ -28,7 +28,7 @@ AudioWorklet processors         services/*Processor.ts, workers/*EngineWorker.ts
 
 The `wasm:*` scripts (`package.json`) run `wasm-pack` per crate into `public/wasm/`, then a generator script rewrites the glue for the worklet environment:
 
-- Prepends AudioWorklet-scope polyfills (`TextDecoder`/`TextEncoder`/`FinalizationRegistry` — absent in worklet scope).
+- Prepends AudioWorklet-scope polyfills (`TextDecoder`/`TextEncoder` are absent in worklet scope; `FinalizationRegistry` is present in Chromium's worklet scope, so its block is only a guarded fallback).
 - Replaces `new URL('*_bg.wasm', import.meta.url)` with a static path so Vite does not try to bundle the `.wasm` out of `src/`.
 
 Never hand-edit files under `src/modules/AudioEngine/wasm/` — regenerate via the matching `wasm:*` script. `wasm:all` builds all four crates.
