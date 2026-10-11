@@ -226,6 +226,7 @@ import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { initCrumbsModePush } from './initCrumbsModePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
+import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
@@ -438,6 +439,7 @@ setProjectIdentityTransitionDependencies({
 // age/budget sweeps while it is inactive. Enumeration stays a pull from the
 // persisted snapshots — no second ownership table to drift.
 configureDurableAudioBufferOwnership(collectDurableOwnedAudioBufferIds);
+initInputMonitoringProjectAccess();
 
 function disposeYeastRealtimeBridge(): void {
     disposeWebMidiRealtimeProcessor();

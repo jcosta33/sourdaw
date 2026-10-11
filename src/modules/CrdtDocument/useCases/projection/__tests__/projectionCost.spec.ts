@@ -168,14 +168,20 @@ describe('projection cost per CRDT change (audit CC-1)', () => {
             });
         });
 
-        // Measured on this harness: 5 serializations for the local write —
-        // its authored `toDocSafe` round-trip, the #4858 ownership guard's
-        // base-versus-desired compare (a composite slot write pays one
-        // stringify per side to learn whether the writer owns a delta), the
-        // fresh terminal decode, and one base-capture presence snapshot —
-        // against 67 for the full re-projection, which is what every local
-        // write used to pay, and grows with the project because each slot
-        // serializes its whole payload.
+        // Measured on this harness: 3 serializations for the local write —
+        // its authored `toDocSafe` round-trip, the fresh terminal decode, and
+        // one base-capture presence snapshot — against 67 for the full
+        // re-projection, which is what every local write used to pay, and
+        // grows with the project because each slot serializes its whole
+        // payload.
+        //
+        // The #4858 ownership guard's base-versus-desired compare (one
+        // stringify per side of a composite slot) does not run here: the
+        // transport store's only baseline is its module-init seed, retained as
+        // a deferred baseline before any port existed, and a write derived
+        // from that baseline flushes with an unknown base (#5268). A write
+        // whose base is committed or hydrated authority pays both sides of
+        // that compare again.
         //
         // The presence snapshot (the #4962 flush guard) reads and serializes
         // the document slot beside the base: once at pending creation and
@@ -185,7 +191,7 @@ describe('projection cost per CRDT change (audit CC-1)', () => {
         // yet, so that capture reads an absence without serializing. Seeding
         // the slot at project creation would move this pin to 6, by the
         // capture's own design.
-        expect(localWriteCost).toBe(5);
+        expect(localWriteCost).toBe(3);
         expect(localWriteCost).toBeLessThan(fullProjectionCost);
         expect(fullProjectionCost).toBeGreaterThanOrEqual(projectSlotProjections.length);
     });

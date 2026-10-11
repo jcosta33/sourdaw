@@ -177,6 +177,7 @@ const {
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
+    initInputMonitoringProjectAccessMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -265,6 +266,7 @@ const {
         setCrumbsEventBusMock: vi.fn(),
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
+        initInputMonitoringProjectAccessMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -742,6 +744,9 @@ vi.mock('../initCrumbsModePush', () => ({
 vi.mock('../initDeviceStateReconciliation', () => ({
     initDeviceStateReconciliation: initDeviceStateReconciliationMock,
 }));
+vi.mock('../initInputMonitoringProjectAccess', () => ({
+    initInputMonitoringProjectAccess: initInputMonitoringProjectAccessMock,
+}));
 
 // Side-effect import: this is what runs the composition root under test.
 // `vi.mock` calls above are hoisted above this import by Vitest, so every
@@ -764,6 +769,9 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
+    it('binds committed project access during bootstrap', () => {
+        expect(initInputMonitoringProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
+    });
     // The exact order bootstrap.ts passes module handler maps to the production assembler.
     // This list IS the assertion: every module bootstrap wires into the shared
     // handler registry must appear here
