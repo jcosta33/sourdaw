@@ -1,0 +1,29 @@
+scripts/__tests__/resourceGuardShowOutput.spec.ts
+  s_29d8df116c5b92::t_8fb94227ade3df 54-55,57-76,78-103
+scripts/resourceGuard.ts
+  s_59e31a5c6f3e31::t_95290c7d13cb40 1334-1338,1343-1354,1362-1364,1393-1398,1400-1401,1414-1417,1420-1427,1438-1451
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "defd12d48ca17d1cabb4ced4ccc3f286a708cff4",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
