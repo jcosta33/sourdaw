@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { agentMeasurementArtifactStore, agentSectionRenderArtifactStore } from '#/modules/AudioRendering/stores';
 import { glutenMeterStore, updateGlutenMeters } from '#/modules/Gluten/stores';
 import { createGrandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { defaultToasterState, toasterStore } from '#/modules/Toaster/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 
@@ -124,6 +126,10 @@ import { resetModuleStoresToDefault } from '../resetModuleStoresToDefault';
 
 describe('resetModuleStoresToDefault', () => {
     beforeEach(() => {
+        // The reset seeds the incoming transport from the Recording
+        // preferences, so pin them to their defaults for every test; the
+        // transport-specific tests below opt into non-defaults explicitly.
+        preferencesStore.set(defaultPreferences);
         mocks.resetArrangementStoresForProject.mockClear();
         mocks.transportStoreSet.mockClear();
         mocks.setMasterGainValue.mockClear();
@@ -182,7 +188,17 @@ describe('resetModuleStoresToDefault', () => {
         resetModuleStoresToDefault();
 
         expect(mocks.resetArrangementStoresForProject).toHaveBeenCalledTimes(1);
-        expect(mocks.transportStoreSet).toHaveBeenCalledWith(defaultTransportState);
+        // With the Recording preferences at their defaults (count-in 1 bar,
+        // pre-roll off, 2 bars), the incoming transport carries those seeds;
+        // every field without a preference stays at the model default.
+        expect(mocks.transportStoreSet).toHaveBeenCalledWith({
+            ...defaultTransportState,
+            countInEnabled: true,
+            countInBars: 1,
+            preRollEnabled: false,
+            preRollBars: 2,
+        });
+        // Master gain has no preference: it stays on the static model default.
         expect(mocks.setMasterGainValue).toHaveBeenCalledWith(defaultTransportState.masterGain / 100);
         expect(mocks.automationStoreSet).toHaveBeenCalledWith({ lanes: [] });
         expect(mocks.resetMidiStoreForProject).toHaveBeenCalledWith({ generateProbabilitySeed: false });
@@ -195,6 +211,45 @@ describe('resetModuleStoresToDefault', () => {
         });
         expect(mocks.hydrateGrooveTemplates).toHaveBeenCalledWith({ templates: [], assignments: [] });
         expect(mocks.hydrateYeastState).toHaveBeenCalledWith(undefined);
+    });
+
+    it('seeds the incoming transport from non-default Recording preferences', () => {
+        // The Recording preferences are the count-in/pre-roll default the
+        // transport adopts for a NEW project (#4673). A loaded project never
+        // passes here: its hydrate path is `restoreTransportSnapshot`.
+        preferencesStore.set({ ...defaultPreferences, recordCountIn: 2, preRollEnabled: false, preRollBars: 1 });
+
+        resetModuleStoresToDefault();
+
+        expect(mocks.transportStoreSet).toHaveBeenCalledWith({
+            ...defaultTransportState,
+            countInEnabled: true,
+            countInBars: 2,
+            preRollEnabled: false,
+            preRollBars: 1,
+        });
+    });
+
+    it('keeps the model defaults for fields without a Recording preference', () => {
+        preferencesStore.set({ ...defaultPreferences, recordCountIn: 4, preRollEnabled: true, preRollBars: 4 });
+
+        resetModuleStoresToDefault();
+
+        // Master gain is seeded from the static model default, not a
+        // preference, and the unseeded transport fields stay at the model's.
+        expect(mocks.setMasterGainValue).toHaveBeenCalledWith(defaultTransportState.masterGain / 100);
+        expect(mocks.transportStoreSet).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tempo: defaultTransportState.tempo,
+                metronomeVolume: defaultTransportState.metronomeVolume,
+                masterGain: defaultTransportState.masterGain,
+                punchOutBeat: defaultTransportState.punchOutBeat,
+                countInEnabled: true,
+                countInBars: 4,
+                preRollEnabled: true,
+                preRollBars: 4,
+            })
+        );
     });
 
     it('preserves collaborative groove CRDT truth before projecting a loaded document', () => {
