@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
     existsSync,
     mkdirSync,
@@ -3705,6 +3705,7 @@ sleep() { printf '%s\\n' "$1" >> "$SLEEP_LOG"; }
 apt-get() {
   if [ "$1" = update ]; then
     if [ "\${STALL_ALSA_CHILD:-false}" = true ]; then
+      printf '%s\\n' "$$" > "$STALL_ALSA_PID_FILE"
       while :; do :; done
     fi
     attempt_count=0
@@ -3729,27 +3730,70 @@ export -f sudo timeout sleep apt-get
 
     const boundedAlsaProbeStderr = (stderr: string): string => stderr.slice(0, MAX_ALSA_PROBE_STDERR_CHARACTERS);
 
+    const requireOwnedPid = (pid: number): void => {
+        if (!Number.isSafeInteger(pid) || pid <= 1) {
+            throw new Error(`ALSA probe has no safe owned process ID: ${pid}`);
+        }
+    };
+
+    const processGroupAlive = (pid: number): boolean => {
+        requireOwnedPid(pid);
+        try {
+            process.kill(-pid, 0);
+            return true;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+                return false;
+            }
+            throw error;
+        }
+    };
+
+    const signalProcessGroup = (pid: number, signal: NodeJS.Signals): void => {
+        requireOwnedPid(pid);
+        try {
+            process.kill(-pid, signal);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+                throw error;
+            }
+        }
+    };
+
+    const waitForProcessGroupExit = async (pid: number): Promise<void> => {
+        const deadline = Date.now() + 2_000;
+        while (processGroupAlive(pid) && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        if (processGroupAlive(pid)) {
+            throw new Error(`ALSA probe process group ${pid} survived SIGKILL; fixture retained`);
+        }
+    };
+
     const describeAlsaProbeFailure = (result: AlsaProbeResult): string =>
         `ALSA probe child failed: error=${result.errorCode ?? 'none'}; status=${result.status ?? 'null'}; ` +
         `signal=${result.signal ?? 'none'}; stderr=${boundedAlsaProbeStderr(result.stderr) || '(empty)'}`;
 
     // Executes the published ALSA loop with exported Bash functions so every
     // command stays hermetic while the real nested `bash -c` and retry branches run.
-    const runAlsaInstall = (
+    const runAlsaInstall = async (
         run: string,
         succeedOnAttempt: number,
         options: { stallChild?: boolean; timeoutMs?: number } = {}
-    ): AlsaProbeResult => {
+    ): Promise<AlsaProbeResult> => {
         const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
         const attemptLog = join(probeDirectory, 'attempts.log');
         const sleepLog = join(probeDirectory, 'sleeps.log');
+        const stalledPidFile = join(probeDirectory, 'stalled.pid');
         const preludePath = join(probeDirectory, 'functions.bash');
+        let groupPid: number | undefined;
         try {
             writeFileSync(preludePath, alsaCommandFunctions);
             writeFileSync(attemptLog, '');
             writeFileSync(sleepLog, '');
-            const result = spawnSync('bash', ['-c', run], {
-                encoding: 'utf8',
+            const child = spawn('bash', ['-c', run], {
+                detached: true,
+                stdio: ['ignore', 'ignore', 'pipe'],
                 env: {
                     ...process.env,
                     BASH_ENV: preludePath,
@@ -3757,26 +3801,75 @@ export -f sudo timeout sleep apt-get
                     SLEEP_LOG: sleepLog,
                     SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
                     STALL_ALSA_CHILD: String(options.stallChild ?? false),
+                    STALL_ALSA_PID_FILE: stalledPidFile,
                 },
-                timeout: options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS,
             });
-            const error = result.error;
+            groupPid = child.pid;
+            let stderr = '';
+            let childError: NodeJS.ErrnoException | undefined;
+            let timedOut = false;
+            child.stderr?.setEncoding('utf8');
+            child.stderr?.on('data', (chunk: string) => {
+                stderr = boundedAlsaProbeStderr(stderr + chunk);
+            });
+            child.once('error', (error: NodeJS.ErrnoException) => {
+                childError = error;
+            });
+            const closed = new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+                child.once('close', (status, signal) => resolve({ status, signal }));
+            });
+            const timeout = setTimeout(() => {
+                timedOut = true;
+                if (groupPid !== undefined) {
+                    signalProcessGroup(groupPid, 'SIGTERM');
+                }
+            }, options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS);
+            const killAfter = setTimeout(
+                () => {
+                    if (timedOut && groupPid !== undefined && processGroupAlive(groupPid)) {
+                        signalProcessGroup(groupPid, 'SIGKILL');
+                    }
+                },
+                (options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS) + 200
+            );
+            let closedResult: Awaited<typeof closed>;
+            try {
+                closedResult = await closed;
+                if (timedOut && groupPid !== undefined) {
+                    await waitForProcessGroupExit(groupPid);
+                }
+                if (!timedOut && groupPid !== undefined && processGroupAlive(groupPid)) {
+                    signalProcessGroup(groupPid, 'SIGKILL');
+                    await waitForProcessGroupExit(groupPid);
+                    throw new Error(`ALSA probe process group ${groupPid} outlived its direct child`);
+                }
+            } finally {
+                clearTimeout(timeout);
+                clearTimeout(killAfter);
+            }
             const outcome: AlsaProbeResult = {
                 attempts: 0,
                 sleeps: [],
-                status: result.status,
-                signal: result.signal,
-                errorCode: error?.code ?? null,
-                stderr: result.stderr,
-                error,
+                status: closedResult.status,
+                signal: closedResult.signal,
+                errorCode: timedOut ? 'ETIMEDOUT' : (childError?.code ?? null),
+                stderr,
+                error: childError,
             };
-            if (outcome.error !== undefined || outcome.status === null || outcome.signal !== null) {
-                throw Object.assign(new Error(describeAlsaProbeFailure(outcome)), { probeDirectory });
+            if (timedOut || outcome.error !== undefined || outcome.status === null || outcome.signal !== null) {
+                const rawStalledPid = existsSync(stalledPidFile) ? readFileSync(stalledPidFile, 'utf8').trim() : '';
+                const stalledPid = Number(rawStalledPid);
+                throw Object.assign(new Error(describeAlsaProbeFailure(outcome)), {
+                    probeDirectory,
+                    stalledPid: Number.isSafeInteger(stalledPid) && stalledPid > 1 ? stalledPid : undefined,
+                });
             }
             const lines = (path: string): string[] => readFileSync(path, 'utf8').split('\n').filter(Boolean);
             return { ...outcome, attempts: lines(attemptLog).length, sleeps: lines(sleepLog) };
         } finally {
-            rmSync(probeDirectory, { force: true, recursive: true });
+            if (groupPid === undefined || !processGroupAlive(groupPid)) {
+                rmSync(probeDirectory, { force: true, recursive: true });
+            }
         }
     };
 
@@ -3792,43 +3885,43 @@ export -f sudo timeout sleep apt-get
             expect(outcome.stderr).toContain('ALSA header install failed (attempt 3/3)');
         };
 
-        it(`${label} makes three ALSA install attempts, then fails the step`, () => {
-            const outcome = runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
+        it(`${label} makes three ALSA install attempts, then fails the step`, async () => {
+            const outcome = await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
             assertExhaustionContract(outcome);
         });
 
-        it(`${label} stops retrying the ALSA install once an attempt succeeds`, () => {
-            const outcome = runAlsaInstall(alsaRun, 2);
+        it(`${label} stops retrying the ALSA install once an attempt succeeds`, async () => {
+            const outcome = await runAlsaInstall(alsaRun, 2);
             expect(outcome.attempts).toBe(2);
             expect(outcome.sleeps).toEqual(['15']);
             expect(outcome.status).toBe(0);
         });
 
-        it(`${label} retry oracle rejects a loop with its later attempts removed`, () => {
+        it(`${label} retry oracle rejects a loop with its later attempts removed`, async () => {
             const oneAttempt = alsaRun.replace('for attempt in 1 2 3; do', 'for attempt in 1; do');
             expect(oneAttempt).not.toBe(alsaRun);
-            const outcome = runAlsaInstall(oneAttempt, Number.MAX_SAFE_INTEGER);
+            const outcome = await runAlsaInstall(oneAttempt, Number.MAX_SAFE_INTEGER);
             expect(() => assertExhaustionContract(outcome)).toThrow();
         });
 
-        it(`${label} retry oracle rejects a successful exit after the third failed attempt`, () => {
+        it(`${label} retry oracle rejects a successful exit after the third failed attempt`, async () => {
             const swallowedFailure = alsaRun.replace(/\n\s*exit 1\s*$/, '\n  exit 0');
             expect(swallowedFailure).not.toBe(alsaRun);
-            const outcome = runAlsaInstall(swallowedFailure, Number.MAX_SAFE_INTEGER);
+            const outcome = await runAlsaInstall(swallowedFailure, Number.MAX_SAFE_INTEGER);
             expect(outcome.attempts).toBe(3);
             expect(outcome.sleeps).toEqual(['15', '30']);
             expect(() => assertExhaustionContract(outcome)).toThrow();
         });
     }
 
-    it('reports a stalled ALSA child timeout and cleans up its fixture before the test deadline', () => {
-        const failure = (() => {
+    it('reports a stalled ALSA child timeout, stops its process tree, and cleans up its fixture', async () => {
+        const failure = await (async () => {
             try {
                 const alsaRun = stringAt(
                     stepNamed(jobAt(validationWorkflow, 'rust'), 'Install ALSA development headers'),
                     'run'
                 );
-                runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER, { stallChild: true, timeoutMs: 100 });
+                await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER, { stallChild: true, timeoutMs: 100 });
                 throw new Error('Expected the stalled ALSA child to fail with a bounded timeout');
             } catch (error) {
                 if (!(error instanceof Error)) {
@@ -3840,20 +3933,44 @@ export -f sudo timeout sleep apt-get
                         'probeDirectory' in error && typeof error.probeDirectory === 'string'
                             ? error.probeDirectory
                             : undefined,
+                    stalledPid:
+                        'stalledPid' in error && typeof error.stalledPid === 'number' ? error.stalledPid : undefined,
                 };
             }
         })();
-        expect(failure.message).toContain('error=ETIMEDOUT; status=null; signal=SIGTERM');
-        expect(failure.message.length).toBeLessThanOrEqual(
-            'ALSA probe child failed: error=ETIMEDOUT; status=null; signal=SIGTERM; stderr='.length +
-                MAX_ALSA_PROBE_STDERR_CHARACTERS +
-                '(empty)'.length
-        );
-        expect(failure.probeDirectory).toBeDefined();
-        if (failure.probeDirectory === undefined) {
-            throw new Error('The ALSA probe did not expose its fixture directory');
+        const killRecordedStalledChild = (pid: number): void => {
+            requireOwnedPid(pid);
+            try {
+                process.kill(pid, 'SIGKILL');
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+                    throw error;
+                }
+            }
+        };
+        try {
+            expect(failure.message).toContain('error=ETIMEDOUT; status=null; signal=SIGTERM');
+            expect(failure.message.length).toBeLessThanOrEqual(
+                'ALSA probe child failed: error=ETIMEDOUT; status=null; signal=SIGTERM; stderr='.length +
+                    MAX_ALSA_PROBE_STDERR_CHARACTERS +
+                    '(empty)'.length
+            );
+            expect(failure.probeDirectory).toBeDefined();
+            if (failure.probeDirectory === undefined) {
+                throw new Error('The ALSA probe did not expose its fixture directory');
+            }
+            expect(existsSync(failure.probeDirectory)).toBe(false);
+            expect(failure.stalledPid).toBeDefined();
+            if (failure.stalledPid === undefined) {
+                throw new Error('The ALSA probe did not expose its stalled child PID');
+            }
+            const stalledPid = failure.stalledPid;
+            expect(() => process.kill(stalledPid, 0)).toThrow();
+        } finally {
+            if (failure.stalledPid !== undefined) {
+                killRecordedStalledChild(failure.stalledPid);
+            }
         }
-        expect(existsSync(failure.probeDirectory)).toBe(false);
     });
 
     it('fails every Linux browser install step after its third failed attempt', () => {

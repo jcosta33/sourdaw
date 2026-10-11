@@ -22,6 +22,8 @@ Probe the actual published loop with exported Bash functions loaded in its neste
 
 Drive the stalled child through the same helper and fixture boundary used by the successful retry probes. A standalone child with a separate fixture can report timeout and cleanup while the retry helper's timeout guard is deleted. On the committed head, deleting that guard and deleting its cleanup must each fail the stalled-child case.
 
+The timeout probe must also own the nested Bash process after its direct child exits. `spawnSync` can report `ETIMEDOUT` and allow fixture cleanup while that nested shell continues spinning. Record the nested shell's positive PID from Bash 3.2-compatible `$$`, then require it and the helper's detached process group to be gone before cleanup; a direct-PID-only termination mutation must fail the same case. Validate every recorded PID before probing or signaling it: an empty `BASHPID` on macOS coerced to PID 0 and killed the test runner's process group instead of observing the child.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
