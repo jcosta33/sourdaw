@@ -56,7 +56,10 @@ function sendParameterKey(busId: string): string {
     return `send:${busId}`;
 }
 
-export type WebAudioOfflineBackendDeps = Pick<BuildDeviceChainContext, 'instruments' | 'loadedExternalInstanceIds'> & {
+export type WebAudioOfflineBackendDeps = Pick<
+    BuildDeviceChainContext,
+    'instruments' | 'loadedExternalInstanceIds' | 'refuseFailedFaustDevices'
+> & {
     /** The render's context. Every node this backend builds belongs to it. */
     context: OfflineAudioContext;
     /** Where a strip routed to `master` lands. */
@@ -270,6 +273,7 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                         onWarning,
                         contributesAudio: command.contributesAudio,
                         cancellationSignal: deps.cancellationSignal,
+                        refuseFailedFaustDevices: deps.refuseFailedFaustDevices,
                     }
                 );
                 if (command.state.soloGated) {

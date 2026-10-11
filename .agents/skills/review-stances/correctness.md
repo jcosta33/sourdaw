@@ -540,3 +540,17 @@ Probe: render a mono buffer through each real factory in Chromium OfflineAudioCo
 must produce a right-channel peak; Widener at non-unity width must emit equal left and right
 samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
 Removing the explicit speakers upmix at either input must turn its mono assertion red.
+
+### 2026-10-11 — warning-only Faust failure produced an incomplete musician export (#5215)
+
+PR #841 (`4edbe587b`) established the construction-error split: unsupported claimed devices refused,
+but runtime factory failures warned and omitted the device. Its Faust case asserted that omission;
+the dialog's warning case asserted success over a returned buffer. The historical stance dispatch
+is unverified. The missing failure mode was an admitted, audible device failing after admission.
+
+Inject a real Faust factory rejection through the musician mixdown's strip and chain, require a
+named track/device refusal with no buffer, then require the dialog to perform no encode, write or
+download. Exercise grouped stem strips and auxiliary detector keys; a refusal must invalidate the
+whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
+and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
+later runtime load failure.
