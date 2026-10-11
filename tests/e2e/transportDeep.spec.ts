@@ -95,9 +95,14 @@ test.describe('Transport deep — BPM, metronome, loop', () => {
         await expect
             .poll(async () => {
                 const during = await sample();
-                return during.map((pixel, index) =>
-                    pixel.some((channel, channelIndex) => channel !== before[index][channelIndex])
-                );
+                const blueIncrease = during.map((pixel, index) => pixel[2] - before[index][2]);
+                // The faint fill raises blue inside the interval; each opaque
+                // accent handle must raise it much more than the fill alone.
+                return [
+                    blueIncrease[1] > 0,
+                    blueIncrease[0] > blueIncrease[1] * 2,
+                    blueIncrease[2] > blueIncrease[1] * 2,
+                ];
             })
             .toEqual([true, true, true]);
 
