@@ -166,6 +166,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             projectMidiEvents,
             selectMidiEventProbability,
             projectPpqEndpoints,
+            beatAtSecondsFromAnchor,
             resolveTempoAtBeat,
             processYeastMidi,
             projectChordPitch,
@@ -375,6 +376,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         projections: {
                             projectMidiEvents,
                             projectPpqEndpoints,
+                            beatAtSecondsFromAnchor,
                             resolveTempoAtBeat,
                             processYeastMidi,
                             selectMidiEventProbability,
@@ -414,6 +416,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         projections: {
                             projectMidiEvents,
                             projectPpqEndpoints,
+                            beatAtSecondsFromAnchor,
                             resolveTempoAtBeat,
                             processYeastMidi,
                             selectMidiEventProbability,
