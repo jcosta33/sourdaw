@@ -1,0 +1,18 @@
+.github/workflows/nightly-evidence-report.yml
+  h_beb54bf43b47b7 1-83
+scripts/__tests__/codeqlNightlyEvidence.spec.ts
+  h_beb54bf43b47b7 1-266
+scripts/codeqlNightlyEvidence.ts
+  h_beb54bf43b47b7 1-313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66f3d18270667a2cfa2acc9c408cb2701e5b7c70",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
