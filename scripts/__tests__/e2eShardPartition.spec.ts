@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -109,9 +109,12 @@ describe('planned browser matrix', () => {
         const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
         const recorded = [...readSpecDurations().keys()].sort().slice(0, 30);
         const inventory = [SMOKE_SPEC, ...recorded];
+        symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
+        writeFileSync(join(root, '.gitignore'), 'node_modules\n');
+        writeFileSync(join(root, 'playwright.config.mjs'), "export default { testDir: './tests/e2e' };\n");
         for (const path of inventory) {
             mkdirSync(join(root, dirname(path)), { recursive: true });
-            writeFileSync(join(root, path), '// browser fixture\n');
+            writeFileSync(join(root, path), "import { test } from '@playwright/test';\ntest('fixture', () => {});\n");
         }
         git(['init', '--quiet']);
         git(['config', 'user.email', 'ci@example.invalid']);
