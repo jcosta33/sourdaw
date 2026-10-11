@@ -1,10 +1,14 @@
 /**
  * AudioWorklet-scope polyfills prepended to every generated wasm-bindgen glue file.
  *
- * The worklet global scope has no `TextDecoder`/`TextEncoder`/`FinalizationRegistry`,
- * but wasm-bindgen's glue uses all three: every `set_param(name, value)` call runs the
- * string through `TextEncoder.encodeInto`, and anything returning a `String` from Rust
- * comes back through `TextDecoder.decode`.
+ * The worklet global scope has no `TextDecoder`/`TextEncoder`, but wasm-bindgen's glue
+ * uses both: every `set_param(name, value)` call runs the string through
+ * `TextEncoder.encodeInto`, and anything returning a `String` from Rust comes back
+ * through `TextDecoder.decode`. The glue's finalizer needs `FinalizationRegistry`, and
+ * Chromium's AudioWorklet scope provides it (measured in both live and offline
+ * contexts), so that finalizer is live on the render thread — the premise ADR 0052's
+ * paced disposal drain builds on. The registry block below stays only as a guarded
+ * fallback for a target that lacks it.
  *
  * The previous implementation was latin1, not UTF-8 — `decode` did
  * `String.fromCharCode(byte)` per byte and `encode` masked `charCodeAt(i) & 0xff`.
