@@ -1,0 +1,280 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 216-230
+.agents/skills/review-stances/browser-inventory.md
+  h_beb54bf43b47b7 12-19
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9-16
+.github/workflows/health-gates.yml
+  h_beb54bf43b47b7 21,34-39,44-46
+.github/workflows/heavy-gates.yml
+  h_beb54bf43b47b7 179,183,187,193,200,208,212-243
+AGENTS.md
+  h_beb54bf43b47b7 89-100,585-593
+crates/daw-dsp/src/grinder/engine.rs
+  h_beb54bf43b47b7 694-704
+crates/daw-dsp/src/grinder/mod.rs
+  h_beb54bf43b47b7 12,78-93
+crates/daw-dsp/src/grinder/nam/activations.rs
+  h_beb54bf43b47b7 1-191
+crates/daw-dsp/src/grinder/nam/conv.rs
+  h_beb54bf43b47b7 1-198
+crates/daw-dsp/src/grinder/nam/convnet.rs
+  h_beb54bf43b47b7 1-266
+crates/daw-dsp/src/grinder/nam/fixtures/convnet_synthetic.nam
+  h_beb54bf43b47b7 1
+crates/daw-dsp/src/grinder/nam/fixtures/gated_wavenet_synthetic.nam
+  h_beb54bf43b47b7 1
+crates/daw-dsp/src/grinder/nam/fixtures/golden_convnet_synthetic_bs64.txt
+  h_beb54bf43b47b7 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_gated_wavenet_synthetic_bs64.txt
+  h_beb54bf43b47b7 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_lstm_bs256.txt
+  h_beb54bf43b47b7 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_lstm_bs64.txt
+  h_beb54bf43b47b7 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_wavenet_bs256.txt
+  h_beb54bf43b47b7 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/golden_wavenet_bs64.txt
+  h_beb54bf43b47b7 1-384
+crates/daw-dsp/src/grinder/nam/fixtures/lstm.nam
+  h_beb54bf43b47b7 1
+crates/daw-dsp/src/grinder/nam/fixtures/wavenet.nam
+  h_beb54bf43b47b7 1
+crates/daw-dsp/src/grinder/nam/linear.rs
+  h_beb54bf43b47b7 1-110
+crates/daw-dsp/src/grinder/nam/lstm.rs
+  h_beb54bf43b47b7 1-237
+crates/daw-dsp/src/grinder/nam/mod.rs
+  h_beb54bf43b47b7 1-632
+crates/daw-dsp/src/grinder/nam/wavenet.rs
+  h_beb54bf43b47b7 1-833
+crates/daw-dsp/src/grinder/neural.rs
+  h_beb54bf43b47b7 11-12,201-204,241,277-284,291-293,315-334,341-348,393-395,490,542-753
+crates/daw-dsp/src/levain/engine.rs
+  h_beb54bf43b47b7 1191-1198,1213-1215
+crates/daw-dsp/src/levain/voice.rs
+  h_beb54bf43b47b7 411-412,1186-1193,1226-1238
+crates/daw-dsp/src/toaster/engines/mod.rs
+  h_beb54bf43b47b7 298
+crates/daw-dsp/src/toaster/engines/modal.rs
+  h_beb54bf43b47b7 286-292
+crates/daw-dsp/tests/levain_mic_mix_is_audible.rs
+  h_beb54bf43b47b7 375-397,925-1013
+crates/daw-dsp/tests/toaster_pad_output.rs
+  h_beb54bf43b47b7 325-352
+docs/affected-e2e.md
+  h_beb54bf43b47b7 1-40
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,611-622,1002,1005-1019,1066,1107-1221,1226
+public/wasm/daw-dsp/daw_dsp.js
+  h_beb54bf43b47b7 1262-1285,2242-2246,2379-2384
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,5,8-22,69,110-224,229
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,15-18,20-21
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1351,1771
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 616,1182,1323,1359,1397
+scripts/__tests__/e2eAffectedGraph.spec.ts
+  h_beb54bf43b47b7 1-591
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  h_beb54bf43b47b7 22-29,252-316
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 29,46-56,61-62,65-68,417,422,427,435,444,449,454-471
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 204-223,547-557,559,562-585,1906-1929,1941-1943,1947-1948,1951-1975,2042-2046,4623-4671,4694-4708,4712,4783-4788,4862
+scripts/__tests__/prValidationScope.spec.ts
+  h_beb54bf43b47b7 10,19,23,83-257,332,477-499,658
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 37,64,78,4990,5018-5111,5231-5237,5400-5657,5671-5686,5692,5858-5862,5865-5866,5996,6975,6991-6997,7026-7027,7029-7031,7034,7437,7447,7469,7477,7486,7505,7513,7518,7531,7544,7551-7555,7603,7695,7725,7737,7745,7769,7794,7797,7805-7809
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  h_beb54bf43b47b7 469-528
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  h_beb54bf43b47b7 210-216
+scripts/__tests__/reviewStructuralAdmission.spec.ts
+  h_beb54bf43b47b7 1-86
+scripts/e2eAffectedGraph.ts
+  h_beb54bf43b47b7 1-550
+scripts/e2eSuiteOwners.json
+  h_beb54bf43b47b7 1-536
+scripts/healthGateWorkflowContract.ts
+  h_beb54bf43b47b7 77,151,241,402
+scripts/prValidationScope.ts
+  h_beb54bf43b47b7 10-11,50,340-368,373-374,404-406,408-410,463-537,559-567,569-572,582-585
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 35-41,52,300,334,349,351-353,600
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 128
+scripts/reviewStructuralAdmission.ts
+  h_beb54bf43b47b7 1-167
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 235,272,311
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  h_beb54bf43b47b7 136
+src/modules/Arrangement/useCases/freezeBounce/__tests__/detectSilentBake.spec.ts
+  h_beb54bf43b47b7 8-12
+src/modules/AudioEngine/models/RuntimeGrinderNeuralPatch.ts
+  h_beb54bf43b47b7 37-50
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineModulatorParity.spec.ts
+  h_beb54bf43b47b7 1-186
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  h_beb54bf43b47b7 13-17,27,37-64,230-245,341-505,525-526,1098-1154,1160-1175,1191-1200,1203-1207,1209,1211-1212,1214-1233,1235-1243,1245
+src/modules/AudioEngine/repositories/offlineScheduler/makeSecondsToBeat.ts
+  h_beb54bf43b47b7 1-44
+src/modules/AudioEngine/services/__tests__/grinderProcessorNeuralPatch.spec.ts
+  h_beb54bf43b47b7 5,8,18-20,41,161-270
+src/modules/AudioEngine/services/__tests__/grinderProcessorTestHarness.ts
+  h_beb54bf43b47b7 57,64,92-98,190,197,204-207
+src/modules/AudioEngine/services/__tests__/runtimeGrinderNeuralPatch.spec.ts
+  h_beb54bf43b47b7 69-159
+src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts
+  h_beb54bf43b47b7 40,48-55,70-71,119-143,150
+src/modules/AudioEngine/services/grinderProcessor.ts
+  h_beb54bf43b47b7 218-221,224-226,255-259,261-263,268-287,323-340,417-418,609
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineAdjustmentLayerParity.spec.ts
+  h_beb54bf43b47b7 1-268
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  h_beb54bf43b47b7 3,2261-2317
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  h_beb54bf43b47b7 4-5,1293,1296-1298,1300-1302,1305-1361
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  h_beb54bf43b47b7 432-567,633-647,650-664
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  h_beb54bf43b47b7 1-2,6,8,12,14,16,18,21,23,30-31,55-71,117-180,182-268,270,277,300-314,320-324,326-327,370-390
+src/modules/AudioEngine/useCases/offlineRender/composeOfflineStripLevel.ts
+  h_beb54bf43b47b7 1-19
+src/modules/AudioEngine/useCases/offlineRender/createOfflineAdjustmentBusChain.ts
+  h_beb54bf43b47b7 1-50
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  h_beb54bf43b47b7 95
+src/modules/AudioEngine/useCases/offlineRender/offlineAdjustmentLayers.ts
+  h_beb54bf43b47b7 1-175
+src/modules/AudioEngine/useCases/offlineRender/readOfflineAdjustmentLayerSnapshot.ts
+  h_beb54bf43b47b7 1-6
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  h_beb54bf43b47b7 1,3-4,11,17,20,24,28,32,36,274-332,343-357,360,413-416,418-425,446-483
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineAdjustmentCurves.ts
+  h_beb54bf43b47b7 1-70
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  h_beb54bf43b47b7 3,312-323,325-328,371,377
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  h_beb54bf43b47b7 82-107,116-126,135-143,154-201,249
+src/modules/AudioEngine/useCases/offlineRender/tryNativeOfflineRender.ts
+  h_beb54bf43b47b7 1-3,26,39-49
+src/modules/AudioEngine/useCases/offlineRender/wireAdjustmentBusChain.ts
+  h_beb54bf43b47b7 1-22
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,611-622,1002,1005-1019,1066,1107-1221,1226
+src/modules/AudioEngine/wasm/daw_dsp.js
+  h_beb54bf43b47b7 1439-1462,2419-2423,2556-2561
+src/modules/Automation/useCases/index.ts
+  h_beb54bf43b47b7 18-19
+src/modules/Automation/useCases/modulation/offlineModulatorSchedule.ts
+  h_beb54bf43b47b7 1-100
+src/modules/Command/useCases/__tests__/compensateAbortedActions.spec.ts
+  h_beb54bf43b47b7 1-143
+src/modules/Command/useCases/__tests__/rollbackAbortedActions.spec.ts
+  h_beb54bf43b47b7 1-103
+src/modules/Grinder/models/GrinderNeuralModelJson.ts
+  h_beb54bf43b47b7 1-28
+src/modules/Grinder/models/GrinderNeuralProfileParams.ts
+  h_beb54bf43b47b7 1,14-93,104-106,109,118-121,220-225,238,253-254,260-266,269-271,293-298,308
+src/modules/Grinder/models/GrinderPatch.ts
+  h_beb54bf43b47b7 32-49,62-69,430-438,442-443
+src/modules/Grinder/models/__tests__/GrinderNeuralModelJson.spec.ts
+  h_beb54bf43b47b7 1-48
+src/modules/Grinder/models/__tests__/GrinderNeuralProfileParams.spec.ts
+  h_beb54bf43b47b7 3-26,41-42,101-208
+src/modules/Grinder/models/__tests__/GrinderPatch.spec.ts
+  h_beb54bf43b47b7 122-123,145-146
+src/modules/Grinder/models/__tests__/GrinderProjectParameterMap.spec.ts
+  h_beb54bf43b47b7 7-12,30-31,142-207
+src/modules/Grinder/presentations/components/__tests__/ImportedNeuralLibraryCard.spec.tsx
+  h_beb54bf43b47b7 40-41
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  h_beb54bf43b47b7 170-171
+src/modules/Grinder/repositories/neuralLibraryPersistence/__tests__/neuralLibraryPersistence.spec.ts
+  h_beb54bf43b47b7 31-32
+src/modules/Grinder/services/__tests__/parseGrinderNamFile.spec.ts
+  h_beb54bf43b47b7 5-44,47,60-63,81-83,85,95,122-125,139
+src/modules/Grinder/services/__tests__/parseGrinderNamFileBranches.spec.ts
+  h_beb54bf43b47b7 6-10,13-58,60-113,117-120,126-127,132-133,138-141,146-147,151-156,163,168,173,178,186,191,197,201,206,209,214,218,224,230-231,233,236,244,250,253,269,285-324,352,369-398,402-403,407-413,417-418,425,430,435
+src/modules/Grinder/services/__tests__/validateGrinderNamModel.spec.ts
+  h_beb54bf43b47b7 1-313
+src/modules/Grinder/services/parseGrinderNamFile.ts
+  h_beb54bf43b47b7 1,8-9,94-99,105-110,154-168,175-196,202
+src/modules/Grinder/services/validateGrinderNamModel.ts
+  h_beb54bf43b47b7 1-623
+src/modules/Grinder/stores/__tests__/grinderNeuralLibraryStore.spec.ts
+  h_beb54bf43b47b7 34-35
+src/modules/Grinder/useCases/__tests__/exportGrinderNeuralModel.spec.ts
+  h_beb54bf43b47b7 45-46
+src/modules/Grinder/useCases/__tests__/importGrinderNeuralModels.spec.ts
+  h_beb54bf43b47b7 23-25,30,32-50
+src/modules/Grinder/useCases/__tests__/removeGrinderNeuralModel.spec.ts
+  h_beb54bf43b47b7 52-53,89-90
+src/modules/Grinder/useCases/__tests__/restoreGrinderNeuralLibrary.spec.ts
+  h_beb54bf43b47b7 66-67
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/loadGrinderPatchWithAudio.spec.ts
+  h_beb54bf43b47b7 163-164,190-191
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/syncGrinderPatchToAudio.spec.ts
+  h_beb54bf43b47b7 176-177,232-316
+src/modules/Grinder/useCases/grinderParamBridge/helpers.ts
+  h_beb54bf43b47b7 28-35
+src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
+  h_beb54bf43b47b7 4,305-309,312-316
+src/modules/MIDI/repositories/webMidi/__tests__/routeYeastLifecycleNoteOff.spec.ts
+  h_beb54bf43b47b7 1-150
+src/modules/MIDI/repositories/webMidi/pendingYeastRelease.ts
+  h_beb54bf43b47b7 19-23,34-52,67,98,125,135,267-311,340
+src/modules/MIDI/repositories/webMidi/releaseCapturedYeastVoices.ts
+  h_beb54bf43b47b7 2,21
+src/modules/MIDI/repositories/webMidi/releaseHeldYeastVoices.ts
+  h_beb54bf43b47b7 1-28
+src/modules/MIDI/repositories/webMidi/routeYeastLifecycleNoteOff.ts
+  h_beb54bf43b47b7 1-47
+src/modules/MIDI/repositories/webMidi/routeYeastNoteOff.ts
+  h_beb54bf43b47b7 1-52
+src/modules/MIDI/repositories/webMidi/routeYeastNoteOffToInstrument.ts
+  h_beb54bf43b47b7 1-58
+src/modules/MIDI/repositories/webMidi/webMidiEventBus.ts
+  h_beb54bf43b47b7 11-18
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  h_beb54bf43b47b7 3-15,23-34,38-49,51-55,102-115,118-125,134,145-149,187-189,197,203-295,411
+src/modules/MIDI/useCases/webMidiInput/initWebMidi.ts
+  h_beb54bf43b47b7 3,6-8,14,70-79,81,83-99
+src/modules/Project/useCases/arrangement/__tests__/loadSnapshot.spec.ts
+  h_beb54bf43b47b7 32
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackLevelSection.spec.tsx
+  h_beb54bf43b47b7 36
+src/modules/Yeast/engine/YeastWorkerClient.ts
+  h_beb54bf43b47b7 773,778-788,791-792,796-806
+src/modules/Yeast/engine/__tests__/YeastWorkerClient.spec.ts
+  h_beb54bf43b47b7 1170-1172,1190-1191,1214-1316,1430-1431
+src/modules/Yeast/events/YeastNotesOffPayload.ts
+  h_beb54bf43b47b7 4-12
+src/modules/Yeast/workers/MidiRack.ts
+  h_beb54bf43b47b7 388-391,395-399
+src/modules/Yeast/workers/__tests__/MidiRack.spec.ts
+  h_beb54bf43b47b7 1164-1234
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  h_beb54bf43b47b7 22-24
+tests/e2e/exportFidelityTestId.spec.ts
+  h_beb54bf43b47b7 2,6,17,21-26
+tests/e2e/exportTestId.spec.ts
+  h_beb54bf43b47b7 7,54,58-60
+tests/e2e/firstPaintWarmup.ts
+  h_beb54bf43b47b7 34-37,62,64,66,68,70,72,83,89,97,99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fdaa3dffd2185aa939e9694ea821f66429cbf334",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
