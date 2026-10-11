@@ -5474,6 +5474,24 @@ mod tests {
         assert_eq!(frames, 18_432_000_000_000_000_000);
     }
 
+    /// The boundary itself, at rate 1.0 where both products are exact in
+    /// `f64`: exactly 2^64 refuses, and the largest f64 below it — one f64
+    /// step of 2048 at this magnitude — still converts. The Err case is what
+    /// makes `>=` load-bearing: under `>` the cast saturates 2^64 to
+    /// `u64::MAX` and hands back an Ok instead.
+    #[test]
+    fn seconds_at_the_exact_frame_range_boundary_refuse_and_just_below_still_convert() {
+        let refused = seconds_to_frames(18_446_744_073_709_551_616.0, 1.0, "x")
+            .expect_err("2^64 frames is one past the representable range");
+
+        assert_eq!(refused, "x exceeds the frame range");
+
+        let frames = seconds_to_frames(18_446_744_073_709_549_568.0, 1.0, "x")
+            .expect("the largest f64 below 2^64 is representable in u64");
+
+        assert_eq!(frames, 18_446_744_073_709_549_568);
+    }
+
     fn clip_and_gain_batch() -> GraphBatchPayload {
         batch(json!([
             {

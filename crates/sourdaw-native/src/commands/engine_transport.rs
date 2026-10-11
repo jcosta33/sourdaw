@@ -579,10 +579,12 @@ mod tests {
         );
     }
 
-    /// Segments past the frame range must take the whole map out. Both later
-    /// starts here would saturate to `u64::MAX`, so the map would install with
-    /// segments sharing one start frame — contradicting the one-frame rule the
-    /// engine reads tempo segments by.
+    /// Segments past the frame range must be refused by the conversion itself,
+    /// naming the field. Pre-fix this payload was refused too — but only by
+    /// accident of structure: both later starts saturated to `u64::MAX`, and
+    /// `TempoMap::new` rejected the collapsed map for breaking its
+    /// strictly-increasing-frames rule, an error that names no range breach.
+    /// The assertion below pins the conversion's own refusal.
     #[test]
     fn a_map_with_segments_past_the_frame_range_is_refused() {
         let payload = TransportMapsPayload {
