@@ -47,6 +47,16 @@ const MUTATIONS: readonly TransportMutation[] = [
 export type NativeTestResult = { code: number | null; signal: string | null; output: string; failure?: string };
 type CaseRecord = { phase: string; spec: string; code: number | null; signal: string | null; log: string };
 
+export class NativeCommandOwnershipError extends Error {
+    readonly reason: string;
+
+    constructor(reason: string, cause?: unknown) {
+        super(`Native command ownership unconfirmed after SIGKILL: ${reason}`, { cause });
+        this.name = 'NativeCommandOwnershipError';
+        this.reason = reason;
+    }
+}
+
 function digest(value: string): string {
     return createHash('sha256').update(value).digest('hex');
 }
@@ -131,7 +141,11 @@ export async function verifyTransportMutations(options: {
 }): Promise<{ sourceDigest: string; restoredDigest: string; cases: CaseRecord[] }> {
     const original = readFileSync(options.sourcePath, 'utf8');
     const cases: CaseRecord[] = [];
+    let ownershipFailure: NativeCommandOwnershipError | undefined;
     const restoreSource = () => {
+        if (ownershipFailure !== undefined) {
+            throw ownershipFailure;
+        }
         writeFileSync(options.sourcePath, original);
         if (readFileSync(options.sourcePath, 'utf8') !== original) {
             throw new Error('Owning source restoration failed');
@@ -148,7 +162,15 @@ export async function verifyTransportMutations(options: {
         mutateTransportSource(original, mutation.name);
     }
     const run = async (phase: string, spec: string, panic?: string) => {
-        const result = await options.runCase(spec);
+        let result: NativeTestResult;
+        try {
+            result = await options.runCase(spec);
+        } catch (error) {
+            if (error instanceof NativeCommandOwnershipError) {
+                ownershipFailure = error;
+            }
+            throw error;
+        }
         const log = `${phase}-${spec}.log`;
         writeFileSync(join(options.evidencePath, log), result.output);
         cases.push({ phase, spec: `${PREFIX}${spec}`, code: result.code, signal: result.signal, log });
@@ -207,37 +229,151 @@ function childEnvironment(): NodeJS.ProcessEnv {
     return environment;
 }
 
-function runCommand(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<NativeTestResult> {
-    return new Promise((resolve) => {
-        const child = spawn(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+function spawnNativeCommand(
+    command: string,
+    args: string[],
+    options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean; stdio: ['ignore', 'pipe', 'pipe'] }
+) {
+    return spawn(command, args, options);
+}
+
+type NativeCommandPorts = {
+    spawn: typeof spawnNativeCommand;
+    setTimeout: typeof setTimeout;
+    clearTimeout: typeof clearTimeout;
+    process: Pick<NodeJS.Process, 'kill' | 'once' | 'removeListener'>;
+};
+
+function isAbsentProcessGroup(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH';
+}
+
+export function runCommand(
+    command: string,
+    args: string[],
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+    ports: NativeCommandPorts = { spawn: spawnNativeCommand, setTimeout, clearTimeout, process }
+): Promise<NativeTestResult> {
+    return new Promise((resolve, reject) => {
+        const child = ports.spawn(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        const pid = child.pid;
+        const ownsGroup = pid !== undefined && Number.isSafeInteger(pid) && pid > 1;
         const buffers: Buffer[] = [];
         let size = 0;
         let failure: string | undefined;
+        let terminationFailure: string | undefined;
+        let ownershipCause: unknown;
+        let closed: { code: number | null; signal: NodeJS.Signals | null } | undefined;
+        let groupAbsent = false;
+        let terminating = false;
+        let settled = false;
         let killTimer: ReturnType<typeof setTimeout> | undefined;
-        const stop = (reason: string) => {
-            if (failure !== undefined) {
+        let confirmationTimer: ReturnType<typeof setTimeout> | undefined;
+        let pollTimer: ReturnType<typeof setTimeout> | undefined;
+        const groupAlive = () => {
+            if (pid === undefined || groupAbsent) {
+                return false;
+            }
+            if (!ownsGroup) {
+                terminationFailure = 'child-pid-invalid';
+                return true;
+            }
+            try {
+                ports.process.kill(-pid, 0);
+                return true;
+            } catch (error) {
+                if (isAbsentProcessGroup(error)) {
+                    groupAbsent = true;
+                    return false;
+                }
+                terminationFailure = 'child-group-inspection-failed';
+                ownershipCause = error;
+                return true;
+            }
+        };
+        const kill = (signal: NodeJS.Signals) => {
+            if (!ownsGroup || !groupAlive() || pid === undefined) {
                 return;
             }
-            failure = reason;
-            const kill = (signal: NodeJS.Signals) => {
-                if (child.pid !== undefined) {
-                    try {
-                        process.kill(-child.pid, signal);
-                    } catch (error) {
-                        if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) {
-                            failure = `${reason}: child termination failed`;
-                        }
-                    }
+            try {
+                ports.process.kill(-pid, signal);
+            } catch (error) {
+                if (isAbsentProcessGroup(error)) {
+                    groupAbsent = true;
+                } else {
+                    terminationFailure = 'child-termination-failed';
+                    ownershipCause = error;
                 }
-            };
+            }
+        };
+        const cleanup = () => {
+            ports.clearTimeout(timeout);
+            ports.clearTimeout(killTimer);
+            ports.clearTimeout(confirmationTimer);
+            ports.clearTimeout(pollTimer);
+            ports.process.removeListener('SIGINT', interrupt);
+            ports.process.removeListener('SIGTERM', interrupt);
+        };
+        const finish = () => {
+            if (settled) {
+                return true;
+            }
+            if (closed === undefined || groupAlive()) {
+                return false;
+            }
+            settled = true;
+            cleanup();
+            const result: NativeTestResult = { ...closed, output: Buffer.concat(buffers).toString('utf8') };
+            if (failure !== undefined) {
+                result.failure = terminationFailure === undefined ? failure : `${failure}: ${terminationFailure}`;
+            }
+            resolve(result);
+            return true;
+        };
+        const waitForGroup = () => {
+            if (finish() || pollTimer !== undefined) {
+                return;
+            }
+            pollTimer = ports.setTimeout(() => {
+                pollTimer = undefined;
+                waitForGroup();
+            }, 50);
+        };
+        const stop = (reason: string) => {
+            if (settled) {
+                return;
+            }
+            failure ??= reason;
+            if (terminating) {
+                return;
+            }
+            terminating = true;
             kill('SIGTERM');
-            killTimer = setTimeout(() => kill('SIGKILL'), 5_000);
+            killTimer = ports.setTimeout(() => {
+                kill('SIGKILL');
+                if (finish()) {
+                    return;
+                }
+                confirmationTimer = ports.setTimeout(() => {
+                    if (finish()) {
+                        return;
+                    }
+                    settled = true;
+                    cleanup();
+                    reject(new NativeCommandOwnershipError(failure ?? reason, ownershipCause));
+                }, 5_000);
+            }, 5_000);
+            waitForGroup();
         };
         const interrupt = () => stop('interrupted');
-        process.once('SIGINT', interrupt);
-        process.once('SIGTERM', interrupt);
-        const timeout = setTimeout(() => stop('timeout'), 180_000);
+        ports.process.once('SIGINT', interrupt);
+        ports.process.once('SIGTERM', interrupt);
+        const timeout = ports.setTimeout(() => stop('timeout'), 180_000);
         const collect = (buffer: Buffer) => {
+            if (settled) {
+                return;
+            }
             size += buffer.length;
             if (size > 16 * 1024 * 1024) {
                 stop('output-limit');
@@ -248,22 +384,15 @@ function runCommand(command: string, args: string[], cwd: string, env: NodeJS.Pr
         child.stdout.on('data', collect);
         child.stderr.on('data', collect);
         child.on('error', () => {
-            failure = 'child-start-failed';
+            stop('child-start-failed');
         });
         child.on('close', (code, signal) => {
-            clearTimeout(timeout);
-            clearTimeout(killTimer);
-            process.removeListener('SIGINT', interrupt);
-            process.removeListener('SIGTERM', interrupt);
-            const result: NativeTestResult = {
-                code,
-                signal,
-                output: Buffer.concat(buffers).toString('utf8'),
-            };
-            if (failure !== undefined) {
-                result.failure = failure;
+            closed = { code, signal };
+            if (finish()) {
+                return;
             }
-            resolve(result);
+            stop('child-descendants-survived');
+            waitForGroup();
         });
     });
 }
@@ -315,14 +444,20 @@ async function proveIsolatedTransport(context: {
     }
     record.toolchain = toolchain.output.trim();
     for (const mutation of MUTATIONS) {
+        let restorationAdmitted = true;
         try {
             writeFileSync(sourcePath, mutateTransportSource(original, mutation.name));
             writeFileSync(
                 join(evidencePath, `${mutation.name}.patch`),
                 await git('-C', candidate, 'diff', '--', SOURCE)
             );
+        } catch (error) {
+            restorationAdmitted = !(error instanceof NativeCommandOwnershipError);
+            throw error;
         } finally {
-            writeFileSync(sourcePath, original);
+            if (restorationAdmitted) {
+                writeFileSync(sourcePath, original);
+            }
         }
     }
     const proof = await verifyTransportMutations({

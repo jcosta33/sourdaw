@@ -6,6 +6,20 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-12 — closed pipes hid a surviving process group (PR #5240 review repair)
+
+The native mutation runner had no real-child fixture: direct-child close canceled KILL while a
+same-group descendant could close inherited pipes and resist TERM. Assertion fixtures also omitted
+exit zero with the otherwise correct expected-panic transcript, so widening the exit-101 oracle
+could stay green.
+
+Observe the real direct-child close, a live TERM-resistant descendant with closed inherited pipes,
+and a separate unaffected process. Require the runner to remain pending until group absence,
+exercise TERM/KILL deadlines with a controlled clock, and forbid signals after observed absence.
+Exhaust confirmation through injected liveness ports and require the same ownership error, retained
+mutated source and partial evidence, and no restored cases. Independently reject the correct panic
+transcript with exit zero; widening admission to 101 or zero must fail that case.
+
 ### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
 
 The subgraph fixture asserted that the inverse callback received the requested beat-four
