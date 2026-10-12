@@ -75,6 +75,7 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
     let failure: string | undefined;
     let cause: unknown;
     let diagnostic: OwnershipDiagnostic | undefined;
+    let provisional: { cause: unknown; diagnostic: OwnershipDiagnostic } | undefined;
     const alive = () => {
         if (pid === undefined || groupAbsent) {
             return false;
@@ -89,7 +90,13 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
         } catch (error) {
             if (isAbsentProcessGroup(error)) {
                 groupAbsent = true;
+                provisional = undefined;
                 return false;
+            }
+            // Darwin can retain an all-zombie group until reap; only ESRCH retires its identity.
+            if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'EPERM') {
+                provisional ??= { cause: error, diagnostic: ownershipDiagnostic(error, 'inspect', 0) };
+                return true;
             }
             failure = 'child-group-inspection-failed';
             cause = error;
@@ -106,6 +113,7 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
         } catch (error) {
             if (isAbsentProcessGroup(error)) {
                 groupAbsent = true;
+                provisional = undefined;
             } else {
                 failure = 'child-termination-failed';
                 cause = error;
@@ -131,7 +139,12 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
         alive,
         terminate,
         result,
-        ownershipError: (reason: string) => new NativeCommandOwnershipError(reason, cause, diagnostic),
+        ownershipError: (reason: string) =>
+            new NativeCommandOwnershipError(
+                reason,
+                diagnostic === undefined ? provisional?.cause : cause,
+                diagnostic ?? provisional?.diagnostic
+            ),
     };
 }
 

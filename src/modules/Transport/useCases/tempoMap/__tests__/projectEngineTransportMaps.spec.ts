@@ -290,6 +290,40 @@ describe('projectEngineTransportMaps', () => {
         expect(tempo[1]?.beatsPerMinute).toBeCloseTo(140, 9);
     });
 
+    it.each([
+        [0, 2e-7, 4e-7],
+        [2e-7, 4e-7, 6e-7],
+    ])('keeps the governing instant tempo when the opening cluster %j moves to zero', (...beats) => {
+        tempoMapStore.set({ changes: beats.map((beat, index) => tempoChange(beat, [90, 120, 160][index]!)) });
+
+        expect(projectEngineTransportMaps().tempo).toEqual([{ startSeconds: 0, beatsPerMinute: 160 }]);
+    });
+
+    it('preserves the ramp mean and terminal tempo after relocating a near-zero governing change', () => {
+        const changes = [
+            tempoChange(2e-7, 90),
+            tempoChange(4e-7, 120),
+            tempoChange(6e-7, 160, 'linear'),
+            tempoChange(4, 240),
+        ];
+        tempoMapStore.set({ changes });
+
+        const { tempo } = projectEngineTransportMaps();
+
+        expect(tempo[0]?.startSeconds).toBe(0);
+        expect(tempo[0]!.beatsPerMinute).toBeGreaterThan(160);
+        expect(tempo.at(-1)?.beatsPerMinute).toBe(240);
+        expect(tempo.at(-1)?.startSeconds).toBeCloseTo(secondsBetweenBeats(changes, 0, 4, 120), 12);
+        let engineBeats = 0;
+        for (let index = 0; index + 1 < tempo.length; index += 1) {
+            const segment = tempo[index]!;
+            const next = tempo[index + 1]!;
+            engineBeats += ((next.startSeconds - segment.startSeconds) * segment.beatsPerMinute) / 60;
+            expect(engineBeats).toBeCloseTo(Math.min(4, 6e-7 + (index + 1) * 0.25), 12);
+        }
+        expect(engineBeats).toBeCloseTo(4, 12);
+    });
+
     it('opens one segment where two changes sit a float step apart', () => {
         tempoMapStore.set({
             changes: [

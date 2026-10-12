@@ -236,12 +236,12 @@ function tempoAtBeat(sorted: readonly TempoChange[], beat: number, defaultTempo:
  */
 function segmentBeatsPerMinute(
     sorted: readonly TempoChange[],
-    boundary: { beat: number; seconds: number },
+    boundary: { beat: number; governingBeat: number; seconds: number },
     next: { beat: number; seconds: number } | undefined,
     defaultTempo: number
 ): number {
     if (next === undefined || next.seconds <= boundary.seconds) {
-        return tempoAtBeat(sorted, boundary.beat, defaultTempo);
+        return tempoAtBeat(sorted, boundary.governingBeat, defaultTempo);
     }
     return (60 * (next.beat - boundary.beat)) / (next.seconds - boundary.seconds);
 }
@@ -278,6 +278,8 @@ function projectTempo(
         segmentBeats(authored, rampStep).sort((left, right) => left - right),
         capacity
     );
+    // Moving the opening coordinate to zero must not replace its governing authored change.
+    const openingGoverningBeat = beats[0] ?? 0;
     // The engine refuses a map that does not start at zero. Before the first
     // change the arrangement holds that change's tempo, so opening the map with
     // it is the projection of what the timeline already sounds like. `capacity`
@@ -293,7 +295,11 @@ function projectTempo(
     // whole authored map — not the thinned one — so a segment that survived
     // still opens on the second the arrangement actually reaches its beat,
     // whatever was dropped around it.
-    const boundaries = beats.map((beat) => ({ beat, seconds: atBeat(beat) }));
+    const boundaries = beats.map((beat, index) => ({
+        beat,
+        governingBeat: index === 0 ? openingGoverningBeat : beat,
+        seconds: atBeat(beat),
+    }));
     return boundaries.map((boundary, index) => ({
         startSeconds: boundary.seconds,
         beatsPerMinute: segmentBeatsPerMinute(sorted, boundary, boundaries[index + 1], defaultTempo),

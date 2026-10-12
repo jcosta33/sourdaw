@@ -32,6 +32,29 @@ and persistent EIO separately: the first still refuses mutation proof, the secon
 source and partial evidence without restoration. Never infer the first intermittent failure's cause
 from a later pass or retain raw error text in public diagnostics.
 
+Inspection EPERM is not proof of a foreign UID or group absence: Darwin's group signal traversal
+can exclude every zombie member before reap removes the group. Keep inspection EPERM provisional
+until exact ESRCH, without changing deadlines or signaling policy. A real owned-child fixture
+with injected EPERM must remain unsettled before ESRCH and recover only that provisional failure;
+persistent EPERM must exhaust the existing deadline, retain mutated source and report its typed
+diagnostic. EIO and actual termination EPERM must remain fatal after later absence. Current XNU
+main explains a possible mechanism, never the installed kernel or a historical run's zombie state.
+
+### 2026-10-12 — one near-zero tempo missed governing identity (escaped via PR #5199)
+
+PR #5199's opening-fold regression covered one positive near-zero tempo and a later distinct
+change. It never placed multiple differing values entirely inside the origin tolerance: beats
+`2e-7`, `4e-7`, `6e-7` at 90, 120, 160 BPM returned a 90 BPM tail. Public review
+`5472288669` flagged absent opening-fold coverage; final `5474617910` omitted this cluster.
+Private prompt and tier are unavailable, so the established miss is input coverage.
+
+Probe exact-zero and strictly-positive clusters with distinct values and no later boundary;
+require 160 BPM at the relocated origin. Independently observe sampled-ramp boundary integrals
+and terminal tempo so an identity repair cannot replace finite-span means. Reverting the authored
+identity binding must fail the unchanged cluster cases. A deliberate full-history workflow edit
+also updates its owning independent assertion and regenerated snapshot; the snapshot diff must
+contain only the intended checkout depth, and a depth-two mutation must fail the assertion.
+
 ### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
 
 The subgraph fixture asserted that the inverse callback received the requested beat-four

@@ -1329,7 +1329,7 @@ function assertNativeTransportMutationProof(candidate: UnknownRecord): void {
     const job = jobAt(candidate, 'native-macos');
     expect(job['runs-on']).toBe('macos-latest');
     expect(recordAt(stepNamed(job, 'Checkout'), 'with')).toEqual({
-        'fetch-depth': 2,
+        'fetch-depth': 0,
         'persist-credentials': false,
     });
     expect(recordAt(stepNamed(job, 'Cache cargo build'), 'with')).toEqual({ 'save-if': 'false' });
@@ -4373,6 +4373,12 @@ describe('health gates workflow contract', () => {
             'unfetched head',
             (job: UnknownRecord) => {
                 recordAt(stepNamed(job, 'Checkout'), 'with')['fetch-depth'] = 1;
+            },
+        ],
+        [
+            'unfetched event base after main advances',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Checkout'), 'with')['fetch-depth'] = 2;
             },
         ],
         [

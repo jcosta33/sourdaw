@@ -274,38 +274,116 @@ function fileReceipt(root: string, name: string) {
 }
 
 describe('owned command process-group completion', () => {
-    it('retains a bounded termination error after the group is later absent', async () => {
-        let inspections = 0;
-        const signal = vi.fn((_pid: number, requested: string | number | undefined): true => {
-            if (requested !== 0) {
-                throw Object.assign(new Error('private termination message'), { code: 'EACCES', errno: -13 });
+    it('settles a timed-out owned child only after provisional inspection EPERM becomes ESRCH', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        let phase: 'alive' | 'eperm' | 'absent' = 'alive';
+        const owned: { child?: ChildProcess; ready?: Promise<unknown>; closed?: Promise<unknown> } = {};
+        const signal = vi.fn((pid: number, requested: string | number | undefined): true => {
+            expect(pid).toBe(-owned.child!.pid!);
+            if (requested === 0) {
+                if (phase !== 'alive') {
+                    throw Object.assign(new Error('group inspection'), {
+                        code: phase === 'eperm' ? 'EPERM' : 'ESRCH',
+                        errno: -1,
+                    });
+                }
+                return true;
             }
-            inspections += 1;
-            if (inspections > 2) {
-                throw Object.assign(new Error('absent'), { code: 'ESRCH' });
-            }
+            expect(requested).toBe('SIGTERM');
+            owned.child!.kill('SIGTERM');
             return true;
         });
-        const result = await runCommand(process.execPath, ['-e', 'process.exit(0)'], tmpdir(), process.env, {
-            spawn,
-            setTimeout,
-            clearTimeout,
-            process: {
-                kill: signal,
-                once: process.once.bind(process),
-                removeListener: process.removeListener.bind(process),
-            },
+        let settled = false;
+        const completed = runCommand(
+            process.execPath,
+            ['-e', "process.stdout.write('ready'); setInterval(() => {}, 1000)"],
+            tmpdir(),
+            process.env,
+            {
+                spawn: (command, args, configuration) => {
+                    const child = spawn(command, args, configuration);
+                    owned.child = child;
+                    owned.ready = once(child.stdout, 'data');
+                    owned.closed = once(child, 'close');
+                    child.once('close', () => {
+                        phase = 'eperm';
+                    });
+                    return child;
+                },
+                setTimeout,
+                clearTimeout,
+                process: {
+                    kill: signal,
+                    once: process.once.bind(process),
+                    removeListener: process.removeListener.bind(process),
+                },
+            }
+        ).then((result) => {
+            settled = true;
+            return result;
         });
-        expect(result.failure).toBe('child-descendants-survived: child-termination-failed');
-        expect(result.ownershipDiagnostic).toEqual({
-            operation: 'terminate',
-            signal: 'SIGTERM',
-            code: 'EACCES',
-            errno: -13,
-        });
-        expect(() => assertNativeTestResult(result, 'unexecuted')).toThrow('EACCES');
-        expect(JSON.stringify(result)).not.toContain('private termination message');
+        try {
+            await owned.ready;
+            vi.advanceTimersByTime(180_000);
+            await owned.closed;
+            expect(settled).toBe(false);
+            expect(phase).toBe('eperm');
+            expect(signal.mock.calls.filter(([, requested]) => requested !== 0)).toHaveLength(1);
+            phase = 'absent';
+            await vi.advanceTimersByTimeAsync(50);
+            const result = await completed;
+            expect(result.failure).toBe('timeout');
+            expect(result.ownershipDiagnostic).toBeUndefined();
+            expect(signal.mock.calls.filter(([, requested]) => requested !== 0)).toEqual([
+                [-owned.child!.pid!, 'SIGTERM'],
+            ]);
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            phase = 'absent';
+            owned.child?.kill('SIGKILL');
+            await owned.closed;
+            await vi.advanceTimersByTimeAsync(50);
+            await completed;
+        }
     });
+    it.each(['EACCES', 'EPERM'])(
+        'retains a bounded termination %s error after the group is later absent',
+        async (code) => {
+            let inspections = 0;
+            const signal = vi.fn((_pid: number, requested: string | number | undefined): true => {
+                if (requested !== 0) {
+                    throw Object.assign(new Error('private termination message'), {
+                        code,
+                        errno: code === 'EACCES' ? -13 : -1,
+                    });
+                }
+                inspections += 1;
+                if (inspections > 2) {
+                    throw Object.assign(new Error('absent'), { code: 'ESRCH' });
+                }
+                return true;
+            });
+            const result = await runCommand(process.execPath, ['-e', 'process.exit(0)'], tmpdir(), process.env, {
+                spawn,
+                setTimeout,
+                clearTimeout,
+                process: {
+                    kill: signal,
+                    once: process.once.bind(process),
+                    removeListener: process.removeListener.bind(process),
+                },
+            });
+            expect(result.failure).toBe('child-descendants-survived: child-termination-failed');
+            expect(result.ownershipDiagnostic).toEqual({
+                operation: 'terminate',
+                signal: 'SIGTERM',
+                code,
+                errno: code === 'EACCES' ? -13 : -1,
+            });
+            expect(() => assertNativeTestResult(result, 'unexecuted')).toThrow(code);
+            expect(JSON.stringify(result)).not.toContain('private termination message');
+        }
+    );
     it.each([
         ['EIO', -5, { code: 'EIO', errno: -5 }],
         ['unsafe diagnostic text', Number.POSITIVE_INFINITY, {}],
@@ -531,85 +609,91 @@ describe('owned command process-group completion', () => {
 });
 
 describe('source restoration and completed observable', () => {
-    it('retains the mutated source and refuses proof when bounded ownership confirmation is exhausted', async () => {
-        const options = fixture();
-        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-        let groupPresent = true;
-        const signal = vi.fn((_pid: number, requested: string | number | undefined): true => {
-            if (requested === 0 && !groupPresent) {
-                throw Object.assign(new Error('absent group'), { code: 'ESRCH' });
-            }
-            if (requested === 0) {
-                throw Object.assign(new Error('private diagnostic message'), { code: 'EIO', errno: -5 });
-            }
-            return true;
-        });
-        let commandClosed: (() => void) | undefined;
-        const closed = new Promise<void>((resolve) => {
-            commandClosed = resolve;
-        });
-        let calls = 0;
-        let settled = false;
-        const completed = verifyTransportMutations({
-            ...options,
-            runCase: async (spec) => {
-                calls += 1;
-                if (calls <= 7) {
-                    return passing(spec);
+    it.each(['EIO', 'EPERM'])(
+        'retains the mutated source and refuses proof when bounded %s ownership confirmation is exhausted',
+        async (code) => {
+            const options = fixture();
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            let groupPresent = true;
+            const signal = vi.fn((_pid: number, requested: string | number | undefined): true => {
+                if (requested === 0 && !groupPresent) {
+                    throw Object.assign(new Error('absent group'), { code: 'ESRCH' });
                 }
-                return runCommand(process.execPath, ['-e', 'process.exit(0)'], tmpdir(), process.env, {
-                    spawn: (command, args, configuration) => {
-                        const child = spawn(command, args, configuration);
-                        child.once('close', () => commandClosed?.());
-                        return child;
-                    },
-                    setTimeout,
-                    clearTimeout,
-                    process: {
-                        kill: signal,
-                        once: process.once.bind(process),
-                        removeListener: process.removeListener.bind(process),
-                    },
-                });
-            },
-        }).then(
-            () => {
-                settled = true;
-                return undefined;
-            },
-            (error: unknown) => {
-                settled = true;
-                return error;
-            }
-        );
-        try {
-            await closed;
-            const mutated = readFileSync(options.sourcePath, 'utf8');
-            expect(mutated).toBe(mutateTransportSource(source, 'adjacent-keep-first'));
-            await vi.advanceTimersByTimeAsync(10_000);
-            expect(settled).toBe(true);
-            const error = await completed;
-            expect(error).toBeInstanceOf(NativeCommandOwnershipError);
-            expect(error).toMatchObject({ reason: 'child-descendants-survived' });
-            expect(error).toMatchObject({
-                ownershipDiagnostic: { operation: 'inspect', signal: 0, code: 'EIO', errno: -5 },
+                if (requested === 0) {
+                    throw Object.assign(new Error('private diagnostic message'), {
+                        code,
+                        errno: code === 'EIO' ? -5 : -1,
+                    });
+                }
+                return true;
             });
-            expect(readFileSync(options.sourcePath, 'utf8')).toBe(mutated);
-            expect(existsSync(join(options.evidencePath, 'adjacent-keep-first.source.sha256'))).toBe(true);
-            const cases = readFileSync(join(options.evidencePath, 'cases.json'), 'utf8');
-            expect(cases.match(/"phase": "baseline"/gu)).toHaveLength(7);
-            expect(cases).not.toContain('restored');
-            expect(calls).toBe(8);
-            expect(vi.getTimerCount()).toBe(0);
-            const observed = signal.mock.calls.length;
-            vi.advanceTimersByTime(180_000);
-            expect(signal.mock.calls).toHaveLength(observed);
-        } finally {
-            groupPresent = false;
-            await vi.advanceTimersByTimeAsync(50);
-            await completed;
+            let commandClosed: (() => void) | undefined;
+            const closed = new Promise<void>((resolve) => {
+                commandClosed = resolve;
+            });
+            let calls = 0;
+            let settled = false;
+            const completed = verifyTransportMutations({
+                ...options,
+                runCase: async (spec) => {
+                    calls += 1;
+                    if (calls <= 7) {
+                        return passing(spec);
+                    }
+                    return runCommand(process.execPath, ['-e', 'process.exit(0)'], tmpdir(), process.env, {
+                        spawn: (command, args, configuration) => {
+                            const child = spawn(command, args, configuration);
+                            child.once('close', () => commandClosed?.());
+                            return child;
+                        },
+                        setTimeout,
+                        clearTimeout,
+                        process: {
+                            kill: signal,
+                            once: process.once.bind(process),
+                            removeListener: process.removeListener.bind(process),
+                        },
+                    });
+                },
+            }).then(
+                () => {
+                    settled = true;
+                    return undefined;
+                },
+                (error: unknown) => {
+                    settled = true;
+                    return error;
+                }
+            );
+            try {
+                await closed;
+                const mutated = readFileSync(options.sourcePath, 'utf8');
+                expect(mutated).toBe(mutateTransportSource(source, 'adjacent-keep-first'));
+                await vi.advanceTimersByTimeAsync(10_000);
+                expect(settled).toBe(true);
+                const error = await completed;
+                expect(error).toBeInstanceOf(NativeCommandOwnershipError);
+                expect(error).toMatchObject({ reason: 'child-descendants-survived' });
+                expect(error).toMatchObject({
+                    ownershipDiagnostic: { operation: 'inspect', signal: 0, code, errno: code === 'EIO' ? -5 : -1 },
+                });
+                expect(readFileSync(options.sourcePath, 'utf8')).toBe(mutated);
+                expect(existsSync(join(options.evidencePath, 'adjacent-keep-first.source.sha256'))).toBe(true);
+                const cases = readFileSync(join(options.evidencePath, 'cases.json'), 'utf8');
+                expect(cases.match(/"phase": "baseline"/gu)).toHaveLength(7);
+                expect(cases).not.toContain('restored');
+                expect(calls).toBe(8);
+                expect(vi.getTimerCount()).toBe(0);
+                const observed = signal.mock.calls.length;
+                vi.advanceTimersByTime(180_000);
+                expect(signal.mock.calls).toHaveLength(observed);
+            } finally {
+                groupPresent = false;
+                await vi.advanceTimersByTimeAsync(50);
+                await completed;
+            }
         }
-    });
+    );
 
     it('runs seven original cases, seven mutant failures and seven restored cases before completing', async () => {
         const options = fixture();
