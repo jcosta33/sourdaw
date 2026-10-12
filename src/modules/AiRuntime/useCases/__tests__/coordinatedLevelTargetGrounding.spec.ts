@@ -374,6 +374,43 @@ describe('a coordinated level list refuses calls that do not match it exactly', 
 
 describe('a coordinated level list keeps the request exclusions and protections', () => {
     it.each([
+        'turn Drums and Bass down 3 dB; leave Bass pan and fader unchanged',
+        'turn Drums and Bass down 3 dB; leave Bass fader and pan unchanged',
+        'turn Drums and Bass down 3 dB; leave Bass volume and pan unchanged',
+        'turn Drums and Bass down 3 dB; leave Bass pan and gain unchanged',
+        'turn Drums and Bass down 3 dB; leave track-bass pan and fader unchanged',
+    ])('keeps the protected member out of the exact gain proposal in "%s"', (prompt) => {
+        const bothCalled = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
+        const onlyDrums = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+        expect(bothCalled.actions).toEqual([]);
+        expect(bothCalled.rejections).toMatchObject([
+            { index: 0, name: 'setTrackGain', reason: NOT_GROUNDED },
+            { index: 1, name: 'setTrackGain', reason: NOT_GROUNDED },
+        ]);
+        expect(onlyDrums.rejections).toEqual([]);
+        expect(onlyDrums.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        expect(projectContext.tracks.find((track) => track.id === bass.id)).toEqual(bass);
+    });
+
+    it.each([
+        'turn Drums and Bass down 3 dB; do not mute Bass once gain is adjusted',
+        'turn Drums and Bass down 3 dB; after adjusting gain do not mute Bass',
+        'turn Drums and Bass down 3 dB; while adjusting gain do not mute Bass',
+        'turn Drums and Bass down 3 dB; when adjusting gain do not mute Bass',
+        'turn Drums and Bass down 3 dB; do not mute Bass until the gain adjustment completes',
+        'turn Drums and Bass down 3 dB; do not mute Bass for the purpose of preserving its volume',
+        'set Drums and Bass volume to -6 dB; do not mute Bass once gain is adjusted',
+    ])('admits both requested gain changes when only muting is restricted in "%s"', (prompt) => {
+        const value = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
+        const result = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, value), gainAction(bass.id, value)]);
+        expect(projectContext.tracks.find((track) => track.id === bass.id)).toEqual(bass);
+    });
+
+    it.each([
         'turn the Drums and the Bass down 3 dB, but leave the Bass pan unchanged',
         'turn the Drums and the Bass down 3 dB, but do not mute Bass',
         'turn the Drums and the Bass down 3 dB; solo everything with the exception of Bass',
