@@ -207,7 +207,12 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Install server dependencies',
             'Server and Rust workspace health gates',
         ],
-        'native-macos': NATIVE_MACOS_STEPS,
+        'native-macos': [
+            ...NATIVE_MACOS_STEPS,
+            'Set up Node for native mutation proof',
+            'Verify native transport mutation sensitivity',
+            'Upload native transport mutation evidence',
+        ],
         'native-windows': [
             'Checkout',
             'Install the pinned Rust toolchain',
@@ -362,14 +367,12 @@ const DEPLOY_SKIP = `${DEPLOY_CRED} && steps.production.outputs.deploy != 'true'
 const DEPLOY_NO_CRED = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
 const PRODUCT_SCOPE = "needs.decide.outputs.tooling != 'true'";
 
-const pin = (workflow: string, job: string, step: string, condition: string): ConditionalStepPin => ({
-    workflow,
-    job,
-    step,
-    condition,
-});
+function pin(workflow: string, job: string, step: string, condition: string): ConditionalStepPin {
+    return { workflow, job, step, condition };
+}
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    pin('validation.yml', 'native-macos', 'Upload native transport mutation evidence', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'selection-shadow', 'Upload shadow measurement', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
     pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),

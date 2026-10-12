@@ -541,6 +541,21 @@ must produce a right-channel peak; Widener at non-unity width must emit equal le
 samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
 Removing the explicit speakers upmix at either input must turn its mono assertion red.
 
+### 2026-10-12 — near-zero tempo identity escape (PR #5199)
+
+Commit `77f11923e6bb9906c14d84d3709dac4c97dd5a61` relocated the projected opening
+boundary to zero but lost the selected authored governing beat. Three instant changes at
+`2e-7`, `4e-7`, `6e-7` beats with 90, 120, 160 BPM projected a 90 BPM tail instead of 160.
+Public review `5472288669` flagged the opening fold without a case; final review
+`5474617910` missed multiple positive changes in the origin bucket. Missing input coverage
+is established; private prompt and tier are unavailable.
+
+Relocate the engine coordinate independently of authored tempo identity. Probe several distinct
+values within the origin tolerance, both with an exact-zero member and entirely positive starts;
+require the last value to govern the terminal segment. Separately preserve each sampled ramp
+boundary's beat integral and final tail. Restoring the zero-coordinate lookup must fail the
+cluster cases without requiring a renderer sample rate.
+
 ### 2026-10-11 — warning-only Faust failure produced an incomplete musician export (#5215)
 
 PR #841 (`4edbe587b`) established the construction-error split: unsupported claimed devices refused,
