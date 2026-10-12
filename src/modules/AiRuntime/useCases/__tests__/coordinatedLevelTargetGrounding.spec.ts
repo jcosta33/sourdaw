@@ -220,6 +220,33 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         }
     );
 
+    it.each([
+        'turn "Drums" and "Bass" down 3dB',
+        'turn “Drums” and “Bass” down 3dB',
+        'set "Drums", "Bass", and "Keys" volume to -6 dB',
+    ])('binds each complete quoted list member in "%s"', (prompt) => {
+        const targets = prompt.startsWith('set ') ? [drums, bass, keys] : [drums, bass];
+        const value = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
+        const result = bridge(targets.map((track) => gainCall(track.id, value)), prompt);
+        const compiled = prompt.startsWith('set ') ? null : bridgeCompiledGainList(prompt, targets);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual(targets.map((track) => gainAction(track.id, value)));
+        if (compiled) {
+            expect(compiled.rejections).toEqual([]);
+            expect(compiled.actions).toEqual(targets.map((track) => gainAction(track.id, value)));
+        }
+    });
+
+    it.each([
+        'turn "Drums" and "Bass DI" down 3dB',
+        'turn "Drums" and "Strings" down 3dB',
+    ])('refuses a quoted member outside the complete requested set in "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toHaveLength(2);
+    });
+
     it('grounds a list beside a single-track level change in the same request', () => {
         const result = bridge(
             [
@@ -389,6 +416,48 @@ describe('a coordinated level list refuses calls that do not match it exactly', 
 });
 
 describe('a coordinated level list keeps the request exclusions and protections', () => {
+    it.each([
+        'turn Drums and Bass down 3 dB; do not change the pan and solo and fader of Bass',
+        'turn Drums and Bass down 3 dB; do not change the pan and solo and fader of "Bass"',
+        'turn Drums and Bass down 3 dB; do not change Bass pan, solo, and fader',
+    ])('keeps a complete postposed or comma-conjoined Bass fader protection in "%s"', (prompt) => {
+        const value = { deltaDb: -3 };
+        const bothCalled = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
+        const onlyDrums = bridge([gainCall(drums.id, value)], prompt);
+        const compiledBoth = bridgeCompiledGainList(prompt, [drums, bass]);
+        const compiledDrums = bridgeCompiledGainList(prompt, [drums]);
+
+        for (const result of [bothCalled, compiledBoth]) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toHaveLength(2);
+        }
+        for (const result of [onlyDrums, compiledDrums]) {
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([gainAction(drums.id, value)]);
+        }
+    });
+
+    it.each(['following the Bass pan adjustment', 'during the Bass pan adjustment'])(
+        'keeps timing modifier references outside the principal Vocals gain protection: "%s"',
+        (modifier) => {
+            const prompt = `turn Drums and Bass down 3 dB; do not change Vocals gain ${modifier}`;
+            const value = { deltaDb: -3 };
+            const bothCalled = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
+            const onlyDrums = bridge([gainCall(drums.id, value)], prompt);
+            const compiledBoth = bridgeCompiledGainList(prompt, [drums, bass]);
+            const compiledDrums = bridgeCompiledGainList(prompt, [drums]);
+
+            for (const result of [bothCalled, compiledBoth]) {
+                expect(result.rejections).toEqual([]);
+                expect(result.actions).toEqual([gainAction(drums.id, value), gainAction(bass.id, value)]);
+            }
+            for (const result of [onlyDrums, compiledDrums]) {
+                expect(result.actions).toEqual([]);
+                expect(result.rejections).toHaveLength(1);
+            }
+        }
+    );
+
     it.each([
         'turn Drums and Bass down 3 dB; leave Bass pan and solo and fader unchanged',
         'turn Drums and Bass down 3 dB; leave Bass pan, solo and fader unchanged',
