@@ -129,28 +129,28 @@ export async function createPopSongTemplate(): Promise<void> {
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Pop Kit',
-        deviceParams: { kit: 3, gain: 0.9 },
+        deviceParams: { kit: 3, level: -0.9 },
     });
     const snare = createInstrumentTrack({
         name: 'Snare',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Pop Kit',
-        deviceParams: { kit: 3, gain: 0.85 },
+        deviceParams: { kit: 3, level: -1.4 },
     });
     const hat = createInstrumentTrack({
         name: 'Hat',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Pop Kit',
-        deviceParams: { kit: 3, gain: 0.7 },
+        deviceParams: { kit: 3, level: -3.1 },
     });
     const perc = createInstrumentTrack({
         name: 'Perc',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Pop Kit',
-        deviceParams: { kit: 3, gain: 0.6 },
+        deviceParams: { kit: 3, level: -4.4 },
     });
     for (const drum of [kick, snare, hat, perc]) {
         addSend({ from: drum, to: drumBus, level: 0.9 });

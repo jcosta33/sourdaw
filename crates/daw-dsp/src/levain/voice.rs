@@ -979,6 +979,13 @@ impl LevainVoice {
         }
     }
 
+    /// Hold this voice's attack a further `samples` past whatever delay its
+    /// humanization already set, so an ensemble onset offset and a humanize
+    /// offset add rather than replace one another.
+    pub fn delay_onset(&mut self, samples: u32) {
+        self.pending_samples = self.pending_samples.saturating_add(samples);
+    }
+
     /// Point this voice at a new Attack/Release macro scaling. A sounding voice
     /// re-derives its envelope from the zone's own ADSR immediately, so a
     /// player dragging Release over a held chord hears it on that chord rather

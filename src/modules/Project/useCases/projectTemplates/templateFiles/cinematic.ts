@@ -147,21 +147,21 @@ export async function createCinematicTemplate(): Promise<void> {
         parentId: percussionFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Acoustic',
-        deviceParams: { kit: 3, gain: 0.9 },
+        deviceParams: { kit: 3, level: -0.9 },
     });
     const cineSnare = createInstrumentTrack({
         name: 'Snare',
         parentId: percussionFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Acoustic',
-        deviceParams: { kit: 3, gain: 0.8 },
+        deviceParams: { kit: 3, level: -1.9 },
     });
     const cymbal = createInstrumentTrack({
         name: 'Cymbal',
         parentId: percussionFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Acoustic',
-        deviceParams: { kit: 3, gain: 0.75 },
+        deviceParams: { kit: 3, level: -2.5 },
     });
     const timpani = createInstrumentTrack({
         name: 'Timpani',

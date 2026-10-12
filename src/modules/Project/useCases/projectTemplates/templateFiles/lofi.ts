@@ -74,14 +74,14 @@ export async function createLofiTemplate(): Promise<void> {
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Lo-fi Vinyl',
-        deviceParams: { kit: 4, gain: 0.85 },
+        deviceParams: { kit: 4, level: -1.4 },
     });
     const lofiSnare = createInstrumentTrack({
         name: 'Snare (muffled)',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Lo-fi Vinyl',
-        deviceParams: { kit: 4, gain: 0.75 },
+        deviceParams: { kit: 4, level: -2.5 },
         extraDevices: [
             {
                 type: 'builtin-eq',
@@ -105,7 +105,7 @@ export async function createLofiTemplate(): Promise<void> {
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Lo-fi Vinyl',
-        deviceParams: { kit: 4, gain: 0.6 },
+        deviceParams: { kit: 4, level: -4.4 },
     });
     const vinylCrackle = createAudioTrack({ name: 'Vinyl Crackle', parentId: drumFolder.id });
     for (const drum of [lofiKick, lofiSnare, lofiHat]) {

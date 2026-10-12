@@ -1,6 +1,11 @@
 import { type Device } from '#/modules/Arrangement/stores';
 import { type audioEngine } from '#/modules/AudioEngine/useCases';
-import { isBypassedNoteReceiver, type NoteReceivingInstrument, resolveDrumKitBy } from '#/utils/deviceTypeMatching';
+import {
+    isBypassedNoteReceiver,
+    type NoteReceivingInstrument,
+    resolveDrumKitBy,
+    resolveDrumKitOutputGain,
+} from '#/utils/deviceTypeMatching';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 
 import { type midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
@@ -150,9 +155,19 @@ function voiceToaster(input: VoiceYeastNoteOnInput, device: Device): void {
 function voiceDrumKit(input: VoiceYeastNoteOnInput): void {
     const { deps, context } = input;
     const time = input.sampleFrame / context.sampleRate;
+    const kitGain = resolveDrumKitOutputGain(input.trackDevices);
     const kitDefinition = resolveDrumKitBy(input.trackDevices, deps.getDrumKitDefByIndex);
     if (kitDefinition) {
-        deps.scheduleDrumKitNote(context, input.resolveDestination(), kitDefinition, input.note, time, input.velocity);
+        deps.scheduleDrumKitNote(
+            context,
+            input.resolveDestination(),
+            kitDefinition,
+            input.note,
+            time,
+            input.velocity,
+            1,
+            kitGain
+        );
         return;
     }
     const kit = resolveDrumKitBy(input.trackDevices, deps.getDrumKitByIndex);
@@ -164,7 +179,9 @@ function voiceDrumKit(input: VoiceYeastNoteOnInput): void {
             input.note,
             time,
             generatedNoteSeconds(input),
-            input.velocity
+            input.velocity,
+            1,
+            kitGain
         );
     }
 }

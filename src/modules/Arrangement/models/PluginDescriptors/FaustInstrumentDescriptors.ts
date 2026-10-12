@@ -140,6 +140,7 @@ const FAUST_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
             fp('decay', 'faust-supersaw-unison', 'Decay', 0.01, 5, 0.3, 's', 'log'),
             fp('sustain', 'faust-supersaw-unison', 'Sustain', 0, 1, 0.8),
             fp('release', 'faust-supersaw-unison', 'Release', 0.01, 10, 0.5, 's', 'log'),
+            fp('gain', 'faust-supersaw-unison', 'Gain', 0, 1, 0.5),
             fp('freq', 'faust-supersaw-unison', 'Freq', 20, 12000, 440, 'Hz'),
             fp('gate', 'faust-supersaw-unison', 'Gate', 0, 1, 0),
         ],

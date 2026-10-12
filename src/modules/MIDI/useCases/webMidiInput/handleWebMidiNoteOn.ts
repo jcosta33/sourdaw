@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
-import { isBypassedNoteReceiver, resolveDrumKitBy } from '#/utils/deviceTypeMatching';
+import { isBypassedNoteReceiver, resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
@@ -444,6 +444,7 @@ export const handleWebMidiNoteOn = inject({
                 // The same drum device and kit index sequenced playback, audition and
                 // export resolve; only the kit lookups differ.
                 const trackDevices = instrumentTrack?.devices ?? [];
+                const kitGain = resolveDrumKitOutputGain(trackDevices);
                 const kitDefinition = resolveDrumKitBy(trackDevices, deps.getDrumKitDefByIndex);
                 if (kitDefinition) {
                     deps.scheduleDrumKitNote(
@@ -452,7 +453,9 @@ export const handleWebMidiNoteOn = inject({
                         kitDefinition,
                         note,
                         dispatchTime,
-                        velocity
+                        velocity,
+                        1,
+                        kitGain
                     );
                 } else {
                     const kit = resolveDrumKitBy(trackDevices, deps.getDrumKitByIndex);
@@ -464,7 +467,9 @@ export const handleWebMidiNoteOn = inject({
                             note,
                             dispatchTime,
                             60,
-                            velocity
+                            velocity,
+                            1,
+                            kitGain
                         );
                     }
                 }

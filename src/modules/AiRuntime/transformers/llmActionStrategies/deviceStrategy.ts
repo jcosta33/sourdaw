@@ -108,6 +108,16 @@ const deviceStrategyDefinitions = [
             }
             const target = findDeviceTarget(context, args.deviceId);
             const parameter = (target?.device.parameters ?? []).find((candidate) => candidate.id === args.paramId);
+            if (target && !parameter) {
+                // Name what the device does declare, so a retired or misremembered id
+                // (a drum kit's former `gain`, now `level`) points at its replacement.
+                const declaredIds = (target.device.parameters ?? []).map((candidate) => candidate.id);
+                return rejection(
+                    index,
+                    call.name,
+                    `Device ${target.device.type} declares no parameter "${args.paramId}"; its parameters are: ${declaredIds.join(', ') || 'none'}`
+                );
+            }
             if (
                 !target ||
                 target.track.frozen === true ||
