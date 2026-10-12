@@ -6,6 +6,7 @@ import {
     type PendingAppActionConfirmation,
     getPendingActionConfirmation,
 } from '../stores/pendingActionConfirmationStore';
+import { diffProposalCommands } from '../transformers/diffProposalCommands';
 
 import { getProviderRouteView } from './getProviderRouteView';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
@@ -70,6 +71,22 @@ type ApprovalMeasuredPreview = {
     targets: readonly ApprovalMeasuredTarget[];
 };
 
+/** One payload field a command of the previous proposal set to a different value, both rendered. */
+type ApprovalChangedField = { field: string; previous: string | null; next: string | null };
+
+/** One command that differs from the proposal this one replaced, under the label each proposal gave it. */
+type ApprovalProposalChange =
+    | { kind: 'added'; actionType: string; label: string }
+    | { kind: 'removed'; actionType: string; label: string }
+    | { kind: 'changed'; actionType: string; label: string; fields: readonly ApprovalChangedField[] };
+
+/** What this proposal changes against the one it replaced; commands left as they were are only counted. */
+type ApprovalPreviousProposalDiff = {
+    previousConfirmationId: string;
+    changes: readonly ApprovalProposalChange[];
+    unchangedCount: number;
+};
+
 type ApprovalFreshness =
     | { status: 'current'; currentRevision: string | null }
     | { status: 'stale'; reason: string; currentRevision: string | null }
@@ -87,6 +104,8 @@ export type AgentApprovalView = {
     actionLabels: readonly string[];
     supersedes: string | null;
     supersededBy: string | null;
+    /** The per-command diff against the proposal this one replaced, or `null` when it replaced none still held. */
+    previousProposalDiff: ApprovalPreviousProposalDiff | null;
     scope: {
         targetIds: readonly string[];
         targetRanges: ReadonlyArray<{ startBeat: number; endBeat: number }>;
@@ -292,6 +311,27 @@ function projectMeasuredPreview(
     };
 }
 
+/**
+ * What this proposal changes against the one it replaced, while the store still holds that one.
+ * Each side is read from its own approval snapshot, so the diff compares the two batches exactly as
+ * each was put to the user.
+ */
+function projectPreviousProposalDiff(
+    confirmation: PendingAppActionConfirmation
+): AgentApprovalView['previousProposalDiff'] {
+    if (confirmation.supersedes === null) {
+        return null;
+    }
+    const previous = getPendingActionConfirmation(confirmation.supersedes);
+    if (previous === null) {
+        return null;
+    }
+    return {
+        previousConfirmationId: previous.id,
+        ...diffProposalCommands(previous.approvalSnapshot, confirmation.approvalSnapshot),
+    };
+}
+
 function projectRisk(agentApproval: ApprovalSnapshot['agentApproval']): AgentApprovalView['risk'] {
     if (!agentApproval) {
         return null;
@@ -329,6 +369,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         actionLabels: confirmation.actionLabels,
         supersedes: confirmation.supersedes,
         supersededBy: confirmation.supersededBy,
+        previousProposalDiff: projectPreviousProposalDiff(confirmation),
         scope: commandBatch ? commandBatch.authority.scope : EMPTY_SCOPE,
         risk: projectRisk(agentApproval),
         recipes: projectRecipes(adoptedRecipes),
