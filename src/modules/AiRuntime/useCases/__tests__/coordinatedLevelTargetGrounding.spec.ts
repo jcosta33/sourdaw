@@ -247,6 +247,16 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         expect(result.rejections).toHaveLength(2);
     });
 
+    it('refuses a quoted member that resolves to two tracks', () => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+            'turn "Drums" and "Bass" down 3dB',
+            projectWithTwoBassTracks
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toHaveLength(2);
+    });
+
     it('grounds a list beside a single-track level change in the same request', () => {
         const result = bridge(
             [
@@ -416,6 +426,15 @@ describe('a coordinated level list refuses calls that do not match it exactly', 
 });
 
 describe('a coordinated level list keeps the request exclusions and protections', () => {
+    it('refuses an explicit control protection with no resolvable target', () => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+            'turn Drums and Bass down 3 dB; do not change pan, solo, and fader of Strings'
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toHaveLength(2);
+    });
+
     it.each([
         'turn Drums and Bass down 3 dB; do not change the pan and solo and fader of Bass',
         'turn Drums and Bass down 3 dB; do not change the pan and solo and fader of "Bass"',
