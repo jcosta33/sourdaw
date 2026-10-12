@@ -88,7 +88,8 @@ at 48 kHz). The one unbounded free is the safety net above.
 ## Consequences
 
 - Zone-map construction (`ZoneMap::build_lut`) and PCM copy-in remain staging messages on the render
-  thread. Moving them to a Worker, and splitting large samples into chunks, are separate follow-ups.
+  thread. Moving them to a Worker is a separate follow-up; PCM copy-in is now bounded to one chunk per
+  message (#5081, ADR 0052's message contract).
 - The retired slot holds one bank. Peak residency is unchanged: the displaced bank is freed after the
   commit instead of during it.
 - `device_process_rt.rs` guards the commit and the abort with `assert_no_alloc`, which aborts on a free

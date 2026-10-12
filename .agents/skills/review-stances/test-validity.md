@@ -6,6 +6,33 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-12 — a release budget missed the still-open PCM entry (PR #5239 review repair)
+
+An aborted bank could hold both a sealed sample and an unfinished reservation. Release freed
+the open reservation first, then gave the sealed pool the full entry budget. A single-entry
+call therefore freed both while existing large-budget disposal checks stayed green.
+
+Stage one sealed and one open sample in the actual shipped module, abort, then release with
+budgets zero and one: minimum progress is one entry, so the first call must retain the sealed
+PCM and the second must finish. Pair native PCM-allocation counts with an open-only bank and a
+shared sounding owner. Charge every PCM holder to the normalized budget; never forward zero
+remaining budget to a lower helper that independently normalizes it to one. This is an entry
+count contract, not a browser deallocation-time or audio-deadline measurement.
+
+### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
+
+Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
+that waiter followed by its own terminal error before the reservation continuation: the failed
+load posted PCM and kept a credit it had not used. Grant first, then fail, dispose or cancel in
+the same turn; require rejection, zero waiter PCM, and exact ceiling-sized reuse by the next
+bank. Reverse ordering alone does not exercise the ownership handoff.
+
+The shipped upload test compared two chunkings through the same copy path. Omitting that copy
+could leave both renders equally wrong, while nonzero allocator leftovers passed a sounding
+check. Poison the reserved PCM span, compare each acknowledged window with the independent
+input bit-for-bit, and remove only the production copy in a committed private probe. Require
+that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
+
 ### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
 
 The subgraph fixture asserted that the inverse callback received the requested beat-four
