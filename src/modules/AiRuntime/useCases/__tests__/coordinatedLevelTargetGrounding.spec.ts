@@ -96,7 +96,7 @@ const projectWithTwoBassTracks: ProjectContext = {
 
 const projectWithQuotedOverlap: ProjectContext = {
     ...projectContext,
-    tracks: [...projectContext.tracks, bassCommaDi, rockAndRoll],
+    tracks: [...projectContext.tracks.filter((track) => track.id !== bassDi.id), bassCommaDi, rockAndRoll],
 };
 
 /** The fixture with a VCA group named "Strings": a project reference that names no track. */
@@ -310,9 +310,15 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         expect(direct.rejections).toEqual([]);
         expect(direct.actions).toEqual(expected);
         expect(atomicDirect.status).toBe('grounded');
-        if (atomicDirect.status === 'grounded') expect(atomicDirect.actions).toEqual(expected);
+        if (atomicDirect.status === 'grounded') {
+            expect(atomicDirect.actions).toHaveLength(expected.length);
+            expect(atomicDirect.actions).toMatchObject(expected);
+        }
         expect(atomicCompiled.status).toBe('grounded');
-        if (atomicCompiled.status === 'grounded') expect(atomicCompiled.actions).toEqual(expected);
+        if (atomicCompiled.status === 'grounded') {
+            expect(atomicCompiled.actions).toHaveLength(expected.length);
+            expect(atomicCompiled.actions).toMatchObject(expected);
+        }
         expect(missing.status).toBe('rejected');
     });
 
@@ -509,11 +515,13 @@ describe('a coordinated level list keeps the request exclusions and protections'
         expect(atomicCompiled.status).toBe('rejected');
         expect(eligibleDirect.status).toBe('grounded');
         if (eligibleDirect.status === 'grounded') {
-            expect(eligibleDirect.actions).toEqual([gainAction(eligibleTrack.id, { deltaDb: -3 })]);
+            expect(eligibleDirect.actions).toHaveLength(1);
+            expect(eligibleDirect.actions).toMatchObject([gainAction(eligibleTrack.id, { deltaDb: -3 })]);
         }
         expect(eligibleCompiled.status).toBe('grounded');
         if (eligibleCompiled.status === 'grounded') {
-            expect(eligibleCompiled.actions).toEqual([gainAction(eligibleTrack.id, { deltaDb: -3 })]);
+            expect(eligibleCompiled.actions).toHaveLength(1);
+            expect(eligibleCompiled.actions).toMatchObject([gainAction(eligibleTrack.id, { deltaDb: -3 })]);
         }
     });
 
@@ -524,6 +532,22 @@ describe('a coordinated level list keeps the request exclusions and protections'
         );
         expect(result.actions).toEqual([]);
         expect(result.rejections).toHaveLength(2);
+    });
+
+    it('refuses an unresolved explicitly named member of one preserved-control conjunction', () => {
+        const prompt = 'turn Drums and Bass down 3 dB; do not change Bass pan and Strings fader';
+        const bothCalls = [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })];
+        const direct = bridge(bothCalls, prompt, projectWithStringsGroup);
+        const partial = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, projectWithStringsGroup);
+        const atomicDirect = groundGainList(prompt, [drums, bass], projectWithStringsGroup);
+        const atomicCompiled = groundGainList(prompt, [drums, bass], projectWithStringsGroup, true);
+
+        expect(direct.actions).toEqual([]);
+        expect(direct.rejections).toHaveLength(2);
+        expect(partial.actions).toEqual([]);
+        expect(partial.rejections).toHaveLength(1);
+        expect(atomicDirect.status).toBe('rejected');
+        expect(atomicCompiled.status).toBe('rejected');
     });
 
     it.each([
