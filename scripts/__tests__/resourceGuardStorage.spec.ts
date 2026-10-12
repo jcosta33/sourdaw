@@ -568,15 +568,10 @@ describe('guard-owned temporary storage', () => {
             const coverageUnavailable = diagnostics.some((line) =>
                 line.startsWith('guard storage file-use proof unavailable: lsof-live-pid-missing:')
             );
-            expect(diagnostics).toEqual(
-                coverageUnavailable
-                    ? [
-                          expect.stringMatching(
-                              /^guard storage file-use proof unavailable: lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+$/
-                          ),
-                      ]
-                    : []
+            const expectedCoverageDiagnostic = expect.stringMatching(
+                /^guard storage file-use proof unavailable: lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+$/
             );
+            expect(diagnostics).toEqual(coverageUnavailable ? [expectedCoverageDiagnostic] : []);
             const originalRetained = existsSync(started.tmp);
             const claims = claimPayloads(join(root, 'storage'));
             expect(originalRetained || claims.length > 0).toBe(coverageUnavailable);
@@ -1275,11 +1270,13 @@ describe('storage ownership recovery', () => {
         expect(observed.reasons).toEqual(reason === undefined ? [] : [expect.stringContaining(reason)]);
         const censusTimeouts = observed.timeouts.filter((sample) => sample.command === 'lsof');
         expect(censusTimeouts.map((sample) => sample.timeout)).toEqual(
-            Array.from({ length: samples }, (_, index) =>
-                scenario === 'post-death recovery live PID gap'
-                    ? 5000
-                    : 5000 - index * (scenario === 'expired second observation' ? 2500 : 100)
-            )
+            Array.from({ length: samples }, (_, index) => {
+                if (scenario === 'post-death recovery live PID gap') {
+                    return 5000;
+                }
+                const elapsedPerObservation = scenario === 'expired second observation' ? 2500 : 100;
+                return 5000 - index * elapsedPerObservation;
+            })
         );
         if (state === 'dead') {
             expect(observed.processSamples).toBe(4);
