@@ -1,0 +1,137 @@
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_29d8df116c5b92::t_2cf0a1e27634b7 91-92
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_29d8df116c5b92::t_72c7955fe885f9 76-87,94-108
+.agents/skills/review-stances/correctness.md
+  s_29d8df116c5b92::t_bfd7f77f6ec5fa 558-571
+.agents/skills/review-stances/security-and-platform.md
+  s_29d8df116c5b92::t_7791de4d741323 25-59
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_cdf4f45705ebd2 58-84,122-143,988-1001
+.github/workflows/validation.yml
+  s_29d8df116c5b92::t_eee9d2ae8a5b0f 487-494,504,511-516,519,528
+.gitignore
+  s_29d8df116c5b92::t_198e61b66abcbe 47-50
+crates/daw-dsp/AGENTS.md
+  s_29d8df116c5b92::t_18b23eb2003c46 61-74
+crates/daw-dsp/src/levain/engine.rs
+  s_29d8df116c5b92::t_218732548cc9dd 29,44-66,70-72,90,110-111,130,142,157-161,169-172,319-321,330,337-445,456-457,488,528,2261,2334
+crates/daw-dsp/src/levain/mod.rs
+  s_29d8df116c5b92::t_51b51345a53228 41-50,150-158,170-232
+crates/daw-dsp/src/levain/zone.rs
+  s_29d8df116c5b92::t_200915aeb86a42 82-93
+crates/daw-dsp/tests/device_process_rt.rs
+  s_29d8df116c5b92::t_174078fb572819 1921-1967
+crates/daw-dsp/tests/levain_sample_upload.rs
+  s_29d8df116c5b92::t_ed29e7b33fc15a 1-511
+docs/06-testing.md
+  s_29d8df116c5b92::t_fdfb0e6c44c205 722-818
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_29d8df116c5b92::t_cfc83875f1a9bd 1,719-727,753-763,784-795,874-893,1052-1185,1226,1231,1248-1250
+public/wasm/daw-dsp/daw_dsp.js
+  s_29d8df116c5b92::t_d0eebf4c63696d 1520-1528,1597-1614,1652-1669,1827-1861
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_29d8df116c5b92::t_1d4138071fa398 1,5-138,179,184,201-203
+public/wasm/manifest.json
+  s_29d8df116c5b92::t_74fe88ce3100f6 12,15-18,20-21
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_e6530d596547d7 1213,1345,1351,1771
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_29d8df116c5b92::t_f97a406e127f45 812-813,816-820,825,833,836-843,846,854
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_29d8df116c5b92::t_c1daf339d535dd 1,3737-3841,3843-3845,3849-3852,3854-3859,3862,3866-3867,3870-3931,3933-3948,3950-3952,3961,3966-3970,3973-3974,3979-3994,3997-4087,5003-5033
+scripts/__tests__/resourceGuard.spec.ts
+  s_29d8df116c5b92::t_b034415782ed2e 16,58-62,494,498,501-502,508,510-528,1389,1406,2009-2014,2349,2354,2361,2372
+scripts/__tests__/resourceGuardShowOutput.spec.ts
+  s_29d8df116c5b92::t_ea32fcb977be60 54-55,57-76,78-103
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_29d8df116c5b92::t_311ebc6f26a1e6 1-1857
+scripts/__tests__/runIsolatedUnitShard.spec.ts
+  s_29d8df116c5b92::t_87fd402233b64b 1-740
+scripts/__tests__/unitExecutionCopy.spec.ts
+  s_29d8df116c5b92::t_47fcc9b1ddc92b 1-220
+scripts/__tests__/viteBuildFaustWorkletRegistration.spec.ts
+  s_29d8df116c5b92::t_ad473f587e7452 1-357
+scripts/healthGateWorkflowContract.ts
+  s_29d8df116c5b92::t_87b8c38f581d69 75-76,78-84,86-93,127,187-196,201,211,247,299
+scripts/resourceGuard.ts
+  s_29d8df116c5b92::t_1ad42c60c8e6e8 8,12,20,35-47,124-127,138-139,804,823,831-834,840,844,857-881,957-959,966-969,1005-1007,1018,1034-1498,1501-1503,1592-1640,1643-1649,1651-1672,1674,1676-1695,1728-1763,1788-1794,1815,1821-1826,1846,1867-1873,1884-1892,1901-1902,2165,2396,2453-2461,2481,2498,2581,2653
+scripts/resourceGuardStorage.ts
+  s_29d8df116c5b92::t_5eceb29714ddb7 1-630
+scripts/runIsolatedUnitShard.ts
+  s_29d8df116c5b92::t_93c7800ba28483 1-621
+scripts/test-health-gate-scripts.sh
+  s_29d8df116c5b92::t_ea1cb4982041e3 953-1026
+scripts/unitExecutionCopy.ts
+  s_29d8df116c5b92::t_0897d8b6008bcb 1-118
+scripts/unitShardCheckoutOwnership.ts
+  s_29d8df116c5b92::t_bcf0d729576db7 1-77
+scripts/verifyUnitStorageIsolation.ts
+  s_29d8df116c5b92::t_fc36b0a59e27a2 1-104
+src/infra/audioWorklet/levainSampleChunk.ts
+  s_29d8df116c5b92::t_0bf2459e2ae002 1-27
+src/modules/AudioEngine/AGENTS.md
+  s_29d8df116c5b92::t_6e6486b3280192 35
+src/modules/AudioEngine/errors/FaustDeviceExportError.ts
+  s_29d8df116c5b92::t_954661904a6a3d 1-17
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_29d8df116c5b92::t_05744e29f66cab 77-84
+src/modules/AudioEngine/repositories/deviceStrategy/FaustDeviceStrategy.ts
+  s_29d8df116c5b92::t_5fab951be49417 110-113
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_29d8df116c5b92::t_ac146085758c6b 28-31,82-85,88-89,92-122,211-224,372-379,381-486,489-495,519-520,524-526,538,550,554-556,571,583,586,595,599,625-627,632,635,679,682,709,712
+src/modules/AudioEngine/services/__tests__/levainProcessorDisposalRelease.spec.ts
+  s_29d8df116c5b92::t_31566d70edb904 14,68,75-76,143-177
+src/modules/AudioEngine/services/__tests__/levainProcessorSampleUpload.spec.ts
+  s_29d8df116c5b92::t_f7091d9ac975a1 1-441
+src/modules/AudioEngine/services/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_29d8df116c5b92::t_a44042dd4137e7 32,39-40
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_29d8df116c5b92::t_985e8d531b9e2a 18-20,28-37,177,184-185,254-258,724-725,728,734-746,814-852
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  s_29d8df116c5b92::t_8f6d4c40494dc2 522-648
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainWithheldDevice.spec.ts
+  s_29d8df116c5b92::t_9bb693eba6832c 39,90-92
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_29d8df116c5b92::t_eaf37c31ea8f11 3-4,13-14,16-17,24-32,102-110,270-335,412,418,467,614,729-796,1175-1205
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_29d8df116c5b92::t_552c7b59e54560 7-8,10-11,18-26,92-100,307-356
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_29d8df116c5b92::t_47ae03f5963348 14,90,123-124,172,217-220,231-232,385-386,389-390,441-442,499,529-544
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_29d8df116c5b92::t_78532a3fd0a178 10,241-242,244,312,350,521-523,539-544
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_29d8df116c5b92::t_cbb6fe4cc7d7e5 24-27,110
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_29d8df116c5b92::t_9a339d9266b551 59-62,276
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_29d8df116c5b92::t_cd23a77e2fbf4b 89
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_29d8df116c5b92::t_bfffc2539f12e2 1,719-727,753-763,784-795,874-893,1052-1185,1226,1231,1248-1250
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_29d8df116c5b92::t_5ce9dc38b83391 1697-1705,1774-1791,1829-1846,2004-2038
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_29d8df116c5b92::t_54883de0f68bd6 1286-1325
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_29d8df116c5b92::t_e1c1f2f50ae0a8 3-4,75-78,121-136,139-140,153-154,174-190,214-216,222-227,236,238-243,247-249,259,265-270,276-281,295-298,309-310,315-321,348-350,354-355,358-360,362,364-368,444,475-1013,1024-1026,1344,1592,1595,1597-1602
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_29d8df116c5b92::t_b67dc34ff5ca5f 1,21-22,154-155,168,197-200,293-505,586-587,624-625,725-728
+vite.config.ts
+  s_29d8df116c5b92::t_aa668f34584fd2 16-34,164-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f071392fa0795efeaeee475d6c3aa0eef0b5c458",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
