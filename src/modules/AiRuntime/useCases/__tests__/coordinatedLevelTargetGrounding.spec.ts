@@ -323,9 +323,13 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         expect(direct.rejections).toEqual([]);
         expect(direct.actions).toEqual(expected);
         expect(atomicDirect.status).toBe('grounded');
-        if (atomicDirect.status === 'grounded') expect(atomicDirect.actions).toEqual(expectedGrounded);
+        if (atomicDirect.status === 'grounded') {
+            expect(atomicDirect.actions).toEqual(expectedGrounded);
+        }
         expect(atomicCompiled.status).toBe('grounded');
-        if (atomicCompiled.status === 'grounded') expect(atomicCompiled.actions).toEqual(expectedGrounded);
+        if (atomicCompiled.status === 'grounded') {
+            expect(atomicCompiled.actions).toEqual(expectedGrounded);
+        }
         expect(missing.status).toBe('rejected');
     });
 
