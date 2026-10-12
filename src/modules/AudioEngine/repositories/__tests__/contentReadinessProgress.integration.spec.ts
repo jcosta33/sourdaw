@@ -74,7 +74,14 @@ function createPort(): MessagePort {
         }
     }
     return {
-        postMessage(message: { type: string; loadToken?: number }) {
+        postMessage(message: { type: string; loadToken?: number; sampleId?: number }) {
+            if (message.type === 'sampleChunk') {
+                // The worklet writes each chunk and says so; the loader sends no
+                // more than a few chunks ahead of these answers.
+                queueMicrotask(() =>
+                    emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId })
+                );
+            }
             if (message.type === 'beginSampleBank') {
                 queueMicrotask(() =>
                     emit({

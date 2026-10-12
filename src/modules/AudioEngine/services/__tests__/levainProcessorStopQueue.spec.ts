@@ -28,7 +28,6 @@ const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let processShouldThrow = false;
-let addSampleShouldThrow = false;
 let abortSampleBankShouldThrow = false;
 let allNotesOffShouldThrow = false;
 let setParamShouldThrow = false;
@@ -70,16 +69,6 @@ class LevainInstanceMock {
     }
     handle_cc(cc: number, value: number): void {
         calls.push({ method: 'handle_cc', args: [cc, value] });
-    }
-    add_sample(data: Float32Array, frameCount: number, channels: number, sampleRate: number): number {
-        if (addSampleShouldThrow) {
-            // Sample loading is the likeliest place for this device to fail
-            // after startup: the copy into linear memory is hundreds of MiB for
-            // a single instrument, with no dedup between instances.
-            throw new Error('memory allocation failed');
-        }
-        calls.push({ method: 'add_sample', args: [Array.from(data), frameCount, channels, sampleRate] });
-        return calls.filter((call) => call.method === 'add_sample').length - 1;
     }
     add_zone(...args: unknown[]): void {
         calls.push({ method: 'add_zone', args });
@@ -169,7 +158,6 @@ describe('LevainProcessor queued notes across allNotesOff', () => {
         resetGrowableMemory(memory, HEAP_BYTES);
         calls.length = 0;
         processShouldThrow = false;
-        addSampleShouldThrow = false;
         abortSampleBankShouldThrow = false;
         allNotesOffShouldThrow = false;
         setParamShouldThrow = false;

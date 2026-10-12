@@ -11,6 +11,7 @@ type DisposalEngine = {
     release_retired_bank: (maxEntries: number) => boolean;
     retire_sample_bank: () => boolean;
     sample_bank_bytes: () => number;
+    sample_write_floats: (sampleId: number) => number;
     free: () => void;
 };
 
@@ -64,14 +65,15 @@ function loadBank(processor: LevainProcessorLike, loadToken: number, instrumentI
     const data = new Float32Array(SAMPLE_FRAMES).map((_, frame) => Math.sin(frame * 0.05) * 0.5);
     for (let sampleId = 0; sampleId < samples; sampleId++) {
         send(processor, {
-            type: 'addSample',
+            type: 'beginSample',
             loadToken,
             sampleId,
-            data,
             frameCount: SAMPLE_FRAMES,
             channels: 1,
             sampleRate: 48_000,
         });
+        send(processor, { type: 'sampleChunk', loadToken, sampleId, data });
+        send(processor, { type: 'sealSample', loadToken, sampleId });
         send(processor, {
             type: 'addZone',
             loadToken,
@@ -138,6 +140,41 @@ afterEach(() => {
 });
 
 describe('shipped LevainProcessor disposal release', () => {
+    it.each([0, 1])('counts an aborted open sample inside a %i-entry minimum release budget', async (budget) => {
+        const processor = await startProcessor();
+        send(processor, { type: 'beginSampleBank', bankKey: 'partial', instrumentId: 'violin-1', loadToken: 1 });
+        const data = new Float32Array(SAMPLE_FRAMES).fill(0.5);
+        send(processor, {
+            type: 'beginSample',
+            loadToken: 1,
+            sampleId: 0,
+            frameCount: SAMPLE_FRAMES,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        send(processor, { type: 'sampleChunk', loadToken: 1, sampleId: 0, data });
+        send(processor, { type: 'sealSample', loadToken: 1, sampleId: 0 });
+        send(processor, {
+            type: 'beginSample',
+            loadToken: 1,
+            sampleId: 1,
+            frameCount: SAMPLE_FRAMES,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        const engine = engineOf(processor);
+        expect(engine.sample_write_floats(1)).toBe(SAMPLE_FRAMES);
+
+        send(processor, { type: 'abortSampleBank', loadToken: 1 });
+
+        expect(engine.has_retired_bank()).toBe(true);
+        expect(engine.release_retired_bank(budget), 'only the open PCM entry fits the first step').toBe(false);
+        expect(engine.has_retired_bank()).toBe(true);
+        expect(engine.release_retired_bank(budget), 'the sealed PCM entry fits the second step').toBe(true);
+        expect(engine.has_retired_bank()).toBe(false);
+        expect(engine.release_retired_bank(budget), 'an emptied retired slot stays empty').toBe(true);
+    });
+
     it('frees nothing in dispose and frees a large bank over several paced steps', async () => {
         const processor = await startProcessor();
         loadBank(processor, 1, 'violin-1', LARGE_BANK_SAMPLES);
