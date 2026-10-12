@@ -1,0 +1,16 @@
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  h_beb54bf43b47b7 112-165,243,249-261,447-456
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  h_beb54bf43b47b7 1255-1257,1259-1260,1262-1273,1281-1282,1284-1286,1290-1320,1322,1324-1330,1402-1404,1408,1415-1418,1420-1421,1425,1428,1692-1699,1705-1707
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5103c3667d0b4e6b00ac9d250a956b738fee32c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
