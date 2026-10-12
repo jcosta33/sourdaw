@@ -691,7 +691,7 @@ describe('guard-owned temporary storage', () => {
         20_000
     );
 
-    it('treats an exit-zero empty process census as unavailable monitoring evidence and retains live storage', async () => {
+    async function verifyEmptyProcessCensusAdmission(holdPreparedRecord: boolean): Promise<void> {
         const deadline = Date.now() + 20_000;
         const root = fixture();
         const marker = join(root, 'empty.json');
@@ -699,6 +699,9 @@ describe('guard-owned temporary storage', () => {
         const rootMarker = join(root, 'root.pid');
         const childMarker = join(root, 'child.pid');
         const admitted = join(root, 'admission.json');
+        const prepared = join(root, 'admission.pending');
+        const preparationReady = join(root, 'preparation-ready');
+        const publishPrepared = join(root, 'publish-prepared');
         const samplesPath = join(root, 'samples.jsonl');
         const bin = join(root, 'bin');
         mkdirSync(bin);
@@ -729,8 +732,23 @@ if(!args.includes('pid=,ppid=,pgid=,rss=,command=')){
  const rootRow=rows.find(row=>row.pid===rootPid);
  const sample={empty:false,rootPid,supervisorPid:process.ppid,rootPresent:pids.includes(rootPid),supervisorPresent:pids.includes(process.ppid),admittedDescendants:visible.filter(row=>descendants.has(row.pid)).map(row=>row.pid),childPid,childPresent:pids.includes(childPid),rootGroup:rootRow?.group};
  fs.appendFileSync(${JSON.stringify(samplesPath)},JSON.stringify(sample)+'\\n');
- if(childPid!==undefined&&descendants.has(childPid)&&sample.rootPresent&&sample.supervisorPresent){fs.writeFileSync(${JSON.stringify(admitted)},JSON.stringify({childPid,rootPid,rootGroup:rootRow.group}))}
- process.stdout.write(visible.map(row=>row.line).join('\\n')+'\\n');
+ const catalog=visible.map(row=>row.line).join('\\n')+'\\n';
+ if(childPid!==undefined&&descendants.has(childPid)&&sample.rootPresent&&sample.supervisorPresent&&!fs.existsSync(${JSON.stringify(admitted)})){
+  const record=JSON.stringify({childPid,rootPid,rootGroup:rootRow.group});
+  if(${holdPreparedRecord}){
+   fs.writeFileSync(${JSON.stringify(prepared)},'');
+   fs.writeFileSync(${JSON.stringify(preparationReady)},'prepared');
+   let published=false;
+   const watch=fs.watch(${JSON.stringify(root)},()=>publish());
+   function publish(){
+    if(published||!fs.existsSync(${JSON.stringify(publishPrepared)}))return;
+    published=true;watch.close();
+    fs.writeFileSync(${JSON.stringify(prepared)},record);fs.renameSync(${JSON.stringify(prepared)},${JSON.stringify(admitted)});
+    process.stdout.write(catalog);
+   }
+   publish();
+  }else{fs.writeFileSync(${JSON.stringify(prepared)},record);fs.renameSync(${JSON.stringify(prepared)},${JSON.stringify(admitted)});process.stdout.write(catalog)}
+ }else process.stdout.write(catalog);
 }
 `
         );
@@ -773,6 +791,21 @@ ready();
             throw new Error('empty census supervisor did not start');
         }
         childPids.add(supervisor.pid);
+        if (holdPreparedRecord) {
+            await waitUntil(() => existsSync(preparationReady));
+            const childPid = Number(readFileSync(childMarker, 'utf8'));
+            const rootPid = Number(readFileSync(rootMarker, 'utf8'));
+            childPids.add(childPid);
+            childPids.add(rootPid);
+            try {
+                expect(readFileSync(prepared, 'utf8')).toBe('');
+                expect(existsSync(admitted)).toBe(false);
+                expect(existsSync(marker)).toBe(false);
+                expect(isAlive(childPid)).toBe(true);
+            } finally {
+                writeFileSync(publishPrepared, 'publish');
+            }
+        }
         await waitUntil(() => existsSync(marker));
         const started: { pid: number; tmp: string; group: number; sessionPresent: boolean } = JSON.parse(
             readFileSync(marker, 'utf8')
@@ -833,6 +866,14 @@ ready();
         await waitForStorageAbandonment([started.tmp], deadline);
         expect((await guarded(root)).code).toBe(0);
         expect(existsSync(started.tmp)).toBe(false);
+    }
+
+    it('treats an exit-zero empty process census as unavailable monitoring evidence and retains live storage', async () => {
+        await verifyEmptyProcessCensusAdmission(false);
+    }, 20_000);
+
+    it('keeps admission readiness pending until its complete record is published', async () => {
+        await verifyEmptyProcessCensusAdmission(true);
     }, 20_000);
 
     it('gives a nested guard its own temp and reserve without cleaning the live parents temp', async () => {
