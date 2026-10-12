@@ -542,21 +542,24 @@ describe('a coordinated level list keeps the request exclusions and protections'
     it.each([
         ['unknown track', projectContext],
         ['non-track project reference', projectWithStringsGroup],
-    ] as const)('refuses an unresolved explicitly named member of one preserved-control conjunction: %s', (_kind, context) => {
-        const prompt = 'turn Drums and Bass down 3 dB; do not change Bass pan and Strings fader';
-        const bothCalls = [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })];
-        const direct = bridge(bothCalls, prompt, context);
-        const partial = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, context);
-        const atomicDirect = groundGainList(prompt, [drums, bass], context);
-        const atomicCompiled = groundGainList(prompt, [drums, bass], context, true);
+    ] as const)(
+        'refuses an unresolved explicitly named member of one preserved-control conjunction: %s',
+        (_kind, context) => {
+            const prompt = 'turn Drums and Bass down 3 dB; do not change Bass pan and Strings fader';
+            const bothCalls = [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })];
+            const direct = bridge(bothCalls, prompt, context);
+            const partial = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, context);
+            const atomicDirect = groundGainList(prompt, [drums, bass], context);
+            const atomicCompiled = groundGainList(prompt, [drums, bass], context, true);
 
-        expect(direct.actions).toEqual([]);
-        expect(direct.rejections).toHaveLength(2);
-        expect(partial.actions).toEqual([]);
-        expect(partial.rejections).toHaveLength(1);
-        expect(atomicDirect.status).toBe('rejected');
-        expect(atomicCompiled.status).toBe('rejected');
-    });
+            expect(direct.actions).toEqual([]);
+            expect(direct.rejections).toHaveLength(2);
+            expect(partial.actions).toEqual([]);
+            expect(partial.rejections).toHaveLength(1);
+            expect(atomicDirect.status).toBe('rejected');
+            expect(atomicCompiled.status).toBe('rejected');
+        }
+    );
 
     it.each([
         'turn Drums and Bass down 3 dB; do not change the pan and solo and fader of Bass',

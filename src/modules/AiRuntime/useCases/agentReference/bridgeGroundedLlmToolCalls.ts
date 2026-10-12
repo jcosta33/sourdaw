@@ -1277,16 +1277,26 @@ function protectsAnotherTrackControlFromGain(maskedOperation: string): boolean {
     return namesOtherControl && !namesGain;
 }
 
+const BARE_CONTROL_MEMBER =
+    /^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu;
+const FIRST_BARE_CONTROL_MEMBER =
+    /^(?:(?:not|never|don't)\s+change\s+|(?:leave|keep|preserve|retain)\s+)(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu;
+const UNRESOLVED_NAMED_CONTROL_MEMBER =
+    /^(?:(?:the|its)\s+)?\S(?:.*\S)?\s+(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu;
+const UNRESOLVED_POSTPOSED_CONTROL_MEMBER =
+    /^(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\s+of\s+(?:the\s+)?\S(?:.*\S)?\s*$/iu;
+
 /**
  * Clause splitting may cut a preservation operation at each control in its conjunction.
- * Continue only across bare control members: a named target, new action, or modifier closes it.
+ * Continue across bare controls and complete explicitly named control members. A new action or
+ * modifier closes the operation; the consumer retains each member's own control and target.
  */
 function getSharedControlRestriction(
     clauses: readonly PromptClauseSpan[],
     firstClauseIndex: number,
     prompt: string,
     maskedPrompt: string,
-    tracks: ProjectContext['tracks']
+    catalog: GroundingCatalog
 ): { clause: PromptClauseSpan; lastClauseIndex: number } {
     const first = clauses[firstClauseIndex]!;
     const firstOperation = getRestrictedTrackControlOperation(first);
@@ -1294,7 +1304,6 @@ function getSharedControlRestriction(
         (hasTrackControlRestriction(firstOperation.masked) ||
             COORDINATED_TARGET_PROTECTION_CUE.test(firstOperation.masked)) &&
         /\b(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/iu.test(firstOperation.masked);
-    const hasFirstTarget = collectNamedProjectTracks(firstOperation.text, tracks).length > 0;
     let lastClauseIndex = firstClauseIndex;
     if (isControlRestriction && first.masked.slice(firstOperation.end).trim().length === 0) {
         for (let index = firstClauseIndex + 1; index < clauses.length; index += 1) {
@@ -1305,25 +1314,31 @@ function getSharedControlRestriction(
                 break;
             }
             const nextOperation = getRestrictedTrackControlOperation(next);
-            const isPostposedTarget =
-                !hasFirstTarget &&
-                /^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\s+of\s+(?:the\s+)?(?:"□+"|'□+'|“□+”|‘□+’|□+)\s*$/iu.test(
-                    nextOperation.masked.trim()
-                );
-            if (isPostposedTarget) {
-                lastClauseIndex = index;
-                break;
-            }
             if (
-                collectNamedProjectTracks(nextOperation.text, tracks).length > 0 ||
-                !/^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu.test(
-                    nextOperation.masked.trim()
-                )
+                hasTrackControlRestriction(nextOperation.masked) ||
+                /^(?:not|never|don't|except|excluding|without)\b/iu.test(nextOperation.masked.trim()) ||
+                resolveClauseActionIntent(nextOperation.masked, catalog) !== null
             ) {
                 break;
             }
+            const isNamedControlMember =
+                /^(?:(?:the|its)\s+)?(?:"□+"|'□+'|“□+”|‘□+’|□+)\s+(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu.test(
+                    nextOperation.masked.trim()
+                ) ||
+                /^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\s+of\s+(?:the\s+)?(?:"□+"|'□+'|“□+”|‘□+’|□+)\s*$/iu.test(
+                    nextOperation.masked.trim()
+                );
+            const isBareControlMember = BARE_CONTROL_MEMBER.test(nextOperation.masked.trim());
+            const isUnresolvedControlMember =
+                !isNamedControlMember &&
+                !isBareControlMember &&
+                (UNRESOLVED_NAMED_CONTROL_MEMBER.test(nextOperation.masked.trim()) ||
+                    UNRESOLVED_POSTPOSED_CONTROL_MEMBER.test(nextOperation.masked.trim()));
+            if (!isNamedControlMember && !isBareControlMember && !isUnresolvedControlMember) {
+                break;
+            }
             lastClauseIndex = index;
-            if (next.masked.slice(nextOperation.end).trim().length > 0) {
+            if (isUnresolvedControlMember || next.masked.slice(nextOperation.end).trim().length > 0) {
                 break;
             }
         }
@@ -1394,7 +1409,8 @@ function getProtectedListMemberIds(
     clauses: readonly PromptClauseSpan[],
     context: ProjectContext,
     maskedPrompt: string,
-    prompt: string
+    prompt: string,
+    catalog: GroundingCatalog
 ): ReadonlySet<string> | null {
     const memberIds = list.memberIds ?? [];
     const protectedIds = new Set<string>();
@@ -1409,7 +1425,8 @@ function getProtectedListMemberIds(
             index - 1 !== list.lastClauseIndex &&
             normalizePromptText(previousClause.masked) === 'all' &&
             normalizePromptText(maskedPrompt.slice(previousClause.end, clause.start)) === 'but';
-        const restriction = getSharedControlRestriction(clauses, index, prompt, maskedPrompt, context.tracks);
+        const firstRestrictionIndex = index;
+        const restriction = getSharedControlRestriction(clauses, index, prompt, maskedPrompt, catalog);
         index = restriction.lastClauseIndex;
         const restrictionMasked = joinsAllButRestriction
             ? maskedPrompt.slice(previousClause.start, clause.end)
@@ -1424,17 +1441,37 @@ function getProtectedListMemberIds(
         ) {
             continue;
         }
-        const namedTargets = collectNamedProjectTracks(operation.text, context.tracks);
-        if (
-            /\b(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/iu.test(operation.masked) &&
-            namedTargets.length === 0
-        ) {
-            return null;
-        }
-        if (actionName === 'setTrackGain' && protectsAnotherTrackControlFromGain(operation.masked)) {
+        if (/\b(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/iu.test(operation.masked)) {
+            const members = clauses.slice(firstRestrictionIndex, restriction.lastClauseIndex + 1);
+            const memberOperations = members.map(getRestrictedTrackControlOperation);
+            const memberTargets = memberOperations.map((member) =>
+                collectNamedProjectTracks(member.text, context.tracks)
+            );
+            let inheritedTargets = memberTargets.find((targets) => targets.length > 0);
+            if (inheritedTargets === undefined) {
+                return null;
+            }
+            for (const [memberIndex, member] of memberOperations.entries()) {
+                const explicitTargets = memberTargets[memberIndex]!;
+                if (explicitTargets.length > 0) {
+                    inheritedTargets = explicitTargets;
+                } else if (
+                    !(memberIndex === 0 ? FIRST_BARE_CONTROL_MEMBER : BARE_CONTROL_MEMBER).test(member.masked.trim())
+                ) {
+                    return null;
+                }
+                if (actionName === 'setTrackGain' && protectsAnotherTrackControlFromGain(member.masked)) {
+                    continue;
+                }
+                for (const id of inheritedTargets) {
+                    if (memberIds.includes(id)) {
+                        protectedIds.add(id);
+                    }
+                }
+            }
             continue;
         }
-        for (const id of namedTargets) {
+        for (const id of collectNamedProjectTracks(operation.text, context.tracks)) {
             if (memberIds.includes(id)) {
                 protectedIds.add(id);
             }
@@ -1488,7 +1525,8 @@ function getCoordinatedLevelLists(input: {
             input.clauses,
             input.context,
             input.maskedPrompt,
-            input.prompt
+            input.prompt,
+            input.catalog
         );
         const targetIds = protectedIds === null ? [] : (list.memberIds?.filter((id) => !protectedIds.has(id)) ?? []);
         const scope: PromptClauseScope | null =
@@ -1704,7 +1742,7 @@ function resolveActionPromptScope({
     });
     const sharedRestrictionContinuations = new Set<number>();
     for (let index = 0; index < clauses.length; index += 1) {
-        const { lastClauseIndex } = getSharedControlRestriction(clauses, index, prompt, maskedPrompt, context.tracks);
+        const { lastClauseIndex } = getSharedControlRestriction(clauses, index, prompt, maskedPrompt, catalog);
         for (let continuation = index + 1; continuation <= lastClauseIndex; continuation += 1) {
             sharedRestrictionContinuations.add(continuation);
         }
@@ -4607,6 +4645,14 @@ function groundToolCall({
             targetPrompt = prompt;
         } else if (call.name === 'muteTrack' || call.name === 'soloTrack') {
             targetPrompt = getTrackControlTargetPrompt(prompt, actionScope, catalog, context.tracks);
+        }
+        if (targetRule.promptRole === undefined && typeof assertedValue === 'string') {
+            const member = actionScope.coordinatedTargets?.references.find(
+                (reference) => reference.id === assertedValue
+            );
+            if (member) {
+                targetPrompt = actionScope.text.slice(member.start, member.end);
+            }
         }
         if (
             articulationTransferScope?.status === 'request' &&
