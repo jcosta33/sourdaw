@@ -28,6 +28,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function targetIdentity(actionType: string, payload: Readonly<Record<string, unknown>>): string {
+    if (actionType === 'moveClip' || actionType === 'removeClip') {
+        return typeof payload.clipId === 'string' ? `${actionType}|clipId=${payload.clipId}` : actionType;
+    }
     const targets = TARGET_IDENTITY_FIELDS.flatMap((field) =>
         typeof payload[field] === 'string' ? [`${field}=${payload[field]}`] : []
     );

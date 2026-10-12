@@ -672,6 +672,48 @@ describe('getAgentApprovalView', () => {
             });
         });
 
+        it('shows a moved clip by its stable identity and a replacement removal as separate commands', () => {
+            const moveFromTrackA = {
+                type: 'moveClip',
+                payload: { clipId: 'clip-a', trackId: 'track-a', startBeat: 0 },
+            } satisfies AppAction;
+            const moveToTrackB = {
+                type: 'moveClip',
+                payload: { clipId: 'clip-a', trackId: 'track-b', startBeat: 0 },
+            } satisfies AppAction;
+            const removeClipA = { type: 'removeClip', payload: { clipId: 'clip-a' } } satisfies AppAction;
+            const removeClipB = { type: 'removeClip', payload: { clipId: 'clip-b' } } satisfies AppAction;
+            const keepRename = { type: 'renameClip', payload: { clipId: 'clip-c', name: 'Intro' } } satisfies AppAction;
+
+            propose('confirmation-clips-by-identity-before', {
+                actions: [moveFromTrackA, removeClipA, keepRename],
+                actionLabels: ['Move clip', 'Remove clip A', 'Keep clip name'],
+            });
+            propose('confirmation-clips-by-identity-after', {
+                supersedes: 'confirmation-clips-by-identity-before',
+                actions: [moveToTrackB, removeClipB, keepRename],
+                actionLabels: ['Move clip', 'Remove clip B', 'Keep clip name'],
+            });
+
+            const view = getAgentApprovalView({ confirmationId: 'confirmation-clips-by-identity-after' });
+
+            expect(view?.actionLabels).toEqual(['Move clip', 'Remove clip B', 'Keep clip name']);
+            expect(view?.previousProposalDiff).toEqual({
+                previousConfirmationId: 'confirmation-clips-by-identity-before',
+                changes: [
+                    {
+                        kind: 'changed',
+                        actionType: 'moveClip',
+                        label: 'Move clip',
+                        fields: [{ field: 'trackId', previous: 'track-a', next: 'track-b' }],
+                    },
+                    { kind: 'added', actionType: 'removeClip', label: 'Remove clip B' },
+                    { kind: 'removed', actionType: 'removeClip', label: 'Remove clip A' },
+                ],
+                unchangedCount: 1,
+            });
+        });
+
         // Red when a proposal that replaced none, or one whose predecessor the store let go, is shown a diff.
         it('shows no diff for an original proposal or one whose predecessor is no longer held', () => {
             propose('confirmation-original');

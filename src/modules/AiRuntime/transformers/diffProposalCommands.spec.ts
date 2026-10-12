@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { diffProposalCommands } from './diffProposalCommands';
 
 describe('diffProposalCommands', () => {
@@ -69,6 +71,45 @@ describe('diffProposalCommands', () => {
                 { kind: 'removed', actionType: 'addClip', label: 'Chorus clip' },
             ],
             unchangedCount: 0,
+        });
+    });
+
+    it('uses clip identity for moves while keeping a different removal target separate', () => {
+        const moveFromTrackA = {
+            type: 'moveClip',
+            payload: { clipId: 'clip-a', trackId: 'track-a', startBeat: 0 },
+        } satisfies AppAction;
+        const moveToTrackB = {
+            type: 'moveClip',
+            payload: { clipId: 'clip-a', trackId: 'track-b', startBeat: 0 },
+        } satisfies AppAction;
+        const removeClipA = { type: 'removeClip', payload: { clipId: 'clip-a' } } satisfies AppAction;
+        const removeClipB = { type: 'removeClip', payload: { clipId: 'clip-b' } } satisfies AppAction;
+        const keepRename = { type: 'renameClip', payload: { clipId: 'clip-c', name: 'Intro' } } satisfies AppAction;
+
+        expect(
+            diffProposalCommands(
+                {
+                    actions: [moveFromTrackA, removeClipA, keepRename],
+                    actionLabels: ['Move clip', 'Remove clip A', 'Keep clip name'],
+                },
+                {
+                    actions: [moveToTrackB, removeClipB, keepRename],
+                    actionLabels: ['Move clip', 'Remove clip B', 'Keep clip name'],
+                }
+            )
+        ).toEqual({
+            changes: [
+                {
+                    kind: 'changed',
+                    actionType: 'moveClip',
+                    label: 'Move clip',
+                    fields: [{ field: 'trackId', previous: 'track-a', next: 'track-b' }],
+                },
+                { kind: 'added', actionType: 'removeClip', label: 'Remove clip B' },
+                { kind: 'removed', actionType: 'removeClip', label: 'Remove clip A' },
+            ],
+            unchangedCount: 1,
         });
     });
 });
