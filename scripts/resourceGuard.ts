@@ -1397,11 +1397,11 @@ export function storageFileState(
             return unknown(pids);
         }
         if (platform() === 'darwin') {
-            for (let observation = 0; observation < 2; observation += 1) {
+            for (let observation = 0; observation < 3; observation += 1) {
                 if (Date.now() >= deadline) {
                     return unknown('file-census-time-bound');
                 }
-                if (observation === 1) {
+                if (observation > 0) {
                     pids = readProcessUsers();
                     if (typeof pids === 'string') {
                         return unknown(pids);
@@ -1422,7 +1422,7 @@ export function storageFileState(
                 if (census === undefined) {
                     // A descriptor can close between lsof's field reads. Discard
                     // that catalog; only a wholly valid fresh observation can prove safety.
-                    if (observation === 0 && parseReason === 'descriptor-type-missing') {
+                    if (observation < 2 && parseReason === 'descriptor-type-missing') {
                         continue;
                     }
                     return unknown(`lsof-fields-unusable:${parseReason}`);
@@ -1464,8 +1464,8 @@ export function storageFileState(
                     return unknown('lsof-coverage-time-bound');
                 }
                 if (observation === 0 && missing.length > 0 && onlyNewLivePids) {
-                    // Discard the stale catalog. The shared two-observation limit
-                    // permits one complete replacement, never partial coverage.
+                    // Discard the stale catalog only once. The third observation
+                    // is reserved for a missing descriptor type, never PID churn.
                     continue;
                 }
                 const snapshots = missing.slice(0, 4);
