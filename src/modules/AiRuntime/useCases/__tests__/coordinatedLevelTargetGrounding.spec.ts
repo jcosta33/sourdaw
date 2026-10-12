@@ -534,13 +534,16 @@ describe('a coordinated level list keeps the request exclusions and protections'
         expect(result.rejections).toHaveLength(2);
     });
 
-    it('refuses an unresolved explicitly named member of one preserved-control conjunction', () => {
+    it.each([
+        ['unknown track', projectContext],
+        ['non-track project reference', projectWithStringsGroup],
+    ] as const)('refuses an unresolved explicitly named member of one preserved-control conjunction: %s', (_kind, context) => {
         const prompt = 'turn Drums and Bass down 3 dB; do not change Bass pan and Strings fader';
         const bothCalls = [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })];
-        const direct = bridge(bothCalls, prompt, projectWithStringsGroup);
-        const partial = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, projectWithStringsGroup);
-        const atomicDirect = groundGainList(prompt, [drums, bass], projectWithStringsGroup);
-        const atomicCompiled = groundGainList(prompt, [drums, bass], projectWithStringsGroup, true);
+        const direct = bridge(bothCalls, prompt, context);
+        const partial = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt, context);
+        const atomicDirect = groundGainList(prompt, [drums, bass], context);
+        const atomicCompiled = groundGainList(prompt, [drums, bass], context, true);
 
         expect(direct.actions).toEqual([]);
         expect(direct.rejections).toHaveLength(2);
