@@ -374,6 +374,61 @@ describe('a coordinated level list refuses calls that do not match it exactly', 
 
 describe('a coordinated level list keeps the request exclusions and protections', () => {
     it.each([
+        'turn Drums and Bass down 3 dB; leave Bass pan and solo and fader unchanged',
+        'turn Drums and Bass down 3 dB; leave Bass pan, solo and fader unchanged',
+        'turn Drums and Bass down 3 dB; leave Bass pan and fader alone',
+        'turn Drums and Bass down 3 dB; keep Bass pan and fader untouched',
+        'turn Drums and Bass down 3 dB; do not change Bass pan and fader',
+        'turn Drums and Bass down 3 dB; leave Bass pan and solo unchanged and fader unchanged',
+        'turn Drums and Bass down 3 dB; leave Bass pan and its solo and the fader unchanged',
+        'turn Drums and Bass down 3 dB; leave track-bass pan and solo and fader unchanged',
+        'set Drums and Bass volume to -6 dB; leave Bass pan and solo and fader unchanged',
+    ])('keeps the whole shared Bass preservation operation in "%s"', (prompt) => {
+        const before = structuredClone(projectContext);
+        const value: Record<string, number> = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
+        const bothCalled = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
+        const onlyDrums = bridge([gainCall(drums.id, value)], prompt);
+
+        expect(bothCalled.actions).toEqual([]);
+        expect(bothCalled.rejections).toMatchObject([
+            { index: 0, name: 'setTrackGain', reason: NOT_GROUNDED },
+            { index: 1, name: 'setTrackGain', reason: NOT_GROUNDED },
+        ]);
+        expect(onlyDrums.rejections).toEqual([]);
+        expect(onlyDrums.actions).toEqual([gainAction(drums.id, value)]);
+        expect(projectContext).toEqual(before);
+    });
+
+    it.each([
+        'turn Drums and Bass down 3 dB; leave Vocals fader unchanged after adjusting Bass pan',
+        'turn Drums and Bass down 3 dB; do not change Vocals gain after adjusting Bass pan',
+        'turn Drums and Bass down 3 dB; leave Vocals gain unchanged while adjusting Bass pan',
+        'turn Drums and Bass down 3 dB; leave Bass pan unchanged after adjusting Vocals gain',
+        'set Drums and Bass volume to -6 dB; leave Vocals fader unchanged after adjusting Bass pan',
+    ])('does not borrow a restriction target from a later modifier in "%s"', (prompt) => {
+        const before = structuredClone(projectContext);
+        const value: Record<string, number> = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
+        const bothCalled = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
+        const onlyDrums = bridge([gainCall(drums.id, value)], prompt);
+
+        expect(bothCalled.rejections).toEqual([]);
+        expect(bothCalled.actions).toEqual([gainAction(drums.id, value), gainAction(bass.id, value)]);
+        expect(onlyDrums.actions).toEqual([]);
+        expect(onlyDrums.rejections).toMatchObject([{ index: 0, name: 'setTrackGain', reason: NOT_GROUNDED }]);
+        expect(projectContext).toEqual(before);
+    });
+
+    it('keeps a Bass fader restriction binding when its modifier names another track', () => {
+        const prompt = 'turn Drums and Bass down 3 dB; leave Bass fader unchanged after adjusting Vocals pan';
+        const bothCalled = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
+        const onlyDrums = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+        expect(bothCalled.actions).toEqual([]);
+        expect(onlyDrums.rejections).toEqual([]);
+        expect(onlyDrums.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+    });
+
+    it.each([
         'turn Drums and Bass down 3 dB; leave Bass pan and fader unchanged',
         'turn Drums and Bass down 3 dB; leave Bass fader and pan unchanged',
         'turn Drums and Bass down 3 dB; leave Bass volume and pan unchanged',
