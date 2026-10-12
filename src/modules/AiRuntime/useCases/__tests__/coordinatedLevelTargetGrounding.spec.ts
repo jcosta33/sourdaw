@@ -379,9 +379,12 @@ describe('a coordinated level list keeps the request exclusions and protections'
         'turn Drums and Bass down 3 dB; leave Bass volume and pan unchanged',
         'turn Drums and Bass down 3 dB; leave Bass pan and gain unchanged',
         'turn Drums and Bass down 3 dB; leave track-bass pan and fader unchanged',
+        'set Drums and Bass volume to -6 dB; leave Bass pan and fader unchanged',
     ])('keeps the protected member out of the exact gain proposal in "%s"', (prompt) => {
-        const bothCalled = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
-        const onlyDrums = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+        const before = structuredClone(projectContext);
+        const value = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
+        const bothCalled = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
+        const onlyDrums = bridge([gainCall(drums.id, value)], prompt);
 
         expect(bothCalled.actions).toEqual([]);
         expect(bothCalled.rejections).toMatchObject([
@@ -389,8 +392,8 @@ describe('a coordinated level list keeps the request exclusions and protections'
             { index: 1, name: 'setTrackGain', reason: NOT_GROUNDED },
         ]);
         expect(onlyDrums.rejections).toEqual([]);
-        expect(onlyDrums.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
-        expect(projectContext.tracks.find((track) => track.id === bass.id)).toEqual(bass);
+        expect(onlyDrums.actions).toEqual([gainAction(drums.id, value)]);
+        expect(projectContext).toEqual(before);
     });
 
     it.each([
@@ -402,12 +405,26 @@ describe('a coordinated level list keeps the request exclusions and protections'
         'turn Drums and Bass down 3 dB; do not mute Bass for the purpose of preserving its volume',
         'set Drums and Bass volume to -6 dB; do not mute Bass once gain is adjusted',
     ])('admits both requested gain changes when only muting is restricted in "%s"', (prompt) => {
+        const before = structuredClone(projectContext);
         const value = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
         const result = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
+        const incomplete = bridge([gainCall(drums.id, value)], prompt);
 
         expect(result.rejections).toEqual([]);
         expect(result.actions).toEqual([gainAction(drums.id, value), gainAction(bass.id, value)]);
-        expect(projectContext.tracks.find((track) => track.id === bass.id)).toEqual(bass);
+        expect(incomplete.actions).toEqual([]);
+        expect(incomplete.rejections).toMatchObject([{ index: 0, name: 'setTrackGain', reason: NOT_GROUNDED }]);
+        expect(projectContext).toEqual(before);
+    });
+
+    it('does not protect Bass from gain when the separate restriction names Bass DI', () => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+            'turn Drums and Bass down 3 dB; leave Bass DI pan and fader unchanged'
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 }), gainAction(bass.id, { deltaDb: -3 })]);
     });
 
     it.each([

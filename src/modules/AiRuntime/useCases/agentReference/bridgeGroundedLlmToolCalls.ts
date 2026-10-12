@@ -1254,13 +1254,50 @@ const COORDINATED_TARGET_PROTECTION_CUE =
 
 /** A named control other than gain cannot exclude a track from a requested fader change. */
 function protectsAnotherTrackControlFromGain(maskedClause: string): boolean {
-    // A later purpose or condition does not change the control the restriction names.
-    const operation = maskedClause.split(/\b(?:while|after|before|at\s+any|to)\b/iu, 1)[0] ?? maskedClause;
-    const normalized = normalizePromptText(operation);
+    const normalizedClause = normalizePromptText(maskedClause);
+    // A leading timing phrase and a trailing condition or purpose describe the restriction;
+    // neither changes the control named by its own verb and target.
+    const restriction =
+        /\b(?:not|never|don t|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|retain|retaining)\b/u.exec(
+            normalizedClause
+        );
+    const namedOperation = normalizedClause.slice(restriction?.index ?? 0);
+    const modifier = /\b(?:while|after|before|when|once|until|at any|for the purpose of|to preserve)\b/u.exec(
+        namedOperation
+    );
+    const normalized = namedOperation.slice(0, modifier?.index ?? namedOperation.length);
     const namesGain = /\b(?:gain|volume|level|fader|db)\b/u.test(normalized);
     const namesOtherControl =
         /\b(?:pan|panning|mute|muted|muting|unmute|unmuted|solo|soloed|soloing|unsolo|unsoloed)\b/u.test(normalized);
     return namesOtherControl && !namesGain;
+}
+
+/**
+ * "Leave Bass pan and fader unchanged" is split at "and", but the second control still
+ * belongs to the same preservation operation and the same named target.
+ */
+function extendSharedControlRestriction(
+    clause: PromptClauseSpan,
+    nextClause: PromptClauseSpan | undefined,
+    prompt: string,
+    maskedPrompt: string,
+    tracks: ProjectContext['tracks']
+): PromptClause {
+    if (nextClause === undefined || normalizePromptText(prompt.slice(clause.end, nextClause.start)) !== 'and') {
+        return clause;
+    }
+    const next = normalizePromptText(nextClause.masked);
+    if (
+        collectNamedProjectTracks(nextClause.text, tracks).length > 0 ||
+        !/^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/u.test(next) ||
+        !/\bunchanged\b/u.test(next)
+    ) {
+        return clause;
+    }
+    return {
+        text: prompt.slice(clause.start, nextClause.end),
+        masked: maskedPrompt.slice(clause.start, nextClause.end),
+    };
 }
 
 /** A coordinated track list that states this action's level change, and the scope it grounds, if any. */
@@ -1331,12 +1368,19 @@ function getProtectedListMemberIds(
                 index - 1 !== list.lastClauseIndex &&
                 normalizePromptText(previousClause.masked) === 'all' &&
                 normalizePromptText(maskedPrompt.slice(previousClause.end, clause.start)) === 'but';
+            const restrictionClause = extendSharedControlRestriction(
+                clause,
+                clauses[index + 1],
+                prompt,
+                maskedPrompt,
+                context.tracks
+            );
             const restrictionMasked = joinsAllButRestriction
                 ? maskedPrompt.slice(previousClause.start, clause.end)
-                : clause.masked;
+                : restrictionClause.masked;
             const restrictionText = joinsAllButRestriction
                 ? prompt.slice(previousClause.start, clause.end)
-                : clause.text;
+                : restrictionClause.text;
             if (
                 !hasTrackControlRestriction(restrictionMasked) &&
                 !COORDINATED_TARGET_PROTECTION_CUE.test(restrictionMasked)
@@ -1615,6 +1659,18 @@ function resolveActionPromptScope({
     for (const [clauseIndex, clause] of clauses.entries()) {
         const continuesScope = takesContinuation;
         takesContinuation = false;
+        const previousClause = clauses[clauseIndex - 1];
+        if (
+            previousClause !== undefined &&
+            hasTrackControlRestriction(previousClause.masked) &&
+            collectNamedProjectTracks(previousClause.text, context.tracks).length > 0 &&
+            extendSharedControlRestriction(previousClause, clause, prompt, maskedPrompt, context.tracks).masked !==
+                previousClause.masked
+        ) {
+            // A bare second control inherits the preservation verb and target. It is not a
+            // second gain command just because its control is named "gain" or "volume".
+            continue;
+        }
         const coordinatedList = coordinatedLevelLists.find(
             (list) => clauseIndex >= list.firstClauseIndex && clauseIndex <= list.lastClauseIndex
         );
