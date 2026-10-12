@@ -804,6 +804,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The event base can predate both integration parents after main advances.
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Install the pinned Rust toolchain
         run: rustup show
@@ -811,6 +815,10 @@ jobs:
       - name: Cache cargo build
         id: rust-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # The trusted main seed saves the graph. A candidate probe never
+          # saves its temporary compiled mutations, including on interruption.
+          save-if: 'false'
 
       # Even a full-match rust-cache restore does not keep these jobs off the
       # registry index: the restored cache carries every .crate file (no
@@ -854,6 +862,30 @@ jobs:
         env:
           CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package sourdaw-native
+
+      # Reuse only this job's warmed graph. The helper probes the immutable
+      # candidate head in a detached tree, then restores its source and tests.
+      - name: Set up Node for native mutation proof
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+
+      - name: Verify native transport mutation sensitivity
+        id: native-mutations
+        timeout-minutes: 20
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/verifyNativeTransportMutations.ts
+
+      - name: Upload native transport mutation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-transport-mutations-${{ github.event.pull_request.head.sha }}
+          path: .agents/artifacts/native-transport-mutations/
+          if-no-files-found: error
+          retention-days: 7
 
   native-windows:
     name: Native audio backend (Windows)

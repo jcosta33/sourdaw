@@ -176,3 +176,18 @@ refuse the reviewed commit, its predecessors, and a merged sibling that does not
 zero mutations for the whole confirmation batch. Read the root comment's review commit from GitHub
 in both production queries, preserve it across pagination, and refuse missing provenance. A reply's
 review or a comment's moving diff commit must never replace the revision that received the finding.
+
+### Process-group inspection EPERM — bounded settlement
+
+Do not infer a foreign UID from inspection EPERM. Apple's XNU group signal traversal excludes
+zombies, so an existing all-zombie group may return EPERM until reap removes its membership
+([signal traversal](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c#L1549-L1624),
+[reap](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exit.c#L2601-L2624)).
+Current main source is not an installed-kernel binding, and the saved PR #5240 run did not observe
+zombie state. Its earlier interrupted failure's errno is unknown.
+
+Only inspection EPERM may be provisional; it is never absence. Require direct-child close and
+exact ESRCH before settling or restoring source, retain unchanged escalation/confirmation bounds,
+and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRCH around a real
+owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
+require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
