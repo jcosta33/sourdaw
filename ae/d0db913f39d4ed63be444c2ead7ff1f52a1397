@@ -1,0 +1,18 @@
+src/modules/AiRuntime/transformers/diffProposalCommands.spec.ts
+  h_beb54bf43b47b7 3-4,76-114
+src/modules/AiRuntime/transformers/diffProposalCommands.ts
+  h_beb54bf43b47b7 31-33
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  h_beb54bf43b47b7 675-716
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aed0db913f39d4ed63be444c2ead7ff1f52a1397",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
