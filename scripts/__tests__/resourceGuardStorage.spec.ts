@@ -696,16 +696,60 @@ describe('guard-owned temporary storage', () => {
         const root = fixture();
         const marker = join(root, 'empty.json');
         const resultPath = join(root, 'result.json');
+        const rootMarker = join(root, 'root.pid');
+        const childMarker = join(root, 'child.pid');
+        const admitted = join(root, 'admission.json');
+        const samplesPath = join(root, 'samples.jsonl');
         const bin = join(root, 'bin');
         mkdirSync(bin);
         const fakePs = join(bin, 'ps');
+        writeFileSync(join(bin, 'package.json'), '{}\n');
         writeFileSync(
             fakePs,
-            `#!/bin/sh\ncase "$*" in\n *"pid=,ppid=,pgid=,rss=,command="*) if [ -f '${marker.replaceAll("'", "'\\''")}' ]; then exit 0; fi ;;\nesac\nexec /bin/ps "$@"\n`
+            `#!${process.execPath}
+const fs=require('node:fs');const {execFileSync}=require('node:child_process');
+const args=process.argv.slice(2),marker=${JSON.stringify(marker)},rootMarker=${JSON.stringify(rootMarker)},childMarker=${JSON.stringify(childMarker)};
+if(!args.includes('pid=,ppid=,pgid=,rss=,command=')){
+ process.stdout.write(execFileSync('/bin/ps',args,{encoding:'utf8'}));
+}else if(fs.existsSync(marker)){
+ fs.appendFileSync(${JSON.stringify(samplesPath)},JSON.stringify({empty:true})+'\\n');
+}else{
+ const output=execFileSync('/bin/ps',args,{encoding:'utf8'});
+ const rootPid=fs.existsSync(rootMarker)?Number(fs.readFileSync(rootMarker,'utf8')):undefined;
+ const rows=output.trimEnd().split('\\n').map(line=>{
+  const match=/^\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+/.exec(line);
+  if(!match)throw new Error('unusable controlled monitor row');
+  return {line,pid:Number(match[1]),parentPid:Number(match[2]),group:Number(match[3])};
+ });
+ const descendants=new Set();let changed=true;
+ while(changed){changed=false;for(const row of rows){if(row.pid!==rootPid&&(row.parentPid===rootPid||descendants.has(row.parentPid))&&!descendants.has(row.pid)){descendants.add(row.pid);changed=true}}}
+ const visible=rows.filter(row=>!descendants.has(row.pid));
+ const pids=visible.map(row=>row.pid);
+ const childPid=fs.existsSync(childMarker)?Number(fs.readFileSync(childMarker,'utf8')):undefined;
+ const rootRow=rows.find(row=>row.pid===rootPid);
+ const sample={empty:false,rootPid,supervisorPid:process.ppid,rootPresent:pids.includes(rootPid),supervisorPresent:pids.includes(process.ppid),admittedDescendants:visible.filter(row=>descendants.has(row.pid)).map(row=>row.pid),childPid,childPresent:pids.includes(childPid),rootGroup:rootRow?.group};
+ fs.appendFileSync(${JSON.stringify(samplesPath)},JSON.stringify(sample)+'\\n');
+ if(childPid!==undefined&&descendants.has(childPid)&&sample.rootPresent&&sample.supervisorPresent){fs.writeFileSync(${JSON.stringify(admitted)},JSON.stringify({childPid,rootPid,rootGroup:rootRow.group}))}
+ process.stdout.write(visible.map(row=>row.line).join('\\n')+'\\n');
+}
+`
         );
         chmodSync(fakePs, 0o700);
-        const descendant = `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));setInterval(()=>{},1000)`;
-        const parent = `setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',env:{TMPDIR:process.env.TMPDIR,TMP:process.env.TMP,TEMP:process.env.TEMP,PATH:process.env.PATH}});child.unref()},375);setTimeout(()=>process.exit(0),1500)`;
+        const descendant = `
+const fs=require('node:fs');const {execFileSync}=require('node:child_process');
+fs.writeFileSync(${JSON.stringify(childMarker)},String(process.pid));
+const watch=fs.watch(${JSON.stringify(root)},()=>ready());
+function ready(){
+ if(!fs.existsSync(${JSON.stringify(admitted)}))return;
+ const admission=JSON.parse(fs.readFileSync(${JSON.stringify(admitted)},'utf8'));
+ if(admission.childPid!==process.pid)return;
+ watch.close();
+ fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir(),group:Number(execFileSync('/bin/ps',['-p',String(process.pid),'-o','pgid='],{encoding:'utf8'})),sessionPresent:process.env.SOURDAW_PROCESS_SESSION!==undefined}));
+ setInterval(()=>{},1000);
+}
+ready();
+`;
+        const parent = `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(rootMarker)},String(process.pid));const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',env:{TMPDIR:process.env.TMPDIR,TMP:process.env.TMP,TEMP:process.env.TEMP,PATH:process.env.PATH}});child.unref();setInterval(()=>{},1000);`;
         const options = {
             command: process.execPath,
             args: ['-e', parent],
@@ -730,8 +774,14 @@ describe('guard-owned temporary storage', () => {
         }
         childPids.add(supervisor.pid);
         await waitUntil(() => existsSync(marker));
-        const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+        const started: { pid: number; tmp: string; group: number; sessionPresent: boolean } = JSON.parse(
+            readFileSync(marker, 'utf8')
+        );
         childPids.add(started.pid);
+        const admission: { childPid: number; rootPid: number; rootGroup: number } = JSON.parse(
+            readFileSync(admitted, 'utf8')
+        );
+        const ownerTrackedAtChildReady = readOwner(started.tmp).tracked.map((identity) => identity.pid);
         // Unknown-tree monitor cleanup includes the guard's 7s wait and two 2s cleanup waits.
         await waitUntil(() => existsSync(resultPath), 15_000);
         const result = JSON.parse(readFileSync(resultPath, 'utf8'));
@@ -741,10 +791,42 @@ describe('guard-owned temporary storage', () => {
                 code: result.code,
                 alive: isAlive(started.pid),
                 tempExists: existsSync(started.tmp),
+                admission,
+                ownerTrackedAtChildReady,
+                ownerTrackedAtGuardReturn: readOwner(started.tmp).tracked.map((identity) => identity.pid),
+                sessionPresent: started.sessionPresent,
+                childGroup: started.group,
             })
         );
         expect(isAlive(started.pid)).toBe(true);
         expect(existsSync(started.tmp)).toBe(true);
+        const samples: {
+            empty: boolean;
+            childPresent?: boolean;
+            rootPid?: number;
+            rootPresent?: boolean;
+            supervisorPresent?: boolean;
+            admittedDescendants?: number[];
+        }[] = readFileSync(samplesPath, 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line));
+        const usable = samples.filter((sample) => !sample.empty);
+        expect(usable.length).toBeGreaterThan(0);
+        expect(usable.every((sample) => sample.supervisorPresent)).toBe(true);
+        expect(usable.filter((sample) => sample.rootPid !== undefined).every((sample) => sample.rootPresent)).toBe(
+            true
+        );
+        expect(usable.some((sample) => sample.rootPid === admission.rootPid && sample.rootPresent)).toBe(true);
+        expect(
+            usable.every((sample) => sample.childPresent === false && sample.admittedDescendants?.length === 0)
+        ).toBe(true);
+        expect(samples.filter((sample) => sample.empty).length).toBeGreaterThanOrEqual(3);
+        expect(ownerTrackedAtChildReady).not.toContain(started.pid);
+        expect(readOwner(started.tmp).tracked.map((identity) => identity.pid)).not.toContain(started.pid);
+        expect(started.sessionPresent).toBe(false);
+        expect(started.group).not.toBe(admission.rootGroup);
+
         expect(result.reason).toBe('monitor');
         expect(result.code).not.toBe(0);
         await kill(started.pid);
