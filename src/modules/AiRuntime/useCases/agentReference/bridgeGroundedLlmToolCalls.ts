@@ -1316,8 +1316,7 @@ function getSharedControlRestriction(
             const nextOperation = getRestrictedTrackControlOperation(next);
             if (
                 hasTrackControlRestriction(nextOperation.masked) ||
-                /^(?:not|never|don't|except|excluding|without)\b/iu.test(nextOperation.masked.trim()) ||
-                resolveClauseActionIntent(nextOperation.masked, catalog) !== null
+                /^(?:not|never|don't|except|excluding|without)\b/iu.test(nextOperation.masked.trim())
             ) {
                 break;
             }
@@ -1332,6 +1331,7 @@ function getSharedControlRestriction(
             const isUnresolvedControlMember =
                 !isNamedControlMember &&
                 !isBareControlMember &&
+                resolveClauseActionIntent(nextOperation.masked, catalog) === null &&
                 (UNRESOLVED_NAMED_CONTROL_MEMBER.test(nextOperation.masked.trim()) ||
                     UNRESOLVED_POSTPOSED_CONTROL_MEMBER.test(nextOperation.masked.trim()));
             if (!isNamedControlMember && !isBareControlMember && !isUnresolvedControlMember) {
