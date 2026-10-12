@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 
 /**
  * One level change stated once for a coordinated list of named tracks.
@@ -58,6 +59,8 @@ function createTrack({
 const drums = createTrack({ id: 'track-drums', name: 'Drums' });
 const bass = createTrack({ id: 'track-bass', name: 'Bass' });
 const bassDi = createTrack({ id: 'track-bass-di', name: 'Bass DI' });
+const bassCommaDi = createTrack({ id: 'track-bass-comma-di', name: 'Bass, DI' });
+const rockAndRoll = createTrack({ id: 'track-rock-and-roll', name: 'Rock and Roll' });
 const keys = createTrack({ id: 'track-keys', name: 'Keys', kind: 'midi' });
 const vocals = createTrack({ id: 'track-vocals', name: 'Vocals' });
 const drumBus = createTrack({ id: 'track-drum-bus', name: 'Drum Bus', kind: 'bus' });
@@ -91,6 +94,11 @@ const projectWithTwoBassTracks: ProjectContext = {
     tracks: [...projectContext.tracks, createTrack({ id: 'track-bass-2', name: 'Bass' })],
 };
 
+const projectWithQuotedOverlap: ProjectContext = {
+    ...projectContext,
+    tracks: [...projectContext.tracks, bassCommaDi, rockAndRoll],
+};
+
 /** The fixture with a VCA group named "Strings": a project reference that names no track. */
 const projectWithStringsGroup: ProjectContext = {
     ...projectContext,
@@ -109,9 +117,9 @@ function gainAction(trackId: string, value: Record<string, number>) {
     return { type: 'setTrackGain', payload: { trackId, ...value } };
 }
 
-function bridgeCompiledGainList(prompt: string, tracks: ProjectTrack[]) {
+function compileGainList(prompt: string, tracks: ProjectTrack[], context: ProjectContext = projectContext) {
     const compiled = compileArbitraryCommandList({
-        context: projectContext,
+        context,
         revision: 'revision-coordinated-level',
         calls: [
             {
@@ -154,12 +162,39 @@ function bridgeCompiledGainList(prompt: string, tracks: ProjectTrack[]) {
     if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
         throw new Error(`Expected the list to compile: ${JSON.stringify(compiled)}`);
     }
+    return compiled.compilerEvidence;
+}
+
+function bridgeCompiledGainList(prompt: string, tracks: ProjectTrack[], context: ProjectContext = projectContext) {
+    const compilerEvidence = compileGainList(prompt, tracks, context);
     return bridgeGroundedLlmToolCalls({
-        calls: compiled.compilerEvidence.commands,
-        compilerEvidence: compiled.compilerEvidence,
-        context: projectContext,
+        calls: compilerEvidence.commands,
+        compilerEvidence,
+        context,
         projectRevision: 'revision-coordinated-level',
         prompt,
+    });
+}
+
+function groundGainList(
+    prompt: string,
+    tracks: ProjectTrack[],
+    context: ProjectContext = projectContext,
+    compiled = false
+) {
+    const compilerEvidence = compiled ? compileGainList(prompt, tracks, context) : undefined;
+    return groundCompiledCommandBatch({
+        toolCalls: compilerEvidence?.commands ?? tracks.map((track) => gainCall(track.id, { deltaDb: -3 })),
+        compilerEvidence,
+        context,
+        prompt,
+        projectRevision: 'revision-coordinated-level',
+        workflowCapabilityId: undefined,
+        selectedCompilations: [],
+        transformCommands: [],
+        transformTargetIds: [],
+        creativeAuthority: undefined,
+        providerProposal: null,
     });
 }
 
@@ -258,6 +293,27 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         );
         expect(result.actions).toEqual([]);
         expect(result.rejections).toHaveLength(2);
+    });
+
+    it.each([
+        ['turn Drums and "Bass, DI" down 3 dB', bassCommaDi],
+        ['turn Drums and "Rock and Roll" down 3 dB', rockAndRoll],
+    ])('binds a quoted member containing a separator as one exact target in "%s"', (prompt, quotedTrack) => {
+        const tracks = [drums, quotedTrack];
+        const calls = tracks.map((track) => gainCall(track.id, { deltaDb: -3 }));
+        const expected = tracks.map((track) => gainAction(track.id, { deltaDb: -3 }));
+        const direct = bridge(calls, prompt, projectWithQuotedOverlap);
+        const atomicDirect = groundGainList(prompt, tracks, projectWithQuotedOverlap);
+        const atomicCompiled = groundGainList(prompt, tracks, projectWithQuotedOverlap, true);
+        const missing = groundGainList(prompt, [drums], projectWithQuotedOverlap);
+
+        expect(direct.rejections).toEqual([]);
+        expect(direct.actions).toEqual(expected);
+        expect(atomicDirect.status).toBe('grounded');
+        if (atomicDirect.status === 'grounded') expect(atomicDirect.actions).toEqual(expected);
+        expect(atomicCompiled.status).toBe('grounded');
+        if (atomicCompiled.status === 'grounded') expect(atomicCompiled.actions).toEqual(expected);
+        expect(missing.status).toBe('rejected');
     });
 
     it('grounds a list beside a single-track level change in the same request', () => {
@@ -429,6 +485,38 @@ describe('a coordinated level list refuses calls that do not match it exactly', 
 });
 
 describe('a coordinated level list keeps the request exclusions and protections', () => {
+    it.each([
+        ['do not change Bass pan and Bass fader', drums],
+        ['do not change Bass pan, Bass fader', drums],
+        ['do not change Bass pan, and Bass fader', drums],
+        ['do not change Drums pan and Bass fader', drums],
+        ['do not change Drums gain and Bass pan', bass],
+    ])('keeps each explicit control and target paired in "%s"', (restriction, eligibleTrack) => {
+        const prompt = `turn Drums and Bass down 3 dB; ${restriction}`;
+        const bothCalls = [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })];
+        const direct = bridge(bothCalls, prompt);
+        const onlyEligible = bridge([gainCall(eligibleTrack.id, { deltaDb: -3 })], prompt);
+        const atomicDirect = groundGainList(prompt, [drums, bass]);
+        const atomicCompiled = groundGainList(prompt, [drums, bass], projectContext, true);
+        const eligibleDirect = groundGainList(prompt, [eligibleTrack]);
+        const eligibleCompiled = groundGainList(prompt, [eligibleTrack], projectContext, true);
+
+        expect(direct.actions).toEqual([]);
+        expect(direct.rejections).toHaveLength(2);
+        expect(onlyEligible.rejections).toEqual([]);
+        expect(onlyEligible.actions).toEqual([gainAction(eligibleTrack.id, { deltaDb: -3 })]);
+        expect(atomicDirect.status).toBe('rejected');
+        expect(atomicCompiled.status).toBe('rejected');
+        expect(eligibleDirect.status).toBe('grounded');
+        if (eligibleDirect.status === 'grounded') {
+            expect(eligibleDirect.actions).toEqual([gainAction(eligibleTrack.id, { deltaDb: -3 })]);
+        }
+        expect(eligibleCompiled.status).toBe('grounded');
+        if (eligibleCompiled.status === 'grounded') {
+            expect(eligibleCompiled.actions).toEqual([gainAction(eligibleTrack.id, { deltaDb: -3 })]);
+        }
+    });
+
     it('refuses an explicit control protection with no resolvable target', () => {
         const result = bridge(
             [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
