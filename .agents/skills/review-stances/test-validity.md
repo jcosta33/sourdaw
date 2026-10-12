@@ -262,6 +262,25 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Lessons from escapes
 
+### 2026-10-12 — one omitted Darwin field did not prove a bounded omission sequence
+
+PR #5274 (`40baa0716b`) tested one missing descriptor type followed by complete proof,
+but did not exercise two omissions before a complete catalog. Live account captures
+later demonstrated transient `f,n` records without `t`; their exact historical failed-run
+descriptor identities and review dispatch are unestablished.
+
+Probe the real parser and census with two omissions then complete third proof, persistent
+three omissions, a third live borrower, a third uncovered live PID, and the unchanged
+five-second deadline. Assert observation counts and remaining command timeouts. Pair the
+controlled census with real owned release and borrower retention; a parser result alone
+does not prove deletion. Reverting the bounded admission must fail the release case.
+
+An earlier `dead` sample does not bind a later startup recovery: a new uncovered live PID
+can make that later census `unknown` while the new run itself succeeds. Require retention
+only for the exact later PID-coverage diagnostic, reject other unexpected diagnostics,
+and inspect both the original run and claim payloads. Keep complete-proof deletion
+unconditional; observing a prior sample or the new run's exit code cannot prove it.
+
 ### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
 
 PR #4057 added the streamed-artifact positive case and ZIP-based strict-parser fixtures without

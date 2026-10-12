@@ -519,6 +519,7 @@ describe('guard-owned temporary storage', () => {
             await waitUntil(() => existsSync(marker));
             const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             const rootPid = Number(readFileSync(rootMarker, 'utf8'));
+            const originalToken = readOwner(started.tmp).token;
             childPids.add(started.pid);
             childPids.add(rootPid);
             const startedAt = execFileSync('ps', ['-p', String(started.pid), '-o', 'lstart='], {
@@ -559,7 +560,29 @@ describe('guard-owned temporary storage', () => {
                     })
                 );
             }
-            expect(existsSync(started.tmp)).toBe(false);
+            // A prior dead census cannot authorize a later recovery whose
+            // complete-catalog PID coverage is unavailable.
+            const diagnostics = recovery.output
+                .split('\n')
+                .filter((line) => line.startsWith('guard storage file-use proof unavailable: '));
+            const coverageUnavailable = diagnostics.some((line) =>
+                line.startsWith('guard storage file-use proof unavailable: lsof-live-pid-missing:')
+            );
+            expect(diagnostics).toEqual(
+                coverageUnavailable
+                    ? [
+                          expect.stringMatching(
+                              /^guard storage file-use proof unavailable: lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+$/
+                          ),
+                      ]
+                    : []
+            );
+            const originalRetained = existsSync(started.tmp);
+            const claims = claimPayloads(join(root, 'storage'));
+            expect(originalRetained || claims.length > 0).toBe(coverageUnavailable);
+            expect(claims.map((payload) => readOwner(join(payload, 'tmp')).token)).toEqual(
+                coverageUnavailable && !originalRetained ? [originalToken] : []
+            );
         },
         15_000
     );
@@ -1124,13 +1147,171 @@ describe('storage ownership recovery', () => {
         expect(inspections).toEqual(expectedInspections);
     });
 
+    it.skipIf(process.getuid === undefined).each([
+        { scenario: 'third complete census', omissions: 2, state: 'dead', samples: 3, reason: undefined },
+        {
+            scenario: 'persistent omission',
+            omissions: 3,
+            state: 'unknown',
+            samples: 3,
+            reason: 'lsof-fields-unusable:descriptor-type-missing',
+        },
+        { scenario: 'third live borrower', omissions: 2, state: 'alive', samples: 3, reason: undefined },
+        {
+            scenario: 'expired second observation',
+            omissions: 2,
+            state: 'unknown',
+            samples: 2,
+            reason: 'file-census-time-bound',
+        },
+        {
+            scenario: 'third missing live PID',
+            omissions: 2,
+            state: 'unknown',
+            samples: 3,
+            reason: 'lsof-live-pid-missing:count=1',
+        },
+        {
+            scenario: 'missing live PID replacement cap',
+            omissions: 0,
+            state: 'unknown',
+            samples: 2,
+            reason: 'lsof-live-pid-missing:count=2',
+        },
+        {
+            scenario: 'unknown descriptor type',
+            omissions: 0,
+            state: 'unknown',
+            samples: 1,
+            reason: 'lsof-fields-unusable:unknown-file-type',
+        },
+        {
+            scenario: 'post-death recovery live PID gap',
+            omissions: 0,
+            state: 'unknown',
+            samples: 2,
+            reason: 'lsof-live-pid-missing:count=1',
+        },
+    ])('bounds Darwin census observations for $scenario', ({ scenario, omissions, state, samples, reason }) => {
+        const root = fixture();
+        // Isolate builtin substitutions in a child; the real parser, census and
+        // private-storage checks run without changing the test worker's globals.
+        const program = `
+            import childProcess from 'node:child_process';
+            import os from 'node:os';
+            import {syncBuiltinESMExports} from 'node:module';
+            const scenario=${JSON.stringify(scenario)},omissions=${omissions};
+            const uid=process.getuid(),pid=process.pid,newPid=pid+100000,newerPid=pid+100001;
+            let samples=0,processSamples=0,now=0;
+            const timeouts=[];
+            os.platform=()=> 'darwin';
+            Date.now=()=>now;
+            process.kill=()=>true;
+            childProcess.spawnSync=(command,args,options)=>{
+                timeouts.push({command,timeout:options.timeout});
+                let stdout;
+                if(command==='ps'){
+                    if(args[0]==='-p')stdout=uid+' S\\n';
+                    else {
+                        processSamples++;
+                        let pids=[pid];
+                        if(scenario==='third missing live PID')pids.push(newPid);
+                        if(scenario==='post-death recovery live PID gap'&&processSamples>=3)pids.push(newPid);
+                        if(scenario==='missing live PID replacement cap'){
+                            if(processSamples>=2)pids.push(newPid);
+                            if(processSamples>=4)pids.push(newerPid);
+                        }
+                        stdout=pids.map(pid=>pid+' '+uid).join('\\n')+'\\n';
+                    }
+                }else if(command==='lsof'){
+                    samples++;
+                    now+=scenario==='expired second observation'?2500:100;
+                    if(samples<=omissions)stdout='p'+pid+'\\0\\nf3\\0nFD unavailable\\0\\n';
+                    else {
+                        const type=scenario==='unknown descriptor type'?'UNKNOWN':'DIR';
+                        const path=scenario==='third live borrower'?${JSON.stringify(join(root, 'tmp'))}:'/outside';
+                        stdout='p'+pid+'\\0\\nfcwd\\0t'+type+'\\0n'+path+'\\0\\n';
+                    }
+                }else throw new Error('unexpected command '+command);
+                return {status:0,stdout,stderr:''};
+            };
+            syncBuiltinESMExports();
+            const {storageFileState}=await import(${JSON.stringify(guardPath)});
+            const reasons=[];
+            let state,retained,proofBeforeRecovery,claimPayloadCount;
+            if(scenario==='post-death recovery live PID gap'){
+                const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
+                const {randomUUID}=await import('node:crypto');
+                const {existsSync,readdirSync}=await import('node:fs');
+                const storageRoot=${JSON.stringify(join(root, 'storage'))};
+                const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>state=storageFileState([original,current],[],reason=>reasons.push(reason))};
+                const storage=createGuardStorage({root:storageRoot,token:randomUUID(),owner:${JSON.stringify(fakeOwner)},ports});
+                proofBeforeRecovery=storageFileState([storage.tempDirectory],[]);
+                createGuardStorage({root:storageRoot,token:randomUUID(),owner:${JSON.stringify(fakeReclaimer)},ports});
+                retained=existsSync(storage.tempDirectory);
+                claimPayloadCount=readdirSync(storageRoot+'/.claims').length;
+            }else state=storageFileState([${JSON.stringify(join(root, 'tmp'))}],[],reason=>reasons.push(reason));
+            console.log(JSON.stringify({state,reasons,samples,processSamples,timeouts,retained,proofBeforeRecovery,claimPayloadCount}));
+        `;
+        chmodSync(root, 0o700);
+        const observed: {
+            state: string;
+            reasons: string[];
+            samples: number;
+            processSamples: number;
+            timeouts: { command: string; timeout: number }[];
+            retained?: boolean;
+            proofBeforeRecovery?: string;
+            claimPayloadCount?: number;
+        } = JSON.parse(
+            execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 10_000,
+            })
+        );
+        expect(observed.state).toBe(state);
+        expect(observed.samples).toBe(samples);
+        expect(observed.reasons).toEqual(reason === undefined ? [] : [expect.stringContaining(reason)]);
+        const censusTimeouts = observed.timeouts.filter((sample) => sample.command === 'lsof');
+        expect(censusTimeouts.map((sample) => sample.timeout)).toEqual(
+            Array.from({ length: samples }, (_, index) =>
+                scenario === 'post-death recovery live PID gap'
+                    ? 5000
+                    : 5000 - index * (scenario === 'expired second observation' ? 2500 : 100)
+            )
+        );
+        if (state === 'dead') {
+            expect(observed.processSamples).toBe(4);
+        }
+        if (scenario === 'post-death recovery live PID gap') {
+            expect(observed.proofBeforeRecovery).toBe('dead');
+            expect(observed.claimPayloadCount).toBe(0);
+            expect(observed.retained).toBe(true);
+        }
+    });
+
     it.skipIf(process.platform !== 'darwin').each([
-        { scenario: 'valid replacement reclaims', persistent: false, consumer: false, released: true },
-        { scenario: 'live consumer replacement retains', persistent: false, consumer: true, released: false },
-        { scenario: 'persistent missing type retains', persistent: true, consumer: false, released: false },
+        { scenario: 'valid replacement reclaims', omissions: 1, persistent: false, consumer: false, released: true },
+        { scenario: 'third observation reclaims', omissions: 2, persistent: false, consumer: false, released: true },
+        { scenario: 'third live consumer retains', omissions: 2, persistent: false, consumer: true, released: false },
+        {
+            scenario: 'live consumer replacement retains',
+            omissions: 1,
+            persistent: false,
+            consumer: true,
+            released: false,
+        },
+        {
+            scenario: 'persistent missing type retains',
+            omissions: 3,
+            persistent: true,
+            consumer: false,
+            released: false,
+        },
     ])(
         'takes bounded fresh file proof for a missing descriptor type: $scenario',
-        async ({ persistent, consumer, released }) => {
+        async ({ omissions, persistent, consumer, released }) => {
             const root = fixture();
             const bin = join(root, 'bin');
             mkdirSync(bin);
@@ -1138,13 +1319,14 @@ describe('storage ownership recovery', () => {
             const utility = join(bin, 'lsof');
             writeFileSync(
                 utility,
-                `#!/bin/sh\nif ${persistent ? 'true' : `[ ! -e '${count}' ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
+                `#!/bin/sh\nif ${persistent ? 'true' : `[ ! -e '${count}' ] || [ $(/usr/bin/wc -l < '${count}') -lt ${omissions} ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
             );
             chmodSync(utility, 0o700);
             const resultPath = join(root, 'result.json');
             const diagnosticPath = join(root, 'proof-diagnostic.json');
             const program = `
-            const {writeFileSync,existsSync}=await import('node:fs');
+            const {writeFileSync,existsSync,readdirSync}=await import('node:fs');
+            const {join}=await import('node:path');
             const {spawn}=await import('node:child_process');
             const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
             const {storageFileState}=await import(${JSON.stringify(guardPath)});
@@ -1158,7 +1340,9 @@ describe('storage ownership recovery', () => {
                     await new Promise((resolve,reject)=>{holder.once('spawn',resolve);holder.once('error',reject)});
                 }
                 const released=await storage.release(true);
-                writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({released,exists:existsSync(storage.tempDirectory)}));
+                const claimsRoot=${JSON.stringify(join(root, 'storage', '.claims'))};
+                const claimPayloads=readdirSync(claimsRoot).flatMap(claim=>readdirSync(join(claimsRoot,claim)).filter(name=>name!=='claim.json')).length;
+                writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({released,exists:existsSync(storage.tempDirectory),claimPayloads}));
                 writeFileSync(${JSON.stringify(diagnosticPath)},JSON.stringify(reasons));
             } finally {if(holder){holder.kill('SIGKILL');await closed}}
         `;
@@ -1175,15 +1359,19 @@ describe('storage ownership recovery', () => {
             expect(JSON.parse(readFileSync(resultPath, 'utf8')), readFileSync(diagnosticPath, 'utf8')).toEqual({
                 released,
                 exists: !released,
+                claimPayloads: 0,
             });
             const samples = readFileSync(count, 'utf8').trim().split('\n');
-            expect(samples.slice(0, 2)).toEqual(persistent ? ['incomplete', 'incomplete'] : ['incomplete', 'complete']);
+            expect(samples.slice(0, omissions)).toEqual(Array.from({ length: omissions }, () => 'incomplete'));
+            if (!persistent) {
+                expect(samples[omissions]).toBe('complete');
+            }
             if (released) {
-                expect(samples.length).toBeGreaterThanOrEqual(3);
-                expect(samples.length).toBeLessThanOrEqual(4);
-                expect(samples.slice(2).every((sample) => sample === 'complete')).toBe(true);
+                expect(samples.length).toBeGreaterThanOrEqual(omissions + 2);
+                expect(samples.length).toBeLessThanOrEqual(omissions + 3);
+                expect(samples.slice(omissions).every((sample) => sample === 'complete')).toBe(true);
             } else {
-                expect(samples.length).toBe(2);
+                expect(samples.length).toBe(persistent ? 3 : omissions + 1);
             }
         },
         15_000
