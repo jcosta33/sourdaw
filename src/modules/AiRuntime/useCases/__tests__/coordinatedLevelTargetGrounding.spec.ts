@@ -109,6 +109,60 @@ function gainAction(trackId: string, value: Record<string, number>) {
     return { type: 'setTrackGain', payload: { trackId, ...value } };
 }
 
+function bridgeCompiledGainList(prompt: string, tracks: ProjectTrack[]) {
+    const compiled = compileArbitraryCommandList({
+        context: projectContext,
+        revision: 'revision-coordinated-level',
+        calls: [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: {
+                        semantic: { classification: 'simple', uncertainty: [] },
+                        objective: prompt,
+                        constraints: [],
+                        scope: {
+                            targetIds: tracks.map((track) => track.id),
+                            targetRanges: [],
+                            protectedTargetIds: [],
+                            protectedRanges: [],
+                        },
+                        capabilityIds: [],
+                        assetIds: [],
+                        alternatives: [],
+                        validationStrategy: [],
+                        stoppingConditions: [],
+                    },
+                    list: {
+                        schemaVersion: 1,
+                        items: tracks.map((track) => ({
+                            id: track.id,
+                            name: 'setTrackGain',
+                            arguments: { deltaDb: -3 },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                where: { name: track.name },
+                                quantity: { unit: 'targets', exactly: 1 },
+                            },
+                        })),
+                    },
+                },
+            },
+        ],
+    });
+    if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+        throw new Error(`Expected the list to compile: ${JSON.stringify(compiled)}`);
+    }
+    return bridgeGroundedLlmToolCalls({
+        calls: compiled.compilerEvidence.commands,
+        compilerEvidence: compiled.compilerEvidence,
+        context: projectContext,
+        projectRevision: 'revision-coordinated-level',
+        prompt,
+    });
+}
+
 describe('one level change stated for a coordinated list of named tracks', () => {
     it.each([
         ['turn the Drums and the Bass down 3 dB'],
@@ -186,61 +240,23 @@ describe('one level change stated for a coordinated list of named tracks', () =>
 
     it('grounds the list through a compiled command list', () => {
         const prompt = 'turn the Drums and the Bass down 3 dB';
-        const compiled = compileArbitraryCommandList({
-            context: projectContext,
-            revision: 'revision-coordinated-level',
-            calls: [
-                {
-                    name: 'command.batch.propose',
-                    arguments: {
-                        plan: {
-                            semantic: { classification: 'simple', uncertainty: [] },
-                            objective: prompt,
-                            constraints: [],
-                            scope: {
-                                targetIds: [drums.id, bass.id],
-                                targetRanges: [],
-                                protectedTargetIds: [],
-                                protectedRanges: [],
-                            },
-                            capabilityIds: [],
-                            assetIds: [],
-                            alternatives: [],
-                            validationStrategy: [],
-                            stoppingConditions: [],
-                        },
-                        list: {
-                            schemaVersion: 1,
-                            items: [drums, bass].map((track) => ({
-                                id: track.id,
-                                name: 'setTrackGain',
-                                arguments: { deltaDb: -3 },
-                                selector: {
-                                    targetArgument: 'trackId',
-                                    entity: 'track',
-                                    where: { name: track.name },
-                                    quantity: { unit: 'targets', exactly: 1 },
-                                },
-                            })),
-                        },
-                    },
-                },
-            ],
-        });
-        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
-            throw new Error(`Expected the list to compile: ${JSON.stringify(compiled)}`);
-        }
-
-        const result = bridgeGroundedLlmToolCalls({
-            calls: compiled.compilerEvidence.commands,
-            compilerEvidence: compiled.compilerEvidence,
-            context: projectContext,
-            projectRevision: 'revision-coordinated-level',
-            prompt,
-        });
+        const result = bridgeCompiledGainList(prompt, [drums, bass]);
 
         expect(result.rejections).toEqual([]);
         expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 }), gainAction(bass.id, { deltaDb: -3 })]);
+    });
+
+    it('does not borrow a modifier target after compiler target resolution', () => {
+        const prompt = 'turn Drums and Bass down 3 dB; do not change Vocals gain after adjusting Bass pan';
+        const bothCalled = bridgeCompiledGainList(prompt, [drums, bass]);
+        const onlyDrums = bridgeCompiledGainList(prompt, [drums]);
+
+        expect(bothCalled.rejections).toEqual([]);
+        expect(bothCalled.actions).toEqual([
+            gainAction(drums.id, { deltaDb: -3 }),
+            gainAction(bass.id, { deltaDb: -3 }),
+        ]);
+        expect(onlyDrums.actions).toEqual([]);
     });
 
     it('applies the single-target reading rules to every member', () => {
@@ -426,6 +442,16 @@ describe('a coordinated level list keeps the request exclusions and protections'
         expect(bothCalled.actions).toEqual([]);
         expect(onlyDrums.rejections).toEqual([]);
         expect(onlyDrums.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+    });
+
+    it('stops inheriting Bass when the next control names Vocals', () => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+            'turn Drums and Bass down 3 dB; leave Bass pan and Vocals fader unchanged'
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 }), gainAction(bass.id, { deltaDb: -3 })]);
     });
 
     it.each([

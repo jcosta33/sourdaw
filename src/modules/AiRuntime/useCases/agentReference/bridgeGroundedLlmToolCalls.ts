@@ -1252,20 +1252,25 @@ function mergeLevelContinuation(
 const COORDINATED_TARGET_PROTECTION_CUE =
     /\b(?:not|never|don't|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|alone|unchanged)\b/iu;
 
-/** A named control other than gain cannot exclude a track from a requested fader change. */
-function protectsAnotherTrackControlFromGain(maskedClause: string): boolean {
-    const normalizedClause = normalizePromptText(maskedClause);
-    // A leading timing phrase and a trailing condition or purpose describe the restriction;
-    // neither changes the control named by its own verb and target.
+/** The original-text operation whose named control and target the restriction actually protects. */
+function getRestrictedTrackControlOperation(clause: PromptClause): PromptClause & { end: number } {
+    // The masked text shares the original text's offsets, including project names and quoted labels.
     const restriction =
-        /\b(?:not|never|don t|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|retain|retaining)\b/u.exec(
-            normalizedClause
+        /\b(?:not|never|don't|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|retain|retaining)\b/iu.exec(
+            clause.masked
         );
-    const namedOperation = normalizedClause.slice(restriction?.index ?? 0);
-    const modifier = /\b(?:while|after|before|when|once|until|at any|for the purpose of|to preserve)\b/u.exec(
-        namedOperation
-    );
-    const normalized = namedOperation.slice(0, modifier?.index ?? namedOperation.length);
+    const start = restriction?.index ?? 0;
+    const modifier =
+        /\b(?:while|after|before|when|once|until|at\s+any|for\s+the\s+purpose\s+of|to\s+preserve)\b/iu.exec(
+            clause.masked.slice(start)
+        );
+    const end = start + (modifier?.index ?? clause.masked.length - start);
+    return { text: clause.text.slice(start, end), masked: clause.masked.slice(start, end), end };
+}
+
+/** A named control other than gain cannot exclude a track from a requested fader change. */
+function protectsAnotherTrackControlFromGain(maskedOperation: string): boolean {
+    const normalized = normalizePromptText(maskedOperation);
     const namesGain = /\b(?:gain|volume|level|fader|db)\b/u.test(normalized);
     const namesOtherControl =
         /\b(?:pan|panning|mute|muted|muting|unmute|unmuted|solo|soloed|soloing|unsolo|unsoloed)\b/u.test(normalized);
@@ -1273,30 +1278,56 @@ function protectsAnotherTrackControlFromGain(maskedClause: string): boolean {
 }
 
 /**
- * "Leave Bass pan and fader unchanged" is split at "and", but the second control still
- * belongs to the same preservation operation and the same named target.
+ * Clause splitting may cut a preservation operation at each control in its conjunction.
+ * Continue only across bare control members: a named target, new action, or modifier closes it.
  */
-function extendSharedControlRestriction(
-    clause: PromptClauseSpan,
-    nextClause: PromptClauseSpan | undefined,
+function getSharedControlRestriction(
+    clauses: readonly PromptClauseSpan[],
+    firstClauseIndex: number,
     prompt: string,
     maskedPrompt: string,
     tracks: ProjectContext['tracks']
-): PromptClause {
-    if (nextClause === undefined || normalizePromptText(prompt.slice(clause.end, nextClause.start)) !== 'and') {
-        return clause;
+): { clause: PromptClauseSpan; lastClauseIndex: number } {
+    const first = clauses[firstClauseIndex]!;
+    const firstOperation = getRestrictedTrackControlOperation(first);
+    const isNamedControlRestriction =
+        (hasTrackControlRestriction(firstOperation.masked) ||
+            COORDINATED_TARGET_PROTECTION_CUE.test(firstOperation.masked)) &&
+        /\b(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/iu.test(firstOperation.masked) &&
+        collectNamedProjectTracks(firstOperation.text, tracks).length > 0;
+    let lastClauseIndex = firstClauseIndex;
+    if (isNamedControlRestriction && first.masked.slice(firstOperation.end).trim().length === 0) {
+        for (let index = firstClauseIndex + 1; index < clauses.length; index += 1) {
+            const previous = clauses[index - 1]!;
+            const next = clauses[index]!;
+            const connector = prompt.slice(previous.end, next.start).trim().toLocaleLowerCase();
+            if (connector !== 'and' && connector !== ',') {
+                break;
+            }
+            const nextOperation = getRestrictedTrackControlOperation(next);
+            if (
+                collectNamedProjectTracks(nextOperation.text, tracks).length > 0 ||
+                !/^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu.test(
+                    nextOperation.masked.trim()
+                )
+            ) {
+                break;
+            }
+            lastClauseIndex = index;
+            if (next.masked.slice(nextOperation.end).trim().length > 0) {
+                break;
+            }
+        }
     }
-    const next = normalizePromptText(nextClause.masked);
-    if (
-        collectNamedProjectTracks(nextClause.text, tracks).length > 0 ||
-        !/^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/u.test(next) ||
-        !/\bunchanged\b/u.test(next)
-    ) {
-        return clause;
-    }
+    const end = clauses[lastClauseIndex]!.end;
     return {
-        text: prompt.slice(clause.start, nextClause.end),
-        masked: maskedPrompt.slice(clause.start, nextClause.end),
+        clause: {
+            start: first.start,
+            end,
+            text: prompt.slice(first.start, end),
+            masked: maskedPrompt.slice(first.start, end),
+        },
+        lastClauseIndex,
     };
 }
 
@@ -1368,29 +1399,33 @@ function getProtectedListMemberIds(
                 index - 1 !== list.lastClauseIndex &&
                 normalizePromptText(previousClause.masked) === 'all' &&
                 normalizePromptText(maskedPrompt.slice(previousClause.end, clause.start)) === 'but';
-            const restrictionClause = extendSharedControlRestriction(
-                clause,
-                clauses[index + 1],
+            const restrictionClause = getSharedControlRestriction(
+                clauses,
+                index,
                 prompt,
                 maskedPrompt,
                 context.tracks
-            );
+            ).clause;
             const restrictionMasked = joinsAllButRestriction
                 ? maskedPrompt.slice(previousClause.start, clause.end)
                 : restrictionClause.masked;
             const restrictionText = joinsAllButRestriction
                 ? prompt.slice(previousClause.start, clause.end)
                 : restrictionClause.text;
+            const operation = getRestrictedTrackControlOperation({
+                text: restrictionText,
+                masked: restrictionMasked,
+            });
             if (
-                !hasTrackControlRestriction(restrictionMasked) &&
-                !COORDINATED_TARGET_PROTECTION_CUE.test(restrictionMasked)
+                !hasTrackControlRestriction(operation.masked) &&
+                !COORDINATED_TARGET_PROTECTION_CUE.test(operation.masked)
             ) {
                 return [];
             }
-            if (actionName === 'setTrackGain' && protectsAnotherTrackControlFromGain(restrictionMasked)) {
+            if (actionName === 'setTrackGain' && protectsAnotherTrackControlFromGain(operation.masked)) {
                 return [];
             }
-            return collectNamedProjectTracks(restrictionText, context.tracks).filter((id) => memberIds.includes(id));
+            return collectNamedProjectTracks(operation.text, context.tracks).filter((id) => memberIds.includes(id));
         })
     );
 }
@@ -1654,21 +1689,22 @@ function resolveActionPromptScope({
         maskedPrompt,
         prompt,
     });
+    const sharedRestrictionContinuations = new Set<number>();
+    for (let index = 0; index < clauses.length; index += 1) {
+        const { lastClauseIndex } = getSharedControlRestriction(clauses, index, prompt, maskedPrompt, context.tracks);
+        for (let continuation = index + 1; continuation <= lastClauseIndex; continuation += 1) {
+            sharedRestrictionContinuations.add(continuation);
+        }
+        index = lastClauseIndex;
+    }
     const matchingScopes: PromptClauseScope[] = [];
     let takesContinuation = false;
     for (const [clauseIndex, clause] of clauses.entries()) {
         const continuesScope = takesContinuation;
         takesContinuation = false;
-        const previousClause = clauses[clauseIndex - 1];
-        if (
-            previousClause !== undefined &&
-            hasTrackControlRestriction(previousClause.masked) &&
-            collectNamedProjectTracks(previousClause.text, context.tracks).length > 0 &&
-            extendSharedControlRestriction(previousClause, clause, prompt, maskedPrompt, context.tracks).masked !==
-                previousClause.masked
-        ) {
-            // A bare second control inherits the preservation verb and target. It is not a
-            // second gain command just because its control is named "gain" or "volume".
+        if (sharedRestrictionContinuations.has(clauseIndex)) {
+            // A bare later control inherits the restriction's verb and target. It is not a
+            // second gain command just because that control is named "gain" or "volume".
             continue;
         }
         const coordinatedList = coordinatedLevelLists.find(
