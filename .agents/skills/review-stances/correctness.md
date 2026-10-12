@@ -554,3 +554,21 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+### 2026-10-12 — converted bases and ordered mappings escaped offline composition (#5209)
+
+PR #5209 (`54ff77cd1`) treated already-converted AudioParam events as device values and
+selected only the final mapping, omitting earlier updates to live's shared continuous slot.
+A gain base of -6 dB plus 1 dB therefore delivered 1.1886646894 instead of 0.5623413252;
+10 then 30 at alpha 0.4 delivered 30 instead of 18, then 20.88 on the next tick.
+Historical reviewer prompts and tiers are unestablished. The missed probes were nonlinear
+terminal conversion, shared mapping order, and actual delivery after both writers' gates.
+
+Keep a canonical device-value stream until the single terminal fanout. Probe gain and both
+deesser taps, one schedule per tap, linked values and both track/clip lane orders. Separate
+continuous recurrence from quantised delivery and from actual engine hold: an automation
+write of 5 followed by a skipped modulation state of 6 must leave 5; competing active lanes
+force 6. Observe AudioParam, segment and frame boundaries, including compensation and crop
+origin. The #5323 packet error also requires tracing `resolveHistoryAwareRenderContext`'s
+actual beat-zero warmup before prescribing a requested crop anchor. Tempo changes alone
+must not reset the slot; this monotone offline route exposes no transport discontinuity epoch.
