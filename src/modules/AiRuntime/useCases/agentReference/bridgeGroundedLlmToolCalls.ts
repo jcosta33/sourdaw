@@ -1261,7 +1261,7 @@ function getRestrictedTrackControlOperation(clause: PromptClause): PromptClause 
         );
     const start = restriction?.index ?? 0;
     const modifier =
-        /\b(?:while|after|before|when|once|until|at\s+any|for\s+the\s+purpose\s+of|to\s+preserve)\b/iu.exec(
+        /\b(?:while|after|before|when|once|until|following|during|at\s+any|for\s+the\s+purpose\s+of|to\s+preserve)\b/iu.exec(
             clause.masked.slice(start)
         );
     const end = start + (modifier?.index ?? clause.masked.length - start);
@@ -1290,21 +1290,30 @@ function getSharedControlRestriction(
 ): { clause: PromptClauseSpan; lastClauseIndex: number } {
     const first = clauses[firstClauseIndex]!;
     const firstOperation = getRestrictedTrackControlOperation(first);
-    const isNamedControlRestriction =
+    const isControlRestriction =
         (hasTrackControlRestriction(firstOperation.masked) ||
             COORDINATED_TARGET_PROTECTION_CUE.test(firstOperation.masked)) &&
-        /\b(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/iu.test(firstOperation.masked) &&
-        collectNamedProjectTracks(firstOperation.text, tracks).length > 0;
+        /\b(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/iu.test(firstOperation.masked);
+    const hasFirstTarget = collectNamedProjectTracks(firstOperation.text, tracks).length > 0;
     let lastClauseIndex = firstClauseIndex;
-    if (isNamedControlRestriction && first.masked.slice(firstOperation.end).trim().length === 0) {
+    if (isControlRestriction && first.masked.slice(firstOperation.end).trim().length === 0) {
         for (let index = firstClauseIndex + 1; index < clauses.length; index += 1) {
             const previous = clauses[index - 1]!;
             const next = clauses[index]!;
             const connector = prompt.slice(previous.end, next.start).trim().toLocaleLowerCase();
-            if (connector !== 'and' && connector !== ',') {
+            if (connector !== 'and' && connector !== ',' && connector !== ', and') {
                 break;
             }
             const nextOperation = getRestrictedTrackControlOperation(next);
+            const isPostposedTarget =
+                !hasFirstTarget &&
+                /^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\s+of\s+(?:the\s+)?(?:"□+"|'□+'|“□+”|‘□+’|□+)\s*$/iu.test(
+                    nextOperation.masked.trim()
+                );
+            if (isPostposedTarget) {
+                lastClauseIndex = index;
+                break;
+            }
             if (
                 collectNamedProjectTracks(nextOperation.text, tracks).length > 0 ||
                 !/^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu.test(
@@ -1386,48 +1395,52 @@ function getProtectedListMemberIds(
     context: ProjectContext,
     maskedPrompt: string,
     prompt: string
-): ReadonlySet<string> {
+): ReadonlySet<string> | null {
     const memberIds = list.memberIds ?? [];
-    return new Set(
-        clauses.flatMap((clause, index) => {
-            if (index >= list.firstClauseIndex && index <= list.lastClauseIndex) {
-                return [];
+    const protectedIds = new Set<string>();
+    for (let index = 0; index < clauses.length; index += 1) {
+        if (index >= list.firstClauseIndex && index <= list.lastClauseIndex) {
+            continue;
+        }
+        const clause = clauses[index]!;
+        const previousClause = clauses[index - 1];
+        const joinsAllButRestriction =
+            previousClause !== undefined &&
+            index - 1 !== list.lastClauseIndex &&
+            normalizePromptText(previousClause.masked) === 'all' &&
+            normalizePromptText(maskedPrompt.slice(previousClause.end, clause.start)) === 'but';
+        const restriction = getSharedControlRestriction(clauses, index, prompt, maskedPrompt, context.tracks);
+        index = restriction.lastClauseIndex;
+        const restrictionMasked = joinsAllButRestriction
+            ? maskedPrompt.slice(previousClause.start, clause.end)
+            : restriction.clause.masked;
+        const restrictionText = joinsAllButRestriction
+            ? prompt.slice(previousClause.start, clause.end)
+            : restriction.clause.text;
+        const operation = getRestrictedTrackControlOperation({ text: restrictionText, masked: restrictionMasked });
+        if (
+            !hasTrackControlRestriction(operation.masked) &&
+            !COORDINATED_TARGET_PROTECTION_CUE.test(operation.masked)
+        ) {
+            continue;
+        }
+        const namedTargets = collectNamedProjectTracks(operation.text, context.tracks);
+        if (
+            /\b(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/iu.test(operation.masked) &&
+            namedTargets.length === 0
+        ) {
+            return null;
+        }
+        if (actionName === 'setTrackGain' && protectsAnotherTrackControlFromGain(operation.masked)) {
+            continue;
+        }
+        for (const id of namedTargets) {
+            if (memberIds.includes(id)) {
+                protectedIds.add(id);
             }
-            const previousClause = clauses[index - 1];
-            const joinsAllButRestriction =
-                previousClause !== undefined &&
-                index - 1 !== list.lastClauseIndex &&
-                normalizePromptText(previousClause.masked) === 'all' &&
-                normalizePromptText(maskedPrompt.slice(previousClause.end, clause.start)) === 'but';
-            const restrictionClause = getSharedControlRestriction(
-                clauses,
-                index,
-                prompt,
-                maskedPrompt,
-                context.tracks
-            ).clause;
-            const restrictionMasked = joinsAllButRestriction
-                ? maskedPrompt.slice(previousClause.start, clause.end)
-                : restrictionClause.masked;
-            const restrictionText = joinsAllButRestriction
-                ? prompt.slice(previousClause.start, clause.end)
-                : restrictionClause.text;
-            const operation = getRestrictedTrackControlOperation({
-                text: restrictionText,
-                masked: restrictionMasked,
-            });
-            if (
-                !hasTrackControlRestriction(operation.masked) &&
-                !COORDINATED_TARGET_PROTECTION_CUE.test(operation.masked)
-            ) {
-                return [];
-            }
-            if (actionName === 'setTrackGain' && protectsAnotherTrackControlFromGain(operation.masked)) {
-                return [];
-            }
-            return collectNamedProjectTracks(operation.text, context.tracks).filter((id) => memberIds.includes(id));
-        })
-    );
+        }
+    }
+    return protectedIds;
 }
 
 /**
@@ -1477,9 +1490,9 @@ function getCoordinatedLevelLists(input: {
             input.maskedPrompt,
             input.prompt
         );
-        const targetIds = list.memberIds?.filter((id) => !protectedIds.has(id)) ?? [];
+        const targetIds = protectedIds === null ? [] : (list.memberIds?.filter((id) => !protectedIds.has(id)) ?? []);
         const scope: PromptClauseScope | null =
-            list.memberIds === null || targetIds.length === 0
+            list.memberIds === null || protectedIds === null || targetIds.length === 0
                 ? null
                 : {
                       ...clause,

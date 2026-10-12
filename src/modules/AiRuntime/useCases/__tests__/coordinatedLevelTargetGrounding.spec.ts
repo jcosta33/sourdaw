@@ -226,8 +226,11 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         'set "Drums", "Bass", and "Keys" volume to -6 dB',
     ])('binds each complete quoted list member in "%s"', (prompt) => {
         const targets = prompt.startsWith('set ') ? [drums, bass, keys] : [drums, bass];
-        const value = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
-        const result = bridge(targets.map((track) => gainCall(track.id, value)), prompt);
+        const value: Record<string, number> = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
+        const result = bridge(
+            targets.map((track) => gainCall(track.id, value)),
+            prompt
+        );
         const compiled = prompt.startsWith('set ') ? null : bridgeCompiledGainList(prompt, targets);
 
         expect(result.rejections).toEqual([]);
@@ -238,14 +241,14 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         }
     });
 
-    it.each([
-        'turn "Drums" and "Bass DI" down 3dB',
-        'turn "Drums" and "Strings" down 3dB',
-    ])('refuses a quoted member outside the complete requested set in "%s"', (prompt) => {
-        const result = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toHaveLength(2);
-    });
+    it.each(['turn "Drums" and "Bass DI" down 3dB', 'turn "Drums" and "Strings" down 3dB'])(
+        'refuses a quoted member outside the complete requested set in "%s"',
+        (prompt) => {
+            const result = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toHaveLength(2);
+        }
+    );
 
     it('refuses a quoted member that resolves to two tracks', () => {
         const result = bridge(

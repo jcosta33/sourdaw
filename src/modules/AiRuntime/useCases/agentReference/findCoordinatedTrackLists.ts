@@ -29,14 +29,23 @@ export type CoordinatedTrackList = {
     lead: string;
 };
 
+/** One complete project reference, optionally inside a matched pair of original quote marks. */
+const LIST_REFERENCE = String.raw`(?:"□+"|'□+'|“□+”|‘□+’|□+)`;
+
 /** The first clause: any words, an optional "both" and article, and a reference ending the clause. */
-const LIST_HEAD_PATTERN = /^(?<lead>(?:.*?\s)?)(?<both>both\s+)?(?:(?:the|a|an)\s+)?(?<reference>□+)\s*$/iu;
+const LIST_HEAD_PATTERN = new RegExp(
+    String.raw`^(?<lead>(?:.*?\s)?)(?<both>both\s+)?(?:(?:the|a|an)\s+)?(?<reference>${LIST_REFERENCE})\s*$`,
+    'iu'
+);
 
 /** A clause holding nothing but one more reference, after an optional article. */
-const LIST_MEMBER_PATTERN = /^\s*(?:(?:the|a|an)\s+)?(?<reference>□+)\s*$/iu;
+const LIST_MEMBER_PATTERN = new RegExp(String.raw`^\s*(?:(?:the|a|an)\s+)?(?<reference>${LIST_REFERENCE})\s*$`, 'iu');
 
 /** The last clause: its reference, then the words that apply to the whole list. */
-const LIST_TAIL_PATTERN = /^\s*(?:(?:the|a|an)\s+)?(?<reference>□+)(?<tail>\s+[^□]*)$/iu;
+const LIST_TAIL_PATTERN = new RegExp(
+    String.raw`^\s*(?:(?:the|a|an)\s+)?(?<reference>${LIST_REFERENCE})(?<tail>\s+[^□]*)$`,
+    'iu'
+);
 
 /** What may separate two clauses of one list: "A and B", "A, B", "A, B, and C". */
 const LIST_SEPARATOR_PATTERN = /^(?:,|,?\s*and)$/iu;
