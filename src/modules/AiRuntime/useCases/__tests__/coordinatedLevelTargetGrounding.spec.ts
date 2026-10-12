@@ -382,7 +382,7 @@ describe('a coordinated level list keeps the request exclusions and protections'
         'set Drums and Bass volume to -6 dB; leave Bass pan and fader unchanged',
     ])('keeps the protected member out of the exact gain proposal in "%s"', (prompt) => {
         const before = structuredClone(projectContext);
-        const value = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
+        const value: Record<string, number> = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
         const bothCalled = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
         const onlyDrums = bridge([gainCall(drums.id, value)], prompt);
 
@@ -406,7 +406,7 @@ describe('a coordinated level list keeps the request exclusions and protections'
         'set Drums and Bass volume to -6 dB; do not mute Bass once gain is adjusted',
     ])('admits both requested gain changes when only muting is restricted in "%s"', (prompt) => {
         const before = structuredClone(projectContext);
-        const value = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
+        const value: Record<string, number> = prompt.startsWith('set ') ? { gainDb: -6 } : { deltaDb: -3 };
         const result = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
         const incomplete = bridge([gainCall(drums.id, value)], prompt);
 
