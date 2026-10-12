@@ -56,21 +56,21 @@ function targetOf(command: Command): string {
     return [command.type, ...ids].join('|');
 }
 
-function mentionsOperation(clause: string, actionType: string): boolean {
+function operationPattern(actionType: string): RegExp | null {
     if (actionType === 'setTrackPan') {
-        return /\bpan(?:ning)?\b/i.test(clause);
+        return /\bpan(?:ning)?\b/i;
     }
     if (actionType === 'setTrackGain') {
-        return /\b(?:gain|fader|level)\b/i.test(clause);
+        return /\b(?:gain|fader|level)\b/i;
     }
     if (actionType === 'muteTrack') {
-        return /\bmute\b/i.test(clause);
+        return /\bmute\b/i;
     }
     const operation = actionType
         .match(/[A-Z][a-z]+|^[a-z]+/g)
         ?.at(-1)
         ?.toLowerCase();
-    return operation !== undefined && new RegExp(`\\b${operation}\\b`, 'i').test(clause);
+    return operation === undefined ? null : new RegExp(`\\b${operation}\\b`, 'i');
 }
 
 function isNegatedRemoval(clause: string, removalIndex: number): boolean {
@@ -80,36 +80,193 @@ function isNegatedRemoval(clause: string, removalIndex: number): boolean {
     );
 }
 
+const DIRECTIVE = /\b(?:remove|drop|omit|exclude|skip|keep|retain|preserve|leave)\b/gi;
+const REMOVAL = /^(?:remove|drop|omit|exclude|skip)$/i;
+const BINDING_WORDS = new Set([
+    'the',
+    'its',
+    'pending',
+    'proposed',
+    'command',
+    'change',
+    'track',
+    'clip',
+    'pan',
+    'panning',
+    'mute',
+    'gain',
+    'fader',
+    'level',
+    'from',
+    'of',
+    'on',
+    'for',
+]);
+
+function quotedRanges(text: string): Array<{ start: number; end: number; contentEnd: number; complete: boolean }> {
+    const ranges: Array<{ start: number; end: number; contentEnd: number; complete: boolean }> = [];
+    let opened: { start: number; close: string } | null = null;
+    for (let index = 0; index < text.length; index += 1) {
+        const character = text[index];
+        if (opened !== null) {
+            if (character === opened.close) {
+                ranges.push({ start: opened.start, end: index + 1, contentEnd: index, complete: true });
+                opened = null;
+            }
+            continue;
+        }
+        if (character !== '"' && character !== "'" && character !== '“' && character !== '‘') {
+            continue;
+        }
+        if (
+            character === "'" &&
+            /[\p{L}\p{N}]/u.test(text[index - 1] ?? '') &&
+            /[\p{L}\p{N}]/u.test(text[index + 1] ?? '')
+        ) {
+            continue;
+        }
+        let close = character;
+        if (character === '“') {
+            close = '”';
+        } else if (character === '‘') {
+            close = '’';
+        }
+        opened = { start: index, close };
+    }
+    if (opened !== null) {
+        ranges.push({ start: opened.start, end: text.length, contentEnd: text.length, complete: false });
+    }
+    return ranges;
+}
+
+function clausesOf(prompt: string): string[] {
+    const quotes = quotedRanges(prompt);
+    const clauses: string[] = [];
+    let start = 0;
+    for (let index = 0; index < prompt.length; index += 1) {
+        if (/[.,;]/.test(prompt[index] ?? '') && !quotes.some((quote) => index >= quote.start && index < quote.end)) {
+            clauses.push(prompt.slice(start, index));
+            start = index + 1;
+        }
+    }
+    clauses.push(prompt.slice(start));
+    return clauses;
+}
+
+function targetMentions(clause: string, context: ProjectContext, targetIds: readonly string[]) {
+    const candidates = new Map<string, Set<string>>();
+    for (const track of context.tracks) {
+        for (const name of [track.name, track.id]) {
+            const ids = candidates.get(name.toLowerCase()) ?? new Set<string>();
+            ids.add(track.id);
+            candidates.set(name.toLowerCase(), ids);
+        }
+    }
+    for (const id of targetIds) {
+        const ids = candidates.get(id.toLowerCase()) ?? new Set<string>();
+        ids.add(id);
+        candidates.set(id.toLowerCase(), ids);
+    }
+    const names = Array.from(candidates.keys())
+        .filter(Boolean)
+        .sort((left, right) => right.length - left.length);
+    const quotes = quotedRanges(clause);
+    const mentions: Array<{ id: string | null; start: number; end: number }> = [];
+    for (const name of names) {
+        const ids = candidates.get(name)!;
+        const id = ids.size === 1 ? [...ids][0]! : null;
+        const escaped = name.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        for (const match of clause.matchAll(new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'giu'))) {
+            const start = match.index ?? 0;
+            const end = start + name.length;
+            const quote = quotes.find((range) => start < range.end && end > range.start);
+            if (quote !== undefined && (!quote.complete || start !== quote.start + 1 || end !== quote.contentEnd)) {
+                continue;
+            }
+            const bindingStart = quote?.start ?? start;
+            const bindingEnd = quote?.end ?? end;
+            if (!mentions.some((other) => bindingStart < other.end && bindingEnd > other.start)) {
+                mentions.push({ id, start: bindingStart, end: bindingEnd });
+            }
+        }
+    }
+    return mentions.sort((left, right) => left.start - right.start);
+}
+
+function onlyBindingWords(text: string): boolean {
+    return (
+        text === '' ||
+        text
+            .toLowerCase()
+            .split(/\s+/)
+            .every((word) => BINDING_WORDS.has(word))
+    );
+}
+
+function intentionForMention(input: {
+    clause: string;
+    mentions: ReturnType<typeof targetMentions>;
+    directives: RegExpMatchArray[];
+    index: number;
+    operation: RegExp;
+}): 'remove' | 'preserve' | null {
+    const { clause, mentions, directives, index, operation } = input;
+    const mention = mentions[index]!;
+    const previousEnd = mentions[index - 1]?.end ?? 0;
+    const directive = directives.findLast((entry) => {
+        const at = entry.index ?? 0;
+        return at >= previousEnd && at < mention.start;
+    });
+    if (!directive) {
+        return null;
+    }
+    const at = directive.index ?? 0;
+    const beforeTarget = clause.slice(at + directive[0].length, mention.start).trim();
+    if (!onlyBindingWords(beforeTarget)) {
+        return null;
+    }
+    const nextDirective = directives.find((entry) => (entry.index ?? 0) > mention.end)?.index;
+    const nextTarget = mentions[index + 1]?.start;
+    const end = Math.min(nextDirective ?? clause.length, nextTarget ?? clause.length);
+    const afterTarget = clause.slice(mention.end, end);
+    const afterMatch = operation.exec(afterTarget);
+    const beforeOperation = afterMatch === null ? '' : afterTarget.slice(0, afterMatch.index ?? 0).trim();
+    if (
+        (afterMatch !== null && !onlyBindingWords(beforeOperation)) ||
+        (!operation.test(beforeTarget) && afterMatch === null)
+    ) {
+        return null;
+    }
+    return REMOVAL.test(directive[0]) && !isNegatedRemoval(clause, at) ? 'remove' : 'preserve';
+}
+
 function explicitlyRemovesCommand(prompt: string, command: Command, context: ProjectContext): boolean {
     const payload = payloadOf(command);
     const targetIds = Object.entries(payload)
         .filter(([field, value]) => field.endsWith('Id') && !field.startsWith('expected') && typeof value === 'string')
         .map(([, value]) => String(value));
-    const clauses = prompt.toLowerCase().split(/[.,;]/);
+    const clauses = clausesOf(prompt);
     if (targetIds.length === 0) {
-        return clauses.some((clause) =>
-            [...clause.matchAll(/\b(?:remove|drop|omit|exclude|skip)\b/g)].some(
-                (removal) => mentionsOperation(clause, command.type) && !isNegatedRemoval(clause, removal.index ?? 0)
-            )
-        );
+        return false;
+    }
+    const operation = operationPattern(command.type);
+    if (operation === null) {
+        return false;
     }
     return targetIds.every((id) => {
-        const track = context.tracks.find((candidate) => candidate.id === id);
-        const name = (track?.name ?? id).toLowerCase();
-        return clauses.some((clause) => {
-            const at = clause.indexOf(name);
-            if (at < 0 || !mentionsOperation(clause, command.type)) {
-                return false;
-            }
-            const preceding = clause.slice(0, at);
-            const removal = [...preceding.matchAll(/\b(?:remove|drop|omit|exclude|skip)\b/g)].at(-1);
-            const preservation = [...preceding.matchAll(/\b(?:keep|retain|preserve)\b/g)].at(-1);
-            return (
-                removal !== undefined &&
-                !isNegatedRemoval(preceding, removal.index ?? 0) &&
-                (preservation === undefined || (removal.index ?? -1) > (preservation.index ?? -1))
+        const intentions = clauses.flatMap((clause) => {
+            const mentions = targetMentions(clause, context, targetIds);
+            const quotes = quotedRanges(clause);
+            const directives = Array.from(clause.matchAll(DIRECTIVE)).filter(
+                (entry) => !quotes.some((quote) => (entry.index ?? 0) >= quote.start && (entry.index ?? 0) < quote.end)
             );
+            return mentions.flatMap((mention, index) => {
+                const intention =
+                    mention.id === id ? intentionForMention({ clause, mentions, directives, index, operation }) : null;
+                return intention === null ? [] : [intention];
+            });
         });
+        return intentions.includes('remove') && !intentions.includes('preserve');
     });
 }
 

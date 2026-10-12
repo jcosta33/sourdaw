@@ -115,7 +115,10 @@ describe('diffProposalCommands', () => {
 
     it('separates a rename of another clip and compares a rename of the same clip', () => {
         const before = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Verse' } } satisfies AppAction;
-        const otherClip = { type: 'renameClip', payload: { clipId: 'clip-chorus', name: 'Chorus' } } satisfies AppAction;
+        const otherClip = {
+            type: 'renameClip',
+            payload: { clipId: 'clip-chorus', name: 'Chorus' },
+        } satisfies AppAction;
         const sameClip = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Chorus' } } satisfies AppAction;
 
         expect(

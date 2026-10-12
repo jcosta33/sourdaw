@@ -716,7 +716,10 @@ describe('getAgentApprovalView', () => {
 
         it('shows replacement renames of different clips as added and removed', () => {
             const verse = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Verse' } } satisfies AppAction;
-            const chorus = { type: 'renameClip', payload: { clipId: 'clip-chorus', name: 'Chorus' } } satisfies AppAction;
+            const chorus = {
+                type: 'renameClip',
+                payload: { clipId: 'clip-chorus', name: 'Chorus' },
+            } satisfies AppAction;
             propose('confirmation-rename-before', { actions: [verse], actionLabels: ['Rename Verse clip'] });
             propose('confirmation-rename-after', {
                 supersedes: 'confirmation-rename-before',
@@ -724,11 +727,42 @@ describe('getAgentApprovalView', () => {
                 actionLabels: ['Rename Chorus clip'],
             });
 
-            expect(getAgentApprovalView({ confirmationId: 'confirmation-rename-after' })?.previousProposalDiff).toEqual({
-                previousConfirmationId: 'confirmation-rename-before',
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-rename-after' })?.previousProposalDiff).toEqual(
+                {
+                    previousConfirmationId: 'confirmation-rename-before',
+                    changes: [
+                        { kind: 'added', actionType: 'renameClip', label: 'Rename Chorus clip' },
+                        { kind: 'removed', actionType: 'renameClip', label: 'Rename Verse clip' },
+                    ],
+                    unchangedCount: 0,
+                }
+            );
+        });
+
+        it('shows a new name on the same clip as a changed field', () => {
+            const verse = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Verse' } } satisfies AppAction;
+            const chorus = {
+                type: 'renameClip',
+                payload: { clipId: 'clip-verse', name: 'Chorus' },
+            } satisfies AppAction;
+            propose('confirmation-same-clip-before', { actions: [verse], actionLabels: ['Rename clip to Verse'] });
+            propose('confirmation-same-clip-after', {
+                supersedes: 'confirmation-same-clip-before',
+                actions: [chorus],
+                actionLabels: ['Rename clip to Chorus'],
+            });
+
+            expect(
+                getAgentApprovalView({ confirmationId: 'confirmation-same-clip-after' })?.previousProposalDiff
+            ).toEqual({
+                previousConfirmationId: 'confirmation-same-clip-before',
                 changes: [
-                    { kind: 'added', actionType: 'renameClip', label: 'Rename Chorus clip' },
-                    { kind: 'removed', actionType: 'renameClip', label: 'Rename Verse clip' },
+                    {
+                        kind: 'changed',
+                        actionType: 'renameClip',
+                        label: 'Rename clip to Chorus',
+                        fields: [{ field: 'name', previous: 'Verse', next: 'Chorus' }],
+                    },
                 ],
                 unchangedCount: 0,
             });

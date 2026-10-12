@@ -33,11 +33,13 @@ import {
     pendingActionConfirmationStore,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
+import { validateRefinedProposalActions } from '../../validators/admitProposalRefinement';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
+import { getProjectContext } from '../getProjectContext';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
@@ -450,6 +452,37 @@ describe('refining the pending proposal', () => {
         expect(lastAssistantMessage()?.content).toContain('omits');
         expectMixUntouched();
         expect(captureProjectRevision()).toBe(revision);
+    });
+
+    it('binds each removal to its exact track and operation in a multi-operation clause', () => {
+        const current = trackStore.value;
+        trackStore.set({
+            ...current!,
+            tracks: [
+                ...current!.tracks,
+                createTrack('track-guitar', 'Guitar'),
+                createTrack('track-room-dot', 'Room.Mic'),
+            ],
+        });
+        const context = getProjectContext();
+        const leftPan = { type: 'setTrackPan', payload: { trackId: 'track-guitar-left', pan: -20 } };
+        const guitarPan = { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: 10 } };
+        const leftGain = { type: 'setTrackGain', payload: { trackId: 'track-guitar-left', gain: 0.8 } };
+        const dottedMute = { type: 'muteTrack', payload: { trackId: 'track-room-dot', muted: true } };
+        const admission = (prompt: string, pendingAction: { type: string; payload: Record<string, unknown> }) =>
+            validateRefinedProposalActions({ pendingActions: [pendingAction], actions: [], prompt, context }).status;
+
+        expect(admission('Drop Guitar Left pan and leave Guitar pan as proposed.', guitarPan)).toBe('refused');
+        expect(admission('Drop Room Mic mute and leave Guitar Left pan as proposed.', leftPan)).toBe('refused');
+        expect(admission('Do not drop Guitar Left pan.', leftPan)).toBe('refused');
+        expect(admission('Drop Guitar Left pan. Leave Guitar Left pan as proposed.', leftPan)).toBe('refused');
+        expect(admission('Drop "Guitar Left and Guitar" pan.', leftPan)).toBe('refused');
+        expect(admission('Drop Other Guitar Left pan.', leftPan)).toBe('refused');
+        expect(admission('Drop Guitar Left alternate pan.', leftPan)).toBe('refused');
+        expect(admission('Drop Guitar Left pan but leave Guitar Left gain as proposed.', leftGain)).toBe('refused');
+        expect(admission('Drop Guitar Left pan and leave Guitar pan as proposed.', leftPan)).toBe('valid');
+        expect(admission('DROP "Guitar Left" PAN.', leftPan)).toBe('valid');
+        expect(admission('Drop "Room.Mic" mute.', dottedMute)).toBe('valid');
     });
 
     it.each([

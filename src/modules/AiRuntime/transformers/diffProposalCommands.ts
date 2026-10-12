@@ -1,5 +1,6 @@
 import { formatDecibels } from '#/utils/audioLevelLaw';
 import { canonicalJson } from '#/utils/canonicalDigest';
+import { type AppActionType } from '#/utils/handlerContract';
 
 type ProposalCommands = {
     actions: ReadonlyArray<{ type: string; payload?: unknown }>;
@@ -20,6 +21,42 @@ type ProposalCommandDiff = { changes: ProposalCommandChange[]; unchangedCount: n
  * Repeated commands on one target still need occurrence evidence before a changed-value pairing.
  */
 const TARGET_IDENTITY_FIELDS = ['trackId', 'busId', 'deviceId', 'parameterId', 'sendId'] as const;
+/** Typed clip commands whose clipId names the existing clip they act on. Creation IDs are excluded. */
+const CLIP_TARGET_ACTIONS = new Set<string>([
+    'removeClip',
+    'moveClip',
+    'splitClip',
+    'duplicateClip',
+    'duplicateClipToNextBar',
+    'duplicateClipAt',
+    'renameClip',
+    'trimClipStart',
+    'trimClipEnd',
+    'nudgeClip',
+    'slipClipContent',
+    'setClipGain',
+    'muteClip',
+    'setClipColor',
+    'setClipFade',
+    'lockClip',
+    'setClipLoop',
+    'setClipLoopLength',
+    'normalizeClip',
+    'setClipStretchMode',
+    'setClipStretchRatio',
+    'fitClipToBeats',
+    'quantizeNotes',
+    'quantizeNoteLengths',
+    'transposeNotes',
+    'invertNotes',
+    'retrogradeNotes',
+    'scaleAllVelocities',
+    'setAllVelocities',
+    'removeShortMidiOverlaps',
+    'addNotes',
+    'arpeggiate',
+    'exportMidi',
+] satisfies AppActionType[]);
 
 type KeyedCommand = { identity: string; actionType: string; label: string; payload: Readonly<Record<string, unknown>> };
 
@@ -28,7 +65,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function targetIdentity(actionType: string, payload: Readonly<Record<string, unknown>>): string {
-    if (actionType === 'moveClip' || actionType === 'removeClip') {
+    if (CLIP_TARGET_ACTIONS.has(actionType)) {
         return typeof payload.clipId === 'string' ? `${actionType}|clipId=${payload.clipId}` : actionType;
     }
     const targets = TARGET_IDENTITY_FIELDS.flatMap((field) =>
