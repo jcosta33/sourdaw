@@ -950,9 +950,80 @@ expect(
 );
 expect(!secretScanEnvJson.includes('GITHUB_TOKEN') && !secretScanEnvJson.includes('GITLEAKS_LICENSE'), 'secret scan must not require token or license secrets');
 expect(
-    unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
-    'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
+    unitRun === 'node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4',
+    'unit shard must delegate its exact matrix shard through the isolated account context'
 );
+// Exercise the producer rather than searching source: helper metadata must never
+// reach the zero-test wrapper, and pnpm must receive the explicit run subcommand.
+const { runUnitPhase } = await import(`${process.env.REPO_ROOT}/scripts/runIsolatedUnitShard.ts`);
+const shardContext = {
+    workspace: process.env.REPO_ROOT, uid: 20000, gid: 20000, runnerUid: 1001,
+    account: 'sdaw-unit-20000', home: '/unit-shard-contract/home',
+    store: '/unit-shard-contract/store', temp: '/unit-shard-contract/tmp',
+    node: '/tools/node', pnpm: '/tools/pnpm',
+};
+const shardEnvironment = {
+    HOME: shardContext.home, PATH: '/tools:/tools:/usr/local/bin:/usr/bin:/bin',
+    PNPM_CONFIG_STORE_DIR: shardContext.store,
+    CI: 'true', GITHUB_ACTIONS: 'true', GITHUB_WORKSPACE: shardContext.workspace,
+    VITEST_MAX_WORKERS: '4', TMPDIR: shardContext.temp, TMP: shardContext.temp, TEMP: shardContext.temp,
+};
+const shardStatus = [
+    'Uid:\t20000\t20000\t20000\t20000', 'Gid:\t20000\t20000\t20000\t20000',
+    'Groups:\t', 'CapInh:\t0', 'CapPrm:\t0', 'CapEff:\t0', 'CapBnd:\t0', 'CapAmb:\t0', 'NoNewPrivs:\t1', '',
+].join('\n');
+const wholeGuardSpecs = [
+    'scripts/__tests__/resourceGuardStorage.spec.ts',
+    'scripts/__tests__/resourceGuard.spec.ts',
+    'scripts/__tests__/resourceGuardShowOutput.spec.ts',
+];
+for (const shard of ['1/4', '2/4', '3/4', '4/4']) {
+    const commands = [];
+    const commandOptions = [];
+    const result = runUnitPhase(shardContext, 'shard', shard, {
+        env: shardEnvironment, platform: 'linux', uid: 20000,
+        read: () => shardStatus, canonical: (path) => path,
+        metadata: () => ({ directory: true, uid: 20000, gid: 20000, mode: 0o700 }),
+        executable: () => {},
+        run: (file, args, options) => {
+            commands.push([file, args]); commandOptions.push(options);
+            return { status: commands.length <= wholeGuardSpecs.length ? 0 : 7 };
+        },
+    });
+    expect(
+        JSON.stringify(commands) === JSON.stringify([
+            ...wholeGuardSpecs.map((spec) => [shardContext.pnpm, ['run', 'test:run', spec]]),
+            [shardContext.pnpm, ['run', 'test:run', `--shard=${shard}`, ...wholeGuardSpecs.map((spec) => `--exclude=${spec}`)]],
+        ]),
+        `isolated unit shard ${shard} must run all three whole guard specs sequentially before the precise excluded shard through explicit pnpm run`
+    );
+    expect(JSON.stringify(commandOptions) === JSON.stringify([
+        ...wholeGuardSpecs.map(() => ({
+            cwd: shardContext.workspace, env: { ...shardEnvironment, VITEST_MAX_WORKERS: '1' }, inheritOutput: true,
+        })),
+        { cwd: shardContext.workspace, env: shardEnvironment, inheritOutput: true },
+    ]), `isolated unit shard ${shard} must preserve its private store and account with one worker for all three guard commands then four workers`);
+    expect(result === 7, `isolated unit shard ${shard} must propagate pnpm failure`);
+    for (const [index, spec] of wholeGuardSpecs.entries()) {
+        for (const guardStatus of [7, null]) {
+            const aborted = [];
+            const failure = runUnitPhase(shardContext, 'shard', shard, {
+                env: shardEnvironment, platform: 'linux', uid: 20000,
+                read: () => shardStatus, canonical: (path) => path,
+                metadata: () => ({ directory: true, uid: 20000, gid: 20000, mode: 0o700 }),
+                executable: () => {},
+                run: (file, args) => {
+                    aborted.push([file, args]);
+                    return { status: aborted.length <= index ? 0 : guardStatus };
+                },
+            });
+            expect(JSON.stringify(aborted) === JSON.stringify(
+                wholeGuardSpecs.slice(0, index + 1).map((reached) => [shardContext.pnpm, ['run', 'test:run', reached]])
+            ), `isolated unit shard ${shard} must not start remaining proof or its shard after ${spec} returns ${guardStatus}`);
+            expect(failure === (guardStatus ?? 1), `isolated unit shard ${shard} must propagate ${spec} status ${guardStatus}`);
+        }
+    }
+}
 expect(
     e2eRunStep?.run === 'node scripts/prValidationScope.ts run' &&
         e2eRunStep?.env?.E2E_SPECS === '${{ toJSON(matrix.specs) }}' &&

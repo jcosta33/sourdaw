@@ -1283,6 +1283,46 @@ describe('ExportDialog', () => {
         });
     });
 
+    it.each([
+        [true, 'mixdown'],
+        [false, 'mixdown'],
+        [true, 'stems'],
+        [false, 'stems'],
+    ] as const)('saves no file after a named Faust refusal (native=%s, mode=%s)', async (native, mode) => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(native);
+        const message = 'Track "Delay Bus" could not render device "Tape Delay": worklet module unavailable';
+        mocks.renderOffline.mockRejectedValue(new Error(message));
+        mocks.exportStems.mockRejectedValue(new Error(message));
+        const createWritable = vi.fn();
+        const showSaveFilePicker = vi.fn().mockResolvedValue({ createWritable });
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+        const clickDownload = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        try {
+            if (mode === 'mixdown') {
+                await startMixdownExport();
+            } else {
+                setProjectTracks([{ id: 'delay', name: 'Delay Bus', kind: 'audio', clips: [] }]);
+                render(<ExportDialog open={true} onClose={vi.fn()} />);
+                fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            }
+            await waitFor(() => {
+                expect(screen.getByText(message)).toBeInTheDocument();
+            });
+            expect(mocks.encodeWav).not.toHaveBeenCalled();
+            expect(audioBufferToMp3).not.toHaveBeenCalled();
+            expect(audioBufferToFlac).not.toHaveBeenCalled();
+            expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalled();
+            expect(mocks.writeNativeAudioStemFile).not.toHaveBeenCalled();
+            expect(createWritable).not.toHaveBeenCalled();
+            expect(clickDownload).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+        } finally {
+            clickDownload.mockRestore();
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('shows the progress and warnings a live mixdown render reports', async () => {
         const rendering = createDeferred<AudioBuffer>();
         mocks.renderOffline.mockReturnValue(rendering.promise);

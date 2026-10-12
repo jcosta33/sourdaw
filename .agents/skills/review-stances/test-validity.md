@@ -55,6 +55,33 @@ identity binding must fail the unchanged cluster cases. A deliberate full-histor
 also updates its owning independent assertion and regenerated snapshot; the snapshot diff must
 contain only the intended checkout depth, and a depth-two mutation must fail the assertion.
 
+### 2026-10-12 — a release budget missed the still-open PCM entry (PR #5239 review repair)
+
+An aborted bank could hold both a sealed sample and an unfinished reservation. Release freed
+the open reservation first, then gave the sealed pool the full entry budget. A single-entry
+call therefore freed both while existing large-budget disposal checks stayed green.
+
+Stage one sealed and one open sample in the actual shipped module, abort, then release with
+budgets zero and one: minimum progress is one entry, so the first call must retain the sealed
+PCM and the second must finish. Pair native PCM-allocation counts with an open-only bank and a
+shared sounding owner. Charge every PCM holder to the normalized budget; never forward zero
+remaining budget to a lower helper that independently normalizes it to one. This is an entry
+count contract, not a browser deallocation-time or audio-deadline measurement.
+
+### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
+
+Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
+that waiter followed by its own terminal error before the reservation continuation: the failed
+load posted PCM and kept a credit it had not used. Grant first, then fail, dispose or cancel in
+the same turn; require rejection, zero waiter PCM, and exact ceiling-sized reuse by the next
+bank. Reverse ordering alone does not exercise the ownership handoff.
+
+The shipped upload test compared two chunkings through the same copy path. Omitting that copy
+could leave both renders equally wrong, while nonzero allocator leftovers passed a sounding
+check. Poison the reserved PCM span, compare each acknowledged window with the independent
+input bit-for-bit, and remove only the production copy in a committed private probe. Require
+that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
+
 ### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
 
 The subgraph fixture asserted that the inverse callback received the requested beat-four
@@ -91,6 +118,28 @@ The installed affected-E2E loader case asserted full selection for opaque runtim
 Delegate to the installed cruise implementation and inspect its returned graph, rather than substituting a successful graph. Assert the exact fixture source set and root-relative alias edges for explicit, absent, and inherited `baseUrl`, together with the existing opaque-selection assertions. Reverting parsed-config forwarding or implicit-base normalization must fail the graph oracle even when selection still returns full.
 
 The first PR #5291 repair's inherited fixture supplied an explicit `baseUrl`; it could not expose the resolver's implicit inherited-path rebase. The pre-merge regression must place the declaring config and real uncurated consumer in a nested directory, add an unrelated root shadow, and use valid relative imports for surrounding composition code. Require full admission before an unproved traversal or the actual declared graph; an unrelated unresolved alias would mask the omission by selecting full for another reason.
+
+### 2026-10-11 — ALSA retry probes hid child outcomes behind Vitest's deadline (introduced by PR #5115)
+
+The validation and nightly retry probes executed the published loop through four executable command shims and an external `wc` per attempt. Retained #5240 output shows their four cases timing out at Vitest's 5-second limit after 5439–7671 ms, while the child deadline was 10 seconds; the failed run did not retain child status, signal, error, or stderr. A later diagnostic observed the same loop complete correctly, so the original child outcomes and external cause remain unknown.
+
+Probe the actual published loop with exported Bash functions loaded in its nested `bash -c`, a Bash-builtin attempt count, and a child deadline below Vitest's limit. Preserve exact three-attempt, 15/30-second backoff, early-success, and fatal-final-failure observations; remove later retries and force a successful final exit in separate mutations and require the corresponding assertions to fail. Stall a direct child deliberately and require `ETIMEDOUT`/`SIGTERM`, bounded child diagnostics, and fixture cleanup before the outer test limit. Do not infer machine load, add wall-time assertions, or raise Vitest's deadline.
+
+Drive the stalled child through the same helper and fixture boundary used by the successful retry probes. A standalone child with a separate fixture can report timeout and cleanup while the retry helper's timeout guard is deleted. On the committed head, deleting that guard and deleting its cleanup must each fail the stalled-child case.
+
+The timeout probe must also own the nested Bash process after its direct child exits. `spawnSync` can report `ETIMEDOUT` and allow fixture cleanup while that nested shell continues spinning. Record the nested shell's positive PID from Bash 3.2-compatible `$$`, then require it and the helper's detached process group to be gone before cleanup; a direct-PID-only termination mutation must fail the same case. Validate every recorded PID before probing or signaling it: an empty `BASHPID` on macOS coerced to PID 0 and killed the test runner's process group instead of observing the child.
+
+Await process-group shutdown independently of Node's `close` event: a surviving grandchild can keep the inherited stderr pipe open after the direct child dies. On macOS, a group-zero probe may briefly return `EPERM` after `SIGTERM`; only `ESRCH` establishes that the group is gone. Keep the fixture until that observation, with a bounded `SIGKILL` escalation.
+
+PR #5320's plain spinning grandchild died on the initial group `SIGTERM`, so deleting the independent group-exit wait still passed the stalled-child case. Make the nested published apt fixture ignore `TERM` and close its inherited stderr before spinning: the direct child and Node's `close` can finish while the owned grandchild remains. The unchanged case must fail separately when only the timeout path's group-exit wait is deleted and when group signaling is replaced with direct-PID signaling; its final rescue must kill and await the owned group before removing the fixture.
+
+The first #5320 stalled-case rescue signaled the recorded group and descendant again after
+its assertions observed `ESRCH`. Numeric validation bounded the identifiers but did not
+preserve ownership after absence; a reused identifier could target another process. Retire
+the owned group on its first `ESRCH`, share that ownership through helper shutdown and final
+rescue, and never signal the raw descendant PID. Intercept every nonzero signal after a real
+absence observation, model reuse without forwarding it, and require zero retired-ID signals.
+Keep live-group rescue and fixture removal after independently observed group exit.
 
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
@@ -936,3 +985,17 @@ or success output. The complete exact-hit fixture must pass the same compile
 without installation. Also copy a different nightly under the expected directory
 name and require its channel manifest date to reject setup before Cargo; a compiler
 commit date need not equal the requested channel date.
+
+### 2026-10-11 — warning-only Faust failure produced an incomplete musician export (#5215)
+
+PR #841 (`4edbe587b`) established the construction-error split: unsupported claimed devices refused,
+but runtime factory failures warned and omitted the device. Its Faust case asserted that omission;
+the dialog's warning case asserted success over a returned buffer. The historical stance dispatch
+is unverified. The missing failure mode was an admitted, audible device failing after admission.
+
+Inject a real Faust factory rejection through the musician mixdown's strip and chain, require a
+named track/device refusal with no buffer, then require the dialog to perform no encode, write or
+download. Exercise grouped stem strips and auxiliary detector keys; a refusal must invalidate the
+whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
+and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
+later runtime load failure.

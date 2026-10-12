@@ -555,3 +555,17 @@ values within the origin tolerance, both with an exact-zero member and entirely 
 require the last value to govern the terminal segment. Separately preserve each sampled ramp
 boundary's beat integral and final tail. Restoring the zero-coordinate lookup must fail the
 cluster cases without requiring a renderer sample rate.
+
+### 2026-10-11 — warning-only Faust failure produced an incomplete musician export (#5215)
+
+PR #841 (`4edbe587b`) established the construction-error split: unsupported claimed devices refused,
+but runtime factory failures warned and omitted the device. Its Faust case asserted that omission;
+the dialog's warning case asserted success over a returned buffer. The historical stance dispatch
+is unverified. The missing failure mode was an admitted, audible device failing after admission.
+
+Inject a real Faust factory rejection through the musician mixdown's strip and chain, require a
+named track/device refusal with no buffer, then require the dialog to perform no encode, write or
+download. Exercise grouped stem strips and auxiliary detector keys; a refusal must invalidate the
+whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
+and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
+later runtime load failure.
