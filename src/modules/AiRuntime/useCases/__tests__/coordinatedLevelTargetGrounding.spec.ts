@@ -117,6 +117,18 @@ function gainAction(trackId: string, value: Record<string, number>) {
     return { type: 'setTrackGain', payload: { trackId, ...value } };
 }
 
+function groundedGainAction(track: ProjectTrack, value: Record<string, number>) {
+    return {
+        type: 'setTrackGain',
+        payload: {
+            trackId: track.id,
+            ...value,
+            expectedGain: track.gain,
+            automationRecordingPolicy: 'suppressed',
+        },
+    };
+}
+
 function compileGainList(prompt: string, tracks: ProjectTrack[], context: ProjectContext = projectContext) {
     const compiled = compileArbitraryCommandList({
         context,
@@ -302,6 +314,7 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         const tracks = [drums, quotedTrack];
         const calls = tracks.map((track) => gainCall(track.id, { deltaDb: -3 }));
         const expected = tracks.map((track) => gainAction(track.id, { deltaDb: -3 }));
+        const expectedGrounded = tracks.map((track) => groundedGainAction(track, { deltaDb: -3 }));
         const direct = bridge(calls, prompt, projectWithQuotedOverlap);
         const atomicDirect = groundGainList(prompt, tracks, projectWithQuotedOverlap);
         const atomicCompiled = groundGainList(prompt, tracks, projectWithQuotedOverlap, true);
@@ -310,15 +323,9 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         expect(direct.rejections).toEqual([]);
         expect(direct.actions).toEqual(expected);
         expect(atomicDirect.status).toBe('grounded');
-        if (atomicDirect.status === 'grounded') {
-            expect(atomicDirect.actions).toHaveLength(expected.length);
-            expect(atomicDirect.actions).toMatchObject(expected);
-        }
+        if (atomicDirect.status === 'grounded') expect(atomicDirect.actions).toEqual(expectedGrounded);
         expect(atomicCompiled.status).toBe('grounded');
-        if (atomicCompiled.status === 'grounded') {
-            expect(atomicCompiled.actions).toHaveLength(expected.length);
-            expect(atomicCompiled.actions).toMatchObject(expected);
-        }
+        if (atomicCompiled.status === 'grounded') expect(atomicCompiled.actions).toEqual(expectedGrounded);
         expect(missing.status).toBe('rejected');
     });
 
@@ -515,13 +522,11 @@ describe('a coordinated level list keeps the request exclusions and protections'
         expect(atomicCompiled.status).toBe('rejected');
         expect(eligibleDirect.status).toBe('grounded');
         if (eligibleDirect.status === 'grounded') {
-            expect(eligibleDirect.actions).toHaveLength(1);
-            expect(eligibleDirect.actions).toMatchObject([gainAction(eligibleTrack.id, { deltaDb: -3 })]);
+            expect(eligibleDirect.actions).toEqual([groundedGainAction(eligibleTrack, { deltaDb: -3 })]);
         }
         expect(eligibleCompiled.status).toBe('grounded');
         if (eligibleCompiled.status === 'grounded') {
-            expect(eligibleCompiled.actions).toHaveLength(1);
-            expect(eligibleCompiled.actions).toMatchObject([gainAction(eligibleTrack.id, { deltaDb: -3 })]);
+            expect(eligibleCompiled.actions).toEqual([groundedGainAction(eligibleTrack, { deltaDb: -3 })]);
         }
     });
 
