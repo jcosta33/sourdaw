@@ -6,7 +6,7 @@ import {
     scheduleKitNote,
     getSynthParamsFromDevices,
 } from '#/modules/Synth/useCases';
-import { isBypassedNoteReceiver } from '#/utils/deviceTypeMatching';
+import { isBypassedNoteReceiver, readDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
@@ -56,9 +56,10 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     if (receiver?.kind === 'drum') {
         const drumDevice = receiver.device;
         const kitIndex = drumDevice.parameterValues.kit ?? drumDevice.parameterValues.kitId ?? 0;
+        const kitGain = readDrumKitOutputGain(drumDevice);
         const kitDef = getDrumKitDefByIndex(kitIndex);
         if (kitDef) {
-            scheduleDrumKitNote(audioEngine.context, strip.gainNode, kitDef, pitch, now, velocity);
+            scheduleDrumKitNote(audioEngine.context, strip.gainNode, kitDef, pitch, now, velocity, 1, kitGain);
             return () => {};
         }
 
@@ -78,7 +79,9 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
             pitch,
             now,
             60,
-            velocity
+            velocity,
+            1,
+            kitGain
         );
         if (!osc) {
             return () => {};

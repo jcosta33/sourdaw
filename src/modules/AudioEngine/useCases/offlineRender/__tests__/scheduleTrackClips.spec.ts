@@ -536,11 +536,16 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
         );
     });
 
-    it('passes clip gain to the fixed drum-kit scheduler', async () => {
+    it('passes clip gain and the kit level as a linear gain to the fixed drum-kit scheduler', async () => {
         const kitDefinition = { name: '808' };
         mocks.getDrumKitDefByIndex.mockReturnValue(kitDefinition);
 
-        await runSchedule({ useLegacyScheduler: true, trackDeviceType: 'builtin-drum-kit', clipGain: 0.35 });
+        await runSchedule({
+            useLegacyScheduler: true,
+            trackDeviceType: 'builtin-drum-kit',
+            instrumentParameterValues: { kit: 0, level: -6 },
+            clipGain: 0.35,
+        });
 
         expect(mocks.scheduleDrumKitNote).toHaveBeenCalledWith(
             expect.anything(),
@@ -549,15 +554,21 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
             60,
             0.5,
             100,
-            0.35
+            0.35,
+            dbToGain(-6)
         );
     });
 
-    it('passes clip gain to the resolved drum-kit scheduler', async () => {
+    it('passes clip gain and the kit level as a linear gain to the resolved drum-kit scheduler', async () => {
         const drumKit = { name: 'Acoustic' };
         mocks.resolveDrumKit.mockReturnValue(drumKit);
 
-        await runSchedule({ useLegacyScheduler: true, trackDeviceType: 'builtin-drum-machine-analog', clipGain: 0.35 });
+        await runSchedule({
+            useLegacyScheduler: true,
+            trackDeviceType: 'builtin-drum-machine-analog',
+            instrumentParameterValues: { kit: 1, level: -6 },
+            clipGain: 0.35,
+        });
 
         expect(mocks.scheduleKitNote).toHaveBeenCalledWith(
             expect.anything(),
@@ -567,9 +578,90 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
             0.5,
             0.5,
             100,
-            0.35
+            0.35,
+            dbToGain(-6)
         );
     });
+
+    it.each(['builtin-drum-kit', 'builtin-drum-machine-analog'])(
+        'keeps kit level and the captured tempo inverse together for a %s region export',
+        async (deviceType) => {
+            const kit = { name: 'Region kit' };
+            if (deviceType === 'builtin-drum-kit') {
+                mocks.getDrumKitDefByIndex.mockReturnValue(kit);
+            } else {
+                mocks.resolveDrumKit.mockReturnValue(kit);
+            }
+            const changes = [
+                { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' as const },
+                { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+            ];
+            const track = makeMidiTrack();
+            track.devices[0]!.type = deviceType;
+            track.devices[0]!.parameterValues = { kit: 0, level: -6 };
+            track.clips[0]!.endBeat = 8;
+            track.clips[0]!.gain = 0.35;
+            const midi = makeMidi();
+            midi.notesByClipId['clip-1']![0]!.startBeat = 5;
+            await scheduleTrackClips({
+                offlineCtx: makeOfflineCtx(),
+                track,
+                midi,
+                trackInputNode: {} as GainNode,
+                trackGainNode: {} as GainNode,
+                trackPanNode: {} as StereoPannerNode,
+                destination: {} as AudioNode,
+                durationSeconds: 10,
+                defaultTempo: 120,
+                changes,
+                regionStartBeat: 4,
+                projections: {
+                    projectMidiEvents,
+                    projectPpqEndpoints: projectTransportEndpoints,
+                    beatAtSecondsFromAnchor,
+                    resolveTempoAtBeat,
+                    processYeastMidi,
+                    selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                    projectChordPitch: mocks.projectChordPitch,
+                    evaluateAutomationValue: mocks.evaluateAutomationValue,
+                },
+                allTracks: [track],
+                deviceEntriesByTrack: new Map([[track.id, []]]),
+                pendingWorkletEvents: [],
+            });
+            const elapsedToNote = 4.8 * Math.log(162.5 / 150);
+            // Notes and the export region each start on their projected sample frame.
+            const expectedStart =
+                (Math.round(4.8 * Math.log(162.5 / 100) * 48_000) - Math.round(4.8 * Math.log(150 / 100) * 48_000)) /
+                48_000;
+            const call =
+                deviceType === 'builtin-drum-kit'
+                    ? mocks.scheduleDrumKitNote.mock.calls[0]
+                    : mocks.scheduleKitNote.mock.calls[0];
+            expect(call?.[4]).toBeCloseTo(expectedStart, 10);
+            expect(call?.slice(-2)).toEqual([0.35, dbToGain(-6)]);
+            const automationInput = mocks.scheduleTrackAutomation.mock.calls[0]?.[0] as {
+                projectSecondsToBeat: (seconds: number) => number;
+            };
+            expect(automationInput.projectSecondsToBeat(0)).toBe(4);
+            expect(automationInput.projectSecondsToBeat(elapsedToNote)).toBeCloseTo(5, 10);
+        }
+    );
+
+    it.each<Record<string, number>>([{ kit: 0 }, { kit: 0, gain: 0.8 }, { kit: 0, gain: 0.6 }])(
+        'renders a saved kit with no level ($gain legacy gain) at unity, as it rendered before the level existed',
+        async (instrumentParameterValues) => {
+            mocks.getDrumKitDefByIndex.mockReturnValue({ name: '808' });
+
+            await runSchedule({
+                useLegacyScheduler: true,
+                trackDeviceType: 'builtin-drum-kit',
+                instrumentParameterValues,
+            });
+
+            expect(mocks.scheduleDrumKitNote.mock.calls[0]?.slice(5)).toEqual([100, 1, 1]);
+        }
+    );
 
     it('preserves routed clip expression and gain through Yeast', async () => {
         const synthParams = { waveform: 'sawtooth' };

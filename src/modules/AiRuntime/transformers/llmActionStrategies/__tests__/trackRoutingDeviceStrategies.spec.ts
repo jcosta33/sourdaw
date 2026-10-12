@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
@@ -407,6 +408,60 @@ describe('track, routing, and device strategy guards (issue #4110)', () => {
             { deviceId: 'device-vox-eq', paramId: 'mix', value: 0.3, ramp: false },
             'Expected an available device parameter and finite value'
         );
+    });
+
+    it('setDeviceParameter refuses a drum kit write to the retired gain and names level, while accepting level', () => {
+        const kitDescriptor = getBuiltinPlugins().find((plugin) => plugin.id === 'builtin-drum-kit');
+        if (!kitDescriptor) {
+            throw new Error('Expected the builtin-drum-kit descriptor');
+        }
+        const kitContext: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                {
+                    ...projectContext.tracks[0]!,
+                    id: 'track-drums',
+                    name: 'Drums',
+                    kind: 'midi',
+                    devices: [
+                        {
+                            id: 'device-kit',
+                            name: 'Drum Kit',
+                            type: 'builtin-drum-kit',
+                            bypassed: false,
+                            parameters: kitDescriptor.parameters.map(
+                                ({ id, name, type, value, minValue, maxValue, unit }) => ({
+                                    id,
+                                    name,
+                                    type,
+                                    value,
+                                    minValue,
+                                    maxValue,
+                                    unit,
+                                })
+                            ),
+                        },
+                    ],
+                },
+            ],
+        };
+        const bridgeKitCall = (args: Record<string, unknown>) =>
+            bridgeDeviceToolCall({
+                call: { name: 'setDeviceParameter', arguments: args },
+                context: kitContext,
+                index: 0,
+                sectionSignatures: [],
+            });
+
+        expect(bridgeKitCall({ deviceId: 'device-kit', paramId: 'gain', value: 0.5 })).toEqual({
+            index: 0,
+            name: 'setDeviceParameter',
+            reason: 'Device builtin-drum-kit declares no parameter "gain"; its parameters are: kit, level',
+        });
+        expect(bridgeKitCall({ deviceId: 'device-kit', paramId: 'level', value: -6 })).toMatchObject({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'device-kit', paramId: 'level', value: -6, valueUnit: 'dB' },
+        });
     });
 
     it('setDeviceParameter rejects a frozen-track device while accepting the same call on a thawed track', () => {

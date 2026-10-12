@@ -83,28 +83,28 @@ export async function createHipHopTrapTemplate(): Promise<void> {
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Trap',
-        deviceParams: { kit: 5, gain: 0.95 },
+        deviceParams: { kit: 5, level: -0.4 },
     });
     const hats = createInstrumentTrack({
         name: 'Hats',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Trap Hats',
-        deviceParams: { kit: 5, gain: 0.75 },
+        deviceParams: { kit: 5, level: -2.5 },
     });
     const snareClap = createInstrumentTrack({
         name: 'Snare / Clap',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Trap',
-        deviceParams: { kit: 5, gain: 0.85 },
+        deviceParams: { kit: 5, level: -1.4 },
     });
     const drumPerc = createInstrumentTrack({
         name: 'Perc',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Trap Perc',
-        deviceParams: { kit: 5, gain: 0.7 },
+        deviceParams: { kit: 5, level: -3.1 },
     });
     addSend({ from: snareClap, to: reverbPlate, level: 0.35 });
     addSend({ from: drumPerc, to: reverbPlate, level: 0.25 });

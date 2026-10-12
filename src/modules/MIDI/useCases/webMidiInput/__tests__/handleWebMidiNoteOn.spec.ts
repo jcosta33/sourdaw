@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
+import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 import { type RealtimeMidiInput } from '../../../repositories/webMidi/realtimeMidiProcessorState';
@@ -773,7 +774,9 @@ describe('handleWebMidiNoteOn', () => {
                     tracks: [
                         {
                             id: 'track-1',
-                            devices: [{ id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 2 } }],
+                            devices: [
+                                { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 2, level: -6 } },
+                            ],
                         },
                     ],
                     selectedTrackId: 'track-1',
@@ -792,7 +795,9 @@ describe('handleWebMidiNoteOn', () => {
             { id: 'kit-def-2' },
             36,
             expect.anything(),
-            110
+            110,
+            1,
+            dbToGain(-6)
         );
     });
 
@@ -830,11 +835,15 @@ describe('handleWebMidiNoteOn', () => {
                 { id: `kit-def-${kitIndex}` },
                 36,
                 expect.anything(),
-                110
+                110,
+                1,
+                1
             );
         }
     );
 
+    // A saved kit holding a legacy gain and no level plays at unity: the gain
+    // never reached a hit, so honouring it would change the project's mix.
     it('falls back to the factory kit the same device selects when no kit definition covers it', async () => {
         const schedule_kit_note = vi.fn(() => null);
         const get_kit = vi.fn((index: number) => ({ id: `factory-${index}` }));
@@ -844,7 +853,7 @@ describe('handleWebMidiNoteOn', () => {
                     tracks: [
                         {
                             id: 'track-1',
-                            devices: [{ id: 'kit-1', type: 'drum-kit', parameterValues: { kitId: 4 } }],
+                            devices: [{ id: 'kit-1', type: 'drum-kit', parameterValues: { kitId: 4, gain: 0.8 } }],
                         },
                     ],
                     selectedTrackId: 'track-1',
@@ -859,7 +868,17 @@ describe('handleWebMidiNoteOn', () => {
         await fn(0, 36, 110);
 
         expect(get_kit).toHaveBeenCalledWith(4);
-        expect(schedule_kit_note).toHaveBeenCalledTimes(1);
+        expect(schedule_kit_note).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            { id: 'factory-4' },
+            36,
+            expect.anything(),
+            60,
+            110,
+            1,
+            1
+        );
     });
 
     it('logs a warning and returns early when no target track is selected', async () => {
@@ -1447,7 +1466,9 @@ describe('handleWebMidiNoteOn', () => {
                 { id: 'kit-def-0' },
                 36,
                 LIVE_DISPATCH_FRAME / 48_000,
-                110
+                110,
+                1,
+                1
             );
             expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
         });
@@ -1511,7 +1532,7 @@ describe('handleWebMidiNoteOn', () => {
             const fn = handleWebMidiNoteOn._factory(
                 make_dependencies({
                     getTrackStoreState: single_track([
-                        { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 0 } },
+                        { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 0, level: -6 } },
                         { id: 'lev-1', type: 'levain' },
                         { id: 'yeast-1', type: 'yeast' },
                     ]),
@@ -1529,7 +1550,9 @@ describe('handleWebMidiNoteOn', () => {
                 { id: 'kit-def-0' },
                 67,
                 96_240 / 48_000,
-                100
+                100,
+                1,
+                dbToGain(-6)
             );
             expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
         });

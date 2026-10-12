@@ -180,6 +180,9 @@ impl AutoArticulation {
 
 /// Simulates the natural timing, tuning, and dynamic variations that
 /// occur when multiple players in a section play together.
+///
+/// Only the attack spread reaches the render (`onset_delay_samples`); the
+/// pitch-convergence and bloom fields are stored and not yet applied.
 pub struct EnsembleTiming {
     pub enabled: bool,
     /// Attack spread: players start ±N ms apart.
@@ -191,6 +194,11 @@ pub struct EnsembleTiming {
     pub bloom_time_ms: f32,
 }
 
+/// Seed of the attack-spread hash. A constant, so one pitch lands at the same
+/// offset in every engine: the live worklet, an offline render, and the next
+/// session.
+const ATTACK_SPREAD_SEED: u32 = 0x5EC7_1DE5;
+
 impl EnsembleTiming {
     pub fn new() -> Self {
         Self {
@@ -201,4 +209,34 @@ impl EnsembleTiming {
             bloom_time_ms: 200.0,
         }
     }
+
+    /// How many output samples a fresh attack on `note` waits before it
+    /// sounds: a fraction in [0, 1) of `attack_spread_ms`, so notes struck
+    /// together land up to that far apart, the way a section's players do.
+    ///
+    /// The fraction is a hash of the pitch alone, never of engine history or
+    /// the clock. A live engine that has played for an hour and a fresh
+    /// offline engine therefore delay the same note by the same sample count,
+    /// and a render reproduces exactly what was heard.
+    pub fn onset_delay_samples(&self, note: u8, sample_rate: f32) -> u32 {
+        if !self.enabled {
+            return 0;
+        }
+        let delay_seconds = attack_spread_fraction(note) * self.attack_spread_ms / 1000.0;
+        // The float-to-int cast saturates: a negative or NaN spread is no delay.
+        (delay_seconds * sample_rate).round() as u32
+    }
+}
+
+/// A well-mixed fraction in [0, 1) for one pitch (the `lowbias32` integer
+/// finaliser), so neighbouring notes take unrelated offsets.
+fn attack_spread_fraction(note: u8) -> f32 {
+    let mut x = u32::from(note) ^ ATTACK_SPREAD_SEED;
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7feb_352d);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846c_a68b);
+    x ^= x >> 16;
+    // The top 24 bits fit an f32 mantissa exactly, keeping the result below 1.
+    (x >> 8) as f32 / (1u32 << 24) as f32
 }
