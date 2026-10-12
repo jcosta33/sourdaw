@@ -714,6 +714,26 @@ describe('getAgentApprovalView', () => {
             });
         });
 
+        it('shows replacement renames of different clips as added and removed', () => {
+            const verse = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Verse' } } satisfies AppAction;
+            const chorus = { type: 'renameClip', payload: { clipId: 'clip-chorus', name: 'Chorus' } } satisfies AppAction;
+            propose('confirmation-rename-before', { actions: [verse], actionLabels: ['Rename Verse clip'] });
+            propose('confirmation-rename-after', {
+                supersedes: 'confirmation-rename-before',
+                actions: [chorus],
+                actionLabels: ['Rename Chorus clip'],
+            });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-rename-after' })?.previousProposalDiff).toEqual({
+                previousConfirmationId: 'confirmation-rename-before',
+                changes: [
+                    { kind: 'added', actionType: 'renameClip', label: 'Rename Chorus clip' },
+                    { kind: 'removed', actionType: 'renameClip', label: 'Rename Verse clip' },
+                ],
+                unchangedCount: 0,
+            });
+        });
+
         // Red when a proposal that replaced none, or one whose predecessor the store let go, is shown a diff.
         it('shows no diff for an original proposal or one whose predecessor is no longer held', () => {
             propose('confirmation-original');

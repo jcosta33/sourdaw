@@ -435,6 +435,23 @@ describe('refining the pending proposal', () => {
         expectMixUntouched();
     });
 
+    it('keeps the pending card when a reply drops a pan the user expressly left as proposed', async () => {
+        let pendingId = '';
+        scriptProvider([{ calls: MIX_PLAN }, { calls: [REFINED_PLAN[0]!], refines: () => pendingId }]);
+        pendingId = await proposeTheMix();
+        const revision = captureProjectRevision();
+
+        await sendChatMessage(
+            'Set Lead Vocal gain to 80%, leaving Drum Bus unchanged. Drop Room Mic mute and leave Guitar Left pan exactly as proposed, then drop Guitar Right pan from the pending proposal.'
+        );
+
+        expect(proposedIds()).toEqual([pendingId]);
+        expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'proposed', supersededBy: null });
+        expect(lastAssistantMessage()?.content).toContain('omits');
+        expectMixUntouched();
+        expect(captureProjectRevision()).toBe(revision);
+    });
+
     it.each([
         'Do not drop Guitar Left pan from the pending proposal. Set Lead Vocal gain to 80%, pan Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.',
         'I do not want you to drop Guitar Left pan from the pending proposal. Set Lead Vocal gain to 80%, pan Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.',

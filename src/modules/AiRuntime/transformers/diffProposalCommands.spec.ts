@@ -112,4 +112,39 @@ describe('diffProposalCommands', () => {
             unchangedCount: 1,
         });
     });
+
+    it('separates a rename of another clip and compares a rename of the same clip', () => {
+        const before = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Verse' } } satisfies AppAction;
+        const otherClip = { type: 'renameClip', payload: { clipId: 'clip-chorus', name: 'Chorus' } } satisfies AppAction;
+        const sameClip = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Chorus' } } satisfies AppAction;
+
+        expect(
+            diffProposalCommands(
+                { actions: [before], actionLabels: ['Rename Verse clip'] },
+                { actions: [otherClip], actionLabels: ['Rename Chorus clip'] }
+            )
+        ).toEqual({
+            changes: [
+                { kind: 'added', actionType: 'renameClip', label: 'Rename Chorus clip' },
+                { kind: 'removed', actionType: 'renameClip', label: 'Rename Verse clip' },
+            ],
+            unchangedCount: 0,
+        });
+        expect(
+            diffProposalCommands(
+                { actions: [before], actionLabels: ['Rename Verse clip'] },
+                { actions: [sameClip], actionLabels: ['Rename clip to Chorus'] }
+            )
+        ).toEqual({
+            changes: [
+                {
+                    kind: 'changed',
+                    actionType: 'renameClip',
+                    label: 'Rename clip to Chorus',
+                    fields: [{ field: 'name', previous: 'Verse', next: 'Chorus' }],
+                },
+            ],
+            unchangedCount: 0,
+        });
+    });
 });
