@@ -437,6 +437,38 @@ describe('a coordinated level list keeps the request exclusions and protections'
     );
 
     it.each([
+        ['turn Drums and Bass down 3 dB; do not mute Bass after adjusting gain', { deltaDb: -3 }],
+        ['set Drums and Bass volume to -6 dB; do not mute Bass after adjusting gain', { gainDb: -6 }],
+        ['turn Drums and Bass down 3 dB; do not mute Bass before adjusting gain', { deltaDb: -3 }],
+        ['turn Drums and Bass down 3 dB; do not mute Bass to preserve its volume', { deltaDb: -3 }],
+    ])('grounds the complete gain list when the restriction protects only muting in "%s"', (prompt, value) => {
+        const result = bridge([gainCall(drums.id, value), gainCall(bass.id, value)], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, value), gainAction(bass.id, value)]);
+    });
+
+    it.each(['do not change Bass gain after adjusting pan', 'leave Bass fader and pan unchanged after adjusting gain'])(
+        'keeps a named gain restriction binding across a later adjunct in "%s"',
+        (restriction) => {
+            const prompt = `turn Drums and Bass down 3 dB; ${restriction}`;
+            const bothCalled = bridge(
+                [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+                prompt
+            );
+            const onlyDrums = bridge([gainCall(drums.id, { deltaDb: -3 })], prompt);
+
+            expect(bothCalled.actions).toEqual([]);
+            expect(bothCalled.rejections).toMatchObject([
+                { index: 0, name: 'setTrackGain', reason: NOT_GROUNDED },
+                { index: 1, name: 'setTrackGain', reason: NOT_GROUNDED },
+            ]);
+            expect(onlyDrums.rejections).toEqual([]);
+            expect(onlyDrums.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+        }
+    );
+
+    it.each([
         'except Bass',
         'excluding Bass',
         'besides Bass',

@@ -1255,7 +1255,7 @@ const COORDINATED_TARGET_PROTECTION_CUE =
 /** A named control other than gain cannot exclude a track from a requested fader change. */
 function protectsAnotherTrackControlFromGain(maskedClause: string): boolean {
     // A later purpose or condition does not change the control the restriction names.
-    const operation = maskedClause.split(/\b(?:while|at\s+any)\b/iu, 1)[0] ?? maskedClause;
+    const operation = maskedClause.split(/\b(?:while|after|before|at\s+any|to)\b/iu, 1)[0] ?? maskedClause;
     const normalized = normalizePromptText(operation);
     const namesGain = /\b(?:gain|volume|level|fader|db)\b/u.test(normalized);
     const namesOtherControl =
