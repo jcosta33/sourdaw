@@ -1,0 +1,41 @@
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_29d8df116c5b92::t_bfe4f2bc3276a1 239,244,281-282,298-302
+scripts/__tests__/verifyNativeTransportMutations.spec.ts
+  s_29d8df116c5b92::t_9c19f0a36c71c3 277-290,292-293,296-323,333,337,339,349,356,625,630,634,636,654,656,658,660,675,678,681,683-684
+  s_29d8df116c5b92::t_d4b453bec6b99f 325-332,334-336,338,340-347,350-355,357-386,612-620,622-624,626-629,631-633,635,637-653,655,657,659,661-674,676-677,680,682,685-693,696
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_e7b6e93094f788 35-42
+  s_29d8df116c5b92::t_63a84caa1252bc 43-57
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_29d8df116c5b92::t_bdbae59596eee3 1332
+  s_29d8df116c5b92::t_7cde436453d8d5 4379-4383
+  s_29d8df116c5b92::t_6887ca7e8654e9 4378
+scripts/nativeCommand.ts
+  s_29d8df116c5b92::t_d066408117c94f 78,93,96-100,116,142
+  s_29d8df116c5b92::t_668341437afece 143-147
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_29d8df116c5b92::t_7588a01bf3f283 293-321
+  s_29d8df116c5b92::t_903a76b1cc27f7 322-326
+.agents/skills/review-stances/correctness.md
+  s_29d8df116c5b92::t_783cae2da5e16b 543-557
+.agents/skills/review-stances/security-and-platform.md
+  s_29d8df116c5b92::t_4e6c9d221cbe96 130-144
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_29d8df116c5b92::t_d1531bd8c3a7c7 1049
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c62b094dc1d6a75425d95bf868ae765cf2408f77",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
