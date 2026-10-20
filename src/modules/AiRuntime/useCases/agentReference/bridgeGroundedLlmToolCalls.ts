@@ -119,7 +119,6 @@ import { getReferencedCancellationAction } from './groundingStrategies/getRefere
 import { getStatedDecibelLevelForms } from './groundingStrategies/getStatedDecibelLevelForms';
 import { getTargetPromptScope } from './groundingStrategies/getTargetPromptScope';
 import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
-import { hasTrackControlRestriction } from './groundingStrategies/hasTrackControlRestriction';
 import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailingIntentCancellation';
 import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
@@ -1248,118 +1247,11 @@ function mergeLevelContinuation(
     };
 }
 
-/** A word that keeps the tracks a clause names out of a change stated elsewhere: "but not the Bass". */
-const COORDINATED_TARGET_PROTECTION_CUE =
-    /\b(?:not|never|don't|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|alone|unchanged)\b/iu;
-
-/** The original-text operation whose named control and target the restriction actually protects. */
-function getRestrictedTrackControlOperation(clause: PromptClause): PromptClause & { end: number } {
-    // The masked text shares the original text's offsets, including project names and quoted labels.
-    const restriction =
-        /\b(?:not|never|don't|except|excluding|without|leave|leaving|keep|keeping|preserve|preserving|retain|retaining)\b/iu.exec(
-            clause.masked
-        );
-    const start = restriction?.index ?? 0;
-    const modifier =
-        /\b(?:while|after|before|when|once|until|following|during|at\s+any|for\s+the\s+purpose\s+of|to\s+preserve)\b/iu.exec(
-            clause.masked.slice(start)
-        );
-    const end = start + (modifier?.index ?? clause.masked.length - start);
-    return { text: clause.text.slice(start, end), masked: clause.masked.slice(start, end), end };
-}
-
-/** A named control other than gain cannot exclude a track from a requested fader change. */
-function protectsAnotherTrackControlFromGain(maskedOperation: string): boolean {
-    const normalized = normalizePromptText(maskedOperation);
-    const namesGain = /\b(?:gain|volume|level|fader|db)\b/u.test(normalized);
-    const namesOtherControl =
-        /\b(?:pan|panning|mute|muted|muting|unmute|unmuted|solo|soloed|soloing|unsolo|unsoloed)\b/u.test(normalized);
-    return namesOtherControl && !namesGain;
-}
-
-const BARE_CONTROL_MEMBER =
-    /^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu;
-const FIRST_BARE_CONTROL_MEMBER =
-    /^(?:(?:not|never|don't)\s+change\s+|(?:leave|keep|preserve|retain)\s+)(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu;
-const UNRESOLVED_NAMED_CONTROL_MEMBER =
-    /^(?:(?:the|its)\s+)?\S(?:.*\S)?\s+(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu;
-const UNRESOLVED_POSTPOSED_CONTROL_MEMBER =
-    /^(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\s+of\s+(?:the\s+)?\S(?:.*\S)?\s*$/iu;
-
-/**
- * Clause splitting may cut a preservation operation at each control in its conjunction.
- * Continue across bare controls and complete explicitly named control members. A new action or
- * modifier closes the operation; the consumer retains each member's own control and target.
- */
-function getSharedControlRestriction(
-    clauses: readonly PromptClauseSpan[],
-    firstClauseIndex: number,
-    prompt: string,
-    maskedPrompt: string,
-    catalog: GroundingCatalog
-): { clause: PromptClauseSpan; lastClauseIndex: number } {
-    const first = clauses[firstClauseIndex]!;
-    const firstOperation = getRestrictedTrackControlOperation(first);
-    const isControlRestriction =
-        (hasTrackControlRestriction(firstOperation.masked) ||
-            COORDINATED_TARGET_PROTECTION_CUE.test(firstOperation.masked)) &&
-        /\b(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/iu.test(firstOperation.masked);
-    let lastClauseIndex = firstClauseIndex;
-    if (isControlRestriction && first.masked.slice(firstOperation.end).trim().length === 0) {
-        for (let index = firstClauseIndex + 1; index < clauses.length; index += 1) {
-            const previous = clauses[index - 1]!;
-            const next = clauses[index]!;
-            const connector = prompt.slice(previous.end, next.start).trim().toLocaleLowerCase();
-            if (connector !== 'and' && connector !== ',' && connector !== ', and') {
-                break;
-            }
-            const nextOperation = getRestrictedTrackControlOperation(next);
-            if (
-                hasTrackControlRestriction(nextOperation.masked) ||
-                /^(?:not|never|don't|except|excluding|without)\b/iu.test(nextOperation.masked.trim())
-            ) {
-                break;
-            }
-            const isNamedControlMember =
-                /^(?:(?:the|its)\s+)?(?:"□+"|'□+'|“□+”|‘□+’|□+)\s+(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)(?:\s+(?:unchanged|alone|untouched|as\s+is))?\s*$/iu.test(
-                    nextOperation.masked.trim()
-                ) ||
-                /^(?:(?:the|its)\s+)?(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\s+of\s+(?:the\s+)?(?:"□+"|'□+'|“□+”|‘□+’|□+)\s*$/iu.test(
-                    nextOperation.masked.trim()
-                );
-            const isBareControlMember = BARE_CONTROL_MEMBER.test(nextOperation.masked.trim());
-            const isUnresolvedControlMember =
-                !isNamedControlMember &&
-                !isBareControlMember &&
-                resolveClauseActionIntent(nextOperation.masked, catalog) === null &&
-                (UNRESOLVED_NAMED_CONTROL_MEMBER.test(nextOperation.masked.trim()) ||
-                    UNRESOLVED_POSTPOSED_CONTROL_MEMBER.test(nextOperation.masked.trim()));
-            if (!isNamedControlMember && !isBareControlMember && !isUnresolvedControlMember) {
-                break;
-            }
-            lastClauseIndex = index;
-            if (isUnresolvedControlMember || next.masked.slice(nextOperation.end).trim().length > 0) {
-                break;
-            }
-        }
-    }
-    const end = clauses[lastClauseIndex]!.end;
-    return {
-        clause: {
-            start: first.start,
-            end,
-            text: prompt.slice(first.start, end),
-            masked: maskedPrompt.slice(first.start, end),
-        },
-        lastClauseIndex,
-    };
-}
-
 /** A coordinated track list that states this action's level change, and the scope it grounds, if any. */
 type CoordinatedLevelList = {
     firstClauseIndex: number;
     lastClauseIndex: number;
-    /** Null when a member is unresolved or every member is protected: the list then grounds nothing. */
+    /** Null when a member is unresolved or named outside the list: the list then grounds nothing. */
     scope: PromptClauseScope | null;
 };
 
@@ -1399,91 +1291,36 @@ function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
     );
 }
 
-/**
- * The list members any clause outside the list keeps out of the change. Every protected member is
- * removed, whichever clause states it, so an exclusion never reaches a list it was not split from.
- */
-function getProtectedListMemberIds(
-    actionName: string,
+/** The scope a coordinated list grounds: one slot per member, each bound to its own whole span. */
+function getCoordinatedListScope(
     list: CoordinatedTrackList,
-    clauses: readonly PromptClauseSpan[],
-    context: ProjectContext,
-    maskedPrompt: string,
-    prompt: string,
-    catalog: GroundingCatalog
-): ReadonlySet<string> | null {
-    const memberIds = list.memberIds ?? [];
-    const protectedIds = new Set<string>();
-    for (let index = 0; index < clauses.length; index += 1) {
-        if (index >= list.firstClauseIndex && index <= list.lastClauseIndex) {
-            continue;
-        }
-        const clause = clauses[index]!;
-        const previousClause = clauses[index - 1];
-        const joinsAllButRestriction =
-            previousClause !== undefined &&
-            index - 1 !== list.lastClauseIndex &&
-            normalizePromptText(previousClause.masked) === 'all' &&
-            normalizePromptText(maskedPrompt.slice(previousClause.end, clause.start)) === 'but';
-        const firstRestrictionIndex = index;
-        const restriction = getSharedControlRestriction(clauses, index, prompt, maskedPrompt, catalog);
-        index = restriction.lastClauseIndex;
-        const restrictionMasked = joinsAllButRestriction
-            ? maskedPrompt.slice(previousClause.start, clause.end)
-            : restriction.clause.masked;
-        const restrictionText = joinsAllButRestriction
-            ? prompt.slice(previousClause.start, clause.end)
-            : restriction.clause.text;
-        const operation = getRestrictedTrackControlOperation({ text: restrictionText, masked: restrictionMasked });
-        if (
-            !hasTrackControlRestriction(operation.masked) &&
-            !COORDINATED_TARGET_PROTECTION_CUE.test(operation.masked)
-        ) {
-            continue;
-        }
-        if (/\b(?:gain|volume|level|fader|pan|panning|mute|muting|solo|soloing)\b/iu.test(operation.masked)) {
-            const members = clauses.slice(firstRestrictionIndex, restriction.lastClauseIndex + 1);
-            const memberOperations = members.map(getRestrictedTrackControlOperation);
-            const memberTargets = memberOperations.map((member) =>
-                collectNamedProjectTracks(member.text, context.tracks)
-            );
-            let inheritedTargets = memberTargets.find((targets) => targets.length > 0);
-            if (inheritedTargets === undefined) {
-                return null;
-            }
-            for (const [memberIndex, member] of memberOperations.entries()) {
-                const explicitTargets = memberTargets[memberIndex]!;
-                if (explicitTargets.length > 0) {
-                    inheritedTargets = explicitTargets;
-                } else if (
-                    !(memberIndex === 0 ? FIRST_BARE_CONTROL_MEMBER : BARE_CONTROL_MEMBER).test(member.masked.trim())
-                ) {
-                    return null;
-                }
-                if (actionName === 'setTrackGain' && protectsAnotherTrackControlFromGain(member.masked)) {
-                    continue;
-                }
-                for (const id of inheritedTargets) {
-                    if (memberIds.includes(id)) {
-                        protectedIds.add(id);
-                    }
-                }
-            }
-            continue;
-        }
-        for (const id of collectNamedProjectTracks(operation.text, context.tracks)) {
-            if (memberIds.includes(id)) {
-                protectedIds.add(id);
-            }
-        }
-    }
-    return protectedIds;
+    memberIds: readonly string[],
+    clause: PromptClause,
+    intentPhrase: string
+): PromptClauseScope {
+    return {
+        ...clause,
+        start: list.start,
+        end: list.end,
+        directional: false,
+        matchedIntentPhrase: intentPhrase,
+        referenceSlots: memberIds.length,
+        coordinatedTargets: {
+            memberIds,
+            references: list.members.map((member, index) => ({
+                id: memberIds[index]!,
+                start: member.start - list.start,
+                end: member.end - list.start,
+            })),
+        },
+    };
 }
 
 /**
  * Coordinated track lists that state this action's level change: read with the list as one member,
  * the clauses must name the action exactly as a single-target clause does, so a list adds no grammar
- * a single track lacks. Each list grounds one slot per member the request leaves it to change.
+ * a single track lacks. A list grounds one slot per member, and nothing at all when a member is
+ * unresolved or any other clause names a member, whatever that clause asks of it.
  */
 function getCoordinatedLevelLists(input: {
     actionName: string;
@@ -1519,36 +1356,10 @@ function getCoordinatedLevelLists(input: {
         ) {
             return [];
         }
-        const protectedIds = getProtectedListMemberIds(
-            input.actionName,
-            list,
-            input.clauses,
-            input.context,
-            input.maskedPrompt,
-            input.prompt,
-            input.catalog
-        );
-        const targetIds = protectedIds === null ? [] : (list.memberIds?.filter((id) => !protectedIds.has(id)) ?? []);
-        const scope: PromptClauseScope | null =
-            list.memberIds === null || protectedIds === null || targetIds.length === 0
+        const scope =
+            list.memberIds === null || list.memberNamedOutsideList
                 ? null
-                : {
-                      ...clause,
-                      start: list.start,
-                      end: list.end,
-                      directional: false,
-                      matchedIntentPhrase: intent.phrase,
-                      referenceSlots: targetIds.length,
-                      coordinatedTargets: {
-                          memberIds: list.memberIds,
-                          targetIds,
-                          references: list.members.map((member, index) => ({
-                              id: list.memberIds![index]!,
-                              start: member.start - list.start,
-                              end: member.end - list.start,
-                          })),
-                      },
-                  };
+                : getCoordinatedListScope(list, list.memberIds, clause, intent.phrase);
         return [{ firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex, scope }];
     });
 }
@@ -1740,24 +1551,11 @@ function resolveActionPromptScope({
         maskedPrompt,
         prompt,
     });
-    const sharedRestrictionContinuations = new Set<number>();
-    for (let index = 0; index < clauses.length; index += 1) {
-        const { lastClauseIndex } = getSharedControlRestriction(clauses, index, prompt, maskedPrompt, catalog);
-        for (let continuation = index + 1; continuation <= lastClauseIndex; continuation += 1) {
-            sharedRestrictionContinuations.add(continuation);
-        }
-        index = lastClauseIndex;
-    }
     const matchingScopes: PromptClauseScope[] = [];
     let takesContinuation = false;
     for (const [clauseIndex, clause] of clauses.entries()) {
         const continuesScope = takesContinuation;
         takesContinuation = false;
-        if (sharedRestrictionContinuations.has(clauseIndex)) {
-            // A bare later control inherits the restriction's verb and target. It is not a
-            // second gain command just because that control is named "gain" or "volume".
-            continue;
-        }
         const coordinatedList = coordinatedLevelLists.find(
             (list) => clauseIndex >= list.firstClauseIndex && clauseIndex <= list.lastClauseIndex
         );
@@ -1860,13 +1658,13 @@ function resolveActionPromptScope({
             .reduce((count, scope) => count + (scope.referenceSlots ?? 1), 0);
         const assignedArguments = appliesOneExplicitScopeToCompilerExpansion
             ? sameActionAssertedArguments
-            : sameActionAssertedArguments.slice(firstOrdinal, firstOrdinal + coordinatedTargets.targetIds.length);
+            : sameActionAssertedArguments.slice(firstOrdinal, firstOrdinal + coordinatedTargets.memberIds.length);
         if (
             scopeIndex < 0 ||
             !matchesCoordinatedTargets({
                 assignedArguments,
                 targetArgument: groundingRules.targetRules[0]!.argument,
-                targetIds: coordinatedTargets.targetIds,
+                targetIds: coordinatedTargets.memberIds,
             })
         ) {
             return null;
@@ -4934,8 +4732,8 @@ function groundToolCall({
                   return [siblingId];
               })
             : [];
-        // A coordinated list names every member in one scope, protected ones included, so each call
-        // resolves against its own member with the others set aside.
+        // A coordinated list names every member in one scope, so each call resolves against its own
+        // member with the others set aside.
         const coordinatedSiblingIds =
             actionScope.coordinatedTargets?.memberIds.filter((memberId) => memberId !== assertedValue) ?? [];
         const result = resolveAgentReference({

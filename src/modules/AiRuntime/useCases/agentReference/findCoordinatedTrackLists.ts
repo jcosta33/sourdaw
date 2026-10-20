@@ -23,6 +23,12 @@ export type CoordinatedTrackList = {
     collapsedMasked: string;
     /** Each member's track, in list order, or null when any member does not name exactly one track. */
     memberIds: string[] | null;
+    /**
+     * Whether a clause outside the list names one of its members, for whatever purpose: "but not the
+     * Bass", "leave the Bass pan alone", "mute the Bass later". The list cannot tell which members
+     * that clause leaves to the stated change, so it states the change for none of them.
+     */
+    memberNamedOutsideList: boolean;
     /** Original-text spans, in the same order as memberIds. */
     members: readonly ListMember[];
     /** Masked words before the first member, excluding optional "both". */
@@ -149,6 +155,69 @@ function readListTail(clause: PromptClauseSpan): ListTail | null {
     return { member: getReferenceMember(clause, reference), tail };
 }
 
+/** A project reference the masked text holds: a clip name keeps its `clip` prefix in the mask. */
+const MASKED_REFERENCE_PATTERN = /clip□*|□+/gu;
+
+/** Whether one of the clause's whole references names the track, read as a list member is read. */
+function namesTrackByWholeReference(input: {
+    capability: AgentReferenceCapability;
+    clause: PromptClauseSpan;
+    context: ProjectContext;
+    risk: AppActionRisk;
+    trackId: string;
+}): boolean {
+    return [...input.clause.masked.matchAll(MASKED_REFERENCE_PATTERN)].some(
+        (reference) =>
+            resolveWholeMember({
+                capability: input.capability,
+                context: input.context,
+                memberText: input.clause.text.slice(reference.index, reference.index + reference[0].length),
+                risk: input.risk,
+            }) === input.trackId
+    );
+}
+
+/** Whether the clause names the track as the selected track: "leave this track alone". */
+function namesTrackAsSelection(input: {
+    capability: AgentReferenceCapability;
+    clause: PromptClauseSpan;
+    context: ProjectContext;
+    risk: AppActionRisk;
+    trackId: string;
+}): boolean {
+    const result = resolveAgentReference({
+        prompt: input.clause.text,
+        assertedId: input.trackId,
+        capability: input.capability,
+        context: input.context,
+        risk: input.risk,
+    });
+    return result.candidates.some(
+        (candidate) => candidate.id === input.trackId && candidate.evidence.includes('selection')
+    );
+}
+
+/** Whether a clause outside the list's own clauses names one of its members. */
+function isMemberNamedOutsideList(input: {
+    capability: AgentReferenceCapability;
+    clauses: readonly PromptClauseSpan[];
+    context: ProjectContext;
+    firstClauseIndex: number;
+    lastClauseIndex: number;
+    memberIds: readonly string[];
+    risk: AppActionRisk;
+}): boolean {
+    return input.clauses.some(
+        (clause, index) =>
+            (index < input.firstClauseIndex || index > input.lastClauseIndex) &&
+            input.memberIds.some(
+                (trackId) =>
+                    namesTrackByWholeReference({ ...input, clause, trackId }) ||
+                    namesTrackAsSelection({ ...input, clause, trackId })
+            )
+    );
+}
+
 /** The list that opens at `headIndex`, or null when no complete list does. */
 function readListAt(input: {
     capability: AgentReferenceCapability;
@@ -183,13 +252,20 @@ function readListAt(input: {
             return null;
         }
         const headWithoutBoth = head.masked.slice(listHead.lead.length + listHead.both.length).trimEnd();
+        const memberIds = resolveMembers({ ...input, members });
         return {
             firstClauseIndex: input.headIndex,
             lastClauseIndex: index,
             start: head.start,
             end: clause.end,
             collapsedMasked: `${listHead.lead}${headWithoutBoth}${listTail.tail}`,
-            memberIds: resolveMembers({ ...input, members }),
+            memberIds,
+            memberNamedOutsideList: isMemberNamedOutsideList({
+                ...input,
+                firstClauseIndex: input.headIndex,
+                lastClauseIndex: index,
+                memberIds: memberIds ?? [],
+            }),
             members,
             lead: listHead.lead,
         };
