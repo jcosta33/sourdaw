@@ -172,18 +172,63 @@ async function runMarkedGuard(root: string): Promise<{
     tempDirectory: string;
     token: string;
     pid: number;
+    supervisorPid: number;
 }> {
-    const marker = join(root, `guard-${randomUUID()}.json`);
-    const result = await guarded(root, {
+    const run = randomUUID();
+    const marker = join(root, `guard-${run}.json`);
+    const preparedResult = join(root, `guard-${run}.pending`);
+    const resultPath = join(root, `guard-${run}.result.json`);
+    const options: Parameters<typeof runGuardedCommand>[0] = {
+        command: process.execPath,
         args: [
             '-e',
             `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}))`,
         ],
+        profile: 'focused',
+        availableMemoryBytes: abundantMemoryBytes,
+        maxRssBytes: 512 * 1024 ** 2,
+        admissionRoot: root,
+        storageRoot: join(root, 'storage'),
+        diskReserveBytes: 1,
+    };
+    const supervisor = spawn(
+        process.execPath,
+        [
+            '--input-type=module',
+            '-e',
+            `const {writeFileSync,renameSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(preparedResult)},JSON.stringify(result));renameSync(${JSON.stringify(preparedResult)},${JSON.stringify(resultPath)});`,
+        ],
+        { stdio: 'ignore' }
+    );
+    const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+        supervisor.once('error', reject);
+        supervisor.once('close', (code, signal) => resolve({ code, signal }));
     });
-    const observed: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+    const supervisorPid = supervisor.pid;
+    if (supervisorPid !== undefined) {
+        childPids.add(supervisorPid);
+    }
+    const exit = await closed;
+    const observed: { pid: number; tmp: string } | undefined = existsSync(marker)
+        ? JSON.parse(readFileSync(marker, 'utf8'))
+        : undefined;
+    if (observed !== undefined) {
+        childPids.add(observed.pid);
+    }
+    if (supervisorPid === undefined || exit.code !== 0 || exit.signal !== null) {
+        throw new Error(
+            `marked guard supervisor failed: pid=${supervisorPid ?? 'missing'} code=${exit.code} signal=${exit.signal}`
+        );
+    }
+    if (observed === undefined || !existsSync(resultPath)) {
+        throw new Error('marked guard child marker or complete supervisor result is missing');
+    }
+    const result: Awaited<ReturnType<typeof runGuardedCommand>> = JSON.parse(readFileSync(resultPath, 'utf8'));
+    expect(isAlive(observed.pid)).toBe(false);
+    expect(isAlive(supervisorPid)).toBe(false);
     const token = basename(dirname(observed.tmp));
     expect(observed.tmp).toBe(join(root, 'storage', token, 'tmp'));
-    return { result, tempDirectory: observed.tmp, token, pid: observed.pid };
+    return { result, tempDirectory: observed.tmp, token, pid: observed.pid, supervisorPid };
 }
 
 function retainedStorageTokens(root: string): { direct: string[]; claims: string[] } {
@@ -221,6 +266,7 @@ function expectMarkedRecovery(
             firstDiagnostic: diagnostics[0] ?? null,
             originalToken: prior[0]?.token,
             freshToken: fresh.token,
+            freshSupervisorPid: fresh.supervisorPid,
             priorTokens: prior.map((run) => run.token),
             retained,
         })
