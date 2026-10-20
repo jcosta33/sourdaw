@@ -1,0 +1,25 @@
+scripts/reviewPublicationBinding.ts
+  s_29d8df116c5b92::t_ec4abaf6d9076e 349,351,353,356
+scripts/reviewStructuralAdmission.ts
+  s_29d8df116c5b92::t_01ed033523a542 7,22
+  s_29d8df116c5b92::t_ec4abaf6d9076e 73-88,177
+scripts/__tests__/reviewStructuralAdmission.spec.ts
+  s_29d8df116c5b92::t_01ed033523a542 6,25-27,78
+  s_29d8df116c5b92::t_aaa17237f2f00c 28-39,86,90-92,109-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1030121a0b9fa49d2a4acd830a0bd1b71010bc52",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
