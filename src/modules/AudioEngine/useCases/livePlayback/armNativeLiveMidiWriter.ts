@@ -1,17 +1,10 @@
 /**
  * Open a pass of live MIDI over the span the session is playing (#3892).
  *
- * ── Where a pass begins, and why a loop is one span ───────────────────────
- *
- * A pass begins at the playhead, because an entry stamped behind it is counted
- * late and never delivered (`record_late_midi_notes`). A loop is the one case
- * that reaches further back: `Scheduler::frames_until_loop_end` wraps only a
- * playhead already below the region's end, so entering a region partway through
- * still plays the region entire from the first wrap on — and since the engine
- * does not consume an entry, the region sent once is the region every later
- * pass replays. So a looping pass takes the region from its start, or from the
- * playhead when the musician entered it from before, and sends the whole thing
- * here rather than windowing it.
+ * A looping pass projects the whole region but only admits a capacity-bounded
+ * window ahead of the entry position, including the region head when that
+ * window crosses the seam. The native store replays retained entries, while
+ * the pump clears spent trail and replenishes missing upcoming entries.
  *
  * ── Where a non-looping pass ends, and why nowhere ────────────────────────
  *
@@ -64,6 +57,7 @@ import { type AudioGraphCommand, type AudioGraphDeviceTarget } from '../../model
 
 import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
+import { loopMidiWindowBatch } from './loopMidiWindowBatch';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import {
     MIDI_WINDOW_SECONDS,
@@ -174,10 +168,10 @@ function recordAbandonedTargets(
 
 /** The opening batch: every target's store wiped, then filled to the horizon. */
 function openingBatch(pass: LiveMidiWriterPass, positionSeconds: number): MidiWriterBatch {
-    // A looping pass is sent whole: the wrap replays what the store already
-    // holds, and windowing inside a region would need a behind-clear that
-    // deletes exactly what the next wrap is going to play.
-    const horizonSeconds = pass.looping ? Number.POSITIVE_INFINITY : positionSeconds + MIDI_WINDOW_SECONDS;
+    if (pass.looping) {
+        return loopMidiWindowBatch(pass, positionSeconds, null, true);
+    }
+    const horizonSeconds = positionSeconds + MIDI_WINDOW_SECONDS;
     const commands: AudioGraphCommand[] = [];
     const admissions: MidiAdmission[] = [];
     for (const slot of pass.targets) {
@@ -227,6 +221,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
         entrySeconds: input.positionSeconds,
         looping: span.looping,
         loopRegion: span.looping ? nativeLiveGraphSession.loopRegion : null,
+        lastLoopWraps: null,
         // The opening batch wipes each store whole, so the trail starts at the
         // head of the timeline and walks forward from there.
         lastClearedBeforeSeconds: 0,
@@ -242,6 +237,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
                 events: entry.events,
                 cursor: 0,
                 held: 0,
+                heldEventIndices: span.looping ? [] : undefined,
                 saturationReported: false,
             };
         }),

@@ -9,11 +9,10 @@
  * `position - MIDI_TRAIL_SECONDS`, because the store is finite and the engine
  * never consumes an entry: nothing but an explicit clear frees a slot.
  *
- * A looping pass is not pumped at all. The engine replays the region from the
- * entries it already holds, the arm sent the region whole, and a trail clear
- * inside it would delete exactly what the next wrap is going to play.
+ * A looping pass uses an adaptive circular window: the resident event indices
+ * distinguish prefetched replay entries from spent trail, including at a seam.
  *
- * ── Why the trail is not cleared every tick ───────────────────────────────
+ * ── Why a non-looping trail is not cleared every tick ─────────────────────
  *
  * A clear is a command the engine takes under its fence, and the playhead feed
  * ticks on the animation frame. Clearing a few milliseconds of trail sixty
@@ -32,6 +31,7 @@ import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
 
 import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
+import { loopMidiWindowBatch } from './loopMidiWindowBatch';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import {
     MIDI_TRAIL_SECONDS,
@@ -49,14 +49,7 @@ const MIN_TRAIL_CLEAR_SECONDS = 1;
 export type PumpNativeLiveMidiWriterInput = Readonly<{
     /** Where the engine reported itself, on its own clock. */
     positionSeconds: number;
-    /**
-     * How many times the engine has wrapped its loop region.
-     *
-     * Read for nothing here, and deliberately: a looping pass sends nothing, so
-     * a wrap changes no window this pump owns. It stays in the signature
-     * because the playhead feed hands the same reading to both writers and a
-     * caller should not have to know which of them cares.
-     */
+    /** How many times the engine has wrapped, including seams skipped between readings. */
     loopWraps: number;
     /** The pass the caller read before it took the reading. */
     writerEpoch: number;
@@ -136,10 +129,6 @@ export async function pumpNativeLiveMidiWriter(input: PumpNativeLiveMidiWriterIn
     if (!pass || nativeLiveMidiWriter.epoch !== input.writerEpoch) {
         return;
     }
-    // A looping pass holds its whole region already; the wrap replays it.
-    if (pass.looping) {
-        return;
-    }
     // One batch in flight at a time. Stacking a second behind an unanswered one
     // would send the same events twice, since the first has not moved a cursor.
     if (nativeLiveMidiWriter.inFlightEpoch === input.writerEpoch) {
@@ -148,7 +137,12 @@ export async function pumpNativeLiveMidiWriter(input: PumpNativeLiveMidiWriterIn
     if (!nativeLiveGraphSession.backend) {
         return;
     }
-    const batch = windowBatch(pass, input.positionSeconds);
+    let batch: MidiWriterBatch;
+    if (pass.looping) {
+        batch = loopMidiWindowBatch(pass, input.positionSeconds, input.loopWraps);
+    } else {
+        batch = windowBatch(pass, input.positionSeconds);
+    }
     if (batch.commands.length === 0) {
         return;
     }

@@ -24,9 +24,9 @@
  * about to deliver, and the echoed position this side windows from is a frame
  * or two behind the engine's own.
  *
- * A looping pass clears nothing behind it, and sends the region whole at arm
- * instead. The entries the wrap replays are exactly the ones a behind-clear
- * would have deleted.
+ * A looping pass keeps exact resident event identities across the seam. Its
+ * ahead window and spent trail shrink to fit the same fixed store; entries
+ * already prefetched for replay survive clearing and are never sent twice.
  *
  * ## Why module state, and why the epoch
  *
@@ -63,10 +63,12 @@ export type LiveMidiWriterTarget = {
     trackName: string;
     /** This target's events for its span, ascending by time. */
     events: readonly AudioGraphMidiNoteEvent[];
-    /** How many of {@link events} the engine has accepted. */
+    /** Accepted event count; the contiguous prefix cursor for a non-looping pass. */
     cursor: number;
     /** Entries this side believes the engine's store still holds: sent minus cleared. */
     held: number;
+    /** Exact resident entries for a circular pass; non-looping passes use the prefix cursor. */
+    heldEventIndices?: readonly number[];
     /** Whether this pass has already reported this target's store full. */
     saturationReported: boolean;
 };
@@ -105,6 +107,8 @@ export type LiveMidiWriterPass = {
     looping: boolean;
     /** The region being wrapped, or `null` when nothing wraps. */
     loopRegion: EngineLoopRegion | null;
+    /** Last applied circular window reading; absent on non-looping passes. */
+    lastLoopWraps?: number | null;
     /**
      * Where the last trail clear reached, on the engine clock. A pass opens by
      * clearing every entry its targets hold, so it opens at the head.
@@ -118,10 +122,11 @@ export type LiveMidiWriterPass = {
 /** What one target's share of a batch does to the pass, once the engine takes it. */
 export type MidiAdmission = Readonly<{
     slot: LiveMidiWriterTarget;
-    /** How many events past the cursor this batch carried for the target. */
+    /** How many new entries this batch carried for the target. */
     admitted: number;
     /** What its store holds once the batch's clear and its notes are both taken. */
     heldAfter: number;
+    heldEventIndicesAfter?: readonly number[];
 }>;
 
 /** One send, and everything accepting it changes. */
@@ -135,6 +140,7 @@ export type MidiWriterBatch = Readonly<{
      * the store would leave them there with nothing left to name them.
      */
     lastClearedBeforeSeconds?: number;
+    loopWraps?: number | null;
 }>;
 
 export const nativeLiveMidiWriter: {
