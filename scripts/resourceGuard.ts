@@ -1397,12 +1397,14 @@ export function storageFileState(
             return unknown(pids);
         }
         if (platform() === 'darwin') {
+            // Expiry reports the last omission, so a retained run names what stayed uncovered.
             let uncovered = 'file-census-time-bound';
+            const expired = (): 'unknown' => unknown(uncovered);
             for (let observation = 0; Date.now() < deadline; observation += 1) {
                 if (observation > 0) {
                     pids = readProcessUsers();
                     if (typeof pids === 'string') {
-                        return unknown(pids);
+                        return pids === 'file-census-time-bound' ? expired() : unknown(pids);
                     }
                 }
                 const result = spawnSync('lsof', ['-nP', '-F0pfnt', '-a', '-u', String(uid)], {
@@ -1410,6 +1412,9 @@ export function storageFileState(
                     timeout: Math.max(1, deadline - Date.now()),
                     maxBuffer: 16 * 1024 * 1024,
                 });
+                if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT') {
+                    return expired();
+                }
                 if (result.status !== 0 || result.stderr !== '') {
                     return unknown('lsof-command-unavailable');
                 }
@@ -1426,7 +1431,7 @@ export function storageFileState(
                     return unknown(`lsof-fields-unusable:${parseReason}`);
                 }
                 if (Date.now() >= deadline) {
-                    return unknown('file-census-time-bound');
+                    return expired();
                 }
                 if (census.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
                     return 'alive';
@@ -1435,7 +1440,7 @@ export function storageFileState(
                 // Require coverage of processes observed on both sides of inspection.
                 const currentPids = readProcessUsers();
                 if (typeof currentPids === 'string') {
-                    return unknown(currentPids);
+                    return currentPids === 'file-census-time-bound' ? expired() : unknown(currentPids);
                 }
                 const missing: string[] = [];
                 let onlyLiveSameUidPids = true;
@@ -1444,7 +1449,7 @@ export function storageFileState(
                         continue;
                     }
                     if (Date.now() > deadline) {
-                        return unknown('lsof-coverage-time-bound');
+                        return expired();
                     }
                     const snapshot = processFileSnapshot(pid, Math.max(1, deadline - Date.now()));
                     // XNU closes the file table before publishing SZOMB. This only
@@ -1456,7 +1461,7 @@ export function storageFileState(
                     missing.push(`${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
                 }
                 if (Date.now() >= deadline) {
-                    return unknown('lsof-coverage-time-bound');
+                    return expired();
                 }
                 if (missing.length === 0) {
                     return 'dead';
@@ -1468,7 +1473,7 @@ export function storageFileState(
                 // lsof can omit a live same-UID process, or finish before one is born.
                 // Discard the whole catalog: only a fresh complete one can prove safety.
             }
-            return unknown(uncovered);
+            return expired();
         }
         if (platform() !== 'linux') {
             return unknown('file-census-platform-unavailable');
