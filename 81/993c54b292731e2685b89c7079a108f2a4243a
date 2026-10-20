@@ -1,0 +1,22 @@
+scripts/resourceGuard.ts
+  s_1c08b47ac3792f::t_de5065d5cd1472 1593
+  s_1c08b47ac3792f::t_3662c853bec436 1619
+  s_1c08b47ac3792f::t_7c27e3e61a1af5 1584-1589,1592,1595,1597-1611
+  s_1c08b47ac3792f::t_e2274046f6686b 1590-1591
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "81993c54b292731e2685b89c7079a108f2a4243a",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
