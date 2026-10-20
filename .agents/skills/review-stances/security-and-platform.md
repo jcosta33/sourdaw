@@ -57,6 +57,23 @@ may report a negative stat as a missing module. Admit source and the full tool c
 actual identity before importing source. A private execution copy must retain exact checked-out HEAD,
 all refs and history without shared object inodes; leave runner ancestry and action cleanup unchanged.
 
+### 2026-10-12 — guard storage proof ran outside its admitted account and stalled on lsof races (issue #4944)
+
+PR #5274 (`40baa0716b`) isolated only the required unit shards. The nightly unit shards and the
+tooling script suite still ran the guard specs as the hosted runner account, which held a live
+same-UID process with denied `/proc` cwd; every cleanup case reported a leak each night. On macOS
+the same PR treated an `lsof` catalog omitting an already listed live same-UID process as final and
+allowed one replacement, so busy hosts ended passing guarded runs in a leak verdict. The historical
+review stance, prompt and tier are unestablished; the uncovered risks were route coverage of an
+environment-dependent contract and census availability under process churn.
+
+Probe: for every workflow route that collects the guard specs, require the isolated account or an
+explicit exclusion with its reason, and fail the workflow contract spec when one reverts to the
+runner account. On macOS, omit a pre-existing live same-UID process from the first catalog only and
+require reclamation from the second; omit it persistently and require retention at the deadline
+naming the PID; omit a borrower once and require `alive`; kill an omitted process before its state
+sample and require skipping only on exact absence.
+
 ### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 
 PR #4586 first appended `delivery-authorized` after reading review state without a final PR state
