@@ -202,8 +202,12 @@ function scheduleMovingAdjustmentCurves({
     scheduleGrainMs: number;
 }): void {
     const { allRenderableTracks, vcaMultiplierByTrackId, renderContext } = plan;
-    const { durationSeconds, defaultTempo, changes } = renderContext;
+    const { durationSeconds, defaultTempo, changes, beatAtSecondsFromAnchor } = renderContext;
     const tickSeconds = automationSlewTickSecondsForGrain(scheduleGrainMs);
+    let projectSecondsToBeat: ((elapsedSeconds: number) => number) | undefined;
+    if (beatAtSecondsFromAnchor) {
+        projectSecondsToBeat = (elapsedSeconds) => beatAtSecondsFromAnchor(changes, 0, elapsedSeconds, defaultTempo);
+    }
     for (const track of allRenderableTracks) {
         const strip = trackStripsById.get(track.id);
         const composition = compositionsByTrackId.get(track.id);
@@ -223,8 +227,7 @@ function scheduleMovingAdjustmentCurves({
             durationSeconds,
             regionStartBeat: 0,
             tickSeconds,
-            defaultTempo,
-            changes,
+            projectSecondsToBeat,
             compensationDelaySec: getCompensationDelay(track.id, undefined, undefined, latency),
         });
     }

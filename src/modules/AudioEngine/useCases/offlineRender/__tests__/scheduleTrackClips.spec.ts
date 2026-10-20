@@ -7,6 +7,11 @@ import { type MidiStoreState } from '#/modules/MIDI/stores';
 // The real projection, as the composition root injects it: a controller's
 // placement is the behaviour under test and it carries no store or groove state.
 import { projectClipControllerEvents } from '#/modules/MIDI/useCases';
+import {
+    beatAtSecondsFromAnchor,
+    projectPpqEndpoints as projectTransportEndpoints,
+    resolveTempoAtBeat,
+} from '#/modules/Transport/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { makeCeilingClipCurve } from '../../../repositories/devices/dynamics/makeCeilingClipCurve';
@@ -1264,6 +1269,87 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
         offlineDeviceParameterLawState.quantiseValue = null;
         offlineDeviceParameterLawState.acceptsExternalPluginParameter = null;
         offlineDeviceParameterLawState.clampExternalPluginValue = null;
+    });
+
+    it('binds the Transport inverse to the nonzero region and emits the ramp-aligned modulated value', async () => {
+        const tickSeconds = 4.8 * Math.log(175 / 150);
+        const changes = [
+            { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' as const },
+            { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+        ];
+        const track = makeMidiTrack();
+        track.clips = [];
+        track.devices[0]!.parameterValues = { filterCutoff: 0 };
+        const param = { setValueAtTime: vi.fn() } as unknown as AudioParam;
+        const entry = makeInstrumentEntry();
+        entry.strategy = {
+            ...entry.strategy,
+            resolveOfflineAutomation: () => ({
+                kind: 'audioParam',
+                targets: [{ audioParam: param, scale: 1, offset: 0 }],
+            }),
+        };
+        configureOfflineDeviceParameterLaw({ ...injectedLaw, clampValue: ({ value }) => value });
+        setModulationDependencies({
+            updateDeviceParam: vi.fn(),
+            quantiseValue: ({ value }) => value,
+            getPluginParamRange: () => ({ min: 0, max: 100, defaultValue: 0, automatable: true }),
+        });
+        modulationStore.set({
+            modulators: [
+                {
+                    id: 'lfo',
+                    name: 'Saw',
+                    trackId: track.id,
+                    kind: 'lfo',
+                    enabled: true,
+                    config: { kind: 'lfo', waveform: 'saw', rate: 8, sync: true, phase: 0, depth: 1 },
+                    mappings: [
+                        { targetTrackId: track.id, targetDeviceId: 'inst-1', targetParamId: 'filterCutoff', amount: 1 },
+                    ],
+                },
+            ],
+        });
+        mocks.transportValue.value = { scheduleGrainMs: tickSeconds * 1000 };
+        mocks.getCompensationDelay.mockReturnValue(0.125);
+        mocks.runProductionScheduler = true;
+        try {
+            await scheduleTrackClips({
+                offlineCtx: makeOfflineCtx(),
+                track,
+                midi: makeMidi(),
+                trackInputNode: {} as GainNode,
+                trackGainNode: { gain: param } as GainNode,
+                trackPanNode: { pan: param } as StereoPannerNode,
+                destination: {} as AudioNode,
+                durationSeconds: tickSeconds * 1.5,
+                defaultTempo: 120,
+                changes,
+                regionStartBeat: 4,
+                projections: {
+                    projectMidiEvents,
+                    projectPpqEndpoints: projectTransportEndpoints,
+                    beatAtSecondsFromAnchor,
+                    resolveTempoAtBeat,
+                    processYeastMidi,
+                    selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                    projectChordPitch: mocks.projectChordPitch,
+                    evaluateAutomationValue: mocks.evaluateAutomationValue,
+                },
+                allTracks: [track],
+                deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+                pendingWorkletEvents: [],
+            });
+            const writes = vi.mocked(param.setValueAtTime).mock.calls;
+            expect(writes[0]).toEqual([50, 0]);
+            expect(writes[1]).toEqual([50, 0.125]);
+            // Saw phase 4/8 -> 6/8; one alpha0.4 step delivers 50 + 0.4*(75-50).
+            expect(writes.at(-1)?.[0]).toBeCloseTo(60, 10);
+            expect(writes.at(-1)?.[1]).toBeCloseTo(tickSeconds + 0.125, 10);
+        } finally {
+            mocks.runProductionScheduler = false;
+            modulationStore.set({ modulators: [] });
+        }
     });
 
     /**
