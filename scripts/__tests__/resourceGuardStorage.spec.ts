@@ -435,6 +435,121 @@ describe('guard-owned temporary storage', () => {
         expect(readFileSync(foreign, 'utf8')).toBe('foreign');
     });
 
+    it.each([
+        {
+            scenario: 'successful child and final proof',
+            proof: 'complete',
+            childExit: 0,
+            timeout: false,
+            reason: undefined,
+        },
+        {
+            scenario: 'nonzero child and final proof',
+            proof: 'complete',
+            childExit: 7,
+            timeout: false,
+            reason: undefined,
+        },
+        {
+            scenario: 'earlier timeout and final proof',
+            proof: 'complete',
+            childExit: 0,
+            timeout: true,
+            reason: 'timeout',
+        },
+        { scenario: 'persistent incomplete proof', proof: 'incomplete', childExit: 0, timeout: false, reason: 'leak' },
+        { scenario: 'persistent thrown proof', proof: 'throws', childExit: 0, timeout: false, reason: 'leak' },
+    ] as const)(
+        'reports final owned-storage disposition for $scenario',
+        async ({ proof, childExit, timeout, reason }) => {
+            const root = fixture();
+            const marker = join(root, 'child.json');
+            const proofPaths: string[] = [];
+            const releases: { treeStopped: boolean; removed?: boolean; threw?: boolean }[] = [];
+            let tempDirectory: string | undefined;
+            const result = await guarded(root, {
+                args: [
+                    '-e',
+                    `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));${timeout ? 'setInterval(() => {}, 1000)' : `process.exit(${childExit})`}`,
+                ],
+                ...(timeout ? { timeoutMs: 1_000 } : {}),
+                storageFactory: (input) => {
+                    const storage = createGuardStorage({
+                        ...input,
+                        ports: {
+                            ...input.ports,
+                            localReleaseAllowed: (_owner, _original, current) => {
+                                proofPaths.push(current ?? 'missing');
+                                if (proof === 'throws') {
+                                    throw new Error('controlled proof unavailable');
+                                }
+                                return proof === 'complete' && proofPaths.length > 1;
+                            },
+                        },
+                    });
+                    tempDirectory = storage.tempDirectory;
+                    return {
+                        ...storage,
+                        release: async (treeStopped) => {
+                            try {
+                                const removed = await storage.release(treeStopped);
+                                releases.push({ treeStopped, removed });
+                                return removed;
+                            } catch (error) {
+                                releases.push({ treeStopped, threw: true });
+                                throw error;
+                            }
+                        },
+                    };
+                },
+            });
+            expect(existsSync(marker)).toBe(true);
+            const child: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+            childPids.add(child.pid);
+            expect(isAlive(child.pid)).toBe(false);
+            expect(child.tmp).toBe(tempDirectory);
+            expect(tempDirectory).toBeDefined();
+            if (tempDirectory === undefined) {
+                throw new Error('guard storage was not created');
+            }
+            const token = basename(dirname(tempDirectory));
+            const retained = proof !== 'complete';
+            expect(releases).toEqual(
+                retained
+                    ? proof === 'throws'
+                        ? [
+                              { treeStopped: true, threw: true },
+                              { treeStopped: true, threw: true },
+                          ]
+                        : [
+                              { treeStopped: true, removed: false },
+                              { treeStopped: true, removed: false },
+                          ]
+                    : [
+                          { treeStopped: true, removed: false },
+                          { treeStopped: true, removed: true },
+                      ]
+            );
+            expect(proofPaths).toHaveLength(retained ? 2 : 3);
+            expect(proofPaths[0]).toBe(join(root, 'storage', token, 'tmp'));
+            expect(proofPaths[1]).toBe(proofPaths[0]);
+            if (!retained) {
+                expect(proofPaths[2]).toContain('/.claims/');
+            }
+            expect(existsSync(tempDirectory)).toBe(retained);
+            const ownerPath = join(dirname(tempDirectory), 'owner.json');
+            expect(existsSync(ownerPath)).toBe(retained);
+            if (retained) {
+                expect(JSON.parse(readFileSync(ownerPath, 'utf8')).token).toBe(token);
+            }
+            expect(claimPayloads(join(root, 'storage'))).toEqual([]);
+            expect(result.code).toBe(timeout ? null : childExit);
+            expect(result.reason).toBe(reason);
+            expect(result.output.includes('guard storage retained:')).toBe(retained);
+        },
+        10_000
+    );
+
     it('contains post-spawn publication failure and retains uncertain storage without masking the failure', async () => {
         const root = fixture();
         let childPid: number | undefined;
