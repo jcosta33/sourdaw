@@ -333,6 +333,7 @@ export async function scheduleTrackClips({
             deviceEntries,
             durationSeconds,
             changes,
+            defaultTempo,
             // The live slew runs one step per scheduler tick, and the scheduler
             // ticks every `scheduleGrainMs`. Reading the same state is what keeps
             // the bounce's slew filter identical to the monitor's at every grain,

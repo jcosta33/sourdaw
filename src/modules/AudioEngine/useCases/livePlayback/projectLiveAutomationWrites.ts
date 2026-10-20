@@ -117,6 +117,7 @@ export type LiveAutomationWritesInput = Readonly<{
     regionEndSeconds: number;
     changes: readonly { beat: number; tempo: number }[];
     projectBeatToSeconds: (beat: number) => number;
+    defaultTempo: number;
     sampleRate: number;
     /** The strip's latency compensation, in seconds. */
     compensationDelaySeconds: (stripId: string) => number;
@@ -176,6 +177,7 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
         regionEndSeconds,
         changes,
         projectBeatToSeconds,
+        defaultTempo,
         sampleRate,
         compensationDelaySeconds,
         vcaMultiplierByTrackId,
@@ -237,6 +239,7 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
             durationSeconds,
             changes,
             projectBeatToSeconds,
+            defaultTempo,
             sampleRate,
             compensationDelaySec: compensationDelaySeconds(track.id),
             vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,

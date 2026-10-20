@@ -108,6 +108,7 @@ function runOfflineSchedule(lanes: AutomationLane[]): ScheduledCall[] {
         durationSeconds: 2,
         changes: [],
         projectBeatToSeconds: constantTempoProjector(120),
+        defaultTempo: 120,
         slewTickSeconds: SLEW_TICK_SECONDS,
         sampleRate: 48_000,
         deviceParameterLaw: {

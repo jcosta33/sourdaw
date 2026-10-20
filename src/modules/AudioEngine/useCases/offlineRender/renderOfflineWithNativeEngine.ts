@@ -339,6 +339,7 @@ export async function renderOfflineWithNativeEngine(
             durationSeconds,
             changes,
             projectBeatToSeconds,
+            defaultTempo,
             sampleRate,
             compensationDelaySec: compensationDelay,
             vcaMultiplier,

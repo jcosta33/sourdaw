@@ -222,6 +222,13 @@ export type ScheduleTrackAutomationInput = {
      * its own that could drift from live playback.
      */
     projectBeatToSeconds: (beat: number) => number;
+    /**
+     * The flat tempo before the first tempo change, required with no default:
+     * the modulator group's seconds-to-beat walk mirrors the same law the
+     * projection integrates, and a default here would be a second source of
+     * truth that could disagree with the projection's own integrator.
+     */
+    defaultTempo: number;
     sampleRate?: number;
     compensationDelaySec?: number;
     clipBoundsById?: Map<string, { startBeat: number; endBeat: number }>;
@@ -521,6 +528,7 @@ export function scheduleTrackAutomation({
     scheduleFrame,
     regionStartSeconds = 0,
     projectBeatToSeconds,
+    defaultTempo,
     sampleRate = 44_100,
     compensationDelaySec = 0,
     clipBoundsById,
@@ -1126,7 +1134,7 @@ export function scheduleTrackAutomation({
             changes,
             regionStartBeat,
             regionStartSeconds,
-            projectBeatToSeconds: projectBeat,
+            projectBeatToSeconds,
             sampleRate,
             compensationDelaySec,
             clampStep: (value) =>

@@ -99,6 +99,7 @@ const baseInput: Omit<StripAutomationWritesInput, 'track' | 'lanes' | 'admittedS
     durationSeconds: 4,
     changes: [],
     projectBeatToSeconds: (beat) => beat,
+    defaultTempo: 60,
     sampleRate: 48_000,
     compensationDelaySec: 0,
     vcaMultiplier: 1,

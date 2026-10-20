@@ -115,6 +115,7 @@ export type StripAutomationWritesInput = Readonly<{
     durationSeconds: number;
     changes: readonly { beat: number; tempo: number }[];
     projectBeatToSeconds: (beat: number) => number;
+    defaultTempo: number;
     sampleRate: number;
     compensationDelaySec: number;
     vcaMultiplier: number;
@@ -276,6 +277,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         durationSeconds,
         changes,
         projectBeatToSeconds,
+        defaultTempo,
         sampleRate,
         compensationDelaySec,
         vcaMultiplier,
@@ -323,6 +325,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         deviceParameterLaw,
         regionStartSeconds,
         projectBeatToSeconds,
+        defaultTempo,
         sampleRate,
         compensationDelaySec,
         clipBoundsById: clipBoundsById(track),

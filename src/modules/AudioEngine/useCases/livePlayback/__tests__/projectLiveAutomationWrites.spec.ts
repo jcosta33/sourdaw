@@ -93,6 +93,7 @@ const baseInput: Omit<LiveAutomationWritesInput, 'stripTracks' | 'lanes' | 'regi
     {
         changes: [],
         projectBeatToSeconds: (beat) => beat,
+        defaultTempo: 60,
         sampleRate: 48_000,
         compensationDelaySeconds: () => 0,
         vcaMultiplierByTrackId: new Map(),

@@ -240,6 +240,7 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
         regionEndSeconds,
         changes,
         projectBeatToSeconds,
+        defaultTempo,
         sampleRate,
         compensationDelaySeconds: (stripId) => getCompensationDelay(stripId, undefined, hostedStripIds),
         vcaMultiplierByTrackId,
