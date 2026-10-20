@@ -31,7 +31,6 @@ let processShouldThrow = false;
 let abortSampleBankShouldThrow = false;
 let allNotesOffShouldThrow = false;
 let setParamShouldThrow = false;
-let zoneMapShouldBuild = true;
 const sharedBanks = new Set<string>();
 
 class LevainInstanceMock {
@@ -75,10 +74,6 @@ class LevainInstanceMock {
     }
     add_legato_transition(...args: unknown[]): void {
         calls.push({ method: 'add_legato_transition', args });
-    }
-    build_zone_map(numArticulations: number, numMics: number): boolean {
-        calls.push({ method: 'build_zone_map', args: [numArticulations, numMics] });
-        return zoneMapShouldBuild;
     }
     bankStaged = false;
     begin_sample_bank(instrumentId: string): void {
@@ -161,7 +156,6 @@ describe('LevainProcessor queued notes across allNotesOff', () => {
         abortSampleBankShouldThrow = false;
         allNotesOffShouldThrow = false;
         setParamShouldThrow = false;
-        zoneMapShouldBuild = true;
         sharedBanks.clear();
         vi.stubGlobal('currentFrame', 0);
     });

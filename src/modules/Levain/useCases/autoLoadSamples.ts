@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { buildLevainZoneTables } from '#/modules/AudioEngine/useCases';
 
 import { type MicPositionType } from '../models/LevainPatch';
 import { WEB_LOD } from '../repositories/sampleLoader/helpers';
@@ -66,6 +67,7 @@ export async function autoLoadLevainSamples(
             basePath: manifestBase,
             expectedInstrumentId: instrumentId,
             nodePort,
+            buildZoneTables: buildLevainZoneTables,
             lod: WEB_LOD,
             onProgress: (progress) => {
                 if (signal?.aborted) {

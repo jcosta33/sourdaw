@@ -1,4 +1,5 @@
 import { LEVAIN_SAMPLE_CHUNK_FLOATS, LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT } from '#/infra/audioWorklet/levainSampleChunk';
+import { LEVAIN_ZONE_TABLE_CHUNK_ENTRIES } from '#/infra/audioWorklet/levainZoneTableChunk';
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 
 import { decodedBankResource } from './decodedBankResource';
@@ -21,13 +22,37 @@ type SampleBankHandshake = {
     /** Cancel the load on the worklet; false when the abort could not be posted because the port is closed. */
     cancel: () => boolean;
     /**
-     * Tell the handshake that `buildZoneMap` has been posted for this load —
+     * Tell the handshake that `commitSampleBank` has been posted for this load —
      * the point from which the worklet may commit the bank before it ever
      * sees a later abort. Must be called right after that `postMessage`, and
      * only then: see `onAbort`'s use of the flag it sets.
      */
-    markZoneMapPosted: () => void;
+    markCommitPosted: () => void;
 };
+
+/** One zone's place in the lookup tables, numbered as its `addZone` message is. */
+export type LevainZoneSpan = {
+    zoneId: number;
+    articulationId: number;
+    micId: number;
+    loKey: number;
+    hiKey: number;
+    loVel: number;
+    hiVel: number;
+};
+
+/** The LUT as interleaved (offset, count) words, and the arena of zone ids it indexes. */
+export type LevainZoneTables = { lut: Uint32Array; arena: Uint32Array };
+
+/**
+ * Computes a bank's zone tables away from the render thread (in production, a
+ * Worker running its own daw-dsp instance). Rejects when the build fails, and
+ * at once on `signal`.
+ */
+export type LevainZoneTableBuilder = (
+    request: { zones: readonly LevainZoneSpan[]; numArticulations: number; numMics: number },
+    signal?: AbortSignal
+) => Promise<LevainZoneTables>;
 
 function allocateBankLoadToken(): number {
     if (bankLoadSequence >= Number.MAX_SAFE_INTEGER) {
@@ -62,10 +87,10 @@ function createSampleBankHandshake(
 
     let uploadSettled = false;
     let completedSettled = false;
-    // Set once `buildZoneMap` has been posted for this load (see
-    // `markZoneMapPosted`) — from that point the worklet may already be
+    // Set once `commitSampleBank` has been posted for this load (see
+    // `markCommitPosted`) — from that point the worklet may already be
     // committing, so `onAbort` stops settling this handshake locally.
-    let zoneMapPosted = false;
+    let commitPosted = false;
     // Set once `onAbort` has deferred to the worklet instead of rejecting
     // locally, so a later `sampleBankError` for this token is known to be the
     // abort's own answer (reject with the abort's reason) rather than an
@@ -163,17 +188,16 @@ function createSampleBankHandshake(
         } catch {
             // The port is already closed: no terminal message can ever
             // arrive, so local cancellation must settle here regardless of
-            // whether `buildZoneMap` was posted.
+            // whether `commitSampleBank` was posted.
             delivered = false;
             abortDelivered = false;
         }
-        if (zoneMapPosted && delivered) {
-            // Once `buildZoneMap` is posted the worklet may already be
-            // committing: `_buildZoneMap`/`_completeSampleBankLoad`
-            // (levainProcessor.ts ~:293-343, ~:285-291) clear
-            // `_bankLoadToken` and reply before this `abortSampleBank` is even
-            // dispatched, and a matched abort that lands after commit is
-            // already a no-op there too (~:513-517). Settling this promise
+        if (commitPosted && delivered) {
+            // Once `commitSampleBank` is posted the worklet may already be
+            // committing: `_commitSampleBank`/`_completeSampleBankLoad`
+            // (levainProcessor.ts) clear `_bankLoadToken` and reply before
+            // this `abortSampleBank` is even dispatched, and a matched abort
+            // that lands after commit is already a no-op there too. Settling this promise
             // locally now could report a rejection for a bank the engine goes
             // on to commit, so only the worklet's own terminal answer —
             // `sampleBankLoaded` (resolve), or `sampleBankError`/`error`/
@@ -198,8 +222,8 @@ function createSampleBankHandshake(
             onAbort();
             return abortDelivered;
         },
-        markZoneMapPosted: () => {
-            zoneMapPosted = true;
+        markCommitPosted: () => {
+            commitPosted = true;
         },
     };
 }
@@ -347,7 +371,8 @@ function withdrawFromChunkBudget(waiter: BudgetWaiter): boolean {
 
 /**
  * Hold a load to the shared `chunkBudget` of `LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT`
- * chunks the worklets have not yet acknowledged with `sampleChunkWritten`.
+ * chunks the worklets have not yet acknowledged with `sampleChunkWritten` or,
+ * for a zone-table chunk, `zoneTableChunkWritten`.
  * A wait ends on a credit, and just as promptly on the abort signal, a
  * `sampleBankError` for this load, or the processor's `error`/`disposed`: a
  * processor that stops answering must not leave the load waiting for an
@@ -402,7 +427,7 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
         if (message.loadToken !== loadToken) {
             return;
         }
-        if (message.type === 'sampleChunkWritten') {
+        if (message.type === 'sampleChunkWritten' || message.type === 'zoneTableChunkWritten') {
             if (held > 0) {
                 held -= 1;
                 giveBackChunkCredit();
@@ -503,11 +528,64 @@ async function uploadSampleInChunks(
     nodePort.postMessage({ type: 'sealSample', loadToken, sampleId });
 }
 
+/**
+ * Post a bank's zone tables as `reserveZoneTables`, then the LUT and the arena
+ * in `zoneTableChunk` messages of at most `LEVAIN_ZONE_TABLE_CHUNK_ENTRIES`
+ * entries, then `sealZoneTables`, in that order on one port. The worklet
+ * reserves the tables once and appends one checked chunk per message, so no
+ * message builds or copies whole tables on the render thread. Each chunk is a
+ * transferred copy of its slice and waits for a credit from `pacer`, the
+ * budget the sample chunks share.
+ */
+async function uploadZoneTables(
+    nodePort: MessagePort,
+    loadToken: number,
+    dimensions: { numArticulations: number; numMics: number },
+    tables: LevainZoneTables,
+    pacer: ChunkPacer
+): Promise<void> {
+    if (tables.lut.length % 2 !== 0) {
+        throw new Error('Levain zone-table builder returned a LUT that is not (offset, count) pairs');
+    }
+    nodePort.postMessage({
+        type: 'reserveZoneTables',
+        loadToken,
+        numArticulations: dimensions.numArticulations,
+        numMics: dimensions.numMics,
+        lutEntries: tables.lut.length / 2,
+        arenaEntries: tables.arena.length,
+    });
+    await uploadZoneTableInChunks(nodePort, loadToken, 'lut', tables.lut, 2, pacer);
+    await uploadZoneTableInChunks(nodePort, loadToken, 'arena', tables.arena, 1, pacer);
+    nodePort.postMessage({ type: 'sealZoneTables', loadToken });
+}
+
+async function uploadZoneTableInChunks(
+    nodePort: MessagePort,
+    loadToken: number,
+    table: 'lut' | 'arena',
+    words: Uint32Array,
+    wordsPerEntry: number,
+    pacer: ChunkPacer
+): Promise<void> {
+    const chunkWords = LEVAIN_ZONE_TABLE_CHUNK_ENTRIES * wordsPerEntry;
+    for (let offset = 0; offset < words.length; offset += chunkWords) {
+        await pacer.reserve();
+        const data = words.slice(offset, offset + chunkWords);
+        nodePort.postMessage(
+            { type: 'zoneTableChunk', loadToken, table, start: offset / wordsPerEntry, data },
+            [data.buffer]
+        );
+    }
+}
+
 export type LoadInstrumentFromManifestInput = {
     manifestUrl: string;
     basePath: string;
     expectedInstrumentId: string;
     nodePort: MessagePort;
+    /** Computes the bank's zone tables off the render thread; there is no fallback. */
+    buildZoneTables: LevainZoneTableBuilder;
     lod?: SampleLodConfig;
     onProgress?: (progress: number) => void;
     signal?: AbortSignal;
@@ -520,6 +598,7 @@ export type LoadInstrumentFromManifestInput = {
 /**
  * Load a complete instrument from a manifest file.
  * Negotiates shared-bank ownership, uploads PCM only for the elected owner,
+ * stages the zone tables `buildZoneTables` computed (every role stages its own),
  * and resolves only after the worklet commits the bank.
  *
  * @param manifestUrl URL to the JSON manifest
@@ -533,7 +612,7 @@ export type LoadInstrumentFromManifestInput = {
  * @returns The decoded bank the worklet committed, or undefined when the
  *   caller's own pre-flight checks abort this load before it ever asks the
  *   worklet to negotiate a bank (a superseded load resolves rather than
- *   throwing; see the `signal` fencing above). Once `buildZoneMap` has been
+ *   throwing; see the `signal` fencing above). Once `commitSampleBank` has been
  *   posted, an abort no longer settles this promise locally — the worklet may
  *   already be delivering its commit — so only the worklet's own terminal
  *   answer settles it from there: `sampleBankLoaded` resolves with the bank
@@ -545,6 +624,7 @@ export async function loadInstrumentFromManifest({
     basePath,
     expectedInstrumentId,
     nodePort,
+    buildZoneTables,
     lod = DEFAULT_LOD,
     onProgress,
     signal,
@@ -626,6 +706,7 @@ export async function loadInstrumentFromManifest({
             }
         }
 
+        const zoneSpans: LevainZoneSpan[] = [];
         let zoneId = 0;
         for (const { zone, articulationId } of bank.zones) {
             signal?.throwIfAborted();
@@ -673,6 +754,15 @@ export async function loadInstrumentFromManifest({
                 sustain: zone.sustain,
                 release: zone.release,
             });
+            zoneSpans.push({
+                zoneId,
+                articulationId,
+                micId: zone.micId,
+                loKey: zone.loKey,
+                hiKey: zone.hiKey,
+                loVel: zone.loVel,
+                hiVel: zone.hiVel,
+            });
             zoneId++;
         }
 
@@ -684,7 +774,7 @@ export async function loadInstrumentFromManifest({
         // the position matters: `LevainEngine::add_legato_transition` adds to
         // the pending bank's transition store the same way `add_zone` adds to
         // its zone map, and `commit_sample_bank` swaps that store in, so a
-        // message landing either side of `buildZoneMap` still takes.
+        // message landing either side of the zone tables still takes.
         // `loadToken` is what makes a transition from an abandoned load stale.
         for (const transition of bank.legatoTransitions) {
             signal?.throwIfAborted();
@@ -705,17 +795,17 @@ export async function loadInstrumentFromManifest({
             });
         }
 
-        nodePort.postMessage({
-            type: 'buildZoneMap',
-            loadToken,
-            numArticulations: bank.numArticulations,
-            numMics: bank.numMics,
-        });
+        const dimensions = { numArticulations: bank.numArticulations, numMics: bank.numMics };
+        const tables = await raceAbortSignal(buildZoneTables({ zones: zoneSpans, ...dimensions }, signal), signal);
+        chunkPacer ??= createChunkPacer(nodePort, loadToken, signal);
+        await uploadZoneTables(nodePort, loadToken, dimensions, tables, chunkPacer);
+
+        nodePort.postMessage({ type: 'commitSampleBank', loadToken });
         // From here the worklet may commit before it ever sees a later abort
         // (see `onAbort`'s use of this flag) — tell the handshake so a
         // superseding abort waits for the worklet's own terminal message
         // instead of rejecting a load the engine goes on to commit.
-        handshake.markZoneMapPosted();
+        handshake.markCommitPosted();
         await handshake.completed;
         completed = true;
         releaseStarted = true;

@@ -121,6 +121,16 @@ function loadWasmModule(url: string): Promise<WebAssembly.Module> {
 }
 
 /**
+ * The compiled module at `url`, fetched and compiled once per URL in this
+ * realm, for a dedicated Worker that instantiates its own copy. A Worker is a
+ * realm of its own, so unlike a worklet host it binds no bundle version to an
+ * `AudioContext`.
+ */
+export function compileWasmModule(url: string): Promise<WebAssembly.Module> {
+    return loadWasmModule(url);
+}
+
+/**
  * Acquire a short-lived claim on one bundle version for this context, then
  * fetch and asynchronously compile its module once per URL. A compiled
  * `WebAssembly.Module` is

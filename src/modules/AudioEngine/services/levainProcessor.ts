@@ -20,7 +20,10 @@
  *   { type: 'sealSample', loadToken, sampleId }
  *   { type: 'addZone', loadToken, ... }
  *   { type: 'addLegatoTransition', loadToken, sampleId, interval, ... }
- *   { type: 'buildZoneMap', loadToken, numArticulations, numMics }
+ *   { type: 'reserveZoneTables', loadToken, numArticulations, numMics, lutEntries, arenaEntries }
+ *   { type: 'zoneTableChunk', loadToken, table: 'lut' | 'arena', start, data }
+ *   { type: 'sealZoneTables', loadToken }
+ *   { type: 'commitSampleBank', loadToken }
  *   { type: 'releaseRetiredBank', loadToken }
  *   { type: 'releaseDisposedBanks' }
  *   { type: 'dispose' }
@@ -35,10 +38,20 @@
  * unacknowledged, so the worklet's queue never holds a long run of them. A
  * refused chunk is answered by `sampleBankError` instead, never by both.
  *
- * Committing a bank (`buildZoneMap`) builds the zone map in that message, then
- * commits with a call that allocates and frees nothing: the bank it replaces
- * waits in the engine's retired slot. Aborting a staged bank does the same with
- * the staged bank. The host frees it with `releaseRetiredBank` messages of its
+ * A bank's zone tables are computed off the render thread (the loader's
+ * zone-table builder runs in a Worker) and staged the same way:
+ * `reserveZoneTables` reserves their storage (the staging's one allocation),
+ * each `zoneTableChunk` appends at most one chunk of LUT or arena entries after
+ * the engine checks every one, and `sealZoneTables` installs them in O(1).
+ * Each written chunk is answered with `zoneTableChunkWritten { loadToken }`,
+ * which paces the loader with the same budget as the sample chunks. Every role
+ * stages its own tables: zones are per processor, only PCM is shared.
+ *
+ * `commitSampleBank` commits the sealed bank (the owner publishes its PCM
+ * first; a follower holds the commit until the owner's bank publishes) with a
+ * call that allocates and frees nothing: the bank it replaces waits in the
+ * engine's retired slot. Aborting a staged bank does the same with the staged
+ * bank, an open zone-table reservation included. The host frees it with `releaseRetiredBank` messages of its
  * own, one bounded step each, answered by
  * `retiredBankReleased { loadToken, done }`. Nothing frees a bank inside the
  * commit, the abort or `process()`.
@@ -140,6 +153,19 @@ type LevainAddZoneMsg = {
 };
 
 /**
+ * One chunk of a staged bank's zone tables: LUT entries as interleaved
+ * (offset, count) words, or arena entries as zone ids, starting at entry
+ * `start` of that table.
+ */
+type LevainZoneTableChunkMsg = {
+    type: 'zoneTableChunk';
+    loadToken: number;
+    table: 'lut' | 'arena';
+    start: number;
+    data: Uint32Array;
+};
+
+/**
  * MPE per-note expression (audit MD-2). Values arrive already normalised to
  * engine units by `applyNoteExpression`, so the worklet only routes them.
  */
@@ -185,7 +211,17 @@ type LevainMsg =
     | { type: 'sealSample'; loadToken: number; sampleId: number }
     | LevainAddZoneMsg
     | LevainAddLegatoTransitionMsg
-    | { type: 'buildZoneMap'; loadToken: number; numArticulations: number; numMics: number }
+    | {
+          type: 'reserveZoneTables';
+          loadToken: number;
+          numArticulations: number;
+          numMics: number;
+          lutEntries: number;
+          arenaEntries: number;
+      }
+    | LevainZoneTableChunkMsg
+    | { type: 'sealZoneTables'; loadToken: number }
+    | { type: 'commitSampleBank'; loadToken: number }
     | { type: 'releaseRetiredBank'; loadToken: number }
     | { type: 'releaseDisposedBanks' }
     | { type: 'dispose' };
@@ -204,7 +240,6 @@ type LevainQueued =
     | { type: 'cc'; cc: number; value: number; sampleFrame: number; stored?: boolean };
 
 type BankRole = 'owner' | 'follower' | 'ready';
-type BankBuild = { numArticulations: number; numMics: number };
 type InFlightBank = { owner: LevainProcessor; followers: Set<LevainProcessor> };
 
 const inFlightBanks = new Map<string, InFlightBank>();
@@ -242,7 +277,9 @@ class LevainProcessor extends AudioWorkletProcessor {
     _bankKey: string | null = null;
     _bankRole: BankRole | null = null;
     _bankLoadToken: number | null = null;
-    _pendingBankBuild: BankBuild | null = null;
+    // A follower's `commitSampleBank` that arrived before the owner's bank
+    // published; it commits once the shared bank attaches.
+    _pendingBankCommit = false;
     // Load token of the commit whose displaced bank still waits in the engine's
     // retired slot; a `releaseRetiredBank` for any other token frees nothing.
     _retiredBankToken: number | null = null;
@@ -256,6 +293,9 @@ class LevainProcessor extends AudioWorkletProcessor {
     // detached one.
     _memoryFloats: Float32Array | null = null;
     _memoryFloatsBuffer: ArrayBufferLike | null = null;
+    // The same for zone-table chunks, which are 32-bit words.
+    _memoryWords: Uint32Array | null = null;
+    _memoryWordsBuffer: ArrayBufferLike | null = null;
 
     constructor(...args: unknown[]) {
         super();
@@ -345,7 +385,7 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._retiredBankToken = null;
         this._bankKey = bankKey;
         this._bankLoadToken = loadToken;
-        this._pendingBankBuild = null;
+        this._pendingBankCommit = false;
 
         const inFlight = inFlightBanks.get(bankKey);
         if (inFlight) {
@@ -374,21 +414,23 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._bankKey = null;
         this._bankRole = null;
         this._bankLoadToken = null;
-        this._pendingBankBuild = null;
+        this._pendingBankCommit = false;
         this.port.postMessage({ type: 'sampleBankLoaded', loadToken });
     }
 
-    _buildZoneMap(build: BankBuild): void {
+    /**
+     * Commit the staged bank once its zone tables are sealed. Builds nothing:
+     * the tables were computed off the render thread and staged in chunks. The
+     * engine refuses a bank whose tables are not sealed.
+     */
+    _commitSampleBank(): void {
         const inst = this._instance;
         if (!inst) {
             return;
         }
         if (this._bankRole === 'follower') {
-            this._pendingBankBuild = build;
+            this._pendingBankCommit = true;
             return;
-        }
-        if (!inst.build_zone_map(build.numArticulations, build.numMics)) {
-            throw new Error('Levain DSP rejected zone-map dimensions or capacity');
         }
         if (this._bankRole === 'ready') {
             const loadToken = this._bankLoadToken;
@@ -440,10 +482,10 @@ class LevainProcessor extends AudioWorkletProcessor {
                 throw new Error('Levain DSP could not attach the published sample bank');
             }
             this._bankRole = 'ready';
-            const pendingBuild = this._pendingBankBuild;
-            this._pendingBankBuild = null;
-            if (pendingBuild) {
-                this._buildZoneMap(pendingBuild);
+            const commitPending = this._pendingBankCommit;
+            this._pendingBankCommit = false;
+            if (commitPending) {
+                this._commitSampleBank();
             }
         } catch (error) {
             this._rejectBankLoad(error);
@@ -548,7 +590,7 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._bankKey = null;
         this._bankRole = null;
         this._bankLoadToken = null;
-        this._pendingBankBuild = null;
+        this._pendingBankCommit = false;
         if (bankKey && inFlight?.owner === this) {
             inFlightBanks.delete(bankKey);
             for (const follower of inFlight.followers) {
@@ -562,8 +604,9 @@ class LevainProcessor extends AudioWorkletProcessor {
             inFlight?.followers.delete(this);
         }
         try {
-            // The abort retires the staged bank instead of freeing it, so the
-            // host's release loop for this load's token frees it in steps.
+            // The abort retires the staged bank instead of freeing it, an open
+            // sample or zone-table reservation with it, so the host's release
+            // loop for this load's token frees it in steps.
             if (this._instance?.abort_sample_bank()) {
                 this._retiredBankToken = loadToken;
             }
@@ -796,11 +839,32 @@ class LevainProcessor extends AudioWorkletProcessor {
                 );
                 break;
             }
-            case 'buildZoneMap':
+            case 'reserveZoneTables':
                 if (msg.loadToken !== this._bankLoadToken) {
                     break;
                 }
-                this._buildZoneMap(msg);
+                if (!inst.reserve_zone_tables(msg.numArticulations, msg.numMics, msg.lutEntries, msg.arenaEntries)) {
+                    throw new Error('Levain DSP refused the zone-table reservation');
+                }
+                break;
+            case 'zoneTableChunk':
+                if (msg.loadToken === this._bankLoadToken) {
+                    this._writeZoneTableChunk(inst, msg);
+                }
+                break;
+            case 'sealZoneTables':
+                if (msg.loadToken !== this._bankLoadToken) {
+                    break;
+                }
+                if (!inst.seal_zone_tables()) {
+                    throw new Error('Levain DSP could not seal zone tables that are incomplete');
+                }
+                break;
+            case 'commitSampleBank':
+                if (msg.loadToken !== this._bankLoadToken) {
+                    break;
+                }
+                this._commitSampleBank();
                 break;
             case 'releaseRetiredBank':
                 this._releaseRetiredBank(inst, msg.loadToken);
@@ -848,6 +912,49 @@ class LevainProcessor extends AudioWorkletProcessor {
             throw new Error('Levain DSP refused a sample chunk');
         }
         this.port.postMessage({ type: 'sampleChunkWritten', loadToken, sampleId });
+    }
+
+    /**
+     * Append one chunk of zone-table entries to the reserved tables. The
+     * engine's window holds one LUT chunk, so a longer chunk is refused before a
+     * word is written, and the engine checks every entry (order, bounds, arena
+     * refs, zone ids) before it appends any. Allocates nothing in steady state:
+     * the memory view is cached and rebuilt only when `memory.grow()` detaches
+     * its buffer.
+     */
+    _writeZoneTableChunk(inst: LevainInstance, msg: LevainZoneTableChunkMsg): void {
+        const memory = this._memory;
+        if (!memory) {
+            throw new Error('Levain zone-table chunk arrived before the engine memory existed');
+        }
+        const words = msg.data.length;
+        const wordsPerEntry = msg.table === 'lut' ? 2 : 1;
+        if (
+            (msg.table !== 'lut' && msg.table !== 'arena') ||
+            words === 0 ||
+            words % wordsPerEntry !== 0 ||
+            words > inst.zone_table_write_words()
+        ) {
+            throw new Error('Levain zone-table chunk does not fit the write window');
+        }
+        const address = inst.zone_table_write_ptr();
+        // Read after the calls above: neither allocates, but growth anywhere
+        // earlier in this message must not leave a stale view behind.
+        const buffer = memory.buffer;
+        if (this._memoryWordsBuffer !== buffer || this._memoryWords === null) {
+            this._memoryWords = new Uint32Array(buffer);
+            this._memoryWordsBuffer = buffer;
+        }
+        this._memoryWords.set(msg.data, address / Uint32Array.BYTES_PER_ELEMENT);
+        const entries = words / wordsPerEntry;
+        const committed =
+            msg.table === 'lut'
+                ? inst.commit_zone_lut_chunk(msg.start, entries)
+                : inst.commit_zone_arena_chunk(msg.start, entries);
+        if (!committed) {
+            throw new Error('Levain DSP refused a zone-table chunk');
+        }
+        this.port.postMessage({ type: 'zoneTableChunkWritten', loadToken: msg.loadToken });
     }
 
     /**

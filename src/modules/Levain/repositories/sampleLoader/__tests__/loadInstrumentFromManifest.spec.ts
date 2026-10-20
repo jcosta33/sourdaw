@@ -6,6 +6,19 @@ import { decodedBankResource } from '../decodedBankResource';
 import { fetchAndDecode } from '../fetchAndDecode';
 import { loadInstrumentFromManifest } from '../loadInstrumentFromManifest';
 
+/**
+ * The zone-table builder port, standing in for the Worker: tables of the right
+ * LUT size for the request, every slot empty except the first, which lists
+ * every zone. Synchronous work behind a resolved promise.
+ */
+const buildZoneTables = vi.fn(
+    (request: { zones: readonly { zoneId: number }[]; numArticulations: number; numMics: number }) => {
+        const lut = new Uint32Array(request.numArticulations * request.numMics * 128 * 16 * 2);
+        lut[1] = request.zones.length;
+        return Promise.resolve({ lut, arena: Uint32Array.from(request.zones, (zone) => zone.zoneId) });
+    }
+);
+
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
@@ -83,7 +96,7 @@ type MakePortOptions = {
     autoComplete?: boolean;
     commitError?: string;
     /**
-     * Model the processor's own commit timing: `buildZoneMap` clears the
+     * Model the processor's own commit timing: `commitSampleBank` clears the
      * pending token synchronously (as `_completeSampleBankLoad` does,
      * levainProcessor.ts ~:285-291) but the test emits the terminal
      * `sampleBankLoaded` itself, later — so a race between an abort and that
@@ -171,12 +184,16 @@ function makePort(options: MakePortOptions = {}): FakePort {
             });
             return;
         }
-        if (message.type === 'sampleChunk') {
+        if (message.type === 'sampleChunk' || message.type === 'zoneTableChunk') {
             tally.unanswered++;
             tally.peak = Math.max(tally.peak, tally.unanswered);
             const answer = (): void => {
                 tally.unanswered--;
-                emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId });
+                emit(
+                    message.type === 'sampleChunk'
+                        ? { type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId }
+                        : { type: 'zoneTableChunkWritten', loadToken: message.loadToken }
+                );
             };
             const answers = options.chunkAnswers ?? 'now';
             if (answers === 'now') {
@@ -199,7 +216,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
             });
             return;
         }
-        if (message.type === 'buildZoneMap') {
+        if (message.type === 'commitSampleBank') {
             if (options.autoComplete === false) {
                 // Models a commit still in flight (e.g. a shared-bank
                 // follower awaiting its owner) — the token stays pending.
@@ -336,6 +353,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -344,10 +362,10 @@ describe('loadInstrumentFromManifest', () => {
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
         const types = postedTypes(port);
         expect(types).toContain('beginSampleBank');
-        expect(types).toContain('buildZoneMap');
+        expect(types).toContain('commitSampleBank');
         expect(types.filter((type) => UPLOAD_TYPES.includes(type))).toEqual(UPLOAD_TYPES);
         expect(types.indexOf('beginSampleBank')).toBeLessThan(types.indexOf('beginSample'));
-        expect(types.indexOf('sealSample')).toBeLessThan(types.indexOf('buildZoneMap'));
+        expect(types.indexOf('sealSample')).toBeLessThan(types.indexOf('commitSampleBank'));
         const beginCall = port.postMessage.mock.calls.find(([message]) => {
             return (message as { type: string }).type === 'beginSampleBank';
         });
@@ -368,7 +386,7 @@ describe('loadInstrumentFromManifest', () => {
         expect(uploadMessages.every((message) => message.loadToken === beginMessage.loadToken)).toBe(true);
         const zoneAndBuildMessages = port.postMessage.mock.calls
             .map(([message]) => message as { type: string; loadToken?: number })
-            .filter((message) => message.type === 'addZone' || message.type === 'buildZoneMap');
+            .filter((message) => message.type === 'addZone' || message.type === 'commitSampleBank');
         expect(zoneAndBuildMessages.every((message) => message.loadToken === beginMessage.loadToken)).toBe(true);
     });
 
@@ -394,6 +412,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -435,6 +454,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -464,6 +484,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -493,6 +514,7 @@ describe('loadInstrumentFromManifest', () => {
         function load(port: FakePort, signal?: AbortSignal): Promise<unknown> {
             return loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -578,6 +600,7 @@ describe('loadInstrumentFromManifest', () => {
             function loadOwnBank(port: FakePort, name: string, signal?: AbortSignal): Promise<unknown> {
                 return loadInstrumentFromManifest({
                     manifestUrl: '/m.json',
+                    buildZoneTables,
                     basePath: `/${name}`,
                     expectedInstrumentId: 'violin-1',
                     nodePort: port,
@@ -743,7 +766,7 @@ describe('loadInstrumentFromManifest', () => {
                 const holding = loadOwnBank(holder, 'handoff-holder', holderController.signal);
                 void holding.catch(() => {});
                 await vi.waitFor(() => {
-                    expect(postedTypes(holder)).toContain('buildZoneMap');
+                    expect(postedTypes(holder)).toContain('commitSampleBank');
                 });
                 const waiting = loadOwnBank(waiter, 'handoff-waiter', waiterController.signal);
                 void waiting.catch(() => {});
@@ -795,7 +818,7 @@ describe('loadInstrumentFromManifest', () => {
                     void holding.catch(() => {});
                     try {
                         await vi.waitFor(() => {
-                            expect(postedTypes(holder)).toContain('buildZoneMap');
+                            expect(postedTypes(holder)).toContain('commitSampleBank');
                         });
                         stubManyChunks();
                         const waiting = loadOwnBank(waiter, `grant-${terminal}-waiter`, waiterController.signal);
@@ -1006,7 +1029,7 @@ describe('loadInstrumentFromManifest', () => {
             const types = postedTypes(port);
             expect(types.filter((type) => type === 'sampleChunk')).toHaveLength(2);
             expect(types).not.toContain('sealSample');
-            expect(types).not.toContain('buildZoneMap');
+            expect(types).not.toContain('commitSampleBank');
             expect(types).toContain('abortSampleBank');
         });
     });
@@ -1016,6 +1039,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -1025,13 +1049,14 @@ describe('loadInstrumentFromManifest', () => {
             expect(postedTypes(port)).not.toContain(type);
         }
         expect(postedTypes(port)).toContain('addZone');
-        expect(postedTypes(port)).toContain('buildZoneMap');
+        expect(postedTypes(port)).toContain('commitSampleBank');
     });
 
     describe('freeing the bank the commit displaced', () => {
         function load(port: FakePort): Promise<unknown> {
             return loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1051,7 +1076,7 @@ describe('loadInstrumentFromManifest', () => {
                 expect(releaseCount(port)).toBe(3);
             });
             const types = postedTypes(port);
-            expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('buildZoneMap'));
+            expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('commitSampleBank'));
             const begin = port.postMessage.mock.calls[0]?.[0] as { loadToken: number };
             const releases = port.postMessage.mock.calls
                 .map(([message]) => message as { type: string; loadToken: number })
@@ -1067,13 +1092,13 @@ describe('loadInstrumentFromManifest', () => {
             const pending = load(port);
 
             await vi.waitFor(() => {
-                expect(postedTypes(port)).toContain('buildZoneMap');
+                expect(postedTypes(port)).toContain('commitSampleBank');
             });
             expect(releaseCount(port)).toBe(0);
 
             const buildMessage = port.postMessage.mock.calls
                 .map(([message]) => message as { type: string; loadToken: number })
-                .find((message) => message.type === 'buildZoneMap');
+                .find((message) => message.type === 'commitSampleBank');
             port.emit({ type: 'sampleBankLoaded', loadToken: buildMessage!.loadToken });
             await pending;
 
@@ -1154,6 +1179,7 @@ describe('loadInstrumentFromManifest', () => {
 
             const second = loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1182,13 +1208,14 @@ describe('loadInstrumentFromManifest', () => {
             const controller = new AbortController();
             const first = loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
                 signal: controller.signal,
             });
             await vi.waitFor(() => {
-                expect(postedTypes(port)).toContain('buildZoneMap');
+                expect(postedTypes(port)).toContain('commitSampleBank');
             });
             const [firstToken] = beginTokens(port);
             // The user switches instrument: the first load is aborted after its
@@ -1232,6 +1259,7 @@ describe('loadInstrumentFromManifest', () => {
             const controller = new AbortController();
             const middle = loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1294,7 +1322,7 @@ describe('loadInstrumentFromManifest', () => {
                 });
                 const [firstToken] = beginTokens(port);
                 const types = postedTypes(port);
-                expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('buildZoneMap'));
+                expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('commitSampleBank'));
 
                 const second = load(port).catch((error: unknown) => error);
                 await settle();
@@ -1324,6 +1352,7 @@ describe('loadInstrumentFromManifest', () => {
                 });
                 const first = loadInstrumentFromManifest({
                     manifestUrl: '/m.json',
+                    buildZoneTables,
                     basePath: '/base',
                     expectedInstrumentId: 'violin-1',
                     nodePort: port,
@@ -1346,7 +1375,7 @@ describe('loadInstrumentFromManifest', () => {
                     'abortSampleBank',
                     'releaseRetiredBank',
                     'beginSampleBank',
-                    'buildZoneMap',
+                    'commitSampleBank',
                     'releaseRetiredBank',
                 ]);
             });
@@ -1357,7 +1386,7 @@ describe('loadInstrumentFromManifest', () => {
                     const port = makePort({ autoComplete: false, manualRelease: true });
                     const first = load(port);
                     await vi.waitFor(() => {
-                        expect(postedTypes(port)).toContain('buildZoneMap');
+                        expect(postedTypes(port)).toContain('commitSampleBank');
                     });
                     const second = load(port);
                     await settle();
@@ -1381,6 +1410,7 @@ describe('loadInstrumentFromManifest', () => {
         await expect(
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1394,6 +1424,7 @@ describe('loadInstrumentFromManifest', () => {
         let settled = false;
         const pending = loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -1403,15 +1434,15 @@ describe('loadInstrumentFromManifest', () => {
         });
 
         await vi.waitFor(() => {
-            expect(postedTypes(port)).toContain('buildZoneMap');
+            expect(postedTypes(port)).toContain('commitSampleBank');
         });
         expect(settled).toBe(false);
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(1);
         const buildMessage: unknown = port.postMessage.mock.calls.find(([message]) => {
-            return isRecord(message) && message.type === 'buildZoneMap';
+            return isRecord(message) && message.type === 'commitSampleBank';
         })?.[0];
         if (!isRecord(buildMessage) || typeof buildMessage.loadToken !== 'number') {
-            throw new Error('Expected a buildZoneMap message');
+            throw new Error('Expected a commitSampleBank message');
         }
         port.emit({ type: 'sampleBankLoaded', loadToken: buildMessage.loadToken });
 
@@ -1422,7 +1453,7 @@ describe('loadInstrumentFromManifest', () => {
 
     it('aborts the active worklet transaction while waiting for its commit acknowledgement', async () => {
         // The token is still pending on this fake port when the abort lands
-        // (buildZoneMap has not committed — `autoComplete: false`), so the
+        // (commitSampleBank has not committed — `autoComplete: false`), so the
         // port answers `abortSampleBank` with `sampleBankError` the way the
         // real processor's matched abort does; the promise settles from that
         // answer rather than from an immediate local rejection.
@@ -1430,13 +1461,14 @@ describe('loadInstrumentFromManifest', () => {
         const controller = new AbortController();
         const pending = loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
             signal: controller.signal,
         });
         await vi.waitFor(() => {
-            expect(postedTypes(port)).toContain('buildZoneMap');
+            expect(postedTypes(port)).toContain('commitSampleBank');
         });
 
         controller.abort();
@@ -1446,10 +1478,10 @@ describe('loadInstrumentFromManifest', () => {
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
     });
 
-    it('rejects with the abort reason when the abort lands before buildZoneMap is posted, needing no worklet reply', async () => {
+    it('rejects with the abort reason when the abort lands before commitSampleBank is posted, needing no worklet reply', async () => {
         // `silenceAbortReply` proves this settles from the abort itself:
         // `markZoneMapPosted` has not run yet (it only runs right after
-        // `buildZoneMap` is posted), so `onAbort` must reject locally rather
+        // `commitSampleBank` is posted), so `onAbort` must reject locally rather
         // than wait for a worklet answer that never comes.
         const port = makePort({ autoComplete: false, silenceAbortReply: true });
         const controller = new AbortController();
@@ -1463,6 +1495,7 @@ describe('loadInstrumentFromManifest', () => {
 
         const pending = loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
@@ -1470,10 +1503,10 @@ describe('loadInstrumentFromManifest', () => {
         });
 
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-        expect(postedTypes(port)).not.toContain('buildZoneMap');
+        expect(postedTypes(port)).not.toContain('commitSampleBank');
     });
 
-    describe('an abort after buildZoneMap defers to the worklet', () => {
+    describe('an abort after commitSampleBank defers to the worklet', () => {
         it('resolves with the committed bank when the worklet already committed before the abort lands', async () => {
             const twoMicManifest = {
                 ...MANIFEST,
@@ -1497,7 +1530,7 @@ describe('loadInstrumentFromManifest', () => {
                 })
             );
             // `deferCommit` clears the port's pending token synchronously on
-            // `buildZoneMap` (as the real processor's commit does) but leaves
+            // `commitSampleBank` (as the real processor's commit does) but leaves
             // the terminal `sampleBankLoaded` reply for this test to deliver,
             // so the abort-vs-reply race is driven deterministically instead
             // of by timer ordering.
@@ -1505,19 +1538,20 @@ describe('loadInstrumentFromManifest', () => {
             const controller = new AbortController();
             const pending = loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
                 signal: controller.signal,
             });
             await vi.waitFor(() => {
-                expect(postedTypes(port)).toContain('buildZoneMap');
+                expect(postedTypes(port)).toContain('commitSampleBank');
             });
             const buildMessage: unknown = port.postMessage.mock.calls.find(([message]) => {
-                return isRecord(message) && message.type === 'buildZoneMap';
+                return isRecord(message) && message.type === 'commitSampleBank';
             })?.[0];
             if (!isRecord(buildMessage) || typeof buildMessage.loadToken !== 'number') {
-                throw new Error('Expected a buildZoneMap message');
+                throw new Error('Expected a commitSampleBank message');
             }
 
             controller.abort();
@@ -1532,7 +1566,7 @@ describe('loadInstrumentFromManifest', () => {
             expect(bank?.micPositions).toEqual(['close', 'room']);
         });
 
-        // "abort after buildZoneMap while the fake worklet has not committed;
+        // "abort after commitSampleBank while the fake worklet has not committed;
         // it answers the abort with sampleBankError → rejects with the abort
         // reason" is the same scenario the pre-existing
         // 'aborts the active worklet transaction while waiting for its commit
@@ -1550,13 +1584,14 @@ describe('loadInstrumentFromManifest', () => {
                 const controller = new AbortController();
                 const pending = loadInstrumentFromManifest({
                     manifestUrl: '/m.json',
+                    buildZoneTables,
                     basePath: '/base',
                     expectedInstrumentId: 'violin-1',
                     nodePort: port,
                     signal: controller.signal,
                 });
                 await vi.waitFor(() => {
-                    expect(postedTypes(port)).toContain('buildZoneMap');
+                    expect(postedTypes(port)).toContain('commitSampleBank');
                 });
 
                 controller.abort();
@@ -1574,12 +1609,14 @@ describe('loadInstrumentFromManifest', () => {
         await Promise.all([
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: firstPort,
             }),
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: secondPort,
@@ -1632,13 +1669,14 @@ describe('loadInstrumentFromManifest', () => {
         const port = makePort({ autoComplete: false });
         const first = loadInstrumentFromManifest({
             manifestUrl: '/m.json',
+            buildZoneTables,
             basePath: '/base',
             expectedInstrumentId: 'violin-1',
             nodePort: port,
         });
 
         await vi.waitFor(() => {
-            expect(postedTypes(port)).toContain('buildZoneMap');
+            expect(postedTypes(port)).toContain('commitSampleBank');
         });
         const beginCall = port.postMessage.mock.calls.find(
             ([message]) => isRecord(message) && message.type === 'beginSampleBank'
@@ -1684,6 +1722,7 @@ describe('loadInstrumentFromManifest', () => {
         await expect(
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1701,6 +1740,7 @@ describe('loadInstrumentFromManifest', () => {
         await expect(
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1724,6 +1764,7 @@ describe('loadInstrumentFromManifest', () => {
         await expect(
             loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1748,6 +1789,7 @@ describe('loadInstrumentFromManifest', () => {
 
             await loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
@@ -1756,7 +1798,7 @@ describe('loadInstrumentFromManifest', () => {
 
             const types = postedTypes(port);
             expect(types).not.toContain('beginSampleBank');
-            expect(types).not.toContain('buildZoneMap');
+            expect(types).not.toContain('commitSampleBank');
         });
 
         it('does not let one consumer signal abort the shared manifest fetch', async () => {
@@ -1773,6 +1815,7 @@ describe('loadInstrumentFromManifest', () => {
 
             await loadInstrumentFromManifest({
                 manifestUrl: '/m.json',
+                buildZoneTables,
                 basePath: '/base',
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
