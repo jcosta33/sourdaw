@@ -1182,6 +1182,11 @@ describe('storage ownership recovery', () => {
                 expect(samples.length).toBeGreaterThanOrEqual(3);
                 expect(samples.length).toBeLessThanOrEqual(4);
                 expect(samples.slice(2).every((sample) => sample === 'complete')).toBe(true);
+            } else if (persistent) {
+                // A persistent race shape takes fresh catalogs until the proof deadline.
+                expect(samples.length).toBeGreaterThan(2);
+                expect(samples.every((sample) => sample === 'incomplete')).toBe(true);
+                expect(readFileSync(diagnosticPath, 'utf8')).toContain('lsof-fields-unusable:descriptor-type-missing');
             } else {
                 expect(samples.length).toBe(2);
             }

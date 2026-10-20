@@ -1425,7 +1425,8 @@ export function storageFileState(
                 if (census === undefined) {
                     // A descriptor can close between lsof's field reads. Discard
                     // that catalog; only a wholly valid fresh observation can prove safety.
-                    if (observation === 0 && parseReason === 'descriptor-type-missing') {
+                    if (parseReason === 'descriptor-type-missing') {
+                        uncovered = `lsof-fields-unusable:${parseReason}`;
                         continue;
                     }
                     return unknown(`lsof-fields-unusable:${parseReason}`);

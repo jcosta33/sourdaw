@@ -747,12 +747,12 @@ its file table; this exception never releases process-identity or signaling fenc
 File inspection checks same-UID process coverage again after reading files, so a process born
 during inspection cannot disappear from the proof. On Linux, a newly listed live same-UID process
 permits one complete replacement inspection of the full fresh process list, within at most two
-observations. On macOS, a first catalog missing only a descriptor type may be discarded once. A
-catalog that omits a positively live same-UID process, whether newborn or already listed, is
-discarded for a wholly fresh catalog and process list, repeated until one is complete or the
-five-second proof deadline expires; `lsof` can omit a live process it was able to list moments
-later. Catalogs are never merged, and a deadline reached without a complete catalog retains storage
-with the last omission as its reason. Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
+observations. On macOS, `lsof` races the processes it reads: a descriptor that closes between field
+reads leaves an otherwise valid catalog missing only its type, and a positively live same-UID
+process, whether newborn or already listed, can be absent from a catalog that lists it moments
+later. Either catalog is discarded for a wholly fresh catalog and process list, repeated until one
+is complete or the five-second proof deadline expires. Catalogs are never merged, and a deadline
+reached without a complete catalog retains storage with the last omission as its reason. Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
 identity, malformed catalog, denied inspection or unavailable evidence retains storage. Processes created after the final proof remain outside
 that observation; this is conservative sampled evidence, not a guarantee of continuous isolation.
 Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
