@@ -1,0 +1,25 @@
+src/modules/Preferences/models/Preferences.ts
+  s_2bfd55a4393d7c::t_71699cda0ab6e2 131-134
+src/modules/Project/useCases/projectPersistence/__tests__/helpers.spec.ts
+  s_2bfd55a4393d7c::t_ef37723c87488b 101-102,105
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_2bfd55a4393d7c::t_e820d1e6bbb193 215,217,220
+src/modules/Transport/useCases/__tests__/preferencesSeededTransportState.spec.ts
+  s_2bfd55a4393d7c::t_28aca3b1ece962 35-38,43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f0920ea3d5371d237470393e77c48e370baf6677",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
