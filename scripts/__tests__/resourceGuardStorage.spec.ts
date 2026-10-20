@@ -146,6 +146,9 @@ function guarded(root: string, input: Partial<Parameters<typeof runGuardedComman
     });
 }
 
+// A guarded cleanup can spend its whole five-second file-proof deadline retaking
+// catalogs on a busy host, so a case running one cannot use the five-second default.
+const GUARDED_CASE_TIMEOUT_MS = 15_000;
 const fakeOwner = { pid: 999990, startedAt: 'original-start' };
 const fakeReclaimer = { pid: 999991, startedAt: 'reclaimer-start' };
 const deadPorts: StorageRecoveryPorts = { identityState: () => 'dead', sessionState: () => 'dead' };
@@ -167,7 +170,7 @@ function claimPayloads(root: string): string[] {
     );
 }
 
-describe('guard-owned temporary storage', () => {
+describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it('defaults to the canonical Git primary or the non-Git command volume', () => {
         const commonDirectory = execFileSync('git', ['rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim();
         const primary = dirname(realpathSync(resolve(commonDirectory)));
@@ -773,7 +776,7 @@ describe('guard-owned temporary storage', () => {
     }, 15_000);
 });
 
-describe('storage ownership recovery', () => {
+describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it.each([
         { scenario: 'unrelated newborn', released: true, state: 'dead' },
         { scenario: 'newborn cwd borrower', released: false, state: 'alive' },
