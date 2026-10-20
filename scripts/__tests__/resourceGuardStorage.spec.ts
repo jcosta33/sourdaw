@@ -173,6 +173,7 @@ async function runMarkedGuard(root: string): Promise<{
     token: string;
     pid: number;
     supervisorPid: number;
+    ownerPid: number;
 }> {
     const run = randomUUID();
     const marker = join(root, `guard-${run}.json`);
@@ -182,7 +183,7 @@ async function runMarkedGuard(root: string): Promise<{
         command: process.execPath,
         args: [
             '-e',
-            `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}))`,
+            `const fs=require('node:fs'),path=require('node:path'),tmp=require('node:os').tmpdir();const owner=JSON.parse(fs.readFileSync(path.join(path.dirname(tmp),'owner.json'),'utf8'));fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp,ownerPid:owner.owner.pid}))`,
         ],
         profile: 'focused',
         availableMemoryBytes: abundantMemoryBytes,
@@ -209,7 +210,7 @@ async function runMarkedGuard(root: string): Promise<{
         childPids.add(supervisorPid);
     }
     const exit = await closed;
-    const observed: { pid: number; tmp: string } | undefined = existsSync(marker)
+    const observed: { pid: number; tmp: string; ownerPid: number } | undefined = existsSync(marker)
         ? JSON.parse(readFileSync(marker, 'utf8'))
         : undefined;
     if (observed !== undefined) {
@@ -228,7 +229,14 @@ async function runMarkedGuard(root: string): Promise<{
     expect(isAlive(supervisorPid)).toBe(false);
     const token = basename(dirname(observed.tmp));
     expect(observed.tmp).toBe(join(root, 'storage', token, 'tmp'));
-    return { result, tempDirectory: observed.tmp, token, pid: observed.pid, supervisorPid };
+    return {
+        result,
+        tempDirectory: observed.tmp,
+        token,
+        pid: observed.pid,
+        supervisorPid,
+        ownerPid: observed.ownerPid,
+    };
 }
 
 function retainedStorageTokens(root: string): { direct: string[]; claims: string[] } {
@@ -249,7 +257,7 @@ function retainedStorageTokens(root: string): { direct: string[]; claims: string
 
 function expectMarkedRecovery(
     root: string,
-    prior: { tempDirectory: string; token: string }[],
+    prior: { tempDirectory: string; token: string; supervisorPid?: number }[],
     fresh: Awaited<ReturnType<typeof runMarkedGuard>>,
     originalStillLive = false
 ): void {
@@ -267,16 +275,25 @@ function expectMarkedRecovery(
             originalToken: prior[0]?.token,
             freshToken: fresh.token,
             freshSupervisorPid: fresh.supervisorPid,
+            freshOwnerPid: fresh.ownerPid,
             priorTokens: prior.map((run) => run.token),
             retained,
         })
     );
     expect(fresh.result.code).toBe(0);
+    expect(Number.isInteger(fresh.supervisorPid) && fresh.supervisorPid > 0).toBe(true);
+    expect(fresh.supervisorPid).not.toBe(process.pid);
+    expect(fresh.ownerPid).toBe(fresh.supervisorPid);
+    expect(isAlive(fresh.supervisorPid)).toBe(false);
     expect(isAlive(fresh.pid)).toBe(false);
     expect(retainedTokens.every((token) => knownTokens.includes(token))).toBe(true);
     expect(new Set(retainedTokens).size).toBe(retainedTokens.length);
     for (const run of [...prior, fresh]) {
         expect(existsSync(run.tempDirectory)).toBe(retained.direct.includes(run.token));
+        if (run.supervisorPid !== undefined) {
+            expect(run.supervisorPid).not.toBe(process.pid);
+            expect(isAlive(run.supervisorPid)).toBe(false);
+        }
     }
     expect(diagnostics).toEqual(
         diagnostics.length === 0
@@ -685,7 +702,11 @@ describe('guard-owned temporary storage', () => {
                 }
                 const interim = await runMarkedGuard(root);
                 expectMarkedRecovery(root, prior, interim, true);
-                prior.push({ tempDirectory: interim.tempDirectory, token: interim.token });
+                prior.push({
+                    tempDirectory: interim.tempDirectory,
+                    token: interim.token,
+                    supervisorPid: interim.supervisorPid,
+                });
                 expect(isAlive(started.pid)).toBe(true);
                 expect(existsSync(started.tmp)).toBe(true);
                 await kill(started.pid);
@@ -1444,7 +1465,7 @@ describe('storage ownership recovery', () => {
             reason: 'lsof-live-pid-missing:count=1',
         },
         {
-            scenario: 'missing live PID replacement cap',
+            scenario: 'persistent first PID gap despite another newborn',
             omissions: 0,
             state: 'unknown',
             samples: 2,
@@ -1492,7 +1513,7 @@ describe('storage ownership recovery', () => {
                         let pids=[pid];
                         if(scenario==='third missing live PID')pids.push(newPid);
                         if(scenario==='post-death recovery live PID gap'&&processSamples>=3)pids.push(newPid);
-                        if(scenario==='missing live PID replacement cap'){
+                        if(scenario==='persistent first PID gap despite another newborn'){
                             if(processSamples>=2)pids.push(newPid);
                             if(processSamples>=4)pids.push(newerPid);
                         }
@@ -1581,6 +1602,181 @@ describe('storage ownership recovery', () => {
     );
 
     it.skipIf(process.getuid === undefined).each([
+        {
+            scenario: 'successive newborns reach complete third catalog',
+            ending: 'complete',
+            secondSnapshot: 'live',
+            state: 'dead',
+            samples: 3,
+            processSamples: 6,
+        },
+        {
+            scenario: 'successive newborns reveal protected third-catalog borrower',
+            ending: 'borrower',
+            secondSnapshot: 'live',
+            state: 'alive',
+            samples: 3,
+            processSamples: 5,
+        },
+        {
+            scenario: 'successive newborns exhaust third catalog with another newborn',
+            ending: 'third newborn',
+            secondSnapshot: 'live',
+            state: 'unknown',
+            samples: 3,
+            processSamples: 6,
+        },
+        {
+            scenario: 'successive newborns reach the original deadline',
+            ending: 'deadline',
+            secondSnapshot: 'live',
+            state: 'unknown',
+            samples: 3,
+            processSamples: 5,
+        },
+        {
+            scenario: 'second newborn has another UID',
+            ending: 'complete',
+            secondSnapshot: 'wrong UID',
+            state: 'unknown',
+            samples: 2,
+            processSamples: 4,
+        },
+        {
+            scenario: 'second newborn has unknown state',
+            ending: 'complete',
+            secondSnapshot: 'unknown state',
+            state: 'unknown',
+            samples: 2,
+            processSamples: 4,
+        },
+        {
+            scenario: 'second newborn snapshot is denied',
+            ending: 'complete',
+            secondSnapshot: 'denied',
+            state: 'unknown',
+            samples: 2,
+            processSamples: 4,
+        },
+    ] as const)(
+        'bounds successive Darwin PID arrivals for $scenario',
+        ({ ending, secondSnapshot, state, samples, processSamples }) => {
+            const root = fixture();
+            chmodSync(root, 0o700);
+            const temp = join(root, 'tmp');
+            const program = `
+                import childProcess from 'node:child_process';
+                import os from 'node:os';
+                import {syncBuiltinESMExports} from 'node:module';
+                const ending=${JSON.stringify(ending)},secondSnapshot=${JSON.stringify(secondSnapshot)};
+                const uid=process.getuid(),pid=process.pid,firstPid=pid+100000,secondPid=pid+100001,thirdPid=pid+100002;
+                const temp=${JSON.stringify(temp)};
+                let fileSamples=0,processSamples=0,now=0;
+                const timeouts=[],accountPids=[],catalogPids=[],snapshotPids=[];
+                os.platform=()=> 'darwin';
+                Date.now=()=>now;
+                process.kill=()=>true;
+                childProcess.spawnSync=(command,args,options)=>{
+                    timeouts.push({command,timeout:options.timeout});
+                    if(command==='ps'&&args[0]==='-p'){
+                        const inspected=Number(args[1]);
+                        snapshotPids.push(inspected);
+                        if(inspected===secondPid&&secondSnapshot==='denied')return {status:1,stdout:'',stderr:'denied'};
+                        const user=inspected===secondPid&&secondSnapshot==='wrong UID'?uid+1:uid;
+                        const state=inspected===secondPid&&secondSnapshot==='unknown state'?'?':'S';
+                        return {status:0,stdout:user+' '+state+'\\n',stderr:''};
+                    }
+                    if(command==='ps'){
+                        processSamples++;
+                        const accounts=[
+                            [pid],[pid,firstPid],[pid,firstPid],[pid,firstPid,secondPid],
+                            [pid,firstPid,secondPid],
+                            ending==='third newborn'?[pid,firstPid,secondPid,thirdPid]:[pid,firstPid,secondPid],
+                        ];
+                        const pids=accounts[processSamples-1];
+                        if(pids===undefined)throw new Error('account observation exceeded six samples');
+                        accountPids.push(pids);
+                        return {status:0,stdout:pids.map(value=>value+' '+uid).join('\\n')+'\\n',stderr:''};
+                    }
+                    if(command==='lsof'){
+                        fileSamples++;
+                        now+=ending==='deadline'&&fileSamples===3?4800:100;
+                        const pids=fileSamples===1?[pid]:fileSamples===2?[pid,firstPid]:[pid,firstPid,secondPid];
+                        catalogPids.push(pids);
+                        const stdout=pids.map(value=>{
+                            const path=ending==='borrower'&&fileSamples===3&&value===secondPid?temp:'/outside';
+                            return 'p'+value+'\\0\\nfcwd\\0tDIR\\0n'+path+'\\0\\n';
+                        }).join('');
+                        return {status:0,stdout,stderr:''};
+                    }
+                    throw new Error('unexpected command '+command);
+                };
+                syncBuiltinESMExports();
+                const {storageFileState}=await import(${JSON.stringify(guardPath)});
+                const reasons=[];
+                const result=storageFileState([temp],[],reason=>reasons.push(reason));
+                console.log(JSON.stringify({result,reasons,fileSamples,processSamples,timeouts,accountPids,catalogPids,snapshotPids,pid,firstPid,secondPid,thirdPid,uid}));
+            `;
+            const observed: {
+                result: string;
+                reasons: string[];
+                fileSamples: number;
+                processSamples: number;
+                timeouts: { command: string; timeout: number }[];
+                accountPids: number[][];
+                catalogPids: number[][];
+                snapshotPids: number[];
+                pid: number;
+                firstPid: number;
+                secondPid: number;
+                thirdPid: number;
+                uid: number;
+            } = JSON.parse(
+                execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 10_000,
+                })
+            );
+            const { pid, firstPid, secondPid, thirdPid, uid } = observed;
+            const thirdAccounts =
+                ending === 'third newborn' ? [pid, firstPid, secondPid, thirdPid] : [pid, firstPid, secondPid];
+            const expectedAccounts = [
+                [pid],
+                [pid, firstPid],
+                [pid, firstPid],
+                [pid, firstPid, secondPid],
+                [pid, firstPid, secondPid],
+                thirdAccounts,
+            ];
+            expect(observed.result).toBe(state);
+            expect(observed.fileSamples).toBe(samples);
+            expect(observed.processSamples).toBe(processSamples);
+            expect(observed.accountPids).toEqual(expectedAccounts.slice(0, processSamples));
+            expect(observed.catalogPids).toEqual(
+                [[pid], [pid, firstPid], [pid, firstPid, secondPid]].slice(0, samples)
+            );
+            expect(observed.snapshotPids).toEqual(
+                ending === 'third newborn' ? [firstPid, secondPid, thirdPid] : [firstPid, secondPid]
+            );
+            expect(
+                observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)
+            ).toEqual([5000, 4900, 4800].slice(0, samples));
+            let expectedReason: string | undefined;
+            if (ending === 'deadline') expectedReason = 'file-census-time-bound';
+            if (ending === 'third newborn')
+                expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${thirdPid}/${uid}/S`;
+            if (secondSnapshot === 'wrong UID')
+                expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${secondPid}/${uid + 1}/S`;
+            if (secondSnapshot === 'unknown state')
+                expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${secondPid}/${uid}/?`;
+            if (secondSnapshot === 'denied')
+                expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${secondPid}/unknown/unknown`;
+            expect(observed.reasons).toEqual(expectedReason === undefined ? [] : [expectedReason]);
+        }
+    );
+
+    it.skipIf(process.getuid === undefined).each([
         { scenario: 'complete current coverage', gap: false, expectedStates: ['dead', 'dead', 'dead'] },
         { scenario: 'new uncovered live PID', gap: true, expectedStates: ['unknown'] },
     ] as const)('requires fresh startup recovery proof for $scenario', ({ gap, expectedStates }) => {
@@ -1592,10 +1788,10 @@ describe('storage ownership recovery', () => {
             import {randomUUID} from 'node:crypto';
             import {existsSync,readFileSync,readdirSync} from 'node:fs';
             import {join} from 'node:path';
-            const gap=${gap},uid=process.getuid(),pid=process.pid,newPid=pid+100000;
+            const gap=${gap},uid=process.getuid(),pid=process.pid,newPid=pid+100000,newerPid=pid+100001;
             const storageRoot=${JSON.stringify(join(root, 'storage'))};
             let fileSamples=0,processSamples=0,now=0;
-            const timeouts=[];
+            const timeouts=[],proofPaths=[],accountPids=[],catalogPids=[];
             os.platform=()=> 'darwin';
             Date.now=()=>now;
             process.kill=()=>true;
@@ -1606,13 +1802,18 @@ describe('storage ownership recovery', () => {
                     if(args[0]==='-p')stdout=uid+' S\\n';
                     else {
                         processSamples++;
-                        const pids=gap&&processSamples>=3?[pid,newPid]:[pid];
+                        const pids=[pid];
+                        if((gap&&processSamples>=3)||(!gap&&processSamples>=4))pids.push(newPid);
+                        if(!gap&&processSamples>=6)pids.push(newerPid);
+                        accountPids.push(pids);
                         stdout=pids.map(value=>value+' '+uid).join('\\n')+'\\n';
                     }
                 }else if(command==='lsof'){
                     fileSamples++;
                     now+=100;
-                    stdout='p'+pid+'\\0\\nfcwd\\0tDIR\\0n/outside\\0\\n';
+                    const covered=gap||fileSamples<=2?[pid]:fileSamples===3?[pid,newPid]:[pid,newPid,newerPid];
+                    catalogPids.push(covered);
+                    stdout=covered.map(value=>'p'+value+'\\0\\nfcwd\\0tDIR\\0n/outside\\0\\n').join('');
                 }else throw new Error('unexpected command '+command);
                 return {status:0,stdout,stderr:''};
             };
@@ -1623,6 +1824,7 @@ describe('storage ownership recovery', () => {
             const ports={
                 identityState:()=> 'dead',
                 sessionState:(_owner,original,current=original)=>{
+                    proofPaths.push({original,current});
                     const state=storageFileState([original,current],[],reason=>reasons.push(reason));
                     states.push(state);
                     return state;
@@ -1633,7 +1835,8 @@ describe('storage ownership recovery', () => {
             const proofBeforeRecovery=storageFileState([storage.tempDirectory],[]);
             recoverGuardStorage(storageRoot,ports,${JSON.stringify(fakeReclaimer)});
             const originalRetained=existsSync(storage.tempDirectory);
-            const originalOwner=originalRetained?JSON.parse(readFileSync(join(storageRoot,originalToken,'owner.json'),'utf8')):undefined;
+            const ownerPath=join(storageRoot,originalToken,'owner.json');
+            const originalOwner=existsSync(ownerPath)?JSON.parse(readFileSync(ownerPath,'utf8')):undefined;
             const claims=readdirSync(join(storageRoot,'.claims')).flatMap(token=>{
                 const claim=join(storageRoot,'.claims',token);
                 return readdirSync(claim).filter(name=>name!=='claim.json').map(name=>{
@@ -1641,7 +1844,7 @@ describe('storage ownership recovery', () => {
                     return {name,owner:JSON.parse(readFileSync(join(path,'owner.json'),'utf8'))};
                 });
             });
-            console.log(JSON.stringify({proofBeforeRecovery,states,reasons,fileSamples,processSamples,timeouts,originalRetained,originalOwner,claims,newPid,uid,originalToken}));
+            console.log(JSON.stringify({proofBeforeRecovery,states,reasons,fileSamples,processSamples,timeouts,proofPaths,accountPids,catalogPids,originalRetained,originalOwner,claims,pid,newPid,newerPid,uid,originalToken}));
         `;
         const observed: {
             proofBeforeRecovery: string;
@@ -1650,10 +1853,15 @@ describe('storage ownership recovery', () => {
             fileSamples: number;
             processSamples: number;
             timeouts: { command: string; timeout: number }[];
+            proofPaths: { original: string; current: string }[];
+            accountPids: number[][];
+            catalogPids: number[][];
             originalRetained: boolean;
             originalOwner?: { token: string };
             claims: { name: string; owner: { token: string } }[];
+            pid: number;
             newPid: number;
+            newerPid: number;
             uid: number;
             originalToken: string;
         } = JSON.parse(
@@ -1668,11 +1876,44 @@ describe('storage ownership recovery', () => {
         expect(observed.reasons).toEqual(
             gap ? [`lsof-live-pid-missing:count=1:pid/uid/state=${observed.newPid}/${observed.uid}/S`] : []
         );
-        expect(observed.fileSamples).toBe(gap ? 2 : 4);
-        expect(observed.processSamples).toBe(gap ? 4 : 8);
-        expect(observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)).toEqual(
-            Array(observed.fileSamples).fill(5000)
+        expect(observed.fileSamples).toBe(gap ? 2 : 6);
+        expect(observed.processSamples).toBe(gap ? 4 : 12);
+        const { pid, newPid, newerPid } = observed;
+        expect(observed.accountPids).toEqual(
+            gap
+                ? [[pid], [pid], [pid, newPid], [pid, newPid]]
+                : [
+                      [pid],
+                      [pid],
+                      [pid],
+                      [pid, newPid],
+                      [pid, newPid],
+                      [pid, newPid, newerPid],
+                      ...Array.from({ length: 6 }, () => [pid, newPid, newerPid]),
+                  ]
         );
+        expect(observed.catalogPids).toEqual(
+            gap
+                ? [[pid], [pid]]
+                : [
+                      [pid],
+                      [pid],
+                      [pid, newPid],
+                      [pid, newPid, newerPid],
+                      [pid, newPid, newerPid],
+                      [pid, newPid, newerPid],
+                  ]
+        );
+        expect(observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)).toEqual(
+            gap ? [5000, 5000] : [5000, 5000, 4900, 4800, 5000, 5000]
+        );
+        expect(observed.proofPaths).toHaveLength(gap ? 1 : 3);
+        expect(observed.proofPaths[0]?.current).toBe(observed.proofPaths[0]?.original);
+        if (!gap) {
+            expect(observed.proofPaths[1]?.current).toBe(observed.proofPaths[1]?.original);
+            expect(observed.proofPaths[2]?.current).toContain('/.claims/');
+            expect(observed.proofPaths[2]?.current).not.toBe(observed.proofPaths[2]?.original);
+        }
         expect(observed.originalRetained).toBe(gap);
         expect(observed.originalOwner?.token).toBe(gap ? observed.originalToken : undefined);
         expect(observed.claims).toEqual([]);
