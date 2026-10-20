@@ -23,7 +23,6 @@ import {
 import { compileAutomationSegments } from './compileAutomationSegments';
 import { eventStreamFrame } from './eventStreamFrame';
 import { type ScheduleCall } from './makeOfflineFrameScheduler';
-import { makeSecondsToBeat } from './makeSecondsToBeat';
 import { mergeAutomationEventStreams, type AutomationEventStream } from './mergeAutomationEventStreams';
 import {
     mergeAutomationSegmentStreams,
@@ -222,6 +221,8 @@ export type ScheduleTrackAutomationInput = {
      * its own that could drift from live playback.
      */
     projectBeatToSeconds: (beat: number) => number;
+    /** Project beat at region-relative render seconds, required only for resolved modulator bindings. */
+    projectSecondsToBeat?: (seconds: number) => number;
     sampleRate?: number;
     compensationDelaySec?: number;
     clipBoundsById?: Map<string, { startBeat: number; endBeat: number }>;
@@ -418,11 +419,7 @@ function scheduleModulatedGroup(input: {
     renderFrames: number;
     durationSeconds: number;
     slewTickSeconds: number;
-    defaultTempo: number;
-    changes: AutomationTempoChange[];
-    regionStartBeat: number;
-    regionStartSeconds: number;
-    projectBeatToSeconds: (beat: number) => number;
+    projectSecondsToBeat: (seconds: number) => number;
     sampleRate: number;
     compensationDelaySec: number;
     clampStep: (value: number) => number;
@@ -431,7 +428,6 @@ function scheduleModulatedGroup(input: {
     const { plans, binding, sampleBaseDevice, scheduleFrame, renderFrames } = input;
     // Live's last-write-wins per tick; one schedule per group, from the last plan.
     const plan = plans[plans.length - 1]!;
-    const secondsToBeat = makeSecondsToBeat(input.defaultTempo, input.changes);
     const descriptorClamp = (value: number): number => Math.min(plan.paramMax, Math.max(plan.paramMin, value));
 
     // The blocks: slew-tick moments across the render, each carrying the
@@ -440,7 +436,7 @@ function scheduleModulatedGroup(input: {
     const values: number[] = [];
     let previous: number | null = null;
     for (let timeSeconds = 0; timeSeconds < input.durationSeconds; timeSeconds += input.slewTickSeconds) {
-        const beat = input.regionStartBeat + secondsToBeat(timeSeconds);
+        const beat = input.projectSecondsToBeat(timeSeconds);
         const sampled = sampleBaseDevice?.(timeSeconds);
         const base = sampled ?? plan.baseValue;
         // Live: `target = clamp(base + delta, paramMin, paramMax)`; the device
@@ -521,11 +517,11 @@ export function scheduleTrackAutomation({
     scheduleFrame,
     regionStartSeconds = 0,
     projectBeatToSeconds,
+    projectSecondsToBeat,
     sampleRate = 44_100,
     compensationDelaySec = 0,
     clipBoundsById,
     vcaMultiplier = 1,
-    regionStartBeat = 0,
     modulatorPlans,
     resolveLaneCeiling,
     onWithheldDeviceLanes,
@@ -1114,6 +1110,9 @@ export function scheduleTrackAutomation({
         if (!entry || !binding) {
             return false;
         }
+        if (!projectSecondsToBeat) {
+            throw createExportError('Offline seconds-to-beat projection is not configured');
+        }
         scheduleModulatedGroup({
             plans,
             binding,
@@ -1122,11 +1121,7 @@ export function scheduleTrackAutomation({
             renderFrames: clampRenderFrameCount({ durationSeconds, sampleRate }),
             durationSeconds,
             slewTickSeconds,
-            defaultTempo,
-            changes,
-            regionStartBeat,
-            regionStartSeconds,
-            projectBeatToSeconds: projectBeat,
+            projectSecondsToBeat,
             sampleRate,
             compensationDelaySec,
             clampStep: (value) =>

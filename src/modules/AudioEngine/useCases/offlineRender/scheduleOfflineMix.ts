@@ -64,6 +64,7 @@ export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuff
         changes,
         projectMidiEvents,
         projectPpqEndpoints,
+        beatAtSecondsFromAnchor,
         resolveTempoAtBeat,
         processYeastMidi,
         selectMidiEventProbability,
@@ -103,6 +104,7 @@ export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuff
             projections: {
                 projectMidiEvents,
                 projectPpqEndpoints,
+                beatAtSecondsFromAnchor,
                 resolveTempoAtBeat,
                 processYeastMidi,
                 selectMidiEventProbability,

@@ -189,3 +189,63 @@ track and on another active track. Undo must keep the original history head and 
 after a successful undo, the same duplicate-ID states must keep redo pending and preserve the restored
 notes. Replay authority requires one live MIDI clip under the captured track owner, not merely a first
 matching clip in that track.
+
+## Committed deletion inverses must restore saved monitoring intent (caught in PR #5091)
+
+PR #5091's head `71221839` captured restore admission after the strip-effect yield and
+guarded deletion only by root identity. The root-ownership stance missed both a replacement
+between strip restoration and rearm and a collaborator restoring a deleted identity within
+the original lineage. Queue replacement from the actual strip sink during single and bulk
+Undo, including published-but-throwing commits; no later outgoing effect or capture request
+may reach it. Pair same-lineage input edits with successful, nonblocking rearm. Restore a
+deleted owner before cleanup and between awaited effects through committed CRDT truth, then
+assert its current gain, strip, source edge and absence of stale removal events. Each removal
+effect must recheck committed absence independently; still-absent owners and cleanup faults
+remain positive controls.
+
+A real track-deletion Undo restored raw document and projected tracks with monitoring On while
+the independent recorder owner stayed absent. Project round trips that assert snapshots alone
+miss this disagreement. Exercise single and bulk removal through Command and its actual inverse,
+then inspect the live source edge and capture stream as well as persisted membership and modes.
+Refused and isolated-preview restores must acquire nothing; published-but-throwing restoration
+may rearm only the committed, still-present owner. A denied device must not turn restored project
+truth or successful Undo into a failure. See the paired lifecycle probe in `session-lifecycle.md`.
+
+The restoration repair in PR #5091 (`319cc5b5f8`) still read the optimistic store after
+awaited strip effects. Hold a second real storage transaction projecting On over a committed
+Off restoration, then abort it: neither normal nor ambiguous restore may request capture,
+retain an owner, or connect an edge. Change the committed selected input during the strip
+await and while permission is pending; admission must use current committed intent and a late
+grant must attach only current owners of that input. Include a shared pending survivor and
+last-owner removal so rejecting one stale restore cannot orphan another owner's capture.
+
+PR #5091's restore repair (`319cc5b5f8`, retained by `fac4a4f061`) awaited microphone
+permission inside sequential restored-track effects and serialized Undo. A successful snapshot
+assertion after granting permission missed the blocked history. Bulk-delete two saved On tracks
+with independent inputs and Undo while the first permission stays held: both requests must
+start, the Undo promise and history transition must complete, and a later real Undo/Redo must
+finish before either grant. Permission work belongs to an admitted runtime continuation, with
+fresh committed mode/input and owner checks at settlement. Cover denial and late grant after
+committed deletion, Off and input change through both normal and published-but-throwing restore;
+none may roll back committed truth or leave an unhandled continuation.
+
+The follow-up head in PR #5091 (`2511d0c172`) omitted permission settlement while a restored On
+owner was optimistically absent in a second removal transaction. Settle that real grant before
+aborting the removal, then require the restored committed owner to reconnect without another
+permission request or a premature strip recreation. Also drive the real palette Delete Track
+entry through registered removal and Undo: a refused write preserves raw and visible membership,
+selection, history and capture, while committed removal retires only its owner and the inverse
+rearms the restored one. A direct helper invocation or a snapshot-only inverse misses the caller
+and independent runtime authority; see the paired lifecycle probes in `session-lifecycle.md`.
+
+PR #867 introduced deferrable track teardown; PR #5091's head `1297f963` fenced the direct
+removal observer while its normal and ambiguous Command continuations still held only track IDs.
+Capture the installed root before optimistic publication and replace it through the real
+`onCommitted` callback, reusing the removed identity. Repeat with publication followed by a
+storage error. The outgoing continuation must leave the incoming owner, source edge, stream and
+strip intact, including modulation cleanup, sidechain rewiring and removed-event publication.
+Attack remove, remove-all, created-track discard, delegated bulk discard and imported-stem
+discard at their actual continuation routes. Replace the root between awaited effects and inside
+a synchronous teardown callback: entry-only fencing cannot authorize the remaining effects.
+A missing captured root also retires cleanup; same-root genuine removal still completes, and
+refusal preserves its graph. The direct observer's replacement test alone misses these routes.

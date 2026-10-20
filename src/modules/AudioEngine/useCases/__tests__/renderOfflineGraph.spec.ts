@@ -5,6 +5,7 @@ import {
     type TrackStoreState,
     type TakeLaneStoreState,
     type GainEnvelopeStoreState,
+    adjustmentLayerStore,
 } from '#/modules/Arrangement/stores';
 import { type AutomationStoreState } from '#/modules/Automation/stores';
 import { createOfflineAutomationEvaluator } from '#/modules/Automation/useCases';
@@ -16,6 +17,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { defaultTransportState, readSecondsAtBeat, type TransportState } from '#/modules/Transport/stores';
 import {
+    beatAtSecondsFromAnchor,
     projectPpqEndpoints,
     resolveTempoAtBeat,
     restoreTimelineMapSnapshot,
@@ -87,10 +89,7 @@ const emptyMidi: NonNullable<MidiStoreState> = {
     pitchBendByClipId: {},
 };
 
-type ScheduleTrackClipsInput = {
-    track: Track;
-    sendAutomationParams?: ReadonlyMap<string, AudioParam>;
-};
+type ScheduleTrackClipsInput = Parameters<typeof import('../offlineRender/scheduleTrackClips').scheduleTrackClips>[0];
 
 const mocks = vi.hoisted(() => {
     const takeLanes: { value: TakeLaneStoreState | null } = { value: null };
@@ -401,6 +400,56 @@ describe('renderOffline — graph construction and lifecycle', () => {
 
     afterEach(() => {
         vi.unstubAllGlobals();
+    });
+
+    it('forwards the captured inverse to mix scheduling and writes ramp-aligned moving layer gain', async () => {
+        const changes = [
+            { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' as const },
+            { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+        ];
+        const inverse = vi.fn(beatAtSecondsFromAnchor);
+        const track = TrackDummy.create();
+        const strip = makeStrip(track.id);
+        mocks.createOfflineTrackStrip.mockResolvedValue(strip);
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({
+                tracks: { tracks: [track] } as TrackStoreState,
+                durationSeconds: 0.015,
+                changes,
+                projectPpqEndpoints,
+                beatAtSecondsFromAnchor: inverse,
+            })
+        );
+        adjustmentLayerStore.set({
+            layers: [
+                {
+                    id: 'fade',
+                    name: 'Fade',
+                    effectType: 'volume',
+                    enabled: true,
+                    mix: 1,
+                    parameters: [{ name: 'Gain', value: -12, min: -60, max: 12, unit: 'dB' }],
+                    affectedTrackIds: [track.id],
+                    insertionIndex: 0,
+                    color: 'red',
+                    regions: [{ id: 'region', startBeat: 0, endBeat: 8, blend: 1, fadeInBeats: 8, fadeOutBeats: 0 }],
+                },
+            ],
+        });
+        restoreTransportSnapshot({ ...defaultTransportState, scheduleGrainMs: 10 });
+        try {
+            await renderOffline({ durationBeats: 8 });
+            expect(mocks.scheduleTrackClips.mock.calls[0]?.[0].projections?.beatAtSecondsFromAnchor).toBe(inverse);
+            expect(inverse).toHaveBeenCalledWith(changes, 0, 0.01, 120);
+            const beat = (100 * Math.exp(0.01 / 4.8) - 100) / 12.5;
+            expect(strip.faderNode.gain.setValueAtTime).toHaveBeenCalledWith(
+                expect.closeTo(0.8 * (1 + ((10 ** (-12 / 20) - 1) * beat) / 8), 10),
+                0.01
+            );
+        } finally {
+            adjustmentLayerStore.set({ layers: [] });
+            restoreTransportSnapshot(defaultTransportState);
+        }
     });
 
     it.each([4, 0])('refuses an active export before capturing a request of %s beats', async (durationBeats) => {

@@ -2,6 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type HandlerAfterCommit } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 import { handleDiscardCreatedTrack } from './discardCreatedTrack';
@@ -18,6 +19,7 @@ export const handleDiscardCreatedTracks = createHandler<'discardCreatedTracks'>(
             return { status: 'conflict' };
         }
 
+        const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
         const afterCommitEffects: HandlerAfterCommit[] = [];
         const afterAmbiguousCommitEffects: HandlerAfterCommit[] = [];
         for (const trackId of action.payload.trackIds) {
@@ -38,8 +40,8 @@ export const handleDiscardCreatedTracks = createHandler<'discardCreatedTracks'>(
 
         return {
             status: 'written',
-            afterCommit: () => runAllAsyncEffects(afterCommitEffects),
-            afterAmbiguousCommit: () => runAllAsyncEffects(afterAmbiguousCommitEffects),
+            afterCommit: () => runAllAsyncEffects(afterCommitEffects.map(runtimeAuthority.guard)),
+            afterAmbiguousCommit: () => runAllAsyncEffects(afterAmbiguousCommitEffects.map(runtimeAuthority.guard)),
         };
     },
     describe: () => ({ label: 'Discard created tracks', inverseAction: null }),

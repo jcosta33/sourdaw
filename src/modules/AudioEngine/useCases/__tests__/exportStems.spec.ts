@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { createAppError } from '#/infra/errors/createAppError';
+
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
 import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
 import { exportStems } from '../exportStems';
@@ -8,14 +10,26 @@ import { cancelExport } from '../offlineRender/exportCancellation';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
 import { isExportActive } from '../offlineRender/isExportActive';
 
+import type { BuildDeviceChainContext, BuildDeviceChainOutput } from '../buildDeviceChain';
+
 const offlineRenderMocks = vi.hoisted(() => ({
+    isFaustModule: vi.fn<(type: string) => boolean>(() => false),
+    createFaustDevice: vi.fn(),
     getTrackStoreState: vi.fn<() => unknown>(() => null),
     getMidiStoreState: vi.fn<() => unknown>(() => null),
     getTransportStoreValue: vi.fn(() => null),
     getTempoMapState: vi.fn(() => null),
     getAutomationLanes: vi.fn(() => []),
     audioBufferCache: { get: vi.fn(() => undefined) },
-    buildDeviceChain: vi.fn(() => Promise.resolve([])),
+    buildDeviceChain: vi.fn<
+        (
+            ctx: BaseAudioContext,
+            devices: import('../../models/TrackViewTypes').Device[],
+            inputNode: AudioNode,
+            outputNode: AudioNode,
+            context?: BuildDeviceChainContext
+        ) => Promise<BuildDeviceChainOutput>
+    >(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
     resolveDrumKit: vi.fn(() => null),
     scheduleTrackAutomation: vi.fn(),
@@ -85,6 +99,15 @@ vi.mock('../../stores/audioBufferCache', () => ({
     audioBufferCache: offlineRenderMocks.audioBufferCache,
 }));
 
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return { ...actual, isFaustModule: offlineRenderMocks.isFaustModule };
+});
+
+vi.mock('../../repositories/faustDeviceFactory', () => ({
+    createFaustDevice: offlineRenderMocks.createFaustDevice,
+}));
+
 vi.mock('../buildDeviceChain', () => ({
     buildDeviceChain: offlineRenderMocks.buildDeviceChain,
 }));
@@ -146,6 +169,10 @@ function createRenderContext(tracks: unknown[] | null) {
         projectMidiEvents: vi.fn(),
         selectMidiEventProbability: vi.fn(() => true),
         projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
+        beatAtSecondsFromAnchor: vi.fn(
+            (_changes: readonly unknown[], anchor: number, elapsed: number, tempo: number) =>
+                anchor + (elapsed * tempo) / 60
+        ),
         projectPpqEndpoints: vi.fn(({ startPpq, endPpq }: { startPpq: number; endPpq: number }) => ({
             startSamples: startPpq,
             endSamples: endPpq,
@@ -240,6 +267,72 @@ describe('exportStems', () => {
         expect(stems.size).toBe(0);
     });
 
+    it('refuses a real Faust factory failure instead of returning the other stems', async () => {
+        const { createOfflineTrackStrip } = await vi.importActual<
+            typeof import('../offlineRender/createOfflineTrackStrip')
+        >('../offlineRender/createOfflineTrackStrip');
+        const { buildDeviceChain } = await vi.importActual<typeof import('../buildDeviceChain')>('../buildDeviceChain');
+        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(createOfflineTrackStrip);
+        offlineRenderMocks.buildDeviceChain.mockImplementation(buildDeviceChain);
+        offlineRenderMocks.isFaustModule.mockImplementation((type: string) => type === 'faust-x');
+        offlineRenderMocks.createFaustDevice.mockRejectedValue(new Error('worklet module unavailable'));
+        const track = (id: string) => ({
+            id,
+            name: id,
+            kind: 'midi',
+            disabled: false,
+            muted: false,
+            gain: 1,
+            pan: 0,
+            clips: [],
+            devices: [],
+            freezeState: { status: 'unfrozen' },
+        });
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(
+            createRenderContext([
+                track('Keys'),
+                {
+                    ...track('Delay Bus'),
+                    devices: [
+                        {
+                            id: 'tape',
+                            name: 'Tape Delay',
+                            type: 'faust-x',
+                            bypassed: false,
+                            parameterValues: {},
+                        },
+                    ],
+                },
+                track('Bass'),
+            ])
+        );
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ id: 'buffer' });
+        class Context {
+            readonly destination = {};
+            readonly sampleRate = 44_100;
+            createGain() {
+                return { gain: { value: 1 }, connect: vi.fn() };
+            }
+            createStereoPanner() {
+                return { pan: { value: 0 }, connect: vi.fn() };
+            }
+        }
+        vi.stubGlobal('OfflineAudioContext', Context);
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        try {
+            await expect(exportStems(4)).rejects.toMatchObject({
+                _tag: 'Export',
+                failureKind: 'faust-device',
+                message: expect.stringMatching(/Delay Bus.*Tape Delay.*worklet module unavailable/),
+            });
+            expect(offlineRenderMocks.renderWithTimeout).toHaveBeenCalledTimes(2);
+            expect(isExportActive()).toBe(false);
+        } finally {
+            offlineRenderMocks.isFaustModule.mockReturnValue(false);
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('emits no stem or offline context for a dormant VCA, including Toaster residue', async () => {
         const dormantVca = {
             id: 'vca-1',
@@ -316,11 +409,13 @@ describe('exportStems', () => {
             honorMuted: false,
             vcaMultiplier: 1,
             cancellationSignal: expect.any(AbortSignal),
+            refuseFailedFaustDevices: true,
         });
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), padChild, {
             honorMuted: false,
             vcaMultiplier: 1,
             cancellationSignal: expect.any(AbortSignal),
+            refuseFailedFaustDevices: true,
         });
         expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
             expect.objectContaining({ tracks: groupedTracks })
@@ -369,6 +464,7 @@ describe('exportStems', () => {
             honorMuted: false,
             vcaMultiplier: 1,
             cancellationSignal: expect.any(AbortSignal),
+            refuseFailedFaustDevices: true,
         });
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
             expect.objectContaining({ track: child, allTracks: [child] })
@@ -515,6 +611,7 @@ describe('exportStems', () => {
             honorMuted: false,
             vcaMultiplier: 1,
             cancellationSignal: expect.any(AbortSignal),
+            refuseFailedFaustDevices: true,
         });
         expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
             expect.objectContaining({ tracks: topology })
@@ -629,11 +726,80 @@ describe('exportStems', () => {
                 (call) => (call[0] as { track: { id: string } }).track.id === trackId
             ).length;
 
+        it('refuses when an auxiliary sidechain key cannot load its Faust effect', async () => {
+            const { createOfflineTrackStrip } = await vi.importActual<
+                typeof import('../offlineRender/createOfflineTrackStrip')
+            >('../offlineRender/createOfflineTrackStrip');
+            const { buildDeviceChain } =
+                await vi.importActual<typeof import('../buildDeviceChain')>('../buildDeviceChain');
+            primeStemRender();
+            const mockStrip = offlineRenderMocks.createOfflineTrackStrip.getMockImplementation()!;
+            const keyedContexts = new Set<OfflineAudioContext>();
+            offlineRenderMocks.createOfflineTrackStrip.mockImplementation((ctx, track, options) => {
+                if (track.id === 'bass') {
+                    keyedContexts.add(ctx);
+                }
+                if (track.id === 'kick' && keyedContexts.has(ctx)) {
+                    return createOfflineTrackStrip(ctx, track, options);
+                }
+                return mockStrip(ctx, track, options);
+            });
+            offlineRenderMocks.buildDeviceChain.mockImplementation(buildDeviceChain);
+            offlineRenderMocks.isFaustModule.mockImplementation((type: string) => type === 'faust-x');
+            offlineRenderMocks.createFaustDevice.mockRejectedValue(new Error('key worklet unavailable'));
+            const pair = keyedPair().map((track) => {
+                if (track.id !== 'kick') {
+                    return { ...track, name: 'Bass', gain: 1, pan: 0 };
+                }
+                return {
+                    ...track,
+                    name: 'Kick Key',
+                    gain: 1,
+                    pan: 0,
+                    devices: [
+                        {
+                            id: 'key-delay',
+                            name: 'Key Delay',
+                            type: 'faust-x',
+                            bypassed: false,
+                            parameterValues: {},
+                        },
+                    ],
+                };
+            });
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(pair));
+            offlineRenderMocks.sidechainStore.value = {
+                routes: [{ sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],
+            };
+            class Context {
+                readonly destination = {};
+                readonly sampleRate = 44_100;
+                createGain() {
+                    return { gain: { value: 1 }, connect: vi.fn() };
+                }
+                createStereoPanner() {
+                    return { pan: { value: 0 }, connect: vi.fn() };
+                }
+            }
+            vi.stubGlobal('OfflineAudioContext', Context);
+            vi.stubGlobal('AudioWorkletNode', undefined);
+            try {
+                await expect(exportStems(4)).rejects.toMatchObject({
+                    _tag: 'Export',
+                    message: expect.stringMatching(/Kick Key.*Key Delay.*key worklet unavailable/),
+                });
+            } finally {
+                offlineRenderMocks.isFaustModule.mockReturnValue(false);
+                vi.unstubAllGlobals();
+            }
+        });
+
         it('wires the key source into the keyed track’s stem so its ducking survives the export', async () => {
             offlineRenderMocks.sidechainStore.value = {
                 routes: [{ sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],
             };
-            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(keyedPair()));
+            const context = createRenderContext(keyedPair());
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(context);
             primeStemRender();
 
             await exportStems(4);
@@ -643,6 +809,16 @@ describe('exportStems', () => {
             // 'kick' is scheduled twice: once as its own stem, once as the key
             // driving the compressor in the 'bass' stem's context.
             expect(scheduleCountFor('kick')).toBe(2);
+            // Both the grouped stem and its key-source pass receive the captured inverse.
+            const kickSchedules = offlineRenderMocks.scheduleTrackClips.mock.calls.filter(
+                (call) => (call[0] as { track: { id: string } }).track.id === 'kick'
+            );
+            expect(kickSchedules).toHaveLength(2);
+            for (const call of kickSchedules) {
+                expect(call[0]).toMatchObject({
+                    projections: { beatAtSecondsFromAnchor: context.beatAtSecondsFromAnchor },
+                });
+            }
             // The key-source strip carries the stem set's cancellation scope
             // (#4440). 'kick' is built twice here — once as its own stem through
             // the grouped loop, once as the bass stem's key source — and an
@@ -994,6 +1170,37 @@ describe('exportStems — option parsing, validation & control flow', () => {
             const warnings = onWarning.mock.calls.map((call) => String(call[0])).join('\n');
             expect(warnings).toContain('broken');
             vi.unstubAllGlobals();
+        });
+
+        it('refuses the complete stem set when one stem omits an audible Faust device', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                createRenderContext([stemTrack('keys'), stemTrack('broken'), stemTrack('bass')])
+            );
+            primeStemPool('broken');
+            const construct = offlineRenderMocks.createOfflineTrackStrip.getMockImplementation()!;
+            const destroy = vi.fn();
+            const failure = createAppError('Export', 'Track "broken" could not render "Tape Delay"', {
+                failureKind: 'faust-device',
+            });
+            offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
+                async (ctx: unknown, track: { id: string }) => {
+                    if (track.id === 'broken') {
+                        throw failure;
+                    }
+                    const strip = await construct(ctx, track);
+                    return {
+                        ...strip,
+                        deviceEntries: [{ deviceId: track.id, deviceType: 'faust-ok', strategy: { destroy } }],
+                    };
+                }
+            );
+            try {
+                await expect(exportStems(4)).rejects.toBe(failure);
+                expect(destroy).toHaveBeenCalledTimes(2);
+                expect(isExportActive()).toBe(false);
+            } finally {
+                vi.unstubAllGlobals();
+            }
         });
 
         // Delivering an empty set silently would repeat the defect this branch

@@ -519,6 +519,133 @@ describe('buildDeviceChain', () => {
         expect(input.connect).toHaveBeenCalledWith(output);
     });
 
+    it('refuses an audible Faust factory failure during musician export', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn() } as unknown as AudioNode;
+        mocks.isFaustModule.mockImplementation((type) => type === 'faust-x');
+        mocks.createFaustDevice.mockRejectedValue(new Error('worklet module unavailable'));
+        const device: Device = {
+            id: 'delay',
+            name: 'Tape Delay',
+            type: 'faust-x',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        await expect(
+            buildDeviceChain({} as BaseAudioContext, [device], input, output, {
+                trackName: 'Delay Bus',
+                refuseFailedFaustDevices: true,
+            })
+        ).rejects.toMatchObject({
+            _tag: 'Export',
+            failureKind: 'faust-device',
+            message: expect.stringMatching(/Delay Bus.*Tape Delay.*faust-x.*worklet module unavailable/),
+        });
+        expect(input.connect).not.toHaveBeenCalledWith(output);
+    });
+
+    it('releases preceding Faust strategies when the next device fails', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn() } as unknown as AudioNode;
+        const destroy = vi.fn();
+        const audioNode = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        mocks.isFaustModule.mockImplementation((type) => type === 'faust-x');
+        mocks.createFaustDevice
+            .mockResolvedValueOnce({
+                inputNode: audioNode,
+                outputNode: audioNode,
+                nodes: [audioNode],
+                wamControls: { destroy },
+            })
+            .mockRejectedValueOnce(new Error('worklet module unavailable'));
+        const device: Device = {
+            id: 'first',
+            name: 'Tape Delay',
+            type: 'faust-x',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        await expect(
+            buildDeviceChain({} as BaseAudioContext, [device, { ...device, id: 'second' }], input, output, {
+                trackName: 'Delay Bus',
+                refuseFailedFaustDevices: true,
+            })
+        ).rejects.toMatchObject({ _tag: 'Export' });
+        expect(destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses Faust setup failure and releases the not-yet-registered strategy', async () => {
+        class Worklet {
+            readonly port = {};
+            readonly connect = vi.fn();
+            readonly disconnect = vi.fn();
+        }
+        vi.stubGlobal('AudioWorkletNode', Worklet);
+        const audioNode = new Worklet() as unknown as AudioNode;
+        const destroy = vi.fn();
+        mocks.isFaustModule.mockImplementation((type) => type === 'faust-x');
+        mocks.createFaustDevice.mockResolvedValue({
+            inputNode: audioNode,
+            outputNode: audioNode,
+            nodes: [audioNode],
+            wamControls: { destroy },
+        });
+        const device: Device = {
+            id: 'delay',
+            name: 'Tape Delay',
+            type: 'faust-x',
+            bypassed: false,
+            parameterValues: {},
+        };
+        const setup = vi.fn(() => Promise.reject(new Error('offline setup unavailable')));
+        const input = { connect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn() } as unknown as AudioNode;
+
+        await expect(
+            buildDeviceChain({} as BaseAudioContext, [device], input, output, {
+                trackName: 'Delay Bus',
+                refuseFailedFaustDevices: true,
+                instruments: new Map([[device.id, setup]]),
+            })
+        ).rejects.toMatchObject({
+            _tag: 'Export',
+            message: expect.stringMatching(/Delay Bus.*Tape Delay.*offline setup unavailable/),
+        });
+        expect(destroy).toHaveBeenCalledTimes(1);
+        expect(input.connect).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { bypassed: false, contributesAudio: false },
+        { bypassed: true, contributesAudio: true },
+    ])('keeps Faust omissions outside the audible chain degradable: %j', async ({ bypassed, contributesAudio }) => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn() } as unknown as AudioNode;
+        mocks.isFaustModule.mockImplementation((type) => type === 'faust-x');
+        mocks.createFaustDevice.mockRejectedValue(new Error('worklet module unavailable'));
+        const device: Device = {
+            id: 'delay',
+            name: 'Tape Delay',
+            type: 'faust-x',
+            bypassed,
+            parameterValues: {},
+        };
+
+        await expect(
+            buildDeviceChain({} as BaseAudioContext, [device], input, output, {
+                trackName: 'Muted Bus',
+                contributesAudio,
+                refuseFailedFaustDevices: true,
+            })
+        ).resolves.toEqual([]);
+        expect(input.connect).toHaveBeenCalledWith(output);
+    });
+
     // The node-less exemptions must not reach the failure path at all: these
     // devices are rendered by the note/kit schedulers, not the device chain.
     it.each([
