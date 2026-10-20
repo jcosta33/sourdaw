@@ -1136,7 +1136,11 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
     it('carries the latest-beat pitch bend of each channel when the source rows are not in beat order', () => {
         const prepared = state({
             pitchBendByClipId: {
-                source: [pitchBend('late', 3, 4900, 0), pitchBend('early', 1, 2400, 0), pitchBend('other', 2, -3200, 1)],
+                source: [
+                    pitchBend('late', 3, 4900, 0),
+                    pitchBend('early', 1, 2400, 0),
+                    pitchBend('other', 2, -3200, 1),
+                ],
             },
         });
 
