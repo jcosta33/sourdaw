@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { LEVAIN_SAMPLE_CHUNK_FLOATS, LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT } from '#/infra/audioWorklet/levainSampleChunk';
+import { LEVAIN_ZONE_TABLE_CHUNK_ENTRIES } from '#/infra/audioWorklet/levainZoneTableChunk';
 
 import { decodedBankResource } from '../decodedBankResource';
 import { fetchAndDecode } from '../fetchAndDecode';
@@ -12,7 +13,10 @@ import { loadInstrumentFromManifest } from '../loadInstrumentFromManifest';
  * every zone. Synchronous work behind a resolved promise.
  */
 const buildZoneTables = vi.fn(
-    (request: { zones: readonly { zoneId: number }[]; numArticulations: number; numMics: number }) => {
+    (
+        request: { zones: readonly { zoneId: number }[]; numArticulations: number; numMics: number },
+        _signal?: AbortSignal
+    ): Promise<{ lut: Uint32Array; arena: Uint32Array }> => {
         const lut = new Uint32Array(request.numArticulations * request.numMics * 128 * 16 * 2);
         lut[1] = request.zones.length;
         return Promise.resolve({ lut, arena: Uint32Array.from(request.zones, (zone) => zone.zoneId) });
@@ -1827,6 +1831,168 @@ describe('loadInstrumentFromManifest', () => {
             expect(request?.[0]).toBe('/m.json');
             expect(request?.[1]?.signal).toBeInstanceOf(AbortSignal);
             expect(request?.[1]?.signal).not.toBe(controller.signal);
+        });
+    });
+
+    describe('staging the zone tables', () => {
+        /** Every table chunk the port saw, in order. */
+        function tableChunks(port: FakePort): { table: string; start: number; data: Uint32Array }[] {
+            return postedMessages(port)
+                .filter((message) => message.type === 'zoneTableChunk')
+                .map((message) => ({
+                    table: message.table as string,
+                    start: message.start as number,
+                    data: message.data as Uint32Array,
+                }));
+        }
+
+        function reassembled(port: FakePort, table: 'lut' | 'arena'): number[] {
+            return tableChunks(port)
+                .filter((chunk) => chunk.table === table)
+                .flatMap((chunk) => [...chunk.data]);
+        }
+
+        it('hands the builder every zone as its addZone numbers it, and stages its tables before the commit', async () => {
+            const port = makePort();
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const zoneIds = postedMessages(port)
+                .filter((message) => message.type === 'addZone')
+                .map((message) => message.zoneId);
+            expect(buildZoneTables).toHaveBeenCalledTimes(1);
+            const [request] = buildZoneTables.mock.calls[0]!;
+            expect(request).toEqual({
+                zones: [{ zoneId: 0, articulationId: 0, micId: 0, loKey: 0, hiKey: 127, loVel: 0, hiVel: 127 }],
+                numArticulations: 1,
+                numMics: 1,
+            });
+            expect(request.zones.map((zone) => zone.zoneId)).toEqual(zoneIds);
+            const types = postedTypes(port).filter((type) => type !== 'releaseRetiredBank');
+            expect(types.slice(types.indexOf('reserveZoneTables'))).toEqual([
+                'reserveZoneTables',
+                'zoneTableChunk',
+                'zoneTableChunk',
+                'sealZoneTables',
+                'commitSampleBank',
+            ]);
+            expect(types.lastIndexOf('addZone')).toBeLessThan(types.indexOf('reserveZoneTables'));
+            const reserve = postedMessages(port).find((message) => message.type === 'reserveZoneTables');
+            expect(reserve).toMatchObject({ numArticulations: 1, numMics: 1, lutEntries: 2_048, arenaEntries: 1 });
+        });
+
+        it('posts the largest bank in transferred chunks of at most one chunk that reassemble to the builder tables', async () => {
+            const lut = Uint32Array.from({ length: 28 * 8 * 128 * 16 * 2 }, (_, index) => index * 7);
+            const arena = Uint32Array.from({ length: 3 * LEVAIN_ZONE_TABLE_CHUNK_ENTRIES + 11 }, (_, index) => index);
+            buildZoneTables.mockResolvedValueOnce({ lut, arena });
+            const port = makePort({ chunkAnswers: 'later' });
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const chunks = tableChunks(port);
+            const entries = chunks.map((chunk) => (chunk.table === 'lut' ? chunk.data.length / 2 : chunk.data.length));
+            expect(Math.max(...entries)).toBe(LEVAIN_ZONE_TABLE_CHUNK_ENTRIES);
+            expect(chunks).toHaveLength(lut.length / 2 / LEVAIN_ZONE_TABLE_CHUNK_ENTRIES + 4);
+            expect(reassembled(port, 'lut')).toEqual([...lut]);
+            expect(reassembled(port, 'arena')).toEqual([...arena]);
+            let lutStart = 0;
+            let arenaStart = 0;
+            for (const chunk of chunks) {
+                if (chunk.table === 'lut') {
+                    expect(chunk.start).toBe(lutStart);
+                    lutStart += chunk.data.length / 2;
+                } else {
+                    expect(chunk.start).toBe(arenaStart);
+                    arenaStart += chunk.data.length;
+                }
+            }
+            const transfers = port.postMessage.mock.calls.filter(
+                ([message]) => (message as { type: string }).type === 'zoneTableChunk'
+            );
+            for (const [message, transfer] of transfers) {
+                const data = (message as { data: Uint32Array }).data;
+                expect(transfer).toEqual([data.buffer]);
+                expect(data.buffer).not.toBe(lut.buffer);
+            }
+            expect(port.peakUnacknowledgedChunks()).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+        });
+
+        it('stages the tables on a load that uploads no PCM, as a follower or ready processor does', async () => {
+            const port = makePort({ uploadRequired: false });
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const types = postedTypes(port);
+            expect(types).not.toContain('sampleChunk');
+            expect(types.filter((type) => type === 'zoneTableChunk')).toHaveLength(2);
+            expect(types).toContain('sealZoneTables');
+        });
+
+        it('rejects the load when the builder fails, without hanging, committing or building elsewhere', async () => {
+            buildZoneTables.mockRejectedValueOnce(new Error('Levain zone-table worker failed: it crashed'));
+            const port = makePort();
+
+            await expect(
+                loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    buildZoneTables,
+                    basePath: '/base',
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                })
+            ).rejects.toThrow('Levain zone-table worker failed: it crashed');
+
+            const types = postedTypes(port);
+            expect(types).not.toContain('reserveZoneTables');
+            expect(types).not.toContain('commitSampleBank');
+            expect(types.indexOf('abortSampleBank')).toBeGreaterThan(types.indexOf('addZone'));
+            await vi.waitFor(() => {
+                expect(postedTypes(port)).toContain('releaseRetiredBank');
+            });
+        });
+
+        it('stops waiting for the builder at once on an abort, passing it the signal', async () => {
+            const building = Promise.withResolvers<{ lut: Uint32Array; arena: Uint32Array }>();
+            buildZoneTables.mockReturnValueOnce(building.promise);
+            const port = makePort();
+            const controller = new AbortController();
+            const reason = new Error('superseded');
+
+            const pending = loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                signal: controller.signal,
+            });
+            await vi.waitFor(() => {
+                expect(buildZoneTables).toHaveBeenCalledTimes(1);
+            });
+            expect(buildZoneTables.mock.calls[0]![1]).toBe(controller.signal);
+            controller.abort(reason);
+
+            await expect(pending).rejects.toBe(reason);
+            expect(postedTypes(port)).not.toContain('reserveZoneTables');
+            expect(postedTypes(port)).toContain('abortSampleBank');
         });
     });
 });
