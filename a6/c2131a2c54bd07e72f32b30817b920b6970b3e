@@ -1,0 +1,19 @@
+src/modules/AudioEngine/services/__tests__/levainProcessorZoneTables.spec.ts
+  s_4c8cd08893b364::t_3b3261b48a0e8f 310-311,375-381,384,395,406,427,449,455,461,477,486-488
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6c2131a2c54bd07e72f32b30817b920b6970b3e",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
