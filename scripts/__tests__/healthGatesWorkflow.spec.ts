@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
     existsSync,
     mkdirSync,
@@ -201,6 +201,26 @@ const BROWSER_AI_WEBGPU_CONDITION = 'inputs.browser-ai';
 const BROWSER_AI_WEBGPU_RUNNER = 'macos-14';
 const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
+const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
+const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 17 * 60_000;
+const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 18;
+const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 30;
+const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
+    BROWSER_AI_WEBGPU_LOG,
+    'test-results/**/trace.zip',
+    'test-results/**/error-context.md',
+    'test-results/.last-run.json',
+];
+const BROWSER_AI_WEBGPU_STEP_CAPS = new Map([
+    ['Checkout', 1],
+    ['Enable Corepack', 1],
+    ['Set up pnpm', 1],
+    ['Set up Node', 1],
+    ['Install dependencies', 2],
+    ['Install Chromium', 2],
+    ['Run Browser AI WebGPU admission', 18],
+    ['Upload Browser AI WebGPU diagnostics', 2],
+]);
 const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
     'playwright test --config tests/e2e/browserAiWebGpuAdmission.playwright.config.ts';
 // Exact, ordered, and length-checked. This leg is the only runner that reaches
@@ -1305,6 +1325,44 @@ function assertCargoIndexCacheKeysJobScoped(candidate: UnknownRecord): void {
     }
 }
 
+function assertNativeTransportMutationProof(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, 'native-macos');
+    expect(job['runs-on']).toBe('macos-latest');
+    expect(recordAt(stepNamed(job, 'Checkout'), 'with')).toEqual({
+        'fetch-depth': 0,
+        'persist-credentials': false,
+    });
+    expect(recordAt(stepNamed(job, 'Cache cargo build'), 'with')).toEqual({ 'save-if': 'false' });
+    const setup = stepNamed(job, 'Set up Node for native mutation proof');
+    expect(setup.uses).toBe('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020');
+    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '24.19.0' });
+    const probe = stepNamed(job, 'Verify native transport mutation sensitivity');
+    expect(probe.run).toBe('node scripts/verifyNativeTransportMutations.ts');
+    expect(probe.id).toBe('native-mutations');
+    expect(probe['timeout-minutes']).toBe(20);
+    expect(probe.if).toBeUndefined();
+    expect(probe['continue-on-error']).toBeUndefined();
+    expect(probe['working-directory']).toBeUndefined();
+    expect(recordAt(probe, 'env')).toEqual({
+        HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
+        BASE_SHA: '${{ github.event.pull_request.base.sha }}',
+    });
+    const upload = stepNamed(job, 'Upload native transport mutation evidence');
+    expect(upload.if).toBe('${{ always() }}');
+    expect(upload['continue-on-error']).toBeUndefined();
+    expect(upload.uses).toBe('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+    expect(recordAt(upload, 'with')).toEqual({
+        name: 'native-transport-mutations-${{ github.event.pull_request.head.sha }}',
+        path: '.agents/artifacts/native-transport-mutations/',
+        'if-no-files-found': 'error',
+        'retention-days': 7,
+    });
+    const names = arrayAt(job, 'steps').map((step) => asRecord(step, 'step').name);
+    expect(names.indexOf('Test the native crate')).toBeLessThan(names.indexOf('Set up Node for native mutation proof'));
+    expect(names.indexOf('Set up Node for native mutation proof')).toBeLessThan(names.indexOf(probe.name));
+    expect(names.indexOf(probe.name)).toBeLessThan(names.indexOf(upload.name));
+}
+
 function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord): void {
     expect(Object.keys(recordAt(seed, 'on'))).toEqual(['push']);
     const push = recordAt(recordAt(seed, 'on'), 'push');
@@ -1883,6 +1941,30 @@ function assertBrowserAiChromiumInstallBounded(job: UnknownRecord): void {
     }
 }
 
+function assertBrowserAiWebGpuStepBudget(job: UnknownRecord): void {
+    const steps = arrayAt(job, 'steps');
+    let declaredMinutes = 0;
+    for (const rawStep of steps) {
+        const step = asRecord(rawStep, 'Browser AI WebGPU step');
+        const minutes = step['timeout-minutes'];
+        if (typeof minutes !== 'number' || !Number.isSafeInteger(minutes) || minutes < 1) {
+            throw new Error('Browser AI WebGPU must bound every named step');
+        }
+        declaredMinutes += minutes;
+    }
+    if (declaredMinutes > BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES - 2) {
+        throw new Error('Browser AI WebGPU step budgets must leave two minutes for runner overhead');
+    }
+    if (steps.length !== BROWSER_AI_WEBGPU_STEP_CAPS.size) {
+        throw new Error('Browser AI WebGPU step budget must cover exactly the selected hardware job');
+    }
+    for (const [name, minutes] of BROWSER_AI_WEBGPU_STEP_CAPS) {
+        if (stepNamed(job, name)['timeout-minutes'] !== minutes) {
+            throw new Error(`Browser AI WebGPU ${name} must retain its ${minutes}-minute cap`);
+        }
+    }
+}
+
 function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     const job = jobAt(candidate, BROWSER_AI_WEBGPU_JOB);
     if (job.name !== BROWSER_AI_WEBGPU_JOB_NAME) {
@@ -1894,13 +1976,41 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
         throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
     }
+    if (job['timeout-minutes'] !== BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES) {
+        throw new Error('Browser AI WebGPU job must retain its 30-minute failure limit');
+    }
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
     }
-    assertBrowserAiChromiumInstallBounded(job);
-    if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
+    const admission = stepNamed(job, 'Run Browser AI WebGPU admission');
+    if (!stringAt(admission, 'run').includes(BROWSER_AI_WEBGPU_COMMAND)) {
         throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
     }
+    if (
+        admission['timeout-minutes'] !== BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES ||
+        admission.shell !== 'bash' ||
+        recordAt(admission, 'env').DEBUG !== 'pw:api,pw:browser'
+    ) {
+        throw new Error('Browser AI WebGPU admission must fail before the job limit with Playwright diagnostics');
+    }
+    const upload = stepNamed(job, 'Upload Browser AI WebGPU diagnostics');
+    const uploadOptions = recordAt(upload, 'with');
+    const uploadPaths = stringAt(uploadOptions, 'path')
+        .trim()
+        .split('\n')
+        .map((path) => path.trim());
+    if (
+        upload.if !== '${{ always() }}' ||
+        uploadOptions.name !== 'browser-ai-webgpu-diagnostics' ||
+        uploadOptions['retention-days'] !== 7 ||
+        uploadOptions['if-no-files-found'] !== 'warn' ||
+        JSON.stringify(uploadPaths) !== JSON.stringify(BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS)
+    ) {
+        throw new Error(
+            'Browser AI WebGPU diagnostics must retain only the log and failure traces after a failed step'
+        );
+    }
+    assertBrowserAiWebGpuStepBudget(job);
     // The browser summary observes this job, then reaches the required Gate
     // through the pull-request workflow's affected caller.
     if (!arrayAt(jobAt(candidate, 'heavy-gate'), 'needs').includes(BROWSER_AI_WEBGPU_JOB)) {
@@ -1966,6 +2076,11 @@ function assertBrowserAiWebGpuProofChain(manifest: UnknownRecord, config: Unknow
     }
     if (config.globalSetup !== BROWSER_AI_WEBGPU_GLOBAL_SETUP) {
         throw new Error('Browser AI WebGPU config must warm the cold first paint before its specs observe it');
+    }
+    if (config.globalTimeout !== BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS || config.retries !== 0 || config.workers !== 1) {
+        throw new Error(
+            'Browser AI WebGPU config must bound the whole dedicated proof without retries or parallel tests'
+        );
     }
 }
 
@@ -3619,53 +3734,222 @@ describe('health gates workflow contract', () => {
         }
     });
 
-    // Executes the ALSA run script with shims standing in for the privileged
-    // and slow commands, so a loop edit that keeps the contract's substrings
-    // but changes what the loop does is observed (#5072).
-    const runAlsaInstall = (
+    const MAX_ALSA_PROBE_STDERR_CHARACTERS = 1_000;
+    const ALSA_PROBE_TIMEOUT_MS = 1_000;
+    const alsaCommandFunctions = `
+sudo() { "$@"; }
+timeout() { shift 2; "$@"; }
+sleep() { printf '%s\\n' "$1" >> "$SLEEP_LOG"; }
+apt-get() {
+  if [ "$1" = update ]; then
+    if [ "\${STALL_ALSA_CHILD:-false}" = true ]; then
+      trap '' TERM
+      exec 2>/dev/null
+      printf '%s\\n' "$$" > "$STALL_ALSA_PID_FILE"
+      while :; do :; done
+    fi
+    attempt_count=0
+    while IFS= read -r _; do attempt_count=$((attempt_count + 1)); done < "$ATTEMPT_LOG"
+    attempt_count=$((attempt_count + 1))
+    printf 'attempt\\n' >> "$ATTEMPT_LOG"
+    [ "$attempt_count" -ge "$SUCCEED_ON_ATTEMPT" ] || return 100
+  fi
+}
+export -f sudo timeout sleep apt-get
+`;
+
+    type AlsaProbeResult = {
+        attempts: number;
+        sleeps: string[];
+        status: number | null;
+        signal: NodeJS.Signals | null;
+        errorCode: string | null;
+        stderr: string;
+        error: Error | undefined;
+    };
+
+    const boundedAlsaProbeStderr = (stderr: string): string => stderr.slice(0, MAX_ALSA_PROBE_STDERR_CHARACTERS);
+
+    const requireOwnedPid = (pid: number): void => {
+        if (!Number.isSafeInteger(pid) || pid <= 1) {
+            throw new Error(`ALSA probe has no safe owned process ID: ${pid}`);
+        }
+    };
+
+    type OwnedProcessGroup = { pid: number | undefined };
+
+    const processGroupAlive = (group: OwnedProcessGroup): boolean => {
+        const pid = group.pid;
+        if (pid === undefined) {
+            return false;
+        }
+        requireOwnedPid(pid);
+        try {
+            process.kill(-pid, 0);
+            return true;
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ESRCH') {
+                group.pid = undefined;
+                return false;
+            }
+            if (code === 'EPERM') {
+                return true;
+            }
+            throw new Error(`ALSA probe cannot inspect owned process group ${pid}: ${String(error)}`, { cause: error });
+        }
+    };
+
+    const signalProcessGroup = (group: OwnedProcessGroup, signal: NodeJS.Signals): void => {
+        const pid = group.pid;
+        if (pid === undefined) {
+            return;
+        }
+        requireOwnedPid(pid);
+        try {
+            process.kill(-pid, signal);
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ESRCH') {
+                group.pid = undefined;
+                return;
+            }
+            if (code !== 'EPERM') {
+                throw new Error(`ALSA probe cannot signal owned process group ${pid}: ${String(error)}`, {
+                    cause: error,
+                });
+            }
+        }
+    };
+
+    const waitForProcessGroupExit = async (group: OwnedProcessGroup): Promise<void> => {
+        const deadline = Date.now() + 2_000;
+        while (processGroupAlive(group) && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        if (processGroupAlive(group)) {
+            throw new Error(`ALSA probe process group ${group.pid} survived SIGKILL; fixture retained`);
+        }
+    };
+
+    const describeAlsaProbeFailure = (result: AlsaProbeResult): string =>
+        `ALSA probe child failed: error=${result.errorCode ?? 'none'}; status=${result.status ?? 'null'}; ` +
+        `signal=${result.signal ?? 'none'}; stderr=${boundedAlsaProbeStderr(result.stderr) || '(empty)'}`;
+
+    // Executes the published ALSA loop with exported Bash functions so every
+    // command stays hermetic while the real nested `bash -c` and retry branches run.
+    const runAlsaInstall = async (
         run: string,
-        succeedOnAttempt: number
-    ): { attempts: number; sleeps: string[]; status: number | null; stderr: string } => {
+        succeedOnAttempt: number,
+        options: { stallChild?: boolean; timeoutMs?: number; ownedGroup?: OwnedProcessGroup } = {}
+    ): Promise<AlsaProbeResult> => {
         const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
         const attemptLog = join(probeDirectory, 'attempts.log');
         const sleepLog = join(probeDirectory, 'sleeps.log');
-        const shim = (name: string, lines: string[]): void => {
-            writeFileSync(join(probeDirectory, name), ['#!/usr/bin/env bash', ...lines].join('\n'), { mode: 0o755 });
-        };
+        const stalledPidFile = join(probeDirectory, 'stalled.pid');
+        const preludePath = join(probeDirectory, 'functions.bash');
+        let groupPid: number | undefined;
+        const ownedGroup = options.ownedGroup ?? { pid: undefined };
         try {
-            shim('sudo', ['exec "$@"']);
-            // Drops the --kill-after and duration operands, then runs the command.
-            shim('timeout', ['shift 2', 'exec "$@"']);
-            shim('sleep', ['printf "%s\\n" "$1" >> "$SLEEP_LOG"']);
-            // Each attempt runs `apt-get update` once; that call is the attempt count.
-            shim('apt-get', [
-                'if [ "$1" = update ]; then',
-                '  printf "attempt\\n" >> "$ATTEMPT_LOG"',
-                '  [ "$(wc -l < "$ATTEMPT_LOG")" -ge "$SUCCEED_ON_ATTEMPT" ] || exit 100',
-                'fi',
-            ]);
-            const result = spawnSync('bash', ['-c', run], {
-                encoding: 'utf8',
+            writeFileSync(preludePath, alsaCommandFunctions);
+            writeFileSync(attemptLog, '');
+            writeFileSync(sleepLog, '');
+            const child = spawn('bash', ['-c', run], {
+                detached: true,
+                stdio: ['ignore', 'ignore', 'pipe'],
                 env: {
                     ...process.env,
+                    BASH_ENV: preludePath,
                     ATTEMPT_LOG: attemptLog,
                     SLEEP_LOG: sleepLog,
                     SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
-                    PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
+                    STALL_ALSA_CHILD: String(options.stallChild ?? false),
+                    STALL_ALSA_PID_FILE: stalledPidFile,
                 },
-                timeout: 10_000,
             });
-            expect(result.error).toBeUndefined();
-            const lines = (path: string): string[] =>
-                existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n') : [];
-            return {
-                attempts: lines(attemptLog).length,
-                sleeps: lines(sleepLog),
-                status: result.status,
-                stderr: result.stderr,
+            groupPid = child.pid;
+            ownedGroup.pid = groupPid;
+            let stderr = '';
+            let childError: NodeJS.ErrnoException | undefined;
+            let timedOut = false;
+            child.stderr?.setEncoding('utf8');
+            child.stderr?.on('data', (chunk: string) => {
+                stderr = boundedAlsaProbeStderr(stderr + chunk);
+            });
+            child.once('error', (error: NodeJS.ErrnoException) => {
+                childError = error;
+            });
+            const closed = new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+                child.once('close', (status, signal) => resolve({ status, signal }));
+            });
+            let resolveDeadline: (() => void) | undefined;
+            const deadlineReached = new Promise<void>((resolve) => {
+                resolveDeadline = resolve;
+            });
+            const timeout = setTimeout(() => {
+                timedOut = true;
+                signalProcessGroup(ownedGroup, 'SIGTERM');
+                resolveDeadline?.();
+            }, options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS);
+            const killAfter = setTimeout(
+                () => {
+                    if (timedOut && processGroupAlive(ownedGroup)) {
+                        signalProcessGroup(ownedGroup, 'SIGKILL');
+                    }
+                },
+                (options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS) + 200
+            );
+            let closedResult: Awaited<typeof closed>;
+            try {
+                const closedBeforeDeadline = await Promise.race([
+                    closed.then(() => true),
+                    deadlineReached.then(() => false),
+                ]);
+                if (closedBeforeDeadline) {
+                    clearTimeout(timeout);
+                }
+                if (timedOut) {
+                    await waitForProcessGroupExit(ownedGroup);
+                }
+                closedResult = await closed;
+                if (!timedOut && processGroupAlive(ownedGroup)) {
+                    signalProcessGroup(ownedGroup, 'SIGKILL');
+                    await waitForProcessGroupExit(ownedGroup);
+                    throw new Error(`ALSA probe process group ${groupPid} outlived its direct child`);
+                }
+            } finally {
+                clearTimeout(timeout);
+                clearTimeout(killAfter);
+            }
+            const outcome: AlsaProbeResult = {
+                attempts: 0,
+                sleeps: [],
+                status: closedResult.status,
+                signal: closedResult.signal,
+                errorCode: timedOut ? 'ETIMEDOUT' : (childError?.code ?? null),
+                stderr,
+                error: childError,
             };
+            if (timedOut || outcome.error !== undefined || outcome.status === null || outcome.signal !== null) {
+                throw new Error(describeAlsaProbeFailure(outcome));
+            }
+            const lines = (path: string): string[] => readFileSync(path, 'utf8').split('\n').filter(Boolean);
+            return { ...outcome, attempts: lines(attemptLog).length, sleeps: lines(sleepLog) };
+        } catch (error) {
+            if (!(error instanceof Error)) {
+                throw error;
+            }
+            const rawStalledPid = existsSync(stalledPidFile) ? readFileSync(stalledPidFile, 'utf8').trim() : '';
+            const stalledPid = Number(rawStalledPid);
+            throw Object.assign(error, {
+                probeDirectory,
+                groupPid,
+                stalledPid: Number.isSafeInteger(stalledPid) && stalledPid > 1 ? stalledPid : undefined,
+            });
         } finally {
-            rmSync(probeDirectory, { force: true, recursive: true });
+            if (!processGroupAlive(ownedGroup)) {
+                rmSync(probeDirectory, { force: true, recursive: true });
+            }
         }
     };
 
@@ -3674,22 +3958,132 @@ describe('health gates workflow contract', () => {
         { label: 'the nightly Rust job', workflow: nightly },
     ]) {
         const alsaRun = stringAt(stepNamed(jobAt(workflow, 'rust'), 'Install ALSA development headers'), 'run');
-
-        it(`${label} makes three ALSA install attempts, then fails the step`, () => {
-            const outcome = runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
+        const assertExhaustionContract = (outcome: AlsaProbeResult): void => {
             expect(outcome.attempts).toBe(3);
             expect(outcome.sleeps).toEqual(['15', '30']);
             expect(outcome.status).toBe(1);
             expect(outcome.stderr).toContain('ALSA header install failed (attempt 3/3)');
+        };
+
+        it(`${label} makes three ALSA install attempts, then fails the step`, async () => {
+            const outcome = await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
+            assertExhaustionContract(outcome);
         });
 
-        it(`${label} stops retrying the ALSA install once an attempt succeeds`, () => {
-            const outcome = runAlsaInstall(alsaRun, 2);
+        it(`${label} stops retrying the ALSA install once an attempt succeeds`, async () => {
+            const outcome = await runAlsaInstall(alsaRun, 2);
             expect(outcome.attempts).toBe(2);
             expect(outcome.sleeps).toEqual(['15']);
             expect(outcome.status).toBe(0);
         });
+
+        it(`${label} retry oracle rejects a loop with its later attempts removed`, async () => {
+            const oneAttempt = alsaRun.replace('for attempt in 1 2 3; do', 'for attempt in 1; do');
+            expect(oneAttempt).not.toBe(alsaRun);
+            const outcome = await runAlsaInstall(oneAttempt, Number.MAX_SAFE_INTEGER);
+            expect(() => assertExhaustionContract(outcome)).toThrow();
+        });
+
+        it(`${label} retry oracle rejects a successful exit after the third failed attempt`, async () => {
+            const swallowedFailure = alsaRun.replace(/\n\s*exit 1\s*$/, '\n  exit 0');
+            expect(swallowedFailure).not.toBe(alsaRun);
+            const outcome = await runAlsaInstall(swallowedFailure, Number.MAX_SAFE_INTEGER);
+            expect(outcome.attempts).toBe(3);
+            expect(outcome.sleeps).toEqual(['15', '30']);
+            expect(() => assertExhaustionContract(outcome)).toThrow();
+        });
     }
+
+    it('reports a stalled ALSA child timeout, stops its process tree, and cleans up its fixture', async () => {
+        const ownedGroup: OwnedProcessGroup = { pid: undefined };
+        const kill = process.kill.bind(process);
+        const retiredIds = new Set<number>();
+        const retiredIdSignals: number[] = [];
+        const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+            if (signal !== 0 && retiredIds.has(pid)) {
+                // Model identifier reuse without ever signaling an unrelated process.
+                retiredIdSignals.push(pid);
+                return true;
+            }
+            try {
+                return kill(pid, signal);
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+                    retiredIds.add(pid);
+                }
+                throw error;
+            }
+        });
+        const failure = await (async () => {
+            try {
+                const alsaRun = stringAt(
+                    stepNamed(jobAt(validationWorkflow, 'rust'), 'Install ALSA development headers'),
+                    'run'
+                );
+                await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER, {
+                    stallChild: true,
+                    timeoutMs: 100,
+                    ownedGroup,
+                });
+                throw new Error('Expected the stalled ALSA child to fail with a bounded timeout');
+            } catch (error) {
+                if (!(error instanceof Error)) {
+                    throw error;
+                }
+                return {
+                    message: error.message,
+                    probeDirectory:
+                        'probeDirectory' in error && typeof error.probeDirectory === 'string'
+                            ? error.probeDirectory
+                            : undefined,
+                    stalledPid:
+                        'stalledPid' in error && typeof error.stalledPid === 'number' ? error.stalledPid : undefined,
+                    groupPid: 'groupPid' in error && typeof error.groupPid === 'number' ? error.groupPid : undefined,
+                };
+            }
+        })();
+        try {
+            expect(failure.message).toContain('error=ETIMEDOUT; status=null; signal=SIGTERM');
+            expect(failure.message.length).toBeLessThanOrEqual(
+                'ALSA probe child failed: error=ETIMEDOUT; status=null; signal=SIGTERM; stderr='.length +
+                    MAX_ALSA_PROBE_STDERR_CHARACTERS +
+                    '(empty)'.length
+            );
+            expect(failure.probeDirectory).toBeDefined();
+            if (failure.probeDirectory === undefined) {
+                throw new Error('The ALSA probe did not expose its fixture directory');
+            }
+            expect(existsSync(failure.probeDirectory)).toBe(false);
+            expect(failure.stalledPid).toBeDefined();
+            if (failure.stalledPid === undefined) {
+                throw new Error('The ALSA probe did not expose its stalled child PID');
+            }
+            const stalledPid = failure.stalledPid;
+            expect(() => process.kill(stalledPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+            expect(failure.groupPid).toBeDefined();
+            if (failure.groupPid === undefined) {
+                throw new Error('The ALSA probe did not expose its process group');
+            }
+            const groupPid = failure.groupPid;
+            requireOwnedPid(groupPid);
+            expect(() => process.kill(-groupPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+            expect(retiredIds).toContain(-groupPid);
+            expect(ownedGroup.pid).toBeUndefined();
+        } finally {
+            try {
+                if (processGroupAlive(ownedGroup)) {
+                    signalProcessGroup(ownedGroup, 'SIGKILL');
+                    await waitForProcessGroupExit(ownedGroup);
+                }
+                if (failure.probeDirectory !== undefined) {
+                    rmSync(failure.probeDirectory, { force: true, recursive: true });
+                }
+            } finally {
+                killSpy.mockRestore();
+            }
+        }
+        expect(retiredIdSignals).toEqual([]);
+    });
 
     it('fails every Linux browser install step after its third failed attempt', () => {
         const installs = [
@@ -4203,6 +4597,92 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('requires exact-head native sensitivity after the warm baseline and preserves failed evidence', () => {
+        expect(() => assertNativeTransportMutationProof(validationWorkflow)).not.toThrow();
+    });
+
+    it.each([
+        ['missing probe', (job: UnknownRecord) => removeStepNamed(job, 'Verify native transport mutation sensitivity')],
+        [
+            'wrong head',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Verify native transport mutation sensitivity'), 'env').HEAD_SHA =
+                    '${{ github.sha }}';
+            },
+        ],
+        [
+            'arbitrary input',
+            (job: UnknownRecord) => {
+                stepNamed(job, 'Verify native transport mutation sensitivity').run =
+                    'node scripts/verifyNativeTransportMutations.ts "$MUTATION"';
+            },
+        ],
+        [
+            'softened failure',
+            (job: UnknownRecord) => {
+                stepNamed(job, 'Verify native transport mutation sensitivity')['continue-on-error'] = true;
+            },
+        ],
+        [
+            'conditional proof',
+            (job: UnknownRecord) => {
+                stepNamed(job, 'Verify native transport mutation sensitivity').if = 'false';
+            },
+        ],
+        [
+            'saved mutated target',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Cache cargo build'), 'with')['save-if'] = 'true';
+            },
+        ],
+        [
+            'missing failed logs',
+            (job: UnknownRecord) => {
+                delete stepNamed(job, 'Upload native transport mutation evidence').if;
+            },
+        ],
+        [
+            'wrong artifact head',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Upload native transport mutation evidence'), 'with').name =
+                    'native-proof-latest';
+            },
+        ],
+        [
+            'unfetched head',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Checkout'), 'with')['fetch-depth'] = 1;
+            },
+        ],
+        [
+            'unfetched event base after main advances',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Checkout'), 'with')['fetch-depth'] = 2;
+            },
+        ],
+        [
+            'persistent credential',
+            (job: UnknownRecord) => {
+                recordAt(stepNamed(job, 'Checkout'), 'with')['persist-credentials'] = true;
+            },
+        ],
+        [
+            'probe before baseline',
+            (job: UnknownRecord) => {
+                const steps = arrayAt(job, 'steps');
+                const index = steps.findIndex(
+                    (step) => asRecord(step, 'step').name === 'Verify native transport mutation sensitivity'
+                );
+                const [probe] = steps.splice(index, 1);
+                steps.unshift(probe);
+            },
+        ],
+    ])('refuses disconnected native proof: %s', (_label, mutate) => {
+        const candidate = structuredClone(validationWorkflow);
+        mutate(jobAt(candidate, 'native-macos'));
+        expect(() => assertNativeTransportMutationProof(candidate)).toThrow();
+    });
+
     it('pins the recorded workflow snapshot, the shard matrices, job-level permissions, and every step inventory', () => {
         expect(() =>
             assertWorkflowSnapshotMatch(
@@ -4520,6 +5000,37 @@ describe('health gates workflow contract', () => {
         }
     });
 
+    it('runs required unit install and shards through a fresh unprivileged identity', () => {
+        const unit = jobAt(validationWorkflow, 'unit');
+        const prepare = stepNamed(unit, 'Prepare isolated unit account');
+        const install = stepNamed(unit, 'Install dependencies');
+        const shard = stepNamed(unit, 'Run shard');
+        const steps = arrayAt(unit, 'steps');
+        const tools = stepNamed(unit, 'Prepare unit tool directory');
+        expect(tools.id).toBe('unit_tools');
+        expect(steps.indexOf(tools)).toBeLessThan(steps.indexOf(stepNamed(unit, 'Set up pnpm')));
+        expect(recordAt(stepNamed(unit, 'Set up pnpm'), 'with').dest).toBe('${{ steps.unit_tools.outputs.root }}');
+        expect(recordAt(prepare, 'env').SOURDAW_UNIT_TOOL_ROOT).toBe('${{ steps.unit_tools.outputs.root }}');
+        expect(prepare.id).toBe('unit_isolation');
+        expect(stringAt(prepare, 'run')).toBe('node scripts/runIsolatedUnitShard.ts prepare');
+        expect(steps.indexOf(prepare)).toBeLessThan(steps.indexOf(install));
+        expect(stringAt(install, 'run')).toBe(
+            'node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"'
+        );
+        expect(stringAt(shard, 'run')).toBe(
+            'node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4'
+        );
+        for (const step of [prepare, install, shard]) {
+            expect(step.if).toBeUndefined();
+            expect(step['continue-on-error']).toBeUndefined();
+        }
+        expect(recordAt(stepNamed(unit, 'Checkout'), 'with')).toMatchObject({
+            'fetch-depth': 0,
+            'persist-credentials': false,
+        });
+        expect(recordAt(shard, 'env').VITEST_MAX_WORKERS).toBe(4);
+    });
+
     it('fetches immutable measurement provenance history only in the unit matrix', () => {
         expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 
@@ -4543,6 +5054,55 @@ describe('health gates workflow contract', () => {
         expect(() => assertBrowserAiWebGpuJob(heavyWorkflow)).not.toThrow();
         expect(() => assertNightlyBrowserAiWebGpuJob(nightly)).not.toThrow();
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, browserAiWebGpuConfig)).not.toThrow();
+        expect(BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS / 60_000).toBeLessThan(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES);
+        expect(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES).toBeLessThan(BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES);
+
+        const unboundedSetup = asRecord(structuredClone(heavyWorkflow), 'unbounded Browser AI setup');
+        delete stepNamed(jobAt(unboundedSetup, BROWSER_AI_WEBGPU_JOB), 'Set up Node')['timeout-minutes'];
+        expect(() => assertBrowserAiWebGpuJob(unboundedSetup)).toThrow('Browser AI WebGPU must bound every named step');
+
+        const exhaustedBudget = asRecord(structuredClone(heavyWorkflow), 'exhausted Browser AI budget');
+        stepNamed(jobAt(exhaustedBudget, BROWSER_AI_WEBGPU_JOB), 'Install dependencies')['timeout-minutes'] = 10;
+        expect(() => assertBrowserAiWebGpuJob(exhaustedBudget)).toThrow(
+            'Browser AI WebGPU step budgets must leave two minutes for runner overhead'
+        );
+
+        // Execute the workflow's actual shell block with a fake pnpm. A
+        // pipeline that reports tee's success instead of pnpm's failure would
+        // turn a failed hardware proof into a passing required Gate.
+        const admissionRun = stringAt(
+            stepNamed(jobAt(heavyWorkflow, BROWSER_AI_WEBGPU_JOB), 'Run Browser AI WebGPU admission'),
+            'run'
+        );
+        for (const exitCode of [0, 7]) {
+            const directory = mkdtempSync(join(tmpdir(), 'sourdaw-browser-ai-webgpu-diagnostics-'));
+            try {
+                writeFileSync(
+                    join(directory, 'pnpm'),
+                    '#!/bin/sh\nprintf "pnpm called: %s; DEBUG=%s\\n" "$*" "$DEBUG"\nexit "$FAKE_PNPM_EXIT"\n',
+                    { mode: 0o755 }
+                );
+                const result = spawnSync('bash', ['-c', admissionRun], {
+                    cwd: directory,
+                    encoding: 'utf8',
+                    env: {
+                        ...process.env,
+                        DEBUG: 'pw:api,pw:browser',
+                        FAKE_PNPM_EXIT: String(exitCode),
+                        PATH: `${directory}${delimiter}${process.env.PATH ?? ''}`,
+                    },
+                    timeout: 10_000,
+                });
+                expect(result.error).toBeUndefined();
+                expect(result.status).toBe(exitCode);
+                const log = readFileSync(join(directory, BROWSER_AI_WEBGPU_LOG), 'utf8');
+                expect(log).toContain('pnpm called: test:e2e:browser-ai-webgpu-admission; DEBUG=pw:api,pw:browser');
+                expect(log).toMatch(/\[browser-ai-webgpu\] started \d{4}-\d{2}-\d{2}T/);
+                expect(log).toContain(`command=${exitCode} log=0`);
+            } finally {
+                rmSync(directory, { recursive: true, force: true });
+            }
+        }
 
         for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
             const premiumRunner = asRecord(structuredClone(heavyWorkflow), `${runner} Browser AI heavyWorkflow`);
@@ -4565,10 +5125,25 @@ describe('health gates workflow contract', () => {
             'Browser AI WebGPU job must run the dedicated hardware command'
         );
 
+        const unboundedAdmission = asRecord(structuredClone(heavyWorkflow), 'unbounded Browser AI admission');
+        delete stepNamed(jobAt(unboundedAdmission, BROWSER_AI_WEBGPU_JOB), 'Run Browser AI WebGPU admission')[
+            'timeout-minutes'
+        ];
+        expect(() => assertBrowserAiWebGpuJob(unboundedAdmission)).toThrow(
+            'Browser AI WebGPU admission must fail before the job limit with Playwright diagnostics'
+        );
+
+        const skippedDiagnostics = asRecord(structuredClone(heavyWorkflow), 'skipped Browser AI diagnostics');
+        stepNamed(jobAt(skippedDiagnostics, BROWSER_AI_WEBGPU_JOB), 'Upload Browser AI WebGPU diagnostics').if =
+            '${{ success() }}';
+        expect(() => assertBrowserAiWebGpuJob(skippedDiagnostics)).toThrow(
+            'Browser AI WebGPU diagnostics must retain only the log and failure traces after a failed step'
+        );
+
         const unboundedHeavyInstall = asRecord(structuredClone(heavyWorkflow), 'unbounded Browser AI heavyWorkflow');
         delete stepNamed(jobAt(unboundedHeavyInstall, BROWSER_AI_WEBGPU_JOB), 'Install Chromium')['timeout-minutes'];
         expect(() => assertBrowserAiWebGpuJob(unboundedHeavyInstall)).toThrow(
-            'Browser AI WebGPU job must bound its Chromium install so a stalled download fails fast'
+            'Browser AI WebGPU must bound every named step'
         );
 
         const unboundedNightlyInstall = asRecord(structuredClone(nightly), 'unbounded Browser AI nightly');
@@ -4637,6 +5212,12 @@ describe('health gates workflow contract', () => {
         delete coldFirstPaint.globalSetup;
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, coldFirstPaint)).toThrow(
             'Browser AI WebGPU config must warm the cold first paint before its specs observe it'
+        );
+
+        const unboundedProof = asRecord(structuredClone(browserAiWebGpuConfig), 'unbounded Browser AI config');
+        delete unboundedProof.globalTimeout;
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, unboundedProof)).toThrow(
+            'Browser AI WebGPU config must bound the whole dedicated proof without retries or parallel tests'
         );
 
         const fallbackRequestAdapter = vi.fn().mockResolvedValue({
@@ -4712,7 +5293,7 @@ describe('health gates workflow contract', () => {
                         RUN_URL: 'https://github.com/owner/repository/actions/runs/1',
                     },
                 });
-                expect(result.status).toBe(0);
+                expect(result.status, result.stderr).toBe(0);
                 return readFileSync(join(directory, 'gh-calls.txt'), 'utf8')
                     .trim()
                     .split('\n')

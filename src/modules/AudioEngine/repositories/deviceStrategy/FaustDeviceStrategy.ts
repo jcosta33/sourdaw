@@ -107,6 +107,10 @@ export class FaustDeviceStrategy implements AudioDeviceStrategy {
         return sampleFrame / this.sampleRate;
     }
 
+    destroy(): void {
+        this.node.wamControls?.destroy?.();
+    }
+
     setParam(name: string, value: number): void {
         try {
             this.faustNode.setParamValue(name, value);

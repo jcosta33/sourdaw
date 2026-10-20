@@ -30,6 +30,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
+import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { createImportedStemTracks } from '../../../useCases/stemImport/createImportedStemTracks';
 import { handleDiscardImportedStemSet, handleImportStemSet } from '../handleImportStemSet';
 
@@ -63,6 +64,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
     removeBusStrip: mocks.removeBusStrip,
     removeTrackStrip: mocks.removeTrackStrip,
+    stopTrackInputMonitoring: vi.fn(),
     reportLatency: mocks.reportLatency,
     getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
@@ -322,6 +324,24 @@ function seedUnrelatedProjectTruth(): void {
     seedTransaction.commit();
 }
 
+function restoreCommittedTracks(tracks: ReturnType<typeof requireTrackState>['tracks']): void {
+    const restoration = runWithAutomergeStorageTransaction(undefined, () => {
+        trackStore.set({ ...requireTrackState(), tracks });
+    });
+    if (restoration.status !== 'returned') {
+        throw restoration.error;
+    }
+    restoration.commit();
+}
+
+function committedTrackIds(): string[] {
+    const document = getCrdtDoc<{ tracks?: { tracks: Array<{ id: string }> } }>('root');
+    if (!document?.tracks) {
+        throw new Error('Expected committed track state');
+    }
+    return document.tracks.tracks.map((track) => track.id);
+}
+
 describe('handleImportStemSet', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -360,6 +380,68 @@ describe('handleImportStemSet', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
+
+    it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
+        'retires imported-stem removal strips and events after root removal, phase=%s',
+        async (phase) => {
+            seedUnrelatedProjectTruth();
+            const inverse = await applyStemImport(createStemImportAction());
+            const result = await handleDiscardImportedStemSet.execute(inverse);
+            expect(result?.status).toBe('written');
+            const emitted = vi.fn(async () => undefined);
+            setArrangementEventBus({ emit: emitted });
+            mocks.removeTrackStrip.mockClear();
+            mocks.removeBusStrip.mockClear();
+            removeCrdtDoc('root');
+            await result?.[phase]?.();
+            expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+            expect(mocks.removeBusStrip).not.toHaveBeenCalled();
+            expect(emitted).not.toHaveBeenCalled();
+        }
+    );
+
+    it('preserves restored stem tracks at the real committed-command boundary', async () => {
+        const inverse = await applyStemImport(createStemImportAction());
+        const restoredTracks = structuredClone(requireTrackState().tracks);
+        const onCommitted = vi.fn(() => restoreCommittedTracks(restoredTracks));
+        mocks.removeTrackStrip.mockClear();
+        mocks.publishTrackRemoved.mockClear();
+
+        await executeAppAction(inverse, { source: 'prompt', onCommitted });
+
+        expect(onCommitted).toHaveBeenCalledOnce();
+        expect(requireTrackState().tracks.map((track) => track.id)).toEqual(
+            inverse.payload.stemTrackIds.concat(inverse.payload.folderId).sort()
+        );
+        expect(committedTrackIds()).toEqual(restoredTracks.map((track) => track.id));
+        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
+    });
+
+    it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
+        'preserves a restored sibling between awaited removal effects, phase=%s',
+        async (phase) => {
+            const inverse = await applyStemImport(createStemImportAction());
+            const restoredTracks = structuredClone(requireTrackState().tracks);
+            const result = await handleDiscardImportedStemSet.execute(inverse);
+            expect(result?.status).toBe('written');
+            mocks.removeTrackStrip.mockClear();
+            mocks.publishTrackRemoved.mockClear();
+            mocks.publishTrackRemoved.mockImplementationOnce(async () => {
+                restoreCommittedTracks(restoredTracks.filter((track) => track.id !== 'track-kick'));
+            });
+
+            await result?.[phase]?.();
+
+            expect(mocks.publishTrackRemoved).toHaveBeenCalledExactlyOnceWith({ trackId: 'track-kick' });
+            expect(mocks.removeTrackStrip).toHaveBeenCalledExactlyOnceWith('track-kick');
+            expect(requireTrackState().tracks.map((track) => track.id)).toEqual([
+                'folder-starter-stems',
+                'track-vocal',
+            ]);
+            expect(committedTrackIds()).toEqual(['folder-starter-stems', 'track-vocal']);
+        }
+    );
 
     it('admits a guarded stem import into an atomic batch and undo executes the inverse exactly', async () => {
         seedUnrelatedProjectTruth();

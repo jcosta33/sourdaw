@@ -21,7 +21,10 @@ type CreateOfflineTrackStripTrackInput = {
     devices: Device[];
 };
 
-type CreateOfflineTrackStripOptions = Pick<BuildDeviceChainContext, 'instruments' | 'loadedExternalInstanceIds'> & {
+type CreateOfflineTrackStripOptions = Pick<
+    BuildDeviceChainContext,
+    'instruments' | 'loadedExternalInstanceIds' | 'refuseFailedFaustDevices'
+> & {
     /**
      * Stem exports pass false: stems of muted tracks must carry the track's
      * content for "later use in a DAW" (exportStems documents this intent).
@@ -104,6 +107,7 @@ export async function createOfflineTrackStrip(
         onWarning: options.onWarning,
         contributesAudio: options.contributesAudio,
         cancellationSignal: options.cancellationSignal,
+        refuseFailedFaustDevices: options.refuseFailedFaustDevices,
     });
 
     preFaderTap.connect(faderNode);
