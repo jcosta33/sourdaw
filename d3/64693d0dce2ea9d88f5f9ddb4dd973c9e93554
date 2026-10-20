@@ -1,0 +1,31 @@
+docs/06-testing.md
+  s_1c08b47ac3792f::t_37b6bdddbfa5a2 752-762
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_4c8cd08893b364::t_e35733d7e208ca 1185,1359,1362,1463-1545,1555-1562,1564-1579,1581-1605,1607-1637,1639-1642,1644-1688,1801
+scripts/resourceGuard.ts
+  s_4c8cd08893b364::t_b75b28ef5a99c0 1112-1158,1500,1519,1521,1526,1529-1534,1538-1555
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d364693d0dce2ea9d88f5f9ddb4dd973c9e93554",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
