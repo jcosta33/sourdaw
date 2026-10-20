@@ -782,9 +782,15 @@ file-use proof: unrelated concurrent process transitions can make a later cleanu
 Each command must finish successfully before the next starts. Failed or unavailable guard verification
 blocks the remaining commands and parallel shard with the original failure status. After success,
 the shard excludes exactly those three already-run files and keeps its normal worker setting.
-All other selected specs still run once across the four shards. This sequencing applies to the
-required fresh-account helper route; the global shard exclusions and nightly/tooling collection
-routes stay unchanged.
+All other selected specs still run once across the four shards. The global shard exclusions stay
+unchanged.
+
+No hosted Linux route runs those three files as the runner account. That account can hold a live
+same-UID process whose `/proc` cwd is denied; the guard then correctly retains every storage it
+creates there, and each cleanup case reports a leak. The nightly unit shards therefore use the same
+fresh-account helper route as the required shards. The tooling script suite excludes the three
+files: guard sources are not review tooling, so a head that changes them takes the broad profile
+and its isolated unit shards.
 
 Before install or Vitest concurrency, mandatory native verification starts a nondumpable same-UID
 Python consumer with cwd and an open file in owned storage. It requires denied cwd inspection and
