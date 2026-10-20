@@ -16,7 +16,15 @@ export function computeLevainZoneTables(
     const builder = new LevainZoneTableBuilder();
     try {
         for (const zone of request.zones) {
-            builder.add_zone(zone.zoneId, zone.articulationId, zone.micId, zone.loKey, zone.hiKey, zone.loVel, zone.hiVel);
+            builder.add_zone(
+                zone.zoneId,
+                zone.articulationId,
+                zone.micId,
+                zone.loKey,
+                zone.hiKey,
+                zone.loVel,
+                zone.hiVel
+            );
         }
         if (!builder.build(request.numArticulations, request.numMics)) {
             throw new Error('Levain zone tables exceed the DSP dimension or capacity limits');

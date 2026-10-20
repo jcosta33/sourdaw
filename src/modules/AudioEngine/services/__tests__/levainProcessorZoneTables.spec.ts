@@ -344,7 +344,10 @@ describe('shipped LevainProcessor zone-table staging', () => {
         // One wide zone on one articulation and mic: 2,048 LUT slots, a 2,048-entry arena.
         const request: LevainZoneTableRequest = { zones: [WIDE_ZONE], numArticulations: 1, numMics: 1 };
 
-        function corrupt(tables: LevainZoneTables, change: (lut: Uint32Array, arena: Uint32Array) => void): LevainZoneTables {
+        function corrupt(
+            tables: LevainZoneTables,
+            change: (lut: Uint32Array, arena: Uint32Array) => void
+        ): LevainZoneTables {
             const copy = { lut: tables.lut.slice(), arena: tables.arena.slice() };
             change(copy.lut, copy.arena);
             return copy;
@@ -354,25 +357,62 @@ describe('shipped LevainProcessor zone-table staging', () => {
             {
                 name: 'a LUT ref reaching past the declared arena',
                 deliver: (deliver, tables) =>
-                    deliverZoneTables(deliver, 1, request, corrupt(tables, (lut) => (lut[0] = tables.arena.length))),
+                    deliverZoneTables(
+                        deliver,
+                        1,
+                        request,
+                        corrupt(tables, (lut) => (lut[0] = tables.arena.length))
+                    ),
             },
             {
                 name: 'an arena id the bank holds no zone for',
-                deliver: (deliver, tables) => deliverZoneTables(deliver, 1, request, corrupt(tables, (_, arena) => (arena[5] = 1))),
+                deliver: (deliver, tables) =>
+                    deliverZoneTables(
+                        deliver,
+                        1,
+                        request,
+                        corrupt(tables, (_, arena) => (arena[5] = 1))
+                    ),
             },
             {
                 name: 'a chunk out of order',
                 deliver: (deliver, tables) => {
-                    deliver({ type: 'reserveZoneTables', loadToken: 1, numArticulations: 1, numMics: 1, lutEntries: tables.lut.length / 2, arenaEntries: tables.arena.length });
-                    deliver({ type: 'zoneTableChunk', loadToken: 1, table: 'lut', start: 1, data: tables.lut.slice(2) });
+                    deliver({
+                        type: 'reserveZoneTables',
+                        loadToken: 1,
+                        numArticulations: 1,
+                        numMics: 1,
+                        lutEntries: tables.lut.length / 2,
+                        arenaEntries: tables.arena.length,
+                    });
+                    deliver({
+                        type: 'zoneTableChunk',
+                        loadToken: 1,
+                        table: 'lut',
+                        start: 1,
+                        data: tables.lut.slice(2),
+                    });
                 },
             },
             {
                 name: 'a chunk past the end of its table',
                 deliver: (deliver, tables) => {
-                    deliver({ type: 'reserveZoneTables', loadToken: 1, numArticulations: 1, numMics: 1, lutEntries: tables.lut.length / 2, arenaEntries: tables.arena.length });
+                    deliver({
+                        type: 'reserveZoneTables',
+                        loadToken: 1,
+                        numArticulations: 1,
+                        numMics: 1,
+                        lutEntries: tables.lut.length / 2,
+                        arenaEntries: tables.arena.length,
+                    });
                     deliver({ type: 'zoneTableChunk', loadToken: 1, table: 'lut', start: 0, data: tables.lut });
-                    deliver({ type: 'zoneTableChunk', loadToken: 1, table: 'lut', start: tables.lut.length / 2, data: new Uint32Array(2) });
+                    deliver({
+                        type: 'zoneTableChunk',
+                        loadToken: 1,
+                        table: 'lut',
+                        start: tables.lut.length / 2,
+                        data: new Uint32Array(2),
+                    });
                 },
             },
             {
@@ -382,12 +422,20 @@ describe('shipped LevainProcessor zone-table staging', () => {
             },
             {
                 name: 'a LUT size the dimensions do not imply',
-                deliver: (deliver, tables) => deliverZoneTables(deliver, 1, { numArticulations: 2, numMics: 1 }, tables),
+                deliver: (deliver, tables) =>
+                    deliverZoneTables(deliver, 1, { numArticulations: 2, numMics: 1 }, tables),
             },
             {
                 name: 'a seal before every entry is written',
                 deliver: (deliver, tables) => {
-                    deliver({ type: 'reserveZoneTables', loadToken: 1, numArticulations: 1, numMics: 1, lutEntries: tables.lut.length / 2, arenaEntries: tables.arena.length });
+                    deliver({
+                        type: 'reserveZoneTables',
+                        loadToken: 1,
+                        numArticulations: 1,
+                        numMics: 1,
+                        lutEntries: tables.lut.length / 2,
+                        arenaEntries: tables.arena.length,
+                    });
                     deliver({ type: 'zoneTableChunk', loadToken: 1, table: 'lut', start: 0, data: tables.lut });
                     deliver({ type: 'sealZoneTables', loadToken: 1 });
                 },

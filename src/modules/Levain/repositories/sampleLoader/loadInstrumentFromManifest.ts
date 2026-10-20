@@ -572,10 +572,9 @@ async function uploadZoneTableInChunks(
     for (let offset = 0; offset < words.length; offset += chunkWords) {
         await pacer.reserve();
         const data = words.slice(offset, offset + chunkWords);
-        nodePort.postMessage(
-            { type: 'zoneTableChunk', loadToken, table, start: offset / wordsPerEntry, data },
-            [data.buffer]
-        );
+        nodePort.postMessage({ type: 'zoneTableChunk', loadToken, table, start: offset / wordsPerEntry, data }, [
+            data.buffer,
+        ]);
     }
 }
 

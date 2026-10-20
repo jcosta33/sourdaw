@@ -899,8 +899,21 @@ describe('LevainProcessor message handling', () => {
         send(proc, { type: 'beginSampleBank', bankKey: 'forward-build-bank', instrumentId: 'violin', loadToken: 1 });
         calls.length = 0;
 
-        send(proc, { type: 'reserveZoneTables', loadToken: 1, numArticulations: 4, numMics: 3, lutEntries: 3, arenaEntries: 2 });
-        send(proc, { type: 'zoneTableChunk', loadToken: 1, table: 'lut', start: 0, data: new Uint32Array([0, 1, 1, 1]) });
+        send(proc, {
+            type: 'reserveZoneTables',
+            loadToken: 1,
+            numArticulations: 4,
+            numMics: 3,
+            lutEntries: 3,
+            arenaEntries: 2,
+        });
+        send(proc, {
+            type: 'zoneTableChunk',
+            loadToken: 1,
+            table: 'lut',
+            start: 0,
+            data: new Uint32Array([0, 1, 1, 1]),
+        });
         send(proc, { type: 'zoneTableChunk', loadToken: 1, table: 'lut', start: 2, data: new Uint32Array([0, 0]) });
         send(proc, { type: 'zoneTableChunk', loadToken: 1, table: 'arena', start: 0, data: new Uint32Array([7, 9]) });
         send(proc, { type: 'sealZoneTables', loadToken: 1 });
@@ -928,7 +941,14 @@ describe('LevainProcessor message handling', () => {
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, { type: 'beginSampleBank', bankKey: 'long-chunk-bank', instrumentId: 'violin', loadToken: 1 });
         calls.length = 0;
-        send(proc, { type: 'reserveZoneTables', loadToken: 1, numArticulations: 1, numMics: 1, lutEntries: 8, arenaEntries: 0 });
+        send(proc, {
+            type: 'reserveZoneTables',
+            loadToken: 1,
+            numArticulations: 1,
+            numMics: 1,
+            lutEntries: 8,
+            arenaEntries: 0,
+        });
 
         send(proc, {
             type: 'zoneTableChunk',

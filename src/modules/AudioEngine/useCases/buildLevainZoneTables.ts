@@ -7,6 +7,9 @@ import type { LevainZoneTableRequest, LevainZoneTables } from '../models/LevainZ
  * stage into the worklet in bounded chunks. Rejects when the build fails and at
  * once on `signal`.
  */
-export function buildLevainZoneTables(request: LevainZoneTableRequest, signal?: AbortSignal): Promise<LevainZoneTables> {
+export function buildLevainZoneTables(
+    request: LevainZoneTableRequest,
+    signal?: AbortSignal
+): Promise<LevainZoneTables> {
     return buildLevainZoneTablesInWorker(request, signal);
 }

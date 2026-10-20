@@ -301,7 +301,9 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
         await expect(bridge.loadSamplesForInstrument(deviceId, 'trumpet')).resolves.toBe('ready');
         expect(levainStore.value?.[deviceId]?.loadedMicPositions).toEqual([null, 'room']);
         expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'addZone', micId: 1 }));
-        expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'reserveZoneTables', numMics: 2 }));
+        expect(port.postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'reserveZoneTables', numMics: 2 })
+        );
 
         device.setParam.mockClear();
         bridge.setMacroWithAudio(deviceId, 4, 0.6);
@@ -395,7 +397,9 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
             // A: worklet commit staged (`commitSampleBank` posted) but held back.
             const loadA = bridge.loadSamplesForInstrument(deviceId, 'cello');
             await vi.waitFor(() => {
-                expect(port.postMessage.mock.calls.some(([m]) => isRecord(m) && m.type === 'commitSampleBank')).toBe(true);
+                expect(port.postMessage.mock.calls.some(([m]) => isRecord(m) && m.type === 'commitSampleBank')).toBe(
+                    true
+                );
             });
             const aLoadPromise = autoLoadSpy.mock.results[0]?.value as ReturnType<typeof autoLoadLevainSamples>;
             expect(aLoadPromise).toBeDefined();

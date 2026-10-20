@@ -98,7 +98,9 @@ describe('buildLevainZoneTablesInWorker', () => {
         const garbled = buildLevainZoneTablesInWorker(REQUEST);
         const garbling = await startedWorker();
         garbling.answer({ type: 'built', lut: [0, 1], arena: new Uint32Array(0) });
-        await expect(garbled).rejects.toThrow('Levain zone-table worker failed: it answered with an unreadable message');
+        await expect(garbled).rejects.toThrow(
+            'Levain zone-table worker failed: it answered with an unreadable message'
+        );
         expect(garbling.terminated).toBe(true);
     });
 

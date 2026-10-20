@@ -807,8 +807,8 @@ describe('loadInstrumentFromManifest', () => {
                     const holderData = new Float32Array(
                         new SharedArrayBuffer(
                             (LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT - FAKE_TABLE_CHUNKS) *
-                            LEVAIN_SAMPLE_CHUNK_FLOATS *
-                            Float32Array.BYTES_PER_ELEMENT
+                                LEVAIN_SAMPLE_CHUNK_FLOATS *
+                                Float32Array.BYTES_PER_ELEMENT
                         )
                     );
                     vi.mocked(fetchAndDecode).mockResolvedValueOnce({
