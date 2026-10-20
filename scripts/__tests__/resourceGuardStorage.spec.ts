@@ -26,7 +26,9 @@ import {
     readStorageDescriptor,
     linuxStorageFileState,
     linuxStorageFileCensus,
+    linuxFilePorts,
     parseLinuxFileSnapshot,
+    parseLinuxStartTicks,
 } from '../resourceGuard';
 import {
     createGuardStorage,
@@ -36,7 +38,7 @@ import {
     resolveGuardStorageRoot,
     storageReferenceState,
     sameUserProcessIds,
-    parseLsofCensus,
+    parseLsofCatalog,
     referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
@@ -93,9 +95,15 @@ async function waitForStorageAbandonment(tempDirectories: string[], deadline: nu
                     return false;
                 }
                 lastReason = 'no diagnostic';
-                lastState = storageFileState(tempDirectories, [], (reason) => {
-                    lastReason = reason;
-                });
+                // This test process supervised every fixture run whose storage is checked.
+                lastState = storageFileState(
+                    tempDirectories,
+                    [],
+                    (reason) => {
+                        lastReason = reason;
+                    },
+                    process.pid
+                );
                 if (Date.now() > deadline) {
                     return false;
                 }
@@ -1053,6 +1061,72 @@ describe('storage ownership recovery', () => {
     );
 
     it.each([
+        { scenario: 'denied cwd predating the supervisor', code: 'EACCES', predates: true, consumer: false },
+        { scenario: 'denied cwd predating the supervisor (EPERM)', code: 'EPERM', predates: true, consumer: false },
+        { scenario: 'denied cwd started after the supervisor', code: 'EACCES', predates: false, consumer: false },
+        { scenario: 'unreadable cwd predating the supervisor', code: 'EIO', predates: true, consumer: false },
+        { scenario: 'later consumer beside an excused process', code: 'EACCES', predates: true, consumer: true },
+    ])(
+        'excuses only uninspectable same-UID processes older than the supervisor: $scenario',
+        ({ code, predates, consumer }) => {
+            const temp = '/owned/run/tmp';
+            const reports: string[] = [];
+            const failure = Object.assign(new Error('private path must not be emitted'), { code });
+            const excused = code !== 'EIO' && predates;
+            const state = linuxStorageFileState([123, 124], 501, [temp], 5_000, (reason) => reports.push(reason), {
+                inspectUid: () => 501,
+                readCwd: (pid) => {
+                    if (pid === 123) {
+                        throw failure;
+                    }
+                    return consumer ? temp : '/elsewhere';
+                },
+                listDescriptors: () => [],
+                readDescriptor: () => undefined,
+                readStatus: () =>
+                    'Pid:\t123\nTgid:\t123\nUid:\t501\t501\t501\t501\nState:\tS (sleeping)\nThreads:\t1\n',
+                isGone: () => false,
+                startedBeforeSupervisor: (pid) => pid === 123 && predates,
+                now: () => 0,
+            });
+            if (consumer) {
+                expect(state).toBe('alive');
+            } else {
+                expect(state).toBe(excused ? 'dead' : 'unknown');
+            }
+            const expectedReports: string[] = [];
+            if (!excused) {
+                expectedReports.push(
+                    `proc-inspection-unavailable:pid=123:phase=cwd:error=${code}:pid/tgid/uids/state/threads=123/123/501,501,501,501/S/1`
+                );
+            }
+            expect(reports).toEqual(expectedReports);
+        }
+    );
+
+    it('reads the proc start time after a command name holding spaces and parentheses', () => {
+        const fields = ['S', '1', '42', '42', '0', '-1', '4194560', '100', '0', '0', '0', '1', '2', '0', '0', '20'];
+        const stat = `42 (a) b (c) ${[...fields, '0', '1', '0', '98765', '1000', '10'].join(' ')}\n`;
+        expect(parseLinuxStartTicks(stat)).toBe(98765);
+        expect(parseLinuxStartTicks(stat.slice(0, -1))).toBeUndefined();
+        expect(parseLinuxStartTicks(`42 (a) ${fields.join(' ')}\n`)).toBeUndefined();
+        expect(parseLinuxStartTicks(stat.replace('98765', '9x765'))).toBeUndefined();
+    });
+
+    it.skipIf(process.platform !== 'linux')('orders real processes against the supervisor start time', async () => {
+        const later = spawn('sleep', ['5'], { stdio: 'ignore' });
+        if (later.pid === undefined) {
+            throw new Error('later process did not start');
+        }
+        childPids.add(later.pid);
+        const ports = linuxFilePorts(process.pid);
+        expect(ports.startedBeforeSupervisor?.(1)).toBe(true);
+        expect(ports.startedBeforeSupervisor?.(later.pid)).toBe(false);
+        expect(ports.startedBeforeSupervisor?.(process.pid)).toBe(false);
+        expect(linuxFilePorts().startedBeforeSupervisor?.(1)).toBe(false);
+    });
+
+    it.each([
         {
             scenario: 'closed enumeration descriptor',
             recreated: false,
@@ -1138,7 +1212,7 @@ describe('storage ownership recovery', () => {
             const utility = join(bin, 'lsof');
             writeFileSync(
                 utility,
-                `#!/bin/sh\nif ${persistent ? 'true' : `[ ! -e '${count}' ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
+                `#!/bin/sh\ncase " $* " in *" -p "*) echo targeted >> '${count}'; ${persistent ? "printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'; exit 0" : 'exec /usr/sbin/lsof "$@"'};; esac\nif ${persistent ? 'true' : `[ ! -e '${count}' ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
             );
             chmodSync(utility, 0o700);
             const resultPath = join(root, 'result.json');
@@ -1176,14 +1250,24 @@ describe('storage ownership recovery', () => {
                 released,
                 exists: !released,
             });
+            // Processes a catalog leaves uncovered are inspected once by PID; only
+            // whole-account catalogs count against the bounded fresh observation.
             const samples = readFileSync(count, 'utf8').trim().split('\n');
-            expect(samples.slice(0, 2)).toEqual(persistent ? ['incomplete', 'incomplete'] : ['incomplete', 'complete']);
+            const catalogs = samples.filter((sample) => sample !== 'targeted');
+            const targeted = samples.length - catalogs.length;
+            expect(catalogs.slice(0, 2)).toEqual(
+                persistent ? ['incomplete', 'incomplete'] : ['incomplete', 'complete']
+            );
             if (released) {
-                expect(samples.length).toBeGreaterThanOrEqual(3);
-                expect(samples.length).toBeLessThanOrEqual(4);
-                expect(samples.slice(2).every((sample) => sample === 'complete')).toBe(true);
+                expect(catalogs.length).toBeGreaterThanOrEqual(3);
+                expect(catalogs.length).toBeLessThanOrEqual(4);
+                expect(catalogs.slice(2).every((sample) => sample === 'complete')).toBe(true);
+                expect(targeted).toBeLessThanOrEqual(2);
+            } else if (persistent) {
+                // Its own PID inspection is as incomplete, so it never proves coverage.
+                expect(samples).toEqual(['incomplete', 'incomplete', 'targeted']);
             } else {
-                expect(samples.length).toBe(2);
+                expect(samples).toHaveLength(2);
             }
         },
         15_000
@@ -1232,7 +1316,8 @@ describe('storage ownership recovery', () => {
             const root = fixture();
             const ports: StorageRecoveryPorts = {
                 identityState: () => 'dead',
-                sessionState: (_owner, original, current = original) => storageFileState([original, current], []),
+                sessionState: (_owner, original, current = original) =>
+                    storageFileState([original, current], [], () => {}, process.pid),
             };
             const storage = ownedStorage(join(root, 'storage'), ports);
             const program = [
@@ -1445,9 +1530,144 @@ if(process.argv[2]==='-axo'){
         20_000
     );
 
+    it.skipIf(process.platform !== 'darwin').each([
+        { scenario: 'unrelated newborn reclaims', consumer: false },
+        { scenario: 'newborn consumer retains', consumer: true },
+    ])(
+        'inspects same-UID processes born after every whole-account catalog: $scenario',
+        async ({ consumer }) => {
+            const root = fixture();
+            const bin = join(root, 'bin');
+            mkdirSync(bin, { mode: 0o700 });
+            const log = join(root, 'catalogs');
+            const newborns = join(root, 'newborns');
+            const ports: StorageRecoveryPorts = {
+                identityState: () => 'dead',
+                sessionState: (_owner, original, current = original) => storageFileState([original, current], []),
+            };
+            const storage = ownedStorage(join(root, 'storage'), ports);
+            // Each real catalog completes before one more same-UID process starts, as a
+            // concurrent guard's own census does, and that process outlives the catalog.
+            writeFileSync(
+                join(bin, 'lsof'),
+                [
+                    '#!/bin/sh',
+                    `case " $* " in *" -p "*) echo targeted >> '${log}'; exec /usr/sbin/lsof "$@";; esac`,
+                    `echo catalog >> '${log}'`,
+                    `/usr/sbin/lsof "$@" > '${root}/catalog.out' || exit $?`,
+                    `(cd '${consumer ? storage.tempDirectory : root}' && exec /bin/sleep 5) < /dev/null > /dev/null 2>&1 &`,
+                    `echo $! >> '${newborns}'`,
+                    `cat '${root}/catalog.out'`,
+                    '',
+                ].join('\n'),
+                { mode: 0o700 }
+            );
+            const previousPath = process.env.PATH;
+            process.env.PATH = `${bin}:${previousPath}`;
+            let released: boolean;
+            try {
+                released = await storage.release(true);
+            } finally {
+                process.env.PATH = previousPath;
+                for (const pid of readFileSync(newborns, 'utf8').trim().split('\n')) {
+                    childPids.add(Number(pid));
+                }
+            }
+            expect(released).toBe(!consumer);
+            expect(existsSync(storage.tempDirectory)).toBe(consumer);
+            // A catalog discarded for a descriptor closing mid-read may precede each proof
+            // once. Its replacement can already see an earlier newborn consumer; a proof that
+            // reclaims always ends with one PID inspection of the newborn its catalog missed.
+            const calls = readFileSync(log, 'utf8').trim().split('\n');
+            const proofs = consumer ? 1 : 2;
+            expect(calls.filter((call) => call === 'catalog').length).toBeLessThanOrEqual(2 * proofs);
+            if (consumer) {
+                expect(calls.filter((call) => call === 'targeted').length).toBeLessThanOrEqual(1);
+            } else {
+                expect(calls.at(-1)).toBe('targeted');
+                expect(calls.filter((call) => call === 'targeted')).toHaveLength(proofs);
+            }
+        },
+        15_000
+    );
+
+    it.skipIf(process.platform !== 'darwin').each([
+        { scenario: 'untyped unrelated process reclaims', untyped: true, consumer: false },
+        { scenario: 'untyped consumer retains', untyped: true, consumer: true },
+        { scenario: 'omitted unrelated process reclaims', untyped: false, consumer: false },
+        { scenario: 'omitted consumer retains', untyped: false, consumer: true },
+    ])(
+        'reinspects a live process every whole-account catalog leaves incomplete: $scenario',
+        async ({ untyped, consumer }) => {
+            const root = fixture();
+            const bin = join(root, 'bin');
+            mkdirSync(bin, { mode: 0o700 });
+            const log = join(root, 'catalogs');
+            const ports: StorageRecoveryPorts = {
+                identityState: () => 'dead',
+                sessionState: (_owner, original, current = original) => storageFileState([original, current], []),
+            };
+            const storage = ownedStorage(join(root, 'storage'), ports);
+            const holder = spawn('/bin/sleep', ['5'], {
+                cwd: consumer ? storage.tempDirectory : root,
+                stdio: 'ignore',
+            });
+            if (holder.pid === undefined) {
+                throw new Error('untyped-record holder did not start');
+            }
+            childPids.add(holder.pid);
+            // Every whole-account catalog omits the live holder, as lsof does for a busy
+            // process, or reports one of its descriptors without a type, as a descriptor
+            // closing between lsof's field reads does.
+            writeFileSync(
+                join(bin, 'lsof'),
+                [
+                    '#!/bin/sh',
+                    `case " $* " in *" -p "*) echo targeted >> '${log}'; exec /usr/sbin/lsof "$@";; esac`,
+                    `echo catalog >> '${log}'`,
+                    `/usr/sbin/lsof "$@" -p '^${holder.pid}' > '${root}/catalog.out' || exit $?`,
+                    `cat '${root}/catalog.out'`,
+                    untyped ? `printf 'p${holder.pid}\\0\\nf99\\0n/elsewhere\\0\\n'` : '',
+                    '',
+                ].join('\n'),
+                { mode: 0o700 }
+            );
+            const previousPath = process.env.PATH;
+            process.env.PATH = `${bin}:${previousPath}`;
+            let released: boolean;
+            try {
+                released = await storage.release(true);
+            } finally {
+                process.env.PATH = previousPath;
+            }
+            expect(isAlive(holder.pid)).toBe(true);
+            expect(released).toBe(!consumer);
+            expect(existsSync(storage.tempDirectory)).toBe(consumer);
+            // An untyped catalog is always replaced once; a real descriptor closing mid-read
+            // can replace an omitting catalog once too. Each proof ends with one PID inspection.
+            const calls = readFileSync(log, 'utf8').trim().split('\n');
+            const proofs = consumer ? 1 : 2;
+            const catalogs = calls.filter((call) => call === 'catalog').length;
+            expect(calls.at(-1)).toBe('targeted');
+            expect(calls.filter((call) => call === 'targeted')).toHaveLength(proofs);
+            expect(catalogs).toBeGreaterThanOrEqual(untyped ? 2 * proofs : proofs);
+            expect(catalogs).toBeLessThanOrEqual(2 * proofs);
+        },
+        15_000
+    );
+
     it('accepts complete Darwin fileport records without bypassing uncertain fields', async () => {
         const catalog = 'p10\0\nffp.\0tREG\0n/outside/held\0\n';
-        expect(parseLsofCensus(catalog)).toEqual({ pids: new Set([10]), paths: ['/outside/held'] });
+        expect(parseLsofCatalog(catalog)).toEqual({
+            pids: new Set([10]),
+            paths: ['/outside/held'],
+            incomplete: new Set(),
+        });
+        // The guard treats an incomplete process as uninspected.
+        const completeCatalog = (output: string) => {
+            const parsed = parseLsofCatalog(output);
+            return parsed !== undefined && parsed.incomplete.size === 0;
+        };
         for (const fields of [
             'ffp',
             'ffp..',
@@ -1459,11 +1679,11 @@ if(process.argv[2]==='-axo'){
             'ffp.\0n/outside/held',
         ]) {
             const output = `p10\0\n${fields}\0\n`;
-            expect(parseLsofCensus(output)).toBeUndefined();
+            expect(completeCatalog(output)).toBe(false);
             const root = fixture();
             const storage = ownedStorage(root, {
                 identityState: () => 'dead',
-                sessionState: () => (parseLsofCensus(output) === undefined ? 'unknown' : 'dead'),
+                sessionState: () => (completeCatalog(output) ? 'dead' : 'unknown'),
             });
             expect(await storage.release(true)).toBe(false);
             expect(existsSync(storage.tempDirectory)).toBe(true);
@@ -1544,15 +1764,24 @@ if(process.argv[2]==='-axo'){
 
     it('parses complete NUL file records and rejects malformed, truncated or opaque file evidence', () => {
         const valid = 'p10\0\nfcwd\0tDIR\0n/owned/tmp\0\nf3\0tREG\0n/owned/tmp/held\0\n';
-        expect(parseLsofCensus(valid)).toEqual({ pids: new Set([10]), paths: ['/owned/tmp', '/owned/tmp/held'] });
-        expect(parseLsofCensus('p10\0\nftwd\0tDIR\0n/owned/tmp\0\n')).toEqual({
+        expect(parseLsofCatalog(valid)).toEqual({
+            pids: new Set([10]),
+            paths: ['/owned/tmp', '/owned/tmp/held'],
+            incomplete: new Set(),
+        });
+        expect(parseLsofCatalog('p10\0\nftwd\0tDIR\0n/owned/tmp\0\n')).toEqual({
             pids: new Set([10]),
             paths: ['/owned/tmp'],
+            incomplete: new Set(),
         });
+        // An untyped record leaves only its own process incomplete, never a proven path.
         const missingType = 'p10\0\nf3\0n/owned/tmp/held\0\n';
-        const reasons: string[] = [];
-        expect(parseLsofCensus(missingType, (reason) => reasons.push(reason))).toBeUndefined();
-        expect(reasons).toEqual(['descriptor-type-missing']);
+        expect(parseLsofCatalog(missingType)).toEqual({ pids: new Set([10]), paths: [], incomplete: new Set([10]) });
+        expect(parseLsofCatalog(`${valid}p11\0\nf3\0n/owned/tmp/held\0\nf4\0n:pipe\0\n`)).toEqual({
+            pids: new Set([10, 11]),
+            paths: ['/owned/tmp', '/owned/tmp/held'],
+            incomplete: new Set([11]),
+        });
         for (const invalid of [
             `${missingType}f4\0tunknown\0n/owned/tmp\0\n`,
             `${missingType}f4\0tREG\0\n`,
@@ -1561,11 +1790,11 @@ if(process.argv[2]==='-axo'){
         ]) {
             let reason: string | undefined;
             expect(
-                parseLsofCensus(invalid, (value) => {
+                parseLsofCatalog(invalid, (value) => {
                     reason = value;
                 })
             ).toBeUndefined();
-            expect(reason).not.toBe('descriptor-type-missing');
+            expect(reason).toBeDefined();
         }
         for (const invalid of [
             '',
@@ -1575,7 +1804,7 @@ if(process.argv[2]==='-axo'){
             'p10\0\nf3\0tREG\0\n',
             'p10\0\nf3\0tunknown\0n/owned/tmp\0\n',
         ]) {
-            expect(parseLsofCensus(invalid)).toBeUndefined();
+            expect(parseLsofCatalog(invalid)).toBeUndefined();
         }
         expect(referencesStoragePath('/owned/tmp/held', ['/owned/tmp'])).toBe(true);
         expect(referencesStoragePath('/claim/run/tmp/held (deleted)', ['/owned/tmp', '/claim/run/tmp'])).toBe(true);

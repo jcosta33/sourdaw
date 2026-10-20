@@ -38,7 +38,7 @@ import {
     resolveGuardStorageRoot,
     storageReferenceState,
     sameUserProcessIds,
-    parseLsofCensus,
+    parseLsofCatalog,
     referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
@@ -1072,17 +1072,26 @@ function storageRecoveryPorts(report: (reason: string) => void): StorageRecovery
                     return state;
                 }
             }
-            return platform() === 'win32'
-                ? 'dead'
-                : storageFileState(
-                      [tempDirectory, currentTempDirectory],
-                      [
-                          owner.owner.pid,
-                          ...owner.tracked.map((identity) => identity.pid),
-                          ...(owner.child === undefined ? [] : [owner.child.pid]),
-                      ],
-                      report
-                  );
+            if (platform() === 'win32') {
+                return 'dead';
+            }
+            // Only this run's own live supervisor bounds which processes predate it.
+            const supervisorPid =
+                platform() === 'linux' &&
+                owner.owner.pid === process.pid &&
+                storageIdentityState(owner.owner) === 'alive'
+                    ? process.pid
+                    : undefined;
+            return storageFileState(
+                [tempDirectory, currentTempDirectory],
+                [
+                    owner.owner.pid,
+                    ...owner.tracked.map((identity) => identity.pid),
+                    ...(owner.child === undefined ? [] : [owner.child.pid]),
+                ],
+                report,
+                supervisorPid
+            );
         },
         localReleaseAllowed: (owner, tempDirectory, currentTempDirectory) => {
             // Windows normal cleanup keeps its tracked-tree contract. Its unavailable
@@ -1119,6 +1128,80 @@ function processFileSnapshot(pid: number, timeout: number): { uid: number; state
         return undefined;
     }
     return { uid: Number(match[1]), state: match[2] };
+}
+
+type DarwinFileCatalog = { inspected: Set<number>; incomplete: Set<number>; paths: string[] };
+
+function darwinFileCatalog(uid: number, deadline: number, selectedPids?: number[]): DarwinFileCatalog | string {
+    const selection = selectedPids === undefined ? [] : ['-p', selectedPids.join(',')];
+    const result = spawnSync('lsof', ['-nP', '-F0pfnt', '-a', '-u', String(uid), ...selection], {
+        encoding: 'utf8',
+        timeout: Math.max(1, deadline - Date.now()),
+        maxBuffer: 16 * 1024 * 1024,
+    });
+    // lsof exits 1 without a diagnostic when a selected process has already exited;
+    // each selected PID absent from the records must still prove its own exit.
+    const selectionExited = selectedPids !== undefined && result.status === 1;
+    if ((result.status !== 0 && !selectionExited) || result.stderr !== '') {
+        return 'lsof-command-unavailable';
+    }
+    if (selectedPids !== undefined && result.stdout === '') {
+        return { inspected: new Set(), incomplete: new Set(), paths: [] };
+    }
+    let parseReason = 'unclassified';
+    const catalog = parseLsofCatalog(result.stdout, (reason) => {
+        parseReason = reason;
+    });
+    if (catalog === undefined) {
+        return `lsof-fields-unusable:${parseReason}`;
+    }
+    const inspected = new Set([...catalog.pids].filter((pid) => !catalog.incomplete.has(pid)));
+    return { inspected, incomplete: catalog.incomplete, paths: catalog.paths };
+}
+
+type UncoveredDarwinProcess = { pid: number; snapshot: { uid: number; state: string } | undefined };
+
+function uncoveredDarwinProcesses(
+    candidates: Iterable<number>,
+    inspected: Set<number>,
+    uid: number,
+    deadline: number
+): UncoveredDarwinProcess[] | undefined {
+    const uncovered: UncoveredDarwinProcess[] = [];
+    for (const pid of candidates) {
+        if (inspected.has(pid) || processIsGone(pid)) {
+            continue;
+        }
+        if (Date.now() > deadline) {
+            return undefined;
+        }
+        const snapshot = processFileSnapshot(pid, Math.max(1, deadline - Date.now()));
+        // XNU closes the file table before publishing SZOMB. This only proves
+        // absence of file use, never release of the PID identity. A process that
+        // exits during its snapshot holds no files either.
+        if ((snapshot?.uid === uid && snapshot.state === 'Z') || processIsGone(pid)) {
+            continue;
+        }
+        uncovered.push({ pid, snapshot });
+    }
+    return uncovered;
+}
+
+// lsof cannot read an exiting process that ps still lists. A process that stays
+// unreadable by PID proves it holds no files only by exiting within this bound.
+function awaitDarwinExits(pids: number[], uid: number, deadline: number): UncoveredDarwinProcess[] | undefined {
+    const exitDeadline = Math.min(deadline, Date.now() + 500);
+    while (pids.some((pid) => !processIsGone(pid)) && Date.now() < exitDeadline) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+    return uncoveredDarwinProcesses(pids, new Set(), uid, deadline);
+}
+
+function darwinMissingReason(missing: UncoveredDarwinProcess[]): string {
+    const snapshots = missing
+        .slice(0, 4)
+        .map(({ pid, snapshot }) => `${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
+    return `lsof-live-pid-missing:count=${missing.length}:pid/uid/state=${snapshots.join(',')}`;
 }
 
 export function readStorageDescriptor(
@@ -1202,8 +1285,50 @@ type LinuxFilePorts = {
     readDescriptor: (pid: number, fd: string) => string | undefined;
     readStatus: (pid: number) => string;
     isGone: (pid: number) => boolean;
+    startedBeforeSupervisor?: (pid: number) => boolean;
     now?: () => number;
 };
+
+export function parseLinuxStartTicks(stat: string): number | undefined {
+    // The command name may contain spaces and parentheses; fields resume after its last ')'.
+    const commandEnd = stat.lastIndexOf(') ');
+    if (commandEnd < 0 || stat.length > 4096 || !stat.endsWith('\n')) {
+        return undefined;
+    }
+    // proc(5) field 22, starttime, is the twentieth field after the command name.
+    const startTime = stat
+        .slice(commandEnd + 2)
+        .trimEnd()
+        .split(' ')[19];
+    if (startTime === undefined || !/^\d+$/.test(startTime) || !Number.isSafeInteger(Number(startTime))) {
+        return undefined;
+    }
+    return Number(startTime);
+}
+
+export function linuxFilePorts(supervisorPid?: number): LinuxFilePorts {
+    const startTicks = (pid: number) => parseLinuxStartTicks(readFileSync(`/proc/${pid}/stat`, 'utf8'));
+    return {
+        inspectUid: (pid) => lstatSync(`/proc/${pid}`).uid,
+        readCwd: (pid) => readlinkSync(`/proc/${pid}/cwd`),
+        listDescriptors: (pid) => readdirSync(`/proc/${pid}/fd`),
+        readDescriptor: (pid, fd) => readStorageDescriptor(`/proc/${pid}/fd/${fd}`),
+        readStatus: (pid) => readFileSync(`/proc/${pid}/status`, 'utf8'),
+        isGone: processIsGone,
+        startedBeforeSupervisor: (pid) => {
+            if (supervisorPid === undefined) {
+                return false;
+            }
+            try {
+                const started = startTicks(pid);
+                const supervisorStarted = startTicks(supervisorPid);
+                return started !== undefined && supervisorStarted !== undefined && started < supervisorStarted;
+            } catch {
+                return false;
+            }
+        },
+    };
+}
 
 function linuxTerminalFilesReleased(snapshot: LinuxFileSnapshot | undefined, pid: number, uid: number): boolean {
     // Linux drops files/fs before publishing EXIT_ZOMBIE. nr_threads includes
@@ -1234,14 +1359,7 @@ export function linuxStorageFileState(
     tempDirectories: string[],
     deadline: number,
     report: (reason: string) => void = () => {},
-    ports: LinuxFilePorts = {
-        inspectUid: (pid) => lstatSync(`/proc/${pid}`).uid,
-        readCwd: (pid) => readlinkSync(`/proc/${pid}/cwd`),
-        listDescriptors: (pid) => readdirSync(`/proc/${pid}/fd`),
-        readDescriptor: (pid, fd) => readStorageDescriptor(`/proc/${pid}/fd/${fd}`),
-        readStatus: (pid) => readFileSync(`/proc/${pid}/status`, 'utf8'),
-        isGone: processIsGone,
-    }
+    ports: LinuxFilePorts = linuxFilePorts()
 ): 'alive' | 'dead' | 'unknown' {
     const unknown = (reason: string): 'unknown' => {
         report(reason);
@@ -1276,6 +1394,18 @@ export function linuxStorageFileState(
             }
         } catch (error) {
             if (ports.isGone(pid)) {
+                continue;
+            }
+            const code = (error as NodeJS.ErrnoException).code;
+            if (
+                phase !== 'root' &&
+                (code === 'EACCES' || code === 'EPERM') &&
+                ports.startedBeforeSupervisor?.(pid) === true
+            ) {
+                // A same-UID process this account cannot inspect holds credentials beyond
+                // the guard's, as long-lived session services can. Having started before the
+                // supervisor, it inherited nothing from the run; like a descendant that
+                // changes privilege, it is outside what this census can prove.
                 continue;
             }
             let snapshot: LinuxFileSnapshot | undefined;
@@ -1345,10 +1475,13 @@ export function linuxStorageFileCensus(
     return unknown('file-census-unavailable');
 }
 
+// supervisorPid names the live process that spawned the run, never a later reclaimer:
+// only processes that predate it are known not to have inherited from the run.
 export function storageFileState(
     tempDirectories: string[],
     ownedPids: number[],
-    report: (reason: string) => void = () => {}
+    report: (reason: string) => void = () => {},
+    supervisorPid?: number
 ): 'alive' | 'dead' | 'unknown' {
     const unknown = (reason: string): 'unknown' => {
         report(reason);
@@ -1407,25 +1540,9 @@ export function storageFileState(
                         return unknown(pids);
                     }
                 }
-                const result = spawnSync('lsof', ['-nP', '-F0pfnt', '-a', '-u', String(uid)], {
-                    encoding: 'utf8',
-                    timeout: Math.max(1, deadline - Date.now()),
-                    maxBuffer: 16 * 1024 * 1024,
-                });
-                if (result.status !== 0 || result.stderr !== '') {
-                    return unknown('lsof-command-unavailable');
-                }
-                let parseReason = 'unclassified';
-                const census = parseLsofCensus(result.stdout, (reason) => {
-                    parseReason = reason;
-                });
-                if (census === undefined) {
-                    // A descriptor can close between lsof's field reads. Discard
-                    // that catalog; only a wholly valid fresh observation can prove safety.
-                    if (observation === 0 && parseReason === 'descriptor-type-missing') {
-                        continue;
-                    }
-                    return unknown(`lsof-fields-unusable:${parseReason}`);
+                const census = darwinFileCatalog(uid, deadline);
+                if (typeof census === 'string') {
+                    return unknown(census);
                 }
                 if (Date.now() >= deadline) {
                     return unknown('file-census-time-bound');
@@ -1433,45 +1550,50 @@ export function storageFileState(
                 if (census.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
                     return 'alive';
                 }
+                // A descriptor can close between lsof's field reads. Discard that catalog
+                // once; a process left incomplete by the replacement is inspected again by PID.
+                if (observation === 0 && census.incomplete.size > 0) {
+                    continue;
+                }
                 // lsof can finish a catalog captured before a new borrower starts.
                 // Require coverage of processes observed on both sides of inspection.
                 const currentPids = readProcessUsers();
                 if (typeof currentPids === 'string') {
                     return unknown(currentPids);
                 }
-                const missing: string[] = [];
-                let onlyNewLivePids = true;
-                for (const pid of new Set([...pids, ...currentPids])) {
-                    if (census.pids.has(pid) || processIsGone(pid)) {
-                        continue;
-                    }
-                    if (Date.now() > deadline) {
-                        return unknown('lsof-coverage-time-bound');
-                    }
-                    const snapshot = processFileSnapshot(pid, Math.max(1, deadline - Date.now()));
-                    // XNU closes the file table before publishing SZOMB. This only
-                    // proves absence of file use, never release of the PID identity.
-                    if (snapshot?.uid === uid && snapshot.state === 'Z') {
-                        continue;
-                    }
-                    onlyNewLivePids &&=
-                        !pids.includes(pid) &&
-                        snapshot?.uid === uid &&
-                        ['R', 'S', 'I', 'T', 'U'].includes(snapshot.state);
-                    missing.push(`${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
-                }
-                if (Date.now() >= deadline) {
+                const uncovered = uncoveredDarwinProcesses(
+                    new Set([...pids, ...currentPids]),
+                    census.inspected,
+                    uid,
+                    deadline
+                );
+                if (uncovered === undefined || Date.now() >= deadline) {
                     return unknown('lsof-coverage-time-bound');
                 }
-                if (observation === 0 && missing.length > 0 && onlyNewLivePids) {
-                    // Discard the stale catalog. The shared two-observation limit
-                    // permits one complete replacement, never partial coverage.
-                    continue;
+                if (uncovered.length === 0) {
+                    return 'dead';
                 }
-                const snapshots = missing.slice(0, 4);
-                return missing.length === 0
-                    ? 'dead'
-                    : unknown(`lsof-live-pid-missing:count=${missing.length}:pid/uid/state=${snapshots.join(',')}`);
+                // Same-UID work elsewhere on the host starts processes and closes descriptors
+                // during every whole-account catalog, and lsof transiently skips a busy
+                // long-lived process. Inspect exactly the uncovered processes by PID; a
+                // replacement whole-account catalog races the next unrelated process.
+                const candidates = uncovered.map(({ pid }) => pid);
+                const retried = darwinFileCatalog(uid, deadline, candidates);
+                if (typeof retried === 'string') {
+                    return unknown(retried);
+                }
+                if (retried.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
+                    return 'alive';
+                }
+                const remaining = awaitDarwinExits(
+                    candidates.filter((pid) => !retried.inspected.has(pid)),
+                    uid,
+                    deadline
+                );
+                if (remaining === undefined || Date.now() >= deadline) {
+                    return unknown('lsof-coverage-time-bound');
+                }
+                return remaining.length === 0 ? 'dead' : unknown(darwinMissingReason(remaining));
             }
             return unknown('file-census-unavailable');
         }
@@ -1481,6 +1603,7 @@ export function storageFileState(
         return linuxStorageFileCensus(pids, uid, tempDirectories, deadline, report, {
             readProcessUsers,
             isGone: processIsGone,
+            files: linuxFilePorts(supervisorPid),
         });
     } catch {
         return unknown('file-census-unavailable');

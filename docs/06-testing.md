@@ -741,17 +741,22 @@ After a Linux `ENOENT` inspection failure, fresh complete status may prove file 
 a zombie whose PID and thread-group ID match the inspected PID, whose four UIDs match the guard,
 and whose thread count is exactly one. A zombie leader with other threads remains uncertain.
 This evidence must arrive within the existing proof deadline and never releases PID ownership
-or signaling fences. Denied inspection and unavailable or malformed status still retain storage.
+or signaling fences. Denied inspection and unavailable or malformed status still retain storage,
+with one exception: a denied process whose `/proc` start time precedes the run's live supervisor
+inherited nothing from the run and, like an elevated descendant, is outside this proof. Crash
+recovery has no live supervisor, so every denial retains a crashed run's storage.
 On macOS, an unreaped same-UID process positively sampled in zombie state has already released
 its file table; this exception never releases process-identity or signaling fences.
 File inspection checks same-UID process coverage again after reading files, so a process born
 during inspection cannot disappear from the proof. On Linux, a newly listed live same-UID process
-permits one complete replacement inspection of the full fresh process list. On macOS, an otherwise
-valid catalog missing only a descriptor type, or omitting a newly observed positively live same-UID
-process, may be discarded for one complete replacement. Each platform allows at most two
-observations within the same five-second proof deadline; both macOS conditions share that limit.
-Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
-identity, malformed catalog, denied inspection or unavailable evidence retains storage. Processes created after the final proof remain outside
+permits one complete replacement inspection of the full fresh process list. On macOS, a catalog
+with a descriptor missing its type may be discarded for one replacement catalog; each platform
+allows at most two whole-account observations within the same five-second proof deadline. Every
+process the final macOS catalog leaves uncovered — newly observed, skipped by lsof, or listed with
+an untyped descriptor — is then inspected once by PID, and one still unreadable must exit within
+half a second. Only complete evidence for every observed process permits deletion; a process left
+uncovered, ambiguous identity, malformed catalog, denied inspection or unavailable evidence retains
+storage. Processes created after the final proof remain outside
 that observation; this is conservative sampled evidence, not a guarantee of continuous isolation.
 Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
 
@@ -789,8 +794,9 @@ routes stay unchanged.
 Before install or Vitest concurrency, mandatory native verification starts a nondumpable same-UID
 Python consumer with cwd and an open file in owned storage. It requires denied cwd inspection and
 actual storage retention, then kills and reaps the consumer and requires reclamation. Missing Python
-or uncertain cleanup fails preparation. This negative proof runs before workers because any denied
-same-account process must conservatively block other guard cleanups too. Hosted account setup,
+or uncertain cleanup fails preparation. This negative proof runs before workers because a denied
+same-account process conservatively blocks the cleanup of every guard whose supervisor started
+before it. Hosted account setup,
 tool traversal and checkout post-step compatibility require current-head Linux evidence; a local
 macOS port-controlled check cannot establish that acceptance.
 

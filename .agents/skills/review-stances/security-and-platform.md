@@ -22,6 +22,20 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-21 — the storage census attributed foreign same-UID processes to every run (introduced by PR #5274)
+
+PR #5274 proved its file census only in a fresh isolated account and on a quiet host; its own body
+left whole macOS verification incomplete. In the runner account a long-lived same-UID process with
+EACCES on `/proc/<pid>/cwd` made every cleanup unknown, so nightly unit shards and the runner-account
+"Review tooling unit suite" reported `leak`. That suite was skipped on #5274 because its profile was
+broad, and the isolated unit shards have no foreign processes. On macOS, other guards' lsof runs,
+hook processes, and editor helpers started, closed descriptors, exited, or went unread during every
+whole-account catalog, so its single replacement catalog failed as well.
+
+Probe: run a guarded no-op in a populated account beside an uninspectable process that predates the
+supervisor and a source of short-lived same-UID processes, and require reclamation. Keep the denial
+retained for a process started after the supervisor, and keep a newborn or skipped consumer retained.
+
 ### 2026-10-10 — verification temporary storage lacked an owned deletion boundary
 
 The original resource guard (`0e20269791`, retained through PR #2449) contained processes without
@@ -47,7 +61,8 @@ Probe Linux terminal file proof with a real unreaped child and a zombie leader w
 Require matching PID/thread-group/four UIDs and one thread; denied, incomplete or expired status
 retains. File release never grants authority to treat a registered PID as gone.
 UID equality does not grant `/proc` readlink access: dumpability and access policy can deny a live
-same-UID cwd or file descriptor. Keep denial unknown and retain storage. For hosted test isolation,
+same-UID cwd or file descriptor. Keep denial unknown and retain storage, except for a process that
+started before the run's live supervisor and so inherited nothing from it. For hosted test isolation,
 prove the account's UID unused before install, all runtime identity fields unprivileged, groups and
 capabilities cleared, and private storage owned. Attack denied same-test-UID consumers before worker
 concurrency and require actual retention followed by reclamation after reaping. Account isolation

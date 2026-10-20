@@ -125,10 +125,12 @@ function parseLsofFile(
     return { missingType: type === undefined };
 }
 
-export function parseLsofCensus(
+// A descriptor can close between lsof's field reads, leaving one record without its
+// type. Such a process is listed as incomplete: inspected, yet not proven free of storage.
+export function parseLsofCatalog(
     output: string,
     report: (reason: string) => void = () => {}
-): { pids: Set<number>; paths: string[] } | undefined {
+): { pids: Set<number>; paths: string[]; incomplete: Set<number> } | undefined {
     const unavailable = (reason: string) => {
         report(reason);
         return undefined;
@@ -137,9 +139,10 @@ export function parseLsofCensus(
         return unavailable('truncated-record');
     }
     const pids = new Set<number>();
+    const incomplete = new Set<number>();
     const paths: string[] = [];
+    let currentPid = 0;
     let fileCount = 0;
-    let missingType = false;
     const knownTypes = new Set([
         'REG',
         'DIR',
@@ -170,6 +173,7 @@ export function parseLsofCensus(
                 return unavailable('invalid-process-record');
             }
             pids.add(pid);
+            currentPid = pid;
             fileCount = 0;
             continue;
         }
@@ -180,7 +184,9 @@ export function parseLsofCensus(
         if (file === undefined) {
             return undefined;
         }
-        missingType ||= file.missingType;
+        if (file.missingType) {
+            incomplete.add(currentPid);
+        }
         if (file.path !== undefined) {
             paths.push(file.path);
         }
@@ -189,7 +195,7 @@ export function parseLsofCensus(
     if (fileCount === 0) {
         return unavailable('process-without-files');
     }
-    return missingType ? unavailable('descriptor-type-missing') : { pids, paths };
+    return { pids, paths, incomplete };
 }
 
 export function referencesStoragePath(path: string, tempDirectories: string[]): boolean {
