@@ -1,0 +1,23 @@
+docs/06-testing.md
+  s_1c08b47ac3792f::t_a33467dc7aac19 797-799
+  s_1c08b47ac3792f::t_14fc3c424e3b9e 744-747,752-759
+.agents/skills/review-stances/security-and-platform.md
+  s_1c08b47ac3792f::t_1cee56954feb24 25-38
+  s_1c08b47ac3792f::t_920258aed5f390 64-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6e9f90e95e9fa218f2aa6b67814f2228157afad",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
