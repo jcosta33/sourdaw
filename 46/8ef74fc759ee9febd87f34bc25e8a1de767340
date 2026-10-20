@@ -1,0 +1,80 @@
+src/modules/AudioEngine/models/LevainZoneTables.ts
+  s_4c8cd08893b364::t_ad5450ec028ccc 1-31
+src/modules/AudioEngine/repositories/levainZoneTables/buildLevainZoneTablesInWorker.ts
+  s_4c8cd08893b364::t_222ba9e507a22a 1-95
+src/modules/AudioEngine/useCases/buildLevainZoneTables.ts
+  s_4c8cd08893b364::t_7fa72f4f63171f 1-12
+src/modules/AudioEngine/useCases/index.ts
+  s_4c8cd08893b364::t_81fe5661bd17b7 61
+src/modules/AudioEngine/services/__tests__/levainZoneTableHarness.ts
+  s_4c8cd08893b364::t_913baf7bd3bcc8 1-79
+crates/daw-dsp/src/levain/zone.rs
+  s_4c8cd08893b364::t_91f4dcb8496687 449-451,457-462,466-468,472-491
+  s_4c8cd08893b364::t_f99af0f1ffa204 9,38,44-313
+  s_4c8cd08893b364::t_c28cc42514dbb9 314-315,492-493
+crates/daw-dsp/tests/device_process_rt.rs
+  s_4c8cd08893b364::t_ea6edb75877426 1968-2042
+  s_4c8cd08893b364::t_360ee457973fc6 2043-2047
+src/infra/audioWorklet/levainZoneTableChunk.ts
+  s_4c8cd08893b364::t_467bbd07dfd918 1-16
+src/modules/AudioEngine/transformers/computeLevainZoneTables.ts
+  s_4c8cd08893b364::t_cb504422478f42 1-28
+src/infra/audioWorklet/workletInitShared.ts
+  s_4c8cd08893b364::t_aa10fa195edee4 124-132
+  s_4c8cd08893b364::t_704ecab4bd7fa0 123
+crates/daw-dsp/src/levain/mod.rs
+  s_4c8cd08893b364::t_14b365e68e5a0b 51-64,71-73,85
+  s_4c8cd08893b364::t_31fea3abdfada8 445-452,459-524
+  s_4c8cd08893b364::t_e22a9778a0a61b 525,566-654
+src/modules/AudioEngine/workers/levainZoneTableWorker.ts
+  s_4c8cd08893b364::t_1e71ec8f8a11da 1-30
+src/modules/AudioEngine/services/__tests__/levainProcessorZoneTables.spec.ts
+  s_4c8cd08893b364::t_39c2bd18eb051e 1-517
+crates/daw-dsp/tests/levain_zone_table_staging.rs
+  s_4c8cd08893b364::t_4c9264f9d1e991 1-555
+  s_4c8cd08893b364::t_f5d9d10ba759ba 556-585
+crates/daw-dsp/src/levain/engine.rs
+  s_4c8cd08893b364::t_8957d5c5a370db 28,73-77,96,118-120,140,153,710-773,776-778,2340,2414
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_4c8cd08893b364::t_b616cecca31b7e 1,770-777,804-818,886-893,925-930,941-985,1135-1136,1174-1227,1230-1231,1273,1275-1276,1291-1308,1323-1324,1339,1345,1348-1370
+public/wasm/daw-dsp/daw_dsp.js
+  s_4c8cd08893b364::t_6ae1779b56e1fd 1626-1633,1678-1704,1843-1858,1913-1922,1944-1963,1967-2040,2523-2525,2538-2542,2568-2575,2670
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_4c8cd08893b364::t_a4c6e4d55ec7b7 1,6-7,45-98,101-102,144,146-147,162-179,194-195,210,216,219-241
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_4c8cd08893b364::t_a59ff13aaa7bbd 32-35,134-156,249-257,518,554-555,561,572,584,591,617,656,662,666,713,743,896,902-966,968-970,989,1002,1033,1092,1128,1152,1158,1163
+src/modules/AudioEngine/services/__tests__/levainProcessorDisposalRelease.spec.ts
+  s_4c8cd08893b364::t_124f74e1a7c586 6,103-107
+src/modules/AudioEngine/services/__tests__/levainProcessorSampleUpload.spec.ts
+  s_4c8cd08893b364::t_cc5f06f4c5bba4 8,151,153-157,233-237
+src/modules/AudioEngine/services/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_4c8cd08893b364::t_eedabdd844590f 6,79-83
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_4c8cd08893b364::t_9fd343f2c9e8db 23-26,41-54,155-167,214-224,280-282,296-298,388,417,421-426,432,485-488,593,607-609,842,846-867,917-959
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_4c8cd08893b364::t_3f0e047969ff8f 1,770-777,804-818,886-893,925-930,941-985,1135-1136,1174-1227,1230-1231,1273,1275-1276,1291-1308,1323-1324,1339,1345,1348-1370
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_4c8cd08893b364::t_5f10cbf2a86378 1803-1810,1855-1881,2020-2035,2090-2099,2121-2140,2144-2217,2700-2702,2715-2719,2745-2752,2847
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_4c8cd08893b364::t_3301a38d8d2f9f 9-21,99,187,192-196,219,356,365,368,389,415,457,487,517,603,769,821,1032,1042,1052,1059,1079,1095,1101,1182,1211,1218,1262,1325,1355,1378,1389,1413,1427,1437,1442,1445,1456,1464,1471,1481,1484,1498,1506,1509,1533,1541,1548,1551,1554,1569,1587,1594,1612,1619,1672,1679,1725,1743,1767,1792,1801,1818
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_4c8cd08893b364::t_213b704d45c25b 2,25,30,33-56,90-91,93,191,195-200,225-226,374-375,430,531-581,587-588,601,615,627,709,757-765,777,798-803,808
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_4c8cd08893b364::t_89c83f98a4cc01 2,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "468ef74fc759ee9febd87f34bc25e8a1de767340",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
