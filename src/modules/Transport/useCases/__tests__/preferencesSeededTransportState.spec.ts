@@ -32,15 +32,15 @@ describe('preferencesSeededTransportState', () => {
     });
 
     it('carries the preference defaults through when the store holds its defaults', () => {
-        // `defaultPreferences.recordCountIn` is 1, not Off, so a fresh install
-        // seeds `countInEnabled: true` — deliberately not the transport model's
-        // own `false`; the Recording preference is the new-project default. The
-        // other three fields coincide with the model defaults.
+        // The shipped `recordCountIn` default is Off, so the seeded state
+        // coincides with the transport model's own defaults: a fresh install
+        // keeps the historical no-count-in behavior while the preference is
+        // honored for new projects.
         preferencesStore.set(defaultPreferences);
 
         expect(preferencesSeededTransportState()).toEqual({
             ...defaultTransportState,
-            countInEnabled: true,
+            countInEnabled: false,
             countInBars: 1,
             preRollEnabled: false,
             preRollBars: 2,

@@ -128,7 +128,10 @@ export const defaultPreferences: Preferences = {
     audioLatencyProfile: DEFAULT_AUDIO_LATENCY_PROFILE,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
-    recordCountIn: 1,
+    // Shipped default is Off: honoring the preference for new projects must
+    // keep the historical no-count-in transport behavior until the user
+    // changes the preference themselves.
+    recordCountIn: 0,
     defaultVelocity: 100,
     midiInputChannel: 'all',
     soloMode: 'sip',

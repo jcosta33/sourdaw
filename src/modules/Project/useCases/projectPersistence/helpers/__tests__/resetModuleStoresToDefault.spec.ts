@@ -212,12 +212,12 @@ describe('resetModuleStoresToDefault', () => {
         resetModuleStoresToDefault();
 
         expect(mocks.resetArrangementStoresForProject).toHaveBeenCalledTimes(1);
-        // With the Recording preferences at their defaults (count-in 1 bar,
+        // With the Recording preferences at their defaults (count-in off,
         // pre-roll off, 2 bars), the incoming transport carries those seeds;
-        // every field without a preference stays at the model default.
+        // they coincide with the model default for every field.
         expect(mocks.transportStoreSet).toHaveBeenCalledWith({
             ...defaultTransportState,
-            countInEnabled: true,
+            countInEnabled: false,
             countInBars: 1,
             preRollEnabled: false,
             preRollBars: 2,
