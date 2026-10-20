@@ -1445,6 +1445,89 @@ if(process.argv[2]==='-axo'){
         20_000
     );
 
+    it.skipIf(process.platform !== 'darwin').each([
+        { scenario: 'transient omission of an unrelated process reclaims', persistent: false, borrower: false },
+        { scenario: 'transient omission of a borrower retains', persistent: false, borrower: true },
+        { scenario: 'persistent omission retains at the proof deadline', persistent: true, borrower: false },
+    ])(
+        'takes fresh whole catalogs after lsof omits a live same-UID process: $scenario',
+        async ({ persistent, borrower }) => {
+            const root = fixture();
+            const bin = join(root, 'bin');
+            const outside = join(root, 'outside');
+            const count = join(root, 'catalog-count');
+            mkdirSync(bin, { mode: 0o700 });
+            mkdirSync(outside, { mode: 0o700 });
+            writeFileSync(join(bin, 'package.json'), '{}\n', { mode: 0o600 });
+            const reasons: string[] = [];
+            const ports: StorageRecoveryPorts = {
+                identityState: () => 'dead',
+                sessionState: (_owner, original, current = original) =>
+                    storageFileState([original, current], [], (reason) => reasons.push(reason)),
+            };
+            const storage = ownedStorage(join(root, 'storage'), ports);
+            const residentCwd = borrower ? storage.tempDirectory : outside;
+            const resident = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+                cwd: residentCwd,
+                stdio: 'ignore',
+            });
+            const residentPid = resident.pid;
+            if (residentPid === undefined) {
+                throw new Error('resident same-UID process did not start');
+            }
+            childPids.add(residentPid);
+            // Discovery is limited to this runner and a resident that is live before
+            // the first catalog, so the omission is neither a newborn race nor host churn.
+            writeFileSync(
+                join(bin, 'ps'),
+                `#!${process.execPath}
+const {execFileSync}=require('node:child_process');
+const args=process.argv[2]==='-axo'?['-p','${process.pid},${residentPid}','-o','pid=,uid=']:process.argv.slice(2);
+process.stdout.write(execFileSync('/bin/ps',args,{encoding:'utf8'}));
+`,
+                { mode: 0o700 }
+            );
+            writeFileSync(
+                join(bin, 'lsof'),
+                `#!${process.execPath}
+const fs=require('node:fs');
+const countPath=${JSON.stringify(count)};
+const count=fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8'))+1:1;
+fs.writeFileSync(countPath,String(count));
+let catalog='p${process.pid}\\0\\nfcwd\\0tDIR\\0n/\\0\\n';
+if(!${persistent}&&count>1)catalog+='p${residentPid}\\0\\nfcwd\\0tDIR\\0n'+${JSON.stringify(residentCwd)}+'\\0\\n';
+process.stdout.write(catalog);
+`,
+                { mode: 0o700 }
+            );
+            const previousPath = process.env.PATH;
+            process.env.PATH = `${bin}:${previousPath}`;
+            try {
+                const startedAt = Date.now();
+                const state = storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason));
+                const elapsed = Date.now() - startedAt;
+                const catalogs = existsSync(count) ? Number(readFileSync(count, 'utf8')) : 0;
+                if (persistent) {
+                    expect(state, reasons.join('; ')).toBe('unknown');
+                    expect(reasons.at(-1)).toMatch(
+                        new RegExp(`^lsof-live-pid-missing:count=1:pid/uid/state=${residentPid}/${process.getuid?.()}/[RSITU]$`)
+                    );
+                    expect(catalogs, reasons.join('; ')).toBeGreaterThan(1);
+                    expect(elapsed).toBeLessThan(6_500);
+                    expect(existsSync(storage.tempDirectory)).toBe(true);
+                    return;
+                }
+                expect(state, reasons.join('; ')).toBe(borrower ? 'alive' : 'dead');
+                expect(catalogs, reasons.join('; ')).toBe(2);
+                expect(await storage.release(true), reasons.join('; ')).toBe(!borrower);
+                expect(existsSync(storage.tempDirectory)).toBe(borrower);
+            } finally {
+                process.env.PATH = previousPath;
+            }
+        },
+        20_000
+    );
+
     it('accepts complete Darwin fileport records without bypassing uncertain fields', async () => {
         const catalog = 'p10\0\nffp.\0tREG\0n/outside/held\0\n';
         expect(parseLsofCensus(catalog)).toEqual({ pids: new Set([10]), paths: ['/outside/held'] });
