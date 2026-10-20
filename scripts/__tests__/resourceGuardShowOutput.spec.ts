@@ -51,22 +51,56 @@ describe('resource guard --show-output', () => {
         expect(result.output).toContain(`LINE ${oversizedStdoutLineCount}`);
     });
 
-    it('emits the full child stdout on success when showOutput is set', async () => {
-        const result = await runIsolatedGuardedCommand({
-            command: process.execPath,
-            args: oversizedStdoutChild,
-            profile: 'focused',
-            showOutput: true,
-            availableMemoryBytes: abundantMemoryBytes,
-        });
-
+    it('emits the full child stdout on success when showOutput is set', () => {
+        const output = Array.from({ length: oversizedStdoutLineCount }, (_, index) => `LINE ${index + 1}\n`).join('');
         const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-        const exitCode = emitGuardedResult(process.execPath, result, true);
+        try {
+            const exitCode = emitGuardedResult(
+                process.execPath,
+                {
+                    code: 0,
+                    signal: null,
+                    output,
+                    omittedBytes: 0,
+                    peakRssBytes: 0,
+                    maxRssBytes: 512 * 1024 ** 2,
+                    durationMs: 100,
+                },
+                true
+            );
+            expect(exitCode).toBe(0);
+            expect(logSpy.mock.calls.some(([line]) => line === output)).toBe(true);
+        } finally {
+            logSpy.mockRestore();
+        }
+    });
 
-        expect(exitCode).toBe(0);
-        expect(result.omittedBytes).toBe(0);
-        expect(logSpy.mock.calls.some(([line]) => typeof line === 'string' && line.startsWith('LINE 1\n'))).toBe(true);
-        logSpy.mockRestore();
+    it('fails and emits full child stdout when successful child exit has uncertain cleanup', () => {
+        const output = Array.from({ length: oversizedStdoutLineCount }, (_, index) => `LINE ${index + 1}\n`).join('');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            const exitCode = emitGuardedResult(
+                process.execPath,
+                {
+                    code: 0,
+                    signal: null,
+                    reason: 'leak',
+                    output,
+                    omittedBytes: 0,
+                    peakRssBytes: 0,
+                    maxRssBytes: 512 * 1024 ** 2,
+                    durationMs: 100,
+                },
+                true
+            );
+            expect(exitCode).not.toBe(0);
+            expect(
+                errorSpy.mock.calls.some(([line]) => typeof line === 'string' && line.includes('FAILED (leak,'))
+            ).toBe(true);
+            expect(errorSpy.mock.calls.some(([line]) => line === output)).toBe(true);
+        } finally {
+            errorSpy.mockRestore();
+        }
     });
 
     it('names the applied RSS budget when a memory kill is reported', () => {

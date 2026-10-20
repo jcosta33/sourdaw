@@ -27,6 +27,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     setTrackState: mocks.setTrackState,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
     startFaustNote: vi.fn(),

@@ -36,6 +36,7 @@ import {
 import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
+    type OfflineBeatAtSecondsFromAnchor,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { resolveDrumKit } from '../../services/deviceResolution';
@@ -67,6 +68,7 @@ import { yieldToMain } from './yieldToMain';
 type OfflineProjectionDependencies = {
     projectMidiEvents: OfflineMidiEventProjector;
     projectPpqEndpoints: OfflinePpqEndpointProjector;
+    beatAtSecondsFromAnchor?: OfflineBeatAtSecondsFromAnchor | null;
     /**
      * Flat tempo at a beat — what a clip's buffer-content offset converts
      * through, as opposed to the integrated map `projectPpqEndpoints` walks.
@@ -203,6 +205,7 @@ export async function scheduleTrackClips({
         projectChordPitch,
         projectMidiEvents,
         projectPpqEndpoints,
+        beatAtSecondsFromAnchor,
         processYeastMidi,
         resolveArticulationId,
         projectClipControllers,
@@ -332,7 +335,6 @@ export async function scheduleTrackClips({
             sendAutomationParams,
             deviceEntries,
             durationSeconds,
-            defaultTempo,
             changes,
             // The live slew runs one step per scheduler tick, and the scheduler
             // ticks every `scheduleGrainMs`. Reading the same state is what keeps
@@ -370,6 +372,9 @@ export async function scheduleTrackClips({
             regionStartSeconds: regionStartSec,
             regionStartBeat,
             projectBeatToSeconds,
+            projectSecondsToBeat: beatAtSecondsFromAnchor
+                ? (elapsedSeconds) => beatAtSecondsFromAnchor(changes, regionStartBeat, elapsedSeconds, defaultTempo)
+                : undefined,
             sampleRate: offlineCtx.sampleRate,
             compensationDelaySec: compensationDelay,
             clipBoundsById,

@@ -4,6 +4,7 @@ import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
+import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
@@ -47,6 +48,7 @@ const REVIEW_TOOLING = new Set([
     'reviewerModelDiversity',
     'reviewRoundEscalation',
     'reviewRiskPolicy',
+    'reviewStructuralAdmission',
     'reviewRepair',
     'reviewShadowStatus',
     'savedProjectStatePaths',
@@ -165,6 +167,9 @@ function needsCodeql(path: string): boolean {
 }
 
 function isReviewTooling(path: string): boolean {
+    if (path === 'scripts/e2eCollectorInventory.ts') {
+        return true;
+    }
     if (RELEASE_TOOLING_METADATA.has(path)) {
         return true;
     }
@@ -568,6 +573,12 @@ async function main(): Promise<void> {
     const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
     if (affected?.kind === 'full') {
         plan.reasons.push({ path: 'affected graph', reason: affected.reason });
+    }
+    if (plan.browser) {
+        assertCollectedBrowserInventory(root, specs, [
+            SMOKE_SPEC,
+            ...plan.matrix.include.flatMap((group) => group.specs),
+        ]);
     }
     writeFileSync('pr-validation-scope.json', `${JSON.stringify(plan, null, 2)}\n`);
     appendFileSync(

@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
 const { updateDeviceParam, persistDeviceParam } = mocks;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 

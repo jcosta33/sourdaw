@@ -3,8 +3,10 @@ import { describe, it, expect } from 'vitest';
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { compileAutomationEvents } from '../compileAutomationEvents';
 
-const DEFAULT_TEMPO = 120;
+import { constantTempoProjector } from './constantTempoProjector';
+
 // At 120 bpm, 1 beat = 0.5 seconds.
+const FLAT_TEMPO_PROJECTOR = constantTempoProjector(120);
 const NO_CHANGES: { beat: number; tempo: number }[] = [];
 
 function point(beat: number, value: number, curve: AutomationPoint['curve'] = 'linear'): AutomationPoint {
@@ -13,20 +15,20 @@ function point(beat: number, value: number, curve: AutomationPoint['curve'] = 'l
 
 describe('compileAutomationEvents — basic compilation', () => {
     it('returns an empty array for zero points', () => {
-        expect(compileAutomationEvents([], 1, DEFAULT_TEMPO, [])).toEqual([]);
+        expect(compileAutomationEvents([], 1, [], 0, FLAT_TEMPO_PROJECTOR)).toEqual([]);
     });
 
     it('returns an empty array for negative duration', () => {
-        expect(compileAutomationEvents([point(0, 1)], -1, DEFAULT_TEMPO, [])).toEqual([]);
+        expect(compileAutomationEvents([point(0, 1)], -1, [], 0, FLAT_TEMPO_PROJECTOR)).toEqual([]);
     });
 
     it('emits a single set event for a single point', () => {
-        const events = compileAutomationEvents([point(0, 0.5)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([point(0, 0.5)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
         expect(events).toEqual([{ type: 'set', timeSeconds: 0, value: 0.5 }]);
     });
 
     it('emits the initial value from the first point at time 0', () => {
-        const events = compileAutomationEvents([point(0, 0.2), point(4, 0.8)], 2, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([point(0, 0.2), point(4, 0.8)], 2, [], 0, FLAT_TEMPO_PROJECTOR);
         expect(events[0]).toEqual({ type: 'set', timeSeconds: 0, value: 0.2 });
     });
 });
@@ -34,7 +36,7 @@ describe('compileAutomationEvents — basic compilation', () => {
 describe('compileAutomationEvents — linear curve', () => {
     it('interpolates linearly between two points and ends at the second value', () => {
         // beat 0→2 at 120bpm = 0→1 second.
-        const events = compileAutomationEvents([point(0, 0), point(2, 1)], 1, DEFAULT_TEMPO, NO_CHANGES);
+        const events = compileAutomationEvents([point(0, 0), point(2, 1)], 1, NO_CHANGES, 0, FLAT_TEMPO_PROJECTOR);
         const last = events.at(-1)!;
         expect(last.type).toBe('linear');
         expect(last.timeSeconds).toBeCloseTo(1, 2);
@@ -42,7 +44,7 @@ describe('compileAutomationEvents — linear curve', () => {
     });
 
     it('produces monotonically increasing values for an ascending ramp', () => {
-        const events = compileAutomationEvents([point(0, 0), point(4, 1)], 2, DEFAULT_TEMPO, NO_CHANGES);
+        const events = compileAutomationEvents([point(0, 0), point(4, 1)], 2, NO_CHANGES, 0, FLAT_TEMPO_PROJECTOR);
         const values = events.map((event) => event.value);
         for (let i = 1; i < values.length; i++) {
             expect(values[i]).toBeGreaterThanOrEqual(values[i - 1]! - 1e-6);
@@ -52,7 +54,13 @@ describe('compileAutomationEvents — linear curve', () => {
 
 describe('compileAutomationEvents — step curve', () => {
     it('holds the first value until the next point, then jumps (step)', () => {
-        const events = compileAutomationEvents([point(0, 0.3, 'step'), point(2, 0.9, 'step')], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents(
+            [point(0, 0.3, 'step'), point(2, 0.9, 'step')],
+            1,
+            [],
+            0,
+            FLAT_TEMPO_PROJECTOR
+        );
         // First event: set 0.3. At beat 2 (1s): set 0.9.
         const setEvents = events.filter((event) => event.type === 'set');
         expect(setEvents.some((event) => event.value === 0.3 && event.timeSeconds === 0)).toBe(true);
@@ -66,7 +74,7 @@ describe('compileAutomationEvents — stairs curve', () => {
     it('produces discrete stair-step set events with exact values', () => {
         const p1 = point(0, 0, 'stairs');
         p1.stairSteps = 4;
-        const events = compileAutomationEvents([p1, point(2, 1)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([p1, point(2, 1)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
         const setEvents = events.filter((event) => event.type === 'set');
         // 4 stairs → values at 0.25, 0.5, 0.75 (the initial 0 is a 'set' too).
         const stairValues = setEvents.map((event) => event.value);
@@ -80,7 +88,7 @@ describe('compileAutomationEvents — stairs curve', () => {
     it('clamps stairSteps below 2 up to 2', () => {
         const p1 = point(0, 0, 'stairs');
         p1.stairSteps = 1; // below minimum → clamped to 2
-        const events = compileAutomationEvents([p1, point(2, 1)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([p1, point(2, 1)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
         const setEvents = events.filter((event) => event.type === 'set');
         // Initial set + 2 clamped stairs = exactly 3 set events.
         expect(setEvents).toHaveLength(3);
@@ -93,7 +101,7 @@ describe('compileAutomationEvents — exponential curve', () => {
     it('produces a curved ramp below the linear midpoint for positive tension', () => {
         const p1 = point(0, 0, 'exponential');
         p1.tension = 1;
-        const events = compileAutomationEvents([p1, point(2, 1)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([p1, point(2, 1)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
         const linearEvents = events.filter((event) => event.type === 'linear');
         // Find the event closest to midpoint time 0.5s.
         const midEvent = linearEvents.reduce((closest, event) =>
@@ -110,7 +118,7 @@ describe('compileAutomationEvents — s-curve', () => {
     it('produces a sigmoid ramp that equals 0.5 at the midpoint', () => {
         const p1 = point(0, 0, 's-curve');
         p1.tension = 0; // no tension blend → pure smoothstep
-        const events = compileAutomationEvents([p1, point(2, 1)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([p1, point(2, 1)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
         const linearEvents = events.filter((event) => event.type === 'linear');
         const midEvent = linearEvents.reduce((closest, event) =>
             Math.abs(event.timeSeconds - 0.5) < Math.abs(closest.timeSeconds - 0.5) ? event : closest
@@ -127,7 +135,7 @@ describe('compileAutomationEvents — smooth curve (Catmull-Rom)', () => {
         const p1 = point(1, 0.3, 'smooth');
         const p2 = point(3, 0.7, 'smooth');
         const p3 = point(4, 1, 'smooth');
-        const events = compileAutomationEvents([p0, p1, p2, p3], 2, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([p0, p1, p2, p3], 2, [], 0, FLAT_TEMPO_PROJECTOR);
         const linearEvents = events.filter((event) => event.type === 'linear');
         // The smooth curve passes through the control points.
         expect(linearEvents.length).toBeGreaterThan(1);
@@ -145,7 +153,7 @@ describe('compileAutomationEvents — bezier curve', () => {
         const p1 = point(0, 0, 'bezier');
         p1.cp1 = { x: 0.33, y: 0.1 };
         p1.cp2 = { x: 0.66, y: 0.9 };
-        const events = compileAutomationEvents([p1, point(2, 1)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([p1, point(2, 1)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
         const linearEvents = events.filter((event) => event.type === 'linear');
         // The bezier ramp ends at the second point's value.
         expect(linearEvents.at(-1)!.value).toBeCloseTo(1, 3);
@@ -158,7 +166,7 @@ describe('compileAutomationEvents — deduplication', () => {
     it('does not emit consecutive events with identical type, time, and value', () => {
         // A flat segment (0.5 → 0.5) produces a linear ramp of identical values.
         // appendEvent skips any event whose type+time+value matches the previous.
-        const events = compileAutomationEvents([point(0, 0.5), point(2, 0.5)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([point(0, 0.5), point(2, 0.5)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
         // No two consecutive events share all three of type, timeSeconds, value.
         for (let i = 1; i < events.length; i++) {
             const prev = events[i - 1]!;
@@ -177,7 +185,13 @@ describe('compileAutomationEvents — point normalization', () => {
     // value resolves to the array-later point exactly as the live lookup's
     // last-point-at-or-before search does.
     it('resolves a tied pair to the array-later point as the held value', () => {
-        const events = compileAutomationEvents([point(0, 0.1), point(0, 0.2), point(2, 0.8)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents(
+            [point(0, 0.1), point(0, 0.2), point(2, 0.8)],
+            1,
+            [],
+            0,
+            FLAT_TEMPO_PROJECTOR
+        );
         // Initial value is from the array-later point at beat 0 (0.2, not 0.1).
         expect(events[0]!.value).toBeCloseTo(0.2, 3);
     });
@@ -186,14 +200,20 @@ describe('compileAutomationEvents — point normalization', () => {
         // Ramp 0 → 1 over beats 0–2 (1s), jump to 0.2 at beat 2: a lane that
         // ends on a jump must still land on the later value, and the ramp
         // into the jump must play.
-        const events = compileAutomationEvents([point(0, 0), point(2, 1), point(2, 0.2)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents(
+            [point(0, 0), point(2, 1), point(2, 0.2)],
+            1,
+            [],
+            0,
+            FLAT_TEMPO_PROJECTOR
+        );
         expect(events.some((event) => event.value > 0.9)).toBe(true);
         expect(events.at(-1)!.value).toBeCloseTo(0.2, 6);
     });
 
     it('sorts unsorted input points by beat', () => {
-        const sorted = compileAutomationEvents([point(0, 0), point(2, 1)], 1, DEFAULT_TEMPO, []);
-        const unsorted = compileAutomationEvents([point(2, 1), point(0, 0)], 1, DEFAULT_TEMPO, []);
+        const sorted = compileAutomationEvents([point(0, 0), point(2, 1)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
+        const unsorted = compileAutomationEvents([point(2, 1), point(0, 0)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
         // Same result regardless of input order.
         expect(sorted[0]).toEqual(unsorted[0]);
         expect(sorted.at(-1)!.value).toBeCloseTo(unsorted.at(-1)!.value, 3);
@@ -201,11 +221,12 @@ describe('compileAutomationEvents — point normalization', () => {
 });
 
 describe('compileAutomationEvents — tempo changes', () => {
-    it('respects tempo changes when projecting beats to seconds', () => {
+    it('places events through the supplied projection across a tempo step', () => {
         // At beat 2, tempo doubles from 120 to 240. Beat 0→2 at 120bpm = 1s.
         // Beat 2→4 at 240bpm = 0.5s. So beat 4 = 1.5s total.
         const changes = [{ beat: 2, tempo: 240 }];
-        const events = compileAutomationEvents([point(0, 0), point(4, 1)], 2, DEFAULT_TEMPO, changes);
+        const projectStep = (beat: number): number => (beat <= 2 ? beat / 2 : 1 + (beat - 2) / 4);
+        const events = compileAutomationEvents([point(0, 0), point(4, 1)], 2, changes, 0, projectStep);
         const last = events.at(-1)!;
         expect(last.timeSeconds).toBeCloseTo(1.5, 2);
     });
@@ -214,7 +235,7 @@ describe('compileAutomationEvents — tempo changes', () => {
 describe('compileAutomationEvents — region offset', () => {
     it('offsets event times by regionStartSeconds', () => {
         // Full range beat 0→2 = 0→1s. Region starts at 0.5s.
-        const events = compileAutomationEvents([point(0, 0), point(2, 1)], 0.5, DEFAULT_TEMPO, [], 0.5);
+        const events = compileAutomationEvents([point(0, 0), point(2, 1)], 0.5, [], 0.5, FLAT_TEMPO_PROJECTOR);
         // First event time is 0 (relative to region start).
         expect(events[0]!.timeSeconds).toBe(0);
         // No negative times.
@@ -225,9 +246,9 @@ describe('compileAutomationEvents — region offset', () => {
 });
 
 describe('compileAutomationEvents — custom beat projector', () => {
-    it('uses the provided projectBeatToSeconds instead of the default', () => {
+    it('places events through the supplied projectBeatToSeconds', () => {
         // Custom projector: beat → seconds*2 (half-speed).
-        const events = compileAutomationEvents([point(0, 0), point(2, 1)], 4, DEFAULT_TEMPO, [], 0, (beat) => beat * 2);
+        const events = compileAutomationEvents([point(0, 0), point(2, 1)], 4, [], 0, (beat) => beat * 2);
         // Beat 2 projects to 4 seconds.
         expect(events.at(-1)!.timeSeconds).toBeCloseTo(4, 2);
     });
@@ -235,13 +256,13 @@ describe('compileAutomationEvents — custom beat projector', () => {
 
 describe('compileAutomationEvents — event types', () => {
     it('emits "set" for the initial value and "linear" for interpolated steps', () => {
-        const events = compileAutomationEvents([point(0, 0), point(2, 1)], 1, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([point(0, 0), point(2, 1)], 1, [], 0, FLAT_TEMPO_PROJECTOR);
         expect(events[0]!.type).toBe('set');
         expect(events.some((event) => event.type === 'linear')).toBe(true);
     });
 
     it('all events have finite timeSeconds and value', () => {
-        const events = compileAutomationEvents([point(0, 0), point(4, 1)], 2, DEFAULT_TEMPO, []);
+        const events = compileAutomationEvents([point(0, 0), point(4, 1)], 2, [], 0, FLAT_TEMPO_PROJECTOR);
         for (const event of events) {
             expect(Number.isFinite(event.timeSeconds)).toBe(true);
             expect(Number.isFinite(event.value)).toBe(true);
@@ -258,10 +279,9 @@ describe('compileAutomationEvents — device-param slew (AU-2)', () => {
         const events = compileAutomationEvents(
             [point(0, 0, 'step'), point(2, 1, 'step')],
             3,
-            DEFAULT_TEMPO,
             [],
             0,
-            undefined,
+            FLAT_TEMPO_PROJECTOR,
             SLEW
         );
         expect(events[0]).toEqual({ type: 'set', timeSeconds: 0, value: 0 });
@@ -275,7 +295,7 @@ describe('compileAutomationEvents — device-param slew (AU-2)', () => {
     });
 
     it('leaves a single-point lane unslewed (nothing to smooth)', () => {
-        const events = compileAutomationEvents([point(0, 0.5)], 1, DEFAULT_TEMPO, [], 0, undefined, SLEW);
+        const events = compileAutomationEvents([point(0, 0.5)], 1, [], 0, FLAT_TEMPO_PROJECTOR, SLEW);
         expect(events).toEqual([{ type: 'set', timeSeconds: 0, value: 0.5 }]);
     });
 
@@ -285,7 +305,7 @@ describe('compileAutomationEvents — device-param slew (AU-2)', () => {
     // smooth, and the `events.length <= 1` early return skipped that clamp.
     it('clamps a single-point lane above its declared range (#4598)', () => {
         const clampStep = (value: number): number => Math.min(12, Math.max(0, value));
-        const events = compileAutomationEvents([point(0, 20)], 1, DEFAULT_TEMPO, [], 0, undefined, {
+        const events = compileAutomationEvents([point(0, 20)], 1, [], 0, FLAT_TEMPO_PROJECTOR, {
             slew: { alpha: 0.4, tickSeconds: 0.01, clampStep },
         });
         expect(events.length).toBeGreaterThan(0);
@@ -300,7 +320,7 @@ describe('compileAutomationEvents — device-param slew (AU-2)', () => {
     // pins.
     it('clamps a single-point lane before quantising it (#4598)', () => {
         const clampStep = (value: number): number => Math.min(12.4, Math.max(0, value));
-        const events = compileAutomationEvents([point(0, 20)], 1, DEFAULT_TEMPO, [], 0, undefined, {
+        const events = compileAutomationEvents([point(0, 20)], 1, [], 0, FLAT_TEMPO_PROJECTOR, {
             slew: { alpha: 0.4, tickSeconds: 0.01, clampStep, quantiseEmit: Math.round },
         });
         expect(events.length).toBeGreaterThan(0);
@@ -315,7 +335,7 @@ describe('compileAutomationEvents — device-param slew (AU-2)', () => {
     // and automationScheduling.spec.ts) must still clamp what it does emit.
     it('clamps a lane whose active window closes at the first event (#4598)', () => {
         const clampStep = (value: number): number => Math.min(12, Math.max(0, value));
-        const events = compileAutomationEvents([point(0, 20), point(2, 25)], 1, DEFAULT_TEMPO, [], 0, undefined, {
+        const events = compileAutomationEvents([point(0, 20), point(2, 25)], 1, [], 0, FLAT_TEMPO_PROJECTOR, {
             slew: { alpha: 0.4, tickSeconds: 0.01, clampStep },
             activeWindowSeconds: { startSeconds: 0, endSeconds: 0 },
         });
@@ -330,7 +350,7 @@ describe('compileAutomationEvents — device-param slew (AU-2)', () => {
     // range that must be clamped on the way out.
     it('clamps every event when the slew tick is zero (#4598)', () => {
         const clampStep = (value: number): number => Math.min(12, Math.max(0, value));
-        const events = compileAutomationEvents([point(0, 20), point(2, 25)], 1, DEFAULT_TEMPO, [], 0, undefined, {
+        const events = compileAutomationEvents([point(0, 20), point(2, 25)], 1, [], 0, FLAT_TEMPO_PROJECTOR, {
             slew: { alpha: 0.4, tickSeconds: 0, clampStep },
         });
         expect(events.length).toBeGreaterThan(1);
@@ -343,7 +363,7 @@ describe('compileAutomationEvents — device-param slew (AU-2)', () => {
 describe('compileAutomationEvents — clip active window (AU-12)', () => {
     it('crops emission to the clip span while keeping the export time origin', () => {
         // Linear 0 -> 1 over beats 0..8 (0..4s); clip active only 1..3s.
-        const events = compileAutomationEvents([point(0, 0), point(8, 1)], 4, DEFAULT_TEMPO, [], 0, undefined, {
+        const events = compileAutomationEvents([point(0, 0), point(8, 1)], 4, [], 0, FLAT_TEMPO_PROJECTOR, {
             activeWindowSeconds: { startSeconds: 1, endSeconds: 3 },
         });
         expect(events[0]!.timeSeconds).toBeCloseTo(1, 10);
@@ -353,7 +373,7 @@ describe('compileAutomationEvents — clip active window (AU-12)', () => {
     });
 
     it('emits nothing when the clip window is entirely outside the region', () => {
-        const events = compileAutomationEvents([point(0, 0), point(8, 1)], 4, DEFAULT_TEMPO, [], 0, undefined, {
+        const events = compileAutomationEvents([point(0, 0), point(8, 1)], 4, [], 0, FLAT_TEMPO_PROJECTOR, {
             activeWindowSeconds: { startSeconds: 10, endSeconds: 12 },
         });
         expect(events).toEqual([]);

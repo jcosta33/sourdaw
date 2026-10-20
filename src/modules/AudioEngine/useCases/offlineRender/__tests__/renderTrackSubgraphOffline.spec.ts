@@ -6,6 +6,7 @@ import { adjustmentLayerStore, trackStore, vcaGroupStore, type Device, type Trac
 import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import { defaultTransportState } from '#/modules/Transport/stores';
+import { beatAtSecondsFromAnchor, projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 
 import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { type AudioDeviceStrategy } from '../../../repositories/deviceStrategy/setupDeviceStrategies';
@@ -103,6 +104,8 @@ type HarnessStrip = {
     outputNode: { connect: { calls: unknown[][] } };
     inputNode: Record<string, unknown>;
     postFaderGain: { gain: { value: number } };
+    faderNode: { gain: ReturnType<typeof createParam> };
+    panNode: { pan: ReturnType<typeof createParam> };
 };
 
 class RenderHarnessBuffer {
@@ -2164,6 +2167,119 @@ describe('renderTrackSubgraphOffline', () => {
         afterEach(() => {
             setAudioDeviceRuntimeSink({});
         });
+
+        it.each([
+            { seedSensitive: false, compensationDelay: 0 },
+            { seedSensitive: false, compensationDelay: 0.125 },
+            { seedSensitive: true, compensationDelay: 0 },
+            { seedSensitive: true, compensationDelay: 0.125 },
+        ])(
+            'emits history-origin gain/pan across the crop with seed-sensitive layers $seedSensitive and delay $compensationDelay',
+            async ({ seedSensitive, compensationDelay }) => {
+                const tickSeconds = 4.8 * Math.log(175 / 150);
+                const historySeconds = 4.8 * Math.log(150 / 100);
+                const changes = [
+                    { id: 'ramp', beat: 0, tempo: 100, curve: 'linear' as const },
+                    { id: 'end', beat: 8, tempo: 200, curve: 'instant' as const },
+                ];
+                const { configureOfflinePpqEndpointProjection } =
+                    await import('../../configureOfflinePpqEndpointProjection');
+                configureOfflinePpqEndpointProjection({
+                    project: projectPpqEndpoints,
+                    resolveTempoAtBeat,
+                    beatAtSecondsFromAnchor,
+                });
+                const compensation = await import('../../latencyCompensation/compensation/getCompensationDelay');
+                const delay = vi.spyOn(compensation, 'getCompensationDelay');
+                const track = TrackDummy.create({ id: 'track-1', gain: 0.8, clips: [], devices: [] });
+                const fade = {
+                    id: 'fade',
+                    name: 'Fade',
+                    effectType: 'volume' as const,
+                    enabled: true,
+                    mix: 1,
+                    parameters: [{ name: 'Gain', value: -12, min: -60, max: 12, unit: 'dB' }],
+                    affectedTrackIds: [track.id],
+                    insertionIndex: 0,
+                    color: 'red',
+                    regions: [{ id: 'region', startBeat: 4, endBeat: 8, blend: 1, fadeInBeats: 4, fadeOutBeats: 0 }],
+                };
+                const pan = {
+                    ...fade,
+                    id: 'pan',
+                    effectType: 'pan' as const,
+                    parameters: [{ name: 'Pan', value: 100, min: -100, max: 100, unit: '%' }],
+                };
+                // At beat zero this layer is fully active; at the requested
+                // beat four it is half active, exposing the compensation seed.
+                const historyFade = {
+                    ...fade,
+                    id: 'history-fade',
+                    regions: [{ id: 'history', startBeat: 0, endBeat: 8, blend: 1, fadeInBeats: 0, fadeOutBeats: 8 }],
+                };
+                const historyPan = { ...pan, id: 'history-pan', regions: historyFade.regions };
+                adjustmentLayerStore.set({
+                    layers: seedSensitive ? [fade, pan, historyFade, historyPan] : [fade, pan],
+                });
+                const project = suppliedDocument([track], {
+                    tempoMap: { changes },
+                    transport: { ...defaultTransportState, tempo: TEMPO, scheduleGrainMs: tickSeconds * 1000 },
+                });
+                const gainAtBeat = (beat: number): number => {
+                    const fadeBlend = beat < 4 ? 0 : (beat - 4) / 4;
+                    const historyBlend = seedSensitive ? 1 - beat / 8 : 0;
+                    return 0.8 * (1 + (10 ** (-12 / 20) - 1) * fadeBlend) * (1 + (10 ** (-12 / 20) - 1) * historyBlend);
+                };
+                const panAtBeat = (beat: number): number =>
+                    (beat < 4 ? 0 : (beat - 4) / 4) + (seedSensitive ? 1 - beat / 8 : 0);
+                try {
+                    delay.mockReturnValue(compensationDelay);
+                    const render = async (startBeat: number) => {
+                        const buffer = await renderTrackSubgraphOffline({
+                            targetTrackId: track.id,
+                            renderTracks: [track],
+                            startBeat,
+                            endBeat: 8,
+                            source: { project },
+                        });
+                        expect(buffer).not.toBeNull();
+                        const strip = mocks.builtStripsById.get(track.id)!;
+                        return {
+                            buffer: buffer!,
+                            gain: strip.faderNode.gain.setValueAtTime.mock.calls,
+                            pan: strip.panNode.pan.setValueAtTime.mock.calls,
+                        };
+                    };
+                    const whole = await render(0);
+                    const cropped = await render(4);
+                    expect(cropped.gain).toEqual(whole.gain);
+                    expect(cropped.pan).toEqual(whole.pan);
+                    expect(cropped.buffer.length).toBeLessThan(whole.buffer.length);
+                    expect(cropped.buffer.duration).toBeCloseTo(4.8 * Math.log(200 / 150), 4);
+                    if (compensationDelay > 0) {
+                        expect(cropped.gain[0]).toEqual([gainAtBeat(0), 0]);
+                        expect(cropped.pan[0]).toEqual([panAtBeat(0), 0]);
+                    }
+                    const seedCount = compensationDelay > 0 ? 1 : 0;
+                    // The analytical ramp integral is t = 4.8 ln((100 +
+                    // 12.5 beat) / 100). These ticks straddle the crop.
+                    expect(2 * tickSeconds).toBeLessThan(historySeconds);
+                    expect(3 * tickSeconds).toBeGreaterThan(historySeconds);
+                    for (const tick of [1, 2, 3, 4]) {
+                        const beat = 8 * ((175 / 150) ** tick - 1);
+                        const gainWrite = cropped.gain[seedCount + tick]!;
+                        const panWrite = cropped.pan[seedCount + tick]!;
+                        expect(gainWrite[0]).toBeCloseTo(gainAtBeat(beat), 10);
+                        expect(panWrite[0]).toBeCloseTo(panAtBeat(beat), 10);
+                        expect(gainWrite[1]).toBeCloseTo(tick * tickSeconds + compensationDelay, 10);
+                        expect(panWrite[1]).toBeCloseTo(tick * tickSeconds + compensationDelay, 10);
+                    }
+                } finally {
+                    delay.mockRestore();
+                    adjustmentLayerStore.set({ layers: [] });
+                }
+            }
+        );
 
         it('plays the supplied document’s notes at its VCA levels, never the live project’s', async () => {
             const track = TrackDummy.create({
