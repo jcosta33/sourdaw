@@ -231,7 +231,10 @@ function expect(condition, message) {
 // headers, so its spec first carried those exact literals, and the self-contained `base..head` diff
 // scan still sees them in the commits that introduced them even though the head composes every
 // fixture from fragments and holds no literal of that shape. Each value is a hand-built header with
-// no key material behind it, and the reader refuses it exactly as it refuses a real one.
+// no key material behind it, and the reader refuses it exactly as it refuses a real one. The sixth
+// was audited on 2026-10-20: the match is the Bacteria parameter name `band0_convolutionIr` compared
+// with `key ===` in a test filter, a parameter id with no secret behind it, flagged only in commit
+// b4d8147 of a merged branch.
 expect(
     gitleaksIgnore ===
         'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3288\n' +
@@ -240,8 +243,9 @@ expect(
             '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:682\n' +
             '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:685\n' +
             '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:688\n' +
-            '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:691\n',
-    '.gitleaksignore must contain exactly the seven approved fingerprints'
+            '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:691\n' +
+            'b4d81478b230d1fbd0e4b9e2f915d6e78caf342c:src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/loadBacteriaPatchWithAudio.behavior.spec.ts:generic-api-key:223\n',
+    '.gitleaksignore must contain exactly the eight approved fingerprints'
 );
 
 function expectNightlyDoesNotMintGate(jobs) {
