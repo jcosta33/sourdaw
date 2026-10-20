@@ -5570,7 +5570,7 @@ describe('fresh reviewer dossier publication', () => {
             (record: AdmissionRecord) => {
                 record.stances[0]!.draws[0]!.baselineProbe.result = 'passed';
             },
-            /baselineProbe\.result must be mutation-detected, still-green or not-run/u,
+            /baselineProbe\.result must be mutation-detected, baseline-failed, still-green or not-run/u,
         ],
         [
             'still green',
@@ -5590,6 +5590,17 @@ describe('fresh reviewer dossier publication', () => {
         const record = validAdmission();
         change(record);
         expectStructuralRefusal({ record, reason });
+    });
+
+    it('refuses a failed baseline on an approval even when its dossier draw says blocker-found', () => {
+        const stances = (dossierInput().stances as Record<string, unknown>[]).map((draw, index) => ({
+            ...draw,
+            outcome: index === 0 ? 'blocker-found' : 'clean',
+        }));
+        const dossier = dossierInput({ stances });
+        const record = validAdmission(dossier);
+        record.stances[0]!.draws[0]!.baselineProbe.result = 'baseline-failed';
+        expectStructuralRefusal({ record, dossier, reason: /baseline probe.*reported baseline-failed/u });
     });
 
     it.each([
@@ -7098,9 +7109,22 @@ describe('fresh reviewer dossier publication', () => {
             side: comment.side,
             body: 'rendered',
         };
+        const stances = (dossierInput().stances as Record<string, unknown>[]).map((draw, index) => ({
+            ...draw,
+            outcome: index === 0 ? 'blocker-found' : 'clean',
+        }));
+        const dossier = dossierInput({ stances });
+        const admission = validAdmission(dossier);
+        admission.stances[0]!.draws[0]!.baselineProbe = {
+            spec: 'scripts/__tests__/publishReview.spec.ts',
+            mutation: 'not applied because the unmodified baseline already failed',
+            observed: 'the unmodified baseline refused the requested review',
+            result: 'baseline-failed',
+        };
         const fixture = dossierFixture({
             plan: riskPlan(),
-            dossier: dossierInput(),
+            dossier,
+            stances: admission,
             document: changesDocument,
             diff,
             reviewComments: [postedComment],

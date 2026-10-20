@@ -22,7 +22,7 @@ const completed: CompletedReviewStance[] = [
     { stance: 'stale replay', reviewerModel: 'model-three', modelTier: 'standard', outcome: 'clean' },
 ];
 
-function record(draws: readonly CompletedReviewStance[] = completed): unknown {
+function record(draws: readonly CompletedReviewStance[] = completed) {
     return {
         format: REVIEW_STANCES_ADMISSION_FORMAT,
         pr: plan.pr,
@@ -50,11 +50,68 @@ function record(draws: readonly CompletedReviewStance[] = completed): unknown {
     };
 }
 
-function admit(value: unknown, draws: readonly CompletedReviewStance[] = completed, riskPlan = plan): void {
-    assertFreshReviewStructuralAdmission(riskPlan, draws, { present: true, value }, 'bundle/stances.json');
+function recordWithResult(result: string, draws: readonly CompletedReviewStance[] = completed) {
+    const value = record(draws);
+    value.stances[0]!.draws[0]!.baselineProbe.result = result;
+    return value;
+}
+
+function admit(
+    value: unknown,
+    draws: readonly CompletedReviewStance[] = completed,
+    riskPlan = plan,
+    publication?: { recommendation: 'approve' | 'request-changes'; acceptedFindingCount: number }
+): void {
+    assertFreshReviewStructuralAdmission(riskPlan, draws, { present: true, value }, 'bundle/stances.json', publication);
 }
 
 describe('fresh reviewer structural admission', () => {
+    it('admits a failed unmodified baseline only for a blocker draw in a change request with an accepted finding', () => {
+        const draws: CompletedReviewStance[] = [{ ...completed[0]!, outcome: 'blocker-found' }, ...completed.slice(1)];
+        expect(() =>
+            admit(recordWithResult('baseline-failed', draws), draws, plan, {
+                recommendation: 'request-changes',
+                acceptedFindingCount: 1,
+            })
+        ).not.toThrow();
+    });
+
+    it.each([
+        ['approval', { recommendation: 'approve', acceptedFindingCount: 1 }, 'blocker-found'],
+        ['no accepted finding', { recommendation: 'request-changes', acceptedFindingCount: 0 }, 'blocker-found'],
+        ['clean draw', { recommendation: 'request-changes', acceptedFindingCount: 1 }, 'clean'],
+    ] as const)('refuses a failed baseline on %s', (_case, publication, outcome) => {
+        const draws: CompletedReviewStance[] = [{ ...completed[0]!, outcome }, ...completed.slice(1)];
+        expect(() => admit(recordWithResult('baseline-failed', draws), draws, plan, publication)).toThrow(
+            /baseline probe.*reported baseline-failed/u
+        );
+    });
+
+    it('refuses a failed baseline without matched publication context', () => {
+        const draws: CompletedReviewStance[] = [{ ...completed[0]!, outcome: 'blocker-found' }, ...completed.slice(1)];
+        expect(() => admit(recordWithResult('baseline-failed', draws), draws)).toThrow(
+            /baseline probe.*reported baseline-failed/u
+        );
+    });
+
+    it.each(['still-green', 'not-run'] as const)('still refuses %s on a blocking change request', (result) => {
+        const draws: CompletedReviewStance[] = [{ ...completed[0]!, outcome: 'blocker-found' }, ...completed.slice(1)];
+        expect(() =>
+            admit(recordWithResult(result, draws), draws, plan, {
+                recommendation: 'request-changes',
+                acceptedFindingCount: 1,
+            })
+        ).toThrow(new RegExp(`baseline probe.*reported ${result}`, 'u'));
+    });
+
+    it.each([undefined, 'passed'] as const)('rejects unsupported probe result %s', (result) => {
+        const value = recordWithResult('mutation-detected');
+        Reflect.set(value.stances[0]!.draws[0]!.baselineProbe, 'result', result);
+        expect(() => admit(value)).toThrow(
+            /baselineProbe\.result must be mutation-detected, baseline-failed, still-green or not-run/u
+        );
+    });
+
     it('accepts three task-derived names without requiring the plan menu names', () => {
         expect(() => admit(record())).not.toThrow();
     });

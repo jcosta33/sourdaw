@@ -220,8 +220,13 @@ at least three unique task-risk entries in `stances`, each with `stance` and
 entry's `draws`: `{ reviewerModel, baselineProbe: { spec, mutation, observed,
 result } }`, plus `exhaustion` when the corresponding dossier draw has it.
 The probe strings are bounded, trimmed, single-line and evidence-safe.
-`result` is `mutation-detected`, `still-green`, or `not-run`; only
-`mutation-detected` admits a fresh reviewer POST. Every completed dossier
+`result` is `mutation-detected`, `baseline-failed`, `still-green`, or `not-run`.
+`mutation-detected` admits a fresh reviewer POST. `baseline-failed` admits only
+`REQUEST_CHANGES` with at least one accepted inline blocker and `blocker-found`
+for that draw: put the unmodified baseline failure in `observed`, say in
+`mutation` that it was not applied, and retain the raw failure log. It carries
+no approval or delivery authority. `still-green` and `not-run` refuse. Every
+completed dossier
 `(stance, reviewerModel)` pair needs exactly one matching probe, with no extra
 pair. A `native-security`, `realtime-audio`, or `undo` plan needs at least one
 completed `strongest` dossier draw on any recorded stance. The gate checks
