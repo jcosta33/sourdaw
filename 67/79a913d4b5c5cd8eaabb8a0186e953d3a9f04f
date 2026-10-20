@@ -1,0 +1,57 @@
+src/modules/MIDI/useCases/webMidiInput/recordChannelEvent.ts
+  s_2bfd55a4393d7c::t_ce28f4df2beef5 1-62
+src/modules/MIDI/useCases/webMidiInput/resolveRecordingPlacement.ts
+  s_2bfd55a4393d7c::t_be25bec073240d 1-207
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  s_2bfd55a4393d7c::t_95589f97d79e80 1-116
+src/modules/MIDI/AGENTS.md
+  s_2bfd55a4393d7c::t_217384ed71af12 25
+src/modules/MIDI/models/MidiControllerState.ts
+  s_2bfd55a4393d7c::t_583fcf18b87b82 146-150
+src/modules/MIDI/models/MidiNote.ts
+  s_2bfd55a4393d7c::t_0f4178d7ff8c30 90-97
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  s_2bfd55a4393d7c::t_597ab3dbe30da1 152-153,170,175-202,276
+src/modules/MIDI/stores/midiStore.ts
+  s_2bfd55a4393d7c::t_1a479bea3271bb 4,229-231
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_2bfd55a4393d7c::t_ec19363e0a73f7 1-3,6-8,15,30,45,83-86,799-1045
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiMessage.spec.ts
+  s_2bfd55a4393d7c::t_2ba5676b7e890c 375-397
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_2bfd55a4393d7c::t_cba131be8722c4 1-3,6-7,64-67,420-535
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_2bfd55a4393d7c::t_70e3431fd98e2d 7,20,28-34,100-114
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_2bfd55a4393d7c::t_a8e407ee6fbbd0 2,15,142-153,184-185,187,189,194-195,197,199
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_2bfd55a4393d7c::t_637c5628a73143 4,22,381-412,414-418,420-429,431-433,435-436
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_2bfd55a4393d7c::t_86eaee5e6d2e44 28,59
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  s_2bfd55a4393d7c::t_9651ac5159824e 13,94-103
+src/modules/MIDI/useCases/webMidiInput/midiMessageHandlerDependencies.ts
+  s_2bfd55a4393d7c::t_5d24f52e40ab04 28-29,49-50
+src/modules/TimelineEditor/presentations/views/AutomationLane/PitchBendLane.tsx
+  s_2bfd55a4393d7c::t_d9d049b2be422d 9,42-48,69,104,169,226
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  s_2bfd55a4393d7c::t_b6cd052b324683 83-84,86,89,133-134,137,143-144,149-150,155,190-201
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  s_2bfd55a4393d7c::t_2fbdd48a3c5f07 39-43,242,249,255,299,306,312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6779a913d4b5c5cd8eaabb8a0186e953d3a9f04f",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
