@@ -18,6 +18,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
+import { resolveAdmittedEventBeat } from './resolveAdmittedEventBeat';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -25,7 +26,6 @@ import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInp
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveLiveInputNoteReceiver } from './resolveLiveInputNoteReceiver';
 import { resolveNativeNoteSink } from './resolveNativeNoteSink';
-import { resolveAdmittedEventBeat } from './resolveRecordingPlacement';
 import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 

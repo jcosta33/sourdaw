@@ -7,15 +7,8 @@ import {
     DEFAULT_TEMPO_BPM,
 } from '#/modules/Transport/stores';
 
-import { captureEventBeatAt } from './captureEventBeat';
-
-import { type midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
-import { type CapturedInputEventTime } from './resolveInputEventTime';
-
-export type RecordingPlacementDependencies = Pick<
-    typeof midiMessageHandlerDependencies,
-    'getTrackStoreState' | 'getTransportStoreValue' | 'getCompensationDelay'
->;
+import { isRecordingOnArmedTrack } from './isRecordingOnArmedTrack';
+import { type RecordingPlacementDependencies } from './recordingPlacementDependencies';
 
 type RecordedClip = { id: string; startBeat: number; endBeat: number };
 
@@ -43,12 +36,6 @@ type ResolveRecordingPlacementInput = {
     admittedBeat: number;
 };
 
-type ResolveAdmittedEventBeatInput = {
-    timeStamp: number | CapturedInputEventTime | undefined;
-    /** The event's own instant on the AudioContext clock, from `resolveInputEventTime`. */
-    eventTime: number;
-};
-
 /**
  * Distance from a beat to a half-open [startBeat, endBeat) clip: zero inside,
  * otherwise the beats to the nearer edge. The onset reaching this helper is
@@ -61,25 +48,6 @@ function clipDistance(clip: RecordedClip, beat: number): number {
 /** The clip whose span sits nearest the beat, earlier clip winning a tie. */
 function nearestClip(clips: RecordedClip[], beat: number): RecordedClip {
     return clips.reduce((best, clip) => (clipDistance(clip, beat) < clipDistance(best, beat) ? clip : best));
-}
-
-/**
- * The timeline beat a live event was admitted at: the dispatcher's capture when
- * it supplied one, otherwise projected from the event's own instant (#4875).
- */
-export function resolveAdmittedEventBeat({ timeStamp, eventTime }: ResolveAdmittedEventBeatInput): number {
-    if (typeof timeStamp === 'object' && timeStamp !== null && Number.isFinite(timeStamp.recordingBeat)) {
-        return timeStamp.recordingBeat!;
-    }
-    // No dispatcher-captured beat: derive it from this event's own instant
-    // anyway (#4875).
-    return captureEventBeatAt({ audioTime: eventTime });
-}
-
-/** Whether live input on this track is being written into a take right now. */
-export function isRecordingOnArmedTrack(deps: RecordingPlacementDependencies, trackId: string): boolean {
-    const track = deps.getTrackStoreState()?.tracks.find((candidate) => candidate.id === trackId);
-    return (deps.getTransportStoreValue()?.isRecording ?? false) && (track?.armed ?? false);
 }
 
 function findActiveRecordingClip(

@@ -1,13 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { isRecordingOnArmedTrack } from './isRecordingOnArmedTrack';
 import { type midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { type RecordingPlacementDependencies } from './recordingPlacementDependencies';
+import { resolveAdmittedEventBeat } from './resolveAdmittedEventBeat';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
-import {
-    isRecordingOnArmedTrack,
-    resolveAdmittedEventBeat,
-    resolveRecordingPlacement,
-    type RecordingPlacementDependencies,
-} from './resolveRecordingPlacement';
+import { resolveRecordingPlacement } from './resolveRecordingPlacement';
 
 export type RecordableChannelEvent =
     { kind: 'controlChange'; controller: number; value: number } | { kind: 'pitchBend'; value: number };
