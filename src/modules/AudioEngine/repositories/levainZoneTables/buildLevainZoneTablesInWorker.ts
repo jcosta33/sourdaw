@@ -6,9 +6,10 @@ import type { LevainZoneTableRequest, LevainZoneTables } from '../../models/Leva
 const DAW_DSP_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 function abortReason(signal: AbortSignal): Error {
-    return signal.reason instanceof Error
-        ? signal.reason
-        : new DOMException('Levain zone-table build aborted', 'AbortError');
+    if (signal.reason instanceof Error) {
+        return signal.reason;
+    }
+    return new DOMException('Levain zone-table build aborted', 'AbortError');
 }
 
 function readBuiltTables(data: unknown): LevainZoneTables | null {
@@ -21,10 +22,10 @@ function readBuiltTables(data: unknown): LevainZoneTables | null {
 }
 
 function readFailure(data: unknown): string {
-    const message: unknown =
-        typeof data === 'object' && data !== null && Reflect.get(data, 'type') === 'failed'
-            ? Reflect.get(data, 'message')
-            : null;
+    if (typeof data !== 'object' || data === null || Reflect.get(data, 'type') !== 'failed') {
+        return 'it answered with an unreadable message';
+    }
+    const message: unknown = Reflect.get(data, 'message');
     return typeof message === 'string' ? message : 'it answered with an unreadable message';
 }
 

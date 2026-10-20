@@ -196,11 +196,11 @@ function makePort(options: MakePortOptions = {}): FakePort {
             tally.peak = Math.max(tally.peak, tally.unanswered);
             const answer = (): void => {
                 tally.unanswered--;
-                emit(
-                    message.type === 'sampleChunk'
-                        ? { type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId }
-                        : { type: 'zoneTableChunkWritten', loadToken: message.loadToken }
-                );
+                if (message.type === 'sampleChunk') {
+                    emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId });
+                    return;
+                }
+                emit({ type: 'zoneTableChunkWritten', loadToken: message.loadToken });
             };
             const answers = options.chunkAnswers ?? 'now';
             if (answers === 'now') {

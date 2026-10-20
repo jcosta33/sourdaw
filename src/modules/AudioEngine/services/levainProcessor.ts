@@ -946,15 +946,18 @@ class LevainProcessor extends AudioWorkletProcessor {
             this._memoryWordsBuffer = buffer;
         }
         this._memoryWords.set(msg.data, address / Uint32Array.BYTES_PER_ELEMENT);
-        const entries = words / wordsPerEntry;
-        const committed =
-            msg.table === 'lut'
-                ? inst.commit_zone_lut_chunk(msg.start, entries)
-                : inst.commit_zone_arena_chunk(msg.start, entries);
-        if (!committed) {
+        if (!this._commitZoneTableChunk(inst, msg.table, msg.start, words / wordsPerEntry)) {
             throw new Error('Levain DSP refused a zone-table chunk');
         }
         this.port.postMessage({ type: 'zoneTableChunkWritten', loadToken: msg.loadToken });
+    }
+
+    /** Ask the engine to append the `entries` it was just handed in its window to `table`. */
+    _commitZoneTableChunk(inst: LevainInstance, table: 'lut' | 'arena', start: number, entries: number): boolean {
+        if (table === 'lut') {
+            return inst.commit_zone_lut_chunk(start, entries);
+        }
+        return inst.commit_zone_arena_chunk(start, entries);
     }
 
     /**

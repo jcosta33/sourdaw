@@ -293,28 +293,45 @@ describe('shipped LevainProcessor zone-table staging', () => {
         expect(firstMismatch(accepted.lut, tables.lut)).toBe(-1);
         expect(firstMismatch(accepted.arena, tables.arena)).toBe(-1);
 
-        // Today's `buildZoneMap` handler on the same bank, for the measurement:
-        // the build that ran inside one port message.
-        const before = await createProcessor();
-        stageBankContents(before, 1, 'largest-before', zones, [sine(SAMPLE_FRAMES, 0.01)]);
-        const started = performance.now();
-        expect(engineOf(before).build_zone_map(32, 8)).toBe(true);
-        const buildMs = performance.now() - started;
-        if (process.env.LEVAIN_ZONE_TABLE_TIMING !== undefined) {
+        if (process.env.LEVAIN_ZONE_TABLE_TIMING === undefined) {
+            return;
+        }
+        // The measurement: each path once cold and once again on the same
+        // processor. Today's `buildZoneMap` handler was the build below, inside
+        // one port message.
+        const maxMsByType = (timings: readonly { type: string; ms: number }[]): Record<string, number> => {
             const byType = new Map<string, number>();
-            for (const { type, ms } of handlerMs) {
+            for (const { type, ms } of timings) {
                 byType.set(type, Math.max(byType.get(type) ?? 0, ms));
             }
-            console.info(
-                JSON.stringify({
-                    kind: 'levain-zone-table-staging-32x8',
-                    messages: handlerMs.length,
-                    maxMsByType: Object.fromEntries(byType),
-                    maxMs: Math.max(...handlerMs.map(({ ms }) => ms)),
-                    buildZoneMapMs: buildMs,
-                })
-            );
-        }
+            return Object.fromEntries(byType);
+        };
+        const coldStaged = handlerMs.splice(0);
+        send(processor, { type: 'releaseRetiredBank', loadToken: 1 });
+        stageBankContents(processor, 2, 'largest-again', zones, [sine(SAMPLE_FRAMES, 0.01)]);
+        deliverZoneTables(timed, 2, request, tables);
+        timed({ type: 'commitSampleBank', loadToken: 2 });
+        expect(loaded(processor, 2)).toBe(true);
+
+        const before = await createProcessor();
+        const timeBuild = (loadToken: number): number => {
+            stageBankContents(before, loadToken, `largest-before-${loadToken}`, zones, [sine(SAMPLE_FRAMES, 0.01)]);
+            const started = performance.now();
+            expect(engineOf(before).build_zone_map(32, 8)).toBe(true);
+            return performance.now() - started;
+        };
+        const coldBuildMs = timeBuild(1);
+        const warmBuildMs = timeBuild(2);
+        console.info(
+            JSON.stringify({
+                kind: 'levain-zone-table-staging-32x8',
+                messages: coldStaged.length,
+                stagedCold: maxMsByType(coldStaged),
+                stagedWarm: maxMsByType(handlerMs),
+                buildZoneMapCold: coldBuildMs,
+                buildZoneMapWarm: warmBuildMs,
+            })
+        );
     }, 120_000);
 
     it('refuses a table posted in one message, so nothing is installed', async () => {
