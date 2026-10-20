@@ -10,10 +10,14 @@ type StatedNote = { startBeat: number; duration: number };
 
 /**
  * The note law the system prompt states, transcribed literally: this is the
- * rule a model following the prompt implements. The agreement tests hold the
- * transcription against the validator, so the prompt can never teach a window
- * the application then refuses (#5198: the pre-anchor sentence admitted notes
- * the anchored validator rejects and forbade the wrapped head it plays).
+ * rule a model following the prompt implements. The paragraph pin below holds
+ * the prompt to this exact text, so no clause can be added, removed, or
+ * reworded into it (#5198 review: a contradicting clause appended to the
+ * prompt sentence passed the sentence pins while the validator played notes
+ * it forbade). The agreement tests then hold the transcription against the
+ * validator, so the prompt can never teach a window the application then
+ * refuses (#5198: the pre-anchor sentence admitted notes the anchored
+ * validator rejects and forbade the wrapped head it plays).
  */
 function promptAdmits(note: StatedNote, clip: ClipContentWindowInput): boolean {
     const offsetBeats = clip.midiOffsetBeats ?? 0;
@@ -52,6 +56,21 @@ function promptAdmits(note: StatedNote, clip: ClipContentWindowInput): boolean {
     // plus whichever is shorter of its loopLength and endBeat minus startBeat"
     const windowEndBeat = offsetBeats + Math.min(loopLengthBeats, passSpanBeats);
     return note.startBeat >= offsetBeats && note.startBeat + note.duration <= windowEndBeat;
+}
+
+/**
+ * The prompt's full normative note-window paragraph, verbatim — from its
+ * opening sentence through the minimum-duration sentence that closes the
+ * template line it lives on. The minimum duration rides the imported constant
+ * so this pin tracks the same figure the prompt interpolates.
+ */
+const NOTE_WINDOW_PARAGRAPH = `Note beats are positions inside a clip's own content, never timeline beats: a note in a clip you create must start at beat 0 or later and end at or before that clip's length in beats, and a note you add to an existing clip must start at or after its midiOffsetBeats and end at or before that offset plus whichever is shorter of its loopLength and endBeat minus startBeat, which is endBeat minus startBeat when it does not loop or reports no loopLength; an anchored clip, one that loops and reports a loopOriginBeat, instead sounds the window opening at its midiOffsetBeats minus how far its startBeat sits past its loopOriginBeat and running for its loopLength, so the note must start inside that window, its position from the window opening wrapped by the loopLength must sit before the shorter of that loopLength and endBeat minus startBeat, its duration may never outlast the loopLength, and a note ringing past that shorter span only fits when the span reaches the full loopLength, all of which the project context reports. Every note lasts at least ${MIDI_NOTE_MIN_DURATION_BEATS} beats.`;
+
+/** The template line the note-window paragraph closes. */
+function promptNoteLawLine(systemPrompt: string): string | undefined {
+    return systemPrompt
+        .split('\n')
+        .find((line) => line.includes("Note beats are positions inside a clip's own content"));
 }
 
 /** A clip trimmed two beats into a four-beat loop it was anchored to at beat 0. */
@@ -94,6 +113,18 @@ describe('the system prompt note-window law agrees with the validator', () => {
             'the window opening at its midiOffsetBeats minus how far its startBeat sits past its loopOriginBeat and running for its loopLength'
         );
         expect(systemPrompt).toContain('its position from the window opening wrapped by the loopLength');
+    });
+
+    it('pins the note-window paragraph verbatim, so no clause can be added, removed, or reworded into it', () => {
+        // The sentence pins above admit an appended clause, and the agreement
+        // sweeps test the local transcription, not the prompt: only exact
+        // equality with the live paragraph fails a contradicting addition.
+        // The paragraph closes its template line, so suffix equality also
+        // catches anything appended after the last sentence.
+        const lawLine = promptNoteLawLine(buildLlmActionSystemPrompt());
+
+        expect(lawLine).toBeDefined();
+        expect(lawLine?.endsWith(NOTE_WINDOW_PARAGRAPH)).toBe(true);
     });
 
     it('agrees with the validator across a trimmed looped clip', () => {
