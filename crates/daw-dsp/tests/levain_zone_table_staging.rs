@@ -397,7 +397,9 @@ fn levain_a_reservation_refuses_dimensions_past_the_limits_and_a_lut_size_they_d
     let (mut instance, lut, arena) = single_zone_bank();
     let arena_entries = arena.len() as u32;
 
-    assert!(!instance.reserve_zone_tables(MAX_ARTICULATIONS as u32 + 1, 1, 0, arena_entries));
+    // Each with the LUT size its dimensions imply, so only the limits refuse it.
+    let over = MAX_ARTICULATIONS as u32 + 1;
+    assert!(!instance.reserve_zone_tables(over, 1, over * 128 * 16, arena_entries));
     assert!(!instance.reserve_zone_tables(1, 9, 9 * 128 * 16, arena_entries));
     assert!(!instance.reserve_zone_tables(1, 1, lut_entries(&lut) - 1, arena_entries));
     assert!(!instance.reserve_zone_tables(1, 1, lut_entries(&lut) + 1, arena_entries));
