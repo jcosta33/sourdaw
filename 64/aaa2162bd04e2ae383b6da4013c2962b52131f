@@ -1,0 +1,21 @@
+docs/06-testing.md
+  s_4c8cd08893b364::t_cbd38007087a33 751-755
+scripts/resourceGuard.ts
+  s_4c8cd08893b364::t_cb7d34045efc22 1450,1468-1469,1479
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "64aaa2162bd04e2ae383b6da4013c2962b52131f",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
