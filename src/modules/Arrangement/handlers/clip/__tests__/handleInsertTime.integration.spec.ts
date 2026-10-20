@@ -21,7 +21,7 @@ import {
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
 import { prepareMidiGlobalTimeTransaction, prepareMidiTimeStateRestore } from '#/modules/MIDI/useCases';
-import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+import { readBarStartBeat, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { prepareTimelineMapStateRestore, prepareTimelineMapTimeOperation } from '#/modules/Transport/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
@@ -133,5 +133,37 @@ describe('Insert Time moves each tempo and meter change with the material on its
         expect(beatOf(markerStore.value?.markers, 'marker')).toBe(expected);
         expect(beatOf(tempoMapStore.value?.changes, 'tempo')).toBe(expected);
         expect(beatOf(timeSignatureMapStore.value?.changes, 'meter')).toBe(expected);
+    });
+
+    it('keeps a clip that starts on a downbeat on that downbeat when the span is not a whole number of bars', async () => {
+        const clipBeat = 8;
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    kind: 'midi',
+                    clips: [
+                        ClipDummy.create({
+                            id: 'clip',
+                            trackId: 'track-1',
+                            type: 'midi',
+                            startBeat: clipBeat,
+                            endBeat: 16,
+                        }),
+                    ],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        timeSignatureMapStore.set({ changes: [{ id: 'meter-start', beat: 0, numerator: 4, denominator: 4 }] });
+        flushAutomergeStorageWrites();
+        expect(readBarStartBeat({ bar: 3 })).toBe(clipBeat);
+
+        await executeAppAction({ type: 'insertTime', payload: { atBeat: 4, durationBeats: 2 } });
+
+        const clipStart = trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'clip')?.startBeat;
+        expect(clipStart).toBe(clipBeat + 2);
+        expect(readBarStartBeat({ bar: 3 })).toBe(clipStart);
     });
 });

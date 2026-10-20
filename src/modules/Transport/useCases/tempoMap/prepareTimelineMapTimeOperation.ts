@@ -370,10 +370,6 @@ function carryTempoAcrossInsertion({
     return { arrivals: [arrival], carried: [createTempoChange(endBeat, reached, 'linear')] };
 }
 
-function carryNothingAcrossInsertion<TChange extends TimelineChange>(): CarriedChanges<TChange> {
-    return { arrivals: [], carried: [] };
-}
-
 // Removing time never changes the tempo before the cut. A ramp that crosses the
 // cut would otherwise be re-aimed at whatever now follows it, so it arrives at
 // the cut on its own slope, at an instant change holding the value it reached,
@@ -485,6 +481,36 @@ function carryTimeSignatureToSpanStart(input: CarryAcrossDeletionInput<TimeSigna
         return [];
     }
     return [createTimeSignatureChange(carriedBeat, governingAtEnd.numerator, governingAtEnd.denominator)];
+}
+
+// Bars are counted from the change that opens them, so material from the insert
+// point on keeps its bars only if the span ends on a downbeat of the meter in force
+// there. The first original downbeat at or after the point is where the material's
+// bar grid resumes; it lands `durationBeats` later, and the bar it falls in runs
+// longer by the inserted span, as a partial bar, up to that beat. Nothing is
+// carried when the shifted grid already has a downbeat there (the span is a whole
+// number of bars), or when a change at or before that downbeat shifts onto it and
+// opens its own bar.
+function carryTimeSignatureAcrossInsertion({
+    original,
+    atBeat,
+    durationBeats,
+}: CarryAcrossInsertionInput<TimeSignatureChange>): CarriedChanges<TimeSignatureChange> {
+    const governing = lastChangeAtOrBefore(original, atBeat) ?? readImpliedTimeSignature();
+    const barBeats = meterBarBeats(governing);
+    const firstDownbeat = governing.beat + Math.ceil((atBeat - governing.beat - BEAT_EPSILON) / barBeats) * barBeats;
+    const nextChange = Math.min(
+        Infinity,
+        ...original.filter((change) => change.beat >= atBeat).map(({ beat }) => beat)
+    );
+    const shiftedDownbeat = firstDownbeat + durationBeats;
+    if (firstDownbeat >= nextChange - BEAT_EPSILON || isMeterBarStart(governing, shiftedDownbeat)) {
+        return { arrivals: [], carried: [] };
+    }
+    return {
+        arrivals: [],
+        carried: [createTimeSignatureChange(shiftedDownbeat, governing.numerator, governing.denominator)],
+    };
 }
 
 function prepareDeletedChanges<TChange extends TimelineChange>(
@@ -612,7 +638,7 @@ function prepareTimelineMapStates(operation: TimelineMapTimeOperation): Prepared
 
     const preparedTimeSignatureChanges = prepareChanges(timeSignatureState.changes, operation, {
         deletion: carryTimeSignatureAcrossDeletion,
-        insertion: carryNothingAcrossInsertion,
+        insertion: carryTimeSignatureAcrossInsertion,
     });
     if (preparedTimeSignatureChanges.status === 'invalid') {
         return { status: 'rejected' };
