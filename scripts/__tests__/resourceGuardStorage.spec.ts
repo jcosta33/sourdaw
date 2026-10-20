@@ -1409,7 +1409,12 @@ if(process.argv[2]==='-axo'){
                 expect(released).toBe(reclaimable);
                 const observedCatalogs = Number(readFileSync(count, 'utf8'));
                 if (route !== 'startup recovery') {
-                    expect(observedCatalogs).toBe(3);
+                    // A persistent omission takes fresh catalogs until the proof deadline.
+                    if (missing) {
+                        expect(observedCatalogs).toBeGreaterThan(3);
+                    } else {
+                        expect(observedCatalogs).toBe(3);
+                    }
                 }
                 const held = join(borrower.cwd, 'held');
                 await waitUntil(() => existsSync(held) && statSync(held).size > 0);

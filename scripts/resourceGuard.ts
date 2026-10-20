@@ -1397,11 +1397,9 @@ export function storageFileState(
             return unknown(pids);
         }
         if (platform() === 'darwin') {
-            for (let observation = 0; observation < 2; observation += 1) {
-                if (Date.now() >= deadline) {
-                    return unknown('file-census-time-bound');
-                }
-                if (observation === 1) {
+            let uncovered = 'file-census-time-bound';
+            for (let observation = 0; Date.now() < deadline; observation += 1) {
+                if (observation > 0) {
                     pids = readProcessUsers();
                     if (typeof pids === 'string') {
                         return unknown(pids);
@@ -1440,7 +1438,7 @@ export function storageFileState(
                     return unknown(currentPids);
                 }
                 const missing: string[] = [];
-                let onlyNewLivePids = true;
+                let onlyLiveSameUidPids = true;
                 for (const pid of new Set([...pids, ...currentPids])) {
                     if (census.pids.has(pid) || processIsGone(pid)) {
                         continue;
@@ -1454,26 +1452,23 @@ export function storageFileState(
                     if (snapshot?.uid === uid && snapshot.state === 'Z') {
                         continue;
                     }
-                    onlyNewLivePids &&=
-                        !pids.includes(pid) &&
-                        snapshot?.uid === uid &&
-                        ['R', 'S', 'I', 'T', 'U'].includes(snapshot.state);
+                    onlyLiveSameUidPids &&= snapshot?.uid === uid && ['R', 'S', 'I', 'T', 'U'].includes(snapshot.state);
                     missing.push(`${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
                 }
                 if (Date.now() >= deadline) {
                     return unknown('lsof-coverage-time-bound');
                 }
-                if (observation === 0 && missing.length > 0 && onlyNewLivePids) {
-                    // Discard the stale catalog. The shared two-observation limit
-                    // permits one complete replacement, never partial coverage.
-                    continue;
+                if (missing.length === 0) {
+                    return 'dead';
                 }
-                const snapshots = missing.slice(0, 4);
-                return missing.length === 0
-                    ? 'dead'
-                    : unknown(`lsof-live-pid-missing:count=${missing.length}:pid/uid/state=${snapshots.join(',')}`);
+                uncovered = `lsof-live-pid-missing:count=${missing.length}:pid/uid/state=${missing.slice(0, 4).join(',')}`;
+                if (!onlyLiveSameUidPids) {
+                    return unknown(uncovered);
+                }
+                // lsof can omit a live same-UID process, or finish before one is born.
+                // Discard the whole catalog: only a fresh complete one can prove safety.
             }
-            return unknown('file-census-unavailable');
+            return unknown(uncovered);
         }
         if (platform() !== 'linux') {
             return unknown('file-census-platform-unavailable');
