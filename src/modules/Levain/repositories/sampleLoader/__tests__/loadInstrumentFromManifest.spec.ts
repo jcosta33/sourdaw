@@ -1386,6 +1386,10 @@ describe('loadInstrumentFromManifest', () => {
                     'abortSampleBank',
                     'releaseRetiredBank',
                     'beginSampleBank',
+                    'reserveZoneTables',
+                    'zoneTableChunk',
+                    'zoneTableChunk',
+                    'sealZoneTables',
                     'commitSampleBank',
                     'releaseRetiredBank',
                 ]);
