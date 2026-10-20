@@ -1352,6 +1352,38 @@ describe('storage ownership recovery', () => {
         },
         { scenario: 'third live borrower', omissions: 2, state: 'alive', samples: 3, reason: undefined },
         {
+            scenario: 'descriptor omission then complete PID coverage',
+            omissions: 1,
+            state: 'dead',
+            samples: 3,
+            processSamples: 5,
+            reason: undefined,
+        },
+        {
+            scenario: 'descriptor omission then live borrower',
+            omissions: 1,
+            state: 'alive',
+            samples: 3,
+            processSamples: 4,
+            reason: undefined,
+        },
+        {
+            scenario: 'descriptor omission then persistent PID gap',
+            omissions: 1,
+            state: 'unknown',
+            samples: 3,
+            processSamples: 5,
+            reason: 'lsof-live-pid-missing:count=1',
+        },
+        {
+            scenario: 'descriptor omission then another new PID',
+            omissions: 1,
+            state: 'unknown',
+            samples: 3,
+            processSamples: 5,
+            reason: 'lsof-live-pid-missing:count=1',
+        },
+        {
             scenario: 'expired second observation',
             omissions: 2,
             state: 'unknown',
@@ -1386,15 +1418,18 @@ describe('storage ownership recovery', () => {
             samples: 2,
             reason: 'lsof-live-pid-missing:count=1',
         },
-    ])('bounds Darwin census observations for $scenario', ({ scenario, omissions, state, samples, reason }) => {
-        const root = fixture();
-        // Isolate builtin substitutions in a child; the real parser, census and
-        // private-storage checks run without changing the test worker's globals.
-        const program = `
+    ])(
+        'bounds Darwin census observations for $scenario',
+        ({ scenario, omissions, state, samples, processSamples, reason }) => {
+            const root = fixture();
+            // Isolate builtin substitutions in a child; the real parser, census and
+            // private-storage checks run without changing the test worker's globals.
+            const program = `
             import childProcess from 'node:child_process';
             import os from 'node:os';
             import {syncBuiltinESMExports} from 'node:module';
             const scenario=${JSON.stringify(scenario)},omissions=${omissions};
+            const mixedOmission=scenario.startsWith('descriptor omission then ');
             const uid=process.getuid(),pid=process.pid,newPid=pid+100000,newerPid=pid+100001;
             let samples=0,processSamples=0,now=0;
             const timeouts=[];
@@ -1415,16 +1450,25 @@ describe('storage ownership recovery', () => {
                             if(processSamples>=2)pids.push(newPid);
                             if(processSamples>=4)pids.push(newerPid);
                         }
+                        if(mixedOmission&&processSamples>=3)pids.push(newPid);
+                        if(scenario==='descriptor omission then another new PID'&&processSamples>=5)pids.push(newerPid);
                         stdout=pids.map(pid=>pid+' '+uid).join('\\n')+'\\n';
                     }
                 }else if(command==='lsof'){
                     samples++;
                     now+=scenario==='expired second observation'?2500:100;
-                    if(samples<=omissions)stdout='p'+pid+'\\0\\nf3\\0nFD unavailable\\0\\n';
+                    if(samples<=omissions){
+                        stdout='p'+pid+'\\0\\nf3\\0nFD unavailable\\0\\n';
+                        if(mixedOmission)stdout='p'+pid+'\\0\\nfcwd\\0tDIR\\0n'+${JSON.stringify(join(root, 'tmp'))}+'\\0\\np'+newPid+'\\0\\nf3\\0nFD unavailable\\0\\n';
+                    }
                     else {
                         const type=scenario==='unknown descriptor type'?'UNKNOWN':'DIR';
                         const path=scenario==='third live borrower'?${JSON.stringify(join(root, 'tmp'))}:'/outside';
                         stdout='p'+pid+'\\0\\nfcwd\\0t'+type+'\\0n'+path+'\\0\\n';
+                        if(mixedOmission&&samples>=3&&scenario!=='descriptor omission then persistent PID gap'){
+                            const borrowed=scenario==='descriptor omission then live borrower'?${JSON.stringify(join(root, 'tmp'))}:'/outside';
+                            stdout+='p'+newPid+'\\0\\nfcwd\\0tDIR\\0n'+borrowed+'\\0\\n';
+                        }
                     }
                 }else throw new Error('unexpected command '+command);
                 return {status:0,stdout,stderr:''};
@@ -1447,45 +1491,48 @@ describe('storage ownership recovery', () => {
             }else state=storageFileState([${JSON.stringify(join(root, 'tmp'))}],[],reason=>reasons.push(reason));
             console.log(JSON.stringify({state,reasons,samples,processSamples,timeouts,retained,proofBeforeRecovery,claimPayloadCount}));
         `;
-        chmodSync(root, 0o700);
-        const observed: {
-            state: string;
-            reasons: string[];
-            samples: number;
-            processSamples: number;
-            timeouts: { command: string; timeout: number }[];
-            retained?: boolean;
-            proofBeforeRecovery?: string;
-            claimPayloadCount?: number;
-        } = JSON.parse(
-            execFileSync(process.execPath, ['--input-type=module', '-e', program], {
-                cwd: root,
-                encoding: 'utf8',
-                timeout: 10_000,
-            })
-        );
-        expect(observed.state).toBe(state);
-        expect(observed.samples).toBe(samples);
-        expect(observed.reasons).toEqual(reason === undefined ? [] : [expect.stringContaining(reason)]);
-        const censusTimeouts = observed.timeouts.filter((sample) => sample.command === 'lsof');
-        expect(censusTimeouts.map((sample) => sample.timeout)).toEqual(
-            Array.from({ length: samples }, (_, index) => {
-                if (scenario === 'post-death recovery live PID gap') {
-                    return 5000;
-                }
-                const elapsedPerObservation = scenario === 'expired second observation' ? 2500 : 100;
-                return 5000 - index * elapsedPerObservation;
-            })
-        );
-        if (state === 'dead') {
-            expect(observed.processSamples).toBe(4);
+            chmodSync(root, 0o700);
+            const observed: {
+                state: string;
+                reasons: string[];
+                samples: number;
+                processSamples: number;
+                timeouts: { command: string; timeout: number }[];
+                retained?: boolean;
+                proofBeforeRecovery?: string;
+                claimPayloadCount?: number;
+            } = JSON.parse(
+                execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 10_000,
+                })
+            );
+            expect(observed.state).toBe(state);
+            expect(observed.samples).toBe(samples);
+            expect(observed.reasons).toEqual(reason === undefined ? [] : [expect.stringContaining(reason)]);
+            const censusTimeouts = observed.timeouts.filter((sample) => sample.command === 'lsof');
+            expect(censusTimeouts.map((sample) => sample.timeout)).toEqual(
+                Array.from({ length: samples }, (_, index) => {
+                    if (scenario === 'post-death recovery live PID gap') {
+                        return 5000;
+                    }
+                    const elapsedPerObservation = scenario === 'expired second observation' ? 2500 : 100;
+                    return 5000 - index * elapsedPerObservation;
+                })
+            );
+            if (processSamples !== undefined) {
+                expect(observed.processSamples).toBe(processSamples);
+            } else if (state === 'dead') {
+                expect(observed.processSamples).toBe(4);
+            }
+            if (scenario === 'post-death recovery live PID gap') {
+                expect(observed.proofBeforeRecovery).toBe('dead');
+                expect(observed.claimPayloadCount).toBe(0);
+                expect(observed.retained).toBe(true);
+            }
         }
-        if (scenario === 'post-death recovery live PID gap') {
-            expect(observed.proofBeforeRecovery).toBe('dead');
-            expect(observed.claimPayloadCount).toBe(0);
-            expect(observed.retained).toBe(true);
-        }
-    });
+    );
 
     it.skipIf(process.getuid === undefined).each([
         { scenario: 'complete current coverage', gap: false, expectedStates: ['dead', 'dead', 'dead'] },
