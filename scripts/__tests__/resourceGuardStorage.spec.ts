@@ -149,6 +149,20 @@ function guarded(root: string, input: Partial<Parameters<typeof runGuardedComman
 // A guarded cleanup can spend its whole five-second file-proof deadline retaking
 // catalogs on a busy host, so a case running one cannot use the five-second default.
 const GUARDED_CASE_TIMEOUT_MS = 15_000;
+
+// Runs one guarded command in a separate supervisor process. Values travel as argv data,
+// never as generated source.
+const SUPERVISOR_PROGRAM =
+    "const [guard, options, resultPath] = process.argv.slice(1); const { writeFileSync } = await import('node:fs'); const { runGuardedCommand } = await import(guard); const result = await runGuardedCommand(JSON.parse(options)); if (resultPath !== undefined) writeFileSync(resultPath, JSON.stringify(result));";
+
+function supervisorArgs(options: object, resultPath?: string): string[] {
+    const args = ['--input-type=module', '-e', SUPERVISOR_PROGRAM, guardPath, JSON.stringify(options)];
+    if (resultPath !== undefined) {
+        args.push(resultPath);
+    }
+    return args;
+}
+
 const fakeOwner = { pid: 999990, startedAt: 'original-start' };
 const fakeReclaimer = { pid: 999991, startedAt: 'reclaimer-start' };
 const deadPorts: StorageRecoveryPorts = { identityState: () => 'dead', sessionState: () => 'dead' };
@@ -182,7 +196,8 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             [
                 '--input-type=module',
                 '-e',
-                `import { resolveGuardStorageRoot } from ${JSON.stringify(pathToFileURL(storagePath).href)}; console.log(JSON.stringify(resolveGuardStorageRoot(process.cwd())));`,
+                'const { resolveGuardStorageRoot } = await import(process.argv[1]); console.log(JSON.stringify(resolveGuardStorageRoot(process.cwd())));',
+                pathToFileURL(storagePath).href,
             ],
             {
                 cwd: root,
@@ -322,7 +337,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             const marker = join(root, 'spawned');
             const sampled: string[] = [];
             const result = await guarded(root, {
-                args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`],
+                args: ['-e', "require('node:fs').writeFileSync(process.argv[1], 'spawned')", marker],
                 diskReserveBytes: 100,
                 diskSampler: (path) => {
                     sampled.push(path);
@@ -346,7 +361,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             const root = fixture();
             const marker = join(root, 'spawned');
             const pending = guarded(root, {
-                args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`],
+                args: ['-e', "require('node:fs').writeFileSync(process.argv[1], 'spawned')", marker],
                 diskSampler: () => (setupFailure ? 1000 : 0),
                 storageFactory: (input) => {
                     const storage = createGuardStorage(input);
@@ -380,7 +395,8 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
         const result = await guarded(root, {
             args: [
                 '-e',
-                `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() })); setInterval(() => {}, 1000);`,
+                "const fs = require('node:fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() })); setInterval(() => {}, 1000);",
+                marker,
             ],
             hostSampleIntervalMs: 20,
             sampleIntervalMs: 20,
@@ -406,11 +422,16 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
         const marker = join(root, 'started.json');
         const terminated = join(root, 'term');
         const lastLiveSample = join(root, 'live');
-        const descendant = `const fs = require('node:fs'); const tmp = require('node:os').tmpdir(); process.on('SIGTERM', () => fs.writeFileSync(${JSON.stringify(terminated)}, 'received')); fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp })); setInterval(() => { fs.writeFileSync(${JSON.stringify(`${lastLiveSample}.candidate`)}, String(fs.existsSync(tmp))); fs.renameSync(${JSON.stringify(`${lastLiveSample}.candidate`)}, ${JSON.stringify(lastLiveSample)}); }, 20);`;
+        const descendant =
+            "const [terminated, marker, lastLiveSample] = process.argv.slice(1); const fs = require('node:fs'); const tmp = require('node:os').tmpdir(); process.on('SIGTERM', () => fs.writeFileSync(terminated, 'received')); fs.writeFileSync(marker, JSON.stringify({ pid: process.pid, tmp })); setInterval(() => { fs.writeFileSync(lastLiveSample + '.candidate', String(fs.existsSync(tmp))); fs.renameSync(lastLiveSample + '.candidate', lastLiveSample); }, 20);";
         const result = await guarded(root, {
             args: [
                 '-e',
-                `process.on('SIGTERM', () => {}); require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore' }); setInterval(() => {}, 1000);`,
+                "process.on('SIGTERM', () => {}); require('node:child_process').spawn(process.execPath, ['-e', ...process.argv.slice(1)], { detached: true, stdio: 'ignore' }); setInterval(() => {}, 1000);",
+                descendant,
+                terminated,
+                marker,
+                lastLiveSample,
             ],
             timeoutMs: 1000,
             sampleIntervalMs: 20,
@@ -428,11 +449,13 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
         const deadline = Date.now() + 30_000;
         const root = fixture();
         const marker = join(root, 'started.json');
-        const descendant = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() })); setInterval(() => {}, 1000);`;
-        const child = `const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(join(root, 'root.pid'))}, String(process.pid)); setInterval(() => {}, 1000);`;
+        const descendant =
+            "require('node:fs').writeFileSync(process.argv[1], JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() })); setInterval(() => {}, 1000);";
+        const child =
+            "const [descendant, marker, rootPid] = process.argv.slice(1); const child = require('node:child_process').spawn(process.execPath, ['-e', descendant, marker], { detached: true, stdio: 'ignore' }); require('node:fs').writeFileSync(rootPid, String(process.pid)); setInterval(() => {}, 1000);";
         const options = {
             command: process.execPath,
-            args: ['-e', child],
+            args: ['-e', child, descendant, marker, join(root, 'root.pid')],
             profile: 'focused',
             availableMemoryBytes: abundantMemoryBytes,
             maxRssBytes: 512 * 1024 ** 2,
@@ -442,15 +465,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             sampleIntervalMs: 20,
             hostSampleIntervalMs: 20,
         };
-        const supervisor = spawn(
-            process.execPath,
-            [
-                '--input-type=module',
-                '-e',
-                `const { runGuardedCommand } = await import(${JSON.stringify(guardPath)}); await runGuardedCommand(${JSON.stringify(options)});`,
-            ],
-            { stdio: 'ignore' }
-        );
+        const supervisor = spawn(process.execPath, supervisorArgs(options), { stdio: 'ignore' });
         expect(supervisor.pid).toBeDefined();
         if (supervisor.pid !== undefined) {
             childPids.add(supervisor.pid);
@@ -490,13 +505,23 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             const resultPath = join(root, 'result.json');
             const descendant = [
                 "const fs = require('node:fs');",
-                `fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() }));`,
+                "fs.writeFileSync(process.argv[1], JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() }));",
                 'setInterval(() => {}, 1000);',
             ].join(program === 'multiline program' ? '\n' : ' ');
-            const parent = `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(rootMarker)}, String(process.pid)); setTimeout(() => { const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore', env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 375); const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(marker)}) && ${JSON.stringify(scenario === 'parent exit')}) { clearInterval(timer); process.exit(0); } }, 5);`;
+            // Base64 keeps the parent's own command line on one line while it carries a
+            // multiline descendant program.
+            const parent =
+                "const [descendant, marker, rootMarker, exitOnMarker] = process.argv.slice(1); const fs = require('node:fs'); fs.writeFileSync(rootMarker, String(process.pid)); setTimeout(() => { const child = require('node:child_process').spawn(process.execPath, ['-e', Buffer.from(descendant, 'base64').toString('utf8'), marker], { detached: true, stdio: 'ignore', env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 375); const timer = setInterval(() => { if (fs.existsSync(marker) && exitOnMarker === 'true') { clearInterval(timer); process.exit(0); } }, 5);";
             const options = {
                 command: process.execPath,
-                args: ['-e', parent],
+                args: [
+                    '-e',
+                    parent,
+                    Buffer.from(descendant, 'utf8').toString('base64'),
+                    marker,
+                    rootMarker,
+                    String(scenario === 'parent exit'),
+                ],
                 profile: 'focused',
                 availableMemoryBytes: abundantMemoryBytes,
                 maxRssBytes: 512 * 1024 ** 2,
@@ -504,15 +529,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
                 storageRoot: join(root, 'storage'),
                 diskReserveBytes: 1,
             };
-            const supervisor = spawn(
-                process.execPath,
-                [
-                    '--input-type=module',
-                    '-e',
-                    `const { writeFileSync } = await import('node:fs'); const { runGuardedCommand } = await import(${JSON.stringify(guardPath)}); const result = await runGuardedCommand(${JSON.stringify(options)}); writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));`,
-                ],
-                { stdio: 'ignore' }
-            );
+            const supervisor = spawn(process.execPath, supervisorArgs(options, resultPath), { stdio: 'ignore' });
             const supervisorPid = supervisor.pid;
             expect(supervisorPid).toBeDefined();
             if (supervisorPid === undefined) {
@@ -583,11 +600,12 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             const heartbeat = join(root, 'heartbeat');
             const rootMarker = join(root, 'root.pid');
             const resultPath = join(root, 'result.json');
-            const descendant = `const fs=require('node:fs'); const tmp=process.cwd(); const fd=fs.openSync('held','w'); ${consumer === 'open file' ? "process.chdir('/');" : 'fs.closeSync(fd);'} fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp})); let n=0; setInterval(()=>{${consumer === 'open file' ? "fs.writeSync(fd,'x');" : "fs.writeFileSync('held',String(n));"} fs.writeFileSync(${JSON.stringify(heartbeat)},String(++n));},50);`;
-            const parent = `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(rootMarker)},String(process.pid)); setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',cwd:process.env.TMPDIR,env:{PATH:process.env.PATH}});child.unref();},375); setInterval(()=>{if(fs.existsSync(${JSON.stringify(marker)})&&${scenario === 'parent exit'})process.exit(0)},5);`;
+            const descendant = `const [marker,heartbeat]=process.argv.slice(1); const fs=require('node:fs'); const tmp=process.cwd(); const fd=fs.openSync('held','w'); ${consumer === 'open file' ? "process.chdir('/');" : 'fs.closeSync(fd);'} fs.writeFileSync(marker,JSON.stringify({pid:process.pid,tmp})); let n=0; setInterval(()=>{${consumer === 'open file' ? "fs.writeSync(fd,'x');" : "fs.writeFileSync('held',String(n));"} fs.writeFileSync(heartbeat,String(++n));},50);`;
+            const parent =
+                "const [descendant,rootMarker,marker,heartbeat,exitOnMarker]=process.argv.slice(1); const fs=require('node:fs'); fs.writeFileSync(rootMarker,String(process.pid)); setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',descendant,marker,heartbeat],{detached:true,stdio:'ignore',cwd:process.env.TMPDIR,env:{PATH:process.env.PATH}});child.unref();},375); setInterval(()=>{if(fs.existsSync(marker)&&exitOnMarker==='true')process.exit(0)},5);";
             const options = {
                 command: process.execPath,
-                args: ['-e', parent],
+                args: ['-e', parent, descendant, rootMarker, marker, heartbeat, String(scenario === 'parent exit')],
                 profile: 'focused',
                 availableMemoryBytes: abundantMemoryBytes,
                 maxRssBytes: 512 * 1024 ** 2,
@@ -595,15 +613,7 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
                 storageRoot: join(root, 'storage'),
                 diskReserveBytes: 1,
             };
-            const supervisor = spawn(
-                process.execPath,
-                [
-                    '--input-type=module',
-                    '-e',
-                    `const {writeFileSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(resultPath)},JSON.stringify(result));`,
-                ],
-                { stdio: 'ignore' }
-            );
+            const supervisor = spawn(process.execPath, supervisorArgs(options, resultPath), { stdio: 'ignore' });
             const supervisorPid = supervisor.pid;
             if (supervisorPid === undefined) {
                 throw new Error('hidden temp supervisor did not start');
@@ -686,14 +696,17 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
         const fakePs = join(bin, 'ps');
         writeFileSync(
             fakePs,
-            `#!/bin/sh\ncase "$*" in\n *"pid=,ppid=,pgid=,rss=,command="*) if [ -f '${marker.replaceAll("'", "'\\''")}' ]; then exit 0; fi ;;\nesac\nexec /bin/ps "$@"\n`
+            // The marker sits beside this script's directory: root/empty.json.
+            '#!/bin/sh\ncase "$*" in\n *"pid=,ppid=,pgid=,rss=,command="*) if [ -f "$(dirname "$0")/../empty.json" ]; then exit 0; fi ;;\nesac\nexec /bin/ps "$@"\n'
         );
         chmodSync(fakePs, 0o700);
-        const descendant = `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));setInterval(()=>{},1000)`;
-        const parent = `setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',env:{TMPDIR:process.env.TMPDIR,TMP:process.env.TMP,TEMP:process.env.TEMP,PATH:process.env.PATH}});child.unref()},375);setTimeout(()=>process.exit(0),1500)`;
+        const descendant =
+            "require('node:fs').writeFileSync(process.argv[1],JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));setInterval(()=>{},1000)";
+        const parent =
+            "setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',...process.argv.slice(1)],{detached:true,stdio:'ignore',env:{TMPDIR:process.env.TMPDIR,TMP:process.env.TMP,TEMP:process.env.TEMP,PATH:process.env.PATH}});child.unref()},375);setTimeout(()=>process.exit(0),1500)";
         const options = {
             command: process.execPath,
-            args: ['-e', parent],
+            args: ['-e', parent, descendant, marker],
             profile: 'focused',
             availableMemoryBytes: abundantMemoryBytes,
             maxRssBytes: 512 * 1024 ** 2,
@@ -701,15 +714,10 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             storageRoot: join(root, 'storage'),
             diskReserveBytes: 1,
         };
-        const supervisor = spawn(
-            process.execPath,
-            [
-                '--input-type=module',
-                '-e',
-                `const {writeFileSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(resultPath)},JSON.stringify(result));`,
-            ],
-            { stdio: 'ignore', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } }
-        );
+        const supervisor = spawn(process.execPath, supervisorArgs(options, resultPath), {
+            stdio: 'ignore',
+            env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+        });
         if (supervisor.pid === undefined) {
             throw new Error('empty census supervisor did not start');
         }
@@ -754,7 +762,10 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             args: [
                 '--input-type=module',
                 '-e',
-                `import { tmpdir } from 'node:os'; import { existsSync } from 'node:fs'; const parent = tmpdir(); const { runGuardedCommand } = await import(${JSON.stringify(guardPath)}); const result = await runGuardedCommand(${JSON.stringify(nestedOptions)}); console.log(JSON.stringify({ parent, nested: result.output, nestedCode: result.code, parentExists: existsSync(parent), nestedExists: existsSync(result.output), reserve: process.env.${DISK_RESERVE_ENV} }));`,
+                "import { tmpdir } from 'node:os'; import { existsSync } from 'node:fs'; const [guard, nestedOptions, reserveName] = process.argv.slice(1); const parent = tmpdir(); const { runGuardedCommand } = await import(guard); const result = await runGuardedCommand(JSON.parse(nestedOptions)); console.log(JSON.stringify({ parent, nested: result.output, nestedCode: result.code, parentExists: existsSync(parent), nestedExists: existsSync(result.output), reserve: process.env[reserveName] }));",
+                guardPath,
+                JSON.stringify(nestedOptions),
+                DISK_RESERVE_ENV,
             ],
         });
         expect(result.code).toBe(0);
@@ -1141,31 +1152,43 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
             const utility = join(bin, 'lsof');
             writeFileSync(
                 utility,
-                `#!/bin/sh\nif ${persistent ? 'true' : `[ ! -e '${count}' ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
+                // The sample log sits beside this script's directory: root/samples.
+                `#!/bin/sh\ncount="$(dirname "$0")/../samples"\nif ${persistent ? 'true' : '[ ! -e "$count" ]'}; then\n echo incomplete >> "$count"\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> "$count"\n exec /usr/sbin/lsof "$@"\nfi\n`
             );
             chmodSync(utility, 0o700);
             const resultPath = join(root, 'result.json');
             const diagnosticPath = join(root, 'proof-diagnostic.json');
+            const config = {
+                storageModule: storagePath,
+                guardModule: guardPath,
+                root: join(root, 'storage'),
+                token: randomUUID(),
+                owner: fakeOwner,
+                consumer,
+                resultPath,
+                diagnosticPath,
+            };
             const program = `
+            const config=JSON.parse(process.argv[1]);
             const {writeFileSync,existsSync}=await import('node:fs');
             const {spawn}=await import('node:child_process');
-            const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
-            const {storageFileState}=await import(${JSON.stringify(guardPath)});
+            const {createGuardStorage}=await import(config.storageModule);
+            const {storageFileState}=await import(config.guardModule);
             const reasons=[];const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
-            const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
+            const storage=createGuardStorage({root:config.root,token:config.token,owner:config.owner,ports});
             let holder;let closed;
             try {
-                if(${consumer}) {
+                if(config.consumer) {
                     holder=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{cwd:storage.tempDirectory,stdio:'ignore'});
                     closed=new Promise(resolve=>holder.once('close',resolve));
                     await new Promise((resolve,reject)=>{holder.once('spawn',resolve);holder.once('error',reject)});
                 }
                 const released=await storage.release(true);
-                writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({released,exists:existsSync(storage.tempDirectory)}));
-                writeFileSync(${JSON.stringify(diagnosticPath)},JSON.stringify(reasons));
+                writeFileSync(config.resultPath,JSON.stringify({released,exists:existsSync(storage.tempDirectory)}));
+                writeFileSync(config.diagnosticPath,JSON.stringify(reasons));
             } finally {if(holder){holder.kill('SIGKILL');await closed}}
         `;
-            const supervisor = spawn(process.execPath, ['--input-type=module', '-e', program], {
+            const supervisor = spawn(process.execPath, ['--input-type=module', '-e', program, JSON.stringify(config)], {
                 cwd: root,
                 stdio: 'ignore',
                 env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
@@ -1211,7 +1234,9 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 process.execPath,
                 [
                     '-e',
-                    `const child=require('node:child_process').spawn(process.execPath,['-e',"require('node:fs').openSync('held','w');process.exit(0)"],{cwd:${JSON.stringify(storage.tempDirectory)},stdio:'ignore'});require('node:fs').writeFileSync(${JSON.stringify(marker)},String(child.pid));Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,8000)`,
+                    "const [temp,marker]=process.argv.slice(1);const child=require('node:child_process').spawn(process.execPath,['-e',\"require('node:fs').openSync('held','w');process.exit(0)\"],{cwd:temp,stdio:'ignore'});require('node:fs').writeFileSync(marker,String(child.pid));Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,8000)",
+                    storage.tempDirectory,
+                    marker,
                 ],
                 { cwd: root, stdio: 'ignore' }
             );
@@ -1346,13 +1371,32 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
             writeFileSync(join(bin, 'package.json'), '{}\n', { mode: 0o600 });
             // Owner identity is controlled; same-UID process discovery and the detached
             // writer are real. The catalog intentionally freezes before the writer starts.
-            const borrowerProgram = `const fs=require('node:fs');const fd=fs.openSync('held','w');fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,cwd:process.cwd()}));setInterval(()=>fs.writeSync(fd,'x'),20);`;
+            const borrowerProgram =
+                "const fs=require('node:fs');const fd=fs.openSync('held','w');fs.writeFileSync(process.argv[1],JSON.stringify({pid:process.pid,cwd:process.cwd()}));setInterval(()=>fs.writeSync(fd,'x'),20);";
+            // The fakes read their values from fixture.json beside them, never from generated source.
+            writeFileSync(
+                join(bin, 'fixture.json'),
+                JSON.stringify({
+                    count,
+                    marker,
+                    processSamples,
+                    storageRoot,
+                    outside,
+                    borrowerProgram,
+                    missing,
+                    consumer,
+                    trigger: route === 'startup recovery' ? 3 : 2,
+                    runner: process.pid,
+                }),
+                { mode: 0o600 }
+            );
             writeFileSync(
                 join(bin, 'lsof'),
                 `#!${process.execPath}
 const {execFileSync,spawn}=require('node:child_process');
 const fs=require('node:fs');const {join}=require('node:path');
-const countPath=${JSON.stringify(count)},marker=${JSON.stringify(marker)};
+const fixture=JSON.parse(fs.readFileSync(join(__dirname,'fixture.json'),'utf8'));
+const countPath=fixture.count,marker=fixture.marker;
 const count=fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8'))+1:1;
 fs.writeFileSync(countPath,String(count));
 const uid=process.getuid();let catalog='';
@@ -1360,14 +1404,14 @@ const args=process.argv.slice(2);const requested=args.includes('-p')?args[args.i
 for(const row of execFileSync('/bin/ps',['-axo','pid=,uid='],{encoding:'utf8'}).trim().split('\\n')){
  const [pid,user]=row.trim().split(/\\s+/).map(Number);
  if(requested!==undefined&&!requested.includes(pid))continue;
- if(user===uid){let path='/';if(fs.existsSync(marker)){const borrower=JSON.parse(fs.readFileSync(marker,'utf8'));if(pid===borrower.pid){if(${missing})continue;path=borrower.cwd;}}
+ if(user===uid){let path='/';if(fs.existsSync(marker)){const borrower=JSON.parse(fs.readFileSync(marker,'utf8'));if(pid===borrower.pid){if(fixture.missing)continue;path=borrower.cwd;}}
  catalog+='p'+pid+'\\0\\nfcwd\\0tDIR\\0n'+path+'\\0\\n';}
 }
-if(count===${route === 'startup recovery' ? 3 : 2}){
- const claims=join(${JSON.stringify(storageRoot)},'.claims');
+if(count===fixture.trigger){
+ const claims=join(fixture.storageRoot,'.claims');
  const claim=join(claims,fs.readdirSync(claims)[0]);
  const run=fs.readdirSync(claim).find(name=>name!=='claim.json');
- const child=spawn(process.execPath,['-e',${JSON.stringify(borrowerProgram)}],{cwd:${consumer ? "join(claim,run,'tmp')" : JSON.stringify(outside)},detached:true,stdio:'ignore',env:{PATH:process.env.PATH}});child.unref();
+ const child=spawn(process.execPath,['-e',fixture.borrowerProgram,marker],{cwd:fixture.consumer?join(claim,run,'tmp'):fixture.outside,detached:true,stdio:'ignore',env:{PATH:process.env.PATH}});child.unref();
  const deadline=Date.now()+3000;while(!fs.existsSync(marker)&&Date.now()<deadline)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);
  if(!fs.existsSync(marker))process.exit(88);
 }
@@ -1379,11 +1423,12 @@ process.stdout.write(catalog);
                 join(bin, 'ps'),
                 `#!${process.execPath}
 const {execFileSync}=require('node:child_process');const fs=require('node:fs');
+const fixture=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'fixture.json'),'utf8'));
 if(process.argv[2]==='-axo'){
- const marker=${JSON.stringify(marker)};const ids=[${process.pid}];
+ const marker=fixture.marker;const ids=[fixture.runner];
  if(fs.existsSync(marker))ids.push(JSON.parse(fs.readFileSync(marker,'utf8')).pid);
  const output=execFileSync('/bin/ps',['-p',ids.join(','),'-o','pid=,uid='],{encoding:'utf8'});
- fs.appendFileSync(${JSON.stringify(processSamples)},JSON.stringify({catalogCount:fs.existsSync(${JSON.stringify(count)})?Number(fs.readFileSync(${JSON.stringify(count)},'utf8')):0,pids:output.trim().split('\\n').map(row=>Number(row.trim().split(/\\s+/)[0]))})+'\\n');
+ fs.appendFileSync(fixture.processSamples,JSON.stringify({catalogCount:fs.existsSync(fixture.count)?Number(fs.readFileSync(fixture.count,'utf8')):0,pids:output.trim().split('\\n').map(row=>Number(row.trim().split(/\\s+/)[0]))})+'\\n');
  process.stdout.write(output);
 }else process.stdout.write(execFileSync('/bin/ps',process.argv.slice(2),{encoding:'utf8'}));
 `,
@@ -1462,25 +1507,34 @@ if(process.argv[2]==='-axo'){
 
     // Darwin census fixtures. The fake `ps` limits discovery to this runner and the named
     // residents (`call` counts process listings) and may override their state samples. The
-    // fake `lsof` logs whole and PID-scoped reads; `whole` numbers the whole catalogs.
+    // fake `lsof` logs whole and PID-scoped reads; `whole` numbers the whole catalogs. Both
+    // read their values as `fixture` from fixture.json beside them, never from generated source.
     function darwinCensusFixture(
         root: string,
+        values: Record<string, unknown>,
         scripts: { listed: string; sample?: string; lsof: string }
     ): { bin: string; reads: () => string[] } {
         const bin = join(root, 'bin');
-        const calls = join(root, 'ps-calls');
         const log = join(root, 'lsof-reads');
         mkdirSync(bin, { mode: 0o700 });
         writeFileSync(join(bin, 'package.json'), '{}\n', { mode: 0o600 });
         writeFileSync(
+            join(bin, 'fixture.json'),
+            JSON.stringify({ ...values, runner: process.pid, calls: join(root, 'ps-calls'), log }),
+            { mode: 0o600 }
+        );
+        const prologue =
+            "const fs=require('node:fs');const fixture=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'fixture.json'),'utf8'));";
+        writeFileSync(
             join(bin, 'ps'),
             `#!${process.execPath}
-const {execFileSync}=require('node:child_process');const fs=require('node:fs');
+${prologue}
+const {execFileSync}=require('node:child_process');
 const args=process.argv.slice(2);
 if(args[0]==='-axo'){
- const call=fs.existsSync(${JSON.stringify(calls)})?Number(fs.readFileSync(${JSON.stringify(calls)},'utf8'))+1:1;
- fs.writeFileSync(${JSON.stringify(calls)},String(call));
- const ids=[${process.pid},...(${scripts.listed})];
+ const call=fs.existsSync(fixture.calls)?Number(fs.readFileSync(fixture.calls,'utf8'))+1:1;
+ fs.writeFileSync(fixture.calls,String(call));
+ const ids=[fixture.runner,...(${scripts.listed})];
  process.stdout.write(execFileSync('/bin/ps',['-p',ids.join(','),'-o','pid=,uid='],{encoding:'utf8'}));
 }else{
  ${scripts.sample ?? ''}
@@ -1492,13 +1546,14 @@ if(args[0]==='-axo'){
         writeFileSync(
             join(bin, 'lsof'),
             `#!${process.execPath}
-const fs=require('node:fs');const args=process.argv.slice(2);
+${prologue}
+const args=process.argv.slice(2);
 const scoped=args.includes('-p');const requested=scoped?args[args.indexOf('-p')+1].split(',').map(Number):[];
-const log=${JSON.stringify(log)};
+const log=fixture.log;
 const whole=(fs.existsSync(log)?fs.readFileSync(log,'utf8').split('\\n').filter((read)=>read==='whole').length:0)+(scoped?0:1);
 fs.appendFileSync(log,(scoped?'scoped':'whole')+'\\n');
 const entry=(pid,path)=>'p'+pid+'\\0\\nfcwd\\0tDIR\\0n'+path+'\\0\\n';
-let catalog=scoped?'':entry(${process.pid},'/');
+let catalog=scoped?'':entry(fixture.runner,'/');
 ${scripts.lsof}
 process.stdout.write(catalog);
 `,
@@ -1557,10 +1612,14 @@ process.stdout.write(catalog);
             const resident = spawnResident(residentCwd);
             // The resident is listed before the first catalog, and scoped reads never list it,
             // so only a later whole catalog can cover it.
-            const { bin, reads } = darwinCensusFixture(root, {
-                listed: `[${resident}]`,
-                lsof: `if(!scoped&&!${persistent}&&whole>1)catalog+=entry(${resident},${JSON.stringify(residentCwd)});`,
-            });
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { resident, residentCwd, persistent },
+                {
+                    listed: '[fixture.resident]',
+                    lsof: 'if(!scoped&&!fixture.persistent&&whole>1)catalog+=entry(fixture.resident,fixture.residentCwd);',
+                }
+            );
             const startedAt = Date.now();
             const state = await withCensusPath(bin, () =>
                 storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
@@ -1597,10 +1656,14 @@ process.stdout.write(catalog);
             const second = spawnResident(outside);
             // Odd whole catalogs omit the first resident, even ones the second; together they
             // cover both, but no single catalog does.
-            const { bin, reads } = darwinCensusFixture(root, {
-                listed: `[${first},${second}]`,
-                lsof: `if(!scoped)catalog+=entry(whole%2===1?${second}:${first},${JSON.stringify(outside)});`,
-            });
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { first, second, outside },
+                {
+                    listed: '[fixture.first,fixture.second]',
+                    lsof: 'if(!scoped)catalog+=entry(whole%2===1?fixture.second:fixture.first,fixture.outside);',
+                }
+            );
             const state = await withCensusPath(bin, () =>
                 storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
             );
@@ -1626,13 +1689,14 @@ process.stdout.write(catalog);
             const resident = spawnResident(residentCwd);
             const scopedRead =
                 scoped === 'failure'
-                    ? `if(scoped){process.stderr.write('lsof: inspection denied\\n');process.exit(1)}`
-                    : `if(scoped&&requested.includes(${resident}))catalog+=entry(${resident},${JSON.stringify(residentCwd)});`;
+                    ? "if(scoped){process.stderr.write('lsof: inspection denied\\n');process.exit(1)}"
+                    : 'if(scoped&&requested.includes(fixture.resident))catalog+=entry(fixture.resident,fixture.residentCwd);';
             // The resident first appears after the opening process list, and no whole catalog lists it.
-            const { bin, reads } = darwinCensusFixture(root, {
-                listed: `call>1?[${resident}]:[]`,
-                lsof: scopedRead,
-            });
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { resident, residentCwd },
+                { listed: 'call>1?[fixture.resident]:[]', lsof: scopedRead }
+            );
             const state = await withCensusPath(bin, () =>
                 storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
             );
@@ -1662,15 +1726,19 @@ process.stdout.write(catalog);
             const resident = spawnResident(storage.tempDirectory);
             const replies = {
                 failed: 'process.exit(1)',
-                foreign: `process.stdout.write('0 S\\n');process.exit(0)`,
-                undetermined: `process.stdout.write('${process.getuid?.()} ?\\n');process.exit(0)`,
+                foreign: "process.stdout.write('0 S\\n');process.exit(0)",
+                undetermined: "process.stdout.write(process.getuid()+' ?\\n');process.exit(0)",
             };
             // Whole catalogs never list the resident; a scoped read shows its storage cwd.
-            const { bin, reads } = darwinCensusFixture(root, {
-                listed: `[${resident}]`,
-                sample: `if(args[0]==='-p'&&args[1]==='${resident}'){${replies[sample]}}`,
-                lsof: `if(scoped&&requested.includes(${resident}))catalog+=entry(${resident},${JSON.stringify(storage.tempDirectory)});`,
-            });
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { resident, temp: storage.tempDirectory },
+                {
+                    listed: '[fixture.resident]',
+                    sample: `if(args[0]==='-p'&&args[1]===String(fixture.resident)){${replies[sample]}}`,
+                    lsof: 'if(scoped&&requested.includes(fixture.resident))catalog+=entry(fixture.resident,fixture.temp);',
+                }
+            );
             const state = await withCensusPath(bin, () =>
                 storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
             );
@@ -1694,18 +1762,15 @@ process.stdout.write(catalog);
         'skips an omitted process that exits before its state sample only on exact absence',
         async () => {
             const root = fixture();
-            const bin = join(root, 'bin');
             const pidPath = join(root, 'resident.pid');
-            const count = join(root, 'catalog-count');
-            mkdirSync(bin, { mode: 0o700 });
-            writeFileSync(join(bin, 'package.json'), '{}\n', { mode: 0o600 });
             const storage = ownedStorage(join(root, 'storage'));
             // A detached grandchild is reaped by launchd once killed, so its exit yields exact ESRCH.
             const launcher = spawn(
                 process.execPath,
                 [
                     '-e',
-                    `const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});child.unref();require('node:fs').writeFileSync(${JSON.stringify(pidPath)},String(child.pid))`,
+                    "const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});child.unref();require('node:fs').writeFileSync(process.argv[1],String(child.pid))",
+                    pidPath,
                 ],
                 { stdio: 'ignore' }
             );
@@ -1716,43 +1781,27 @@ process.stdout.write(catalog);
             const residentPid = Number(readFileSync(pidPath, 'utf8'));
             childPids.add(residentPid);
             // The state sample for the omitted resident kills it and reports ps's missing-PID failure.
-            writeFileSync(
-                join(bin, 'ps'),
-                `#!${process.execPath}
-const {execFileSync}=require('node:child_process');
-const args=process.argv.slice(2);
-if(args[0]==='-p'&&args[1]==='${residentPid}'){
- process.kill(${residentPid},'SIGKILL');
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { resident: residentPid },
+                {
+                    listed: '[fixture.resident]',
+                    sample: `if(args[0]==='-p'&&args[1]===String(fixture.resident)){
+ process.kill(fixture.resident,'SIGKILL');
  const deadline=Date.now()+3000;
- while(Date.now()<deadline){try{process.kill(${residentPid},0)}catch(error){if(error.code==='ESRCH')process.exit(1)}Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
+ while(Date.now()<deadline){try{process.kill(fixture.resident,0)}catch(error){if(error.code==='ESRCH')process.exit(1)}Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  process.exit(2);
-}
-const census=args[0]==='-axo'?['-p','${process.pid},${residentPid}','-o','pid=,uid=']:args;
-process.stdout.write(execFileSync('/bin/ps',census,{encoding:'utf8'}));
-`,
-                { mode: 0o700 }
-            );
-            writeFileSync(
-                join(bin, 'lsof'),
-                `#!${process.execPath}
-const fs=require('node:fs');
-const countPath=${JSON.stringify(count)};
-fs.writeFileSync(countPath,String(fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8'))+1:1));
-process.stdout.write('p${process.pid}\\0\\nfcwd\\0tDIR\\0n/\\0\\n');
-`,
-                { mode: 0o700 }
+}`,
+                    lsof: '',
+                }
             );
             const reasons: string[] = [];
-            const previousPath = process.env.PATH;
-            process.env.PATH = `${bin}:${previousPath}`;
-            try {
-                const state = storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason));
-                expect(state, reasons.join('; ')).toBe('dead');
-                expect(Number(readFileSync(count, 'utf8'))).toBe(1);
-                expect(isAlive(residentPid)).toBe(false);
-            } finally {
-                process.env.PATH = previousPath;
-            }
+            const state = await withCensusPath(bin, () =>
+                storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+            );
+            expect(state, reasons.join('; ')).toBe('dead');
+            expect(reads()).toEqual(['whole']);
+            expect(isAlive(residentPid)).toBe(false);
         },
         20_000
     );
@@ -1798,43 +1847,58 @@ process.stdout.write('p${process.pid}\\0\\nfcwd\\0tDIR\\0n/\\0\\n');
             const utility = join(bin, 'lsof');
             writeFileSync(
                 utility,
-                `#!${process.execPath}\nimport {execFileSync} from 'node:child_process';import {readFileSync} from 'node:fs';const {path,type}=JSON.parse(readFileSync(${JSON.stringify(catalogPath)},'utf8'));const args=process.argv.slice(2);const requested=args.includes('-p')?args[args.indexOf('-p')+1].split(',').map(Number):undefined;const users=execFileSync('ps',['-axo','pid=,uid='],{encoding:'utf8'});for(const row of users.trim().split('\\n')){const [pid,uid]=row.trim().split(/\\s+/).map(Number);if(uid===process.getuid()&&(requested===undefined||requested.includes(pid)))process.stdout.write('p'+pid+'\\0\\nffp.\\0t'+type+'\\0n'+path+'\\0\\n')}\n`,
+                `#!${process.execPath}\nimport {execFileSync} from 'node:child_process';import {readFileSync} from 'node:fs';const {path,type}=JSON.parse(readFileSync(new URL('../catalog.json',import.meta.url),'utf8'));const args=process.argv.slice(2);const requested=args.includes('-p')?args[args.indexOf('-p')+1].split(',').map(Number):undefined;const users=execFileSync('ps',['-axo','pid=,uid='],{encoding:'utf8'});for(const row of users.trim().split('\\n')){const [pid,uid]=row.trim().split(/\\s+/).map(Number);if(uid===process.getuid()&&(requested===undefined||requested.includes(pid)))process.stdout.write('p'+pid+'\\0\\nffp.\\0t'+type+'\\0n'+path+'\\0\\n')}\n`,
                 { mode: 0o700 }
             );
             const resultPath = join(root, 'result.json');
             const diagnosticPath = join(root, 'proof-diagnostic.json');
+            const config = {
+                storageModule: storagePath,
+                guardModule: guardPath,
+                root: join(root, 'storage'),
+                fixtureRoot: root,
+                catalogPath,
+                resultPath,
+                diagnosticPath,
+                token: randomUUID(),
+                owner: fakeOwner,
+                reclaimer: fakeReclaimer,
+                payload,
+                type,
+            };
             const program = `
+                const config=JSON.parse(process.argv[1]);
                 const {writeFileSync,existsSync}=await import('node:fs');
                 const {join}=await import('node:path');
-                const {createGuardStorage,reclaimGuardStorage,recoverGuardStorage}=await import(${JSON.stringify(storagePath)});
-                const {storageFileState}=await import(${JSON.stringify(guardPath)});
-                const root=${JSON.stringify(join(root, 'storage'))};
+                const {createGuardStorage,reclaimGuardStorage,recoverGuardStorage}=await import(config.storageModule);
+                const {storageFileState}=await import(config.guardModule);
+                const root=config.root;
                 const reasons=[];const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
-                writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path:${JSON.stringify(root)},type:'REG'}));
-                const storage=createGuardStorage({root,token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
+                writeFileSync(config.catalogPath,JSON.stringify({path:config.fixtureRoot,type:'REG'}));
+                const storage=createGuardStorage({root,token:config.token,owner:config.owner,ports});
                 let current=storage.tempDirectory;
-                if(${JSON.stringify(payload)}==='moved claim') {
+                if(config.payload==='moved claim') {
                     const {readFileSync,readdirSync}=await import('node:fs');
                     const {dirname}=await import('node:path');
                     let checks=0;
                     const owner=JSON.parse(readFileSync(join(dirname(current),'owner.json'),'utf8'));
-                    if(await reclaimGuardStorage({root,owner,reclaimer:${JSON.stringify(fakeReclaimer)},canRemove:()=>checks++===0}))throw Error('claim unexpectedly removed');
+                    if(await reclaimGuardStorage({root,owner,reclaimer:config.reclaimer,canRemove:()=>checks++===0}))throw Error('claim unexpectedly removed');
                     const claims=join(root,'.claims');const claim=join(claims,readdirSync(claims)[0]);
                     current=join(claim,readdirSync(claim).find(name=>name!=='claim.json'),'tmp');
                 }
-                const path=${JSON.stringify(payload)}==='outside'?${JSON.stringify(root)}:${JSON.stringify(type)}==='DIR'?current:join(current,'held');
-                writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path,type:${JSON.stringify(type)}}));
+                const path=config.payload==='outside'?config.fixtureRoot:config.type==='DIR'?current:join(current,'held');
+                writeFileSync(config.catalogPath,JSON.stringify({path,type:config.type}));
                 const state=storageFileState([storage.tempDirectory,current],[]);
                 let released;
-                if(${JSON.stringify(payload)}==='moved claim'){await recoverGuardStorage(root,ports,${JSON.stringify(fakeReclaimer)});released=!existsSync(current)}
+                if(config.payload==='moved claim'){await recoverGuardStorage(root,ports,config.reclaimer);released=!existsSync(current)}
                 else released=await storage.release(true);
                 const retained=existsSync(current);
-                writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path:${JSON.stringify(root)},type:'REG'}));
-                await recoverGuardStorage(root,ports,${JSON.stringify(fakeReclaimer)});
-                writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({state,released,retained,reclaimed:!existsSync(current)}));
-                writeFileSync(${JSON.stringify(diagnosticPath)},JSON.stringify(reasons));
+                writeFileSync(config.catalogPath,JSON.stringify({path:config.fixtureRoot,type:'REG'}));
+                await recoverGuardStorage(root,ports,config.reclaimer);
+                writeFileSync(config.resultPath,JSON.stringify({state,released,retained,reclaimed:!existsSync(current)}));
+                writeFileSync(config.diagnosticPath,JSON.stringify(reasons));
             `;
-            const supervisor = spawn(process.execPath, ['--input-type=module', '-e', program], {
+            const supervisor = spawn(process.execPath, ['--input-type=module', '-e', program, JSON.stringify(config)], {
                 cwd: root,
                 stdio: 'ignore',
                 env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
@@ -1914,7 +1978,8 @@ process.stdout.write('p${process.pid}\\0\\nfcwd\\0tDIR\\0n/\\0\\n');
                 command: process.execPath,
                 args: [
                     '-e',
-                    `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({tmp:require('node:os').tmpdir()}))`,
+                    "require('node:fs').writeFileSync(process.argv[1],JSON.stringify({tmp:require('node:os').tmpdir()}))",
+                    marker,
                 ],
                 profile: 'focused',
                 availableMemoryBytes: abundantMemoryBytes,
@@ -1923,15 +1988,10 @@ process.stdout.write('p${process.pid}\\0\\nfcwd\\0tDIR\\0n/\\0\\n');
                 storageRoot: join(root, 'storage'),
                 diskReserveBytes: 1,
             };
-            const supervisor = spawn(
-                process.execPath,
-                [
-                    '--input-type=module',
-                    '-e',
-                    `const {writeFileSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(resultPath)},JSON.stringify(result));`,
-                ],
-                { stdio: 'ignore', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } }
-            );
+            const supervisor = spawn(process.execPath, supervisorArgs(options, resultPath), {
+                stdio: 'ignore',
+                env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+            });
             if (supervisor.pid === undefined) {
                 throw new Error('file census supervisor did not start');
             }
@@ -2106,11 +2166,10 @@ process.stdout.write('p${process.pid}\\0\\nfcwd\\0tDIR\\0n/\\0\\n');
         const foreign = join(root, 'foreign');
         mkdirSync(foreign);
         writeFileSync(join(foreign, 'keep'), 'foreign');
-        const code = `const { recoverGuardStorage } = await import(${JSON.stringify(storagePath)}); recoverGuardStorage(${JSON.stringify(root)}, { identityState: (identity) => { if (identity.pid === ${fakeOwner.pid}) return 'dead'; try { process.kill(identity.pid, 0); return 'alive'; } catch { return 'dead'; } }, sessionState: () => 'dead' }, { pid: process.pid, startedAt: 'test-reclaimer' });`;
-        const children: ChildProcess[] = [
-            spawn(process.execPath, ['--input-type=module', '-e', code]),
-            spawn(process.execPath, ['--input-type=module', '-e', code]),
-        ];
+        const code =
+            "const [storageModule, root, ownerPid] = process.argv.slice(1); const { recoverGuardStorage } = await import(storageModule); recoverGuardStorage(root, { identityState: (identity) => { if (identity.pid === Number(ownerPid)) return 'dead'; try { process.kill(identity.pid, 0); return 'alive'; } catch { return 'dead'; } }, sessionState: () => 'dead' }, { pid: process.pid, startedAt: 'test-reclaimer' });";
+        const scavenger = ['--input-type=module', '-e', code, storagePath, root, String(fakeOwner.pid)];
+        const children: ChildProcess[] = [spawn(process.execPath, scavenger), spawn(process.execPath, scavenger)];
         const exits = await Promise.all(
             children.map(
                 (child) =>
