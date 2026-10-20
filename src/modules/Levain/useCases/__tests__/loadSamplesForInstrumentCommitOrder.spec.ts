@@ -301,7 +301,7 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
         await expect(bridge.loadSamplesForInstrument(deviceId, 'trumpet')).resolves.toBe('ready');
         expect(levainStore.value?.[deviceId]?.loadedMicPositions).toEqual([null, 'room']);
         expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'addZone', micId: 1 }));
-        expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'commitSampleBank', numMics: 2 }));
+        expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'reserveZoneTables', numMics: 2 }));
 
         device.setParam.mockClear();
         bridge.setMacroWithAudio(deviceId, 4, 0.6);

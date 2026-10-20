@@ -23,6 +23,9 @@ const buildZoneTables = vi.fn(
     }
 );
 
+/** Table chunks a load of the fake builder's tables posts: one LUT chunk and one arena chunk. */
+const FAKE_TABLE_CHUNKS = 2;
+
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
@@ -747,12 +750,14 @@ describe('loadInstrumentFromManifest', () => {
             }, 5000);
 
             it('passes on a credit granted to a waiter in the turn the waiter is aborted', async () => {
-                // A holder that posted exactly the limit and then waits on its
-                // commit, a waiter queued behind it, and a credit freed in the
+                // A holder that posted exactly the limit (its sample chunks and
+                // its zone-table chunks) and then waits on its commit, a waiter queued behind it, and a credit freed in the
                 // same turn the waiter is aborted.
                 const holderData = new Float32Array(
                     new SharedArrayBuffer(
-                        LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT * LEVAIN_SAMPLE_CHUNK_FLOATS * Float32Array.BYTES_PER_ELEMENT
+                        (LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT - FAKE_TABLE_CHUNKS) *
+                            LEVAIN_SAMPLE_CHUNK_FLOATS *
+                            Float32Array.BYTES_PER_ELEMENT
                     )
                 );
                 vi.mocked(fetchAndDecode).mockResolvedValueOnce({
@@ -801,7 +806,9 @@ describe('loadInstrumentFromManifest', () => {
                 async (terminal) => {
                     const holderData = new Float32Array(
                         new SharedArrayBuffer(
-                            LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT * LEVAIN_SAMPLE_CHUNK_FLOATS * Float32Array.BYTES_PER_ELEMENT
+                            (LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT - FAKE_TABLE_CHUNKS) *
+                            LEVAIN_SAMPLE_CHUNK_FLOATS *
+                            Float32Array.BYTES_PER_ELEMENT
                         )
                     );
                     vi.mocked(fetchAndDecode).mockResolvedValueOnce({
