@@ -20,6 +20,7 @@ export { secondsBetweenBeats } from './secondsBetweenBeats';
 export { restoreTransportSnapshot } from './restoreTransportSnapshot';
 export { restoreTimelineMapSnapshot } from './restoreTimelineMapSnapshot';
 export { projectPpqEndpoints } from './projectPpqEndpoints';
+export { beatAtSecondsFromAnchor } from './playheadScheduler/beatAtSecondsFromAnchor';
 export { createMusicalPositionProjector } from './createMusicalPositionProjector';
 export { createSamplePositionProjector } from './createSamplePositionProjector';
 

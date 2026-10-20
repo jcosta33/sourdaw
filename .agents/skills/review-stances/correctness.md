@@ -82,6 +82,36 @@ Keep same-envelope point duplicates, global track/clip/device collisions, and
 repeated arrangement IDs repair-required; only canonical gain point rows have
 this local scope.
 
+### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
+
+The orchestrator packet prescribed the requested beat-four anchor without tracing
+`resolveHistoryAwareRenderContext`, which expands bounded renders to beat zero for device
+history. The resulting moving-layer inverse sampled the crop's future during warmup and
+lost the fade in the retained crop; its positive-compensation seed also used the wrong beat.
+This was a dispatch-origin error as well as an implementation and review gap.
+
+Trace the actual render origin through history expansion before prescribing an anchor.
+Require terminal gain and pan writes to match a whole render on both sides of the crop under
+a tempo ramp. Add a layer whose beat-zero value differs from its requested-start value,
+and prove positive compensation changes only write times while its zero-time seed uses the
+actual render origin. Keep crop selection distinct from the scheduling clock.
+
+### 2026-10-11 — offline modulation retained a second tempo inverse (#5209, exposed by #5243)
+
+PR #5209 (`54ff77cd1`) sampled modulation and moving adjustment layers through a private,
+step-only seconds-to-beat helper with inverted units. PR #5243's Transport ramp integration
+removed the modulation caller's `defaultTempo` and `projectBeat` aliases at its actual landing
+(`83a92c4005`), leaving a runtime ReferenceError as well as ramp and subregion drift.
+The historical reviewer prompts and tiers are unestablished; the missed probe is established.
+
+Trace both projection directions from captured tempo state to every terminal binding: AudioParam,
+segment writer and curve writer, with track, clip and absent automation lanes. Drive a flat tempo
+and a linear ramp from a nonzero region anchor; independently integrate the ramp and require the
+actual delivered value, quantisation, slew and compensated write clock. Include both moving-layer
+schedulers and both stem branches. Replacing the Transport inverse or losing the region anchor
+must fail the terminal-output cases. Require the inverse only for moving consumers so lane-only
+native recorders remain valid, and preserve native refusal of enabled modulation and layers.
+
 ### 2026-09-28 — elapsed cohort timeout retired progressing instruments (introduced in `9783731236`; exposed after PR #3982)
 
 The 10-second `waitForDevices` deadline measured the whole cohort from wait entry, even while Levain decoded files continued to complete. A cold 161-file bank with five consumers therefore timed out after 39 files and rolled back all five live nodes. The method also returned `void` after timeout, so a committed demo/template could appear ready without usable instruments. The timeout commit is associated with PR #2035, but that association does not prove its readiness policy was reviewed there. PR #3982 deliberately fixed cohort isolation and explicitly deferred progress and caller outcomes to #3318; do not charge its bounded review with that missing promise.
@@ -569,3 +599,32 @@ For a batch-admitted restored clip preceding a split, compare captured IDs with 
 IDs before reloading and replaying twice; a live execution that remints a preflight capture is not
 replay-stable. Draw is singleton-only, so a rejected draw/split batch proves admission, not prefix
 execution. Read executable entries from the full history owner rather than its label-only UI view.
+
+### 2026-10-12 — near-zero tempo identity escape (PR #5199)
+
+Commit `77f11923e6bb9906c14d84d3709dac4c97dd5a61` relocated the projected opening
+boundary to zero but lost the selected authored governing beat. Three instant changes at
+`2e-7`, `4e-7`, `6e-7` beats with 90, 120, 160 BPM projected a 90 BPM tail instead of 160.
+Public review `5472288669` flagged the opening fold without a case; final review
+`5474617910` missed multiple positive changes in the origin bucket. Missing input coverage
+is established; private prompt and tier are unavailable.
+
+Relocate the engine coordinate independently of authored tempo identity. Probe several distinct
+values within the origin tolerance, both with an exact-zero member and entirely positive starts;
+require the last value to govern the terminal segment. Separately preserve each sampled ramp
+boundary's beat integral and final tail. Restoring the zero-coordinate lookup must fail the
+cluster cases without requiring a renderer sample rate.
+
+### 2026-10-11 — warning-only Faust failure produced an incomplete musician export (#5215)
+
+PR #841 (`4edbe587b`) established the construction-error split: unsupported claimed devices refused,
+but runtime factory failures warned and omitted the device. Its Faust case asserted that omission;
+the dialog's warning case asserted success over a returned buffer. The historical stance dispatch
+is unverified. The missing failure mode was an admitted, audible device failing after admission.
+
+Inject a real Faust factory rejection through the musician mixdown's strip and chain, require a
+named track/device refusal with no buffer, then require the dialog to perform no encode, write or
+download. Exercise grouped stem strips and auxiliary detector keys; a refusal must invalidate the
+whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
+and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
+later runtime load failure.
