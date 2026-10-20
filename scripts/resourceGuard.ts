@@ -1397,6 +1397,7 @@ export function storageFileState(
             return unknown(pids);
         }
         if (platform() === 'darwin') {
+            let pidGapReplacementUsed = false;
             for (let observation = 0; observation < 3; observation += 1) {
                 if (Date.now() >= deadline) {
                     return unknown('file-census-time-bound');
@@ -1463,9 +1464,10 @@ export function storageFileState(
                 if (Date.now() >= deadline) {
                     return unknown('lsof-coverage-time-bound');
                 }
-                if (observation === 0 && missing.length > 0 && onlyNewLivePids) {
-                    // Discard the stale catalog only once. The third observation
-                    // is reserved for a missing descriptor type, never PID churn.
+                if (observation < 2 && !pidGapReplacementUsed && missing.length > 0 && onlyNewLivePids) {
+                    // Replace one stale catalog independently of descriptor omissions.
+                    // Both causes share the same three-observation limit and deadline.
+                    pidGapReplacementUsed = true;
                     continue;
                 }
                 const snapshots = missing.slice(0, 4);
