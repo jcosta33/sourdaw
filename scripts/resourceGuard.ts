@@ -1383,6 +1383,9 @@ export function storageFileState(
                 timeout: Math.max(1, deadline - Date.now()),
                 maxBuffer: 16 * 1024 * 1024,
             });
+            if ((users.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT') {
+                return 'file-census-time-bound';
+            }
             if (users.status !== 0 || users.stderr !== '') {
                 return 'process-users-unavailable';
             }
