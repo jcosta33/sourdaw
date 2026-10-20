@@ -1,6 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
+import { midiStore } from '../../../stores/midiStore';
+import { addPitchBend } from '../../midiEvent/addPitchBend';
 
 const mpe_enabled = vi.hoisted(() => ({ value: true }));
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
@@ -57,6 +61,10 @@ function make_dependencies(
 ): HandleWebMidiPitchBendDependencies {
     return {
         getSynthParamsForTrack: () => ({ detune: 5 }),
+        getTransportStoreValue: () => ({ isRecording: false, overdubEnabled: false, isLooping: false, tempo: 120 }),
+        getTrackStoreState: () => ({ tracks: [], selectedTrackId: null }),
+        getCompensationDelay: () => 0,
+        addPitchBend,
         ...overrides,
     };
 }
@@ -408,5 +416,121 @@ describe('handleWebMidiPitchBend', () => {
         expect(() => fn(0, 127, 127)).not.toThrow();
         // The note WITH an osc is still retuned.
         expect(set_target).toHaveBeenCalledTimes(1);
+    });
+
+    describe('recording into the take', () => {
+        const RECORDING_CLIP_ID = 'clip-rec';
+
+        const recording_dependencies = (
+            overrides: Partial<HandleWebMidiPitchBendDependencies> = {}
+        ): HandleWebMidiPitchBendDependencies =>
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            armed: true,
+                            devices: [],
+                            clips: [
+                                { id: RECORDING_CLIP_ID, type: 'midi', startBeat: 4, endBeat: 12, midiOffsetBeats: 0 },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({
+                    isRecording: true,
+                    overdubEnabled: false,
+                    isLooping: false,
+                    tempo: 120,
+                }),
+                getCompensationDelay: () => 0,
+                addPitchBend,
+                ...overrides,
+            });
+
+        /** An event admitted at a timeline beat, as the dispatcher stamps a recording take's events. */
+        const at_beat = (recordingBeat: number) => ({ audioTime: 2, recordingBeat });
+
+        const recorded_rows = () =>
+            (midiStore.value?.pitchBendByClipId[RECORDING_CLIP_ID] ?? []).map(({ value, beat, channel }) => ({
+                value,
+                beat,
+                channel,
+            }));
+
+        beforeEach(() => {
+            tempoMapStore.set({ changes: [] });
+            midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        });
+
+        afterEach(() => {
+            tempoMapStore.set({ changes: [] });
+        });
+
+        it('records a non-MPE bend as the signed wire delta at its clip-relative beat', () => {
+            mpe_enabled.value = false;
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
+
+            // Full bend up is wire position 16383 (lsb 127, msb 127); the centre is 8192 (lsb 0, msb 64).
+            fn(0, 127, 127, at_beat(6));
+            fn(0, 0, 64, at_beat(7));
+
+            expect(recorded_rows()).toEqual([
+                { value: 8191, beat: 2, channel: 0 },
+                { value: 0, beat: 3, channel: 0 },
+            ]);
+        });
+
+        it('records a full bend down as -8192 on the channel it arrived on', () => {
+            mpe_enabled.value = false;
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
+
+            fn(5, 0, 0, at_beat(6));
+
+            expect(recorded_rows()).toEqual([{ value: -8192, beat: 2, channel: 5 }]);
+        });
+
+        it('records nothing while the transport is not recording', () => {
+            mpe_enabled.value = false;
+            const fn = handleWebMidiPitchBend._factory(
+                recording_dependencies({
+                    getTransportStoreValue: () => ({
+                        isRecording: false,
+                        overdubEnabled: false,
+                        isLooping: false,
+                        tempo: 120,
+                    }),
+                })
+            );
+
+            fn(0, 127, 127, at_beat(6));
+
+            expect(midiStore.value?.pitchBendByClipId).toEqual({});
+        });
+
+        it('keeps an MPE member-channel bend as per-note data and records the master channel bend', () => {
+            mpe_enabled.value = true;
+            const key = createWebMidiNoteKey(2, 64);
+            activeNotes.set(key, {
+                channel: 2,
+                note: 64,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(2, key);
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
+
+            fn(2, 0, 96, at_beat(6));
+
+            expect(midiStore.value?.pitchBendByClipId).toEqual({});
+            expect(activeNotes.get(key)?.pitchBend).toBe(4096);
+
+            fn(0, 0, 96, at_beat(6));
+
+            expect(recorded_rows()).toEqual([{ value: 4096, beat: 2, channel: 0 }]);
+        });
     });
 });

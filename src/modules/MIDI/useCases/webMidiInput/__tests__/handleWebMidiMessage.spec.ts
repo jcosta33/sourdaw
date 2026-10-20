@@ -372,4 +372,27 @@ describe('handleWebMidiMessage', () => {
             });
         }
     });
+
+    it("stamps a recording take's controller and bend with the beat of their own arrival", () => {
+        const previous = transportStore.value;
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 7.95 });
+        playheadPositionRef.current = 7.95;
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => 3.5,
+        });
+        try {
+            handleWebMidiMessage(midi_event([0xb3, 64, 127]));
+            handleWebMidiMessage(midi_event([0xe2, 0, 96]));
+
+            expect(handle_cc).toHaveBeenCalledWith(3, 64, 127, { audioTime: 2, recordingBeat: 3.5 });
+            expect(handle_pitch_bend).toHaveBeenCalledWith(2, 0, 96, { audioTime: 2, recordingBeat: 3.5 });
+        } finally {
+            transportStore.set(previous);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => audio_clock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
+        }
+    });
 });
