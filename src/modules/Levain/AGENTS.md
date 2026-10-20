@@ -11,7 +11,7 @@ Orchestral multi-sample acoustic instrument engine (strings, brass, woodwinds, p
 
 ## Key Subsystems
 
-- **Sample Bank Loader** (`repositories/sampleLoader/`): Remote manifest parser (`sampleManifest.ts`), multi-microphone audio fetcher, and background decoder (`loadInstrumentFromManifest`, `createDecodedBankResource`).
+- **Sample Bank Loader** (`repositories/sampleLoader/`): Remote manifest parser (`sampleManifest.ts`), multi-microphone audio fetcher, and background decoder (`loadInstrumentFromManifest`, `createDecodedBankResource`). The loader never asks the worklet to build zone tables: it takes them from an injected builder (`autoLoadLevainSamples` passes AudioEngine's `buildLevainZoneTables`, a Worker) and stages them in bounded chunks on every route that loads a bank, live and offline alike.
 - **Instrument Catalog** (`models/LevainPatch.ts`): Source-of-truth instrument IDs (`INSTRUMENT_IDS`), articulation mappings, dynamic velocity layers, and microphone position mixes (close, tree, ambient).
 - **Param Bridge** (`useCases/levainParamBridge/`): Registers device instances with the AudioEngine node, synchronizes macro controls, and prepares offline render state (`prepareOfflineLevain`).
 - **Store & State** (`stores/levainStore.ts`): Reactive state for active instrument selection, articulation switches, and download/decoding readiness.
