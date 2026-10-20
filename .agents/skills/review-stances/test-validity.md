@@ -324,6 +324,12 @@ five-second deadline. Assert observation counts and remaining command timeouts. 
 controlled census with real owned release and borrower retention; a parser result alone
 does not prove deletion. Reverting the bounded admission must fail the release case.
 
+Probe two successive exclusively new, same-UID live PID gaps, then require a third wholly
+complete catalog to release real owned storage. A protected borrower in that third catalog
+must veto deletion; another new PID there must retain storage. Keep a prior missing PID
+present in the next pre-sample as a refusal, and assert the shared three-observation and
+original five-second bounds on every path.
+
 An earlier `dead` sample does not bind a later startup recovery: a new uncovered live PID
 can make that later census `unknown` while the new run itself succeeds. Require retention
 only for the exact later PID-coverage diagnostic, reject other unexpected diagnostics,
