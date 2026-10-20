@@ -1447,7 +1447,7 @@ export function storageFileState(
                     return currentPids === 'file-census-time-bound' ? expired() : unknown(currentPids);
                 }
                 const missing: string[] = [];
-                let onlyLiveSameUidPids = true;
+                let onlySameUidPids = true;
                 for (const pid of new Set([...pids, ...currentPids])) {
                     if (census.pids.has(pid) || processIsGone(pid)) {
                         continue;
@@ -1465,7 +1465,8 @@ export function storageFileState(
                     if (snapshot === undefined && processIsGone(pid)) {
                         continue;
                     }
-                    onlyLiveSameUidPids &&= snapshot?.uid === uid && ['R', 'S', 'I', 'T', 'U'].includes(snapshot.state);
+                    // Any same-UID state, including ps's undetermined `?`, only earns a fresh catalog.
+                    onlySameUidPids &&= snapshot?.uid === uid;
                     missing.push(`${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
                 }
                 if (Date.now() >= deadline) {
@@ -1475,7 +1476,7 @@ export function storageFileState(
                     return 'dead';
                 }
                 uncovered = `lsof-live-pid-missing:count=${missing.length}:pid/uid/state=${missing.slice(0, 4).join(',')}`;
-                if (!onlyLiveSameUidPids) {
+                if (!onlySameUidPids) {
                     return unknown(uncovered);
                 }
                 // lsof can omit a live same-UID process, or finish before one is born.

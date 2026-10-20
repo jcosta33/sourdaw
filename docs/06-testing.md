@@ -748,9 +748,11 @@ File inspection checks same-UID process coverage again after reading files, so a
 during inspection cannot disappear from the proof. On Linux, a newly listed live same-UID process
 permits one complete replacement inspection of the full fresh process list, within at most two
 observations. On macOS, `lsof` races the processes it reads: a descriptor that closes between field
-reads leaves an otherwise valid catalog missing only its type, and a positively live same-UID
-process, whether newborn or already listed, can be absent from a catalog that lists it moments
-later. Either catalog is discarded for a wholly fresh catalog and process list, repeated until one
+reads leaves an otherwise valid catalog missing only its type, and a live same-UID process,
+whether newborn or already listed and in any sampled state including `ps`'s undetermined `?`, can
+be absent from a catalog that lists it moments later. A process that exits before its sample is
+skipped only on exact absence; an omitted process with another or unsampled UID retains storage at
+once. Either race catalog is discarded for a wholly fresh catalog and process list, repeated until one
 is complete or the five-second proof deadline expires. Catalogs are never merged, and a deadline
 reached without a complete catalog retains storage with the last omission as its reason. Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
 identity, malformed catalog, denied inspection or unavailable evidence retains storage. Processes created after the final proof remain outside
