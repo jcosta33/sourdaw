@@ -1109,6 +1109,53 @@ function killedByTimeout(error: Error | undefined): boolean {
     return error !== undefined && 'code' in error && error.code === 'ETIMEDOUT';
 }
 
+type ScopedFileState =
+    | { kind: 'alive' }
+    | { kind: 'uncovered'; pids: number[] }
+    | { kind: 'expired' }
+    | { kind: 'unavailable'; reason: string };
+
+// Reads only the processes a whole catalog missed. A PID absent from a usable read stays
+// uncovered unless exact ESRCH proves it gone; any other failure leaves the proof unavailable.
+function scopedDarwinFileState(
+    pids: number[],
+    uid: number,
+    tempDirectories: string[],
+    deadline: number
+): ScopedFileState {
+    const result = spawnSync('lsof', ['-nP', '-F0pfnt', '-a', '-u', String(uid), '-p', pids.join(',')], {
+        encoding: 'utf8',
+        timeout: Math.max(1, deadline - Date.now()),
+        maxBuffer: 16 * 1024 * 1024,
+    });
+    if (killedByTimeout(result.error)) {
+        return { kind: 'expired' };
+    }
+    // lsof exits 1 without diagnostics when a selected PID no longer exists.
+    if ((result.status !== 0 && result.status !== 1) || result.stderr !== '') {
+        return { kind: 'unavailable', reason: 'lsof-scoped-command-unavailable' };
+    }
+    let parseReason = 'unclassified';
+    const census =
+        result.stdout === ''
+            ? { pids: new Set<number>(), paths: [] }
+            : parseLsofCensus(result.stdout, (reason) => {
+                  parseReason = reason;
+              });
+    if (census === undefined) {
+        return parseReason === 'descriptor-type-missing'
+            ? { kind: 'uncovered', pids }
+            : { kind: 'unavailable', reason: `lsof-scoped-fields-unusable:${parseReason}` };
+    }
+    if ([...census.pids].some((pid) => !pids.includes(pid))) {
+        return { kind: 'unavailable', reason: 'lsof-scoped-unrequested-pid' };
+    }
+    if (census.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
+        return { kind: 'alive' };
+    }
+    return { kind: 'uncovered', pids: pids.filter((pid) => !census.pids.has(pid) && !processIsGone(pid)) };
+}
+
 function processFileSnapshot(pid: number, timeout: number): { uid: number; state: string } | undefined {
     const result = spawnSync('ps', ['-p', String(pid), '-o', 'uid=,stat='], {
         encoding: 'utf8',
@@ -1450,7 +1497,7 @@ export function storageFileState(
                 if (typeof currentPids === 'string') {
                     return currentPids === 'file-census-time-bound' ? expired() : unknown(currentPids);
                 }
-                const missing: string[] = [];
+                const missing = new Map<number, string>();
                 let onlySameUidPids = true;
                 for (const pid of new Set([...pids, ...currentPids])) {
                     if (census.pids.has(pid) || processIsGone(pid)) {
@@ -1469,22 +1516,43 @@ export function storageFileState(
                     if (snapshot === undefined && processIsGone(pid)) {
                         continue;
                     }
-                    // Any same-UID state, including ps's undetermined `?`, only earns a fresh catalog.
+                    // Any same-UID state, including ps's undetermined `?`, earns inspection, never a skip.
                     onlySameUidPids &&= snapshot?.uid === uid;
-                    missing.push(`${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
+                    missing.set(pid, `${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
                 }
                 if (Date.now() >= deadline) {
                     return expired();
                 }
-                if (missing.length === 0) {
+                if (missing.size === 0) {
                     return 'dead';
                 }
-                uncovered = `lsof-live-pid-missing:count=${missing.length}:pid/uid/state=${missing.slice(0, 4).join(',')}`;
+                const describe = (pids: number[]) =>
+                    `lsof-live-pid-missing:count=${pids.length}:pid/uid/state=${pids
+                        .slice(0, 4)
+                        .map((pid) => missing.get(pid))
+                        .join(',')}`;
+                uncovered = describe([...missing.keys()]);
                 if (!onlySameUidPids) {
                     return unknown(uncovered);
                 }
-                // lsof can omit a live same-UID process, or finish before one is born.
-                // Discard the whole catalog: only a fresh complete one can prove safety.
+                // lsof can omit a live same-UID process, or finish before one is born. Other
+                // work keeps starting processes, so read the missed ones directly; coverage
+                // stays within this observation and is never pooled with earlier catalogs.
+                const scoped = scopedDarwinFileState([...missing.keys()], uid, tempDirectories, deadline);
+                if (scoped.kind === 'alive') {
+                    return 'alive';
+                }
+                if (scoped.kind === 'expired' || Date.now() >= deadline) {
+                    return expired();
+                }
+                if (scoped.kind === 'unavailable') {
+                    return unknown(scoped.reason);
+                }
+                if (scoped.pids.length === 0) {
+                    return 'dead';
+                }
+                // Discard the whole observation: a fresh catalog must cover what stayed missed.
+                uncovered = describe(scoped.pids);
             }
             return expired();
         }

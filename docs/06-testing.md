@@ -749,12 +749,17 @@ during inspection cannot disappear from the proof. On Linux, a newly listed live
 permits one complete replacement inspection of the full fresh process list, within at most two
 observations. On macOS, `lsof` races the processes it reads: a descriptor that closes between field
 reads leaves an otherwise valid catalog missing only its type, and a live same-UID process,
-whether newborn or already listed and in any sampled state including `ps`'s undetermined `?`, can
-be absent from a catalog that lists it moments later. A process that exits before its sample is
-skipped only on exact absence; an omitted process with another or unsampled UID retains storage at
-once. Either race catalog is discarded for a wholly fresh catalog and process list, repeated until one
-is complete or the five-second proof deadline expires. Catalogs are never merged, and a deadline
-reached without a complete catalog retains storage with the last omission as its reason. Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
+whether newborn or already listed, can be absent from a whole-account catalog. Other work on a busy
+host keeps starting such processes, so a fresh whole catalog may never be complete. An omitted
+process that exits before its state sample is skipped only on exact absence. An omitted process
+with another or unsampled UID retains storage at once. Every other omitted process, in any sampled
+state including `ps`'s undetermined `?`, is read directly in the same observation with a PID-scoped,
+same-UID `lsof`: a storage path there is a live use, a failed or unusable scoped read retains
+storage, and a scoped read that does not list a still-live process leaves it uncovered. Coverage
+counts only within one observation and is never pooled across catalogs. An observation left
+uncovered, or a catalog missing a descriptor type, is discarded for a wholly fresh catalog and
+process list until one is covered or the five-second proof deadline expires; expiry retains
+storage with the last omission as its reason. Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
 identity, malformed catalog, denied inspection or unavailable evidence retains storage. Processes created after the final proof remain outside
 that observation; this is conservative sampled evidence, not a guarantee of continuous isolation.
 Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
