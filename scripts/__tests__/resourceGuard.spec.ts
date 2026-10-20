@@ -13,7 +13,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -55,7 +55,11 @@ afterAll(() => rmSync(enforcementAdmissionRoot, { recursive: true, force: true }
 function runIsolatedGuardedCommand(
     input: Parameters<typeof runGuardedCommand>[0]
 ): ReturnType<typeof runGuardedCommand> {
-    return runGuardedCommand({ ...input, admissionRoot: enforcementAdmissionRoot });
+    return runGuardedCommand({
+        storageRoot: join(enforcementAdmissionRoot, 'storage'),
+        ...input,
+        admissionRoot: enforcementAdmissionRoot,
+    });
 }
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
@@ -487,20 +491,41 @@ describe('resource enforcement', () => {
         try {
             const childEnv: NodeJS.ProcessEnv = { ...process.env, [RESOURCE_ROOT_ENV]: root };
             delete childEnv[RESOURCE_SESSION_ENV];
+            let guardStderr = '';
             guard = spawn(
                 process.execPath,
                 [
-                    'scripts/resourceGuard.ts',
+                    resolve('scripts/resourceGuard.ts'),
                     '--profile',
                     'focused',
+                    '--max-rss-mib',
+                    '512',
                     '--',
                     process.execPath,
                     '-e',
                     `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)`,
                 ],
-                { cwd: process.cwd(), env: childEnv, stdio: 'ignore' }
+                { cwd: root, env: childEnv, stdio: ['ignore', 'ignore', 'pipe'] }
             );
-            await waitUntil(() => existsSync(pidPath));
+            guard.stderr?.on('data', (chunk: Buffer) => {
+                guardStderr = `${guardStderr}${chunk.toString()}`.slice(-8_192);
+            });
+            try {
+                await waitUntil(() => existsSync(pidPath));
+            } catch (error) {
+                const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+                const reservations = existsSync(reservationsRoot)
+                    ? readdirSync(reservationsRoot)
+                          .slice(0, 8)
+                          .map(
+                              (name) => `${name}: ${readFileSync(join(reservationsRoot, name), 'utf8').slice(0, 1_024)}`
+                          )
+                    : [];
+                throw new Error(
+                    `${error instanceof Error ? error.message : String(error)}; guard exit=${guard.exitCode}; stderr=${guardStderr}; admission=${JSON.stringify(reservations)}`,
+                    { cause: error }
+                );
+            }
             const recordedPid = Number(readFileSync(pidPath, 'utf8'));
             childPid = recordedPid;
             guard.kill('SIGTERM');
@@ -1361,7 +1386,7 @@ describe('guard failure stop enforcement', () => {
         }
     });
 
-    it('writes guard-failure receipt on memory/timeout/monitor/leak failure in an author lane', async () => {
+    it('writes guard-failure receipt on memory/timeout/monitor/leak/pressure failure in an author lane', async () => {
         const repoRoot = fixtureRoot('lane-fail');
         const laneName = 'agent-101-work';
         const headSha = '3333333333333333333333333333333333333333';
@@ -1378,7 +1403,7 @@ describe('guard failure stop enforcement', () => {
         const errors: string[] = [];
 
         try {
-            for (const reason of ['memory', 'timeout', 'monitor', 'leak'] as const) {
+            for (const reason of ['memory', 'timeout', 'monitor', 'leak', 'pressure'] as const) {
                 const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
                     cwd: lane.worktreePath,
                     detectLane: () => lane,
@@ -1981,7 +2006,12 @@ describe('guard failure stop enforcement', () => {
                     {
                         cwd: recordedCwd,
                         detectLane: () => fixture.lane,
-                        runCommand: async (input) => runIsolatedGuardedCommand(input),
+                        runCommand: async (input) =>
+                            runIsolatedGuardedCommand({
+                                ...input,
+                                availableMemoryBytes: abundantMemoryBytes,
+                                maxRssBytes: 512 * 1024 ** 2,
+                            }),
                         assertModulesPreflight: () => undefined,
                     }
                 );
@@ -2316,17 +2346,19 @@ describe('guard failure stop enforcement', () => {
             let capturedCommand: string | undefined;
             let capturedArgs: string[] | undefined;
             let capturedMaxRss: number | undefined;
+            let capturedDiskReserve: number | undefined;
             let capturedCwd: string | undefined;
             const logs: string[] = [];
 
             try {
-                const code = await runGuardCli(['--recover', '--max-rss-mib', '6144'], {
+                const code = await runGuardCli(['--recover', '--max-rss-mib', '6144', '--disk-reserve-mib', '123'], {
                     cwd: lane.worktreePath,
                     detectLane: () => lane,
                     runCommand: async (input) => {
                         capturedCommand = input.command;
                         capturedArgs = input.args;
                         capturedMaxRss = input.maxRssBytes;
+                        capturedDiskReserve = input.diskReserveBytes;
                         capturedCwd = input.cwd;
                         return fakeResult({ code: 0, peakRssBytes: 5.5 * 1024 ** 3 });
                     },
@@ -2337,6 +2369,7 @@ describe('guard failure stop enforcement', () => {
                 expect(capturedCommand).toBe('pnpm');
                 expect(capturedArgs).toEqual(['test:run', 'heavy.spec.ts']);
                 expect(capturedMaxRss).toBe(6144 * 1024 ** 2);
+                expect(capturedDiskReserve).toBe(123 * 1024 ** 2);
                 expect(capturedCwd).toBe(realpathSync(lane.worktreePath));
                 expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
                 expect(logs).toContain(`guard: recovery succeeded; guard-failure receipt cleared for lane ${laneName}`);

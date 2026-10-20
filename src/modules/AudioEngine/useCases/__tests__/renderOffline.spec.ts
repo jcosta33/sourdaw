@@ -4,14 +4,26 @@ import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/
 
 import { renderOffline } from '../renderOffline';
 
+import type { BuildDeviceChainContext, BuildDeviceChainOutput } from '../buildDeviceChain';
+
 const offlineRenderMocks = vi.hoisted(() => ({
+    isFaustModule: vi.fn<(type: string) => boolean>(() => false),
+    createFaustDevice: vi.fn(),
     getTrackStoreState: vi.fn(() => null),
     getMidiStoreState: vi.fn(() => null),
     getTransportStoreValue: vi.fn(() => null),
     getTempoMapState: vi.fn(() => null),
     getAutomationLanes: vi.fn<() => { trackId: string; parameterId: string }[]>(() => []),
     audioBufferCache: { get: vi.fn(() => undefined) },
-    buildDeviceChain: vi.fn(() => Promise.resolve([])),
+    buildDeviceChain: vi.fn<
+        (
+            ctx: BaseAudioContext,
+            devices: import('../../models/TrackViewTypes').Device[],
+            inputNode: AudioNode,
+            outputNode: AudioNode,
+            context?: BuildDeviceChainContext
+        ) => Promise<BuildDeviceChainOutput>
+    >(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
     resolveDrumKit: vi.fn(() => null),
     scheduleTrackAutomation: vi.fn(),
@@ -75,6 +87,15 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
 
 vi.mock('../../stores/audioBufferCache', () => ({
     audioBufferCache: offlineRenderMocks.audioBufferCache,
+}));
+
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return { ...actual, isFaustModule: offlineRenderMocks.isFaustModule };
+});
+
+vi.mock('../../repositories/faustDeviceFactory', () => ({
+    createFaustDevice: offlineRenderMocks.createFaustDevice,
 }));
 
 vi.mock('../buildDeviceChain', () => ({
@@ -282,6 +303,56 @@ describe('renderOffline effective audibility (OE-4)', () => {
 
     const scheduledTrackIds = (): string[] =>
         offlineRenderMocks.scheduleTrackClips.mock.calls.map((call) => call[0].track.id);
+
+    it.each(['musician-export', 'agent-measurement', 'agent-section-render'] as const)(
+        'applies the Faust failure policy for %s',
+        async (lockHolder) => {
+            const { createOfflineTrackStrip } = await vi.importActual<
+                typeof import('../offlineRender/createOfflineTrackStrip')
+            >('../offlineRender/createOfflineTrackStrip');
+            const { buildDeviceChain } =
+                await vi.importActual<typeof import('../buildDeviceChain')>('../buildDeviceChain');
+            primeRender();
+            offlineRenderMocks.createOfflineTrackStrip.mockImplementation(createOfflineTrackStrip);
+            offlineRenderMocks.buildDeviceChain.mockImplementation(buildDeviceChain);
+            offlineRenderMocks.isFaustModule.mockImplementation((type: string) => type === 'faust-x');
+            offlineRenderMocks.createFaustDevice.mockRejectedValue(new Error('worklet module unavailable'));
+            const track = {
+                ...audioTrack({ id: 'delay' }),
+                name: 'Delay Bus',
+                gain: 1,
+                pan: 0,
+                devices: [{ id: 'tape', name: 'Tape Delay', type: 'faust-x', bypassed: false, parameterValues: {} }],
+            };
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(renderContext([track]));
+            class FaustFailureContext {
+                readonly destination = {};
+                readonly sampleRate = 44_100;
+                createGain() {
+                    return { gain: { value: 1 }, connect: vi.fn() };
+                }
+                createStereoPanner() {
+                    return { pan: { value: 0 }, connect: vi.fn() };
+                }
+            }
+            vi.stubGlobal('OfflineAudioContext', FaustFailureContext);
+            vi.stubGlobal('AudioWorkletNode', undefined);
+            try {
+                const rendering = renderOffline({ durationBeats: 4, lockHolder });
+                if (lockHolder === 'musician-export') {
+                    await expect(rendering).rejects.toMatchObject({
+                        _tag: 'Export',
+                        message: expect.stringMatching(/Delay Bus.*Tape Delay.*worklet module unavailable/),
+                    });
+                    expect(offlineRenderMocks.renderWithTimeout).not.toHaveBeenCalled();
+                } else {
+                    await expect(rendering).resolves.toMatchObject({ sampleRate: 44_100 });
+                }
+            } finally {
+                offlineRenderMocks.isFaustModule.mockReturnValue(false);
+            }
+        }
+    );
 
     it('schedules only the soloed track, dropping non-soloed content, when a solo is engaged', async () => {
         offlineRenderMocks.resolveRenderContext.mockReturnValue(
