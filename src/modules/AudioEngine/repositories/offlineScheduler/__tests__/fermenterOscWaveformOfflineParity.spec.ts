@@ -13,6 +13,8 @@ import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { NativeDspDeviceStrategy } from '../../deviceStrategy/NativeDspDeviceStrategy';
 import { scheduleTrackAutomation } from '../automationScheduling';
 
+import { constantTempoProjector } from './constantTempoProjector';
+
 import type { OfflineAutomationSegment } from '../../deviceStrategy/AudioDeviceStrategy';
 
 /**
@@ -104,8 +106,8 @@ function runOfflineSchedule(lanes: AutomationLane[]): ScheduledCall[] {
         trackPanNode: { pan: {} } as unknown as StereoPannerNode,
         deviceEntries: [{ deviceId: DEVICE_ID, deviceType: 'fermenter', contributesAudio: true, strategy }],
         durationSeconds: 2,
-        defaultTempo: 120,
         changes: [],
+        projectBeatToSeconds: constantTempoProjector(120),
         slewTickSeconds: SLEW_TICK_SECONDS,
         sampleRate: 48_000,
         deviceParameterLaw: {

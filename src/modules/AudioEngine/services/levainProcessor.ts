@@ -15,13 +15,25 @@
  *   { type: 'bypass', bypassed }
  *   { type: 'beginSampleBank', bankKey, instrumentId, loadToken }
  *   { type: 'abortSampleBank', loadToken }
- *   { type: 'addSample', loadToken, sampleId, data, frameCount, channels, sampleRate }
+ *   { type: 'beginSample', loadToken, sampleId, frameCount, channels, sampleRate }
+ *   { type: 'sampleChunk', loadToken, sampleId, data }
+ *   { type: 'sealSample', loadToken, sampleId }
  *   { type: 'addZone', loadToken, ... }
  *   { type: 'addLegatoTransition', loadToken, sampleId, interval, ... }
  *   { type: 'buildZoneMap', loadToken, numArticulations, numMics }
  *   { type: 'releaseRetiredBank', loadToken }
  *   { type: 'releaseDisposedBanks' }
  *   { type: 'dispose' }
+ *
+ * A sample uploads in three kinds of message so none copies more than a
+ * bounded chunk on the render thread: `beginSample` reserves the sample's
+ * whole storage (the upload's one allocation), each `sampleChunk` copies at
+ * most one chunk into it and allocates nothing, and `sealSample` publishes the
+ * sample once every float is there. The engine enforces the chunk ceiling.
+ * Each written chunk is answered with `sampleChunkWritten { loadToken,
+ * sampleId }`, which paces the loader: it leaves only a few chunks
+ * unacknowledged, so the worklet's queue never holds a long run of them. A
+ * refused chunk is answered by `sampleBankError` instead, never by both.
  *
  * Committing a bank (`buildZoneMap`) builds the zone map in that message, then
  * commits with a call that allocates and frees nothing: the bank it replaces
@@ -162,14 +174,15 @@ type LevainMsg =
     | { type: 'beginSampleBank'; bankKey: string; instrumentId: string; loadToken: number }
     | { type: 'abortSampleBank'; loadToken: number }
     | {
-          type: 'addSample';
+          type: 'beginSample';
           loadToken: number;
           sampleId: number;
-          data: Float32Array;
           frameCount: number;
           channels: number;
           sampleRate: number;
       }
+    | { type: 'sampleChunk'; loadToken: number; sampleId: number; data: Float32Array }
+    | { type: 'sealSample'; loadToken: number; sampleId: number }
     | LevainAddZoneMsg
     | LevainAddLegatoTransitionMsg
     | { type: 'buildZoneMap'; loadToken: number; numArticulations: number; numMics: number }
@@ -238,6 +251,11 @@ class LevainProcessor extends AudioWorkletProcessor {
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
+    // One view over all of linear memory for chunk uploads, rebuilt when
+    // `memory.grow()` swaps the buffer so a chunk never writes through a
+    // detached one.
+    _memoryFloats: Float32Array | null = null;
+    _memoryFloatsBuffer: ArrayBufferLike | null = null;
 
     constructor(...args: unknown[]) {
         super();
@@ -703,19 +721,29 @@ class LevainProcessor extends AudioWorkletProcessor {
                     this._rejectBankLoad(new Error('Levain sample bank load was aborted'));
                 }
                 break;
-            case 'addSample': {
-                if (msg.loadToken !== this._bankLoadToken) {
+            case 'beginSample': {
+                if (!this._ownsUpload(msg.loadToken)) {
                     break;
                 }
-                if (this._bankRole === 'follower' || this._bankRole === 'ready') {
-                    break;
-                }
-                const sampleId = inst.add_sample(msg.data, msg.frameCount, msg.channels, msg.sampleRate);
+                const sampleId = inst.begin_sample(msg.frameCount, msg.channels, msg.sampleRate);
                 if (sampleId === undefined || sampleId !== msg.sampleId) {
                     throw new Error('Levain DSP rejected sample-bank mutation or sample ordering');
                 }
                 break;
             }
+            case 'sampleChunk':
+                if (this._ownsUpload(msg.loadToken)) {
+                    this._writeSampleChunk(inst, msg.loadToken, msg.sampleId, msg.data);
+                }
+                break;
+            case 'sealSample':
+                if (!this._ownsUpload(msg.loadToken)) {
+                    break;
+                }
+                if (!inst.seal_sample(msg.sampleId)) {
+                    throw new Error('Levain DSP could not seal a sample whose PCM is incomplete');
+                }
+                break;
             case 'addZone': {
                 if (msg.loadToken !== this._bankLoadToken) {
                     break;
@@ -781,6 +809,45 @@ class LevainProcessor extends AudioWorkletProcessor {
                 this._dispose();
                 break;
         }
+    }
+
+    /** Whether a sample upload message for `loadToken` is this processor's to apply: only the current load's owner uploads PCM. */
+    _ownsUpload(loadToken: number): boolean {
+        return loadToken === this._bankLoadToken && this._bankRole !== 'follower' && this._bankRole !== 'ready';
+    }
+
+    /**
+     * Copy one chunk into the storage `beginSample` reserved. The engine says
+     * where it goes and how much it takes (at most one chunk); a chunk that does
+     * not fit, or belongs to another sample, is refused before a byte is
+     * written. Allocates nothing in steady state: the memory view is cached and
+     * rebuilt only when `memory.grow()` detaches its buffer.
+     */
+    _writeSampleChunk(inst: LevainInstance, loadToken: number, sampleId: number, data: Float32Array): void {
+        const memory = this._memory;
+        if (!memory) {
+            throw new Error('Levain sample chunk arrived before the engine memory existed');
+        }
+        const floats = data.length;
+        if (floats === 0 || floats > inst.sample_write_floats(sampleId)) {
+            throw new Error('Levain sample chunk does not fit the open sample');
+        }
+        const address = inst.sample_write_ptr(sampleId);
+        if (address === 0) {
+            throw new Error('Levain sample chunk does not belong to the open sample');
+        }
+        // Read after both calls above: neither allocates, but growth anywhere
+        // earlier in this message must not leave a stale view behind.
+        const buffer = memory.buffer;
+        if (this._memoryFloatsBuffer !== buffer || this._memoryFloats === null) {
+            this._memoryFloats = new Float32Array(buffer);
+            this._memoryFloatsBuffer = buffer;
+        }
+        this._memoryFloats.set(data, address / Float32Array.BYTES_PER_ELEMENT);
+        if (!inst.commit_sample_frames(sampleId, floats)) {
+            throw new Error('Levain DSP refused a sample chunk');
+        }
+        this.port.postMessage({ type: 'sampleChunkWritten', loadToken, sampleId });
     }
 
     /**

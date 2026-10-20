@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -109,9 +109,25 @@ describe('planned browser matrix', () => {
         const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
         const recorded = [...readSpecDurations().keys()].sort().slice(0, 30);
         const inventory = [SMOKE_SPEC, ...recorded];
+        const playwrightRoot = realpathSync(resolve('node_modules/playwright'));
+        mkdirSync(join(root, 'node_modules/@playwright'), { recursive: true });
+        const packages: [string, string][] = [
+            [realpathSync(resolve('node_modules/@playwright/test')), 'node_modules/@playwright/test'],
+            [playwrightRoot, 'node_modules/playwright'],
+            [realpathSync(resolve(playwrightRoot, '../playwright-core')), 'node_modules/playwright-core'],
+        ];
+        for (const [source, destination] of packages) {
+            cpSync(source, join(root, destination), { recursive: true, dereference: true });
+        }
+        mkdirSync(join(root, 'node_modules/.bin'), { recursive: true });
+        const playwrightBin = join(root, 'node_modules/.bin/playwright');
+        writeFileSync(playwrightBin, "#!/usr/bin/env node\nrequire('../playwright/cli.js');\n");
+        chmodSync(playwrightBin, 0o755);
+        writeFileSync(join(root, '.gitignore'), 'node_modules\n');
+        writeFileSync(join(root, 'playwright.config.mjs'), "export default { testDir: './tests/e2e' };\n");
         for (const path of inventory) {
             mkdirSync(join(root, dirname(path)), { recursive: true });
-            writeFileSync(join(root, path), '// browser fixture\n');
+            writeFileSync(join(root, path), "import { test } from '@playwright/test';\ntest('fixture', () => {});\n");
         }
         git(['init', '--quiet']);
         git(['config', 'user.email', 'ci@example.invalid']);

@@ -1,4 +1,4 @@
-import { inputMonitoringSession } from './inputMonitoringSession';
+import { inputMonitoringAdmissionChecks, inputMonitoringSession } from './inputMonitoringSession';
 import { releaseTrackMonitorEdge } from './releaseTrackMonitorEdge';
 
 /**
@@ -14,5 +14,6 @@ export function stopTrackInputMonitoring(trackId: string): void {
         return;
     }
     inputMonitoringSession.trackKeys.delete(trackId);
+    inputMonitoringAdmissionChecks.delete(trackId);
     releaseTrackMonitorEdge(trackId, key);
 }

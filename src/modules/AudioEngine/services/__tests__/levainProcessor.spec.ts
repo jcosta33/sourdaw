@@ -25,6 +25,10 @@ const OUT_LEFT_PTR = 0;
 const OUT_RIGHT_PTR = 4096;
 const FRAMES = 128;
 const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
+// Where the mock engine offers chunk storage, clear of its output buffers, and
+// how many floats it takes per chunk.
+const MOCK_WRITE_BASE = 8192;
+const MOCK_WRITE_WINDOW = 3;
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let engineProcessCalls = 0;
@@ -75,15 +79,47 @@ class LevainInstanceMock {
     handle_cc(cc: number, value: number): void {
         calls.push({ method: 'handle_cc', args: [cc, value] });
     }
-    add_sample(data: Float32Array, frameCount: number, channels: number, sampleRate: number): number {
+    // The sample being uploaded in chunks: the mock offers a small window
+    // inside its memory, like the engine offers one chunk at most.
+    openSample: { id: number; total: number; written: number } | null = null;
+    begin_sample(frameCount: number, channels: number, sampleRate: number): number | undefined {
         if (addSampleShouldThrow) {
             // Sample loading is the likeliest place for this device to fail
-            // after startup: the copy into linear memory is hundreds of MiB for
-            // a single instrument, with no dedup between instances.
+            // after startup: reserving linear memory for hundreds of MiB for a
+            // single instrument, with no dedup between instances.
             throw new Error('memory allocation failed');
         }
-        calls.push({ method: 'add_sample', args: [Array.from(data), frameCount, channels, sampleRate] });
-        return calls.filter((call) => call.method === 'add_sample').length - 1;
+        calls.push({ method: 'begin_sample', args: [frameCount, channels, sampleRate] });
+        const id = calls.filter((call) => call.method === 'begin_sample').length - 1;
+        this.openSample = { id, total: frameCount * channels, written: 0 };
+        return id;
+    }
+    sample_write_floats(sampleId: number): number {
+        const open = this.openSample;
+        return open?.id === sampleId ? Math.min(open.total - open.written, MOCK_WRITE_WINDOW) : 0;
+    }
+    sample_write_ptr(sampleId: number): number {
+        const open = this.openSample;
+        return open?.id === sampleId ? MOCK_WRITE_BASE + open.written * Float32Array.BYTES_PER_ELEMENT : 0;
+    }
+    commit_sample_frames(sampleId: number, floatCount: number): boolean {
+        const open = this.openSample;
+        if (open?.id !== sampleId || floatCount > this.sample_write_floats(sampleId)) {
+            return false;
+        }
+        const written = new RealFloat32Array(memory.buffer, this.sample_write_ptr(sampleId), floatCount);
+        calls.push({ method: 'commit_sample_frames', args: [sampleId, Array.from(written)] });
+        open.written += floatCount;
+        return true;
+    }
+    seal_sample(sampleId: number): boolean {
+        const open = this.openSample;
+        if (open?.id !== sampleId || open.written !== open.total) {
+            return false;
+        }
+        calls.push({ method: 'seal_sample', args: [sampleId] });
+        this.openSample = null;
+        return true;
     }
     add_zone(...args: unknown[]): void {
         calls.push({ method: 'add_zone', args });
@@ -170,6 +206,20 @@ async function loadProcessor(): Promise<LevainProcessorLike> {
 
 function send(proc: LevainProcessorLike, data: unknown): void {
     proc.port.onmessage?.({ data });
+}
+
+/** One sample as the loader posts it: a begin, its PCM in a single chunk, and a seal. */
+function uploadSample(proc: LevainProcessorLike, loadToken: number, sampleId: number, pcm: number[]): void {
+    send(proc, {
+        type: 'beginSample',
+        loadToken,
+        sampleId,
+        frameCount: pcm.length,
+        channels: 1,
+        sampleRate: 48_000,
+    });
+    send(proc, { type: 'sampleChunk', loadToken, sampleId, data: new Float32Array(pcm) });
+    send(proc, { type: 'sealSample', loadToken, sampleId });
 }
 
 function method(name: string): { method: string; args: unknown[] } | undefined {
@@ -319,30 +369,130 @@ describe('LevainProcessor message handling', () => {
         }).toEqual({ silent: [true, true], engineProcessCalls: engineCallsBefore });
     });
 
-    it('loads a sample and forwards addSample args to the instance', async () => {
-        const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
-        calls.length = 0;
+    describe('uploading a sample in chunks', () => {
+        async function stagedProcessor(): Promise<LevainProcessorLike> {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+            send(proc, { type: 'beginSampleBank', bankKey: 'single-bank', instrumentId: 'violin', loadToken: 1 });
+            calls.length = 0;
+            return proc;
+        }
 
-        send(proc, { type: 'beginSampleBank', bankKey: 'single-bank', instrumentId: 'violin', loadToken: 1 });
-        const data = new Float32Array([0.1, 0.2, 0.3, 0.4]);
-        send(proc, {
-            type: 'addSample',
-            loadToken: 1,
-            sampleId: 0,
-            data,
-            frameCount: 4,
-            channels: 1,
-            sampleRate: 48000,
+        function beginMessage(frameCount: number, sampleId = 0): unknown {
+            return { type: 'beginSample', loadToken: 1, sampleId, frameCount, channels: 1, sampleRate: 48000 };
+        }
+
+        function chunkMessage(pcm: number[], sampleId = 0): unknown {
+            return { type: 'sampleChunk', loadToken: 1, sampleId, data: new Float32Array(pcm) };
+        }
+
+        function isChunkAnswer(message: unknown): boolean {
+            return (message as { type: string }).type === 'sampleChunkWritten';
+        }
+
+        function sampleBankErrors(proc: LevainProcessorLike): string[] {
+            const posted = proc.port.postMessage.mock.calls.map(
+                ([message]) => message as { type: string; message?: string }
+            );
+            return posted
+                .filter((message) => message.type === 'sampleBankError')
+                .map((message) => message.message ?? '');
+        }
+
+        it('forwards the begin arguments and each chunk of PCM, in order, to the instance', async () => {
+            const proc = await stagedProcessor();
+
+            send(proc, beginMessage(4));
+            send(proc, chunkMessage([0.25, 0.5, 0.75]));
+            send(proc, chunkMessage([1]));
+            send(proc, { type: 'sealSample', loadToken: 1, sampleId: 0 });
+
+            expect(method('begin_sample')!.args).toEqual([4, 1, 48000]);
+            expect(calls.filter((call) => call.method === 'commit_sample_frames').map((call) => call.args)).toEqual([
+                [0, [0.25, 0.5, 0.75]],
+                [0, [1]],
+            ]);
+            expect(method('seal_sample')!.args).toEqual([0]);
+            expect(sampleBankErrors(proc)).toEqual([]);
+            expect(proc.port.postMessage.mock.calls.filter(([message]) => isChunkAnswer(message))).toEqual([
+                [{ type: 'sampleChunkWritten', loadToken: 1, sampleId: 0 }],
+                [{ type: 'sampleChunkWritten', loadToken: 1, sampleId: 0 }],
+            ]);
         });
 
-        const args = method('add_sample')!.args;
-        expect(args[1]).toBe(4);
-        expect(args[2]).toBe(1);
-        expect(args[3]).toBe(48000);
-        // Float32 storage rounds the sample values; compare with tolerance.
-        const passed = args[0] as number[];
-        expect(passed.map((v) => Number(v.toFixed(6)))).toEqual([0.1, 0.2, 0.3, 0.4]);
+        it('writes a chunk through the buffer memory.grow() installed after the previous chunk', async () => {
+            const proc = await stagedProcessor();
+            send(proc, beginMessage(4));
+            send(proc, chunkMessage([0.25, 0.5, 0.75]));
+
+            memory.buffer = memory.buffer.transfer(HEAP_BYTES * 2);
+            send(proc, chunkMessage([1]));
+            send(proc, { type: 'sealSample', loadToken: 1, sampleId: 0 });
+
+            expect(sampleBankErrors(proc)).toEqual([]);
+            expect(calls.filter((call) => call.method === 'commit_sample_frames').map((call) => call.args[1])).toEqual([
+                [0.25, 0.5, 0.75],
+                [1],
+            ]);
+            expect(method('seal_sample')).toBeDefined();
+        });
+
+        it('refuses a chunk larger than the window the engine offers, before writing a byte', async () => {
+            const proc = await stagedProcessor();
+            send(proc, beginMessage(8));
+            const before = new RealFloat32Array(memory.buffer, MOCK_WRITE_BASE, 8).slice();
+
+            send(proc, chunkMessage([1, 2, 3, 4]));
+
+            expect(sampleBankErrors(proc)).toEqual(['Levain sample chunk does not fit the open sample']);
+            expect(calls.filter((call) => call.method === 'commit_sample_frames')).toHaveLength(0);
+            expect(proc.port.postMessage.mock.calls.some(([message]) => isChunkAnswer(message))).toBe(false);
+            expect(new RealFloat32Array(memory.buffer, MOCK_WRITE_BASE, 8)).toEqual(before);
+        });
+
+        it('refuses a chunk for a sample that is not the open one, before writing a byte', async () => {
+            const proc = await stagedProcessor();
+            send(proc, beginMessage(8));
+            const before = new RealFloat32Array(memory.buffer, MOCK_WRITE_BASE, 8).slice();
+
+            send(proc, chunkMessage([1, 2], 1));
+
+            expect(sampleBankErrors(proc)).toHaveLength(1);
+            expect(calls.filter((call) => call.method === 'commit_sample_frames')).toHaveLength(0);
+            expect(new RealFloat32Array(memory.buffer, MOCK_WRITE_BASE, 8)).toEqual(before);
+        });
+
+        it('refuses a chunk past the sample capacity that the window would otherwise take', async () => {
+            const proc = await stagedProcessor();
+            send(proc, beginMessage(4));
+            send(proc, chunkMessage([1, 2, 3]));
+
+            send(proc, chunkMessage([4, 5]));
+
+            expect(sampleBankErrors(proc)).toEqual(['Levain sample chunk does not fit the open sample']);
+            expect(calls.filter((call) => call.method === 'commit_sample_frames')).toHaveLength(1);
+        });
+
+        it('rejects the load when a sample is sealed before all of its PCM arrived', async () => {
+            const proc = await stagedProcessor();
+            send(proc, beginMessage(4));
+            send(proc, chunkMessage([1, 2, 3]));
+
+            send(proc, { type: 'sealSample', loadToken: 1, sampleId: 0 });
+
+            expect(sampleBankErrors(proc)).toEqual(['Levain DSP could not seal a sample whose PCM is incomplete']);
+            expect(method('seal_sample')).toBeUndefined();
+            send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+            expect(method('commit_sample_bank')).toBeUndefined();
+        });
+
+        it('rejects the load when the engine hands back another id than the loader announced', async () => {
+            const proc = await stagedProcessor();
+
+            send(proc, beginMessage(4, 5));
+
+            expect(sampleBankErrors(proc)).toEqual(['Levain DSP rejected sample-bank mutation or sample ordering']);
+        });
     });
 
     it('reuses one compiled WASM module and uploads one PCM bank for two Levain processors', async () => {
@@ -366,20 +516,14 @@ describe('LevainProcessor message handling', () => {
             loadToken: 2,
             uploadRequired: false,
         });
-        const sample = {
-            type: 'addSample',
-            sampleId: 0,
-            data: new Float32Array([0.1]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        };
-        send(owner, { ...sample, loadToken: 1 });
-        send(follower, { ...sample, loadToken: 2 });
+        uploadSample(owner, 1, 0, [0.1]);
+        uploadSample(follower, 2, 0, [0.1]);
         send(follower, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
         send(owner, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
 
-        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'commit_sample_frames')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'seal_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'build_zone_map')).toHaveLength(2);
         expect(calls.filter((call) => call.method === 'attach_sample_bank')).toHaveLength(2);
@@ -391,15 +535,7 @@ describe('LevainProcessor message handling', () => {
         const owner = await loadProcessor();
         send(owner, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(owner, { type: 'beginSampleBank', bankKey: 'cached-bank', instrumentId: 'violin', loadToken: 1 });
-        send(owner, {
-            type: 'addSample',
-            loadToken: 1,
-            sampleId: 0,
-            data: new Float32Array([0.1]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        });
+        uploadSample(owner, 1, 0, [0.1]);
         send(owner, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
 
         const cached = await loadProcessor();
@@ -411,19 +547,13 @@ describe('LevainProcessor message handling', () => {
             loadToken: 2,
             uploadRequired: false,
         });
-        send(cached, {
-            type: 'addSample',
-            loadToken: 2,
-            sampleId: 0,
-            data: new Float32Array([0.1]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        });
+        uploadSample(cached, 2, 0, [0.1]);
         send(cached, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
 
         expect(calls.filter((call) => call.method === 'attach_sample_bank')).toHaveLength(1);
-        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(0);
+        for (const upload of ['begin_sample', 'commit_sample_frames', 'seal_sample']) {
+            expect(calls.filter((call) => call.method === upload)).toHaveLength(0);
+        }
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(0);
         expect(calls.filter((call) => call.method === 'build_zone_map')).toHaveLength(1);
         expect(cached.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
@@ -438,15 +568,7 @@ describe('LevainProcessor message handling', () => {
         send(follower, { type: 'beginSampleBank', bankKey: 'retry-bank', instrumentId: 'violin', loadToken: 2 });
         addSampleShouldThrow = true;
 
-        send(owner, {
-            type: 'addSample',
-            loadToken: 1,
-            sampleId: 0,
-            data: new Float32Array([0.1]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        });
+        uploadSample(owner, 1, 0, [0.1]);
 
         expect(owner.port.postMessage).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'sampleBankError', message: 'memory allocation failed' })
@@ -458,18 +580,10 @@ describe('LevainProcessor message handling', () => {
         addSampleShouldThrow = false;
         calls.length = 0;
         send(follower, { type: 'beginSampleBank', bankKey: 'retry-bank', instrumentId: 'violin', loadToken: 3 });
-        send(follower, {
-            type: 'addSample',
-            loadToken: 3,
-            sampleId: 0,
-            data: new Float32Array([0.2]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        });
+        uploadSample(follower, 3, 0, [0.2]);
         send(follower, { type: 'buildZoneMap', loadToken: 3, numArticulations: 1, numMics: 1 });
 
-        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
     });
 
@@ -478,27 +592,11 @@ describe('LevainProcessor message handling', () => {
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, { type: 'beginSampleBank', bankKey: 'stale-tail-bank', instrumentId: 'violin', loadToken: 1 });
         addSampleShouldThrow = true;
-        send(proc, {
-            type: 'addSample',
-            loadToken: 1,
-            sampleId: 0,
-            data: new Float32Array([0.1]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        });
+        uploadSample(proc, 1, 0, [0.1]);
 
         addSampleShouldThrow = false;
         calls.length = 0;
-        send(proc, {
-            type: 'addSample',
-            loadToken: 1,
-            sampleId: 1,
-            data: new Float32Array([0.2]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        });
+        uploadSample(proc, 1, 1, [0.2]);
         send(proc, {
             type: 'addZone',
             loadToken: 1,
@@ -524,23 +622,17 @@ describe('LevainProcessor message handling', () => {
         });
         send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
 
-        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(0);
+        for (const upload of ['begin_sample', 'commit_sample_frames', 'seal_sample']) {
+            expect(calls.filter((call) => call.method === upload)).toHaveLength(0);
+        }
         expect(calls.filter((call) => call.method === 'add_zone')).toHaveLength(0);
         expect(calls.filter((call) => call.method === 'build_zone_map')).toHaveLength(0);
 
         send(proc, { type: 'beginSampleBank', bankKey: 'stale-tail-bank', instrumentId: 'violin', loadToken: 2 });
-        send(proc, {
-            type: 'addSample',
-            loadToken: 2,
-            sampleId: 0,
-            data: new Float32Array([0.3]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        });
+        uploadSample(proc, 2, 0, [0.3]);
         send(proc, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
 
-        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
     });
 
@@ -584,18 +676,10 @@ describe('LevainProcessor message handling', () => {
             instrumentId: 'violin',
             loadToken: 3,
         });
-        send(retry, {
-            type: 'addSample',
-            loadToken: 3,
-            sampleId: 0,
-            data: new Float32Array([0.2]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        });
+        uploadSample(retry, 3, 0, [0.2]);
         send(retry, { type: 'buildZoneMap', loadToken: 3, numArticulations: 1, numMics: 1 });
 
-        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
     });
 
@@ -622,18 +706,10 @@ describe('LevainProcessor message handling', () => {
         const retry = await loadProcessor();
         send(retry, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(retry, { type: 'beginSampleBank', bankKey: 'disposed-bank', instrumentId: 'violin', loadToken: 3 });
-        send(retry, {
-            type: 'addSample',
-            loadToken: 3,
-            sampleId: 0,
-            data: new Float32Array([0.3]),
-            frameCount: 1,
-            channels: 1,
-            sampleRate: 48_000,
-        });
+        uploadSample(retry, 3, 0, [0.3]);
         send(retry, { type: 'buildZoneMap', loadToken: 3, numArticulations: 1, numMics: 1 });
 
-        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'begin_sample')).toHaveLength(1);
         expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
     });
 
