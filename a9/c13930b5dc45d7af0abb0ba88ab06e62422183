@@ -1,0 +1,84 @@
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_2bfd55a4393d7c::t_fc961668771497 316
+src/modules/Arrangement/useCases/__tests__/exportMidiClip.spec.ts
+  s_2bfd55a4393d7c::t_04a5387f56abb3 114
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipFanOutState.spec.ts
+  s_2bfd55a4393d7c::t_53db88608a4821 196
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeProjectMidi.spec.ts
+  s_2bfd55a4393d7c::t_20df0ddb26ca86 121
+  s_2bfd55a4393d7c::t_e09a290f11e161 78
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_2bfd55a4393d7c::t_086f952d5a3d46 93-94
+src/modules/MIDI/models/__tests__/MidiNote.spec.ts
+  s_2bfd55a4393d7c::t_2b0f78099f207f 32-33
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiGlobalTimeTransaction.spec.ts
+  s_2bfd55a4393d7c::t_21bb4c46956e04 123
+  s_2bfd55a4393d7c::t_ea6762f38f5d41 286
+  s_2bfd55a4393d7c::t_d12f5e8b8097e4 176
+  s_2bfd55a4393d7c::t_d9ffacffbc2658 271
+  s_2bfd55a4393d7c::t_f7083b3e848251 240
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts
+  s_2bfd55a4393d7c::t_aebce9b0b0ee53 353-354
+  s_2bfd55a4393d7c::t_75b02dc2dcf0fc 176-177
+  s_2bfd55a4393d7c::t_10d86660d7b07b 192-193
+  s_2bfd55a4393d7c::t_757240af1f1cb9 335-336
+src/modules/MIDI/useCases/__tests__/serializeMidiStateForClips.spec.ts
+  s_2bfd55a4393d7c::t_b06b120bbd3a5e 24,41
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipSplit.spec.ts
+  s_2bfd55a4393d7c::t_bcbcc1009fe17d 40,82
+  s_2bfd55a4393d7c::t_f596d691f2d5ca 39,79,81
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/hydrateProjectMidi.spec.ts
+  s_2bfd55a4393d7c::t_72e87ad443bbbd 18
+  s_2bfd55a4393d7c::t_405d4a42b52403 126
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/midiTimeStateCodec.spec.ts
+  s_2bfd55a4393d7c::t_47c2175c5efbc0 52
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiTimeShiftTransaction.spec.ts
+  s_2bfd55a4393d7c::t_5428f6a05ec0ea 55
+  s_2bfd55a4393d7c::t_59b1f4cb33cb56 144
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/duplicateClipNotes.spec.ts
+  s_2bfd55a4393d7c::t_037da361121552 113
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/shiftClipMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_533df7c590bfcc 35
+  s_2bfd55a4393d7c::t_ffcb6982c0524c 44
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareClipMidiShiftTransaction.spec.ts
+  s_2bfd55a4393d7c::t_6dd42a7850f321 122-123
+  s_2bfd55a4393d7c::t_6d251808886c65 51
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_2bfd55a4393d7c::t_7827a12cc3f883 1024,1035
+  s_2bfd55a4393d7c::t_f75e656e895e95 1139
+  s_2bfd55a4393d7c::t_75b7c7478865b4 1146-1147
+  s_2bfd55a4393d7c::t_b858cbc799c3d1 444
+  s_2bfd55a4393d7c::t_f52a8e9d48f550 1027
+  s_2bfd55a4393d7c::t_1f07e77bee3eed 1040
+  s_2bfd55a4393d7c::t_77a4c3d0856ff6 1026,1036
+  s_2bfd55a4393d7c::t_8a4ec828060192 1025,1088
+  s_2bfd55a4393d7c::t_19605999cb7cc1 1042
+  s_2bfd55a4393d7c::t_0934d33bf8a7c8 1039
+  s_2bfd55a4393d7c::t_64dd11078ec615 76
+  s_2bfd55a4393d7c::t_87bc5300263e3e 1169
+  s_2bfd55a4393d7c::t_c32c21db163852 33
+  s_2bfd55a4393d7c::t_45a5176901a0d1 1041
+  s_2bfd55a4393d7c::t_5cb3dd3af763d3 228
+  s_2bfd55a4393d7c::t_049ac8ff9ad01c 1190-1191
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/shiftMidiNotesAfterBeat.spec.ts
+  s_2bfd55a4393d7c::t_f32f78436df1d9 145-146
+  s_2bfd55a4393d7c::t_cf8cca7835bb29 134-135
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.integration.spec.ts
+  s_2bfd55a4393d7c::t_4178a888d8b553 160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a9c13930b5dc45d7af0abb0ba88ab06e62422183",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
