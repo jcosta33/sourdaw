@@ -1,0 +1,19 @@
+scripts/__tests__/e2eAffectedGraph.spec.ts
+  s_1c08b47ac3792f::t_65484c8231eb00 1,3,5,10,19,27,35-70,160-167,285,287,365,367,428,466
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "14eb82f05c4b27f9366b7eaadbec12d57c5bf5e1",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
