@@ -1,0 +1,43 @@
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_4c8cd08893b364::t_53d39b93681e9c 83
+src/modules/AudioEngine/repositories/levainZoneTables/__tests__/buildLevainZoneTablesInWorker.spec.ts
+  s_4c8cd08893b364::t_82a957224f885b 101-103
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_4c8cd08893b364::t_ac58107d997197 902-916,944-951
+src/modules/AudioEngine/services/__tests__/levainProcessorZoneTables.spec.ts
+  s_4c8cd08893b364::t_7f8862115067f1 347-350,360-365,369-375,380-394,400-407,409-415,425-426,431-438
+src/modules/AudioEngine/transformers/computeLevainZoneTables.ts
+  s_59e31a5c6f3e31::t_169da1d9a4a402 19-27
+src/modules/AudioEngine/useCases/buildLevainZoneTables.ts
+  s_59e31a5c6f3e31::t_a5e3dd845c6394 10-13
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_59e31a5c6f3e31::t_db1d3a1761bd37 810-811
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_59e31a5c6f3e31::t_01e2573c559bb9 575-577
+src/modules/Levain/useCases/__tests__/loadSamplesForInstrumentCommitOrder.spec.ts
+  s_59e31a5c6f3e31::t_c0c5345201ed1f 304-306,400-402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "823fa0571776c66d892e9c71e41d356646d3d789",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
