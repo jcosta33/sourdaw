@@ -1523,7 +1523,9 @@ process.stdout.write(catalog);
                 if (persistent) {
                     expect(state, reasons.join('; ')).toBe('unknown');
                     expect(reasons.at(-1)).toMatch(
-                        new RegExp(`^lsof-live-pid-missing:count=1:pid/uid/state=${residentPid}/${process.getuid?.()}/[RSITU]$`)
+                        new RegExp(
+                            `^lsof-live-pid-missing:count=1:pid/uid/state=${residentPid}/${process.getuid?.()}/[RSITU]$`
+                        )
                     );
                     expect(catalogs, reasons.join('; ')).toBeGreaterThan(1);
                     expect(elapsed).toBeLessThan(6_500);

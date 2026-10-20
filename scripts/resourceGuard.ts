@@ -1105,6 +1105,10 @@ function processIsGone(pid: number): boolean {
     }
 }
 
+function killedByTimeout(error: Error | undefined): boolean {
+    return error !== undefined && 'code' in error && error.code === 'ETIMEDOUT';
+}
+
 function processFileSnapshot(pid: number, timeout: number): { uid: number; state: string } | undefined {
     const result = spawnSync('ps', ['-p', String(pid), '-o', 'uid=,stat='], {
         encoding: 'utf8',
@@ -1383,7 +1387,7 @@ export function storageFileState(
                 timeout: Math.max(1, deadline - Date.now()),
                 maxBuffer: 16 * 1024 * 1024,
             });
-            if ((users.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT') {
+            if (killedByTimeout(users.error)) {
                 return 'file-census-time-bound';
             }
             if (users.status !== 0 || users.stderr !== '') {
@@ -1415,7 +1419,7 @@ export function storageFileState(
                     timeout: Math.max(1, deadline - Date.now()),
                     maxBuffer: 16 * 1024 * 1024,
                 });
-                if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT') {
+                if (killedByTimeout(result.error)) {
                     return expired();
                 }
                 if (result.status !== 0 || result.stderr !== '') {
