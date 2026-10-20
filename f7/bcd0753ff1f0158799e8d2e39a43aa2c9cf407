@@ -1,0 +1,35 @@
+src/modules/AudioEngine/workers/__tests__/levainZoneTableWorker.spec.ts
+  s_4c8cd08893b364::t_1353ac93ced909 1-68
+src/modules/AudioEngine/repositories/levainZoneTables/__tests__/buildLevainZoneTablesInWorker.spec.ts
+  s_4c8cd08893b364::t_a47e2e3e9f72c2 1-124
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_4c8cd08893b364::t_82f3c74984aae6 92-93
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_4c8cd08893b364::t_9d2973967e9af8 82-83,86,111-119
+crates/daw-dsp/AGENTS.md
+  s_4c8cd08893b364::t_c2b35d1a84260a 75-89
+src/modules/AudioEngine/AGENTS.md
+  s_4c8cd08893b364::t_c112fdfc41ead5 35
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_4c8cd08893b364::t_66cba8f2d694c4 18-28,89-91,108
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_4c8cd08893b364::t_d8dbf076b2f546 4,16-19,1836-1997
+src/modules/Levain/useCases/__tests__/loadSamplesForInstrumentCommitOrder.spec.ts
+  s_4c8cd08893b364::t_75d6385af0cf3a 9-20,44,129,152-163,172,233,304,343,346,351,381,395,398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7bcd0753ff1f0158799e8d2e39a43aa2c9cf407",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
