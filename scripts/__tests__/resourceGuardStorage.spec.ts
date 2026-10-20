@@ -13,7 +13,7 @@ import {
     statSync,
     writeFileSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -165,6 +165,99 @@ function claimPayloads(root: string): string[] {
             .filter((name) => name !== 'claim.json')
             .map((name) => join(claims, claim, name))
     );
+}
+
+async function runMarkedGuard(root: string): Promise<{
+    result: Awaited<ReturnType<typeof runGuardedCommand>>;
+    tempDirectory: string;
+    token: string;
+    pid: number;
+}> {
+    const marker = join(root, `guard-${randomUUID()}.json`);
+    const result = await guarded(root, {
+        args: [
+            '-e',
+            `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}))`,
+        ],
+    });
+    const observed: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+    const token = basename(dirname(observed.tmp));
+    expect(observed.tmp).toBe(join(root, 'storage', token, 'tmp'));
+    return { result, tempDirectory: observed.tmp, token, pid: observed.pid };
+}
+
+function retainedStorageTokens(root: string): { direct: string[]; claims: string[] } {
+    const storageRoot = join(root, 'storage');
+    const direct = readdirSync(storageRoot)
+        .filter((name) => name !== '.claims')
+        .map((token) => {
+            expect(readOwner(join(storageRoot, token, 'tmp')).token).toBe(token);
+            return token;
+        });
+    const claims = claimPayloads(storageRoot).map((payload) => {
+        const token = readOwner(join(payload, 'tmp')).token;
+        expect(basename(payload)).toBe(token);
+        return token;
+    });
+    return { direct, claims };
+}
+
+function expectMarkedRecovery(
+    root: string,
+    prior: { tempDirectory: string; token: string }[],
+    fresh: Awaited<ReturnType<typeof runMarkedGuard>>
+): void {
+    const knownTokens = [...prior.map((run) => run.token), fresh.token];
+    expect(new Set(knownTokens).size).toBe(knownTokens.length);
+    const diagnostics = fresh.result.output
+        .split('\n')
+        .filter((line) => line.startsWith('guard storage file-use proof unavailable: '));
+    const retained = retainedStorageTokens(root);
+    const retainedTokens = [...retained.direct, ...retained.claims];
+    console.log(
+        JSON.stringify({
+            recovery: fresh.result,
+            firstDiagnostic: diagnostics[0] ?? null,
+            originalToken: prior[0]?.token,
+            freshToken: fresh.token,
+            priorTokens: prior.map((run) => run.token),
+            retained,
+        })
+    );
+    expect(fresh.result.code).toBe(0);
+    expect(isAlive(fresh.pid)).toBe(false);
+    expect(retainedTokens.every((token) => knownTokens.includes(token))).toBe(true);
+    expect(new Set(retainedTokens).size).toBe(retainedTokens.length);
+    for (const run of [...prior, fresh]) {
+        expect(existsSync(run.tempDirectory)).toBe(retained.direct.includes(run.token));
+    }
+    expect(diagnostics).toEqual(
+        diagnostics.length === 0
+            ? []
+            : [
+                  expect.stringMatching(
+                      /^guard storage file-use proof unavailable: lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+$/
+                  ),
+              ]
+    );
+    const freshRetained = retainedTokens.includes(fresh.token);
+    if (fresh.result.reason === undefined) {
+        expect(freshRetained).toBe(false);
+        expect(fresh.result.output).not.toContain('guard storage retained:');
+    } else {
+        expect(fresh.result.reason).toBe('leak');
+        expect(freshRetained).toBe(true);
+        expect(fresh.result.output).toContain(
+            'guard storage retained: process-tree exit or storage ownership could not be proved'
+        );
+    }
+    if (diagnostics.length === 0) {
+        expect(fresh.result.reason).toBeUndefined();
+        expect(retained.direct).toEqual([]);
+        expect(retained.claims).toEqual([]);
+    } else {
+        expect(retainedTokens.length).toBeGreaterThan(0);
+    }
 }
 
 describe('guard-owned temporary storage', () => {
@@ -537,47 +630,24 @@ describe('guard-owned temporary storage', () => {
             const tempExists = existsSync(started.tmp);
             console.log(JSON.stringify({ scenario, program, pid: started.pid, startedAt, alive, tempExists }));
             expect(alive && !tempExists).toBe(false);
+            const prior = [{ tempDirectory: started.tmp, token: originalToken }];
             if (alive) {
                 if (scenario === 'parent exit') {
                     expect(JSON.parse(readFileSync(resultPath, 'utf8')).reason).toBe('leak');
                 }
-                expect((await guarded(root)).code).toBe(0);
+                const interim = await runMarkedGuard(root);
+                expect(interim.result.code).toBe(0);
+                expect(isAlive(interim.pid)).toBe(false);
+                const interimRetained = Object.values(retainedStorageTokens(root)).flat().includes(interim.token);
+                expect(interim.result.reason).toBe(interimRetained ? 'leak' : undefined);
+                prior.push({ tempDirectory: interim.tempDirectory, token: interim.token });
                 expect(existsSync(started.tmp)).toBe(true);
                 await kill(started.pid);
             }
             await waitForStorageAbandonment([started.tmp], deadline);
-            const recovery = await guarded(root);
-            expect(recovery.code).toBe(0);
+            const recovery = await runMarkedGuard(root);
             expect(isAlive(started.pid)).toBe(false);
-            if (existsSync(started.tmp)) {
-                console.log(
-                    JSON.stringify({
-                        retainedAfterExit: true,
-                        scenario,
-                        program,
-                        recoveryReason: recovery.reason,
-                        evidence: recovery.output.slice(-512),
-                    })
-                );
-            }
-            // A prior dead census cannot authorize a later recovery whose
-            // complete-catalog PID coverage is unavailable.
-            const diagnostics = recovery.output
-                .split('\n')
-                .filter((line) => line.startsWith('guard storage file-use proof unavailable: '));
-            const coverageUnavailable = diagnostics.some((line) =>
-                line.startsWith('guard storage file-use proof unavailable: lsof-live-pid-missing:')
-            );
-            const expectedCoverageDiagnostic = expect.stringMatching(
-                /^guard storage file-use proof unavailable: lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+$/
-            );
-            expect(diagnostics).toEqual(coverageUnavailable ? [expectedCoverageDiagnostic] : []);
-            const originalRetained = existsSync(started.tmp);
-            const claims = claimPayloads(join(root, 'storage'));
-            expect(originalRetained || claims.length > 0).toBe(coverageUnavailable);
-            expect(claims.map((payload) => readOwner(join(payload, 'tmp')).token)).toEqual(
-                coverageUnavailable && !originalRetained ? [originalToken] : []
-            );
+            expectMarkedRecovery(root, prior, recovery);
         },
         15_000
     );
@@ -814,6 +884,8 @@ ready();
         const admission: { childPid: number; rootPid: number; rootGroup: number } = JSON.parse(
             readFileSync(admitted, 'utf8')
         );
+        childPids.add(admission.rootPid);
+        const originalToken = readOwner(started.tmp).token;
         const ownerTrackedAtChildReady = readOwner(started.tmp).tracked.map((identity) => identity.pid);
         // Unknown-tree monitor cleanup includes the guard's 7s wait and two 2s cleanup waits.
         await waitUntil(() => existsSync(resultPath), 15_000);
@@ -863,9 +935,13 @@ ready();
         expect(result.reason).toBe('monitor');
         expect(result.code).not.toBe(0);
         await kill(started.pid);
+        await waitUntil(() => supervisor.exitCode !== null || supervisor.signalCode !== null);
+        await kill(admission.rootPid);
+        expect(isAlive(supervisor.pid)).toBe(false);
+        expect(isAlive(admission.rootPid)).toBe(false);
         await waitForStorageAbandonment([started.tmp], deadline);
-        expect((await guarded(root)).code).toBe(0);
-        expect(existsSync(started.tmp)).toBe(false);
+        const recovery = await runMarkedGuard(root);
+        expectMarkedRecovery(root, [{ tempDirectory: started.tmp, token: originalToken }], recovery);
     }
 
     it('treats an exit-zero empty process census as unavailable monitoring evidence and retains live storage', async () => {
@@ -1409,6 +1485,104 @@ describe('storage ownership recovery', () => {
             expect(observed.claimPayloadCount).toBe(0);
             expect(observed.retained).toBe(true);
         }
+    });
+
+    it.each([
+        { scenario: 'complete current coverage', gap: false, expectedStates: ['dead', 'dead', 'dead'] },
+        { scenario: 'new uncovered live PID', gap: true, expectedStates: ['unknown'] },
+    ] as const)('requires fresh startup recovery proof for $scenario', ({ gap, expectedStates }) => {
+        const root = fixture();
+        const program = `
+            import childProcess from 'node:child_process';
+            import os from 'node:os';
+            import {syncBuiltinESMExports} from 'node:module';
+            import {randomUUID} from 'node:crypto';
+            import {existsSync,readFileSync,readdirSync} from 'node:fs';
+            import {join} from 'node:path';
+            const gap=${gap},uid=process.getuid(),pid=process.pid,newPid=pid+100000;
+            const storageRoot=${JSON.stringify(join(root, 'storage'))};
+            let fileSamples=0,processSamples=0,now=0;
+            const timeouts=[];
+            os.platform=()=> 'darwin';
+            Date.now=()=>now;
+            process.kill=()=>true;
+            childProcess.spawnSync=(command,args,options)=>{
+                timeouts.push({command,timeout:options.timeout});
+                let stdout;
+                if(command==='ps'){
+                    if(args[0]==='-p')stdout=uid+' S\\n';
+                    else {
+                        processSamples++;
+                        const pids=gap&&processSamples>=3?[pid,newPid]:[pid];
+                        stdout=pids.map(value=>value+' '+uid).join('\\n')+'\\n';
+                    }
+                }else if(command==='lsof'){
+                    fileSamples++;
+                    now+=100;
+                    stdout='p'+pid+'\\0\\nfcwd\\0tDIR\\0n/outside\\0\\n';
+                }else throw new Error('unexpected command '+command);
+                return {status:0,stdout,stderr:''};
+            };
+            syncBuiltinESMExports();
+            const {storageFileState}=await import(${JSON.stringify(guardPath)});
+            const {createGuardStorage,recoverGuardStorage}=await import(${JSON.stringify(storagePath)});
+            const reasons=[],states=[];
+            const ports={
+                identityState:()=> 'dead',
+                sessionState:(_owner,original,current=original)=>{
+                    const state=storageFileState([original,current],[],reason=>reasons.push(reason));
+                    states.push(state);
+                    return state;
+                },
+            };
+            const originalToken=randomUUID();
+            const storage=createGuardStorage({root:storageRoot,token:originalToken,owner:${JSON.stringify(fakeOwner)},ports});
+            const proofBeforeRecovery=storageFileState([storage.tempDirectory],[]);
+            recoverGuardStorage(storageRoot,ports,${JSON.stringify(fakeReclaimer)});
+            const originalRetained=existsSync(storage.tempDirectory);
+            const originalOwner=originalRetained?JSON.parse(readFileSync(join(storageRoot,originalToken,'owner.json'),'utf8')):undefined;
+            const claims=readdirSync(join(storageRoot,'.claims')).flatMap(token=>{
+                const claim=join(storageRoot,'.claims',token);
+                return readdirSync(claim).filter(name=>name!=='claim.json').map(name=>{
+                    const path=join(claim,name);
+                    return {name,owner:JSON.parse(readFileSync(join(path,'owner.json'),'utf8'))};
+                });
+            });
+            console.log(JSON.stringify({proofBeforeRecovery,states,reasons,fileSamples,processSamples,timeouts,originalRetained,originalOwner,claims,newPid,uid,originalToken}));
+        `;
+        const observed: {
+            proofBeforeRecovery: string;
+            states: string[];
+            reasons: string[];
+            fileSamples: number;
+            processSamples: number;
+            timeouts: { command: string; timeout: number }[];
+            originalRetained: boolean;
+            originalOwner?: { token: string };
+            claims: { name: string; owner: { token: string } }[];
+            newPid: number;
+            uid: number;
+            originalToken: string;
+        } = JSON.parse(
+            execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 10_000,
+            })
+        );
+        expect(observed.proofBeforeRecovery).toBe('dead');
+        expect(observed.states).toEqual(expectedStates);
+        expect(observed.reasons).toEqual(
+            gap ? [`lsof-live-pid-missing:count=1:pid/uid/state=${observed.newPid}/${observed.uid}/S`] : []
+        );
+        expect(observed.fileSamples).toBe(gap ? 2 : 4);
+        expect(observed.processSamples).toBe(gap ? 4 : 8);
+        expect(observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)).toEqual(
+            Array(observed.fileSamples).fill(5000)
+        );
+        expect(observed.originalRetained).toBe(gap);
+        expect(observed.originalOwner?.token).toBe(gap ? observed.originalToken : undefined);
+        expect(observed.claims).toEqual([]);
     });
 
     it.skipIf(process.platform !== 'darwin').each([
