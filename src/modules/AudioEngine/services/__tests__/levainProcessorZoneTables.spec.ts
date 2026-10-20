@@ -307,6 +307,8 @@ describe('shipped LevainProcessor zone-table staging', () => {
             return Object.fromEntries(byType);
         };
         const coldStaged = handlerMs.splice(0);
+        accepted.lut.length = 0;
+        accepted.arena.length = 0;
         send(processor, { type: 'releaseRetiredBank', loadToken: 1 });
         stageBankContents(processor, 2, 'largest-again', zones, [sine(SAMPLE_FRAMES, 0.01)]);
         deliverZoneTables(timed, 2, request, tables);
@@ -370,9 +372,16 @@ describe('shipped LevainProcessor zone-table staging', () => {
             return copy;
         }
 
-        const cases: Array<{ name: string; deliver: (deliver: Deliver, tables: LevainZoneTables) => void }> = [
+        const CHUNK_REFUSED = 'Levain DSP refused a zone-table chunk';
+        const RESERVATION_REFUSED = 'Levain DSP refused the zone-table reservation';
+        const cases: Array<{
+            name: string;
+            refusal: string;
+            deliver: (deliver: Deliver, tables: LevainZoneTables) => void;
+        }> = [
             {
                 name: 'a LUT ref reaching past the declared arena',
+                refusal: CHUNK_REFUSED,
                 deliver: (deliver, tables) =>
                     deliverZoneTables(
                         deliver,
@@ -383,6 +392,7 @@ describe('shipped LevainProcessor zone-table staging', () => {
             },
             {
                 name: 'an arena id the bank holds no zone for',
+                refusal: CHUNK_REFUSED,
                 deliver: (deliver, tables) =>
                     deliverZoneTables(
                         deliver,
@@ -393,6 +403,7 @@ describe('shipped LevainProcessor zone-table staging', () => {
             },
             {
                 name: 'a chunk out of order',
+                refusal: CHUNK_REFUSED,
                 deliver: (deliver, tables) => {
                     deliver({
                         type: 'reserveZoneTables',
@@ -413,6 +424,7 @@ describe('shipped LevainProcessor zone-table staging', () => {
             },
             {
                 name: 'a chunk past the end of its table',
+                refusal: CHUNK_REFUSED,
                 deliver: (deliver, tables) => {
                     deliver({
                         type: 'reserveZoneTables',
@@ -434,16 +446,19 @@ describe('shipped LevainProcessor zone-table staging', () => {
             },
             {
                 name: 'dimensions over the DSP limits',
+                refusal: RESERVATION_REFUSED,
                 deliver: (deliver, tables) =>
                     deliverZoneTables(deliver, 1, { numArticulations: 33, numMics: 1 }, tables),
             },
             {
                 name: 'a LUT size the dimensions do not imply',
+                refusal: RESERVATION_REFUSED,
                 deliver: (deliver, tables) =>
                     deliverZoneTables(deliver, 1, { numArticulations: 2, numMics: 1 }, tables),
             },
             {
                 name: 'a seal before every entry is written',
+                refusal: 'Levain DSP could not seal zone tables that are incomplete',
                 deliver: (deliver, tables) => {
                     deliver({
                         type: 'reserveZoneTables',
@@ -459,7 +474,7 @@ describe('shipped LevainProcessor zone-table staging', () => {
             },
         ];
 
-        it.each(cases)('$name', async ({ deliver }) => {
+        it.each(cases)('$name', async ({ deliver, refusal }) => {
             const tables = computeLevainZoneTables(wasmModule, request);
             const processor = await createProcessor();
             stageBankContents(processor, 1, 'unsound', [WIDE_ZONE], [sine(SAMPLE_FRAMES, 0.01)]);
@@ -468,7 +483,9 @@ describe('shipped LevainProcessor zone-table staging', () => {
             send(processor, { type: 'sealZoneTables', loadToken: 1 });
             send(processor, { type: 'commitSampleBank', loadToken: 1 });
 
-            expect(bankErrors(processor)).toHaveLength(1);
+            // The refusal is the first and only answer: the load rejects at the
+            // message that broke the rule, and nothing after it is applied.
+            expect(bankErrors(processor)).toEqual([refusal]);
             expect(loaded(processor, 1)).toBe(false);
             // Nothing committed: a fresh engine has no bank and no fallback tone to sound.
             send(processor, { type: 'noteOn', note: 60, velocity: 100 });
