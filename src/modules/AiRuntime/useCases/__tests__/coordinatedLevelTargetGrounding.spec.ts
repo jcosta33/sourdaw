@@ -302,16 +302,6 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         }
     );
 
-    it('refuses a quoted member whose text only contains a track name when no track carries the whole text', () => {
-        const result = bridge(
-            [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
-            'turn "Drums" and "Bass DI" down 3dB',
-            { ...projectContext, tracks: [drums, bass, keys] }
-        );
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toHaveLength(2);
-    });
-
     it('refuses a quoted member that resolves to two tracks', () => {
         const result = bridge(
             [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
@@ -447,6 +437,22 @@ describe('a coordinated level list refuses calls that do not match it exactly', 
         );
 
         expect(result.actions).toEqual([]);
+    });
+
+    it('refuses a member whose whole reference names another object and only contains a track name', () => {
+        // "Bass DI" is one reference, the VCA group's name, and no track carries it, so nothing
+        // longer takes the contained "Bass" away from the track resolver's exact-name evidence.
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+            'turn the Drums and the Bass DI down 3 dB',
+            {
+                ...projectContext,
+                tracks: [drums, bass, keys],
+                vcaGroups: [{ id: 'vca-bass-di', name: 'Bass DI', gain: 1, muted: false, trackIds: [bass.id] }],
+            }
+        );
+
+        expectNotGrounded(result, 2);
     });
 
     it('refuses a first member with an unresolved word before a known name', () => {

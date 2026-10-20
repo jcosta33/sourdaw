@@ -78,8 +78,8 @@ function getReferenceMember(clause: PromptClauseSpan, reference: string): ListMe
  * literal id evidence, and that name or id must be the member's whole text, so a member never
  * stands for a track whose name it merely contains. The resolver's exact-name evidence alone does
  * not ensure that: it holds for any contained name, and yields to a longer name only when that
- * longer name is itself a project object, so a quoted "Bass DI" binds Bass in a project with no
- * Bass DI track.
+ * longer name is itself a candidate track, so a member masked whole as a VCA group's "Bass DI"
+ * binds the Bass track in a project with no Bass DI track.
  */
 function resolveWholeMember(input: {
     capability: AgentReferenceCapability;
