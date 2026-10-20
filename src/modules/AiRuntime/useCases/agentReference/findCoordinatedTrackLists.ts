@@ -29,6 +29,12 @@ export type CoordinatedTrackList = {
      * that clause leaves to the stated change, so it states the change for none of them.
      */
     memberNamedOutsideList: boolean;
+    /**
+     * Whether every clause outside the list names a track outside it. A clause that names none ("but
+     * not the second one", "and 6 dB respectively", "then up 1 dB") can only be about the members,
+     * singled out without a name, so the list cannot say which of them keep the stated change.
+     */
+    everyOtherClauseNamesAnotherTrack: boolean;
     /** Original-text spans, in the same order as memberIds. */
     members: readonly ListMember[];
     /** Masked words before the first member, excluding optional "both". */
@@ -70,7 +76,10 @@ function getReferenceMember(clause: PromptClauseSpan, reference: string): ListMe
 /**
  * The one track a member's whole text names. The canonical resolver must bind it on exact name or
  * literal id evidence, and that name or id must be the member's whole text, so a member never
- * stands for a track whose name it merely contains.
+ * stands for a track whose name it merely contains. The resolver's exact-name evidence alone does
+ * not ensure that: it holds for any contained name, and yields to a longer name only when that
+ * longer name is itself a project object, so a quoted "Bass DI" binds Bass in a project with no
+ * Bass DI track.
  */
 function resolveWholeMember(input: {
     capability: AgentReferenceCapability;
@@ -158,25 +167,6 @@ function readListTail(clause: PromptClauseSpan): ListTail | null {
 /** A project reference the masked text holds: a clip name keeps its `clip` prefix in the mask. */
 const MASKED_REFERENCE_PATTERN = /clip□*|□+/gu;
 
-/** Whether one of the clause's whole references names the track, read as a list member is read. */
-function namesTrackByWholeReference(input: {
-    capability: AgentReferenceCapability;
-    clause: PromptClauseSpan;
-    context: ProjectContext;
-    risk: AppActionRisk;
-    trackId: string;
-}): boolean {
-    return [...input.clause.masked.matchAll(MASKED_REFERENCE_PATTERN)].some(
-        (reference) =>
-            resolveWholeMember({
-                capability: input.capability,
-                context: input.context,
-                memberText: input.clause.text.slice(reference.index, reference.index + reference[0].length),
-                risk: input.risk,
-            }) === input.trackId
-    );
-}
-
 /** Whether the clause names the track as the selected track: "leave this track alone". */
 function namesTrackAsSelection(input: {
     capability: AgentReferenceCapability;
@@ -197,25 +187,48 @@ function namesTrackAsSelection(input: {
     );
 }
 
-/** Whether a clause outside the list's own clauses names one of its members. */
-function isMemberNamedOutsideList(input: {
+/**
+ * Every track the clause names: each whole reference read as a list member is read, and the
+ * selected track when the clause names it as the selection. The resolver gives selection evidence
+ * to the selected track alone, so that is the only track a selection phrase can name.
+ */
+function getTracksNamedByClause(input: {
+    capability: AgentReferenceCapability;
+    clause: PromptClauseSpan;
+    context: ProjectContext;
+    risk: AppActionRisk;
+}): Set<string> {
+    const trackIds = new Set<string>();
+    for (const reference of input.clause.masked.matchAll(MASKED_REFERENCE_PATTERN)) {
+        const trackId = resolveWholeMember({
+            capability: input.capability,
+            context: input.context,
+            memberText: input.clause.text.slice(reference.index, reference.index + reference[0].length),
+            risk: input.risk,
+        });
+        if (trackId !== null) {
+            trackIds.add(trackId);
+        }
+    }
+    const selectedTrackId = input.context.selectedTrackId;
+    if (selectedTrackId && namesTrackAsSelection({ ...input, trackId: selectedTrackId })) {
+        trackIds.add(selectedTrackId);
+    }
+    return trackIds;
+}
+
+/** The tracks each clause outside the list's own clauses names, one set per clause. */
+function getTracksNamedOutsideList(input: {
     capability: AgentReferenceCapability;
     clauses: readonly PromptClauseSpan[];
     context: ProjectContext;
     firstClauseIndex: number;
     lastClauseIndex: number;
-    memberIds: readonly string[];
     risk: AppActionRisk;
-}): boolean {
-    return input.clauses.some(
-        (clause, index) =>
-            (index < input.firstClauseIndex || index > input.lastClauseIndex) &&
-            input.memberIds.some(
-                (trackId) =>
-                    namesTrackByWholeReference({ ...input, clause, trackId }) ||
-                    namesTrackAsSelection({ ...input, clause, trackId })
-            )
-    );
+}): Set<string>[] {
+    return input.clauses
+        .filter((_, index) => index < input.firstClauseIndex || index > input.lastClauseIndex)
+        .map((clause) => getTracksNamedByClause({ ...input, clause }));
 }
 
 /** The list that opens at `headIndex`, or null when no complete list does. */
@@ -253,6 +266,12 @@ function readListAt(input: {
         }
         const headWithoutBoth = head.masked.slice(listHead.lead.length + listHead.both.length).trimEnd();
         const memberIds = resolveMembers({ ...input, members });
+        const namedOutsideList = getTracksNamedOutsideList({
+            ...input,
+            firstClauseIndex: input.headIndex,
+            lastClauseIndex: index,
+        });
+        const isMember = (trackId: string) => memberIds?.includes(trackId) === true;
         return {
             firstClauseIndex: input.headIndex,
             lastClauseIndex: index,
@@ -260,12 +279,10 @@ function readListAt(input: {
             end: clause.end,
             collapsedMasked: `${listHead.lead}${headWithoutBoth}${listTail.tail}`,
             memberIds,
-            memberNamedOutsideList: isMemberNamedOutsideList({
-                ...input,
-                firstClauseIndex: input.headIndex,
-                lastClauseIndex: index,
-                memberIds: memberIds ?? [],
-            }),
+            memberNamedOutsideList: namedOutsideList.some((trackIds) => [...trackIds].some(isMember)),
+            everyOtherClauseNamesAnotherTrack: namedOutsideList.every((trackIds) =>
+                [...trackIds].some((trackId) => !isMember(trackId))
+            ),
             members,
             lead: listHead.lead,
         };

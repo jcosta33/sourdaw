@@ -302,6 +302,16 @@ describe('one level change stated for a coordinated list of named tracks', () =>
         }
     );
 
+    it('refuses a quoted member whose text only contains a track name when no track carries the whole text', () => {
+        const result = bridge(
+            [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
+            'turn "Drums" and "Bass DI" down 3dB',
+            { ...projectContext, tracks: [drums, bass, keys] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toHaveLength(2);
+    });
+
     it('refuses a quoted member that resolves to two tracks', () => {
         const result = bridge(
             [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
@@ -578,20 +588,70 @@ describe('a coordinated level list refuses itself when another clause names a me
     });
 });
 
-describe('a coordinated level list keeps the protections of tracks outside it', () => {
-    it('reads a protection naming no list member as the two-clause form reads it', () => {
-        const calls = [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })];
-        const restriction = 'do not change pan, solo, and fader of Strings';
+describe('a coordinated level list refuses itself when a member is singled out without a name', () => {
+    it.each([
+        'turn the Drums and the Bass down 3 dB but not the second one',
+        'turn the Drums and the Bass down 3 dB but not the latter',
+        'turn the Drums and the Bass down 3 dB except the last one',
+        'turn the Drums and the Bass down 3 dB, excluding the second',
+        'turn the Drums and the Bass down 3 dB and leave the other alone',
+        'turn the Drums and the Bass down 3 dB but leave one of them alone',
+        'turn the Drums and the Bass down 3 dB and 6 dB respectively',
+        'turn the Drums and the Bass down 3 dB and 6 dB',
+        'turn the Drums and the Bass down 3 dB, 6 dB',
+        'turn the Drums and the Bass down 3 dB, the latter by 6',
+        'turn the Drums and the Bass down 3 dB (6 dB for the second)',
+        'turn the Drums and the Bass down 3 dB, and 6 dB for the second',
+        'turn Drums and Bass down 3 dB, then up 1 dB',
+    ])('refuses every call for the list in "%s"', (prompt) => {
+        expectNotGrounded(bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt), 2);
+    });
 
-        expect(bridge(calls, `turn Drums and Bass down 3 dB; ${restriction}`)).toEqual(
-            bridge(calls, `turn Drums down 3 dB and Bass down 3 dB; ${restriction}`)
-        );
+    it.each([
+        'turn the Drums and the Bass down 3 dB and pan the Keys left',
+        'turn the Drums and the Bass down 3 dB and leave the Keys alone',
+    ])('grounds the list when the other clause names a track outside it in "%s"', (prompt) => {
+        const result = bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 }), gainAction(bass.id, { deltaDb: -3 })]);
+    });
+
+    it('refuses a member singled out without a name through a compiled command list', () => {
+        const compiled = bridgeCompiledGainList('turn the Drums and the Bass down 3 dB but not the second one', [
+            drums,
+            bass,
+        ]);
+
+        expect(compiled.actions).toEqual([]);
+        expect(compiled.rejections).not.toEqual([]);
+    });
+
+    it('grounds a compiled list when the other clause names a track outside it', () => {
+        const compiled = bridgeCompiledGainList('turn the Drums and the Bass down 3 dB and pan the Keys left', [
+            drums,
+            bass,
+        ]);
+
+        expect(compiled.rejections).toEqual([]);
+        expect(compiled.actions).toEqual([gainAction(drums.id, { deltaDb: -3 }), gainAction(bass.id, { deltaDb: -3 })]);
+    });
+});
+
+describe('a coordinated level list keeps the protections of tracks outside it', () => {
+    it.each([
+        'turn Drums and Bass down 3 dB; do not change pan, solo, and fader of Strings',
+        'turn Drums and Bass down 3 dB; leave Bass DI pan and fader unchanged',
+    ])('refuses the list when a clause of a restriction names no track in "%s"', (prompt) => {
+        // "solo" and "fader unchanged" are clauses of their own that name no track outside the
+        // list, so they could be singling out a member; the list grounds nothing.
+        expectNotGrounded(bridge([gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })], prompt), 2);
     });
 
     it('does not protect Bass from gain when the separate restriction names Bass DI', () => {
         const result = bridge(
             [gainCall(drums.id, { deltaDb: -3 }), gainCall(bass.id, { deltaDb: -3 })],
-            'turn Drums and Bass down 3 dB; leave Bass DI pan and fader unchanged'
+            'turn Drums and Bass down 3 dB; leave Bass DI pan unchanged'
         );
 
         expect(result.rejections).toEqual([]);

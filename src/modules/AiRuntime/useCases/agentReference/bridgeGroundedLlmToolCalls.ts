@@ -1316,11 +1316,27 @@ function getCoordinatedListScope(
     };
 }
 
+/** The decibel unit after a list's one figure, then nothing but punctuation to the list's end. */
+const LIST_FIGURE_ENDING_PATTERN = /^\s*d\s?b[\p{P}\s]*$/iu;
+
+/** Whether the list's own text states exactly one figure, in decibels, and ends on it. */
+function endsOnItsOneFigure(maskedList: string): boolean {
+    const numbers = findPromptNumbers(maskedList);
+    return numbers.length === 1 && LIST_FIGURE_ENDING_PATTERN.test(maskedList.slice(numbers[0]!.end));
+}
+
 /**
  * Coordinated track lists that state this action's level change: read with the list as one member,
  * the clauses must name the action exactly as a single-target clause does, so a list adds no grammar
- * a single track lacks. A list grounds one slot per member, and nothing at all when a member is
- * unresolved or any other clause names a member, whatever that clause asks of it.
+ * a single track lacks.
+ *
+ * A list grounds one slot per member only when the request cannot be singling a member out. Its own
+ * text must end on its one decibel figure, and every other clause must name a track outside the list
+ * through the same whole-reference reading the members get. Words after the figure ("except the last
+ * one", "(6 dB for the second)") or a clause naming no other track ("but not the latter", "and 6 dB
+ * respectively", "then up 1 dB") can single out a member without naming it, which no word list can
+ * enumerate, so either grounds nothing for any member. So does an unresolved member, or any other
+ * clause naming a member, whatever that clause asks of it.
  */
 function getCoordinatedLevelLists(input: {
     actionName: string;
@@ -1357,7 +1373,10 @@ function getCoordinatedLevelLists(input: {
             return [];
         }
         const scope =
-            list.memberIds === null || list.memberNamedOutsideList
+            list.memberIds === null ||
+            list.memberNamedOutsideList ||
+            !list.everyOtherClauseNamesAnotherTrack ||
+            !endsOnItsOneFigure(clause.masked)
                 ? null
                 : getCoordinatedListScope(list, list.memberIds, clause, intent.phrase);
         return [{ firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex, scope }];
