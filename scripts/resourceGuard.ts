@@ -1461,6 +1461,10 @@ export function storageFileState(
                     if (snapshot?.uid === uid && snapshot.state === 'Z') {
                         continue;
                     }
+                    // A process that exits before its sample holds no files; only exact ESRCH proves it.
+                    if (snapshot === undefined && processIsGone(pid)) {
+                        continue;
+                    }
                     onlyLiveSameUidPids &&= snapshot?.uid === uid && ['R', 'S', 'I', 'T', 'U'].includes(snapshot.state);
                     missing.push(`${pid}/${snapshot?.uid ?? 'unknown'}/${snapshot?.state ?? 'unknown'}`);
                 }

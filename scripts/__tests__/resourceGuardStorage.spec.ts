@@ -1538,6 +1538,73 @@ process.stdout.write(catalog);
         20_000
     );
 
+    it.skipIf(process.platform !== 'darwin')(
+        'skips an omitted process that exits before its state sample only on exact absence',
+        async () => {
+            const root = fixture();
+            const bin = join(root, 'bin');
+            const pidPath = join(root, 'resident.pid');
+            const count = join(root, 'catalog-count');
+            mkdirSync(bin, { mode: 0o700 });
+            writeFileSync(join(bin, 'package.json'), '{}\n', { mode: 0o600 });
+            const storage = ownedStorage(join(root, 'storage'));
+            // A detached grandchild is reaped by launchd once killed, so its exit yields exact ESRCH.
+            const launcher = spawn(
+                process.execPath,
+                [
+                    '-e',
+                    `const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});child.unref();require('node:fs').writeFileSync(${JSON.stringify(pidPath)},String(child.pid))`,
+                ],
+                { stdio: 'ignore' }
+            );
+            if (launcher.pid !== undefined) {
+                childPids.add(launcher.pid);
+            }
+            await waitUntil(() => existsSync(pidPath));
+            const residentPid = Number(readFileSync(pidPath, 'utf8'));
+            childPids.add(residentPid);
+            // The state sample for the omitted resident kills it and reports ps's missing-PID failure.
+            writeFileSync(
+                join(bin, 'ps'),
+                `#!${process.execPath}
+const {execFileSync}=require('node:child_process');
+const args=process.argv.slice(2);
+if(args[0]==='-p'&&args[1]==='${residentPid}'){
+ process.kill(${residentPid},'SIGKILL');
+ const deadline=Date.now()+3000;
+ while(Date.now()<deadline){try{process.kill(${residentPid},0)}catch(error){if(error.code==='ESRCH')process.exit(1)}Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
+ process.exit(2);
+}
+const census=args[0]==='-axo'?['-p','${process.pid},${residentPid}','-o','pid=,uid=']:args;
+process.stdout.write(execFileSync('/bin/ps',census,{encoding:'utf8'}));
+`,
+                { mode: 0o700 }
+            );
+            writeFileSync(
+                join(bin, 'lsof'),
+                `#!${process.execPath}
+const fs=require('node:fs');
+const countPath=${JSON.stringify(count)};
+fs.writeFileSync(countPath,String(fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8'))+1:1));
+process.stdout.write('p${process.pid}\\0\\nfcwd\\0tDIR\\0n/\\0\\n');
+`,
+                { mode: 0o700 }
+            );
+            const reasons: string[] = [];
+            const previousPath = process.env.PATH;
+            process.env.PATH = `${bin}:${previousPath}`;
+            try {
+                const state = storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason));
+                expect(state, reasons.join('; ')).toBe('dead');
+                expect(Number(readFileSync(count, 'utf8'))).toBe(1);
+                expect(isAlive(residentPid)).toBe(false);
+            } finally {
+                process.env.PATH = previousPath;
+            }
+        },
+        20_000
+    );
+
     it('accepts complete Darwin fileport records without bypassing uncertain fields', async () => {
         const catalog = 'p10\0\nffp.\0tREG\0n/outside/held\0\n';
         expect(parseLsofCensus(catalog)).toEqual({ pids: new Set([10]), paths: ['/outside/held'] });
@@ -1717,7 +1784,8 @@ process.stdout.write(catalog);
                 throw new Error('file census supervisor did not start');
             }
             childPids.add(supervisor.pid);
-            await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1));
+            // Partial coverage retakes catalogs until each five-second proof deadline expires.
+            await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1), 25_000);
             const started: { tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             const result = JSON.parse(readFileSync(resultPath, 'utf8'));
             expect(result.reason).toBe('leak');
@@ -1737,7 +1805,7 @@ process.stdout.write(catalog);
             expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
             expect(existsSync(started.tmp), proofDiagnostic(recovery)).toBe(false);
         },
-        15_000
+        30_000
     );
 
     it('vetoes local deletion and crash recovery for temp references on raw census continuation lines', async () => {
