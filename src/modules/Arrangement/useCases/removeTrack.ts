@@ -1,5 +1,10 @@
 import { inject } from '#/infra/di/inject';
-import { removeBusStrip, removeTrackStrip, setTrackOutput } from '#/modules/AudioEngine/useCases';
+import {
+    removeBusStrip,
+    removeTrackStrip,
+    setTrackOutput,
+    stopTrackInputMonitoring,
+} from '#/modules/AudioEngine/useCases';
 import { removeAutomationLanesForTrack } from '#/modules/Automation/useCases';
 import { removeMidiClipData } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
@@ -14,7 +19,9 @@ import { takeLaneStore } from '../stores/takeLaneStore';
 import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 
 import { ArrangementEventBus } from './arrangementEventBus';
+import { captureTrackRemovalRuntimeAuthority } from './captureTrackRemovalRuntimeAuthority';
 import { removeClipSatelliteData } from './clip/removeClipSatelliteData';
+import { finalizeCommittedTrackRuntimeRemoval } from './finalizeCommittedTrackRuntimeRemoval';
 import { refreshToasterPadBindings } from './refreshToasterPadBindings';
 
 type RemoveTrackOptions = {
@@ -42,6 +49,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 return { removed: false };
             }
             const removedTrack = track;
+            const runtimeAuthority = captureTrackRemovalRuntimeAuthority();
 
             const clipIds = collectTrackClipIds(track);
 
@@ -86,12 +94,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             const deferredSidechainRuntimeEffects: Array<() => void> = [];
             for (const route of routes) {
                 if (route.sourceTrackId === trackId || route.targetTrackId === trackId) {
-                    let deferredRuntimeEffect: (() => void) | null;
-                    if (options.deferRuntimeEffects) {
-                        deferredRuntimeEffect = removeSidechainRoute(route.id, { deferRuntimeEffect: true });
-                    } else {
-                        deferredRuntimeEffect = removeSidechainRoute(route.id);
-                    }
+                    const deferredRuntimeEffect = removeSidechainRoute(route.id, { deferRuntimeEffect: true });
                     if (deferredRuntimeEffect) {
                         deferredSidechainRuntimeEffects.push(deferredRuntimeEffect);
                     }
@@ -108,10 +111,11 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             // when the node is absent.
             let runtimeRemovalFinalized = false;
             function finalizeRuntimeRemoval(): void {
-                if (runtimeRemovalFinalized) {
+                if (runtimeRemovalFinalized || !runtimeAuthority.isCurrent()) {
                     return;
                 }
                 const effects: Array<() => void> = [...deferredSidechainRuntimeEffects];
+                effects.push(() => stopTrackInputMonitoring(trackId));
                 if (shouldCreateLiveTrackStrip(removedTrack)) {
                     effects.push(() => removeTrackStrip(trackId));
                 }
@@ -128,14 +132,16 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                     effects.push(() => setTrackOutput(repointed.trackId, repointed.outputId));
                 }
                 effects.push(() => refreshToasterPadBindings(tracks, removedTrack.parentId));
-                runAllEffects(effects);
+                if (!options.suppressRemovedEvent) {
+                    effects.push(() => {
+                        void eventBus.emit('track.removed', { trackId });
+                    });
+                }
+                runAllEffects(effects.map((effect) => runtimeAuthority.guardAbsent(trackId, effect)));
                 runtimeRemovalFinalized = true;
             }
             if (!options.deferRuntimeEffects) {
-                finalizeRuntimeRemoval();
-            }
-            if (!options.suppressRemovedEvent) {
-                void eventBus.emit('track.removed', { trackId });
+                finalizeCommittedTrackRuntimeRemoval(trackId, finalizeRuntimeRemoval, runtimeAuthority.isCurrent);
             }
             return { removed: true, finalizeRuntimeRemoval };
         }

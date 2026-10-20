@@ -1,7 +1,7 @@
 import { type AdjustmentLayer } from '#/modules/Arrangement/stores';
 import { PAN_SCALE_MAX, clampFaderGain, toStereoPan } from '#/utils/audioLevelLaw';
 
-import { makeSecondsToBeat } from '../../repositories/offlineScheduler/makeSecondsToBeat';
+import { createExportError } from '../../errors/ExportError';
 
 import { resolveTrackAdjustmentComposition, type OfflineTrackAdjustmentComposition } from './offlineAdjustmentLayers';
 
@@ -32,15 +32,16 @@ export function scheduleOfflineAdjustmentCurves(input: {
     durationSeconds: number;
     regionStartBeat: number;
     tickSeconds: number;
-    defaultTempo: number;
-    changes: ReadonlyArray<{ beat: number; tempo: number }>;
+    projectSecondsToBeat?: (seconds: number) => number;
     compensationDelaySec: number;
 }): void {
     if (input.composition.constant) {
         return;
     }
     const { trackGainNode, trackPanNode } = input;
-    const secondsToBeat = makeSecondsToBeat(input.defaultTempo, input.changes);
+    if (!input.projectSecondsToBeat) {
+        throw createExportError('Offline seconds-to-beat projection is not configured');
+    }
     const compositionAtBeat = (beat: number): OfflineTrackAdjustmentComposition =>
         resolveTrackAdjustmentComposition({
             layers: input.layers,
@@ -63,7 +64,7 @@ export function scheduleOfflineAdjustmentCurves(input: {
         trackPanNode.pan.setValueAtTime(toStereoPan(composedPanStored(input.regionStartBeat)), 0);
     }
     for (let timeSeconds = 0; timeSeconds < input.durationSeconds; timeSeconds += input.tickSeconds) {
-        const beat = input.regionStartBeat + secondsToBeat(timeSeconds);
+        const beat = input.projectSecondsToBeat(timeSeconds);
         trackGainNode.gain.setValueAtTime(composedGain(beat), writeTime(timeSeconds));
         trackPanNode.pan.setValueAtTime(toStereoPan(composedPanStored(beat)), writeTime(timeSeconds));
     }

@@ -14,6 +14,7 @@ import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
+    configureOfflinePpqEndpointProjection,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
@@ -99,6 +100,8 @@ type TunerReadingUnderTest = {
 
 const {
     noop,
+    configureOfflinePpqProjectionMock,
+    beatAtSecondsFromAnchorMock,
     sentinelHandlers,
     assertCanonicalLlmActionStrategiesMock,
     getExecutableAppActionGroundingCatalogMock,
@@ -177,12 +180,15 @@ const {
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
+    initInputMonitoringProjectAccessMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
     const executableAppActionGroundingCatalog = [{ actionType: 'addMarker', intentPhrases: [] }];
     return {
         noop,
+        configureOfflinePpqProjectionMock: vi.fn<typeof configureOfflinePpqEndpointProjection>(),
+        beatAtSecondsFromAnchorMock: vi.fn(() => -1),
         sentinelHandlers,
         assertCanonicalLlmActionStrategiesMock: vi.fn(),
         getExecutableAppActionGroundingCatalogMock: vi.fn(() => executableAppActionGroundingCatalog),
@@ -265,6 +271,7 @@ const {
         setCrumbsEventBusMock: vi.fn(),
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
+        initInputMonitoringProjectAccessMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -390,7 +397,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
     configureOfflineDeviceParameterLaw: noop,
     configureOfflineMidiEventProjection: noop,
-    configureOfflinePpqEndpointProjection: noop,
+    configureOfflinePpqEndpointProjection: configureOfflinePpqProjectionMock,
     configureOfflineYeastMidiProcessing: noop,
     stopAllScheduled: noop,
     compileAudioGraphTopology: noop,
@@ -674,6 +681,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     createMusicalPositionProjector: noop,
     createSamplePositionProjector: noop,
     projectPpqEndpoints: noop,
+    beatAtSecondsFromAnchor: beatAtSecondsFromAnchorMock,
     resolveTempoAtBeat: noop,
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
@@ -742,6 +750,9 @@ vi.mock('../initCrumbsModePush', () => ({
 vi.mock('../initDeviceStateReconciliation', () => ({
     initDeviceStateReconciliation: initDeviceStateReconciliationMock,
 }));
+vi.mock('../initInputMonitoringProjectAccess', () => ({
+    initInputMonitoringProjectAccess: initInputMonitoringProjectAccessMock,
+}));
 
 // Side-effect import: this is what runs the composition root under test.
 // `vi.mock` calls above are hoisted above this import by Vitest, so every
@@ -764,6 +775,9 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
+    it('binds committed project access during bootstrap', () => {
+        expect(initInputMonitoringProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
+    });
     // The exact order bootstrap.ts passes module handler maps to the production assembler.
     // This list IS the assertion: every module bootstrap wires into the shared
     // handler registry must appear here
@@ -816,6 +830,14 @@ describe('bootstrap', () => {
         expect(assertCanonicalLlmActionStrategiesMock.mock.invocationCallOrder[0] ?? Infinity).toBeLessThan(
             registerProductionCommandHandlersMock.mock.invocationCallOrder[0] ?? Infinity
         );
+    });
+
+    it('configures both offline tempo directions through Transport', () => {
+        expect(configureOfflinePpqProjectionMock).toHaveBeenCalledExactlyOnceWith({
+            project: noop,
+            resolveTempoAtBeat: noop,
+            beatAtSecondsFromAnchor: beatAtSecondsFromAnchorMock,
+        });
     });
 
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {
