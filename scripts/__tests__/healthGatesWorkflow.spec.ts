@@ -3469,8 +3469,12 @@ describe('health gates workflow contract', () => {
         }
         expect(staticSteps).toHaveLength(STEP_INVENTORY['validation.yml']!.static!.length);
         expect(jobAt(validationWorkflow, 'tooling-unit').if).toBe("needs.decide.outputs.tooling == 'true'");
+        // The runner account holds an uninspectable same-UID process, so the guard
+        // storage specs run only in the isolated unit account (#4944).
         expect(stringAt(stepNamed(jobAt(validationWorkflow, 'tooling-unit'), 'Run script suite'), 'run')).toBe(
-            "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'"
+            "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'" +
+                " --exclude='**/resourceGuardStorage.spec.ts' --exclude='**/resourceGuard.spec.ts'" +
+                " --exclude='**/resourceGuardShowOutput.spec.ts'"
         );
     });
 
@@ -4754,15 +4758,15 @@ export -f sudo timeout sleep apt-get
         expect(() => assertPnpmBeforeNodeOrder(heavyWorkflow)).not.toThrow();
 
         const missingPnpmSetup = asRecord(structuredClone(nightly), 'missing pnpm setup nightly');
-        removeStepNamed(jobAt(missingPnpmSetup, 'unit'), PNPM_SETUP_STEP);
+        removeStepNamed(jobAt(missingPnpmSetup, 'build'), PNPM_SETUP_STEP);
         expect(() => assertPnpmBeforeNodeOrder(missingPnpmSetup)).toThrow(
-            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+            `build must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
         );
 
         const reversedSetup = asRecord(structuredClone(nightly), 'reversed pnpm setup nightly');
-        swapStepsNamed(jobAt(reversedSetup, 'unit'), PNPM_SETUP_STEP, NODE_SETUP_STEP);
+        swapStepsNamed(jobAt(reversedSetup, 'build'), PNPM_SETUP_STEP, NODE_SETUP_STEP);
         expect(() => assertPnpmBeforeNodeOrder(reversedSetup)).toThrow(
-            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+            `build must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
         );
 
         const reversedDeploySetup = asRecord(structuredClone(nightly), 'reversed deploy pnpm setup nightly');
@@ -5000,8 +5004,14 @@ export -f sudo timeout sleep apt-get
         }
     });
 
-    it('runs required unit install and shards through a fresh unprivileged identity', () => {
-        const unit = jobAt(validationWorkflow, 'unit');
+    // The guard storage specs require an account with no uninspectable same-UID
+    // process; the hosted runner account has one, so every unit shard route,
+    // scheduled or required, enters the fresh unprivileged account (#4944).
+    it.each([
+        ['validation.yml', validationWorkflow],
+        ['nightly.yml', nightly],
+    ])('runs %s unit install and shards through a fresh unprivileged identity', (_file, workflow) => {
+        const unit = jobAt(workflow, 'unit');
         const prepare = stepNamed(unit, 'Prepare isolated unit account');
         const install = stepNamed(unit, 'Install dependencies');
         const shard = stepNamed(unit, 'Run shard');

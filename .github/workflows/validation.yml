@@ -565,9 +565,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # These expensive specs run once in static, outside a pooled unit run.
+      # Release proof and agent delivery specs run once in static, outside a
+      # pooled unit run. The guard storage specs refuse cleanup while any
+      # same-UID process is uninspectable, which the hosted runner account
+      # holds, so they run only in the isolated `unit` account. A tooling
+      # profile cannot change the guard: its sources are not review tooling,
+      # so a head that touches them takes the broad profile and that job (#4944).
       - name: Run script suite
-        run: pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'
+        run: pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts' --exclude='**/resourceGuardStorage.spec.ts' --exclude='**/resourceGuard.spec.ts' --exclude='**/resourceGuardShowOutput.spec.ts'
 
   smoke:
     name: Offline browser smoke
