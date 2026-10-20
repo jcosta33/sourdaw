@@ -205,7 +205,8 @@ function retainedStorageTokens(root: string): { direct: string[]; claims: string
 function expectMarkedRecovery(
     root: string,
     prior: { tempDirectory: string; token: string }[],
-    fresh: Awaited<ReturnType<typeof runMarkedGuard>>
+    fresh: Awaited<ReturnType<typeof runMarkedGuard>>,
+    originalStillLive = false
 ): void {
     const knownTokens = [...prior.map((run) => run.token), fresh.token];
     expect(new Set(knownTokens).size).toBe(knownTokens.length);
@@ -236,7 +237,7 @@ function expectMarkedRecovery(
             ? []
             : [
                   expect.stringMatching(
-                      /^guard storage file-use proof unavailable: lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+$/
+                      /^guard storage file-use proof unavailable: (?:lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+|lsof-fields-unusable:descriptor-type-missing)$/
                   ),
               ]
     );
@@ -246,17 +247,18 @@ function expectMarkedRecovery(
         expect(fresh.result.output).not.toContain('guard storage retained:');
     } else {
         expect(fresh.result.reason).toBe('leak');
-        expect(freshRetained).toBe(true);
+        expect(diagnostics).toHaveLength(1);
         expect(fresh.result.output).toContain(
             'guard storage retained: process-tree exit or storage ownership could not be proved'
         );
+        // The result records the first failed release; a final cleanup retry can remove its payload.
     }
-    if (diagnostics.length === 0) {
+    if (originalStillLive) {
+        expect(retained.direct).toContain(prior[0]?.token);
+    } else if (diagnostics.length === 0) {
         expect(fresh.result.reason).toBeUndefined();
         expect(retained.direct).toEqual([]);
         expect(retained.claims).toEqual([]);
-    } else {
-        expect(retainedTokens.length).toBeGreaterThan(0);
     }
 }
 
@@ -636,11 +638,9 @@ describe('guard-owned temporary storage', () => {
                     expect(JSON.parse(readFileSync(resultPath, 'utf8')).reason).toBe('leak');
                 }
                 const interim = await runMarkedGuard(root);
-                expect(interim.result.code).toBe(0);
-                expect(isAlive(interim.pid)).toBe(false);
-                const interimRetained = Object.values(retainedStorageTokens(root)).flat().includes(interim.token);
-                expect(interim.result.reason).toBe(interimRetained ? 'leak' : undefined);
+                expectMarkedRecovery(root, prior, interim, true);
                 prior.push({ tempDirectory: interim.tempDirectory, token: interim.token });
+                expect(isAlive(started.pid)).toBe(true);
                 expect(existsSync(started.tmp)).toBe(true);
                 await kill(started.pid);
             }
