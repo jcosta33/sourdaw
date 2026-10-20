@@ -1,0 +1,29 @@
+src/modules/MIDI/useCases/webMidiInput/resolveRecordingPlacement.ts
+  s_2bfd55a4393d7c::t_b1c0ae9f07b91c 10-11
+src/modules/MIDI/useCases/webMidiInput/recordChannelEvent.ts
+  s_2bfd55a4393d7c::t_0b5add24c98b7a 3,5-6,8
+src/modules/MIDI/useCases/webMidiInput/recordingPlacementDependencies.ts
+  s_2bfd55a4393d7c::t_2203ecd560e1fe 1-6
+src/modules/MIDI/useCases/webMidiInput/isRecordingOnArmedTrack.ts
+  s_2bfd55a4393d7c::t_34994cc9a427c3 1-7
+src/modules/MIDI/useCases/webMidiInput/resolveAdmittedEventBeat.ts
+  s_2bfd55a4393d7c::t_89b8c9a4e8c041 1-21
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_2bfd55a4393d7c::t_bd2fb0f66040ef 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "722e4a874d9b2fae30db6f7df6b4993aab1b3ff0",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
