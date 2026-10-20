@@ -151,12 +151,12 @@ function guarded(root: string, input: Partial<Parameters<typeof runGuardedComman
 const GUARDED_CASE_TIMEOUT_MS = 15_000;
 
 // Runs one guarded command in a separate supervisor process. Values travel as argv data,
-// never as generated source.
+// never as generated source. The guard path must not be argv[1]: that would start its CLI.
 const SUPERVISOR_PROGRAM =
-    "const [guard, options, resultPath] = process.argv.slice(1); const { writeFileSync } = await import('node:fs'); const { runGuardedCommand } = await import(guard); const result = await runGuardedCommand(JSON.parse(options)); if (resultPath !== undefined) writeFileSync(resultPath, JSON.stringify(result));";
+    "const [options, guard, resultPath] = process.argv.slice(1); const { writeFileSync } = await import('node:fs'); const { runGuardedCommand } = await import(guard); const result = await runGuardedCommand(JSON.parse(options)); if (resultPath !== undefined) writeFileSync(resultPath, JSON.stringify(result));";
 
 function supervisorArgs(options: object, resultPath?: string): string[] {
-    const args = ['--input-type=module', '-e', SUPERVISOR_PROGRAM, guardPath, JSON.stringify(options)];
+    const args = ['--input-type=module', '-e', SUPERVISOR_PROGRAM, JSON.stringify(options), guardPath];
     if (resultPath !== undefined) {
         args.push(resultPath);
     }
@@ -762,9 +762,9 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             args: [
                 '--input-type=module',
                 '-e',
-                "import { tmpdir } from 'node:os'; import { existsSync } from 'node:fs'; const [guard, nestedOptions, reserveName] = process.argv.slice(1); const parent = tmpdir(); const { runGuardedCommand } = await import(guard); const result = await runGuardedCommand(JSON.parse(nestedOptions)); console.log(JSON.stringify({ parent, nested: result.output, nestedCode: result.code, parentExists: existsSync(parent), nestedExists: existsSync(result.output), reserve: process.env[reserveName] }));",
-                guardPath,
+                "import { tmpdir } from 'node:os'; import { existsSync } from 'node:fs'; const [nestedOptions, guard, reserveName] = process.argv.slice(1); const parent = tmpdir(); const { runGuardedCommand } = await import(guard); const result = await runGuardedCommand(JSON.parse(nestedOptions)); console.log(JSON.stringify({ parent, nested: result.output, nestedCode: result.code, parentExists: existsSync(parent), nestedExists: existsSync(result.output), reserve: process.env[reserveName] }));",
                 JSON.stringify(nestedOptions),
+                guardPath,
                 DISK_RESERVE_ENV,
             ],
         });
