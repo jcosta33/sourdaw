@@ -244,10 +244,11 @@ describe('two shipped Levain processors through the offline MIDI route', () => {
         vi.useFakeTimers();
         const { registry } = installWorkletGlobals<Processor>();
         await import('../../../services/levainProcessor');
-        const ProcessorCtor = registry.get('levain-processor');
-        if (!ProcessorCtor) {
+        const registeredProcessor = registry.get('levain-processor');
+        if (!registeredProcessor) {
             throw new Error('Levain processor was not registered');
         }
+        const ProcessorCtor = registeredProcessor;
         const simulated: SimulatedNode[] = [];
         const decodedIdentities: number[] = [];
         class FakeAudioContext {}
