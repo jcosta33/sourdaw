@@ -1487,7 +1487,7 @@ describe('storage ownership recovery', () => {
         }
     });
 
-    it.each([
+    it.skipIf(process.getuid === undefined).each([
         { scenario: 'complete current coverage', gap: false, expectedStates: ['dead', 'dead', 'dead'] },
         { scenario: 'new uncovered live PID', gap: true, expectedStates: ['unknown'] },
     ] as const)('requires fresh startup recovery proof for $scenario', ({ gap, expectedStates }) => {
