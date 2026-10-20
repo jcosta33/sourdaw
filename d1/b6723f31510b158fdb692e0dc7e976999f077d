@@ -1,0 +1,23 @@
+scripts/resourceGuard.ts
+  s_29d8df116c5b92::t_53de1e8184d292 1466-1468
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_53de1e8184d292 327-332
+.agents/skills/review-stances/security-and-platform.md
+  s_29d8df116c5b92::t_53de1e8184d292 36-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1b6723f31510b158fdb692e0dc7e976999f077d",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
