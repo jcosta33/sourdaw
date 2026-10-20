@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
-import { type DawProjectParseResult } from '../dawProjectTypes';
+import { type DawProjectImportWarning, type DawProjectParseResult } from '../dawProjectTypes';
 import { mapToProjectData } from '../mapToProjectData';
 
 function minimalParsed(overrides: Partial<DawProjectParseResult> = {}): DawProjectParseResult {
@@ -170,6 +170,7 @@ describe('mapToProjectData — clip mapping', () => {
     });
 
     it('leaves bufferId undefined when the audio path is not in the map', () => {
+        const warnings: DawProjectImportWarning[] = [];
         const data = mapToProjectData({
             parsed: minimalParsed({
                 tracks: [
@@ -199,9 +200,13 @@ describe('mapToProjectData — clip mapping', () => {
             }),
             bufferIdsByPath: new Map(),
             fileName: 'test.dawproject',
+            warnings,
         });
         const clip = data.arrangement.tracks.find((track) => track.id === 't1')!.clips[0]!;
         expect(clip.bufferId).toBeUndefined();
+        expect(warnings).toMatchObject([
+            { kind: 'missing-audio', name: 'Missing', sourceId: 'gone.wav', context: 'T1' },
+        ]);
     });
 
     it('maps a MIDI clip and populates notesByClipId with default probability/pressure', () => {
@@ -247,6 +252,7 @@ describe('mapToProjectData — clip mapping', () => {
 
 describe('mapToProjectData — device normalization', () => {
     it('passes through known builtin device types', () => {
+        const warnings: DawProjectImportWarning[] = [];
         const data = mapToProjectData({
             parsed: minimalParsed({
                 tracks: [
@@ -267,14 +273,17 @@ describe('mapToProjectData — device normalization', () => {
             }),
             bufferIdsByPath: new Map(),
             fileName: 'test.dawproject',
+            warnings,
         });
         const track = data.arrangement.tracks.find((track) => track.id === 't1')!;
         expect(track.devices).toHaveLength(2);
         expect(track.devices[0]!.type).toBe('builtin-synth');
         expect(track.devices[1]!.type).toBe('builtin-reverb');
+        expect(warnings).toEqual([]);
     });
 
     it('normalizes unknown device types to a default gain device', () => {
+        const warnings: DawProjectImportWarning[] = [];
         const data = mapToProjectData({
             parsed: minimalParsed({
                 tracks: [
@@ -295,11 +304,47 @@ describe('mapToProjectData — device normalization', () => {
             }),
             bufferIdsByPath: new Map(),
             fileName: 'test.dawproject',
+            warnings,
         });
         const track = data.arrangement.tracks.find((track) => track.id === 't1')!;
         expect(track.devices).toHaveLength(1);
         expect(track.devices[0]!.type).toBe('builtin-gain');
         expect(track.devices[0]!.name).toBe('mystery-plugin');
+        expect(warnings).toMatchObject([
+            { kind: 'unsupported-device', name: 'mystery-plugin', handling: 'substituted' },
+        ]);
+    });
+
+    it('reports ignored settings on a supported device without claiming the device was dropped', () => {
+        const warnings: DawProjectImportWarning[] = [];
+        mapToProjectData({
+            parsed: minimalParsed({
+                tracks: [
+                    {
+                        id: 't1',
+                        name: 'Lead',
+                        kind: 'midi',
+                        color: '',
+                        parentId: null,
+                        volume: 0.8,
+                        pan: 0,
+                        mute: false,
+                        solo: false,
+                        clips: [],
+                        deviceTypes: ['builtin-synth'],
+                        deviceSources: [
+                            { name: 'House Synth', sourceType: 'BuiltinDevice', sourceOrder: 1, hasSettings: true },
+                        ],
+                    },
+                ],
+            }),
+            bufferIdsByPath: new Map(),
+            fileName: 'test.dawproject',
+            warnings,
+        });
+        expect(warnings).toMatchObject([
+            { kind: 'unsupported-device-settings', name: 'House Synth', context: 'Lead', handling: 'dropped' },
+        ]);
     });
 
     it('injects a default synth for a midi track with no devices', () => {

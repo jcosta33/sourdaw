@@ -15,6 +15,32 @@ export type DawProjectParsedTrack = {
     solo: boolean;
     clips: DawProjectParsedClip[];
     deviceTypes: string[];
+    deviceSources?: DawProjectDeviceSource[];
+};
+
+export type DawProjectDeviceSource = {
+    name: string;
+    sourceType: string;
+    sourceId?: string;
+    sourceOrder: number;
+    hasSettings: boolean;
+};
+
+export type DawProjectImportWarning = {
+    kind:
+        | 'unsupported-device'
+        | 'unsupported-device-settings'
+        | 'unsupported-automation'
+        | 'unsupported-track-type'
+        | 'unsupported-clip'
+        | 'invalid-note'
+        | 'missing-audio';
+    name: string;
+    sourceType: string;
+    sourceId?: string;
+    context: string;
+    handling: 'dropped' | 'substituted';
+    sourceOrder: number;
 };
 
 export type DawProjectParsedMidiNote = {
@@ -32,6 +58,8 @@ export type DawProjectParsedClip = {
     type: 'audio' | 'midi';
     audioAssetPath?: string;
     notes?: DawProjectParsedMidiNote[];
+    sourceId?: string;
+    sourceOrder?: number;
     /** Where the clip starts reading its media (`Clip@playStart`), in beats.
      * Absent means the file carries no content offset. */
     playStartBeat?: number;
@@ -71,4 +99,5 @@ export type DawProjectParseResult = {
     tracks: DawProjectParsedTrack[];
     markers: DawProjectMarker[];
     audioAssets: Map<string, Uint8Array>;
+    warnings?: DawProjectImportWarning[];
 };

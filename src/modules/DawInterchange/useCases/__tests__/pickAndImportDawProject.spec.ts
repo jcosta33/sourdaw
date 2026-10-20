@@ -18,7 +18,7 @@ describe('pickAndImportDawProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(true);
-        vi.mocked(importDawProject).mockResolvedValue(true);
+        vi.mocked(importDawProject).mockResolvedValue({ ok: true, warnings: [] });
     });
 
     it('returns false without importing when the file picker is cancelled', async () => {
@@ -37,6 +37,13 @@ describe('pickAndImportDawProject', () => {
 
         expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1);
         expect(importDawProject).toHaveBeenCalledWith({ buffer: expect.any(ArrayBuffer), fileName: 'song.dawproject' });
+    });
+
+    it('returns false when the import does not commit', async () => {
+        vi.mocked(pickFiles).mockResolvedValue([new File([new Uint8Array([1])], 'song.dawproject')]);
+        vi.mocked(importDawProject).mockResolvedValue({ ok: false, warnings: [] });
+
+        await expect(pickAndImportDawProject()).resolves.toBe(false);
     });
 
     // Issue 3694: the import replaces the open project, so a pre-switch save

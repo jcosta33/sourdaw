@@ -19,5 +19,5 @@ export async function pickAndImportDawProject(): Promise<boolean> {
     }
     const file = files[0]!;
     const buffer = await file.arrayBuffer();
-    return importDawProject({ buffer, fileName: file.name });
+    return (await importDawProject({ buffer, fileName: file.name })).ok;
 }

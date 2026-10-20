@@ -137,6 +137,15 @@ describe('parseProjectXml — track kind classification', () => {
         const result = parseProjectXml(project('<Structure><Track id="t0"/></Structure>'));
         expect(result.tracks[0]?.kind).toBe('audio');
     });
+
+    it('reports an explicit unsupported track type when it substitutes audio', () => {
+        const result = parseProjectXml(
+            project('<Structure><Track id="t0" name="Control" contentType="video"/></Structure>')
+        );
+        expect(result.warnings).toMatchObject([
+            { kind: 'unsupported-track-type', name: 'video: Control', context: 'Control', handling: 'substituted' },
+        ]);
+    });
 });
 
 describe('parseProjectXml — channel info parsing', () => {
@@ -256,6 +265,19 @@ describe('parseProjectXml — clip parsing', () => {
             '<Arrangement><Lanes><Clips track="t0"><Clip time="0" duration="2"/></Clips></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
         expect(result.tracks[0]?.clips).toHaveLength(0);
+        expect(result.warnings).toMatchObject([{ kind: 'unsupported-clip', sourceType: 'Clip', context: 'Track 1' }]);
+    });
+
+    it('reports each invalid MIDI note without dropping its containing clip', () => {
+        const inner =
+            '<Structure><Track id="t0" name="Keys" contentType="notes"/></Structure>' +
+            '<Arrangement><Lanes><Clips track="t0"><Clip name="Verse" time="0" duration="2">' +
+            '<Notes><Note id="bad" key="-1"/><Note key="60"/></Notes></Clip></Clips></Lanes></Arrangement>';
+        const result = parseProjectXml(project(inner));
+        expect(result.tracks[0]?.clips[0]?.notes).toHaveLength(1);
+        expect(result.warnings).toMatchObject([
+            { kind: 'invalid-note', name: 'key -1', sourceId: 'bad', context: 'Keys / Verse' },
+        ]);
     });
 
     it('derives an omitted duration from the playStop - playStart window', () => {
@@ -366,6 +388,19 @@ describe('parseProjectXml — master-track automation', () => {
         expect(result.tempoChanges).toEqual([]);
         expect(result.timeSignatureChanges).toEqual([]);
     });
+
+    it('reports named parameter automation and official top-level automation it cannot map', () => {
+        const xml =
+            '<Structure><Track id="t0" name="Lead" contentType="notes"/></Structure>' +
+            '<Arrangement><TempoAutomation name="Tempo shape"><Points><RealPoint time="0" value="140"/></Points></TempoAutomation><Lanes>' +
+            '<Points name="Cutoff" track="t0"><Target parameter="filter"/><RealPoint time="0" value="0.5"/></Points>' +
+            '</Lanes></Arrangement>';
+        const result = parseProjectXml(project(xml));
+        expect(result.warnings).toMatchObject([
+            { kind: 'unsupported-automation', name: 'Tempo shape', context: 'Arrangement' },
+            { kind: 'unsupported-automation', name: 'Cutoff', context: 'Lead' },
+        ]);
+    });
 });
 
 describe('parseProjectXml — markers', () => {
@@ -407,6 +442,7 @@ describe('parseProjectXml — clip routing via channel id', () => {
             '</Clips></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
         expect(result.tracks[0]?.clips).toHaveLength(0);
+        expect(result.warnings).toMatchObject([{ kind: 'unsupported-clip', context: 'nope', sourceType: 'Clip' }]);
     });
 
     it('drops clip lanes that have neither a track nor a channel target attribute', () => {

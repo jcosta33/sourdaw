@@ -1,6 +1,8 @@
 import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 
 import {
+    type DawProjectDeviceSource,
+    type DawProjectImportWarning,
     type DawProjectMarker,
     type DawProjectParsedClip,
     type DawProjectParsedMidiNote,
@@ -49,6 +51,9 @@ type ParseContext = {
     defaultTimeUnit: 'beats' | 'seconds';
     /** Initial tempo in bpm — used to convert seconds to beats when needed. */
     tempo: number;
+    trackNames: Map<string, string>;
+    elementOrder: Map<Element, number>;
+    warnings: DawProjectImportWarning[];
 };
 
 export type ParsedProjectXml = {
@@ -58,7 +63,27 @@ export type ParsedProjectXml = {
     initialTempo: number;
     initialTimeSignature: { numerator: number; denominator: number };
     markers: DawProjectMarker[];
+    warnings: DawProjectImportWarning[];
 };
+
+function warn(
+    context: ParseContext,
+    node: XmlQuery,
+    kind: DawProjectImportWarning['kind'],
+    name: string,
+    owner: string,
+    handling: DawProjectImportWarning['handling'] = 'dropped'
+): void {
+    context.warnings.push({
+        kind,
+        name,
+        sourceType: node.element.tagName,
+        sourceId: node.attr('id') ?? undefined,
+        context: owner,
+        handling,
+        sourceOrder: context.elementOrder.get(node.element) ?? -1,
+    });
+}
 
 const DEFAULT_COLOR_PALETTE = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
@@ -109,7 +134,7 @@ function parseTransport(transport: XmlQuery | null): {
     return { tempo, numerator, denominator };
 }
 
-function classifyTrackKind(track: XmlQuery): DawProjectParsedTrack['kind'] {
+function classifyTrackKind(track: XmlQuery, context: ParseContext, trackName: string): DawProjectParsedTrack['kind'] {
     // An explicit channel role wins over `contentType`. A bus carries
     // contentType="audio" — that is what audio flows through it — so reading
     // contentType first classified every bus as a plain audio track and lost
@@ -133,18 +158,25 @@ function classifyTrackKind(track: XmlQuery): DawProjectParsedTrack['kind'] {
     if (hasChildTrack) {
         return 'folder';
     }
+    if (groupType || role) {
+        warn(context, track, 'unsupported-track-type', `${groupType ?? role}: ${trackName}`, trackName, 'substituted');
+    }
     return 'audio';
 }
 
-function parseChannelInfo(channel: XmlQuery | null): {
+function parseChannelInfo(
+    channel: XmlQuery | null,
+    context: ParseContext
+): {
     volume: number;
     pan: number;
     mute: boolean;
     solo: boolean;
     deviceTypes: string[];
+    deviceSources: DawProjectDeviceSource[];
 } {
     if (!channel) {
-        return { volume: 0.8, pan: 0, mute: false, solo: false, deviceTypes: [] };
+        return { volume: 0.8, pan: 0, mute: false, solo: false, deviceTypes: [], deviceSources: [] };
     }
     const volumeNode = channel.child(VOLUME);
     const panNode = channel.child(PAN);
@@ -157,10 +189,18 @@ function parseChannelInfo(channel: XmlQuery | null): {
 
     const devicesNode = channel.child(DEVICES);
     const deviceTypes: string[] = [];
+    const deviceSources: DawProjectDeviceSource[] = [];
     if (devicesNode) {
         for (const device of devicesNode.children()) {
             const deviceRole = device.attr('deviceRole') ?? device.attr('role') ?? device.element.tagName;
             deviceTypes.push(deviceRole.toLowerCase());
+            deviceSources.push({
+                name: device.attr('deviceName') ?? device.attr('name') ?? deviceRole,
+                sourceType: device.element.tagName,
+                sourceId: device.attr('id') ?? device.attr('deviceID') ?? undefined,
+                sourceOrder: context.elementOrder.get(device.element) ?? -1,
+                hasSettings: device.children().length > 0,
+            });
         }
     }
 
@@ -170,14 +210,21 @@ function parseChannelInfo(channel: XmlQuery | null): {
         mute,
         solo,
         deviceTypes,
+        deviceSources,
     };
 }
 
-function parseNotesNode(notes: XmlQuery, unit: 'beats' | 'seconds', tempo: number): DawProjectParsedMidiNote[] {
+function parseNotesNode(
+    notes: XmlQuery,
+    unit: 'beats' | 'seconds',
+    context: ParseContext,
+    clipName: string
+): DawProjectParsedMidiNote[] {
     const result: DawProjectParsedMidiNote[] = [];
     for (const note of notes.children(NOTE)) {
         const key = note.attrNumber('key', -1);
         if (key < 0) {
+            warn(context, note, 'invalid-note', note.attr('name') ?? `key ${note.attr('key') ?? 'missing'}`, clipName);
             continue;
         }
         const rawStart = note.attrNumber('time', 0);
@@ -185,8 +232,8 @@ function parseNotesNode(notes: XmlQuery, unit: 'beats' | 'seconds', tempo: numbe
         const velRaw = note.attrNumber('vel', 0.787);
         result.push({
             pitch: key,
-            startBeat: toBeats(rawStart, unit, tempo),
-            duration: toBeats(rawDuration, unit, tempo),
+            startBeat: toBeats(rawStart, unit, context.tempo),
+            duration: toBeats(rawDuration, unit, context.tempo),
             velocity: Math.round(Math.max(0, Math.min(1, velRaw)) * 127),
         });
     }
@@ -210,7 +257,8 @@ function parseClip(
     ownerKind: DawProjectParsedTrack['kind'],
     parentUnit: 'beats' | 'seconds',
     context: ParseContext,
-    index: number
+    index: number,
+    trackName: string
 ): DawProjectParsedClip | null {
     // `time` and `duration` read in the clip's timeline unit: its own
     // `timeUnit` attribute or the enclosing scope's. The generic
@@ -237,6 +285,7 @@ function parseClip(
     const endBeat = startBeat + toBeats(Math.max(0, rawDuration), durationUnit, context.tempo);
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
     const id = `clip-${crypto.randomUUID()}`;
+    const source = { sourceId: clip.attr('id') ?? undefined, sourceOrder: context.elementOrder.get(clip.element) };
     // `playStart` is where the clip starts reading its media, in content time.
     // Kept whenever it differs from the default 0 — negative is the slip of a
     // clip left of its media start.
@@ -247,6 +296,7 @@ function parseClip(
     if (notesNode) {
         return {
             id,
+            ...source,
             name,
             startBeat,
             endBeat: Math.max(endBeat, startBeat + 0.25),
@@ -255,7 +305,7 @@ function parseClip(
             // contentTimeUnit governs the content while `time` and `duration`
             // stay in the timeline unit. A Notes `timeUnit` attribute still
             // wins via readTimeUnit.
-            notes: parseNotesNode(notesNode, readTimeUnit(notesNode, contentUnit), context.tempo),
+            notes: parseNotesNode(notesNode, readTimeUnit(notesNode, contentUnit), context, `${trackName} / ${name}`),
             ...playStart,
         };
     }
@@ -264,6 +314,7 @@ function parseClip(
     if (assetPath) {
         return {
             id,
+            ...source,
             name,
             startBeat,
             endBeat: Math.max(endBeat, startBeat + 0.25),
@@ -276,6 +327,7 @@ function parseClip(
     if (ownerKind === 'midi') {
         return {
             id,
+            ...source,
             name,
             startBeat,
             endBeat: Math.max(endBeat, startBeat + 0.25),
@@ -285,6 +337,7 @@ function parseClip(
         };
     }
 
+    warn(context, clip, 'unsupported-clip', name, trackName);
     return null;
 }
 
@@ -298,25 +351,28 @@ function parseTrack(
     children: XmlQuery[];
 } {
     const xmlId = track.attr('id') ?? `track-${String(index)}`;
+    const trackName = track.attr('name') ?? `Track ${String(index + 1)}`;
     const stableId = `track-${crypto.randomUUID()}`;
     context.trackIdMap.set(xmlId, stableId);
+    context.trackNames.set(xmlId, trackName);
 
     const channel = track.child(CHANNEL);
     if (channel) {
         const channelId = channel.attr('id');
         if (channelId) {
             context.channelToTrackId.set(channelId, stableId);
+            context.trackNames.set(channelId, trackName);
         }
     }
 
-    const kind = classifyTrackKind(track);
-    const channelInfo = parseChannelInfo(channel);
+    const kind = classifyTrackKind(track, context, trackName);
+    const channelInfo = parseChannelInfo(channel, context);
     const colorAttr = track.attr('color');
     const color = colorAttr && colorAttr.startsWith('#') ? colorAttr : pickFallbackColor(index);
 
     const parsed: DawProjectParsedTrack = {
         id: stableId,
-        name: track.attr('name') ?? `Track ${String(index + 1)}`,
+        name: trackName,
         kind,
         color,
         parentId,
@@ -326,6 +382,7 @@ function parseTrack(
         solo: channelInfo.solo,
         clips: [],
         deviceTypes: channelInfo.deviceTypes,
+        deviceSources: channelInfo.deviceSources,
     };
 
     return { track: parsed, children: track.children(TRACK) };
@@ -376,6 +433,21 @@ function parseMasterTrackAutomation(
     const tempoChanges: DawProjectTempoChange[] = [];
     const timeSignatureChanges: DawProjectTimeSignatureChange[] = [];
 
+    for (const direct of arrangement.children()) {
+        if (
+            (direct.element.tagName === 'TempoAutomation' || direct.element.tagName === 'TimeSignatureAutomation') &&
+            direct.children().length > 0
+        ) {
+            warn(
+                context,
+                direct,
+                'unsupported-automation',
+                direct.attr('name') ?? direct.element.tagName,
+                'Arrangement'
+            );
+        }
+    }
+
     const lanesRoot = arrangement.child(LANES);
     if (!lanesRoot) {
         return { tempoChanges, timeSignatureChanges };
@@ -395,11 +467,52 @@ function parseMasterTrackAutomation(
                     for (const point of child.children(REAL_POINT)) {
                         tempoChanges.push(parseTempoAutomation(point, childUnit, context.tempo));
                     }
+                    for (const point of child
+                        .children()
+                        .filter(
+                            (entry) => entry.element.tagName !== REAL_POINT && entry.element.tagName !== 'Target'
+                        )) {
+                        warn(
+                            context,
+                            point,
+                            'unsupported-automation',
+                            child.attr('name') ?? 'Tempo automation',
+                            'Arrangement'
+                        );
+                    }
                 } else if (target === 'timeSignature') {
                     for (const point of child.children(TIME_SIGNATURE_POINT)) {
                         timeSignatureChanges.push(parseTsAutomation(point, childUnit, context.tempo));
                     }
+                    for (const point of child
+                        .children()
+                        .filter(
+                            (entry) =>
+                                entry.element.tagName !== TIME_SIGNATURE_POINT && entry.element.tagName !== 'Target'
+                        )) {
+                        warn(
+                            context,
+                            point,
+                            'unsupported-automation',
+                            child.attr('name') ?? 'Time signature automation',
+                            'Arrangement'
+                        );
+                    }
+                } else {
+                    const targetNode = child.child('Target');
+                    const targetName =
+                        targetNode?.attr('parameter') ?? targetNode?.attr('expression') ?? target ?? null;
+                    const trackRef = child.attr('track') ?? child.attr('channel');
+                    const owner = (trackRef && context.trackNames.get(trackRef)) ?? 'Arrangement';
+                    warn(
+                        context,
+                        child,
+                        'unsupported-automation',
+                        child.attr('name') ?? targetName ?? 'Automation',
+                        owner
+                    );
                 }
+                continue;
             }
             walkAutomation(child, childUnit);
         }
@@ -442,12 +555,20 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
                     const clipNodes = laneOrClips.children(CLIP);
                     for (let index = 0; index < clipNodes.length; index++) {
                         const clipNode = clipNodes[index]!;
-                        const clip = parseClip(clipNode, target.kind, laneUnit, context, index);
+                        const clip = parseClip(clipNode, target.kind, laneUnit, context, index, target.name);
                         if (clip) {
                             target.clips.push(clip);
                         }
                     }
+                } else {
+                    for (const clipNode of laneOrClips.children(CLIP)) {
+                        const owner = targetAttr
+                            ? (context.trackNames.get(targetAttr) ?? targetAttr)
+                            : 'Unassigned lane';
+                        warn(context, clipNode, 'unsupported-clip', clipNode.attr('name') ?? 'Clip', owner);
+                    }
                 }
+                continue;
             }
             walkClips(laneOrClips, laneUnit);
         }
@@ -483,6 +604,9 @@ export function parseProjectXml(xml: string): ParsedProjectXml {
         channelToTrackId: new Map(),
         defaultTimeUnit: 'beats',
         tempo: transport.tempo,
+        trackNames: new Map(),
+        elementOrder: new Map(Array.from(rootElement.getElementsByTagName('*')).map((node, index) => [node, index])),
+        warnings: [],
     };
 
     const structureNode = root.child(STRUCTURE);
@@ -509,5 +633,6 @@ export function parseProjectXml(xml: string): ParsedProjectXml {
         initialTempo: transport.tempo,
         initialTimeSignature: { numerator: transport.numerator, denominator: transport.denominator },
         markers,
+        warnings: context.warnings,
     };
 }
