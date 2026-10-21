@@ -1,0 +1,21 @@
+src/modules/Transport/useCases/transportControls/__tests__/recordingTerminalBranchWitness.integration.spec.ts
+  s_59e31a5c6f3e31::t_d4bba03e6a1d3c 1-283
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_59e31a5c6f3e31::t_a88f5c58d60230 13,114-218,225-233,254-255,257,265-269,271,276-283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86744058f527ab811c09b509dc6c1fbf66756a58",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
