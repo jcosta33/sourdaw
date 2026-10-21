@@ -24,21 +24,16 @@ dispatch.
 
 ### 2026-10-21 — the storage census attributed foreign same-UID processes to every run (introduced by PR #5274)
 
-PR #5274 proved its file census only in a fresh isolated account and on a quiet host; its own body
-left whole macOS verification incomplete. In the runner account a long-lived same-UID process with
-EACCES on `/proc/<pid>/cwd` made every cleanup unknown, so nightly unit shards and the runner-account
-"Review tooling unit suite" reported `leak`. That suite was skipped on #5274 because its profile was
-broad, and the isolated unit shards have no foreign processes. On macOS, other guards' lsof runs,
-hook processes, and editor helpers started, closed descriptors, exited, or went unread during every
-whole-account catalog, so its single replacement catalog failed as well.
+PR #5274 proved its Linux file census only in a fresh isolated account. In the runner account a
+long-lived same-UID process with EACCES on `/proc/<pid>/cwd` made every cleanup unknown, so nightly
+unit shards and the runner-account "Review tooling unit suite" reported `leak`. That suite was
+skipped on #5274 because its profile was broad, and the isolated unit shards have no foreign
+processes.
 
-Probe: run a guarded no-op in a populated account beside an uninspectable process that predates the
-supervisor and a source of short-lived same-UID processes, and require reclamation. Keep the denial
-retained for a process started after the supervisor, and keep a newborn or skipped consumer retained.
-This narrows the 2026-10-12 lesson below: a new live PID no longer discards a whole catalog. Each
-uncovered live PID instead receives its own PID inspection inside the bounded observations, the
-account is listed again afterwards, and only a process that stays unreadable and alive past the
-half-second exit window retains storage.
+Probe: run a guarded no-op in a populated Linux account beside an uninspectable process that
+predates the supervisor, and require reclamation. Keep the denial retained for a process started
+after the supervisor, and for every denial during crash recovery or under any owner other than the
+run's own live supervisor.
 
 ### 2026-10-12 — transient Darwin descriptor omission exhausted complete-census admission
 

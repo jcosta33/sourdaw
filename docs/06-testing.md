@@ -749,18 +749,12 @@ On macOS, an unreaped same-UID process positively sampled in zombie state has al
 its file table; this exception never releases process-identity or signaling fences.
 File inspection checks same-UID process coverage again after reading files, so a process born
 during inspection cannot disappear from the proof. On Linux, a newly listed live same-UID process
-permits one complete replacement inspection of the full fresh process list, at most two
-whole-account observations. On macOS, a catalog with a descriptor missing its type, or one whose
-only gaps are verified new live same-UID processes, may be discarded while another of at most three
-whole-account observations remains. Both platforms keep the same five-second proof deadline. Every
-process the last macOS catalog leaves uncovered — newly observed, previously listed and skipped by
-lsof, or listed with an untyped descriptor — is then inspected once by PID, and one still unreadable
-must exit within half a second. Same-UID processes are then listed again, because an inspected process can fork and
-exit before its child is ever listed; each live process neither a catalog nor a PID inspection has
-covered receives the same PID inspection, until a listing adds none within the proof deadline.
-Only complete evidence for every observed process permits deletion; a process left
-uncovered, ambiguous identity, malformed catalog, denied inspection or unavailable evidence retains
-storage. Processes created after the final proof remain outside
+permits one complete replacement inspection of the full fresh process list. On macOS, an otherwise
+valid catalog missing only a descriptor type, or omitting a newly observed positively live same-UID
+process, may be discarded for one complete replacement. Each platform allows at most two
+observations within the same five-second proof deadline; both macOS conditions share that limit.
+Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
+identity, malformed catalog, denied inspection or unavailable evidence retains storage. Processes created after the final proof remain outside
 that observation; this is conservative sampled evidence, not a guarantee of continuous isolation.
 Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
 

@@ -30,7 +30,6 @@ import {
     parseLinuxFileSnapshot,
     parseLinuxStartTicks,
     startTimeExcuseSupervisor,
-    darwinStorageFileCensus,
 } from '../resourceGuard';
 import {
     createGuardStorage,
@@ -40,7 +39,7 @@ import {
     resolveGuardStorageRoot,
     storageReferenceState,
     sameUserProcessIds,
-    parseLsofCatalog,
+    parseLsofCensus,
     referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
@@ -167,14 +166,6 @@ function ownedStorage(root: string, ports: StorageRecoveryPorts = deadPorts) {
 
 function readOwner(tempDirectory: string): Parameters<typeof reclaimGuardStorage>[0]['owner'] {
     return JSON.parse(readFileSync(join(dirname(tempDirectory), 'owner.json'), 'utf8'));
-}
-
-// A logged `lsof -p` invocation names the PIDs it inspected after its `-p` flag.
-function targetedPids(call: string): string[] {
-    if (!call.startsWith('targeted ')) {
-        return [];
-    }
-    return (call.split(' -p ')[1] ?? '').split(',');
 }
 
 function claimPayloads(root: string): string[] {
@@ -1687,117 +1678,6 @@ describe('storage ownership recovery', () => {
     );
 
     it.each([
-        { scenario: 'exits within the exit window', exitsAt: 200, finalSnapshotExit: false, reclaimed: true },
-        { scenario: 'stays alive past the exit window', exitsAt: Infinity, finalSnapshotExit: false, reclaimed: false },
-        { scenario: 'exits during its final snapshot', exitsAt: Infinity, finalSnapshotExit: true, reclaimed: true },
-    ])(
-        'recovers macOS storage beside an unrelated same-UID process lsof cannot read that $scenario',
-        ({ exitsAt, finalSnapshotExit, reclaimed }) => {
-            const root = fixture();
-            const storage = ownedStorage(root);
-            const reports: string[] = [];
-            let clock = 0;
-            let snapshots = 0;
-            let exitedDuringSnapshot = false;
-            const files: Parameters<typeof darwinStorageFileCensus>[5] = {
-                readProcessUsers: () => [123],
-                // Neither the whole-account catalog nor the PID inspection reads process 123.
-                fileCatalog: () => ({ inspected: new Set(), incomplete: new Set(), paths: [] }),
-                snapshot: () => {
-                    snapshots += 1;
-                    if (finalSnapshotExit && snapshots === 2) {
-                        exitedDuringSnapshot = true;
-                        return undefined;
-                    }
-                    return { uid: 501, state: 'S' };
-                },
-                isGone: () => exitedDuringSnapshot || clock >= exitsAt,
-                now: () => clock,
-                pause: (ms) => {
-                    clock += ms;
-                },
-            };
-            const ports: StorageRecoveryPorts = {
-                identityState: () => 'dead',
-                sessionState: (_owner, original, current = original) =>
-                    darwinStorageFileCensus(
-                        [123],
-                        501,
-                        [original, current],
-                        5_000,
-                        (reason) => reports.push(reason),
-                        files
-                    ),
-            };
-            recoverGuardStorage(root, ports, fakeReclaimer);
-            expect(existsSync(storage.tempDirectory)).toBe(!reclaimed);
-            expect(reports).toEqual(reclaimed ? [] : ['lsof-live-pid-missing:count=1:pid/uid/state=123/501/S']);
-            if (exitsAt === Infinity) {
-                expect(clock).toBeGreaterThanOrEqual(500);
-                expect(clock).toBeLessThan(600);
-            } else {
-                expect(clock).toBe(exitsAt);
-            }
-        }
-    );
-
-    it('inspects the child of an uncovered macOS process that forks and exits during its PID inspection', () => {
-        const root = fixture();
-        const storage = ownedStorage(root);
-        const reports: string[] = [];
-        const states: string[] = [];
-        let forked = false;
-        const files: Parameters<typeof darwinStorageFileCensus>[5] = {
-            // Process 200 appears after the first catalog; its child 300 is never listed before it exits.
-            readProcessUsers: () => (forked ? [100, 300] : [100, 200]),
-            fileCatalog: (_uid, _deadline, selected) => {
-                if (selected?.includes(200)) {
-                    forked = true;
-                }
-                const openPaths = new Map<number, string[]>([[100, ['/elsewhere/held']]]);
-                if (forked) {
-                    openPaths.set(300, [join(storage.tempDirectory, 'held')]);
-                }
-                const pids: number[] = [];
-                for (const pid of openPaths.keys()) {
-                    if (selected === undefined || selected.includes(pid)) {
-                        pids.push(pid);
-                    }
-                }
-                return {
-                    inspected: new Set(pids),
-                    incomplete: new Set(),
-                    paths: pids.flatMap((pid) => openPaths.get(pid) ?? []),
-                };
-            },
-            snapshot: () => ({ uid: 501, state: 'S' }),
-            isGone: (pid) => pid === 200 && forked,
-            now: () => 0,
-            pause: () => {},
-        };
-        const ports: StorageRecoveryPorts = {
-            identityState: () => 'dead',
-            sessionState: (_owner, original, current = original) => {
-                const state = darwinStorageFileCensus(
-                    [100],
-                    501,
-                    [original, current],
-                    5_000,
-                    (reason) => reports.push(reason),
-                    files
-                );
-                states.push(state);
-                return state;
-            },
-        };
-        recoverGuardStorage(root, ports, fakeReclaimer);
-        expect(forked).toBe(true);
-        expect(states).toEqual(['alive']);
-        expect(reports).toEqual([]);
-        expect(existsSync(storage.tempDirectory)).toBe(true);
-    });
-
-    it.each([
         {
             scenario: 'closed enumeration descriptor',
             recreated: false,
@@ -1872,13 +1752,11 @@ describe('storage ownership recovery', () => {
     it.skipIf(process.getuid === undefined).each([
         { scenario: 'third complete census', omissions: 2, state: 'dead', samples: 3, reason: undefined },
         {
-            // The last allowed catalog leaves the process incomplete; its own PID
-            // inspection cannot read it either, so it is reported as a live gap.
             scenario: 'persistent omission',
             omissions: 3,
             state: 'unknown',
             samples: 3,
-            reason: 'lsof-live-pid-missing:count=1',
+            reason: 'lsof-fields-unusable:descriptor-type-missing',
         },
         { scenario: 'third live borrower', omissions: 2, state: 'alive', samples: 3, reason: undefined },
         {
@@ -1961,14 +1839,12 @@ describe('storage ownership recovery', () => {
             const scenario=${JSON.stringify(scenario)},omissions=${omissions};
             const mixedOmission=scenario.startsWith('descriptor omission then ');
             const uid=process.getuid(),pid=process.pid,newPid=pid+100000,newerPid=pid+100001;
-            let samples=0,processSamples=0,now=0,targeted=0;
+            let samples=0,processSamples=0,now=0;
             const timeouts=[];
             os.platform=()=> 'darwin';
             Date.now=()=>now;
             process.kill=()=>true;
             childProcess.spawnSync=(command,args,options)=>{
-                // A PID inspection never reads a process its whole-account catalog missed.
-                if(command==='lsof'&&args.includes('-p')){targeted++;return {status:1,stdout:'',stderr:''};}
                 timeouts.push({command,timeout:options.timeout});
                 let stdout;
                 if(command==='ps'){
@@ -2021,7 +1897,7 @@ describe('storage ownership recovery', () => {
                 retained=existsSync(storage.tempDirectory);
                 claimPayloadCount=readdirSync(storageRoot+'/.claims').length;
             }else state=storageFileState([${JSON.stringify(join(root, 'tmp'))}],[],reason=>reasons.push(reason));
-            console.log(JSON.stringify({state,reasons,samples,processSamples,targeted,timeouts,retained,proofBeforeRecovery,claimPayloadCount}));
+            console.log(JSON.stringify({state,reasons,samples,processSamples,timeouts,retained,proofBeforeRecovery,claimPayloadCount}));
         `;
             chmodSync(root, 0o700);
             const observed: {
@@ -2029,7 +1905,6 @@ describe('storage ownership recovery', () => {
                 reasons: string[];
                 samples: number;
                 processSamples: number;
-                targeted: number;
                 timeouts: { command: string; timeout: number }[];
                 retained?: boolean;
                 proofBeforeRecovery?: string;
@@ -2044,8 +1919,6 @@ describe('storage ownership recovery', () => {
             expect(observed.state).toBe(state);
             expect(observed.samples).toBe(samples);
             expect(observed.reasons).toEqual(reason === undefined ? [] : [expect.stringContaining(reason)]);
-            // A gap the last whole observation leaves is inspected once by PID before it is reported.
-            expect(observed.targeted).toBe(reason?.startsWith('lsof-live-pid-missing') === true ? 1 : 0);
             const censusTimeouts = observed.timeouts.filter((sample) => sample.command === 'lsof');
             expect(censusTimeouts.map((sample) => sample.timeout)).toEqual(
                 Array.from({ length: samples }, (_, index) => {
@@ -2140,13 +2013,11 @@ describe('storage ownership recovery', () => {
                 const uid=process.getuid(),pid=process.pid,firstPid=pid+100000,secondPid=pid+100001,thirdPid=pid+100002;
                 const temp=${JSON.stringify(temp)};
                 let fileSamples=0,processSamples=0,now=0;
-                const timeouts=[],accountPids=[],catalogPids=[],snapshotPids=[],targetedPids=[];
+                const timeouts=[],accountPids=[],catalogPids=[],snapshotPids=[];
                 os.platform=()=> 'darwin';
                 Date.now=()=>now;
                 process.kill=()=>true;
                 childProcess.spawnSync=(command,args,options)=>{
-                    // A PID inspection never reads a process its whole-account catalog missed.
-                    if(command==='lsof'&&args.includes('-p')){targetedPids.push(args.at(-1));return {status:1,stdout:'',stderr:''};}
                     timeouts.push({command,timeout:options.timeout});
                     if(command==='ps'&&args[0]==='-p'){
                         const inspected=Number(args[1]);
@@ -2185,7 +2056,7 @@ describe('storage ownership recovery', () => {
                 const {storageFileState}=await import(${JSON.stringify(guardPath)});
                 const reasons=[];
                 const result=storageFileState([temp],[],reason=>reasons.push(reason));
-                console.log(JSON.stringify({result,reasons,fileSamples,processSamples,timeouts,accountPids,catalogPids,snapshotPids,targetedPids,pid,firstPid,secondPid,thirdPid,uid}));
+                console.log(JSON.stringify({result,reasons,fileSamples,processSamples,timeouts,accountPids,catalogPids,snapshotPids,pid,firstPid,secondPid,thirdPid,uid}));
             `;
             const observed: {
                 result: string;
@@ -2196,7 +2067,6 @@ describe('storage ownership recovery', () => {
                 accountPids: number[][];
                 catalogPids: number[][];
                 snapshotPids: number[];
-                targetedPids: string[];
                 pid: number;
                 firstPid: number;
                 secondPid: number;
@@ -2227,17 +2097,9 @@ describe('storage ownership recovery', () => {
             expect(observed.catalogPids).toEqual(
                 [[pid], [pid, firstPid], [pid, firstPid, secondPid]].slice(0, samples)
             );
-            // The gap the last whole observation leaves is inspected once by PID and, still
-            // unreadable, sampled again after the exit window before it is reported.
-            let gapPid: number | undefined;
-            if (ending === 'third newborn') {
-                gapPid = thirdPid;
-            } else if (secondSnapshot !== 'live') {
-                gapPid = secondPid;
-            }
-            const sampledPids = ending === 'third newborn' ? [firstPid, secondPid, thirdPid] : [firstPid, secondPid];
-            expect(observed.snapshotPids).toEqual(gapPid === undefined ? sampledPids : [...sampledPids, gapPid]);
-            expect(observed.targetedPids).toEqual(gapPid === undefined ? [] : [String(gapPid)]);
+            expect(observed.snapshotPids).toEqual(
+                ending === 'third newborn' ? [firstPid, secondPid, thirdPid] : [firstPid, secondPid]
+            );
             expect(
                 observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)
             ).toEqual([5000, 4900, 4800].slice(0, samples));
@@ -2276,13 +2138,11 @@ describe('storage ownership recovery', () => {
             const gap=${gap},uid=process.getuid(),pid=process.pid,newPid=pid+100000,newerPid=pid+100001;
             const storageRoot=${JSON.stringify(join(root, 'storage'))};
             let fileSamples=0,processSamples=0,now=0;
-            const timeouts=[],proofPaths=[],accountPids=[],catalogPids=[],targetedPids=[];
+            const timeouts=[],proofPaths=[],accountPids=[],catalogPids=[];
             os.platform=()=> 'darwin';
             Date.now=()=>now;
             process.kill=()=>true;
             childProcess.spawnSync=(command,args,options)=>{
-                // A PID inspection never reads a process its whole-account catalog missed.
-                if(command==='lsof'&&args.includes('-p')){targetedPids.push(args.at(-1));return {status:1,stdout:'',stderr:''};}
                 timeouts.push({command,timeout:options.timeout});
                 let stdout;
                 if(command==='ps'){
@@ -2331,7 +2191,7 @@ describe('storage ownership recovery', () => {
                     return {name,owner:JSON.parse(readFileSync(join(path,'owner.json'),'utf8'))};
                 });
             });
-            console.log(JSON.stringify({proofBeforeRecovery,states,reasons,fileSamples,processSamples,timeouts,proofPaths,accountPids,catalogPids,targetedPids,originalRetained,originalOwner,claims,pid,newPid,newerPid,uid,originalToken}));
+            console.log(JSON.stringify({proofBeforeRecovery,states,reasons,fileSamples,processSamples,timeouts,proofPaths,accountPids,catalogPids,originalRetained,originalOwner,claims,pid,newPid,newerPid,uid,originalToken}));
         `;
         const observed: {
             proofBeforeRecovery: string;
@@ -2343,7 +2203,6 @@ describe('storage ownership recovery', () => {
             proofPaths: { original: string; current: string }[];
             accountPids: number[][];
             catalogPids: number[][];
-            targetedPids: string[];
             originalRetained: boolean;
             originalOwner?: { token: string };
             claims: { name: string; owner: { token: string } }[];
@@ -2390,8 +2249,6 @@ describe('storage ownership recovery', () => {
         }
         expect(observed.accountPids).toEqual(expectedAccountPids);
         expect(observed.catalogPids).toEqual(expectedCatalogPids);
-        // A persistent gap is inspected once by PID before recovery retains its storage.
-        expect(observed.targetedPids).toEqual(gap ? [String(newPid)] : []);
         expect(observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)).toEqual(
             gap ? [5000, 5000] : [5000, 5000, 4900, 4800, 5000, 5000]
         );
@@ -2435,7 +2292,7 @@ describe('storage ownership recovery', () => {
             const utility = join(bin, 'lsof');
             writeFileSync(
                 utility,
-                `#!/bin/sh\ncase " $* " in *" -p "*) echo targeted >> '${count}'; ${persistent ? "printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'; exit 0" : 'exec /usr/sbin/lsof "$@"'};; esac\nif ${persistent ? 'true' : `[ ! -e '${count}' ] || [ $(/usr/bin/grep -vc targeted '${count}') -lt ${omissions} ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
+                `#!/bin/sh\nif ${persistent ? 'true' : `[ ! -e '${count}' ] || [ $(/usr/bin/wc -l < '${count}') -lt ${omissions} ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
             );
             chmodSync(utility, 0o700);
             const resultPath = join(root, 'result.json');
@@ -2477,35 +2334,17 @@ describe('storage ownership recovery', () => {
                 exists: !released,
                 claimPayloads: 0,
             });
-            // Processes a catalog leaves uncovered are inspected once by PID; only
-            // whole-account catalogs count against the bounded fresh observation.
             const samples = readFileSync(count, 'utf8').trim().split('\n');
-            // Unrelated same-UID processes the host starts meanwhile receive their own PID
-            // inspections, so only whole-account catalogs are counted on the reclaiming route.
-            const catalogs = samples.filter((sample) => sample !== 'targeted');
-            expect(catalogs.slice(0, omissions)).toEqual(Array.from({ length: omissions }, () => 'incomplete'));
+            expect(samples.slice(0, omissions)).toEqual(Array.from({ length: omissions }, () => 'incomplete'));
             if (!persistent) {
-                expect(catalogs[omissions]).toBe('complete');
+                expect(samples[omissions]).toBe('complete');
             }
             if (released) {
-                // The first proof spends the omissions and one complete catalog, and a later
-                // proof follows. Any of the at most three proofs may also replace whole
-                // catalogs for host newborns or a descriptor closing mid-read, within its own
-                // three-observation bound.
-                expect(catalogs.length).toBeGreaterThanOrEqual(omissions + 2);
-                expect(catalogs.length).toBeLessThanOrEqual(3 * 3);
-                expect(catalogs.slice(omissions).every((sample) => sample === 'complete')).toBe(true);
-            } else if (persistent) {
-                // The last allowed catalog is as incomplete, and so is its own PID
-                // inspection, so it never proves coverage.
-                expect(samples).toEqual(['incomplete', 'incomplete', 'incomplete', 'targeted']);
+                expect(samples.length).toBeGreaterThanOrEqual(omissions + 2);
+                expect(samples.length).toBeLessThanOrEqual(omissions + 3);
+                expect(samples.slice(omissions).every((sample) => sample === 'complete')).toBe(true);
             } else {
-                // A real descriptor closing mid-read can discard the first complete catalog too
-                // while another of the three observations remains; the consumer's directory in
-                // a later catalog still retains storage without any PID inspection.
-                expect(samples.length, samples.join(',')).toBeGreaterThanOrEqual(omissions + 1);
-                expect(samples.length, samples.join(',')).toBeLessThanOrEqual(3);
-                expect(samples).not.toContain('targeted');
+                expect(samples.length).toBe(persistent ? 3 : omissions + 1);
             }
         },
         15_000
@@ -2732,9 +2571,7 @@ if(process.argv[2]==='-axo'){
                 expect(released).toBe(reclaimable);
                 const observedCatalogs = Number(readFileSync(count, 'utf8'));
                 if (route !== 'startup recovery') {
-                    // The shim counts every lsof run; a borrower the last catalog still
-                    // misses also receives one PID inspection before storage is retained.
-                    expect(observedCatalogs).toBe(missing ? 4 : 3);
+                    expect(observedCatalogs).toBe(3);
                 }
                 const held = join(borrower.cwd, 'held');
                 await waitUntil(() => existsSync(held) && statSync(held).size > 0);
@@ -2770,151 +2607,9 @@ if(process.argv[2]==='-axo'){
         20_000
     );
 
-    it.skipIf(process.platform !== 'darwin').each([
-        { scenario: 'unrelated newborn reclaims', consumer: false },
-        { scenario: 'newborn consumer retains', consumer: true },
-    ])(
-        'inspects same-UID processes born after every whole-account catalog: $scenario',
-        async ({ consumer }) => {
-            const root = fixture();
-            const bin = join(root, 'bin');
-            mkdirSync(bin, { mode: 0o700 });
-            const log = join(root, 'catalogs');
-            const newborns = join(root, 'newborns');
-            const ports: StorageRecoveryPorts = {
-                identityState: () => 'dead',
-                sessionState: (_owner, original, current = original) => storageFileState([original, current], []),
-            };
-            const storage = ownedStorage(join(root, 'storage'), ports);
-            // Each real catalog completes before one more same-UID process starts, as a
-            // concurrent guard's own census does, and that process outlives the catalog.
-            writeFileSync(
-                join(bin, 'lsof'),
-                [
-                    '#!/bin/sh',
-                    `case " $* " in *" -p "*) echo "targeted $*" >> '${log}'; exec /usr/sbin/lsof "$@";; esac`,
-                    `echo catalog >> '${log}'`,
-                    `/usr/sbin/lsof "$@" > '${root}/catalog.out' || exit $?`,
-                    `(cd '${consumer ? storage.tempDirectory : root}' && exec /bin/sleep 5) < /dev/null > /dev/null 2>&1 &`,
-                    `echo $! >> '${newborns}'`,
-                    `cat '${root}/catalog.out'`,
-                    '',
-                ].join('\n'),
-                { mode: 0o700 }
-            );
-            const previousPath = process.env.PATH;
-            process.env.PATH = `${bin}:${previousPath}`;
-            let released: boolean;
-            try {
-                released = await storage.release(true);
-            } finally {
-                process.env.PATH = previousPath;
-                for (const pid of readFileSync(newborns, 'utf8').trim().split('\n')) {
-                    childPids.add(Number(pid));
-                }
-            }
-            expect(released).toBe(!consumer);
-            expect(existsSync(storage.tempDirectory)).toBe(consumer);
-            // A verified newborn, or a descriptor closing mid-read, replaces a whole catalog
-            // while another of the three observations remains. A replacement can already see
-            // an earlier newborn consumer; a proof that reclaims always ends with one PID
-            // inspection of the newborn its last catalog missed.
-            // Unrelated same-UID processes the host starts meanwhile receive their own PID
-            // inspections, so only inspections of this fixture's newborns are counted.
-            const calls = readFileSync(log, 'utf8').trim().split('\n');
-            const born = readFileSync(newborns, 'utf8').trim().split('\n');
-            const newbornInspections = calls.filter((call) => targetedPids(call).some((pid) => born.includes(pid)));
-            const proofs = consumer ? 1 : 2;
-            expect(calls.filter((call) => call === 'catalog').length).toBeLessThanOrEqual(3 * proofs);
-            if (consumer) {
-                expect(newbornInspections.length).toBeLessThanOrEqual(1);
-            } else {
-                expect(calls.at(-1)).toMatch(/^targeted /);
-                expect(newbornInspections).toHaveLength(proofs);
-            }
-        },
-        15_000
-    );
-
-    it.skipIf(process.platform !== 'darwin').each([
-        { scenario: 'untyped unrelated process reclaims', untyped: true, consumer: false },
-        { scenario: 'untyped consumer retains', untyped: true, consumer: true },
-        { scenario: 'omitted unrelated process reclaims', untyped: false, consumer: false },
-        { scenario: 'omitted consumer retains', untyped: false, consumer: true },
-    ])(
-        'reinspects a live process every whole-account catalog leaves incomplete: $scenario',
-        async ({ untyped, consumer }) => {
-            const root = fixture();
-            const bin = join(root, 'bin');
-            mkdirSync(bin, { mode: 0o700 });
-            const log = join(root, 'catalogs');
-            const ports: StorageRecoveryPorts = {
-                identityState: () => 'dead',
-                sessionState: (_owner, original, current = original) => storageFileState([original, current], []),
-            };
-            const storage = ownedStorage(join(root, 'storage'), ports);
-            const holder = spawn('/bin/sleep', ['5'], {
-                cwd: consumer ? storage.tempDirectory : root,
-                stdio: 'ignore',
-            });
-            if (holder.pid === undefined) {
-                throw new Error('untyped-record holder did not start');
-            }
-            childPids.add(holder.pid);
-            // Every whole-account catalog omits the live holder, as lsof does for a busy
-            // process, or reports one of its descriptors without a type, as a descriptor
-            // closing between lsof's field reads does.
-            writeFileSync(
-                join(bin, 'lsof'),
-                [
-                    '#!/bin/sh',
-                    `case " $* " in *" -p "*) echo "targeted $*" >> '${log}'; exec /usr/sbin/lsof "$@";; esac`,
-                    `echo catalog >> '${log}'`,
-                    `/usr/sbin/lsof "$@" -p '^${holder.pid}' > '${root}/catalog.out' || exit $?`,
-                    `cat '${root}/catalog.out'`,
-                    untyped ? `printf 'p${holder.pid}\\0\\nf99\\0n/elsewhere\\0\\n'` : '',
-                    '',
-                ].join('\n'),
-                { mode: 0o700 }
-            );
-            const previousPath = process.env.PATH;
-            process.env.PATH = `${bin}:${previousPath}`;
-            let released: boolean;
-            try {
-                released = await storage.release(true);
-            } finally {
-                process.env.PATH = previousPath;
-            }
-            expect(isAlive(holder.pid)).toBe(true);
-            expect(released).toBe(!consumer);
-            expect(existsSync(storage.tempDirectory)).toBe(consumer);
-            // An untyped catalog is replaced while another of the three whole observations
-            // remains; a real descriptor closing mid-read can replace an omitting catalog too.
-            // Each proof inspects the holder once by PID; unrelated same-UID processes the
-            // host starts meanwhile get their own.
-            const calls = readFileSync(log, 'utf8').trim().split('\n');
-            const proofs = consumer ? 1 : 2;
-            const catalogs = calls.filter((call) => call === 'catalog').length;
-            expect(calls.at(-1)).toMatch(/^targeted /);
-            expect(calls.filter((call) => targetedPids(call).includes(String(holder.pid)))).toHaveLength(proofs);
-            expect(catalogs).toBeGreaterThanOrEqual(untyped ? 3 * proofs : proofs);
-            expect(catalogs).toBeLessThanOrEqual(3 * proofs);
-        },
-        15_000
-    );
-
     it('accepts complete Darwin fileport records without bypassing uncertain fields', async () => {
         const catalog = 'p10\0\nffp.\0tREG\0n/outside/held\0\n';
-        expect(parseLsofCatalog(catalog)).toEqual({
-            pids: new Set([10]),
-            paths: ['/outside/held'],
-            incomplete: new Set(),
-        });
-        // The guard treats an incomplete process as uninspected.
-        const completeCatalog = (output: string) => {
-            const parsed = parseLsofCatalog(output);
-            return parsed !== undefined && parsed.incomplete.size === 0;
-        };
+        expect(parseLsofCensus(catalog)).toEqual({ pids: new Set([10]), paths: ['/outside/held'] });
         for (const fields of [
             'ffp',
             'ffp..',
@@ -2926,11 +2621,11 @@ if(process.argv[2]==='-axo'){
             'ffp.\0n/outside/held',
         ]) {
             const output = `p10\0\n${fields}\0\n`;
-            expect(completeCatalog(output)).toBe(false);
+            expect(parseLsofCensus(output)).toBeUndefined();
             const root = fixture();
             const storage = ownedStorage(root, {
                 identityState: () => 'dead',
-                sessionState: () => (completeCatalog(output) ? 'dead' : 'unknown'),
+                sessionState: () => (parseLsofCensus(output) === undefined ? 'unknown' : 'dead'),
             });
             expect(await storage.release(true)).toBe(false);
             expect(existsSync(storage.tempDirectory)).toBe(true);
@@ -3011,24 +2706,15 @@ if(process.argv[2]==='-axo'){
 
     it('parses complete NUL file records and rejects malformed, truncated or opaque file evidence', () => {
         const valid = 'p10\0\nfcwd\0tDIR\0n/owned/tmp\0\nf3\0tREG\0n/owned/tmp/held\0\n';
-        expect(parseLsofCatalog(valid)).toEqual({
-            pids: new Set([10]),
-            paths: ['/owned/tmp', '/owned/tmp/held'],
-            incomplete: new Set(),
-        });
-        expect(parseLsofCatalog('p10\0\nftwd\0tDIR\0n/owned/tmp\0\n')).toEqual({
+        expect(parseLsofCensus(valid)).toEqual({ pids: new Set([10]), paths: ['/owned/tmp', '/owned/tmp/held'] });
+        expect(parseLsofCensus('p10\0\nftwd\0tDIR\0n/owned/tmp\0\n')).toEqual({
             pids: new Set([10]),
             paths: ['/owned/tmp'],
-            incomplete: new Set(),
         });
-        // An untyped record leaves only its own process incomplete, never a proven path.
         const missingType = 'p10\0\nf3\0n/owned/tmp/held\0\n';
-        expect(parseLsofCatalog(missingType)).toEqual({ pids: new Set([10]), paths: [], incomplete: new Set([10]) });
-        expect(parseLsofCatalog(`${valid}p11\0\nf3\0n/owned/tmp/held\0\nf4\0n:pipe\0\n`)).toEqual({
-            pids: new Set([10, 11]),
-            paths: ['/owned/tmp', '/owned/tmp/held'],
-            incomplete: new Set([11]),
-        });
+        const reasons: string[] = [];
+        expect(parseLsofCensus(missingType, (reason) => reasons.push(reason))).toBeUndefined();
+        expect(reasons).toEqual(['descriptor-type-missing']);
         for (const invalid of [
             `${missingType}f4\0tunknown\0n/owned/tmp\0\n`,
             `${missingType}f4\0tREG\0\n`,
@@ -3037,11 +2723,11 @@ if(process.argv[2]==='-axo'){
         ]) {
             let reason: string | undefined;
             expect(
-                parseLsofCatalog(invalid, (value) => {
+                parseLsofCensus(invalid, (value) => {
                     reason = value;
                 })
             ).toBeUndefined();
-            expect(reason).toBeDefined();
+            expect(reason).not.toBe('descriptor-type-missing');
         }
         for (const invalid of [
             '',
@@ -3051,7 +2737,7 @@ if(process.argv[2]==='-axo'){
             'p10\0\nf3\0tREG\0\n',
             'p10\0\nf3\0tunknown\0n/owned/tmp\0\n',
         ]) {
-            expect(parseLsofCatalog(invalid)).toBeUndefined();
+            expect(parseLsofCensus(invalid)).toBeUndefined();
         }
         expect(referencesStoragePath('/owned/tmp/held', ['/owned/tmp'])).toBe(true);
         expect(referencesStoragePath('/claim/run/tmp/held (deleted)', ['/owned/tmp', '/claim/run/tmp'])).toBe(true);
