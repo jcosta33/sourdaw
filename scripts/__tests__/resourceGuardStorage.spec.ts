@@ -1737,6 +1737,111 @@ describe('storage ownership recovery', () => {
     });
 
     it.each([
+        { scenario: 'older than the dead owner', ownerTicks: 2, deniedTicks: 1, claim: false, reclaimed: true },
+        { scenario: 'older than a moved claims owner', ownerTicks: 2, deniedTicks: 1, claim: true, reclaimed: true },
+        { scenario: 'started with the dead owner', ownerTicks: 2, deniedTicks: 2, claim: false, reclaimed: false },
+        { scenario: 'started after the dead owner', ownerTicks: 2, deniedTicks: 5, claim: false, reclaimed: false },
+        {
+            scenario: 'started after a moved claims owner',
+            ownerTicks: 2,
+            deniedTicks: 5,
+            claim: true,
+            reclaimed: false,
+        },
+        {
+            scenario: 'beside an unrecorded owner start',
+            ownerTicks: undefined,
+            deniedTicks: 1,
+            claim: false,
+            reclaimed: false,
+        },
+    ])(
+        'bounds the Linux start-time excuse during recovery by the recorded owner start: denied process $scenario',
+        ({ ownerTicks, deniedTicks, claim, reclaimed }) => {
+            const root = fixture();
+            const reclaimer = { pid: process.pid, startedAt: 'reclaimer-start' };
+            const reports: string[] = [];
+            const denied = Object.assign(new Error('private path must not be emitted'), { code: 'EACCES' });
+            // The live reclaimer started after everything, so only the dead owner's record can bound the excuse.
+            const startTicks = (pid: number) => (pid === 123 ? deniedTicks : 10);
+            const ports = storageRecoveryPorts((reason) => reports.push(reason), {
+                platform: () => 'linux',
+                currentPid: reclaimer.pid,
+                identityState: (identity) =>
+                    identity.pid === reclaimer.pid && identity.startedAt === reclaimer.startedAt ? 'alive' : 'dead',
+                processCensus: () => ({ rows: [], rawOutput: 'unrelated process output' }),
+                fileState: (tempDirectories, _ownedPids, report, supervisorPid, ownerStartTicks) =>
+                    linuxStorageFileState([123], 501, tempDirectories, 5_000, report, {
+                        inspectUid: () => 501,
+                        readCwd: () => {
+                            throw denied;
+                        },
+                        listDescriptors: () => [],
+                        readDescriptor: () => undefined,
+                        readStatus: () =>
+                            'Pid:\t123\nTgid:\t123\nUid:\t501\t501\t501\t501\nState:\tS (sleeping)\nThreads:\t1\n',
+                        isGone: () => false,
+                        startedBeforeSupervisor: linuxFilePorts(supervisorPid, startTicks, ownerStartTicks)
+                            .startedBeforeSupervisor,
+                        now: () => 0,
+                    }),
+            });
+            const storage = createGuardStorage({
+                root,
+                token: randomUUID(),
+                owner: { ...fakeOwner, startTicks: ownerTicks },
+                ports: deadPorts,
+            });
+            expect(readOwner(storage.tempDirectory).owner.startTicks).toBe(ownerTicks);
+            let currentTemp = storage.tempDirectory;
+            if (claim) {
+                let checks = 0;
+                expect(
+                    reclaimGuardStorage({
+                        root,
+                        owner: readOwner(storage.tempDirectory),
+                        reclaimer: fakeReclaimer,
+                        canRemove: () => checks++ === 0,
+                    })
+                ).toBe(false);
+                const payloads = claimPayloads(root);
+                expect(payloads).toHaveLength(1);
+                currentTemp = join(payloads[0] ?? '', 'tmp');
+                expect(readOwner(currentTemp).owner.startTicks).toBe(ownerTicks);
+            }
+            recoverGuardStorage(root, ports, reclaimer);
+            expect(existsSync(currentTemp)).toBe(!reclaimed);
+            const expectedReports: string[] = [];
+            if (!reclaimed) {
+                expectedReports.push(
+                    'proc-inspection-unavailable:pid=123:phase=cwd:error=EACCES:pid/tgid/uids/state/threads=123/123/501,501,501,501/S/1'
+                );
+            }
+            expect(reports).toEqual(expectedReports);
+        }
+    );
+
+    it('records the supervisors own Linux start ticks in its storage and none on other hosts', async () => {
+        const root = fixture();
+        const result = await guarded(root, {
+            args: [
+                '-e',
+                "const fs=require('node:fs'),path=require('node:path');const owner=JSON.parse(fs.readFileSync(path.join(path.dirname(require('node:os').tmpdir()),'owner.json'),'utf8'));process.stdout.write(JSON.stringify({pid:owner.owner.pid,ticks:owner.owner.startTicks ?? null})+'\\n')",
+            ],
+        });
+        expect(result.code, proofDiagnostic(result)).toBe(0);
+        const recorded: { pid: number; ticks: number | null } = JSON.parse(result.output.split('\n')[0] ?? '');
+        expect(recorded.pid).toBe(process.pid);
+        if (process.platform === 'linux') {
+            const ticks = parseLinuxStartTicks(readFileSync(`/proc/${process.pid}/stat`, 'utf8'));
+            expect(Number.isSafeInteger(ticks)).toBe(true);
+            expect(recorded.ticks).toBe(ticks);
+            return;
+        }
+        expect(recorded.ticks).toBeNull();
+    });
+
+    it.each([
         {
             scenario: 'closed enumeration descriptor',
             recreated: false,
