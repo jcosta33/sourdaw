@@ -137,6 +137,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     const grooveState = useStore(grooveTemplateStore, defaultGrooveTemplateState);
     const selectedTrackId = trackState?.selectedTrackId ?? null;
     const [presetQuery, setPresetQuery] = useState('');
+    const [viewLevel, setViewLevel] = useState<'simple' | 'full'>('simple');
     const [eucHits, setEucHits] = useState(4);
     const [eucSteps, setEucSteps] = useState(16);
     const [grooveAmountPreview, setGrooveAmountPreview] = useState<GrooveAmountPreview | null>(null);
@@ -382,8 +383,33 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     return (
-        <div className="toaster-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
-            <div className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3">
+        <div className="toaster-faceplate flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-[26px] p-3">
+            <Row justify="end" gap={2}>
+                <label htmlFor={`toaster-view-${deviceId}`} className="text-[10px] text-muted-foreground">
+                    View
+                </label>
+                <DawCompactSelect
+                    id={`toaster-view-${deviceId}`}
+                    aria-label="Toaster view"
+                    value={viewLevel}
+                    onChange={(event) => {
+                        const level = event.target.value;
+                        if (level === 'simple' || level === 'full') {
+                            setViewLevel(level);
+                        }
+                    }}
+                >
+                    <option value="simple">Simple</option>
+                    <option value="full">Full</option>
+                </DawCompactSelect>
+            </Row>
+            <div
+                className={
+                    viewLevel === 'full'
+                        ? 'grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3'
+                        : 'grid min-h-0 flex-1 grid-cols-[minmax(18rem,1fr)_minmax(17rem,1fr)] gap-3'
+                }
+            >
                 <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Kit shelf" detail="Grab a kit, then keep the active pad right below it.">
                         <Row as="label" gap={2} className="toaster-window px-3 py-2">
@@ -500,194 +526,212 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             onReleasePad={releasePad}
                         />
 
-                        <Row gap={3} className="toaster-window px-3 py-3">
-                            <Row
-                                justify="center"
-                                shrink={false}
-                                className="size-12 rounded-[16px] border"
-                                style={{
-                                    background: `linear-gradient(180deg, ${selectedPad.color}33, rgba(0,0,0,0.18))`,
-                                    borderColor: `${selectedPad.color}66`,
-                                    boxShadow: `0 0 18px ${selectedPad.color}22`,
-                                }}
-                            >
-                                <span className="text-[11px] font-semibold text-white/82">{selectedPadIndex + 1}</span>
-                            </Row>
-                            <div className="min-w-0">
-                                <div className="truncate text-[12px] font-semibold text-foreground">
-                                    {selectedPad.name}
-                                </div>
-                                <div className="truncate text-[9px] uppercase tracking-[0.18em] text-muted-foreground/45">
-                                    {selectedPad.engineType.replaceAll('-', ' ')}
-                                </div>
-                            </div>
-                        </Row>
+                        {viewLevel === 'full' ? (
+                            <>
+                                <Row gap={3} className="toaster-window px-3 py-3">
+                                    <Row
+                                        justify="center"
+                                        shrink={false}
+                                        className="size-12 rounded-[16px] border"
+                                        style={{
+                                            background: `linear-gradient(180deg, ${selectedPad.color}33, rgba(0,0,0,0.18))`,
+                                            borderColor: `${selectedPad.color}66`,
+                                            boxShadow: `0 0 18px ${selectedPad.color}22`,
+                                        }}
+                                    >
+                                        <span className="text-[11px] font-semibold text-white/82">
+                                            {selectedPadIndex + 1}
+                                        </span>
+                                    </Row>
+                                    <div className="min-w-0">
+                                        <div className="truncate text-[12px] font-semibold text-foreground">
+                                            {selectedPad.name}
+                                        </div>
+                                        <div className="truncate text-[9px] uppercase tracking-[0.18em] text-muted-foreground/45">
+                                            {selectedPad.engineType.replaceAll('-', ' ')}
+                                        </div>
+                                    </div>
+                                </Row>
 
-                        <Grid cols={3} gapX={2} gapY={3}>
-                            <Knob
-                                value={selectedPad.decay}
-                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'decay', value)}
-                                label="Hit"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={0.5}
-                                readout={`${Math.round(selectedPad.decay * 100)}%`}
-                            />
-                            <Knob
-                                value={selectedPad.tone}
-                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'tone', value)}
-                                label="Tone"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={0.5}
-                                readout={`${Math.round(selectedPad.tone * 100)}%`}
-                            />
-                            <Knob
-                                value={selectedPad.drive}
-                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'drive', value)}
-                                label="Crunch"
-                                min={0}
-                                max={10}
-                                step={0.1}
-                                defaultValue={0}
-                                readout={selectedPad.drive.toFixed(1)}
-                            />
-                            <Knob
-                                value={selectedPad.volume}
-                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'volume', value)}
-                                label="Level"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={0.8}
-                                readout={`${Math.round(selectedPad.volume * 100)}%`}
-                            />
-                            <Knob
-                                value={selectedPad.pan}
-                                onChange={(value) => setToasterPadParam(deviceId, selectedPadIndex, 'pan', value)}
-                                label="Pan"
-                                min={-1}
-                                max={1}
-                                step={0.01}
-                                defaultValue={0}
-                                readout={selectedPad.pan.toFixed(2)}
-                            />
-                            <Knob
-                                value={selectedPad.filterCutoff}
-                                onChange={(value) =>
-                                    setToasterPadParam(deviceId, selectedPadIndex, 'filterCutoff', value)
-                                }
-                                label="Bright"
-                                min={MIN_AUDIBLE_FREQ_HZ}
-                                max={MAX_AUDIBLE_FREQ_HZ}
-                                step={10}
-                                defaultValue={MAX_AUDIBLE_FREQ_HZ}
-                                readout={
-                                    selectedPad.filterCutoff >= 1000
-                                        ? `${(selectedPad.filterCutoff / 1000).toFixed(1)}k`
-                                        : `${selectedPad.filterCutoff.toFixed(0)}`
-                                }
-                            />
-                        </Grid>
+                                <Grid cols={3} gapX={2} gapY={3}>
+                                    <Knob
+                                        value={selectedPad.decay}
+                                        onChange={(value) =>
+                                            setToasterPadParam(deviceId, selectedPadIndex, 'decay', value)
+                                        }
+                                        label="Hit"
+                                        min={0}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={0.5}
+                                        readout={`${Math.round(selectedPad.decay * 100)}%`}
+                                    />
+                                    <Knob
+                                        value={selectedPad.tone}
+                                        onChange={(value) =>
+                                            setToasterPadParam(deviceId, selectedPadIndex, 'tone', value)
+                                        }
+                                        label="Tone"
+                                        min={0}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={0.5}
+                                        readout={`${Math.round(selectedPad.tone * 100)}%`}
+                                    />
+                                    <Knob
+                                        value={selectedPad.drive}
+                                        onChange={(value) =>
+                                            setToasterPadParam(deviceId, selectedPadIndex, 'drive', value)
+                                        }
+                                        label="Crunch"
+                                        min={0}
+                                        max={10}
+                                        step={0.1}
+                                        defaultValue={0}
+                                        readout={selectedPad.drive.toFixed(1)}
+                                    />
+                                    <Knob
+                                        value={selectedPad.volume}
+                                        onChange={(value) =>
+                                            setToasterPadParam(deviceId, selectedPadIndex, 'volume', value)
+                                        }
+                                        label="Level"
+                                        min={0}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={0.8}
+                                        readout={`${Math.round(selectedPad.volume * 100)}%`}
+                                    />
+                                    <Knob
+                                        value={selectedPad.pan}
+                                        onChange={(value) =>
+                                            setToasterPadParam(deviceId, selectedPadIndex, 'pan', value)
+                                        }
+                                        label="Pan"
+                                        min={-1}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={0}
+                                        readout={selectedPad.pan.toFixed(2)}
+                                    />
+                                    <Knob
+                                        value={selectedPad.filterCutoff}
+                                        onChange={(value) =>
+                                            setToasterPadParam(deviceId, selectedPadIndex, 'filterCutoff', value)
+                                        }
+                                        label="Bright"
+                                        min={MIN_AUDIBLE_FREQ_HZ}
+                                        max={MAX_AUDIBLE_FREQ_HZ}
+                                        step={10}
+                                        defaultValue={MAX_AUDIBLE_FREQ_HZ}
+                                        readout={
+                                            selectedPad.filterCutoff >= 1000
+                                                ? `${(selectedPad.filterCutoff / 1000).toFixed(1)}k`
+                                                : `${selectedPad.filterCutoff.toFixed(0)}`
+                                        }
+                                    />
+                                </Grid>
+                            </>
+                        ) : null}
                     </SectionCard>
                 </Stack>
 
-                <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
-                    <Row align="start" justify="between" gap={3}>
-                        <Stack gap={2}>
-                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/70">
-                                Pattern story
-                            </div>
-                            <div className="text-[16px] font-semibold text-foreground">{kit.name}</div>
-                        </Stack>
+                {viewLevel === 'full' ? (
+                    <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
+                        <Row align="start" justify="between" gap={3}>
+                            <Stack gap={2}>
+                                <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/70">
+                                    Pattern story
+                                </div>
+                                <div className="text-[16px] font-semibold text-foreground">{kit.name}</div>
+                            </Stack>
 
-                        <Row align="stretch" justify="end" wrap gap={2}>
-                            {kit.patterns.length > 1 ? (
-                                <Stack
-                                    gap={1}
-                                    className="toaster-window min-w-[94px] px-3 py-2"
-                                    role="group"
-                                    aria-label="Active pattern"
-                                >
-                                    <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                                        Pattern
-                                    </div>
-                                    <Row align="stretch" wrap gap={1}>
-                                        {kit.patterns.map((pattern) => (
-                                            <DawPluginChip
-                                                key={pattern.id}
-                                                active={pattern.id === kit.activePatternId}
-                                                tone="peach"
-                                                size="sm"
-                                                aria-pressed={pattern.id === kit.activePatternId}
-                                                onClick={() => handleSelectPattern(pattern.id)}
-                                            >
-                                                {pattern.name}
-                                            </DawPluginChip>
-                                        ))}
-                                    </Row>
-                                </Stack>
-                            ) : (
+                            <Row align="stretch" justify="end" wrap gap={2}>
+                                {kit.patterns.length > 1 ? (
+                                    <Stack
+                                        gap={1}
+                                        className="toaster-window min-w-[94px] px-3 py-2"
+                                        role="group"
+                                        aria-label="Active pattern"
+                                    >
+                                        <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                                            Pattern
+                                        </div>
+                                        <Row align="stretch" wrap gap={1}>
+                                            {kit.patterns.map((pattern) => (
+                                                <DawPluginChip
+                                                    key={pattern.id}
+                                                    active={pattern.id === kit.activePatternId}
+                                                    tone="peach"
+                                                    size="sm"
+                                                    aria-pressed={pattern.id === kit.activePatternId}
+                                                    onClick={() => handleSelectPattern(pattern.id)}
+                                                >
+                                                    {pattern.name}
+                                                </DawPluginChip>
+                                            ))}
+                                        </Row>
+                                    </Stack>
+                                ) : (
+                                    <DawPluginMetricTile
+                                        className="toaster-window min-w-[94px]"
+                                        label="Pattern"
+                                        value={activePattern?.name ?? 'A1'}
+                                        detail="Current lane"
+                                    />
+                                )}
                                 <DawPluginMetricTile
                                     className="toaster-window min-w-[94px]"
-                                    label="Pattern"
-                                    value={activePattern?.name ?? 'A1'}
-                                    detail="Current lane"
+                                    label="Step"
+                                    value={`${currentStep + 1}`}
+                                    detail="Playback cursor"
                                 />
-                            )}
-                            <DawPluginMetricTile
-                                className="toaster-window min-w-[94px]"
-                                label="Step"
-                                value={`${currentStep + 1}`}
-                                detail="Playback cursor"
-                            />
-                            <DawPluginMetricTile
-                                className="toaster-window min-w-[94px]"
-                                label="Swing"
-                                value={`${Math.round(kit.swing * 100)}%`}
-                                detail="Groove push"
-                            />
-                            <DawPluginMetricTile
-                                className="toaster-window min-w-[94px]"
-                                label="Voices"
-                                value={`${activeVoices}`}
-                                detail="Live hits"
-                            />
+                                <DawPluginMetricTile
+                                    className="toaster-window min-w-[94px]"
+                                    label="Swing"
+                                    value={`${Math.round(kit.swing * 100)}%`}
+                                    detail="Groove push"
+                                />
+                                <DawPluginMetricTile
+                                    className="toaster-window min-w-[94px]"
+                                    label="Voices"
+                                    value={`${activeVoices}`}
+                                    detail="Live hits"
+                                />
+                            </Row>
                         </Row>
-                    </Row>
 
-                    <div className="toaster-window min-h-0 shrink-0 overflow-auto p-3">
-                        {activePattern ? (
-                            <StepSequencer
-                                pattern={activePattern}
-                                pads={kit.pads}
-                                currentStep={currentStep}
-                                isPlaying={isPlaying}
-                                onToggleStep={(trackId, stepIndex) => toggleStep(deviceId, trackId, stepIndex)}
-                                onSetVelocity={(trackId, stepIndex, vel) =>
-                                    setStepVelocity(deviceId, trackId, stepIndex, vel)
-                                }
-                                onSetSoundLock={(trackId, stepIndex, engine) =>
-                                    setSoundLock(deviceId, trackId, stepIndex, engine)
-                                }
-                                onSetRetrigger={(trackId, stepIndex, count) =>
-                                    setStepRetrigger(deviceId, trackId, stepIndex, count)
-                                }
-                                onSetCondition={(trackId, stepIndex, condition) =>
-                                    setStepCondition(deviceId, trackId, stepIndex, condition)
-                                }
-                                onSetProbability={(trackId, stepIndex, prob) =>
-                                    setStepProbability(deviceId, trackId, stepIndex, prob)
-                                }
-                                onSetMicroTiming={(trackId, stepIndex, mt) =>
-                                    setStepMicroTiming(deviceId, trackId, stepIndex, mt)
-                                }
-                            />
-                        ) : null}
-                    </div>
-                </Stack>
+                        <div className="toaster-window min-h-0 shrink-0 overflow-auto p-3">
+                            {activePattern ? (
+                                <StepSequencer
+                                    pattern={activePattern}
+                                    pads={kit.pads}
+                                    currentStep={currentStep}
+                                    isPlaying={isPlaying}
+                                    onToggleStep={(trackId, stepIndex) => toggleStep(deviceId, trackId, stepIndex)}
+                                    onSetVelocity={(trackId, stepIndex, vel) =>
+                                        setStepVelocity(deviceId, trackId, stepIndex, vel)
+                                    }
+                                    onSetSoundLock={(trackId, stepIndex, engine) =>
+                                        setSoundLock(deviceId, trackId, stepIndex, engine)
+                                    }
+                                    onSetRetrigger={(trackId, stepIndex, count) =>
+                                        setStepRetrigger(deviceId, trackId, stepIndex, count)
+                                    }
+                                    onSetCondition={(trackId, stepIndex, condition) =>
+                                        setStepCondition(deviceId, trackId, stepIndex, condition)
+                                    }
+                                    onSetProbability={(trackId, stepIndex, prob) =>
+                                        setStepProbability(deviceId, trackId, stepIndex, prob)
+                                    }
+                                    onSetMicroTiming={(trackId, stepIndex, mt) =>
+                                        setStepMicroTiming(deviceId, trackId, stepIndex, mt)
+                                    }
+                                />
+                            ) : null}
+                        </div>
+                    </Stack>
+                ) : null}
 
                 <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Transport" detail="Keep the rhythm tools tight and ready.">
@@ -733,85 +777,99 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         </DawPluginLed>
                     </SectionCard>
 
-                    <SectionCard title="Pad mixer" detail="Per-pad level, pan, mute, and solo.">
-                        <PadMixer pads={kit.pads} onPadParam={handlePadParam} />
-                    </SectionCard>
+                    {viewLevel === 'full' ? (
+                        <>
+                            <SectionCard title="Pad mixer" detail="Per-pad level, pan, mute, and solo.">
+                                <PadMixer pads={kit.pads} onPadParam={handlePadParam} />
+                            </SectionCard>
 
-                    <SectionCard
-                        title="Fill tools"
-                        detail="Euclid stays playful instead of turning into a spreadsheet."
-                    >
-                        <Row gap={2}>
-                            <Input
-                                type="number"
-                                value={eucHits}
-                                onChange={(event) => setEucHits(Math.max(0, Math.min(32, Number(event.target.value))))}
-                                className="toaster-window h-9 w-14 px-2 text-center text-[11px] text-foreground outline-none"
-                            />
-                            <span className="text-[10px] text-muted-foreground">of</span>
-                            <Input
-                                type="number"
-                                value={eucSteps}
-                                onChange={(event) => setEucSteps(Math.max(1, Math.min(64, Number(event.target.value))))}
-                                className="toaster-window h-9 w-14 px-2 text-center text-[11px] text-foreground outline-none"
-                            />
-                            <DawPluginChip
-                                active
-                                tone="peach"
-                                size="sm"
-                                onClick={() => applyEuclideanToTrack(deviceId, selectedPadIndex, eucHits, eucSteps, 0)}
+                            <SectionCard
+                                title="Fill tools"
+                                detail="Euclid stays playful instead of turning into a spreadsheet."
                             >
-                                Toast
-                            </DawPluginChip>
-                        </Row>
-                    </SectionCard>
+                                <Row gap={2}>
+                                    <Input
+                                        type="number"
+                                        value={eucHits}
+                                        onChange={(event) =>
+                                            setEucHits(Math.max(0, Math.min(32, Number(event.target.value))))
+                                        }
+                                        className="toaster-window h-9 w-14 px-2 text-center text-[11px] text-foreground outline-none"
+                                    />
+                                    <span className="text-[10px] text-muted-foreground">of</span>
+                                    <Input
+                                        type="number"
+                                        value={eucSteps}
+                                        onChange={(event) =>
+                                            setEucSteps(Math.max(1, Math.min(64, Number(event.target.value))))
+                                        }
+                                        className="toaster-window h-9 w-14 px-2 text-center text-[11px] text-foreground outline-none"
+                                    />
+                                    <DawPluginChip
+                                        active
+                                        tone="peach"
+                                        size="sm"
+                                        onClick={() =>
+                                            applyEuclideanToTrack(deviceId, selectedPadIndex, eucHits, eucSteps, 0)
+                                        }
+                                    >
+                                        Toast
+                                    </DawPluginChip>
+                                </Row>
+                            </SectionCard>
+                        </>
+                    ) : null}
 
-                    <SectionCard title="Groove" detail="Master motion and room live together on the right rail.">
-                        <Stack
-                            as="label"
-                            gap={1}
-                            className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
-                        >
-                            Template
-                            <DawCompactSelect
-                                aria-label="Pattern groove template"
-                                value={assignedGrooveTemplateId}
-                                disabled={!canAssignGroove}
-                                onChange={(event) => {
-                                    setGrooveAmountPreview(null);
-                                    handleAssignGroove(event.target.value, assignedGrooveAmount);
-                                }}
-                                className="toaster-window h-8 px-2 text-[10px] normal-case tracking-normal text-foreground outline-none"
+                    {viewLevel === 'full' ? (
+                        <SectionCard title="Groove" detail="Assign timing to the active pattern.">
+                            <Stack
+                                as="label"
+                                gap={1}
+                                className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
                             >
-                                {grooveState.templates.map((template) => (
-                                    <option key={template.id} value={template.id}>
-                                        {template.name}
-                                    </option>
-                                ))}
-                            </DawCompactSelect>
-                        </Stack>
-                        <Stack
-                            as="label"
-                            gap={1}
-                            className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
-                        >
-                            Amount {Math.round(displayedGrooveAmount * 100)}%
-                            <input
-                                aria-label="Pattern groove amount"
-                                type="range"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                value={displayedGrooveAmount}
-                                disabled={!canAssignGroove}
-                                onChange={(event) => previewGrooveAmount(Number(event.target.value))}
-                                onPointerUp={commitGrooveAmount}
-                                onPointerCancel={() => setGrooveAmountPreview(null)}
-                                onKeyUp={commitGrooveAmount}
-                                onBlur={commitGrooveAmount}
-                                className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[var(--color-accent-peach)]"
-                            />
-                        </Stack>
+                                Template
+                                <DawCompactSelect
+                                    aria-label="Pattern groove template"
+                                    value={assignedGrooveTemplateId}
+                                    disabled={!canAssignGroove}
+                                    onChange={(event) => {
+                                        setGrooveAmountPreview(null);
+                                        handleAssignGroove(event.target.value, assignedGrooveAmount);
+                                    }}
+                                    className="toaster-window h-8 px-2 text-[10px] normal-case tracking-normal text-foreground outline-none"
+                                >
+                                    {grooveState.templates.map((template) => (
+                                        <option key={template.id} value={template.id}>
+                                            {template.name}
+                                        </option>
+                                    ))}
+                                </DawCompactSelect>
+                            </Stack>
+                            <Stack
+                                as="label"
+                                gap={1}
+                                className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
+                            >
+                                Amount {Math.round(displayedGrooveAmount * 100)}%
+                                <input
+                                    aria-label="Pattern groove amount"
+                                    type="range"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    value={displayedGrooveAmount}
+                                    disabled={!canAssignGroove}
+                                    onChange={(event) => previewGrooveAmount(Number(event.target.value))}
+                                    onPointerUp={commitGrooveAmount}
+                                    onPointerCancel={() => setGrooveAmountPreview(null)}
+                                    onKeyUp={commitGrooveAmount}
+                                    onBlur={commitGrooveAmount}
+                                    className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[var(--color-accent-peach)]"
+                                />
+                            </Stack>
+                        </SectionCard>
+                    ) : null}
+                    <SectionCard title="Macros" detail="Master motion and room stay within reach.">
                         <Grid cols={2} gapX={2} gapY={3}>
                             <Knob
                                 value={kit.swing}

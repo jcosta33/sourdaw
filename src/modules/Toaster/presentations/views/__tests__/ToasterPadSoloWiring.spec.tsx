@@ -91,6 +91,7 @@ describe('Toaster pad solo reaches the engine', () => {
 
     it('posts soloed=1 to the engine when the pad is soloed from the mixer', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         clickSolo(4);
 
@@ -105,6 +106,7 @@ describe('Toaster pad solo reaches the engine', () => {
      */
     it('posts soloed=0 to the engine when the same pad is un-soloed again', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         clickSolo(4);
         setPadParam.mockClear();
@@ -115,6 +117,7 @@ describe('Toaster pad solo reaches the engine', () => {
 
     it('solos only the pad that was clicked', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         clickSolo(4);
 
@@ -124,6 +127,7 @@ describe('Toaster pad solo reaches the engine', () => {
 
     it('keeps the store flag a boolean so the persisted kit chunk still reads it', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         clickSolo(4);
 
