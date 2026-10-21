@@ -174,9 +174,9 @@ impl ExpressionState {
             }
             // Sustain (CC64) is a continuous position, not a halfway latch:
             // any nonzero value holds the pedal partly down and only 0 lifts
-            // it. The app's pedal law and the closing-line classifier both
-            // treat a stored CC64=63 as still held; a `>= 64` threshold here
-            // released what they keep held.
+            // it — the app's pedal law, which keeps a stored CC64 row engaged
+            // while its value is > 0. A `>= 64` threshold here released
+            // positions that law keeps held.
             64 => self.sustain_pedal = value > 0,
             _ => {}
         }
