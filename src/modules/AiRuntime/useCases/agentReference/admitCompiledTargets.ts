@@ -108,9 +108,10 @@ function getTieredReferenceIds(
     text: string,
     capability: Capability,
     context: ProjectContext,
-    dependencyId?: string
+    dependencyId?: string,
+    excludedIds: readonly string[] = []
 ): string[] {
-    return readReferences(text, capability, context, dependencyId)
+    return readReferences(text, capability, context, dependencyId, excludedIds)
         .filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
         .map((candidate) => candidate.id);
 }
@@ -317,9 +318,11 @@ function statesObject(text: string, objectId: string, input: CompiledTargetAutho
 }
 
 /**
- * How the direct route reads a single target in the clause: as the unique exact reference, as not
- * that reference, or with no exact reference at all. The batch's other targets for the argument and
- * every set-aside object stay out of the reading, as they do when the direct route grounds a list.
+ * How the direct route reads a single target in the clause: as the one exact reference it names
+ * beside the batch's other targets for the argument, as a clause that names another object instead,
+ * as one that names another object as well, or with no exact reference at all. Every set-aside
+ * object stays out of the reading; the batch's other targets stay in it, so a longer name one of
+ * them carries still overlaps a shorter one ("Bass, DI" beside a track named Bass).
  */
 function resolveLikeDirectCall(
     input: CompiledTargetAuthorityInput,
@@ -330,25 +333,19 @@ function resolveLikeDirectCall(
     if (input.targetIds.length !== 1 || targetId === undefined) {
         return 'none';
     }
-    const siblingIds = input.compiledArgumentIds.filter((id) => id !== targetId);
-    const result = resolveAgentReference({
-        prompt: text,
-        assertedId: targetId,
-        capability: input.capability,
-        context: input.context,
-        dependencyId: input.dependencyId,
-        excludedIds: [...setAside, ...siblingIds].filter((id) => id !== targetId),
-    });
-    const groundsExactly = result.candidates.some((candidate) =>
-        candidate.evidence.some((evidence) => evidence !== 'fuzzy-name')
+    const siblingIds = new Set(input.compiledArgumentIds.filter((id) => id !== targetId));
+    const named = getTieredReferenceIds(
+        text,
+        input.capability,
+        input.context,
+        input.dependencyId,
+        setAside.filter((id) => id !== targetId)
     );
-    if (!groundsExactly) {
-        return 'none';
+    const others = named.filter((id) => id !== targetId && !siblingIds.has(id));
+    if (named.includes(targetId)) {
+        return others.length === 0 ? 'target' : 'ambiguous';
     }
-    if (result.status === 'resolved') {
-        return 'target';
-    }
-    return result.reason === 'ambiguous-target' ? 'ambiguous' : 'other';
+    return others.length === 0 ? 'none' : 'other';
 }
 
 /** Whether the request authorizes every target a compiled list resolved for one argument. */
@@ -370,7 +367,6 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): Comp
     const statesEveryPredicate =
         predicates.names.every((name) => wholeWordsPattern(name, 'iu').test(text)) &&
         predicates.ids.every((id) => statesObject(text, id, input));
-    console.log('DBG5', JSON.stringify({ text, predicates, statesEveryPredicate, targets: input.targetIds }));
     if (!statesEveryPredicate) {
         return UNAUTHORIZED;
     }
