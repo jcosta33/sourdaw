@@ -100,26 +100,62 @@ function withoutAffectedGraphDiagnostic(live: ValidationPlan): { plan: Validatio
     return { plan: { ...live, reasons: rest }, notes: [`affected-graph-diagnostic: ${last.reason}`] };
 }
 
-// The affected-graph helper picks the owners and specs of a narrowed selection, and this job does not
-// install it, so no recomputation here can tell a correct narrowing from a forged one. Such a plan is
-// recorded as an explained skip rather than checked against its own claim.
+const FULL_COVERAGE_REASON_SUFFIX = 'full browser coverage';
+
+function isNarrowedRow(row: ValidationPlan['reasons'][number]): boolean {
+    return row.reason.startsWith(NARROW_REASON_PREFIX);
+}
+
 function narrowedOwners(live: ValidationPlan): string[] {
     const owners = new Set<string>();
-    for (const row of live.reasons) {
-        if (row.reason.startsWith(NARROW_REASON_PREFIX)) {
-            for (const owner of row.reason.slice(NARROW_REASON_PREFIX.length).split(', ')) {
-                owners.add(owner);
-            }
+    for (const row of live.reasons.filter(isNarrowedRow)) {
+        for (const owner of row.reason.slice(NARROW_REASON_PREFIX.length).split(', ')) {
+            owners.add(owner);
         }
     }
     return [...owners].sort();
 }
 
+// The affected-graph helper picks the owners and specs of a narrowed selection, and this job does not
+// install it, so those fields cannot be checked. Everything else about a narrowed plan is a function
+// of the changed paths and the inventory, and must equal the recomputation: the scalar fields, the
+// path order, every row that is not an owners row, and that every full-coverage row is an owners row
+// on a src/modules path (any other full-coverage row would have forced the planner to the full suite).
+function narrowedPlanIsBounded(
+    expected: ValidationPlan,
+    live: ValidationPlan,
+    inventory: ReadonlySet<string>,
+    diagnosticWasStripped: boolean
+): boolean {
+    const specs = planSpecs(live);
+    return (
+        !diagnosticWasStripped &&
+        live.version === expected.version &&
+        live.profile === expected.profile &&
+        live.browser === expected.browser &&
+        live.codeql === expected.codeql &&
+        specs.length > 0 &&
+        specs.every((spec) => inventory.has(spec)) &&
+        live.reasons.length === expected.reasons.length &&
+        live.reasons.every((row, index) => {
+            const counterpart = expected.reasons[index];
+            if (counterpart?.path !== row.path) {
+                return false;
+            }
+            const fullCoverage = counterpart.reason.endsWith(FULL_COVERAGE_REASON_SUFFIX);
+            if (!isNarrowedRow(row)) {
+                return row.reason === counterpart.reason && !fullCoverage;
+            }
+            return row.path.startsWith('src/modules/') && fullCoverage;
+        })
+    );
+}
+
 // Authority: the scope artifact. The shadow reproduces its inputs and requires the live plan to equal
 // the recomputed one, admitting only the output of the optional affected-graph helper it does not run:
 //  - the diagnostic row the planner appends after a full-coverage fallback, which is stripped, and
-//  - a narrowed selection, which cannot be verified and is therefore skipped with a reason.
-export function comparePlans(expected: ValidationPlan, live: unknown): PlanAgreement {
+//  - a narrowed selection, whose bounded form is skipped with a reason and any other form is a disagreement.
+export function comparePlans(expected: ValidationPlan, live: unknown, inventory: readonly string[]): PlanAgreement {
     if (!isPlanShape(live)) {
         return { agrees: false, detail: 'authoritative plan is malformed' };
     }
@@ -129,6 +165,12 @@ export function comparePlans(expected: ValidationPlan, live: unknown): PlanAgree
     }
     const owners = narrowedOwners(stripped.plan);
     if (owners.length > 0) {
+        if (!narrowedPlanIsBounded(expected, stripped.plan, new Set(inventory), stripped.notes.length > 0)) {
+            return {
+                agrees: false,
+                detail: 'narrowed authoritative plan differs beyond its unverified owners and specs',
+            };
+        }
         throw new ShadowSkipError(
             'affected-graph-narrowing-unverified',
             `Authoritative scope narrowed the selection to feature owners (${owners.join(', ')}); the shadow does not run the affected-graph helper and cannot verify it`

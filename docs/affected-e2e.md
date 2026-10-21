@@ -34,6 +34,10 @@ graph or missing dependency installation must never produce an empty or silently
 The advisory selection shadow recomputes the plan without the graph helper, so it does not verify a
 graph-narrowed selection: it records one as an explained skip (`affected-graph-narrowing-unverified`)
 and fails only when a non-narrowed plan differs from its recomputation.
+The skip applies only when the narrowed plan equals the recomputation everywhere except the owner
+rows' reasons and the matrix specs (which must be a nonempty subset of the inventory); any other
+difference is a disagreement. A candidate that edits the planner, collector, partition, or
+Playwright config is likewise a skip, because the control cannot reproduce its plan.
 
 This follows the affected-task pattern of comparing Git changes with reverse dependencies described
 by [Nx](https://nx.dev/docs/features/ci-features/affected), using the already installed

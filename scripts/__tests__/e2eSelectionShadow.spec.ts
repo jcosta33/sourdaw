@@ -130,6 +130,7 @@ function withShadowCliCheckouts(
         | 'merge-deleted'
         | 'integration-matcher'
         | 'invalid-scope'
+        | 'planner-edit'
         | 'stale-base'
         | 'policy-drift',
     run: (
@@ -192,8 +193,19 @@ function withShadowCliCheckouts(
         }
         const originalBase = commit('base');
         git('checkout', '-q', '-b', 'candidate');
-        mkdirSync(join(repository, 'src'));
-        writeFileSync(join(repository, 'src/feature.ts'), 'export const feature = true;\n');
+        mkdirSync(join(repository, 'src/modules/Tuner'), { recursive: true });
+        writeFileSync(join(repository, 'src/modules/Tuner/feature.ts'), 'export const tuner = true;\n');
+        if (capability === 'planner-edit') {
+            const planner = join(repository, 'scripts/prValidationScope.ts');
+            writeFileSync(
+                planner,
+                readFileSync(planner, 'utf8').replace(
+                    'const REVIEW_TOOLING = new Set([',
+                    "const REVIEW_TOOLING = new Set([\n    'newReviewTool',"
+                )
+            );
+            writeFileSync(join(repository, 'scripts/newReviewTool.ts'), 'export const reviewTool = true;\n');
+        }
         if (capability === 'malformed') {
             writeFileSync(join(repository, 'scripts/e2eSelectionShadowCertificate.json'), '{ invalid json\n');
         }
@@ -498,36 +510,78 @@ describe('E2E selection shadow', () => {
         );
     }, 30_000);
 
+    const narrowedScope = (specs: string[]) => (plan: ReturnType<typeof selectValidationPlan>) => ({
+        ...plan,
+        matrix: { include: specs.length === 0 ? [] : [{ id: 1, specs }] },
+        reasons: plan.reasons.map((row) =>
+            row.path === 'src/modules/Tuner/feature.ts' ? { ...row, reason: 'affected feature owners: Tuner' } : row
+        ),
+    });
+
     it.each(['absent', 'present'] as const)(
         'records a graph-narrowed scope as an explained skip on the %s route',
         (capability) => {
-            const narrowedScope = (specs: string[]) => (plan: ReturnType<typeof selectValidationPlan>) => ({
-                ...plan,
-                matrix: { include: specs.length === 0 ? [] : [{ id: 1, specs }] },
-                reasons: plan.reasons.map((row) =>
-                    row.path === 'src/feature.ts' ? { ...row, reason: 'affected feature owners: Tuner' } : row
-                ),
-            });
-            for (const specs of [['tests/e2e/example.spec.ts'], []]) {
-                withShadowCliCheckouts(
-                    capability,
-                    (result, report) => {
-                        expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
-                        expect(report).toMatchObject({
-                            measurementStatus: 'skipped',
-                            skipReason: 'affected-graph-narrowing-unverified',
-                        });
-                        expect(report.skipDetail).toMatch(/Tuner/);
-                        expect(report).not.toHaveProperty('failureReason');
-                    },
-                    undefined,
-                    false,
-                    narrowedScope(specs)
-                );
-            }
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+                    expect(report).toMatchObject({
+                        measurementStatus: 'skipped',
+                        skipReason: 'affected-graph-narrowing-unverified',
+                    });
+                    expect(report.skipDetail).toMatch(/Tuner/);
+                    expect(report).not.toHaveProperty('failureReason');
+                },
+                undefined,
+                false,
+                narrowedScope(['tests/e2e/example.spec.ts'])
+            );
         },
         60_000
     );
+
+    it.each(['absent', 'present'] as const)(
+        'fails a graph-narrowed scope with an empty matrix on the %s route',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.measurementStatus).toBe('failed');
+                    expect(report.failureReason).toMatch(/Authoritative scope artifact disagrees/);
+                },
+                undefined,
+                false,
+                narrowedScope([])
+            );
+        },
+        60_000
+    );
+
+    it('skips, not fails, when the candidate edits the planner and the control still holds the old one', () => {
+        withShadowCliCheckouts(
+            'planner-edit',
+            (result, report) => {
+                expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+                expect(report).toMatchObject({
+                    measurementStatus: 'skipped',
+                    skipReason: 'integration-selector-differs-from-control',
+                });
+                expect(report).not.toHaveProperty('failureReason');
+            },
+            undefined,
+            false,
+            (plan) => ({
+                ...plan,
+                reasons: plan.reasons.map((row) => {
+                    if (row.path !== 'scripts/newReviewTool.ts') {
+                        return row;
+                    }
+                    return { ...row, reason: 'known review tooling; security/static checks without browser execution' };
+                }),
+            })
+        );
+    }, 30_000);
 
     it('reports an older head without shadow capability as unsupported full coverage', () => {
         withShadowCliCheckouts('absent', (result, report, base, head, integration) => {
@@ -1400,10 +1454,48 @@ describe('E2E selection shadow agreement with the authoritative scope', () => {
         });
     });
 
-    it('skips a graph-narrowed plan even when the plan also mismatches elsewhere', () => {
-        const livePlan = { ...narrowedPlan([candidate]), codeql: !narrowedPlan([candidate]).codeql };
-        expect(unverified(livePlan, 'M\0src/infra/clock.ts\0')).toMatchObject({
-            code: 'affected-graph-narrowing-unverified',
+    describe('fails a graph-narrowed plan that differs beyond its owners and specs', () => {
+        const honest = () => narrowedPlan([candidate]);
+        const infra = 'src/infra/clock.ts';
+        const owners = { path: candidate, reason: 'affected feature owners: Tuner' };
+
+        it.each([
+            ['beside a codeql flip', () => ({ ...honest(), codeql: !honest().codeql })],
+            ['beside a profile change', () => ({ ...honest(), profile: 'tooling' as const })],
+            [
+                'beside the full-fallback diagnostic',
+                () => ({ ...honest(), reasons: [...honest().reasons, diagnostic] }),
+            ],
+            ['with an empty matrix', () => narrowedPlan([candidate], { ...narrow, specs: [] })],
+            [
+                'with a spec outside the inventory',
+                () => narrowedPlan([candidate], { ...narrow, specs: ['tests/e2e/notInIntegration.spec.ts'] }),
+            ],
+            [
+                'with a changed path row that is no longer the recomputed reason',
+                () => ({ ...honest(), reasons: [{ ...owners, path: `${candidate}.other` }] }),
+            ],
+        ])('%s', (_name, build) => {
+            expect(() => measureShadow(fixture({ livePlan: build() }))).toThrow(disagrees);
+        });
+
+        it('on a path outside src/modules', () => {
+            const full = selectValidationPlan([candidate, infra].sort(), inventoryPaths);
+            const livePlan = {
+                ...full,
+                reasons: full.reasons.map((row) => (row.path === infra ? { ...row, reason: owners.reason } : row)),
+            };
+            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `M\0${infra}\0` }))).toThrow(disagrees);
+        });
+
+        it('beside a full-coverage row that is not an owners row', () => {
+            const full = selectValidationPlan([candidate, infra].sort(), inventoryPaths);
+            const livePlan = {
+                ...full,
+                matrix: honest().matrix,
+                reasons: full.reasons.map((row) => (row.path === candidate ? { ...row, reason: owners.reason } : row)),
+            };
+            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `M\0${infra}\0` }))).toThrow(disagrees);
         });
     });
 

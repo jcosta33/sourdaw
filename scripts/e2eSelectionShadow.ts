@@ -19,6 +19,7 @@ import {
     canonical,
     healthPolicyDigest,
     sha256,
+    skipWhenIntegrationPlannerDiffersFromControl,
     unsupportedShadowReport,
 } from './e2eSelectionShadowCompatibility.ts';
 import {
@@ -281,7 +282,11 @@ function validateMeasurementInput(input: ShadowInput): {
         inventory.map((row) => row.path),
         durations
     );
-    const agreement = comparePlans(expectedPlan, input.livePlan);
+    const agreement = comparePlans(
+        expectedPlan,
+        input.livePlan,
+        inventory.map((row) => row.path)
+    );
     if (!agreement.agrees) {
         throw new Error(
             `Authoritative scope artifact disagrees with the current selector or inventory: ${agreement.detail}`
@@ -484,13 +489,15 @@ export function measureShadow(input: ShadowInput) {
 
 function runSupportedShadow(input: {
     root: string;
+    controlRoot: string;
     integrationRoot: string;
     scopePath: string;
     base: string;
     head: string;
     integrationSha: string;
 }): void {
-    const { root, integrationRoot, scopePath, base, head, integrationSha } = input;
+    const { root, controlRoot, integrationRoot, scopePath, base, head, integrationSha } = input;
+    skipWhenIntegrationPlannerDiffersFromControl({ controlRoot, integrationRoot, base, integrationSha });
     const rawDiff = git(['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--']);
     const parsed = parseChangedRecords(rawDiff.toString('utf8'));
     const mergeBase = git(['merge-base', base, head]).toString('utf8').trim();
@@ -600,7 +607,7 @@ function main(): void {
         console.log(JSON.stringify({ measurementStatus: report.measurementStatus, counts: report.counts }));
         return;
     }
-    runSupportedShadow({ root, integrationRoot, scopePath, base, head, integrationSha });
+    runSupportedShadow({ root, controlRoot, integrationRoot, scopePath, base, head, integrationSha });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

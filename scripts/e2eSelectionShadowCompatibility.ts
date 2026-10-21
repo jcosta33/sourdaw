@@ -146,6 +146,46 @@ export function candidateShadowCapability(
     return 'supported';
 }
 
+const PLANNER_CONTROL_PATHS = [
+    'playwright.config.ts',
+    'scripts/prValidationScope.ts',
+    'scripts/vitestCollectionPatterns.ts',
+    'scripts/e2eShardPartition.ts',
+    'scripts/e2eSpecDurations.json',
+] as const;
+
+// The executing control recomputes the plan with its own selector, collector, and partition. A missing,
+// nonregular, or dirty source is an integrity failure; only valid sources whose bytes differ from the
+// integration's are an explained skip, since the control cannot reproduce the authoritative plan.
+export function skipWhenIntegrationPlannerDiffersFromControl(input: {
+    controlRoot: string;
+    integrationRoot: string;
+    base: string;
+    integrationSha: string;
+}): void {
+    const { controlRoot, integrationRoot, base, integrationSha } = input;
+    for (const path of PLANNER_CONTROL_PATHS) {
+        const integrationEntry = treeEntry(integrationSha, path, integrationRoot);
+        const controlEntry = treeEntry(base, path, controlRoot);
+        if (integrationEntry?.mode !== '100644') {
+            throw new Error(`Integration selector or planner is missing or nonregular: ${path}`);
+        }
+        if (controlEntry?.mode !== '100644') {
+            throw new Error(`Control selector or planner is missing or nonregular: ${path}`);
+        }
+        const controlBytes = git(['show', `${base}:${path}`], controlRoot);
+        if (hashInventoryFile(resolve(controlRoot, path)) !== sha256(controlBytes)) {
+            throw new Error(`Control checkout differs from its immutable base: ${path}`);
+        }
+        if (!git(['show', `${integrationSha}:${path}`], integrationRoot).equals(controlBytes)) {
+            throw new ShadowSkipError(
+                'integration-selector-differs-from-control',
+                `Integration selector or planner differs from control: ${path}`
+            );
+        }
+    }
+}
+
 export function unsupportedShadowReport(input: {
     root: string;
     integrationRoot: string;
@@ -165,32 +205,7 @@ export function unsupportedShadowReport(input: {
     if (full.length === 0) {
         throw new Error('Full browser inventory is empty');
     }
-    for (const path of [
-        'playwright.config.ts',
-        'scripts/prValidationScope.ts',
-        'scripts/vitestCollectionPatterns.ts',
-        'scripts/e2eShardPartition.ts',
-        'scripts/e2eSpecDurations.json',
-    ]) {
-        const integrationEntry = treeEntry(integrationSha, path, integrationRoot);
-        const controlEntry = treeEntry(base, path, root);
-        if (integrationEntry?.mode !== '100644') {
-            throw new Error(`Integration selector or planner is missing or nonregular: ${path}`);
-        }
-        if (controlEntry?.mode !== '100644') {
-            throw new Error(`Control selector or planner is missing or nonregular: ${path}`);
-        }
-        const controlBytes = git(['show', `${base}:${path}`], root);
-        if (hashInventoryFile(resolve(root, path)) !== sha256(controlBytes)) {
-            throw new Error(`Control checkout differs from its immutable base: ${path}`);
-        }
-        if (!git(['show', `${integrationSha}:${path}`], integrationRoot).equals(controlBytes)) {
-            throw new ShadowSkipError(
-                'integration-selector-differs-from-control',
-                `Integration selector or planner differs from control: ${path}`
-            );
-        }
-    }
+    skipWhenIntegrationPlannerDiffersFromControl({ controlRoot: root, integrationRoot, base, integrationSha });
     const durationText = git(['show', `${integrationSha}:scripts/e2eSpecDurations.json`], integrationRoot).toString(
         'utf8'
     );
@@ -201,7 +216,11 @@ export function unsupportedShadowReport(input: {
     );
     const scopeBytes = readFileSync(scopePath);
     const livePlan: unknown = JSON.parse(scopeBytes.toString('utf8'));
-    const agreement = comparePlans(expectedPlan, livePlan);
+    const agreement = comparePlans(
+        expectedPlan,
+        livePlan,
+        inventory.map((row) => row.path)
+    );
     if (!agreement.agrees) {
         throw new Error(
             `Authoritative scope artifact disagrees with the control selector or inventory: ${agreement.detail}`
