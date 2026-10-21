@@ -128,17 +128,17 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
     const factory = findReleasedNativeDspDeviceFactory(device.type);
     // Offline controls are local to this port and generation, as in Bacteria's
     // direct offline API. Bind the captured device instead of reading live state.
-    const controlTarget: RuntimeDeviceControlTarget | undefined =
-        factory?.type === 'grinder'
-            ? {
-                  trackId: 'offline-grinder-track',
-                  deviceId: device.id,
-                  deviceType: factory.type,
-                  parameterIds: Object.entries(device.parameterValues)
-                      .filter(([, value]) => Number.isFinite(value))
-                      .map(([name]) => name),
-              }
-            : undefined;
+    let controlTarget: RuntimeDeviceControlTarget | undefined;
+    if (factory?.type === 'grinder') {
+        controlTarget = {
+            trackId: 'offline-grinder-track',
+            deviceId: device.id,
+            deviceType: factory.type,
+            parameterIds: Object.entries(device.parameterValues)
+                .filter(([, value]) => Number.isFinite(value))
+                .map(([name]) => name),
+        };
+    }
     const result = factory ? await factory.create(ctx, controlTarget) : null;
 
     if (!result) {
