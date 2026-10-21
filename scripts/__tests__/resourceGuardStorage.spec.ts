@@ -1427,7 +1427,7 @@ const fixture=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'fi
 if(process.argv[2]==='-axo'){
  const marker=fixture.marker;const ids=[fixture.runner];
  if(fs.existsSync(marker))ids.push(JSON.parse(fs.readFileSync(marker,'utf8')).pid);
- const output=execFileSync('/bin/ps',['-p',ids.join(','),'-o','pid=,uid='],{encoding:'utf8'});
+ const output=execFileSync('/bin/ps',['-p',ids.join(','),'-o',process.argv[3]],{encoding:'utf8'});
  fs.appendFileSync(fixture.processSamples,JSON.stringify({catalogCount:fs.existsSync(fixture.count)?Number(fs.readFileSync(fixture.count,'utf8')):0,pids:output.trim().split('\\n').map(row=>Number(row.trim().split(/\\s+/)[0]))})+'\\n');
  process.stdout.write(output);
 }else process.stdout.write(execFileSync('/bin/ps',process.argv.slice(2),{encoding:'utf8'}));
@@ -1526,11 +1526,14 @@ if(process.argv[2]==='-axo'){
             { mode: 0o600 }
         );
         // `forkAndExit` signals a forking holder (see startForkingHolder) and waits until it has
-        // recorded its child and exited.
+        // recorded its child and exited; `handOff` waits until a live holder has recorded its heir.
         const prologue = `const fs=require('node:fs');const fixture=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'fixture.json'),'utf8'));
 const forkAndExit=()=>{process.kill(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let gone=false;
  while(Date.now()<deadline&&!gone){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'&&fs.existsSync(fixture.childPath)}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
- if(!gone)process.exit(3);};`;
+ if(!gone)process.exit(3);};
+const handOff=(signal)=>{process.kill(fixture.holder,signal);const deadline=Date.now()+3000;let ready=false;
+ while(Date.now()<deadline&&!ready){ready=fs.existsSync(fixture.childPath)&&(signal!=='SIGHUP'||require('node:child_process').execFileSync('/bin/ps',['-o','ppid=','-p',fs.readFileSync(fixture.childPath,'utf8')],{encoding:'utf8'}).trim()==='1');if(!ready)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
+ if(!ready)process.exit(3);};`;
         writeFileSync(
             join(bin, 'ps'),
             `#!${process.execPath}
@@ -1543,7 +1546,7 @@ if(args[0]==='-axo'){
  // Like the real process list, list only processes that still exist.
  const live=(pid)=>{try{process.kill(pid,0);return true}catch{return false}};
  const ids=[fixture.runner,...(${scripts.listed})].filter(live);
- const output=execFileSync('/bin/ps',['-p',ids.join(','),'-o','pid=,uid='],{encoding:'utf8'});
+ const output=execFileSync('/bin/ps',['-p',ids.join(','),'-o',process.argv[3]],{encoding:'utf8'});
  ${scripts.afterListing ?? ''}
  process.stdout.write(output);
 }else{
@@ -1802,13 +1805,15 @@ process.stdout.write(catalog);
         20_000
     );
 
-    // Starts a detached holder with its cwd in storage; launchd reaps it once it exits. On
-    // SIGUSR1 it forks a child into storage, records the child's PID, and exits.
+    // Starts a detached holder with its cwd in `temp`; launchd reaps it once it exits. On SIGUSR1
+    // it forks a child into `temp`, records the child's PID, and exits. On SIGUSR2 it forks that
+    // child, records it, and moves its own cwd out while staying alive. On SIGHUP it does the same
+    // through an intermediate that exits, so the recorded heir's parent becomes launchd.
     async function startForkingHolder(root: string, temp: string): Promise<{ holder: number; childPath: string }> {
         const holderPath = join(root, 'holder.pid');
         const childPath = join(root, 'child.pid');
         const holderProgram =
-            "const [temp,childPath,holderPath]=process.argv.slice(1);const fs=require('node:fs');process.on('SIGUSR1',()=>{const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',cwd:temp});child.unref();fs.writeFileSync(childPath,String(child.pid));process.exit(0)});fs.writeFileSync(holderPath,String(process.pid));setInterval(()=>{},1000)";
+            "const [temp,childPath,holderPath]=process.argv.slice(1);const fs=require('node:fs');const {spawn}=require('node:child_process');const heir=()=>{const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',cwd:temp});child.unref();fs.writeFileSync(childPath,String(child.pid))};process.on('SIGUSR1',()=>{heir();process.exit(0)});process.on('SIGUSR2',()=>{heir();process.chdir('/')});process.on('SIGHUP',()=>{spawn(process.execPath,['-e',\"const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',cwd:process.argv[1]});c.unref();require('node:fs').writeFileSync(process.argv[2],String(c.pid))\",temp,childPath],{stdio:'ignore'});process.chdir('/')});fs.writeFileSync(holderPath,String(process.pid));setInterval(()=>{},1000)";
         const launcher = spawn(
             process.execPath,
             [
@@ -1878,6 +1883,116 @@ process.stdout.write(catalog);
                 expect(state, reasons.join('; ')).toBe('alive');
                 expect(reads()).toEqual(expectedReads);
                 expect(isAlive(holder)).toBe(false);
+            } finally {
+                if (existsSync(childPath)) {
+                    childPids.add(Number(readFileSync(childPath, 'utf8')));
+                }
+            }
+        },
+        20_000
+    );
+
+    it.skipIf(process.platform !== 'darwin').each([
+        { heir: 'a child', signal: 'SIGUSR2' },
+        { heir: 'a launchd-parented grandchild', signal: 'SIGHUP' },
+    ])(
+        'takes a fresh observation when a live missed holder hands storage to $heir before its scoped read',
+        async ({ signal }) => {
+            const root = fixture();
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
+            const { holder, childPath } = await startForkingHolder(root, storage.tempDirectory);
+            // Whole catalogs omit the holder and list its heir once it exists. At the scoped read the
+            // holder hands storage to the heir, moves out, and is listed clean.
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { holder, childPath, signal, temp: storage.tempDirectory },
+                {
+                    listed: "[fixture.holder,...(fs.existsSync(fixture.childPath)?[Number(fs.readFileSync(fixture.childPath,'utf8'))]:[])]",
+                    lsof: `if(scoped){if(!fs.existsSync(fixture.childPath))handOff(fixture.signal);if(requested.includes(fixture.holder))catalog+=entry(fixture.holder,'/')}
+else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(fixture.childPath,'utf8')),fixture.temp);`,
+                }
+            );
+            try {
+                const state = await withCensusPath(bin, () =>
+                    storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+                );
+                expect(state, reasons.join('; ')).toBe('alive');
+                expect(reads()).toEqual(['whole', 'scoped', 'whole']);
+                expect(isAlive(holder)).toBe(true);
+            } finally {
+                if (existsSync(childPath)) {
+                    childPids.add(Number(readFileSync(childPath, 'utf8')));
+                }
+            }
+        },
+        20_000
+    );
+
+    it.skipIf(process.platform !== 'darwin')(
+        'ignores an unrelated newcomer born during the scoped read and releases',
+        async () => {
+            const root = fixture();
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
+            const outside = outsideDirectory(root);
+            const resident = spawnResident(outside);
+            // A covered spawner outside storage starts an unrelated child during the scoped read.
+            const { holder, childPath } = await startForkingHolder(root, outside);
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { resident, holder, childPath, outside },
+                {
+                    listed: "[fixture.resident,fixture.holder,...(fs.existsSync(fixture.childPath)?[Number(fs.readFileSync(fixture.childPath,'utf8'))]:[])]",
+                    lsof: `if(scoped){if(!fs.existsSync(fixture.childPath))handOff('SIGUSR2');if(requested.includes(fixture.resident))catalog+=entry(fixture.resident,fixture.outside)}
+else{catalog+=entry(fixture.holder,fixture.outside);if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(fixture.childPath,'utf8')),fixture.outside)}`,
+                }
+            );
+            try {
+                const state = await withCensusPath(bin, () =>
+                    storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+                );
+                expect(state, reasons.join('; ')).toBe('dead');
+                expect(reads()).toEqual(['whole', 'scoped']);
+                expect(existsSync(childPath)).toBe(true);
+                expect(await withCensusPath(bin, () => storage.release(true)), reasons.join('; ')).toBe(true);
+                expect(existsSync(storage.tempDirectory)).toBe(false);
+            } finally {
+                if (existsSync(childPath)) {
+                    childPids.add(Number(readFileSync(childPath, 'utf8')));
+                }
+            }
+        },
+        20_000
+    );
+
+    it.skipIf(process.platform !== 'darwin')(
+        'spends no scoped read on an observation in which a missed process exited',
+        async () => {
+            const root = fixture();
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
+            const outside = outsideDirectory(root);
+            const resident = spawnResident(outside);
+            const { holder, childPath } = await startForkingHolder(root, storage.tempDirectory);
+            // Both are missed: the resident would read clean, while the holder forks into storage
+            // and exits after the second process listing.
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { resident, holder, childPath, outside, temp: storage.tempDirectory },
+                {
+                    listed: "[fixture.resident,fixture.holder,...(fs.existsSync(fixture.childPath)?[Number(fs.readFileSync(fixture.childPath,'utf8'))]:[])]",
+                    afterListing: 'if(call===2)forkAndExit();',
+                    lsof: `if(scoped){if(requested.includes(fixture.resident))catalog+=entry(fixture.resident,fixture.outside)}
+else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(fixture.childPath,'utf8')),fixture.temp);`,
+                }
+            );
+            try {
+                const state = await withCensusPath(bin, () =>
+                    storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+                );
+                expect(state, reasons.join('; ')).toBe('alive');
+                expect(reads()).toEqual(['whole', 'whole']);
             } finally {
                 if (existsSync(childPath)) {
                     childPids.add(Number(readFileSync(childPath, 'utf8')));
