@@ -1,0 +1,33 @@
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_ba8dd89de9aac7::t_15e5e2d2e873f4 695-697
+  s_ba8dd89de9aac7::t_d510fa20e56723 321-324
+  s_d257b09300b1ad::t_1c4dc30b139b58 320,325-326,387-388,401,410,492,676,698-699,719,813-818
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_ba8dd89de9aac7::t_3fdc8da45e073b 29-35
+src/modules/AudioEngine/AGENTS.md
+  s_ba8dd89de9aac7::t_664a52d443c03e 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "65a1b5a4efba51d0ace4176309b6b15644da7073",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
