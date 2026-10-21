@@ -231,6 +231,16 @@ describe('a send destination the request names is not a competing track target',
 
         expectRefused(result, drumBus.id);
         expect(result.actions).toEqual([]);
+        // Drum Bus does not send to Drums, so Drums is not set aside as a send destination and the
+        // clause still names both tracks; setting Drums aside would leave Drum Bus the unique
+        // reference and pass the swap on to the send check instead.
+        expect(result.rejections).toEqual([
+            {
+                index: 0,
+                name: 'automateParameterRange',
+                reason: 'Compiled target trackId is not authorized by the user request',
+            },
+        ]);
     });
 
     it('sets no bus aside for a track that does not send to it, leaving both named tracks in the clause', () => {
