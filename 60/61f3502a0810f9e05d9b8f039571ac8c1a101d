@@ -1,0 +1,55 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1c08b47ac3792f::t_43d8aaae5ae097 714-776
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  s_1c08b47ac3792f::t_3a826102322fc9 114-155
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_1c08b47ac3792f::t_51d42b245a091e 148,151-152,156,161,202
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_3e7dea5cde3f9e::t_e26ad09eafceec 253-254
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreClip.spec.ts
+  s_1c08b47ac3792f::t_4a10a89f240262 320-352
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_1c08b47ac3792f::t_9c4c531251e749 82,157,168,176-184
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_1c08b47ac3792f::t_11af1dcad389e5 117-127
+src/modules/Arrangement/useCases/rippleDelete/__tests__/undoRippleDelete.spec.ts
+  s_1c08b47ac3792f::t_8e769e333d48d6 3-4,42-66
+src/modules/Arrangement/useCases/rippleDelete/undoRippleDelete.ts
+  s_ba8dd89de9aac7::t_c683e679ed7d03 21-22,35,69-75
+src/utils/handlerContract.ts
+  s_1c08b47ac3792f::t_8123401ce8e385 1144-1145
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  s_1c08b47ac3792f::t_49cdd722bd76b9 1-699
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6061f3502a0810f9e05d9b8f039571ac8c1a101d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3e7dea5cde3f9e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6e1385a9-1504-4684-890c-605df846cac7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
