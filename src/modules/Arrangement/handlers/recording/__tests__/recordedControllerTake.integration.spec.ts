@@ -1,4 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * A Web MIDI input the take's live route listens on. Stubbed before the MIDI
+ * module loads, because its supported-platform check reads `navigator` once at
+ * import.
+ */
+const liveMidi = vi.hoisted(() => {
+    const input = Object.assign(new EventTarget(), { id: 'live-input', name: 'Live input', manufacturer: 'Test' });
+    const access = { inputs: new Map([[input.id, input]]), onstatechange: null };
+    Object.defineProperty(navigator, 'requestMIDIAccess', {
+        configurable: true,
+        value: () => Promise.resolve(access),
+    });
+    return { input };
+});
 
 import {
     configureAutomergeStoragePort,
@@ -19,7 +34,15 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { addMidiCC, addPitchBend, appendRecordedMidiNote } from '#/modules/MIDI/useCases';
+import {
+    addMidiCC,
+    addPitchBend,
+    appendRecordedMidiNote,
+    destroyWebMidi,
+    initWebMidi,
+    setMidiInputTrack,
+    setWebMidiRuntimeEventBus,
+} from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -41,8 +64,9 @@ const noActionHistoryMetadataPort = {
  * Controller and pitch-bend rows the live MIDI route writes into the recording
  * clip during the pass are part of the take: the one commit at stop snapshots
  * them, one undo removes them with the clip, and one redo restores the same
- * rows. The rows are written through the MIDI use cases the live route calls,
- * so the commit and undo run against the rows exactly as recording leaves them.
+ * rows. The rows reach the clip either through the MIDI editing writers or,
+ * as in a real take, through the Web MIDI input route that dispatches to the
+ * production recording writers.
  */
 describe('recorded controller take commit', () => {
     beforeEach(() => {
@@ -68,6 +92,7 @@ describe('recorded controller take commit', () => {
     });
 
     afterEach(() => {
+        destroyWebMidi();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -112,5 +137,53 @@ describe('recorded controller take commit', () => {
         flushAutomergeStorageWrites();
         expect(midiStore.value?.ccByClipId[clipId]).toEqual([pedalDown, pedalUp]);
         expect(midiStore.value?.pitchBendByClipId[clipId]).toEqual([bend]);
+    });
+
+    // The Web MIDI input route is the barrel's way to the production
+    // `handleWebMidiCC` / `handleWebMidiPitchBend`: those handlers are not
+    // exported, and the input subscription is what calls them in the app.
+    it('records pedal and bend messages arriving on the live input into one undoable take', async () => {
+        setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+        await initWebMidi();
+        setMidiInputTrack(TRACK_ID);
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        const clipId = provisional.id;
+        transportStore.set({ ...transportStore.value!, isRecording: true });
+
+        const send = (beat: number, ...bytes: number[]): void => {
+            transportStore.set({ ...transportStore.value!, playheadPosition: beat });
+            liveMidi.input.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));
+        };
+        send(4.5, 0xb0, 64, 127);
+        send(5, 0xe0, 104, 71);
+        send(5.5, 0xb0, 64, 0);
+        flushAutomergeStorageWrites();
+
+        await stopRecording(8);
+        flushAutomergeStorageWrites();
+
+        const rowsOf = <TRow extends object>(rows: readonly TRow[] | undefined) =>
+            (rows ?? []).map(({ id: _id, ...row }) => row);
+        const recordedCc = midiStore.value?.ccByClipId[clipId];
+        const recordedBend = midiStore.value?.pitchBendByClipId[clipId];
+        expect(rowsOf(recordedCc)).toEqual([
+            { controller: 64, value: 127, beat: 0.5, channel: 0 },
+            { controller: 64, value: 0, beat: 1.5, channel: 0 },
+        ]);
+        expect(rowsOf(recordedBend)).toEqual([{ value: 1000, beat: 1, channel: 0 }]);
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.ccByClipId[clipId]).toBeUndefined();
+        expect(midiStore.value?.pitchBendByClipId[clipId]).toBeUndefined();
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.ccByClipId[clipId]).toEqual(recordedCc);
+        expect(midiStore.value?.pitchBendByClipId[clipId]).toEqual(recordedBend);
     });
 });

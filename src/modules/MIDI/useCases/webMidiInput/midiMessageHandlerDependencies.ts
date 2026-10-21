@@ -25,7 +25,7 @@ import { processRealtimeMidiInput } from '../../repositories/webMidi/processReal
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
 import { appendRecordedMidiNote } from '../appendRecordedMidiNote';
 import { createMidiNote } from '../createMidiNote';
-import { addMidiCC } from '../midiEvent/addMidiCC';
+import { appendRecordedMidiCC } from '../appendRecordedMidiCC';
 import { addPitchBend } from '../midiEvent/addPitchBend';
 import { stepRecordNoteOff } from '../stepRecording/stepRecordNoteOff';
 import { stepRecordNoteOn } from '../stepRecording/stepRecordNoteOn';
@@ -46,8 +46,8 @@ function getSynthParamsForTrack(trackId: string): ReturnType<typeof getSynthPara
 }
 
 export const midiMessageHandlerDependencies = {
-    addMidiCC,
     addPitchBend,
+    appendRecordedMidiCC,
     appendRecordedMidiNote,
     applyMidiMappings,
     completeMidiLearn,

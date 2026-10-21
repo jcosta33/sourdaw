@@ -19,7 +19,7 @@ type RecordChannelEventInput = {
 };
 
 export type RecordChannelEventDependencies = RecordingPlacementDependencies &
-    Pick<typeof midiMessageHandlerDependencies, 'addMidiCC' | 'addPitchBend'>;
+    Pick<typeof midiMessageHandlerDependencies, 'addPitchBend' | 'appendRecordedMidiCC'>;
 
 /**
  * Write a channel controller or pitch-bend event into the take being recorded.
@@ -27,7 +27,8 @@ export type RecordChannelEventDependencies = RecordingPlacementDependencies &
  * The event lands in the clip, at the clip-relative beat, a note-on arriving at
  * the same instant would be filed under. It is written straight to the MIDI
  * store with no undo entry of its own: the recording commit snapshots the
- * clip's controller rows and owns the undo of the whole take.
+ * clip's controller rows and owns the undo of the whole take. Every message is
+ * appended in arrival order, so same-beat controllers all survive.
  *
  * A failed write is logged and dropped rather than thrown: the caller is also
  * voicing the live event, and a recording fault must never silence the
@@ -50,7 +51,10 @@ export function recordChannelEvent(
     }
     try {
         if (event.kind === 'controlChange') {
-            deps.addMidiCC(placement.clipId, event.controller, event.value, placement.clipBeat, channel);
+            deps.appendRecordedMidiCC({
+                clipId: placement.clipId,
+                row: { controller: event.controller, value: event.value, beat: placement.clipBeat, channel },
+            });
             return;
         }
         deps.addPitchBend(placement.clipId, event.value, placement.clipBeat, channel);

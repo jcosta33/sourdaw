@@ -4,7 +4,7 @@ import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 import { midiStore } from '../../../stores/midiStore';
-import { addMidiCC } from '../../midiEvent/addMidiCC';
+import { appendRecordedMidiCC } from '../../appendRecordedMidiCC';
 import { addPitchBend } from '../../midiEvent/addPitchBend';
 
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
@@ -82,8 +82,8 @@ function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {})
         sendNativeLiveMidiControl: send_native_live_midi_control,
         getTransportStoreValue: () => ({ isRecording: false, overdubEnabled: false, isLooping: false, tempo: 120 }),
         getCompensationDelay: () => 0,
-        addMidiCC,
         addPitchBend,
+        appendRecordedMidiCC,
         ...overrides,
     };
 }
@@ -970,6 +970,39 @@ describe('handleWebMidiCC', () => {
             ]);
         });
 
+        it('records an RPN 0 sequence ending in the null RPN whole when every message shares one beat', () => {
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 101, 0, at_beat(6));
+            fn(0, 100, 0, at_beat(6));
+            fn(0, 6, 12, at_beat(6));
+            fn(0, 38, 0, at_beat(6));
+            fn(0, 101, 127, at_beat(6));
+            fn(0, 100, 127, at_beat(6));
+
+            expect(recorded_cc_rows()).toEqual([
+                { controller: 101, value: 0, beat: 2, channel: 0 },
+                { controller: 100, value: 0, beat: 2, channel: 0 },
+                { controller: 6, value: 12, beat: 2, channel: 0 },
+                { controller: 38, value: 0, beat: 2, channel: 0 },
+                { controller: 101, value: 127, beat: 2, channel: 0 },
+                { controller: 100, value: 127, beat: 2, channel: 0 },
+            ]);
+        });
+
+        it('records both pedal messages of the first latency window at clip beat 0', () => {
+            audio_clock.outputLatency = 0.25;
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 64, 0, at_beat(4.1));
+            fn(0, 64, 127, at_beat(4.3));
+
+            expect(recorded_cc_rows()).toEqual([
+                { controller: 64, value: 0, beat: 0, channel: 0 },
+                { controller: 64, value: 127, beat: 0, channel: 0 },
+            ]);
+        });
+
         it('keeps MPE member-channel slide as per-note expression and records the master channel controller', () => {
             mpe_enabled.value = true;
             const fn = handleWebMidiCC._factory(recording_dependencies());
@@ -985,7 +1018,7 @@ describe('handleWebMidiCC', () => {
             const fn = handleWebMidiCC._factory(
                 recording_dependencies({
                     applyMidiMappings: apply_midi_mappings,
-                    addMidiCC: () => {
+                    appendRecordedMidiCC: () => {
                         throw new Error('store unavailable');
                     },
                 })
