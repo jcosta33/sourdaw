@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:bb40b6cbc383e65aa9a7b634db017c97f8f10d56cdcd977421d5394ab7d81c62
+// @wasm-bindgen-dts crate-source: sha256:a12247a539d5c3eb25d01fa21ba651b3ff9d2d8252a80e75c9c7ffad272b0c56
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -20,6 +20,7 @@ export const gluteninstance_process: (a: number, b: number) => number;
 export const gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
 export const commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number];
+export const init_panic_hook: () => void;
 export const __wbg_fermenterinstance_free: (a: number, b: number) => void;
 export const __wbg_grinderinstance_free: (a: number, b: number) => void;
 export const __wbg_toasterinstance_free: (a: number, b: number) => void;
@@ -122,7 +123,6 @@ export const grandbouleinstance_push_sustain: (a: number, b: number, c: number) 
 export const grandbouleinstance_push_una_corda: (a: number, b: number, c: number) => number;
 export const grandbouleinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const grandbouleinstance_set_temperament: (a: number, b: number) => void;
-export const init_panic_hook: () => void;
 export const kneadinstance_get_f0: (a: number) => number;
 export const kneadinstance_get_input_left_ptr: (a: number) => number;
 export const kneadinstance_get_input_right_ptr: (a: number) => number;
