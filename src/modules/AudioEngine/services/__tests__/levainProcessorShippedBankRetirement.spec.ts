@@ -85,6 +85,51 @@ function hasRetiredBank(processor: LevainProcessorLike): boolean {
     return processor._instance.has_retired_bank();
 }
 
+async function renderFreshEnsembleAttack(note: number, ensembleTiming: boolean): Promise<Float32Array[]> {
+    vi.resetModules();
+    const { registry } = installWorkletGlobals<LevainProcessorLike>();
+    await import('../levainProcessor');
+    const Processor = registry.get('levain-processor');
+    if (!Processor) {
+        throw new TypeError('Expected levain-processor registration');
+    }
+    const processor = new Processor({ processorOptions: { wasmModule } });
+    send(processor, { type: 'init' });
+
+    // Neutral realism keeps bow and breath noise out of the sample-onset measurement.
+    loadBank(processor, 1, 'marimba');
+    expect(posted(processor)).toContainEqual({ type: 'sampleBankLoaded', loadToken: 1 });
+    send(processor, { type: 'param', name: 'humanize', value: 0 });
+    send(processor, { type: 'param', name: 'legatoEnabled', value: 0 });
+    send(processor, { type: 'param', name: 'ensembleTiming', value: ensembleTiming ? 1 : 0 });
+    send(processor, { type: 'noteOn', note, velocity: 100, sampleFrame: 0 });
+
+    const quanta = 12;
+    const rendered = makeChannels(2, quanta * FRAMES);
+    const output = makeChannels(2, FRAMES);
+    for (let quantum = 0; quantum < quanta; quantum++) {
+        vi.stubGlobal('currentFrame', quantum * FRAMES);
+        expect(processor.process([], [output])).toBe(true);
+        rendered[0]!.set(output[0]!, quantum * FRAMES);
+        rendered[1]!.set(output[1]!, quantum * FRAMES);
+    }
+    expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+    expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'sampleBankError' }));
+    for (const channel of rendered) {
+        expect(channel.every(Number.isFinite)).toBe(true);
+        expect(channel.some((sample) => Math.abs(sample) > 1e-6)).toBe(true);
+    }
+    return rendered;
+}
+
+function onsetFrame(samples: Float32Array): number {
+    const onset = samples.findIndex((sample) => Math.abs(sample) > 1e-6);
+    if (onset < 0) {
+        throw new TypeError('Expected a sounding sample attack');
+    }
+    return onset;
+}
+
 afterEach(() => {
     vi.unstubAllGlobals();
     vi.resetModules();
@@ -151,5 +196,31 @@ describe('shipped LevainProcessor bank retirement', () => {
         }
         const peak = output[0]!.reduce((max, sample) => Math.max(max, Math.abs(sample)), 0);
         expect(peak).toBeGreaterThan(1e-6);
+    });
+
+    it('spreads compiled sample attacks by pitch and replays the same shifted stereo PCM', async () => {
+        const pitches = [48, 55, 60, 64, 67, 72];
+        const offsets: number[] = [];
+        for (const note of pitches) {
+            const off = await renderFreshEnsembleAttack(note, false);
+            const on = await renderFreshEnsembleAttack(note, true);
+            const replay = await renderFreshEnsembleAttack(note, true);
+            const delay = onsetFrame(on[0]!) - onsetFrame(off[0]!);
+
+            expect(delay, `note ${note} must not precede its ensemble-off attack`).toBeGreaterThanOrEqual(0);
+            expect(delay, `note ${note} must stay within the 12 ms spread at 48 kHz`).toBeLessThanOrEqual(576);
+            for (let channel = 0; channel < 2; channel++) {
+                const offChannel = off[channel]!;
+                const onChannel = on[channel]!;
+                expect(onsetFrame(onChannel) - onsetFrame(offChannel)).toBe(delay);
+                expect(onChannel.subarray(delay), `note ${note}, channel ${channel}: only onset may change`).toEqual(
+                    offChannel.subarray(0, offChannel.length - delay)
+                );
+            }
+            expect(replay, `note ${note} must replay identically in a fresh processor`).toEqual(on);
+            offsets.push(delay);
+        }
+        expect(new Set(offsets).size, `pitch offsets: ${offsets.join(', ')}`).toBeGreaterThan(3);
+        console.info('Shipped Levain ensemble onset offsets (frames):', offsets);
     });
 });
