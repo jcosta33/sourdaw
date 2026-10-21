@@ -160,6 +160,7 @@ describe('recorded controller take commit', () => {
         send(4.5, 0xb0, 64, 127);
         send(5, 0xe0, 104, 71);
         send(5.5, 0xb0, 64, 0);
+        send(5.5, 0xb0, 64, 127);
         flushAutomergeStorageWrites();
 
         await stopRecording(8);
@@ -172,6 +173,7 @@ describe('recorded controller take commit', () => {
         expect(rowsOf(recordedCc)).toEqual([
             { controller: 64, value: 127, beat: 0.5, channel: 0 },
             { controller: 64, value: 0, beat: 1.5, channel: 0 },
+            { controller: 64, value: 127, beat: 1.5, channel: 0 },
         ]);
         expect(rowsOf(recordedBend)).toEqual([{ value: 1000, beat: 1, channel: 0 }]);
         expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
