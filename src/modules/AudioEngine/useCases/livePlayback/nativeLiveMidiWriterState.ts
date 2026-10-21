@@ -27,6 +27,8 @@
  * A looping pass keeps exact resident event identities across the seam. Its
  * ahead window and spent trail shrink to fit the same fixed store; entries
  * already prefetched for replay survive clearing and are never sent twice.
+ * Real offs reserved with their ons remain while the key may be sounding,
+ * so a later clear can settle deletion against the replacement programme.
  *
  * ## Why module state, and why the epoch
  *
@@ -72,6 +74,10 @@ export type LiveMidiWriterTarget = {
     events: readonly AudioGraphMidiNoteEvent[];
     /** Prepared once on a looping arm; owned and invalidated with this programme. */
     loopFrameGroups?: readonly LiveMidiFrameGroup[];
+    /** Real on/off partners after the programme's same-key normalization. */
+    loopNotePartners?: readonly (number | undefined)[];
+    /** Replacement offs spanning an opening position; no note chase is implied. */
+    loopOpeningNoteOffIndices?: readonly number[];
     /** Accepted event count; the contiguous prefix cursor for a non-looping pass. */
     cursor: number;
     /** Entries this side believes the engine's store still holds: sent minus cleared. */

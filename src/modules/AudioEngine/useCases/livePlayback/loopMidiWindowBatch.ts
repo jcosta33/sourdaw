@@ -38,6 +38,26 @@ export function indexLoopMidiFrames(
     return groups;
 }
 
+/** Projection resolves same-key overlaps before emitting this ordered programme. */
+export function indexLoopMidiNotePartners(events: readonly AudioGraphMidiNoteEvent[]): readonly (number | undefined)[] {
+    const partners: (number | undefined)[] = Array.from({ length: events.length }, () => undefined);
+    const open = new Map<number, number>();
+    for (const [index, event] of events.entries()) {
+        const key = event.channel * 128 + event.note;
+        if (event.isNoteOn) {
+            open.set(key, index);
+            continue;
+        }
+        const onset = open.get(key);
+        if (onset !== undefined) {
+            partners[onset] = index;
+            partners[index] = onset;
+            open.delete(key);
+        }
+    }
+    return partners;
+}
+
 function firstGroupAtFrame(groups: readonly LiveMidiFrameGroup[], frame: number): number {
     let first = 0;
     let end = groups.length;
@@ -67,13 +87,14 @@ type AheadWindow = Readonly<{
 function takeAhead(
     slot: LiveMidiWriterTarget,
     groups: readonly LiveMidiFrameGroup[],
-    window: AheadWindow
+    window: AheadWindow,
+    releases: ReadonlySet<number>
 ): Set<number> {
-    const selected = new Set<number>();
+    const selected = new Set(releases);
     const loopFirst = firstGroupAtFrame(groups, window.start);
     const loopEnd = firstGroupAtFrame(groups, window.end);
-    const admit = (group: LiveMidiFrameGroup, distance: number): boolean => {
-        if (distance >= window.horizonFrames || selected.size >= MIDI_NOTE_STORE_CAPACITY / 2) {
+    function admit(group: LiveMidiFrameGroup, distance: number): boolean {
+        if (distance >= window.horizonFrames || selected.size - releases.size >= MIDI_NOTE_STORE_CAPACITY / 2) {
             return false;
         }
         const count = group.endEventIndex - group.firstEventIndex;
@@ -87,14 +108,15 @@ function takeAhead(
             }
             return false;
         }
-        if (selected.size + count > MIDI_NOTE_STORE_CAPACITY) {
+        const additions = groupWithReleases(slot, group, selected);
+        if (selected.size + additions.length > MIDI_NOTE_STORE_CAPACITY) {
             return false;
         }
-        for (let index = group.firstEventIndex; index < group.endEventIndex; index += 1) {
+        for (const index of additions) {
             selected.add(index);
         }
         return true;
-    };
+    }
     for (let index = window.firstAtPosition; index < loopEnd; index += 1) {
         const group = groups[index];
         if (!group || !admit(group, group.frame - window.position)) {
@@ -112,17 +134,38 @@ function takeAhead(
     return selected;
 }
 
+/** Distant real offs reserve entries without admitting their future-frame neighbours. */
+function groupWithReleases(
+    slot: LiveMidiWriterTarget,
+    group: LiveMidiFrameGroup,
+    retained: ReadonlySet<number>
+): number[] {
+    const additions = new Set<number>();
+    for (let index = group.firstEventIndex; index < group.endEventIndex; index += 1) {
+        if (!retained.has(index)) {
+            additions.add(index);
+        }
+        const event = slot.events[index];
+        const partner = slot.loopNotePartners?.[index];
+        if (event?.isNoteOn && partner !== undefined && !retained.has(partner)) {
+            additions.add(partner);
+        }
+    }
+    return [...additions];
+}
+
 /** Visit only resident entries; all clears precede newly admitted frame groups. */
 function clearExcluded(
     slot: LiveMidiWriterTarget,
     held: ReadonlySet<number>,
     retained: ReadonlySet<number>,
     sampleRate: number
-): AudioGraphCommand[] {
+): { commands: AudioGraphCommand[]; removed: Set<number> } {
     const commands: AudioGraphCommand[] = [];
+    const removed = new Set<number>();
     let fromFrame: number | null = null;
     let lastFrame = 0;
-    const flush = () => {
+    function flush(): void {
         if (fromFrame !== null) {
             commands.push({
                 kind: 'clear-midi',
@@ -132,22 +175,37 @@ function clearExcluded(
             });
             fromFrame = null;
         }
-    };
+    }
     const residents = Array.from(held).sort((left, right) => left - right);
-    for (const index of residents) {
-        if (retained.has(index)) {
-            flush();
-            continue;
-        }
-        const event = slot.events[index];
+    function frameOf(index: number | undefined): number {
+        const event = index === undefined ? undefined : slot.events[index];
         if (!event) {
             throw new Error('a resident MIDI entry must belong to its pass programme');
         }
-        fromFrame ??= Math.round(event.time * sampleRate);
-        lastFrame = Math.round(event.time * sampleRate);
+        return Math.round(event.time * sampleRate);
+    }
+    for (let first = 0; first < residents.length;) {
+        const frame = frameOf(residents[first]);
+        let end = first + 1;
+        while (end < residents.length && frameOf(residents[end]) === frame) {
+            end += 1;
+        }
+        const members = residents.slice(first, end);
+        if (members.every((member) => retained.has(member))) {
+            flush();
+        } else {
+            // Clear addresses frames, so a reserved off sharing one with an
+            // excluded resident must be rewritten in this same batch too.
+            fromFrame ??= frame;
+            lastFrame = frame;
+            for (const member of members) {
+                removed.add(member);
+            }
+        }
+        first = end;
     }
     flush();
-    return commands;
+    return { commands, removed };
 }
 
 export function loopMidiWindowBatch(
@@ -176,13 +234,28 @@ export function loopMidiWindowBatch(
             throw new Error('a looping MIDI target must be indexed by its arm');
         }
         const firstAtPosition = firstGroupAtFrame(groups, position);
-        const ahead = takeAhead(slot, groups, {
-            position,
-            start,
-            end,
-            firstAtPosition,
-            horizonFrames: MIDI_WINDOW_SECONDS * pass.sampleRate,
-        });
+        const held = new Set(opening ? [] : slot.heldEventIndices);
+        const releases = new Set(opening ? slot.loopOpeningNoteOffIndices : []);
+        for (const index of held) {
+            const event = slot.events[index];
+            const partner = slot.loopNotePartners?.[index];
+            const onset = partner === undefined ? undefined : slot.events[partner];
+            if (
+                event &&
+                !event.isNoteOn &&
+                onset &&
+                Math.round(onset.time * pass.sampleRate) < position &&
+                Math.round(event.time * pass.sampleRate) >= position
+            ) {
+                releases.add(index);
+            }
+        }
+        const ahead = takeAhead(
+            slot,
+            groups,
+            { position, start, end, firstAtPosition, horizonFrames: MIDI_WINDOW_SECONDS * pass.sampleRate },
+            releases
+        );
         const retained = new Set(ahead);
         for (let groupIndex = firstAtPosition - 1; groupIndex >= 0; groupIndex -= 1) {
             const group = groups[groupIndex];
@@ -192,24 +265,32 @@ export function loopMidiWindowBatch(
             if (retained.has(group.firstEventIndex)) {
                 continue;
             }
-            const count = group.endEventIndex - group.firstEventIndex;
-            if (retained.size + count > MIDI_NOTE_STORE_CAPACITY) {
+            const additions = groupWithReleases(slot, group, retained);
+            if (retained.size + additions.length > MIDI_NOTE_STORE_CAPACITY) {
                 break;
             }
-            for (let index = group.firstEventIndex; index < group.endEventIndex; index += 1) {
+            for (const index of additions) {
                 retained.add(index);
             }
             clearedBefore = Math.min(clearedBefore, group.frame / pass.sampleRate);
         }
-        const held = new Set(opening ? [] : slot.heldEventIndices);
-        const heldAfter = new Set(Array.from(held).filter((index) => retained.has(index)));
-        const added = Array.from(ahead)
+        const cleared = clearExcluded(slot, held, retained, pass.sampleRate);
+        const heldAfter = new Set(
+            Array.from(held).filter((index) => retained.has(index) && !cleared.removed.has(index))
+        );
+        const wanted = new Set(ahead);
+        for (const index of cleared.removed) {
+            if (retained.has(index)) {
+                wanted.add(index);
+            }
+        }
+        const added = Array.from(wanted)
             .filter((index) => !heldAfter.has(index))
             .sort((left, right) => left - right);
         if (opening) {
             commands.push({ kind: 'clear-midi', target: slot.target, fromTime: 0, toTime: null });
         } else {
-            commands.push(...clearExcluded(slot, held, retained, pass.sampleRate));
+            commands.push(...cleared.commands);
         }
         if (added.length > 0) {
             commands.push({

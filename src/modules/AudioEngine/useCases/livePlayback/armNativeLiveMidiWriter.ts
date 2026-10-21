@@ -5,6 +5,8 @@
  * window ahead of the entry position, including the region head when that
  * window crosses the seam. The native store replays retained entries, while
  * the pump clears spent trail and replenishes missing upcoming entries.
+ * Each admitted on reserves its real off even beyond that horizon: a later
+ * rewrite must remove an off for the native engine to record release debt.
  *
  * ── Where a non-looping pass ends, and why nowhere ────────────────────────
  *
@@ -53,11 +55,15 @@
 import { logger } from '#/infra/logger/appLogger';
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphCommand, type AudioGraphDeviceTarget } from '../../models/AudioGraphBackend';
+import {
+    type AudioGraphCommand,
+    type AudioGraphDeviceTarget,
+    type AudioGraphMidiNoteEvent,
+} from '../../models/AudioGraphBackend';
 
 import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
-import { indexLoopMidiFrames, loopMidiWindowBatch } from './loopMidiWindowBatch';
+import { indexLoopMidiFrames, indexLoopMidiNotePartners, loopMidiWindowBatch } from './loopMidiWindowBatch';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import {
     MIDI_WINDOW_SECONDS,
@@ -192,6 +198,37 @@ function openingBatch(pass: LiveMidiWriterPass, positionSeconds: number): MidiWr
     return { commands, admissions };
 }
 
+function prepareLoopMidi(
+    events: readonly AudioGraphMidiNoteEvent[],
+    looping: boolean,
+    positionSeconds: number,
+    sampleRate: number
+): Pick<LiveMidiWriterTarget, 'loopFrameGroups' | 'loopNotePartners' | 'loopOpeningNoteOffIndices'> {
+    if (!looping) {
+        return {};
+    }
+    const partners = indexLoopMidiNotePartners(events);
+    const position = Math.round(positionSeconds * sampleRate);
+    const spanningOffs: number[] = [];
+    for (const [index, event] of events.entries()) {
+        const partner = partners[index];
+        const onset = partner === undefined ? undefined : events[partner];
+        if (
+            !event.isNoteOn &&
+            onset &&
+            Math.round(event.time * sampleRate) >= position &&
+            Math.round(onset.time * sampleRate) < position
+        ) {
+            spanningOffs.push(index);
+        }
+    }
+    return {
+        loopFrameGroups: indexLoopMidiFrames(events, sampleRate),
+        loopNotePartners: partners,
+        loopOpeningNoteOffIndices: spanningOffs,
+    };
+}
+
 export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInput): Promise<void> {
     const span = passSpan(input);
     const programme = readLiveMidiProgramme({
@@ -235,7 +272,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
                 deviceName: device?.name ?? entry.target.deviceId,
                 trackName: trackNameById.get(entry.target.trackId) ?? entry.target.trackId,
                 events: entry.events,
-                loopFrameGroups: span.looping ? indexLoopMidiFrames(entry.events, input.sampleRate) : undefined,
+                ...prepareLoopMidi(entry.events, span.looping, input.positionSeconds, input.sampleRate),
                 cursor: 0,
                 held: 0,
                 heldEventIndices: span.looping ? [] : undefined,

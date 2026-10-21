@@ -140,6 +140,8 @@ function persistentMidiSink(initialPosition = 0) {
     let maximumRequested = 0;
     let refusals = 0;
     const delivered: string[] = [];
+    const sounding = new Set<number>();
+    const releases: number[] = [];
     mocks.apply.mockImplementation(async (batch) => {
         const region = nativeLiveGraphSession.loopRegion;
         const requiredNext = stored.filter((event) => {
@@ -154,6 +156,7 @@ function persistentMidiSink(initialPosition = 0) {
         });
         let next = [...stored];
         let scheduled = false;
+        const stripped = new Set<number>();
         for (const command of batch.commands) {
             if (command.kind === 'clear-midi') {
                 expect(scheduled).toBe(false);
@@ -161,6 +164,9 @@ function persistentMidiSink(initialPosition = 0) {
                 const to = command.toTime === null ? Infinity : Math.round(command.toTime * SAMPLE_RATE);
                 next = next.filter((event) => {
                     const frame = Math.round(event.time * SAMPLE_RATE);
+                    if (frame >= from && frame < to && !event.isNoteOn && sounding.has(event.note)) {
+                        stripped.add(event.note);
+                    }
                     return frame < from || frame >= to;
                 });
             }
@@ -180,7 +186,18 @@ function persistentMidiSink(initialPosition = 0) {
         }
         const after = new Set(eventIdentities(next));
         expect(eventIdentities(requiredNext).filter((identity) => !after.has(identity))).toEqual([]);
-        stored = next.sort((left, right) => left.time - right.time || Number(left.isNoteOn) - Number(right.isNoteOn));
+        // Native merge keeps an already-stored event before an arriving event
+        // at the same frame; it does not reorder ties into note-off first.
+        stored = next.sort((left, right) => left.time - right.time);
+        // Native clear_midi_notes records only removed offs. Settlement reads
+        // the first future event of that key after the entire rewrite batch.
+        for (const note of stripped) {
+            const first = stored.find((event) => event.note === note && event.time >= position);
+            if (!first || first.isNoteOn) {
+                sounding.delete(note);
+                releases.push(note);
+            }
+        }
         maximumHeld = Math.max(maximumHeld, stored.length);
         return APPLIED;
     });
@@ -190,6 +207,8 @@ function persistentMidiSink(initialPosition = 0) {
         maximumHeld: () => maximumHeld,
         maximumRequested: () => maximumRequested,
         refusals: () => refusals,
+        sounding: (note: number) => sounding.has(note),
+        releases,
         render: (from: number, to: number) => {
             const first = Math.round(from * SAMPLE_RATE);
             const end = Math.round(to * SAMPLE_RATE);
@@ -197,14 +216,23 @@ function persistentMidiSink(initialPosition = 0) {
                 to === nativeLiveGraphSession.loopRegion?.endSeconds
                     ? nativeLiveGraphSession.loopRegion.startSeconds
                     : to;
-            delivered.push(
-                ...eventIdentities(
-                    stored.filter((event) => {
-                        const frame = Math.round(event.time * SAMPLE_RATE);
-                        return frame >= first && frame < end;
-                    })
-                )
-            );
+            const due = stored.filter((event) => {
+                const frame = Math.round(event.time * SAMPLE_RATE);
+                return frame >= first && frame < end;
+            });
+            delivered.push(...eventIdentities(due));
+            for (const event of due) {
+                if (event.isNoteOn) {
+                    sounding.add(event.note);
+                } else {
+                    sounding.delete(event.note);
+                    releases.push(event.note);
+                }
+            }
+            if (to === nativeLiveGraphSession.loopRegion?.endSeconds) {
+                releases.push(...sounding);
+                sounding.clear();
+            }
         },
     };
 }
@@ -482,15 +510,44 @@ describe('the live MIDI writer', () => {
         expect(mocks.warn).not.toHaveBeenCalled();
     });
 
-    it('does not queue a release beyond the seam, where the native engine already releases stored keys', async () => {
+    it('reserves a real off beyond the seam for deletion before the native wrap releases the key', async () => {
         mocks.events = [
             { time: 2.75, note: 60 },
             { time: 3.25, note: 60, isNoteOn: false, noteOnTime: 2.75 },
         ];
         nativeLiveGraphSession.loopRegion = { startSeconds: 2, endSeconds: 3, enabled: true };
         nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink(2.5);
         await arm(2.5);
-        expect(scheduledIn(0).map((event) => event.time)).toEqual([2.75]);
+        sink.render(2.5, 2.9);
+        expect(sink.sounding(60)).toBe(true);
+        mocks.events = [];
+        requestNativeLiveMidiWriterRearm();
+        await poll(2.9);
+        expect(sink.sounding(60)).toBe(false);
+        sink.render(2.9, 3);
+        expect(sink.releases).toEqual([60]);
+    });
+
+    it('releases exactly once at each seam while reserving a real off beyond it', async () => {
+        mocks.events = [
+            { time: 2.75, note: 60 },
+            { time: 3.25, note: 60, isNoteOn: false, noteOnTime: 2.75 },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 2, endSeconds: 3, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink(2);
+        await arm(2);
+        for (let wrap = 0; wrap < 3; wrap += 1) {
+            sink.render(2, 2.9);
+            expect(sink.sounding(60)).toBe(true);
+            sink.render(2.9, 3);
+            expect(sink.sounding(60)).toBe(false);
+            expect(sink.releases).toHaveLength(wrap + 1);
+            await pump(2, wrap + 1);
+        }
+        expect(sink.maximumHeld()).toBe(2);
+        expect(sink.refusals()).toBe(0);
     });
 
     it('keeps loop residency and the trail floor unchanged after a refused batch or a superseded answer', async () => {
@@ -586,6 +643,195 @@ describe('the live MIDI writer', () => {
         expect(visits).toBeLessThanOrEqual(bound);
         expect(slot.held).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
         expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it.each(['delete', 'reattack'] as const)(
+        'releases a sounding long note on %s when its old distant off was never resident',
+        async (edit) => {
+            mocks.events = [
+                { time: 1, note: 60, isNoteOn: true },
+                { time: 3, note: 64, isNoteOn: true },
+                { time: 3.5, note: 64, isNoteOn: false },
+                { time: 15, note: 60, isNoteOn: false },
+            ];
+            nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
+            nativeLiveGraphSession.loopEnabled = true;
+            const sink = persistentMidiSink();
+            await arm(0);
+            sink.render(0, 2);
+            expect(sink.sounding(60)).toBe(true);
+            mocks.events = mocks.events.filter((event) => event.note !== 60);
+            if (edit === 'reattack') {
+                mocks.events.push({ time: 4, note: 60, isNoteOn: true }, { time: 4.5, note: 60, isNoteOn: false });
+            }
+            requestNativeLiveMidiWriterRearm();
+            await poll(2);
+            expect(sink.sounding(60)).toBe(false);
+            expect(sink.releases.filter((note) => note === 60)).toEqual([60]);
+            sink.render(2, 4.25);
+            expect(sink.sounding(60)).toBe(edit === 'reattack');
+            sink.render(4.25, 5);
+            expect(sink.sounding(60)).toBe(false);
+        }
+    );
+
+    it.each([15, 18])('preserves a still-live long note through a rewrite ending at %ss', async (end) => {
+        mocks.events = [
+            { time: 1, note: 60, isNoteOn: true },
+            { time: 3, note: 64, isNoteOn: true },
+            { time: 3.5, note: 64, isNoteOn: false },
+            { time: 15, note: 60, isNoteOn: false },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        sink.render(0, 2);
+        mocks.events = mocks.events.map((event) => {
+            if (event.note === 60) {
+                return { ...event, time: event.isNoteOn ? 0.5 : end };
+            }
+            return event;
+        });
+        requestNativeLiveMidiWriterRearm();
+        await poll(2);
+        expect(sink.sounding(60)).toBe(true);
+        expect(sink.releases).not.toContain(60);
+        for (let position = 2; position < end; position += 0.25) {
+            if (position === 8) {
+                // The old on is now outside the spent trail. An unrelated
+                // rewrite must still find its real off and preserve the key.
+                requestNativeLiveMidiWriterRearm();
+                await poll(position);
+                expect(sink.releases).not.toContain(60);
+            }
+            await pump(position, 0);
+            sink.render(position, Math.min(position + 0.25, end));
+            expect(sink.sounding(60)).toBe(true);
+        }
+        sink.render(end, end + 0.25);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.releases.filter((note) => note === 60)).toEqual([60]);
+    });
+
+    it('keeps a reserved off before a later same-frame reattack without preloading that attack', async () => {
+        mocks.events = [
+            { time: 0.1, note: 60, isNoteOn: true },
+            { time: 8, note: 60, isNoteOn: false },
+            { time: 8, note: 60, isNoteOn: true },
+            { time: 8.5, note: 60, isNoteOn: false },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 12, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        expect(scheduledIn(0).map((event) => [event.time, event.isNoteOn])).toEqual([
+            [0.1, true],
+            [8, false],
+        ]);
+        for (let position = 0; position < 8.5; position += 0.25) {
+            await pump(position, 0);
+            sink.render(position, position + 0.25);
+            if (position >= 0.25) {
+                expect(sink.sounding(60)).toBe(true);
+            }
+        }
+        sink.render(8.5, 8.75);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.delivered).toEqual(eventIdentities(mocks.events));
+        expect(sink.releases).toEqual([60, 60]);
+        expect(sink.maximumHeld()).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        expect(sink.refusals()).toBe(0);
+    });
+
+    it('delivers contiguous same-frame off/on pairs across wraps within capacity', async () => {
+        mocks.events = Array.from({ length: 1200 }, (_unused, index) => [
+            { time: 1 + index / 100, note: 60, isNoteOn: true },
+            { time: 1 + (index + 1) / 100, note: 60, isNoteOn: false },
+        ])
+            .flat()
+            .sort((left, right) => left.time - right.time || Number(left.isNoteOn) - Number(right.isNoteOn));
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 14, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        for (let wrap = 0; wrap < 3; wrap += 1) {
+            for (let position = 0; position < 14; position += 0.25) {
+                sink.render(position, position + 0.25);
+                await pump(position + 0.25 === 14 ? 0 : position + 0.25, position + 0.25 === 14 ? wrap + 1 : wrap);
+            }
+            expect(sink.delivered.splice(0)).toEqual(eventIdentities(mocks.events));
+            expect(sink.sounding(60)).toBe(false);
+        }
+        expect(sink.maximumHeld()).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        expect(sink.refusals()).toBe(0);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('preserves a reserved off when wrap cleanup clears its frame neighbour', async () => {
+        mocks.events = [
+            { time: 0.1, note: 60, isNoteOn: true },
+            { time: 8, note: 60, isNoteOn: false },
+            { time: 8, note: 70, isNoteOn: true },
+            { time: 8.5, note: 70, isNoteOn: false },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 12, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        sink.render(0, 4.25);
+        await pump(4.25, 0);
+        sink.render(4.25, 12);
+        await pump(0, 1);
+        sink.render(0, 0.5);
+        expect(sink.sounding(60)).toBe(true);
+        mocks.events = mocks.events.filter((event) => event.note !== 60);
+        requestNativeLiveMidiWriterRearm();
+        await poll(0.5);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.releases.filter((note) => note === 60)).toEqual([60, 60]);
+        expect(sink.refusals()).toBe(0);
+    });
+
+    it('keeps a rejected opening uncommitted and releases the deleted key when a later arm applies', async () => {
+        mocks.events = [
+            { time: 1, note: 60, isNoteOn: true },
+            { time: 3, note: 64, isNoteOn: true },
+            { time: 3.5, note: 64, isNoteOn: false },
+            { time: 15, note: 60, isNoteOn: false },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        sink.render(0, 2);
+        mocks.events = mocks.events.filter((event) => event.note !== 60);
+        mocks.apply.mockResolvedValueOnce(REFUSED);
+        await arm(2);
+        expect(sink.sounding(60)).toBe(true);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBe(0);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.heldEventIndices).toEqual([]);
+        await arm(2);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.releases).toEqual([60]);
+    });
+
+    it('releases a long key when its target is abandoned before its distant off', async () => {
+        mocks.events = [
+            { time: 1, note: 60, isNoteOn: true },
+            { time: 15, note: 60, isNoteOn: false },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        sink.render(0, 2);
+        mocks.targets = [];
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['midi-1', ['d1']]]);
+        await arm(2);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.releases).toEqual([60]);
+        expect(nativeLiveMidiWriter.owedClears.size).toBe(0);
     });
 
     it('replaces the prepared loop index when a note edit rearms the pass', async () => {
