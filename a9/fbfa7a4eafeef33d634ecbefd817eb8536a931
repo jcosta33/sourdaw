@@ -1,0 +1,73 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_0bb0df78fab4d2 44
+  s_1c08b47ac3792f::t_df6e8066a072fd 45
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_b85254544099b6 5609
+  s_1c08b47ac3792f::t_7542fe86f2a366 76
+  s_1c08b47ac3792f::t_793129b482e074 5599-5600,5607-5608,5610
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_87bfacac14419c 32
+  s_1c08b47ac3792f::t_4c5bc8dad98b18 19
+  s_1c08b47ac3792f::t_c6927d02fd4451 503-505,507-508,511-512,514-515,517,523
+  s_1c08b47ac3792f::t_8bffd7507730e0 1286
+  s_1c08b47ac3792f::t_83f1f7bcb76470 7
+  s_1c08b47ac3792f::t_4682969273a5e6 1289,1294,1299
+  s_1c08b47ac3792f::t_82d8e234ff9814 531-540
+  s_1c08b47ac3792f::t_1ac17f3568eb0f 621-676
+  s_1c08b47ac3792f::t_b8272f7cb965af 767,771
+  s_1c08b47ac3792f::t_33c08fec557121 952,955
+  s_1c08b47ac3792f::t_ac57ae1405002d 932-941,943-951,953-954,956
+  s_1c08b47ac3792f::t_6e9b888db171ec 1280,1282-1285
+  s_1c08b47ac3792f::t_77ec0fb3e9edd7 509-510,513,516,518-522,524-528
+  s_1c08b47ac3792f::t_34b050b1003d7b 572-591
+  s_1c08b47ac3792f::t_f4e207d0ab007a 751-754,756-766,768-770,772-802,807,814,822-823
+  s_1c08b47ac3792f::t_14de7019078dd5 942
+  s_1c08b47ac3792f::t_c5669a51eb42a6 804-806,808-813,815-821
+  s_1c08b47ac3792f::t_43a615172db760 803
+  s_1c08b47ac3792f::t_f0174af0244e53 1281,1287-1288,1290-1293,1295-1298,1300-1305
+  s_1c08b47ac3792f::t_80f59f1b9f507a 529-530
+  s_1c08b47ac3792f::t_ac95e963dd3309 506,755
+src/modules/AiRuntime/useCases/agentReference/findTargetOwnerTrackIds.ts
+  s_1c08b47ac3792f::t_98e4710a24668d 9-13,16,18,21-60,65-66,73
+  s_1c08b47ac3792f::t_e2b33ba590fb14 1-8,14-15,17,19-20,61-64,67-72,74
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_1c08b47ac3792f::t_6835b3ae4850ec 14-24,29-37,40,48-52,54,59-61,63-65,67-73
+  s_1c08b47ac3792f::t_ac2eda0ecbd436 91-93,96,98,100
+  s_1c08b47ac3792f::t_58d2a9a91a6bea 28
+  s_1c08b47ac3792f::t_9a188c3707d7f1 105-123,130
+  s_1c08b47ac3792f::t_31dc9ad01f03df 181
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_1c08b47ac3792f::t_014d2564afc5ad 457-458,460
+  s_1c08b47ac3792f::t_255a4449e3984a 40
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_1c08b47ac3792f::t_f34cf77b7fdc32 400
+  s_1c08b47ac3792f::t_6ac9904f8a9e51 369
+  s_1c08b47ac3792f::t_64f9ca228c53f6 61
+  s_1c08b47ac3792f::t_332f5a10dd6f6e 158-159,161-166
+  s_1c08b47ac3792f::t_aac180db1f2c0b 239-241
+  s_1c08b47ac3792f::t_b8ebe6236f7117 347-349,360,362-365,367
+  s_1c08b47ac3792f::t_994892069d3643 43-44
+  s_1c08b47ac3792f::t_e24aefab291c90 54-60,62-63,65-66
+  s_1c08b47ac3792f::t_6736b87b40c99b 64
+  s_1c08b47ac3792f::t_bbb3ee84095afe 361,366
+  s_1c08b47ac3792f::t_ca5f90c62d9440 207
+  s_1c08b47ac3792f::t_b6b77b2c122742 170-173
+src/modules/AiRuntime/transformers/__tests__/diffProposalCommands.spec.ts
+  s_1c08b47ac3792f::t_054a5ef8722e3f 295-341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a9fbfa7a4eafeef33d634ecbefd817eb8536a931",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
