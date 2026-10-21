@@ -55,11 +55,9 @@ export type ArbitraryCommandListSelectorEvidence = {
     preconditions: Array<{ stableId: string; fingerprint: string }>;
     /**
      * The selector's `where` fields, present only when the selector used them, so grounding can ask
-     * whether the request states every term the selection rests on.
+     * whether the request states the name or owner track a selection picks its targets by.
      */
     where?: SemanticCommandListSelector['where'];
-    /** The selector's `condition`, present only when the selector used one, for the same reason. */
-    condition?: SemanticCommandListSelector['condition'];
     /**
      * The selector fields a `match` was compiled with, present only when the selector used one.
      * The evidence validator re-resolves this against its own context through the same shared
@@ -258,9 +256,6 @@ function resolveSelector(input: {
     };
     if (input.selector.where !== undefined) {
         evidence.where = structuredClone(input.selector.where);
-    }
-    if (input.selector.condition !== undefined) {
-        evidence.condition = { ...input.selector.condition };
     }
     return { stableIds, evidence };
 }

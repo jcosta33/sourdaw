@@ -51,7 +51,6 @@ import {
     type CompiledTargetAuthorityInput,
 } from './admitCompiledTargets';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
-import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
     BATCH_LOCAL_BINDING_PATTERN,
@@ -4056,9 +4055,9 @@ function getCompiledSelectorTermsByCallIndex(
         }
         const replay = selector.slice?.selector;
         const terms: CompiledSelectorTerms = {
+            targetArgument: item.targetArgument,
             where: selector.where ?? selector.predicate?.where ?? replay?.where,
             match: selector.predicate?.match ?? replay?.match,
-            condition: selector.condition ?? selector.predicate?.condition ?? replay?.condition,
         };
         const ownIndexes = Array.from({ length: item.commandCount }, (_, offset) => item.commandStart + offset);
         for (const commandIndex of new Set([...ownIndexes, ...item.representativeCommandIndexes])) {
@@ -4089,24 +4088,6 @@ function getSameActionWrittenValueTexts(
         getWrittenValueTexts(arguments_, groundingRules)
     );
     return [...new Set(values)];
-}
-
-/** The nouns the request uses for objects of the capability's kind, read from the created-object vocabulary. */
-function getSelectionNouns(capability: GroundingRules['targetRules'][number]['capability']): RegExp[] {
-    const kind = getAgentReferenceCapabilityKind(capability);
-    if (kind === 'track') {
-        return [CREATED_OBJECT_NOUNS.addTrack, CREATED_OBJECT_NOUNS.createBus];
-    }
-    if (kind === 'clip') {
-        return [CREATED_OBJECT_NOUNS.addClip];
-    }
-    if (capability === 'device' || capability === 'sidechain-capable-device') {
-        return [CREATED_OBJECT_NOUNS.addDevice];
-    }
-    if (capability === 'automation-lane') {
-        return [CREATED_OBJECT_NOUNS.addAutomationLane];
-    }
-    return [];
 }
 
 function getAssertedIds(value: unknown): string[] {
@@ -4730,6 +4711,7 @@ function groundToolCall({
             }
             const setRefusal = compiledTargetRefusalReason(
                 admitsCompiledTargets({
+                    argument: targetRule.argument,
                     capability: targetRule.capability,
                     catalog,
                     clauseStart: resolvedActionScope?.start,
@@ -4740,7 +4722,6 @@ function groundToolCall({
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
                     sendBusIds: [],
-                    selectionNouns: getSelectionNouns(targetRule.capability),
                     valueTexts: getSameActionWrittenValueTexts(call, sameActionAssertedArguments, groundingRules),
                     targetPrompt,
                     targetIds: compilerTargetOverride.stableIds,
@@ -4869,6 +4850,7 @@ function groundToolCall({
         const compiledTargetAuthority: CompiledTargetAuthorityInput | null =
             compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride
                 ? {
+                      argument: targetRule.argument,
                       capability: targetRule.capability,
                       catalog,
                       clauseStart: resolvedActionScope?.start,
@@ -4885,7 +4867,6 @@ function groundToolCall({
                       selectorTerms: compiledSelectorTerms,
                       targetPrompt,
                       targetIds: compilerTargetOverride.stableIds,
-                      selectionNouns: getSelectionNouns(targetRule.capability),
                       valueTexts: getSameActionWrittenValueTexts(call, sameActionAssertedArguments, groundingRules),
                       ...getSameActionTargetIds(sameActionAssertedArguments, groundingRules, targetRule.argument),
                   }

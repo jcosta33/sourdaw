@@ -1,42 +1,47 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
-import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 
-import { PRESET_ACTIONS } from '../../models/PresetActions/Registry';
 import { type ProjectContext } from '../../models/ProjectContext';
-import {
-    type SemanticCommandListMatch,
-    type SemanticCommandListPredicate,
-    type SemanticCommandListSelector,
-} from '../../models/SemanticCommandList';
-import {
-    collectSemanticCommandListCandidates,
-    type SemanticCommandListCandidate,
-} from '../../services/semanticCommandListCandidates';
-import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
-import { CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
+import { type SemanticCommandListMatch, type SemanticCommandListSelector } from '../../models/SemanticCommandList';
 
-import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
-import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
+
+/*
+ * Compiled target authority (#5295).
+ *
+ * A compiled command list proves which objects its selectors resolve to, never that the user asked
+ * for them. This check closes one hole: a selector, or a literal target, that picks an object by
+ * name or id the request never states. Every target the request protects or excludes is refused.
+ * Every name, name fragment, owner track or literal id a target is picked by must be stated in the
+ * clause's original text (outside its protections and the values the batch writes), or, for an id,
+ * reached by the clause's selection reference ("the selected track"). A single target picked that
+ * way must also be the one the clause grounds when the direct route reads it.
+ *
+ * Selections by role, role family, kind, device type, tag, condition or no filter at all are taken
+ * as the compiler resolved them, as before this check. What the request must state for those is
+ * left to #5351 and #5353.
+ */
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
 type Capability = ResolveAgentReferenceInput['capability'];
 
-/** The fields of the selector a compiled target came from, read from the compiler's evidence. */
+/** The selector a compiled call's targets came from, read from the compiler's evidence. */
 export type CompiledSelectorTerms = {
+    /** The argument the selector resolves; any other target argument of the call is literal. */
+    targetArgument?: string;
     where?: SemanticCommandListSelector['where'];
     match?: SemanticCommandListMatch;
-    condition?: SemanticCommandListSelector['condition'];
 };
 
 export type CompiledTargetAuthorityInput = {
+    /** The target argument the targets are compiled for. */
+    argument: string;
     capability: Capability;
     catalog: GroundingCatalog;
     /** Where the clause the targets belong to starts in the request, when the scope knows it. */
@@ -58,17 +63,15 @@ export type CompiledTargetAuthorityInput = {
      * resolution is the naming evidence, so only the request's protections remain to apply.
      */
     referenceResolved: boolean;
-    /** The selector the targets came from, absent when the compiler named them literally. */
+    /** The selector the call's targets came from, absent when the compiler named every one literally. */
     selectorTerms?: CompiledSelectorTerms;
-    /** The nouns the request uses for objects of the target's kind ("tracks", "effects"). */
-    selectionNouns: readonly RegExp[];
     /** Buses a send parameter of the call names and its asserted track already sends to. */
     sendBusIds: readonly string[];
-    /** The text values the call writes ("Bass Drum" for a rename), which name what is written, not a target. */
-    valueTexts: readonly string[];
     /** The original text of the clause the targets belong to. */
     targetPrompt: string;
     targetIds: readonly string[];
+    /** The text values the batch's calls of this action write ("Bass Drum" for a rename). */
+    valueTexts: readonly string[];
 };
 
 export type CompiledTargetAuthority =
@@ -90,14 +93,8 @@ function readReferences(
     dependencyId?: string,
     excludedIds: readonly string[] = []
 ) {
-    return resolveAgentReference({
-        prompt: text,
-        assertedId: undefined,
-        capability,
-        context,
-        dependencyId,
-        excludedIds,
-    }).candidates;
+    return resolveAgentReference({ prompt: text, assertedId: undefined, capability, context, dependencyId, excludedIds })
+        .candidates;
 }
 
 /** Objects of the capability the text names by literal id, whole name or selection. */
@@ -105,10 +102,9 @@ function getTieredReferenceIds(
     text: string,
     capability: Capability,
     context: ProjectContext,
-    dependencyId?: string,
-    excludedIds: readonly string[] = []
+    dependencyId?: string
 ): string[] {
-    return readReferences(text, capability, context, dependencyId, excludedIds)
+    return readReferences(text, capability, context, dependencyId)
         .filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
         .map((candidate) => candidate.id);
 }
@@ -117,19 +113,13 @@ function getTieredReferenceIds(
  * The objects the text names, reading an owned object against every track the text names as well,
  * so "the EQ on Vocals and the EQ on Keys" names both EQs although no single owner holds them.
  */
-function getNamedObjectIds(
-    text: string,
-    capability: Capability,
-    context: ProjectContext,
-    dependencyId?: string,
-    excludedIds: readonly string[] = []
-) {
-    const named = getTieredReferenceIds(text, capability, context, dependencyId, excludedIds);
+function getNamedObjectIds(text: string, capability: Capability, context: ProjectContext, dependencyId?: string) {
+    const named = getTieredReferenceIds(text, capability, context, dependencyId);
     if (dependencyId !== undefined || !TRACK_DEPENDENT_CAPABILITIES.has(capability)) {
         return named;
     }
     const ownedByNamedTracks = getTieredReferenceIds(text, 'track', context).flatMap((trackId) =>
-        getTieredReferenceIds(text, capability, context, trackId, excludedIds)
+        getTieredReferenceIds(text, capability, context, trackId)
     );
     return [...new Set([...named, ...ownedByNamedTracks])];
 }
@@ -151,19 +141,31 @@ function maskRequest(prompt: string, context: ProjectContext): MaskedRequest {
 }
 
 /**
- * The request text from `start` through every following clause that continues it rather than
- * giving another instruction, up to the end of its sentence: "add a compressor to Vocals and Bass"
- * whole, "set Vocals to 75% but leave Keys alone" whole, and "leave Keys alone and set Drums to
- * 50%" only up to the second instruction.
+ * Where the instruction starting at `start` ends: past every following clause that continues it
+ * rather than giving another instruction, up to the end of its sentence. "add a compressor to
+ * Vocals and Bass" runs whole, "leave Keys alone and set Drums to 50%" stops at the second
+ * instruction.
  */
-function getInstructionText(request: MaskedRequest, start: number, catalog: GroundingCatalog): string {
+function getInstructionEnd(request: MaskedRequest, start: number, catalog: GroundingCatalog): number {
     const sentenceEnd = /[;!?\n]|\.(?!\d)/u.exec(request.maskedPrompt.slice(start));
     const limit = sentenceEnd === null ? request.prompt.length : start + sentenceEnd.index;
     const nextInstruction = request.clauses.find(
         (clause) =>
             clause.start > start && clause.start < limit && resolveClauseActionIntent(clause.masked, catalog) !== null
     );
-    return request.prompt.slice(start, nextInstruction?.start ?? limit);
+    return nextInstruction?.start ?? limit;
+}
+
+/** Every restriction of the whole request, from its restriction phrase to the end of its instruction. */
+function getRestrictionRanges(request: MaskedRequest, catalog: GroundingCatalog): { start: number; end: number }[] {
+    return findTrackControlRestrictionStarts(request.maskedPrompt).map((start) => ({
+        start,
+        end: getInstructionEnd(request, start, catalog),
+    }));
+}
+
+function blankRange(text: string, start: number, end: number): string {
+    return `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`;
 }
 
 /** The text with every whole, case-insensitive occurrence of the names blanked to equal-length spaces. */
@@ -172,36 +174,35 @@ function maskWholeNames(text: string, names: readonly string[]): string {
         .filter((name) => name.trim().length > 0)
         .reduce(
             (masked, name) =>
-                masked.replaceAll(
-                    new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'giu'),
-                    (match) => ' '.repeat(match.length)
-                ),
+                masked.replaceAll(wholeWordsPattern(name, 'giu'), (match) => ' '.repeat(match.length)),
             text
         );
 }
 
+function wholeWordsPattern(phrase: string, flags: string): RegExp {
+    return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(phrase)}(?![\\p{L}\\p{N}])`, flags);
+}
+
 /**
- * The clause with the last whole occurrence of each value the call writes blanked out: the value
- * ("rename Kick to Bass Drum") follows the target it is written to, and "rename Kick to Kick In"
- * keeps the earlier mention of the target.
+ * The clause with the last whole occurrence of each written value blanked out: the value ("rename
+ * Kick to Bass Drum") follows the target it is written to, and "rename Kick to Kick In" keeps the
+ * earlier mention of the target.
  */
 function maskWrittenValues(text: string, values: readonly string[]): string {
     return values
         .filter((value) => value.trim().length > 0)
         .reduce((masked, value) => {
-            const occurrences = [
-                ...masked.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`, 'giu')),
-            ];
-            const last = occurrences.at(-1);
-            if (last === undefined) {
-                return masked;
-            }
-            return `${masked.slice(0, last.index)}${' '.repeat(last[0].length)}${masked.slice(last.index + last[0].length)}`;
+            const last = [...masked.matchAll(wholeWordsPattern(value, 'giu'))].at(-1);
+            return last === undefined ? masked : blankRange(masked, last.index, last.index + last[0].length);
         }, text);
 }
 
 /** Everything the request protects or excludes, with every object on a protected track. */
-function getProtectedIds(input: CompiledTargetAuthorityInput, request: MaskedRequest): Set<string> {
+function getProtectedIds(
+    input: CompiledTargetAuthorityInput,
+    request: MaskedRequest,
+    restrictionRanges: readonly { start: number; end: number }[]
+): Set<string> {
     const protectedIds = new Set(input.compilerExcludedIds);
     for (const object of getApplicationProtectedObjects({
         actions: [],
@@ -210,10 +211,8 @@ function getProtectedIds(input: CompiledTargetAuthorityInput, request: MaskedReq
     })) {
         protectedIds.add(object.id);
     }
-    const restrictions = findTrackControlRestrictionStarts(request.maskedPrompt).map((start) =>
-        getInstructionText(request, start, input.catalog)
-    );
-    for (const restriction of restrictions) {
+    for (const range of restrictionRanges) {
+        const restriction = request.prompt.slice(range.start, range.end);
         for (const id of getNamedObjectIds(restriction, input.capability, input.context, input.dependencyId)) {
             protectedIds.add(id);
         }
@@ -233,246 +232,105 @@ function getProtectedIds(input: CompiledTargetAuthorityInput, request: MaskedReq
 }
 
 /**
- * Whether the text states the phrase as whole words, its last word in the singular or the plural
- * whichever form the phrase itself is in: "drums" is stated by "the drum tracks" as by "the drums".
+ * The clause text the targets are read from: the instruction from its start, with the request's
+ * restrictions and the values the batch writes blanked, so a name stated only to protect an object
+ * or as a new name is never read as picking a target.
  */
-function statesPhrase(normalizedText: string, phrase: string): boolean {
-    const normalizedPhrase = normalizePromptText(phrase);
-    if (normalizedPhrase.length === 0) {
-        return false;
+function getEvidenceText(
+    input: CompiledTargetAuthorityInput,
+    request: MaskedRequest,
+    restrictionRanges: readonly { start: number; end: number }[]
+): string {
+    if (input.clauseStart === undefined) {
+        return maskWrittenValues(input.targetPrompt, input.valueTexts);
     }
-    const forms = [normalizedPhrase, normalizedPhrase.replace(/(?<=\p{L}{2})s$/u, '')];
-    return forms.some((form) =>
-        new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(form)}(?:e?s)?(?![\\p{L}\\p{N}])`, 'u').test(normalizedText)
+    const end = getInstructionEnd(request, input.clauseStart, input.catalog);
+    const unrestricted = restrictionRanges.reduce(
+        (text, range) => blankRange(text, range.start, range.end),
+        request.prompt
     );
+    return maskWrittenValues(unrestricted.slice(input.clauseStart, end), input.valueTexts);
 }
 
-/**
- * Every canonical role the text names in a word or a word pair, read through Project's own reading
- * of track names, so the vocabulary it knows for a part ("keyboards", "synths") states it.
- */
-function getStatedCanonicalRoles(normalizedText: string): Set<string> {
-    const words = normalizedText.split(' ').filter((word) => word.length > 0);
-    const windows = [...words, ...words.slice(1).map((word, index) => `${words[index]!} ${word}`)];
-    const roles = windows.map(
-        (window) =>
-            getCanonicalTrackRole({ track: { id: window, name: window, kind: 'audio', clips: [], devices: [] } }).role
-    );
-    return new Set(roles.filter((role) => role !== 'unknown'));
+/** The names, name fragments and ids a call's targets for one argument are picked by. */
+type NamePredicates = { names: string[]; ids: string[] };
+
+function getNamePredicates(input: CompiledTargetAuthorityInput): NamePredicates {
+    const terms = input.selectorTerms;
+    if (terms === undefined || terms.targetArgument !== input.argument) {
+        return { names: [], ids: [...input.targetIds] };
+    }
+    const names: string[] = [];
+    const ids: string[] = [];
+    if (terms.where?.name !== undefined) {
+        names.push(terms.where.name);
+    }
+    if (terms.where?.trackId !== undefined) {
+        ids.push(terms.where.trackId);
+    }
+    for (const predicate of [...(terms.match?.all ?? []), ...(terms.match?.any ?? [])]) {
+        if ('nameIncludes' in predicate) {
+            names.push(predicate.nameIncludes);
+        }
+    }
+    return { names, ids };
 }
 
-/** The word for a track kind and every one-word keyword of the preset that creates that kind. */
-function getTrackKindWords(kind: string): string[] {
-    const preset = PRESET_ACTIONS.find((candidate) => candidate.id === `add-${kind}-track`);
-    const keywords: readonly string[] = preset?.keywords ?? [];
-    return [kind, ...keywords.filter((keyword) => !keyword.includes(' '))];
+/** The names an object is stated by: its own name, and a device's catalogue type name. */
+function getObjectNames(objectId: string, context: ProjectContext): string[] {
+    for (const track of context.tracks) {
+        if (track.id === objectId) {
+            return [track.name];
+        }
+        const clip = track.clips.find((candidate) => candidate.id === objectId);
+        if (clip !== undefined) {
+            return [clip.name];
+        }
+        const device = track.devices.find((candidate) => candidate.id === objectId);
+        if (device !== undefined) {
+            const typeName = (context.availableDeviceTypes ?? []).find((type) => type.id === device.type)?.name;
+            return [device.name, typeName].filter((name): name is string => name !== undefined);
+        }
+    }
+    const lane = (context.automationLanes ?? []).find((candidate) => candidate.id === objectId);
+    return lane === undefined ? [] : [lane.name];
 }
 
-/** The device type's catalogue name and its id's own words. */
-function getDeviceTypeWords(type: string, context: ProjectContext): string[] {
-    const name = (context.availableDeviceTypes ?? []).find((deviceType) => deviceType.id === type)?.name;
-    const idWords = type.replace(/^builtin-/u, '').replaceAll('-', ' ');
-    return name === undefined ? [idWords] : [name, idWords];
-}
-
-function getTrackNameWords(trackId: string, context: ProjectContext): string[] {
-    const track = context.tracks.find((candidate) => candidate.id === trackId);
-    return track === undefined ? [] : [track.name];
-}
-
-function getSectionWords(sectionId: string, context: ProjectContext): string[] {
-    const section = (context.sections ?? []).find((candidate) => candidate.id === sectionId);
-    return section === undefined ? [sectionId] : [section.name];
-}
-
-/** The phrases any one of which states one selector predicate. */
-function getPredicatePhrases(predicate: SemanticCommandListPredicate, context: ProjectContext): string[] {
-    if ('role' in predicate) {
-        return [predicate.role];
+/** Whether the clause states the id literally, states the object's name, or selects it. */
+function statesObject(text: string, objectId: string, input: CompiledTargetAuthorityInput): boolean {
+    if ([objectId, ...getObjectNames(objectId, input.context)].some((name) => wholeWordsPattern(name, 'iu').test(text))) {
+        return true;
     }
-    if ('roleFamily' in predicate) {
-        return [predicate.roleFamily];
-    }
-    if ('nameIncludes' in predicate) {
-        return [predicate.nameIncludes];
-    }
-    if ('tag' in predicate) {
-        return [predicate.tag];
-    }
-    if ('kind' in predicate) {
-        return getTrackKindWords(predicate.kind);
-    }
-    if ('hasDeviceType' in predicate) {
-        return getDeviceTypeWords(predicate.hasDeviceType, context);
-    }
-    if ('isMuted' in predicate) {
-        return [predicate.isMuted ? 'muted' : 'unmuted'];
-    }
-    if ('isFrozen' in predicate) {
-        return [predicate.isFrozen ? 'frozen' : 'unfrozen'];
-    }
-    return getSectionWords(predicate.inSection, context);
-}
-
-/** The canonical roles whose mention states a role or role-family predicate. */
-function getPredicateRoles(predicate: SemanticCommandListPredicate): string[] {
-    if ('role' in predicate) {
-        return [predicate.role];
-    }
-    if ('roleFamily' in predicate) {
-        return Object.entries(CANONICAL_ROLE_TO_RECIPE_ROLE)
-            .filter(([, family]) => family === predicate.roleFamily)
-            .map(([role]) => role);
-    }
-    return [];
-}
-
-/**
- * One selector term: the phrases any one of which states it, the canonical roles that do, and the
- * track a selection reference ("the selected track") states it by.
- */
-type SelectorTerm = { phrases: string[]; roles: string[]; selectedTrackId?: string };
-
-/** Every term the selector rests on. */
-function getSelectorTerms(terms: CompiledSelectorTerms, context: ProjectContext): SelectorTerm[] {
-    const where = terms.where ?? {};
-    const phrases: string[][] = [];
-    if (where.name !== undefined) {
-        phrases.push([where.name]);
-    }
-    if (where.kind !== undefined) {
-        phrases.push(getTrackKindWords(where.kind));
-    }
-    if (where.type !== undefined) {
-        phrases.push(getDeviceTypeWords(where.type, context));
-    }
-    if (terms.condition !== undefined) {
-        phrases.push([terms.condition.equals ? terms.condition.field : `un${terms.condition.field}`]);
-    }
-    const trackTerms: SelectorTerm[] = [];
-    if (where.trackId !== undefined) {
-        trackTerms.push({
-            phrases: getTrackNameWords(where.trackId, context),
-            roles: [],
-            selectedTrackId: where.trackId,
-        });
-    }
-    const match: SemanticCommandListMatch = terms.match ?? {};
-    const predicates: SemanticCommandListPredicate[] = [];
-    if (match.all !== undefined) {
-        predicates.push(...match.all);
-    }
-    if (match.any !== undefined) {
-        predicates.push(...match.any);
-    }
-    return [
-        ...phrases.map((alternatives) => ({ phrases: alternatives, roles: [] })),
-        ...trackTerms,
-        ...predicates.map((predicate) => ({
-            phrases: getPredicatePhrases(predicate, context),
-            roles: getPredicateRoles(predicate),
-        })),
-    ];
-}
-
-function matchesWhere(candidate: SemanticCommandListCandidate | undefined, terms: CompiledSelectorTerms): boolean {
-    return (
-        candidate !== undefined &&
-        Object.entries(terms.where ?? {}).every(
-            ([field, value]) => candidate[field as keyof SemanticCommandListCandidate] === value
-        ) &&
-        (terms.condition === undefined || candidate[terms.condition.field] === terms.condition.equals)
-    );
-}
-
-/** Whether the text's own track selection ("the selected track", "this track") is the track. */
-function selectsTrack(text: string, trackId: string, context: ProjectContext): boolean {
-    const result = resolveAgentReference({ prompt: text, assertedId: trackId, capability: 'track', context });
+    const capability: Capability = input.context.tracks.some((track) => track.id === objectId)
+        ? 'track'
+        : input.capability;
+    const result = resolveAgentReference({ prompt: text, assertedId: objectId, capability, context: input.context });
     return result.status === 'resolved' && result.evidence === 'selection';
 }
 
 /**
- * Whether the clause asks for every object of the target's kind ("Mute all tracks", "Bypass all the
- * effects"), the only request a selector with no filter at all can stand on.
- */
-function statesWholeKindSelection(normalizedText: string, nouns: readonly RegExp[]): boolean {
-    return (
-        nouns.length > 0 &&
-        new RegExp(
-            `\\b(?:all|every|each)(?:\\s+of)?(?:\\s+the)?\\s+(?:${nouns.map((noun) => noun.source).join('|')})`,
-            'u'
-        ).test(normalizedText)
-    );
-}
-
-/**
- * Whether the clause states every term of the selector the targets came from, and the targets are
- * what those terms select: "turn down the lead vocal" states a `lead vocal` role, "set volume to 75%"
- * states no `Keys` name.
- */
-function statesSelectorTerms(input: CompiledTargetAuthorityInput, text: string): boolean {
-    const terms = input.selectorTerms;
-    if (terms === undefined) {
-        return false;
-    }
-    const selectorTerms = getSelectorTerms(terms, input.context);
-    const normalizedText = normalizePromptText(scanPromptQuotedText(text).maskedText);
-    if (selectorTerms.length === 0) {
-        return statesWholeKindSelection(normalizedText, input.selectionNouns);
-    }
-    const statedRoles = getStatedCanonicalRoles(normalizedText);
-    const statesEveryTerm = selectorTerms.every(
-        (term) =>
-            term.phrases.some((phrase) => statesPhrase(normalizedText, phrase)) ||
-            term.roles.some((role) => statedRoles.has(role)) ||
-            (term.selectedTrackId !== undefined && selectsTrack(text, term.selectedTrackId, input.context))
-    );
-    if (!statesEveryTerm) {
-        return false;
-    }
-    const candidates = collectSemanticCommandListCandidates({
-        context: input.context,
-        roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
-    });
-    return input.targetIds.every((targetId) =>
-        matchesWhere(
-            candidates.find((candidate) => candidate.id === targetId),
-            terms
-        )
-    );
-}
-
-function getOwningTrackId(objectId: string, context: ProjectContext): string | undefined {
-    const owner = context.tracks.find(
-        (track) =>
-            track.devices.some((device) => device.id === objectId) || track.clips.some((clip) => clip.id === objectId)
-    );
-    return owner?.id ?? context.automationLanes?.find((lane) => lane.id === objectId)?.trackId;
-}
-
-/**
- * Whether a single target resolves against the clause the way a direct call does: the unique
- * reference the clause grounds, a different unique reference, or no unique reference at all.
+ * How the direct route reads a single target in the clause: as the unique exact reference, as not
+ * that reference, or with no exact reference at all. The batch's other targets for the argument and
+ * every set-aside object stay out of the reading, as they do when the direct route grounds a list.
  */
 function resolveLikeDirectCall(
     input: CompiledTargetAuthorityInput,
     text: string,
-    excludedIds: readonly string[]
-): 'target' | 'other' | 'none' {
+    setAside: readonly string[]
+): 'target' | 'other' | 'ambiguous' | 'none' {
     const [targetId] = input.targetIds;
     if (input.targetIds.length !== 1 || targetId === undefined) {
         return 'none';
     }
+    const siblingIds = input.compiledArgumentIds.filter((id) => id !== targetId);
     const result = resolveAgentReference({
         prompt: text,
         assertedId: targetId,
         capability: input.capability,
         context: input.context,
         dependencyId: input.dependencyId,
-        excludedIds: excludedIds.filter((id) => id !== targetId),
+        excludedIds: [...setAside, ...siblingIds].filter((id) => id !== targetId),
     });
-    // An approximate name is not a reference the clause grounds: whether the selector's own terms
-    // are stated decides a clause whose only mention is one.
     const groundsExactly = result.candidates.some((candidate) =>
         candidate.evidence.some((evidence) => evidence !== 'fuzzy-name')
     );
@@ -482,60 +340,37 @@ function resolveLikeDirectCall(
     if (result.status === 'resolved') {
         return 'target';
     }
-    return result.reason === 'asserted-target-mismatch' ? 'other' : 'none';
+    return result.reason === 'ambiguous-target' ? 'ambiguous' : 'other';
 }
 
-/**
- * Whether the request authorizes every target a compiled selector resolved for one argument.
- *
- * Compiler evidence proves which objects a selector resolves to, never that the request asked for
- * them. A target the request protects or excludes is refused. A single target the clause grounds
- * the way a direct call would is admitted, and one the clause grounds differently is refused. Past
- * that, a clause that names objects of the target's capability admits exactly that set; a clause
- * that names none admits only targets whose every selector term it states, and an owned object only
- * on a track the clause names when it names any.
- */
+/** Whether the request authorizes every target a compiled list resolved for one argument. */
 export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): CompiledTargetAuthority {
-    const { capability, context, dependencyId, targetIds } = input;
-    const request = maskRequest(input.prompt, context);
-    const protectedIds = getProtectedIds(input, request);
-    if (targetIds.some((targetId) => protectedIds.has(targetId))) {
+    const request = maskRequest(input.prompt, input.context);
+    const restrictionRanges = getRestrictionRanges(request, input.catalog);
+    const protectedIds = getProtectedIds(input, request, restrictionRanges);
+    if (input.targetIds.some((targetId) => protectedIds.has(targetId))) {
         return UNAUTHORIZED;
     }
     if (input.referenceResolved) {
         return ADMITTED;
     }
-    let clauseText = input.targetPrompt;
-    if (input.clauseStart !== undefined) {
-        clauseText = getInstructionText(request, input.clauseStart, input.catalog);
+    const predicates = getNamePredicates(input);
+    if (predicates.names.length === 0 && predicates.ids.length === 0) {
+        return ADMITTED;
     }
-    const text = maskWrittenValues(clauseText, input.valueTexts);
+    const text = getEvidenceText(input, request, restrictionRanges);
+    const statesEveryPredicate =
+        predicates.names.every((name) => wholeWordsPattern(name, 'iu').test(text)) &&
+        predicates.ids.every((id) => statesObject(text, id, input));
+    if (!statesEveryPredicate) {
+        return UNAUTHORIZED;
+    }
     const setAside = [
         ...new Set([...input.createdIds, ...protectedIds, ...input.sendBusIds, ...input.otherArgumentIds]),
     ];
     const direct = resolveLikeDirectCall(input, text, setAside);
-    if (direct === 'target') {
-        return ADMITTED;
-    }
     if (direct === 'other') {
         return { status: 'refused', reason: 'reference-mismatch' };
     }
-    const named = getNamedObjectIds(text, capability, context, dependencyId, setAside);
-    if (named.length > 0) {
-        const compiledIds = new Set(input.compiledArgumentIds);
-        const admitsNamedSet =
-            targetIds.every((targetId) => named.includes(targetId)) && named.every((id) => compiledIds.has(id));
-        return admitsNamedSet ? ADMITTED : UNAUTHORIZED;
-    }
-    if (!statesSelectorTerms(input, text)) {
-        return UNAUTHORIZED;
-    }
-    if (getAgentReferenceCapabilityKind(capability) === 'track') {
-        return ADMITTED;
-    }
-    const namedTrackIds = getTieredReferenceIds(text, 'track', context, undefined, setAside);
-    const ownedOnNamedTracks =
-        namedTrackIds.length === 0 ||
-        targetIds.every((targetId) => namedTrackIds.includes(getOwningTrackId(targetId, context) ?? ''));
-    return ownedOnNamedTracks ? ADMITTED : UNAUTHORIZED;
+    return direct === 'ambiguous' ? UNAUTHORIZED : ADMITTED;
 }
