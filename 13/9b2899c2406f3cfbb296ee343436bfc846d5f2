@@ -1,0 +1,21 @@
+crates/daw-engine/src/lib.rs
+  s_59e31a5c6f3e31::t_553bf1e76fe3c4 378-379,419-420,423-436,970,1637,2085-2216
+crates/sourdaw-native/src/commands/engine_retrospective.rs
+  s_59e31a5c6f3e31::t_2b675a83caf516 87-88,206-216,383-427,446-448
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "139b2899c2406f3cfbb296ee343436bfc846d5f2",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
