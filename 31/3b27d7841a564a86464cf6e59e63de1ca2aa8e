@@ -1,0 +1,57 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1c08b47ac3792f::t_06be7998c3ba1f 857-858,896-1081
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_ba8dd89de9aac7::t_d215d8e0a7e376 49-50,69-70,77,79,99-100,117-135,167,200
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_ba8dd89de9aac7::t_711735d2bb670a 9,23,35,72,84-86,100-102,109-115,119,143,172,220-224
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_59e31a5c6f3e31::t_0248a3be0e0a54 269-278,280,284,286-292
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_ba8dd89de9aac7::t_e4fe0395702fe9 13,19,72
+src/modules/Arrangement/useCases/rippleDelete/__tests__/planRippleDelete.spec.ts
+  s_ba8dd89de9aac7::t_5506f254790d5a 49-68
+src/modules/Arrangement/useCases/rippleDelete/__tests__/rippleDeleteClips.spec.ts
+  s_ba8dd89de9aac7::t_487fcbf3f52385 60-65
+src/modules/Arrangement/useCases/rippleDelete/planRippleDelete.ts
+  s_ba8dd89de9aac7::t_790871dfa96eac 23,38,67
+src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts
+  s_ba8dd89de9aac7::t_26d79692d49e7e 16,35-36
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_1c08b47ac3792f::t_221c0eeb56baa7 197-226
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_59e31a5c6f3e31::t_70e76853257459 892,1354,2295-2302,2319,2347,2366,2394,2417-2418,2441,2460,2468,2477,2488-2490,2504-2506,2537,2543,2552,2563,2571,2582-2583,2605,2627-2628,2653-2654,2713,2721,2782,2800,2806,2854,2862,2871,2880-2881,2886-2891,2926,2933,2949,2957,3017-3018,3142,3148,3198,3213,3218,3236-3237,3257,3271-3272,3281,3283,3295-3296,3304-3305,3374-3375,3451-3452,3532-3533,3675,3681,3685-3686,3711,3722,3803-3804,3831-3832,3854,3868,3877,3899,3913,3920,3927-3929,3970-3973,3995,4000,4012,4019,4024,4026,4032,4037,4039-4040,4059,4066,4074-4075,4081,4084,4128-4129,4138-4139,4202,4208-4209,4222-4223,4245-4246,4280,4287,4292-4293,4309,4314-4315,4327,4337,4344,4350,4355,4364-4365,4387,4392-4393,4430-4431,4451,4465-4466,4474-4475,4564,4571,4577-4578,4585,4599,4614,4628,4633-4636,4665,4671,4685,4691,4736,4738,4753,4762-4763,4765,4778-4779,4782,4789,4794,4821,4826,4921,4928,4956,4964,4970,4978-4979,5019,5030,5038,5044,5051,5056,5064-5065,5276,5292,5309,5316-5317,5320,5351,5364-5367,5377-5378,5423,5437,5442,5444,5492,5497,5515,5520,5552,5557,5624,5633,5645,5657,5678,5690,5696,5702-5703,5728,5734-5735,5799,5805,5815,5820,5822,5831,5833,5842,5983-5986,5988-6018,6022,6024-6043,6046,6048-6058,6060-6061,6068-6102,6108-6109,6112-6116,6118-6119,6121,6123-6135,6137-6139,6141-6145,6147-6148,6150-6152,6155-6166,6168,6170-6172,6177-6178,6180-6183,6187-6192,6197,6199-6200,6202-6203,6206-6220,6222-6223,6226,6228-6231,6235-6248
+src/utils/handlerContract.ts
+  s_ba8dd89de9aac7::t_aa6101e6405414 1373
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "313b27d7841a564a86464cf6e59e63de1ca2aa8e",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
