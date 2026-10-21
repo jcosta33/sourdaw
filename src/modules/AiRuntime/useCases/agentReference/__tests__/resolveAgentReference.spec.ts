@@ -1792,6 +1792,24 @@ describe('sibling names the prompt states as closely as each other', () => {
         }
     );
 
+    // A sibling on each side of the apostrophe makes the mismatched joint read as a list, so only the folded
+    // apostrophe keeps D'Angelo whole: "Bob's" has no sibling starting past its apostrophe, so it cannot.
+    it.each(['mute D’Angelo', 'mute D‘Angelo', 'mute D`Angelo', 'mute D′Angelo'])(
+        'reads "%s" as D\'Angelo beside the D and Angelo tracks it splits into',
+        (prompt) => {
+            const project = namedTracksProject(["D'Angelo", 'D', 'Angelo']);
+            const pickedId = trackIdNamed(project, "D'Angelo");
+
+            expect(resolveTrack(prompt, pickedId, project)).toEqual(resolvedTo(pickedId, "D'Angelo", 'exact-name'));
+            for (const sibling of ['D', 'Angelo']) {
+                expect(resolveTrack(prompt, trackIdNamed(project, sibling), project)).toMatchObject({
+                    status: 'rejected',
+                    reason: 'asserted-target-mismatch',
+                });
+            }
+        }
+    );
+
     it.each(['mute Oʻahu and Other', 'mute Oʻahu Other'])(
         'keeps "%s" ambiguous between the two tracks it names',
         (prompt) => {
