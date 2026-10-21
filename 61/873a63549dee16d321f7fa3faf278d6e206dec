@@ -1,0 +1,21 @@
+src/modules/BrowserAi/repositories/__tests__/writeRenderCache.spec.ts
+  s_29d8df116c5b92::t_e5eac0a7468a36 16,42,106-107,225-251
+src/modules/BrowserAi/repositories/renderCacheStorage.ts
+  s_29d8df116c5b92::t_88e87f458223ae 15,25,27,30-34,39-42,60-64,67,122-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61873a63549dee16d321f7fa3faf278d6e206dec",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
