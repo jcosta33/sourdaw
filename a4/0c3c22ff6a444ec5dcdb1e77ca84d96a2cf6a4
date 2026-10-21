@@ -1,0 +1,39 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_f77c5304aa61ba 839-901
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  s_29d8df116c5b92::t_d8744106e8b068 277-318
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_29d8df116c5b92::t_2c7c46f4cdb4f4 143,146-147,151,156,200
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_29d8df116c5b92::t_9ceb05dc726a26 260-261
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreClip.spec.ts
+  s_29d8df116c5b92::t_2e4d4c27c70c59 320-352
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_29d8df116c5b92::t_fcbc68d6a92f0e 82,157,168,176-184
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_29d8df116c5b92::t_e31abd6f5a67f3 216-226
+src/modules/Arrangement/useCases/rippleDelete/__tests__/undoRippleDelete.spec.ts
+  s_29d8df116c5b92::t_7ba83890f41d42 3-4,42-66
+src/modules/Arrangement/useCases/rippleDelete/undoRippleDelete.ts
+  s_29d8df116c5b92::t_f213423506be5f 22-23,36,74-80
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_7c7eb052fde01a 1215-1216
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  s_29d8df116c5b92::t_926d0e339f94aa 1-699
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a40c3c22ff6a444ec5dcdb1e77ca84d96a2cf6a4",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
