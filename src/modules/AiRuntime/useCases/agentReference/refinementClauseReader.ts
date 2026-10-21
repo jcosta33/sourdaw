@@ -310,6 +310,7 @@ function readRefinementRemovals(input: {
 function readValueClause(input: {
     clause: RefinementClause;
     commands: readonly CommandView[];
+    removedCommandIndexes: ReadonlySet<number>;
     candidates: readonly ReferenceCandidate[];
     context: ProjectContext;
     catalog: ReturnType<typeof getExecutableAppActionGroundingCatalog>;
@@ -329,13 +330,15 @@ function readValueClause(input: {
         return { kind: 'addition' };
     }
     const intent = resolveClauseActionIntent(clause.masked, input.catalog)?.actionType ?? null;
-    const named = commands.filter((view) =>
-        references.some((reference) => intersects(reference.denotes, view.denotes))
+    const meant = commands.filter(
+        (view) =>
+            (intent === null || view.command.type === intent) &&
+            (references.length === 0 || references.some((reference) => intersects(reference.denotes, view.denotes)))
     );
-    const meant = references.length === 0 ? commands : named;
     return bindRefinementFigure({
         clause,
-        scoped: meant.filter((view) => intent === null || view.command.type === intent),
+        scoped: meant.filter((view) => !input.removedCommandIndexes.has(view.index)),
+        removed: meant.filter((view) => input.removedCommandIndexes.has(view.index)),
         namesObjects: references.length > 0,
         statesAction: intent !== null,
         context: input.context,
@@ -359,16 +362,17 @@ function readRefinementComparative(text: string, context: ProjectContext): 'less
 
 /**
  * Bind the values a refinement's clauses state to the pending commands they refine. One clause binds
- * one value to one pending command: the command it names, or the only pending value of the stated
- * unit when it names none. Anything a clause leaves open — which command, which unit, which way —
- * is asked rather than guessed, and a clause naming an object outside the card is an addition that
- * a new command must answer.
+ * one value to one pending command the refinement keeps: the command it names, or the only kept
+ * pending value of the stated unit when it names none. Anything a clause leaves open — which command,
+ * which unit, which way — is asked rather than guessed, and a clause naming an object outside the card
+ * is an addition that a new command must answer.
  */
 function bindRefinementValues(input: {
     text: string;
     basis: ProposalGroundingBasis;
     context: ProjectContext;
     removalClauseStarts: ReadonlySet<number>;
+    removedCommandIndexes: ReadonlySet<number>;
 }): RefinementValueBinding {
     const commands = viewCommands(input.basis, input.context);
     const candidates = collectReferenceCandidates(input.context);
@@ -380,7 +384,14 @@ function bindRefinementValues(input: {
         if (input.removalClauseStarts.has(clause.start)) {
             continue;
         }
-        const read = readValueClause({ clause, commands, candidates, context: input.context, catalog });
+        const read = readValueClause({
+            clause,
+            commands,
+            removedCommandIndexes: input.removedCommandIndexes,
+            candidates,
+            context: input.context,
+            catalog,
+        });
         switch (read.kind) {
             case 'consumed':
             case 'restated':

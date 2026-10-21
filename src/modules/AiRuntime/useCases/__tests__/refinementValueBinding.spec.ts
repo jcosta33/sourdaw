@@ -28,6 +28,7 @@ import {
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
@@ -416,8 +417,32 @@ describe('binding a terse refinement to the pending card it refines', () => {
         it('row 15: a value bound to a command the same refinement removes is refused', () => {
             expect(refine(P1_CARD, 'make the snare 1 dB, not the snare', [vocalsBy(-3)])).toMatchObject({
                 status: 'rejected',
-                rejectionReason: expect.stringContaining('restates'),
+                rejectionReason: expect.stringContaining(
+                    '1 dB in "make the snare 1 dB" can only mean a pending change'
+                ),
             });
+        });
+
+        it('a figure binds only among the commands the refinement keeps', () => {
+            const result = refine(P1_CARD, 'not the vocals, make it 1 dB', [snareBy(-1)]);
+
+            expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-snare', deltaDb: -1 }]);
+            expect(result.status === 'grounded' ? result.refinement?.keptDirectionActionIndexes : null).toEqual([0]);
+            expect(refine(P1_CARD, 'not the vocals, make it 1 dB', [snareBy(-2)]).status).toBe('rejected');
+        });
+
+        it('a figure whose only pending change of its unit is removed is refused by that figure', () => {
+            const bassPan = { name: 'setTrackPan', arguments: { trackId: 'track-bass', pan: -30 } };
+            const card = { prompt: 'turn Vocals down 3 dB and pan Bass 30% left', calls: [vocalsBy(-3), bassPan] };
+            const result = refine(card, 'not the vocals, make it 1 dB', [bassPan]);
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining(
+                    '1 dB in "make it 1 dB" can only mean a pending change the refinement removes'
+                ),
+            });
+            expect(result.status === 'rejected' ? result.rejectionReason : '').not.toContain('leaves out');
         });
 
         it('row 15b: an added pan grounds in the refinement text beside the inherited change', () => {
@@ -478,6 +503,225 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
                 { type: 'setTrackGain', trackId: 'track-snare', deltaDb: -2 },
             ]);
+        });
+    });
+
+    describe('reading the direction a refinement states against a pending boost', () => {
+        const UP_CARD = { prompt: 'turn Vocals up 3 dB', calls: [vocalsBy(3)] };
+
+        it('"by minus 1.5 dB" and "by −1.5 dB" read the spoken and typeset minus as the sign', () => {
+            for (const refinement of ['make it by minus 1.5 dB', 'make it by −1.5 dB']) {
+                expect(commandsOf(refine(UP_CARD, refinement, [vocalsBy(-1.5)]))).toEqual([
+                    { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 },
+                ]);
+                expect(refine(UP_CARD, refinement, [vocalsBy(1.5)]).status).toBe('rejected');
+            }
+        });
+
+        it('"make it minus 1.5 dB" and "make it −1.5 dB" ask, as a signed figure with no connector does', () => {
+            for (const refinement of ['make it minus 1.5 dB', 'make it −1.5 dB', 'make it -1.5 dB']) {
+                for (const calls of [[vocalsBy(1.5)], [vocalsBy(-1.5)]]) {
+                    const result = refine(UP_CARD, refinement, calls);
+
+                    expect(result.status).toBe('clarify');
+                    expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain('-1.5 dB');
+                }
+            }
+        });
+
+        it('"drop it 1.5 dB" reads "drop" as down, as any level request does, and admits -1.5 dB', () => {
+            expect(commandsOf(refine(UP_CARD, 'drop it 1.5 dB', [vocalsBy(-1.5)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 },
+            ]);
+            expect(refine(UP_CARD, 'drop it 1.5 dB', [vocalsBy(1.5)]).status).toBe('rejected');
+        });
+
+        it('"bump it 1.5 dB" states a word that may be a direction and asks instead of keeping the boost', () => {
+            for (const calls of [[vocalsBy(1.5)], [vocalsBy(-1.5)]]) {
+                const result = refine(UP_CARD, 'bump it 1.5 dB', calls);
+
+                expect(result.status).toBe('clarify');
+                expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain('"bump"');
+            }
+        });
+
+        it('a clause with no direction cue still keeps the pending boost', () => {
+            for (const refinement of ['less, make it 1.5 dB', 'make it 1.5 dB']) {
+                const result = refine(UP_CARD, refinement, [vocalsBy(1.5)]);
+
+                expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: 1.5 }]);
+                expect(result.status === 'grounded' ? result.refinement?.keptDirectionActionIndexes : null).toEqual([
+                    0,
+                ]);
+                expect(refine(UP_CARD, refinement, [vocalsBy(-1.5)]).status).toBe('rejected');
+            }
+        });
+    });
+
+    describe('moving a pending absolute level', () => {
+        const AT_CARD = {
+            prompt: 'put Vocals at -6 dB',
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: -6 } }],
+        };
+        const vocalsAt = (gainDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-vocals', gainDb },
+        });
+
+        it('"make it 3 dB quieter" moves the pending -6 dB to -9 dB, never 3 dB below the fader now', () => {
+            expect(commandsOf(refine(AT_CARD, 'make it 3 dB quieter', [vocalsAt(-9)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', gainDb: -9 },
+            ]);
+            expect(refine(AT_CARD, 'make it 3 dB quieter', [vocalsBy(-3)]).status).toBe('rejected');
+            expect(refine(AT_CARD, 'make it 3 dB quieter', [vocalsAt(-3)]).status).toBe('rejected');
+        });
+
+        it('"make it 3 dB louder" moves the pending -6 dB to -3 dB', () => {
+            expect(commandsOf(refine(AT_CARD, 'make it 3 dB louder', [vocalsAt(-3)]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', gainDb: -3 },
+            ]);
+            expect(refine(AT_CARD, 'make it 3 dB louder', [vocalsBy(3)]).status).toBe('rejected');
+            expect(refine(AT_CARD, 'make it 3 dB louder', [vocalsAt(-9)]).status).toBe('rejected');
+        });
+    });
+
+    describe('protections a refinement inherits', () => {
+        const decayDevice: ProjectTrack['devices'][number] = {
+            ...reverbDevice,
+            parameters: [
+                { id: 'mix', name: 'Mix', type: 'float', value: 25, minValue: 0, maxValue: 100, unit: '%' },
+                { id: 'decay', name: 'Decay', type: 'float', value: 30, minValue: 0, maxValue: 100, unit: '%' },
+            ],
+        };
+        const KEYS_CONTEXT = projectContext([
+            ...BASE_TRACKS.filter((track) => track.id !== 'track-keys'),
+            projectTrack('track-keys', 'Keys', { deviceCount: 1, devices: [decayDevice] }),
+        ]);
+        const reverbDecay = (value: number): ProviderCall => ({
+            name: 'setDeviceParameter',
+            arguments: { deviceId: 'device-reverb', paramId: 'decay', value },
+        });
+
+        it('refuses a change to the device parameter the request left unchanged', () => {
+            const card = { prompt: 'set Keys Reverb mix to 40%, leaving decay unchanged', calls: [reverbMix(40)] };
+            expect(cardBasis(card.prompt, card.calls, KEYS_CONTEXT).protectedUnchanged.map(({ id }) => id)).toEqual([
+                'device-reverb:decay',
+            ]);
+
+            const result = refine(card, 'set Keys Reverb decay to 60%', [reverbMix(40), reverbDecay(60)], KEYS_CONTEXT);
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('Decay = 30 %", which the request chain leaves unchanged'),
+            });
+        });
+
+        it('refuses an array-target command whose members include a protected track', () => {
+            const kit = {
+                name: 'createVcaGroup',
+                arguments: { name: 'Kit', trackIds: ['track-snare', 'track-drum-bus'] },
+            };
+            const result = refine(
+                P1_CARD,
+                'make the vocals 1.5 dB and create VCA group for Snare and Drum Bus named Kit',
+                [vocalsBy(-1.5), snareBy(-2), kit]
+            );
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('"Drum Bus", which the request chain leaves unchanged'),
+            });
+        });
+    });
+
+    describe('cards no ordinary request decided', () => {
+        type CardRoute = Partial<Parameters<typeof groundCompiledCommandBatch>[0]>;
+
+        /** P1 grounded as a card some application route decided, and the basis that card carries. */
+        function routedCardBasis(route: CardRoute) {
+            const card = groundCompiledCommandBatch({
+                toolCalls: P1_PLAN,
+                context: CONTEXT,
+                prompt: P1,
+                projectRevision: undefined,
+                workflowCapabilityId: undefined,
+                compilerEvidence: undefined,
+                selectedCompilations: [],
+                transformCommands: [],
+                transformTargetIds: [],
+                creativeAuthority: undefined,
+                providerProposal: null,
+                ...route,
+            });
+            if (card.status !== 'grounded') {
+                const reason = card.status === 'rejected' ? card.rejectionReason : card.status;
+                throw new Error(`Expected the routed P1 card to ground: ${reason}`);
+            }
+            return card.groundingBasis;
+        }
+
+        function compiledP1(revision: string) {
+            const compiled = compileArbitraryCommandList({
+                context: CONTEXT,
+                revision,
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: asCommandBatchProposal({ calls: P1_PLAN }).arguments.plan,
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    ['Vocals', -3],
+                                    ['Snare', -2],
+                                ].map(([name, deltaDb]) => ({
+                                    id: `level-${String(name)}`,
+                                    name: 'setTrackGain',
+                                    arguments: { deltaDb },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                })),
+                            },
+                        },
+                    },
+                ],
+            });
+            if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence.');
+            }
+            return compiled.compilerEvidence;
+        }
+
+        it('the ordinary P1 card carries a basis a terse refinement inherits', () => {
+            const basis = routedCardBasis({});
+
+            expect(basis?.rootText).toBe(P1);
+            expect(ground('make the vocals 1.5 dB', [vocalsBy(-1.5), snareBy(-2)], basis).status).toBe('grounded');
+        });
+
+        it('a workflow card carries no basis, so a terse refinement of it inherits nothing', () => {
+            const basis = routedCardBasis({ workflowCapabilityId: 'stem-import-starting-mix' });
+
+            expect(basis).toBeUndefined();
+            expect(ground('make the vocals 1.5 dB', [vocalsBy(-1.5), snareBy(-2)], basis).status).toBe('rejected');
+        });
+
+        it('a compiled command-list card carries no basis, so a terse refinement of it inherits nothing', () => {
+            const revision = 'revision-compiled-p1';
+            const compilerEvidence = compiledP1(revision);
+            const basis = routedCardBasis({
+                toolCalls: compilerEvidence.commands,
+                prompt: 'turn Vocals down 3 dB and turn Snare down 2 dB',
+                compilerEvidence,
+                projectRevision: revision,
+            });
+
+            expect(basis).toBeUndefined();
+            expect(ground('make the vocals 1.5 dB', [vocalsBy(-1.5), snareBy(-2)], basis).status).toBe('rejected');
         });
     });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { canonicalJson } from '#/utils/canonicalDigest';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { proposalCommandShape } from '../../useCases/agentReference/proposalCommandShape';
@@ -9,7 +10,7 @@ type Proposal = Parameters<typeof diffProposalCommands>[0];
 
 /** The diff as the approval view runs it, with command identity read from the action registry. */
 function diff(previous: Proposal, next: Proposal) {
-    return diffProposalCommands(previous, next, proposalCommandShape.identityArguments);
+    return diffProposalCommands(previous, next, proposalCommandShape.identity);
 }
 
 describe('diffProposalCommands', () => {
@@ -192,6 +193,131 @@ describe('diffProposalCommands', () => {
                 },
             ],
             unchangedCount: 0,
+        });
+    });
+
+    describe('pairs a command by the object it acts on, not by every argument the registry calls a target', () => {
+        function changedOnly(actionType: string, before: Record<string, unknown>, after: Record<string, unknown>) {
+            return diff(
+                { actions: [{ type: actionType, payload: before }], actionLabels: ['Before'] },
+                { actions: [{ type: actionType, payload: after }], actionLabels: ['After'] }
+            );
+        }
+
+        it('pairs a placement of the same clip whose start moved', () => {
+            const moves = (startBeat: number) => [{ clipId: 'clip-1', trackId: 'track-1', startBeat }];
+
+            expect(changedOnly('moveClips', { moves: moves(4) }, { moves: moves(8) })).toEqual({
+                changes: [
+                    {
+                        kind: 'changed',
+                        actionType: 'moveClips',
+                        label: 'After',
+                        fields: [{ field: 'moves', previous: canonicalJson(moves(4)), next: canonicalJson(moves(8)) }],
+                    },
+                ],
+                unchangedCount: 0,
+            });
+        });
+
+        it('keeps placements of different clips apart', () => {
+            const move = (clipId: string) => ({ moves: [{ clipId, trackId: 'track-1', startBeat: 4 }] });
+
+            expect(changedOnly('moveClips', move('clip-1'), move('clip-2')).changes.map(({ kind }) => kind)).toEqual([
+                'added',
+                'removed',
+            ]);
+        });
+
+        it('pairs a VCA group and a gain range whose member set changed, by type', () => {
+            expect(
+                changedOnly(
+                    'createVcaGroup',
+                    { name: 'Kit', trackIds: ['track-1', 'track-2'] },
+                    { name: 'Kit', trackIds: ['track-1', 'track-2', 'track-3'] }
+                )
+            ).toEqual({
+                changes: [
+                    {
+                        kind: 'changed',
+                        actionType: 'createVcaGroup',
+                        label: 'After',
+                        fields: [
+                            {
+                                field: 'trackIds',
+                                previous: canonicalJson(['track-1', 'track-2']),
+                                next: canonicalJson(['track-1', 'track-2', 'track-3']),
+                            },
+                        ],
+                    },
+                ],
+                unchangedCount: 0,
+            });
+            expect(
+                changedOnly(
+                    'automateTrackGainRange',
+                    { trackIds: ['track-1', 'track-2'], deltaDb: 2 },
+                    { trackIds: ['track-1'], deltaDb: 2 }
+                ).changes
+            ).toEqual([
+                {
+                    kind: 'changed',
+                    actionType: 'automateTrackGainRange',
+                    label: 'After',
+                    fields: [
+                        {
+                            field: 'trackIds',
+                            previous: canonicalJson(['track-1', 'track-2']),
+                            next: canonicalJson(['track-1']),
+                        },
+                    ],
+                },
+            ]);
+        });
+
+        it('pairs a device insert whose position moved, by the track it goes on', () => {
+            expect(
+                changedOnly(
+                    'addDevice',
+                    { trackId: 'track-1', deviceType: 'builtin-eq', afterDeviceId: 'device-1' },
+                    { trackId: 'track-1', deviceType: 'builtin-eq', afterDeviceId: 'device-2' }
+                ).changes
+            ).toEqual([
+                {
+                    kind: 'changed',
+                    actionType: 'addDevice',
+                    label: 'After',
+                    fields: [{ field: 'afterDeviceId', previous: 'device-1', next: 'device-2' }],
+                },
+            ]);
+        });
+
+        it('pairs two sends from one track by their bus', () => {
+            const send = (busId: string, levelDb: number) =>
+                ({ type: 'setSend', payload: { trackId: 'track-1', busId, levelDb } }) satisfies AppAction;
+
+            expect(
+                diff(
+                    { actions: [send('bus-a', -6), send('bus-b', -12)], actionLabels: ['Send A', 'Send B'] },
+                    { actions: [send('bus-b', -9), send('bus-a', -3)], actionLabels: ['Send B', 'Send A'] }
+                )
+            ).toEqual({
+                changes: [
+                    {
+                        kind: 'changed',
+                        actionType: 'setSend',
+                        label: 'Send B',
+                        fields: [{ field: 'levelDb', previous: '-12 dB', next: '-9 dB' }],
+                    },
+                    {
+                        kind: 'changed',
+                        actionType: 'setSend',
+                        label: 'Send A',
+                        fields: [{ field: 'levelDb', previous: '-6 dB', next: '-3 dB' }],
+                    },
+                ],
+                unchangedCount: 0,
+            });
         });
     });
 });

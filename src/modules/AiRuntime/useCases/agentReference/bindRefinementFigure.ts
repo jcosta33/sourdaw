@@ -3,6 +3,7 @@ import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ProposalGroundingCommand } from '../../models/ProposalGroundingBasis';
 
+import { LOUDER_SCOPE_PHRASES, QUIETER_SCOPE_PHRASES } from './groundingStrategies/classifyPromptDecibelFigures';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
@@ -39,6 +40,8 @@ type StatedFigure = {
     unit: 'dB' | '%' | 'other' | null;
     connector: 'absolute' | 'relative' | null;
     direction: -1 | 1 | null | 'conflicting';
+    /** The first word beside the figure not known to state no direction: it may state one this reading cannot tell. */
+    unreadWord: string | null;
 };
 
 type ValueResolution =
@@ -46,9 +49,58 @@ type ValueResolution =
     | { status: 'clarify'; question: string }
     | { status: 'refused'; reason: string };
 
-const UP_WORDS = /\b(?:up|louder|raise|higher|increase|boost)\b/u;
-const DOWN_WORDS = /\b(?:down|quieter|lower|decrease|reduce|cut|softer)\b/u;
+type MoveDirection = { status: 'direction'; sign: -1 | 1; kept: boolean } | { status: 'clarify'; question: string };
+
 const PAN_SIDE_WORDS = /\b(?:left|right)\b/u;
+/** A sign spoken or typeset before the figure: "minus 1.5 dB", "−1.5 dB" (U+2212). */
+const SIGN_MARK = /(?:\b(minus|plus)\s+|(−)\s*)$/iu;
+/**
+ * Words that state no direction, so a clause made only of them, its figure, unit and connector keeps
+ * the pending change's direction. Any other word may be a direction this reading cannot tell ("bump",
+ * "nudge"), and is asked rather than read as the pending one.
+ */
+const DIRECTIONLESS_WORDS: ReadonlySet<string> = new Set([
+    'a',
+    'actually',
+    'also',
+    'an',
+    'and',
+    'at',
+    'but',
+    'by',
+    'change',
+    'd',
+    'db',
+    'decibel',
+    'decibels',
+    'do',
+    'fader',
+    'gain',
+    'go',
+    'instead',
+    'it',
+    'its',
+    'just',
+    'level',
+    'make',
+    'now',
+    'ok',
+    'okay',
+    'one',
+    'please',
+    'rather',
+    'set',
+    'so',
+    'that',
+    'the',
+    'them',
+    'then',
+    'this',
+    'to',
+    'track',
+    'value',
+    'volume',
+]);
 
 function readUnit(raw: string, after: string): StatedFigure['unit'] {
     if (raw.endsWith('%')) {
@@ -73,16 +125,31 @@ function readConnector(before: string): StatedFigure['connector'] {
     return null;
 }
 
+function namesPhrase(words: string, phrase: string): boolean {
+    return ` ${words} `.includes(` ${phrase} `);
+}
+
+/**
+ * Which way the words beside the figure move a level, read by the scope phrases any level request is
+ * read by, plus the `up` and `down` a figure may follow.
+ */
 function readDirection(words: string): StatedFigure['direction'] {
-    const up = UP_WORDS.test(words);
-    const down = DOWN_WORDS.test(words);
-    if (up && down) {
+    const lowers = [...QUIETER_SCOPE_PHRASES, 'down'].some((phrase) => namesPhrase(words, phrase));
+    const raises = [...LOUDER_SCOPE_PHRASES, 'up'].some((phrase) => namesPhrase(words, phrase));
+    if (lowers && raises) {
         return 'conflicting';
     }
-    if (up) {
-        return 1;
+    if (lowers) {
+        return -1;
     }
-    return down ? -1 : null;
+    return raises ? 1 : null;
+}
+
+function findUnreadWord(words: string): string | null {
+    return (
+        words.split(' ').find((word) => word.length > 0 && !/^\p{N}+$/u.test(word) && !DIRECTIONLESS_WORDS.has(word)) ??
+        null
+    );
 }
 
 /** The one figure a clause states, with its unit, connector and direction, read from the masked clause. */
@@ -100,18 +167,25 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
         return 'unreadable';
     }
     const after = clause.masked.slice(number.end);
-    const before = clause.masked.slice(0, number.index);
+    const signMark = SIGN_MARK.exec(clause.masked.slice(0, number.index));
+    const before = clause.masked.slice(0, signMark?.index ?? number.index);
     let sign: StatedFigure['sign'] = null;
+    let raw = number.raw;
     if (/^[+-]/u.test(number.raw)) {
         sign = value < 0 ? -1 : 1;
+    } else if (signMark !== null) {
+        sign = signMark[1]?.toLowerCase() === 'plus' ? 1 : -1;
+        raw = `${sign < 0 ? '-' : '+'}${number.raw}`;
     }
+    const words = normalizePromptText(`${before} ${after}`);
     return {
         magnitude: Math.abs(value),
         sign,
-        raw: number.raw,
+        raw,
         unit: readUnit(number.raw, after),
         connector: readConnector(before),
-        direction: readDirection(normalizePromptText(`${before} ${after}`)),
+        direction: readDirection(words),
+        unreadWord: findUnreadWord(words),
     };
 }
 
@@ -126,6 +200,29 @@ function clarify(question: string): ValueResolution {
     return { status: 'clarify', question };
 }
 
+/**
+ * Which way a move goes: the direction its words state, else its sign, else the pending change's.
+ * The pending direction is kept only when every word beside the figure states none; a word this
+ * reading cannot tell, or a stated direction its sign contradicts, is asked.
+ */
+function readMoveDirection(figure: StatedFigure, pendingSign: -1 | 1 | null): MoveDirection {
+    const question = `Should the change of ${figure.raw} dB go up or down?`;
+    const stated = figure.direction === null ? figure.sign : figure.direction;
+    if (stated === 'conflicting' || (stated !== null && figure.sign !== null && figure.sign !== stated)) {
+        return { status: 'clarify', question };
+    }
+    if (stated !== null) {
+        return { status: 'direction', sign: stated, kept: false };
+    }
+    if (pendingSign === null) {
+        return { status: 'clarify', question };
+    }
+    if (figure.unreadWord !== null) {
+        return { status: 'clarify', question: `${question} "${figure.unreadWord}" does not say.` };
+    }
+    return { status: 'direction', sign: pendingSign, kept: true };
+}
+
 function resolveRelativeLevel(
     relative: string,
     value: NonNullable<ProposalGroundingCommand['value']>,
@@ -135,40 +232,54 @@ function resolveRelativeLevel(
     if (value.form === 'relative' && value.value !== 0) {
         pendingSign = value.value < 0 ? -1 : 1;
     }
-    if (figure.connector === 'relative' || figure.direction !== null) {
-        const direction = figure.direction === null ? (figure.sign ?? pendingSign) : figure.direction;
-        if (direction === null || direction === 'conflicting' || (figure.sign !== null && figure.sign !== direction)) {
-            return clarify(`Should the change of ${figure.raw} dB go up or down?`);
-        }
-        return {
-            status: 'bound',
-            argument: relative,
-            expected: direction * figure.magnitude,
-            keptPendingDirection: figure.direction === null && figure.sign === null,
-        };
-    }
-    if (figure.sign !== null) {
+    const statesMove = figure.connector === 'relative' || figure.direction !== null;
+    if (!statesMove && figure.sign !== null) {
         return clarify(
             `Is ${figure.raw} dB where the level should land ("at ${figure.raw} dB") or how far it should move ("by ${figure.raw} dB")?`
         );
     }
-    if (pendingSign === null) {
+    if (!statesMove && pendingSign === null) {
         return clarify(
             `Is ${figure.raw} dB where the level should land or how far it should move, and in which direction?`
         );
     }
+    const move = readMoveDirection(figure, pendingSign);
+    if (move.status === 'clarify') {
+        return move;
+    }
     return {
         status: 'bound',
         argument: relative,
-        expected: pendingSign * figure.magnitude,
-        keptPendingDirection: true,
+        expected: move.sign * figure.magnitude,
+        keptPendingDirection: move.kept,
     };
 }
 
 /**
- * A decibel figure against a pending level: `at`/`to` lands it, `by`/`up`/`down` moves it, and an
- * unsigned figure with neither keeps the pending change's form and sign. A signed figure with no
- * connector, or an unsigned one against a pending absolute level, could be either and is asked.
+ * A move stated against a pending absolute level moves that level: "3 dB quieter" than "at -6 dB" is
+ * at -9 dB, never 3 dB below where the fader is now, which the card never proposed.
+ */
+function movePendingLevel(
+    value: NonNullable<ProposalGroundingCommand['value']>,
+    figure: StatedFigure
+): ValueResolution {
+    const move = readMoveDirection(figure, null);
+    if (move.status === 'clarify') {
+        return move;
+    }
+    return {
+        status: 'bound',
+        argument: value.argument,
+        expected: value.value + move.sign * figure.magnitude,
+        keptPendingDirection: false,
+    };
+}
+
+/**
+ * A decibel figure against a pending level: `at`/`to` lands it, `by`/`up`/`down` moves it — from the
+ * pending level when that is absolute — and an unsigned figure with neither keeps the pending change's
+ * form and sign. A signed figure with no connector, or an unsigned one against a pending absolute
+ * level, could be either and is asked.
  */
 function resolveLevelValue(
     command: ProposalGroundingCommand,
@@ -188,6 +299,9 @@ function resolveLevelValue(
         }
         const expected = (figure.sign ?? 1) * figure.magnitude;
         return { status: 'bound', argument: levels.absolute, expected, keptPendingDirection: false };
+    }
+    if (value.form === 'absolute' && (figure.connector === 'relative' || figure.direction !== null)) {
+        return movePendingLevel(value, figure);
     }
     if (levels.relative === null) {
         return { status: 'refused', reason: 'The pending change cannot move by a relative amount.' };
@@ -275,8 +389,10 @@ function resolveFigure(
  */
 export function bindRefinementFigure(input: {
     clause: RefinementClause;
-    /** The pending commands the clause can mean: the ones it names, else all, narrowed to its action. */
+    /** The pending commands the clause can mean: the ones it names, else all it keeps, narrowed to its action. */
     scoped: readonly PendingCommandView[];
+    /** The pending commands the clause would mean the same way but the refinement removes. */
+    removed: readonly PendingCommandView[];
     namesObjects: boolean;
     statesAction: boolean;
     context: ProjectContext;
@@ -292,19 +408,25 @@ export function bindRefinementFigure(input: {
     if (figure === 'several' || figure === 'unreadable') {
         return { kind: 'refused', reason: `The refinement clause "${clause.text.trim()}" states more than one value.` };
     }
+    const unit = figure.unit === 'dB' ? ' dB' : '';
+    const compatible = scoped.filter((view) => isUnitCompatible(view.command, figure));
+    if (compatible.length === 0 && input.removed.some((view) => isUnitCompatible(view.command, figure))) {
+        return {
+            kind: 'refused',
+            reason: `${figure.raw}${unit} in "${clause.text.trim()}" can only mean a pending change the refinement removes.`,
+        };
+    }
     if (scoped.length === 0) {
         if (input.statesAction || input.namesObjects) {
             return { kind: 'addition' };
         }
         return { kind: 'refused', reason: `The pending proposal has no value "${clause.text.trim()}" could change.` };
     }
-    const compatible = scoped.filter((view) => isUnitCompatible(view.command, figure));
     const [only] = compatible;
     if (only === undefined) {
         return { kind: 'refused', reason: `The pending proposal has no value stated in the unit of ${figure.raw}.` };
     }
     if (compatible.length > 1) {
-        const unit = figure.unit === 'dB' ? ' dB' : '';
         return { kind: 'clarify', question: `Which pending change should ${figure.raw}${unit} apply to?` };
     }
     return resolveFigure(only, figure, clause, input.context);

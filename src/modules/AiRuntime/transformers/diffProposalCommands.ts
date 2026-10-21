@@ -16,10 +16,10 @@ type ProposalCommandChange =
 type ProposalCommandDiff = { changes: ProposalCommandChange[]; unchangedCount: number };
 
 /**
- * The arguments that say which object a command of a type acts on, read from the action registry
- * by the caller. A creation id is no target, so it never pairs a fresh object with an old one.
+ * Which object a command acts on, read from the action registry by the caller; two commands pair
+ * only when it is the same. A creation id is no target, so it never pairs a fresh object with an old one.
  */
-export type CommandTargetArguments = (actionType: string) => readonly string[];
+export type CommandObjectIdentity = (actionType: string, payload: Readonly<Record<string, unknown>>) => string;
 
 type KeyedCommand = { identity: string; actionType: string; label: string; payload: Readonly<Record<string, unknown>> };
 
@@ -27,23 +27,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function targetIdentity(
-    actionType: string,
-    payload: Readonly<Record<string, unknown>>,
-    targetArguments: CommandTargetArguments
-): string {
-    const targets = targetArguments(actionType).flatMap((argument) =>
-        payload[argument] === undefined ? [] : [`${argument}=${canonicalJson(payload[argument])}`]
-    );
-    return [actionType, ...targets].join('|');
-}
-
 /** Keep the command's target identity and payload separate so exact occurrences can pair first. */
-function keyCommands(proposal: ProposalCommands, targetArguments: CommandTargetArguments): KeyedCommand[] {
+function keyCommands(proposal: ProposalCommands, objectIdentity: CommandObjectIdentity): KeyedCommand[] {
     return proposal.actions.map((action, index) => {
         const payload = isRecord(action.payload) ? action.payload : {};
         return {
-            identity: targetIdentity(action.type, payload, targetArguments),
+            identity: objectIdentity(action.type, payload),
             actionType: action.type,
             label: proposal.actionLabels[index] ?? action.type,
             payload,
@@ -93,10 +82,10 @@ function changedFields(
 export function diffProposalCommands(
     previous: ProposalCommands,
     next: ProposalCommands,
-    targetArguments: CommandTargetArguments
+    objectIdentity: CommandObjectIdentity
 ): ProposalCommandDiff {
-    const previousCommands = keyCommands(previous, targetArguments);
-    const nextCommands = keyCommands(next, targetArguments);
+    const previousCommands = keyCommands(previous, objectIdentity);
+    const nextCommands = keyCommands(next, objectIdentity);
     const matchedPrevious = new Set<number>();
     const exactNext = new Set<number>();
     // Preserve exact occurrences before pairing changed peers. Removing the first of two clips on

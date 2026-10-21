@@ -5593,19 +5593,20 @@ function describePendingCommand(command: ProposalGroundingCommand, context: Proj
     return names.length === 0 ? command.type : `${command.type} on ${names.join(', ')}`;
 }
 
-/** Every object an action changes, with the track that owns a device or clip it names. */
+/**
+ * Every object an action changes — each target, each member of an array target, a device parameter
+ * by `deviceId:paramId` — with the track that owns a device or clip it names.
+ */
 function getActionTouchedIds(
     actionType: string,
     payload: Readonly<Record<string, unknown>>,
     context: ProjectContext
 ): string[] {
-    return proposalCommandShape.targets(actionType, payload).flatMap((target) => {
+    return proposalCommandShape.objectIds(actionType, payload).flatMap((id) => {
         const owner = context.tracks.find(
-            (track) =>
-                track.devices.some((device) => device.id === target.id) ||
-                track.clips.some((clip) => clip.id === target.id)
+            (track) => track.devices.some((device) => device.id === id) || track.clips.some((clip) => clip.id === id)
         );
-        return owner === undefined ? [target.id] : [target.id, owner.id];
+        return owner === undefined ? [id] : [id, owner.id];
     });
 }
 
@@ -5795,6 +5796,9 @@ function validateBoundValue(
     );
     if (changedArgument !== undefined) {
         return getValueMismatchReason(changedArgument);
+    }
+    if (proposalCommandShape.value(call.name, call.arguments)?.argument !== bound.argument) {
+        return getValueMismatchReason(bound.argument);
     }
     const scope = buildWholePromptActionScope(bound.clause.text, context);
     const groundedArguments = { ...call.arguments };
@@ -6025,6 +6029,7 @@ function bridgeRefinedLlmToolCalls(
         basis,
         context,
         removalClauseStarts: removals.removalClauseStarts,
+        removedCommandIndexes: removals.removedCommandIndexes,
     });
     if (binding.status === 'clarify') {
         return {

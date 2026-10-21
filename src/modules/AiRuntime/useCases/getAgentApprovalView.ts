@@ -332,7 +332,7 @@ function projectPreviousProposalDiff(
         ...diffProposalCommands(
             previous.approvalSnapshot,
             confirmation.approvalSnapshot,
-            proposalCommandShape.identityArguments
+            proposalCommandShape.identity
         ),
     };
 }

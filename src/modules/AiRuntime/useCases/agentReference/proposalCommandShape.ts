@@ -8,15 +8,108 @@ function getTargetArguments(actionType: string): string[] {
     return (getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []).map((rule) => rule.argument);
 }
 
+type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
+type TargetRule = GroundingRules['targetRules'][number];
+
+/** Every argument the mutation identity rules name, of the rules that are, or are not, references only. */
+function getMutationIdentityArguments(
+    rules: GroundingRules['mutationIdentityRules'],
+    referenceOnly: boolean
+): Set<string> {
+    const names = new Set<string>();
+    for (const rule of rules) {
+        if ((rule.resourceReferenceOnly === true) !== referenceOnly) {
+            continue;
+        }
+        for (const argument of rule.arguments) {
+            names.add(argument.argument);
+        }
+        for (const argument of rule.fallbackArguments ?? []) {
+            names.add(argument.argument);
+        }
+    }
+    return names;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
- * The target arguments naming the object a command acts on, as a proposal diff pairs commands. A
- * destination is where the command sends that object, which a replacement may change like a value,
- * so it is left out: a clip moved to another track is the same move, changed.
+ * The target arguments naming the object a command mutates, as the registry's mutation identity
+ * declares it: a send's track and bus, a parameter's device and id, a move's clip but not the track it
+ * moves to, an insert's track but not the device it goes after. A command whose mutation identity is
+ * only a reference falls back to that reference (an added clip's track), and one that declares none
+ * to every target that is no destination.
  */
-function getIdentityArguments(actionType: string): string[] {
-    return (getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []).flatMap((rule) =>
-        rule.promptRole === 'destination' ? [] : [rule.argument]
-    );
+function getIdentityRules(actionType: string): TargetRule[] {
+    const rules = getExecutableAppActionGroundingRules(actionType);
+    if (rules === null) {
+        return [];
+    }
+    const mutated = getMutationIdentityArguments(rules.mutationIdentityRules, false);
+    const byMutation = rules.targetRules.filter((rule) => mutated.has(rule.argument));
+    if (byMutation.length > 0) {
+        return byMutation;
+    }
+    const referenced = getMutationIdentityArguments(rules.mutationIdentityRules, true);
+    const byReference = rules.targetRules.filter((rule) => referenced.has(rule.argument));
+    if (byReference.length > 0) {
+        return byReference;
+    }
+    return rules.targetRules.filter((rule) => rule.promptRole !== 'destination');
+}
+
+/** The id one member of a many-target names: the member itself, or the clip a placement places. */
+function readMemberId(member: unknown): string | null {
+    if (typeof member === 'string') {
+        return member;
+    }
+    return isRecord(member) && typeof member.clipId === 'string' ? member.clipId : null;
+}
+
+/**
+ * Which object a command acts on, as a proposal diff pairs commands: its type and the ids its identity
+ * arguments carry. A many-target counts by its members, sorted, except a set of members the command
+ * gathers into one object (a VCA group's tracks), which pairs by type alone so a changed membership
+ * reads as the same command changed.
+ */
+function getIdentity(actionType: string, argumentsRecord: Readonly<Record<string, unknown>>): string {
+    const parts = getIdentityRules(actionType).flatMap((rule) => {
+        const value = argumentsRecord[rule.argument];
+        if (value === undefined || rule.promptRole === 'members') {
+            return [];
+        }
+        if (rule.cardinality === 'many' && Array.isArray(value)) {
+            const members = value.map((member: unknown) => readMemberId(member) ?? canonicalJson(member));
+            return [[rule.argument, members.toSorted()]];
+        }
+        return [[rule.argument, value]];
+    });
+    return canonicalJson([actionType, parts]);
+}
+
+/**
+ * Every object id a command's targets touch: each single target, each member of a many-target and
+ * every id a member names (a placement's clip and the track it lands on), and a device parameter as
+ * `deviceId:paramId`, the id its protection carries.
+ */
+function getObjectIds(actionType: string, argumentsRecord: Readonly<Record<string, unknown>>): string[] {
+    const ids = getTargetArguments(actionType).flatMap((argument) => {
+        const value = argumentsRecord[argument];
+        const members = Array.isArray(value) ? value : [value];
+        return members.flatMap((member) => {
+            if (typeof member === 'string') {
+                return [member];
+            }
+            return isRecord(member) ? Object.values(member).filter((id) => typeof id === 'string') : [];
+        });
+    });
+    const { deviceId, paramId } = argumentsRecord;
+    if (typeof deviceId === 'string' && typeof paramId === 'string') {
+        ids.push(`${deviceId}:${paramId}`);
+    }
+    return [...new Set(ids)];
 }
 
 /** The full target tuple a command's arguments carry, one entry per declared target argument it sets. */
@@ -60,7 +153,8 @@ function getValue(
 
 /** How a proposed command's targets and value read, from the action registry's declarations alone. */
 export const proposalCommandShape = {
-    identityArguments: getIdentityArguments,
+    identity: getIdentity,
+    objectIds: getObjectIds,
     targets: getTargets,
     targetKey: getTargetKey,
     value: getValue,
