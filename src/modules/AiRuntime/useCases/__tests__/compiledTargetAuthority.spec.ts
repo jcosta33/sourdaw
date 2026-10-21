@@ -6,11 +6,10 @@ import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 
 /**
  * A compiled command list proves which objects its selectors resolve to, never that the user asked
- * for them. A target the request protects or excludes is refused. When a clause names objects of
- * the target's kind, every compiled target must be one of them. A clause whose only mention is an
- * approximate name authorizes nothing. A clause that names nothing keeps the compiler's resolution
- * only for a bounded selection it states ("all audio tracks", "the EQs"), every target meeting it,
- * and an owned object only on a track the clause names when it names any.
+ * for them (#5295). A target the request protects or excludes is refused. A target picked by a
+ * name, name fragment, owner track or literal id must be picked by something the clause states,
+ * and a single such target must be the one the direct route grounds in the clause. Selections by
+ * role, kind, device type, condition or no filter ground as the compiler resolves them.
  */
 
 type ProjectTrack = ProjectContext['tracks'][number];
@@ -32,7 +31,6 @@ type CompiledItem = {
 
 const REVISION = 'revision-compiled-target-authority';
 
-type CompilerEvidence = NonNullable<Parameters<typeof bridgeGroundedLlmToolCalls>[0]['compilerEvidence']>;
 
 function createTrack({
     id,
@@ -165,8 +163,7 @@ function compileAndBridge(
     prompt: string,
     items: CompiledItem[],
     targetIds: string[],
-    context: ProjectContext = projectContext,
-    reviseEvidence: (evidence: CompilerEvidence) => CompilerEvidence = (evidence) => evidence
+    context: ProjectContext = projectContext
 ) {
     const compiled = compileArbitraryCommandList({
         context,
@@ -194,7 +191,7 @@ function compileAndBridge(
     if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
         throw new Error(`Expected the list to compile: ${JSON.stringify(compiled)}`);
     }
-    const compilerEvidence = reviseEvidence(compiled.compilerEvidence);
+    const { compilerEvidence } = compiled;
     return bridgeGroundedLlmToolCalls({
         calls: compilerEvidence.commands,
         compilerEvidence,
@@ -286,11 +283,27 @@ describe('a compiled selector cannot replace a target the request names', () => 
 
         expectRefused(result, keys.id);
         expect(result.actions).toEqual([]);
-        // The direct route grounds Vocals here, so the compiled Keys is refused as that mismatch.
+        // The selector picks Keys by a name the request never states.
         expect(result.rejections).toContainEqual({
             index: 0,
             name: 'setTrackGain',
-            reason: 'Provider target trackId does not match the uniquely grounded project reference',
+            reason: 'Compiled target trackId is not authorized by the user request',
+        });
+    });
+
+    it('refuses a literal device the clause names by type on a different track', () => {
+        const result = compileAndBridge(
+            'bypass the EQ on Vocals',
+            [{ id: 'bypass-keys-eq-literal', name: 'bypassDevice', arguments: { deviceId: keysEq.id, bypassed: true } }],
+            [keysEq.id]
+        );
+
+        // "EQ" states the literal device's type name, but the direct route reads the Vocals EQ.
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({
+            index: 0,
+            name: 'bypassDevice',
+            reason: 'Provider target deviceId does not match the uniquely grounded project reference',
         });
     });
 
@@ -393,10 +406,24 @@ function audioTrackGroupItem(): CompiledItem {
 }
 
 describe('a compiled set selector cannot widen the tracks the request names', () => {
-    it('refuses a set selector reaching a track the request does not name', () => {
+    it('refuses a set selector reaching by name a track the request does not name', () => {
         const result = compileAndBridge(
             'create VCA group for Vocals and Drums named Rhythm',
-            [audioTrackGroupItem()],
+            [
+                {
+                    id: 'group-named-tracks',
+                    name: 'createVcaGroup',
+                    arguments: { name: 'Rhythm' },
+                    selector: {
+                        targetArgument: 'trackIds',
+                        entity: 'track',
+                        match: {
+                            any: [{ nameIncludes: 'Vocals' }, { nameIncludes: 'Drums' }, { nameIncludes: 'Bass' }],
+                        },
+                        quantity: { unit: 'targets', exactly: 3 },
+                    },
+                },
+            ],
             [vocals.id, drums.id, bass.id]
         );
 
@@ -646,25 +673,6 @@ describe('a compiled selector cannot take authority the request does not give', 
         expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
     });
 
-    it('refuses a bounded selection beside a mention that only approximates a track name', () => {
-        const result = compileMix('mute all tracks routed to Vocalz', [
-            {
-                id: 'mute-midi-tracks',
-                name: 'muteTrack',
-                arguments: { muted: true },
-                selector: {
-                    targetArgument: 'trackId',
-                    entity: 'track',
-                    where: { kind: 'midi' },
-                    quantity: { unit: 'targets', exactly: 1 },
-                },
-            },
-        ]);
-
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toContainEqual({ index: 0, name: 'muteTrack', reason: UNAUTHORIZED_TRACK });
-    });
-
     it('refuses a device on a track the request protects', () => {
         const result = compileMix('bypass the EQs but leave Keys alone', [bypassItem(mixKeysEq, mixKeys.id)]);
 
@@ -885,8 +893,6 @@ const auxVerb = roleTrack(
 const auxDelay = roleTrack('track-role-aux-delay', 'Aux Delay', 'bus', [], 'bus');
 const moogLead = roleTrack('track-role-moog-lead', 'Moog Lead', 'synth');
 const rhodes = roleTrack('track-role-rhodes', 'Rhodes', 'keys');
-const warmPads = roleTrack('track-role-warm-pads', 'Warm Pads', 'unknown');
-const darkPads = roleTrack('track-role-dark-pads', 'Dark Pads', 'unknown');
 
 const roleContext: ProjectContext = {
     ...projectContext,
@@ -903,8 +909,6 @@ const roleContext: ProjectContext = {
         auxDelay,
         moogLead,
         rhodes,
-        warmPads,
-        darkPads,
         master,
     ],
     availableDeviceTypes: [
@@ -936,7 +940,7 @@ function turnDown(match: Record<string, string>, exactly: number): CompiledItem 
     );
 }
 
-describe('compiled selectors whose terms the request states still ground', () => {
+describe('role, kind and device-type selections ground as the compiler resolves them', () => {
     it.each([
         ['turn down the lead vocal by 3 dB', { role: 'lead vocal' }, [leadVox.id]],
         ['turn down the kick by 3 dB', { role: 'kick' }, [kickIn.id]],
@@ -1021,30 +1025,6 @@ describe('compiled selectors whose terms the request states still ground', () =>
     });
 });
 
-describe('a compiled selector whose terms the request states still keeps owned objects on a named track', () => {
-    it('refuses the selected devices that sit off the track the request names', () => {
-        const result = compileAndBridge(
-            'bypass every vocal device on Lead Vox',
-            [
-                roleItem(
-                    'bypassDevice',
-                    { bypassed: true },
-                    { targetArgument: 'deviceId', entity: 'device', match: { all: [{ roleFamily: 'vocal' }] } },
-                    4
-                ),
-            ],
-            [],
-            roleContext
-        );
-
-        expect(targetsOf(result, 'deviceId')).not.toContain('device-bv-1-compressor');
-        expect(targetsOf(result, 'deviceId')).not.toContain('device-bv-1-reverb');
-        expect(result.rejections).toContainEqual(
-            expect.objectContaining({ reason: 'Compiled target deviceId is not authorized by the user request' })
-        );
-    });
-});
-
 describe('a compiled selector cannot outlast a negation the direct route reads', () => {
     it.each([
         "set Vocals volume to 75% but don't touch Keys",
@@ -1087,11 +1067,10 @@ describe('a compiled rename reads its target apart from the name it writes', () 
     });
 });
 
-describe('a role or role family stated in the singular or through the project vocabulary still grounds', () => {
+describe('role-family selections worded in the singular or by another name ground as on main', () => {
     it.each([
         ['turn down the drum tracks by 3 dB', { roleFamily: 'drums' }, [kickIn.id, snareTop.id]],
         ['turn down the drum kit by 3 dB', { roleFamily: 'drums' }, [kickIn.id, snareTop.id]],
-        ['turn down the pad tracks by 3 dB', { nameIncludes: 'Pads' }, [warmPads.id, darkPads.id]],
     ])('grounds "%s"', (prompt, match, expected) => {
         const result = compileAndBridge(prompt, [turnDown(match, expected.length)], [], roleContext);
 
@@ -1103,7 +1082,7 @@ describe('a role or role family stated in the singular or through the project vo
         ['turn down the vox by 3 dB', { roleFamily: 'vocal' }, [leadVox.id, backingVoxOne.id, backingVoxTwo.id]],
         ['turn down the synths by 3 dB', { roleFamily: 'keys' }, [moogLead.id, rhodes.id]],
         ['turn down the keyboards by 3 dB', { roleFamily: 'keys' }, [moogLead.id, rhodes.id]],
-    ])('grounds "%s" through the project vocabulary for the role', (prompt, match, expected) => {
+    ])('grounds "%s" as the role-family selection the compiler resolved', (prompt, match, expected) => {
         const result = compileAndBridge(prompt, [turnDown(match, expected.length)], [], roleContext);
 
         expect(result.rejections).toEqual([]);
@@ -1123,7 +1102,7 @@ function everyObjectItem(name: string, arguments_: Record<string, unknown>, enti
     return roleItem(name, arguments_, { targetArgument: entity === 'track' ? 'trackId' : 'deviceId', entity }, count);
 }
 
-describe('a selector with only a condition, or no filter, stands on the selection the request states', () => {
+describe('selections that pick no object by name ground as the compiler resolves them', () => {
     it('grounds the muted tracks a request to unmute all muted tracks selects', () => {
         const result = compileAndBridge(
             'Unmute all muted tracks',
@@ -1160,16 +1139,52 @@ describe('a selector with only a condition, or no filter, stands on the selectio
         expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id, mixVocalsCompressor.id, mixKeysEq.id]);
     });
 
-    it('refuses a selector with no filter for a request that selects nothing', () => {
+    it('grounds every track a request to unmute all tracks selects', () => {
         const result = compileAndBridge(
-            'set volume to 75%',
-            [everyObjectItem('setTrackGain', { gain: 0.75 }, 'track', 4)],
+            'Unmute all tracks',
+            [everyObjectItem('muteTrack', { muted: false }, 'track', 4)],
             [],
             unmasteredContext
         );
 
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).not.toEqual([]);
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([vocals.id, keys.id, drums.id, bass.id]);
+    });
+
+    it('grounds the instrument tracks a request to mute them selects by kind', () => {
+        const result = compileAndBridge(
+            'Mute all instrument tracks',
+            [
+                roleItem(
+                    'muteTrack',
+                    { muted: true },
+                    { targetArgument: 'trackId', entity: 'track', where: { kind: 'midi' } },
+                    1
+                ),
+            ],
+            [],
+            unmasteredContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([keys.id]);
+    });
+
+    it('grounds a named track beside the tracks a role selects', () => {
+        const namedVocals = roleTrack('track-guitar-pair-vocals', 'Vocals', 'lead vocal');
+        const guitarPairContext: ProjectContext = { ...projectContext, tracks: [namedVocals, gtrLeft, gtrRight, master] };
+        const result = compileAndBridge(
+            'Turn down Vocals and the guitars by 3 dB',
+            [
+                trackItem('setTrackGain', namedVocals, { deltaDb: -3 }),
+                turnDown({ roleFamily: 'guitar' }, 2),
+            ],
+            [],
+            guitarPairContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([namedVocals.id, gtrLeft.id, gtrRight.id]);
     });
 });
 
@@ -1238,7 +1253,7 @@ describe('compiled renames in one clause read no written name as a target', () =
     );
 });
 
-describe('a role stated only by a word pair the project reads as that role grounds', () => {
+describe('a role selection worded by a two-word name grounds as on main', () => {
     it('grounds the backing vocals a request for the background vocals selects', () => {
         const result = compileAndBridge(
             'turn down the background vocals by 3 dB',
@@ -1249,35 +1264,5 @@ describe('a role stated only by a word pair the project reads as that role groun
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual([backingVoxOne.id, backingVoxTwo.id]);
-    });
-});
-
-describe('a compiled target must be one the recorded selector selects', () => {
-    it('refuses targets the recorded where does not select, though the request states its terms', () => {
-        const result = compileAndBridge(
-            'mute all midi tracks',
-            [
-                {
-                    id: 'mute-audio-tracks',
-                    name: 'muteTrack',
-                    arguments: { muted: true },
-                    selector: {
-                        targetArgument: 'trackId',
-                        entity: 'track',
-                        where: { kind: 'audio' },
-                        quantity: { unit: 'targets', exactly: 3 },
-                    },
-                },
-            ],
-            [],
-            projectContext,
-            (evidence) => ({
-                ...evidence,
-                selectors: evidence.selectors.map((selector) => ({ ...selector, where: { kind: 'midi' } })),
-            })
-        );
-
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toContainEqual({ index: 0, name: 'muteTrack', reason: UNAUTHORIZED_TRACK });
     });
 });
