@@ -19,4 +19,13 @@ export type ActionPromptScope = PromptClause & {
     roleTexts?: PromptRoleTexts;
     /** How many same-action calls this scope grounds; one when absent. */
     referenceSlots?: number;
+    /**
+     * Set when the scope states one change for a coordinated list of tracks: every track the list
+     * names. The scope's calls must target exactly `memberIds`, one call each.
+     */
+    coordinatedTargets?: {
+        memberIds: readonly string[];
+        /** Whole resolved member spans relative to this scope's original text. */
+        references: readonly { id: string; start: number; end: number }[];
+    };
 };

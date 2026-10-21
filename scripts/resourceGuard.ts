@@ -1042,18 +1042,56 @@ function storageIdentityState(identity: StorageProcessIdentity): 'alive' | 'dead
     return startedAt === identity.startedAt ? 'alive' : 'unknown';
 }
 
-function storageRecoveryPorts(report: (reason: string) => void): StorageRecoveryPorts {
+// Only this run's own live supervisor bounds which processes predate it. A recovered
+// owner, a foreign live owner, or a reused PID bounds nothing, so it excuses nothing.
+export function startTimeExcuseSupervisor(
+    owner: StorageProcessIdentity,
+    currentPid: number,
+    hostPlatform: NodeJS.Platform,
+    identityState: (identity: StorageProcessIdentity) => 'alive' | 'dead' | 'unknown'
+): number | undefined {
+    if (hostPlatform !== 'linux' || owner.pid !== currentPid) {
+        return undefined;
+    }
+    return identityState(owner) === 'alive' ? currentPid : undefined;
+}
+
+type StorageRecoveryHost = {
+    platform: () => NodeJS.Platform;
+    currentPid: number;
+    identityState: (identity: StorageProcessIdentity) => 'alive' | 'dead' | 'unknown';
+    processCensus: (sessionToken: string) => { rows: ProcessRow[]; rawOutput?: string } | undefined;
+    fileState: (
+        tempDirectories: string[],
+        ownedPids: number[],
+        report: (reason: string) => void,
+        supervisorPid?: number
+    ) => 'alive' | 'dead' | 'unknown';
+};
+
+const storageRecoveryHost: StorageRecoveryHost = {
+    platform,
+    currentPid: process.pid,
+    identityState: storageIdentityState,
+    processCensus,
+    fileState: storageFileState,
+};
+
+export function storageRecoveryPorts(
+    report: (reason: string) => void,
+    host: StorageRecoveryHost = storageRecoveryHost
+): StorageRecoveryPorts {
     const ports: StorageRecoveryPorts = {
-        identityState: storageIdentityState,
+        identityState: host.identityState,
         sessionState: (owner, tempDirectory, currentTempDirectory = tempDirectory) => {
-            if (platform() === 'win32' && owner.phase !== 'ready') {
+            if (host.platform() === 'win32' && owner.phase !== 'ready') {
                 return 'unknown';
             }
-            const census = processCensus(owner.token);
+            const census = host.processCensus(owner.token);
             if (census === undefined) {
                 return 'unknown';
             }
-            if (platform() !== 'win32') {
+            if (host.platform() !== 'win32') {
                 const references = storageReferenceState(census.rawOutput, tempDirectory);
                 if (references !== 'dead') {
                     return references;
@@ -1067,27 +1105,35 @@ function storageRecoveryPorts(report: (reason: string) => void): StorageRecovery
                 return 'alive';
             }
             for (const identity of [...owner.tracked, ...(owner.child === undefined ? [] : [owner.child])]) {
-                const state = storageIdentityState(identity);
+                const state = host.identityState(identity);
                 if (state !== 'dead') {
                     return state;
                 }
             }
-            return platform() === 'win32'
-                ? 'dead'
-                : storageFileState(
-                      [tempDirectory, currentTempDirectory],
-                      [
-                          owner.owner.pid,
-                          ...owner.tracked.map((identity) => identity.pid),
-                          ...(owner.child === undefined ? [] : [owner.child.pid]),
-                      ],
-                      report
-                  );
+            if (host.platform() === 'win32') {
+                return 'dead';
+            }
+            const supervisorPid = startTimeExcuseSupervisor(
+                owner.owner,
+                host.currentPid,
+                host.platform(),
+                host.identityState
+            );
+            return host.fileState(
+                [tempDirectory, currentTempDirectory],
+                [
+                    owner.owner.pid,
+                    ...owner.tracked.map((identity) => identity.pid),
+                    ...(owner.child === undefined ? [] : [owner.child.pid]),
+                ],
+                report,
+                supervisorPid
+            );
         },
         localReleaseAllowed: (owner, tempDirectory, currentTempDirectory) => {
             // Windows normal cleanup keeps its tracked-tree contract. Its unavailable
             // environment census remains unknown for crash recovery, never reported dead.
-            if (platform() === 'win32') {
+            if (host.platform() === 'win32') {
                 return true;
             }
             return ports.sessionState(owner, tempDirectory, currentTempDirectory) === 'dead';
@@ -1202,8 +1248,56 @@ type LinuxFilePorts = {
     readDescriptor: (pid: number, fd: string) => string | undefined;
     readStatus: (pid: number) => string;
     isGone: (pid: number) => boolean;
+    startedBeforeSupervisor?: (pid: number) => boolean;
     now?: () => number;
 };
+
+export function parseLinuxStartTicks(stat: string): number | undefined {
+    // The command name may contain spaces and parentheses; fields resume after its last ')'.
+    const commandEnd = stat.lastIndexOf(') ');
+    if (commandEnd < 0 || stat.length > 4096 || !stat.endsWith('\n')) {
+        return undefined;
+    }
+    // proc(5) field 22, starttime, is the twentieth field after the command name.
+    const startTime = stat
+        .slice(commandEnd + 2)
+        .trimEnd()
+        .split(' ')[19];
+    if (startTime === undefined || !/^\d+$/.test(startTime) || !Number.isSafeInteger(Number(startTime))) {
+        return undefined;
+    }
+    return Number(startTime);
+}
+
+function readLinuxStartTicks(pid: number): number | undefined {
+    return parseLinuxStartTicks(readFileSync(`/proc/${pid}/stat`, 'utf8'));
+}
+
+export function linuxFilePorts(
+    supervisorPid?: number,
+    startTicks: (pid: number) => number | undefined = readLinuxStartTicks
+): LinuxFilePorts {
+    return {
+        inspectUid: (pid) => lstatSync(`/proc/${pid}`).uid,
+        readCwd: (pid) => readlinkSync(`/proc/${pid}/cwd`),
+        listDescriptors: (pid) => readdirSync(`/proc/${pid}/fd`),
+        readDescriptor: (pid, fd) => readStorageDescriptor(`/proc/${pid}/fd/${fd}`),
+        readStatus: (pid) => readFileSync(`/proc/${pid}/status`, 'utf8'),
+        isGone: processIsGone,
+        startedBeforeSupervisor: (pid) => {
+            if (supervisorPid === undefined) {
+                return false;
+            }
+            try {
+                const started = startTicks(pid);
+                const supervisorStarted = startTicks(supervisorPid);
+                return started !== undefined && supervisorStarted !== undefined && started < supervisorStarted;
+            } catch {
+                return false;
+            }
+        },
+    };
+}
 
 function linuxTerminalFilesReleased(snapshot: LinuxFileSnapshot | undefined, pid: number, uid: number): boolean {
     // Linux drops files/fs before publishing EXIT_ZOMBIE. nr_threads includes
@@ -1234,14 +1328,7 @@ export function linuxStorageFileState(
     tempDirectories: string[],
     deadline: number,
     report: (reason: string) => void = () => {},
-    ports: LinuxFilePorts = {
-        inspectUid: (pid) => lstatSync(`/proc/${pid}`).uid,
-        readCwd: (pid) => readlinkSync(`/proc/${pid}/cwd`),
-        listDescriptors: (pid) => readdirSync(`/proc/${pid}/fd`),
-        readDescriptor: (pid, fd) => readStorageDescriptor(`/proc/${pid}/fd/${fd}`),
-        readStatus: (pid) => readFileSync(`/proc/${pid}/status`, 'utf8'),
-        isGone: processIsGone,
-    }
+    ports: LinuxFilePorts = linuxFilePorts()
 ): 'alive' | 'dead' | 'unknown' {
     const unknown = (reason: string): 'unknown' => {
         report(reason);
@@ -1276,6 +1363,20 @@ export function linuxStorageFileState(
             }
         } catch (error) {
             if (ports.isGone(pid)) {
+                continue;
+            }
+            const code = (error as NodeJS.ErrnoException).code;
+            if (
+                phase !== 'root' &&
+                (code === 'EACCES' || code === 'EPERM') &&
+                ports.startedBeforeSupervisor?.(pid) === true
+            ) {
+                // A same-UID process this account cannot inspect holds credentials beyond
+                // the guard's, as long-lived session services can. Starting before the
+                // supervisor proves only that it inherited no working directory or descriptor
+                // from the run, not that it never opens the storage path later. An older
+                // same-account process explicitly handed that path is, like a descendant that
+                // changes privilege, outside what this census can prove.
                 continue;
             }
             let snapshot: LinuxFileSnapshot | undefined;
@@ -1345,10 +1446,13 @@ export function linuxStorageFileCensus(
     return unknown('file-census-unavailable');
 }
 
+// supervisorPid names the live process that spawned the run, never a later reclaimer:
+// only processes that predate it are known not to have inherited from the run.
 export function storageFileState(
     tempDirectories: string[],
     ownedPids: number[],
-    report: (reason: string) => void = () => {}
+    report: (reason: string) => void = () => {},
+    supervisorPid?: number
 ): 'alive' | 'dead' | 'unknown' {
     const unknown = (reason: string): 'unknown' => {
         report(reason);
@@ -1397,11 +1501,11 @@ export function storageFileState(
             return unknown(pids);
         }
         if (platform() === 'darwin') {
-            for (let observation = 0; observation < 2; observation += 1) {
+            for (let observation = 0; observation < 3; observation += 1) {
                 if (Date.now() >= deadline) {
                     return unknown('file-census-time-bound');
                 }
-                if (observation === 1) {
+                if (observation > 0) {
                     pids = readProcessUsers();
                     if (typeof pids === 'string') {
                         return unknown(pids);
@@ -1422,7 +1526,7 @@ export function storageFileState(
                 if (census === undefined) {
                     // A descriptor can close between lsof's field reads. Discard
                     // that catalog; only a wholly valid fresh observation can prove safety.
-                    if (observation === 0 && parseReason === 'descriptor-type-missing') {
+                    if (observation < 2 && parseReason === 'descriptor-type-missing') {
                         continue;
                     }
                     return unknown(`lsof-fields-unusable:${parseReason}`);
@@ -1463,9 +1567,9 @@ export function storageFileState(
                 if (Date.now() >= deadline) {
                     return unknown('lsof-coverage-time-bound');
                 }
-                if (observation === 0 && missing.length > 0 && onlyNewLivePids) {
-                    // Discard the stale catalog. The shared two-observation limit
-                    // permits one complete replacement, never partial coverage.
+                if (observation < 2 && missing.length > 0 && onlyNewLivePids) {
+                    // A verified new live PID can replace this whole catalog while
+                    // observations remain in the shared limit and original deadline.
                     continue;
                 }
                 const snapshots = missing.slice(0, 4);
@@ -1481,6 +1585,7 @@ export function storageFileState(
         return linuxStorageFileCensus(pids, uid, tempDirectories, deadline, report, {
             readProcessUsers,
             isGone: processIsGone,
+            files: linuxFilePorts(supervisorPid),
         });
     } catch {
         return unknown('file-census-unavailable');
@@ -1842,65 +1947,74 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     const sampleTimer = setInterval(sampleTick, input.sampleIntervalMs ?? defaultSampleIntervalMs);
     const timeoutTimer = setTimeout(() => stop('timeout'), timeoutMs);
 
-    try {
-        const result = await childCompletion;
-        if (child.pid !== undefined && reason === undefined) {
-            const exitedCleanly = await waitForProcessTreeExit(child.pid, tracked, processToken, 500);
-            if (!exitedCleanly) {
-                terminateProcessTree(child.pid, 'SIGTERM', tracked, processToken);
-                const exitedAfterTerm = await waitForProcessTreeExit(child.pid, tracked, processToken, 1_000);
-                if (!exitedAfterTerm) {
-                    terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
-                    const exitedAfterKill = await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000);
-                    if (!exitedAfterKill) {
-                        output.append(
-                            Buffer.from(`\nprocesses survived forced cleanup:\n${sessionProcessSummary(processToken)}`)
-                        );
-                        reason = 'leak';
+    const completeSpawnedCommand = async () => {
+        try {
+            const result = await childCompletion;
+            if (child.pid !== undefined && reason === undefined) {
+                const exitedCleanly = await waitForProcessTreeExit(child.pid, tracked, processToken, 500);
+                if (!exitedCleanly) {
+                    terminateProcessTree(child.pid, 'SIGTERM', tracked, processToken);
+                    const exitedAfterTerm = await waitForProcessTreeExit(child.pid, tracked, processToken, 1_000);
+                    if (!exitedAfterTerm) {
+                        terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
+                        const exitedAfterKill = await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000);
+                        if (!exitedAfterKill) {
+                            output.append(
+                                Buffer.from(
+                                    `\nprocesses survived forced cleanup:\n${sessionProcessSummary(processToken)}`
+                                )
+                            );
+                            reason = 'leak';
+                        }
                     }
                 }
             }
+            if (child.pid !== undefined && reason !== undefined) {
+                await waitForProcessTreeExit(child.pid, tracked, processToken, 7_000);
+            }
+            await cleanupStorage();
+            return { succeeded: true as const, result };
+        } catch (error) {
+            await cleanupStorage();
+            return { succeeded: false as const, error };
+        } finally {
+            clearInterval(sampleTimer);
+            clearTimeout(timeoutTimer);
+            process.removeListener('SIGINT', onSigint);
+            process.removeListener('SIGTERM', onSigterm);
+            if (forceKillTimer !== undefined) {
+                clearTimeout(forceKillTimer);
+            }
+            // The existing final attempt can prove removal after the first attempt could not.
+            await cleanupStorage();
         }
-        if (child.pid !== undefined && reason !== undefined) {
-            await waitForProcessTreeExit(child.pid, tracked, processToken, 7_000);
-        }
-        const storageRemoved = await cleanupStorage();
+    };
+    const completion = await completeSpawnedCommand();
+    if (!completion.succeeded) {
         if (!storageRemoved) {
-            output.append(
-                Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
-            );
-            reason ??= 'leak';
-        }
-        const tail = output.result();
-        return {
-            ...result,
-            signal: interruptedSignal ?? result.signal,
-            reason,
-            ...tail,
-            peakRssBytes,
-            maxRssBytes,
-            durationMs: Date.now() - startedAt,
-        };
-    } catch (error) {
-        const cleaned = await cleanupStorage();
-        if (!cleaned) {
             throw new Error(
-                `${error instanceof Error ? error.message : String(error)}; guard storage retained: ownership or process-tree exit unproved`,
-                { cause: error }
+                `${completion.error instanceof Error ? completion.error.message : String(completion.error)}; guard storage retained: ownership or process-tree exit unproved`,
+                { cause: completion.error }
             );
         }
-        throw error;
-    } finally {
-        clearInterval(sampleTimer);
-        clearTimeout(timeoutTimer);
-        process.removeListener('SIGINT', onSigint);
-        process.removeListener('SIGTERM', onSigterm);
-        if (forceKillTimer !== undefined) {
-            clearTimeout(forceKillTimer);
-        }
-        // Spawn errors still need cleanup; a removed run is already absent on the normal route.
-        await cleanupStorage();
+        throw completion.error;
     }
+    if (!storageRemoved) {
+        output.append(
+            Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
+        );
+        reason ??= 'leak';
+    }
+    const tail = output.result();
+    return {
+        ...completion.result,
+        signal: interruptedSignal ?? completion.result.signal,
+        reason,
+        ...tail,
+        peakRssBytes,
+        maxRssBytes,
+        durationMs: Date.now() - startedAt,
+    };
 }
 
 export function emitGuardedResult(label: string, result: GuardedCommandResult, showSuccessOutput = false): number {

@@ -741,7 +741,12 @@ After a Linux `ENOENT` inspection failure, fresh complete status may prove file 
 a zombie whose PID and thread-group ID match the inspected PID, whose four UIDs match the guard,
 and whose thread count is exactly one. A zombie leader with other threads remains uncertain.
 This evidence must arrive within the existing proof deadline and never releases PID ownership
-or signaling fences. Denied inspection and unavailable or malformed status still retain storage.
+or signaling fences. Denied inspection and unavailable or malformed status still retain storage,
+with one exception: a denied process whose `/proc` start time precedes the run's live supervisor
+is excused. Its start time proves only that it inherited no working directory or descriptor from
+the run, not that it never opens the storage path later; an older same-account process explicitly
+handed that path is, like an elevated descendant, outside this proof. Crash recovery has no live
+supervisor, so every denial retains a crashed run's storage.
 On macOS, an unreaped same-UID process positively sampled in zombie state has already released
 its file table; this exception never releases process-identity or signaling fences.
 File inspection checks same-UID process coverage again after reading files, so a process born
@@ -789,8 +794,9 @@ routes stay unchanged.
 Before install or Vitest concurrency, mandatory native verification starts a nondumpable same-UID
 Python consumer with cwd and an open file in owned storage. It requires denied cwd inspection and
 actual storage retention, then kills and reaps the consumer and requires reclamation. Missing Python
-or uncertain cleanup fails preparation. This negative proof runs before workers because any denied
-same-account process must conservatively block other guard cleanups too. Hosted account setup,
+or uncertain cleanup fails preparation. This negative proof runs before workers because a denied
+same-account process conservatively blocks the cleanup of every guard whose supervisor started
+before it. Hosted account setup,
 tool traversal and checkout post-step compatibility require current-head Linux evidence; a local
 macOS port-controlled check cannot establish that acceptance.
 
