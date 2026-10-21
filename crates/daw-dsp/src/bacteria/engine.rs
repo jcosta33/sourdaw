@@ -3093,7 +3093,11 @@ mod tests {
         const BLOCK: usize = 512;
         let mut engine = BacteriaEngine::new(SAMPLE_RATE);
         // RoutingMode::MidSide = 2.0
-        engine.set_param("routing", 2.0);
+        engine.set_param("globalRouting", 2.0);
+        assert!(
+            engine.routing == RoutingMode::MidSide,
+            "fixture: engine did not select Mid/Side routing"
+        );
         engine.set_param("bandCount", 1.0);
         engine.set_param("mix", 1.0);
         // Enable oversampling on band 0 so mid carries group delay
@@ -3124,7 +3128,11 @@ mod tests {
 
         // 2. Pure Mid impulse on fresh engine: L = 1.0, R = 1.0 (mid = 1.0, side = 0)
         let mut mid_engine = BacteriaEngine::new(SAMPLE_RATE);
-        mid_engine.set_param("routing", 2.0);
+        mid_engine.set_param("globalRouting", 2.0);
+        assert!(
+            mid_engine.routing == RoutingMode::MidSide,
+            "fixture: mid_engine did not select Mid/Side routing"
+        );
         mid_engine.set_param("bandCount", 1.0);
         mid_engine.set_param("mix", 1.0);
         mid_engine.set_param("band0_distortionEnabled", 1.0);
