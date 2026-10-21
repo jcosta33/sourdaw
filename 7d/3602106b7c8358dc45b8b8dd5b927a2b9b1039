@@ -1,0 +1,25 @@
+src/modules/AudioEngine/services/__tests__/levainProcessorZoneTables.spec.ts
+  s_ba8dd89de9aac7::t_a19a937dada006 543-591
+src/modules/AudioEngine/repositories/levainZoneTables/__tests__/buildLevainZoneTablesInWorker.spec.ts
+  s_ba8dd89de9aac7::t_245e16a62789c3 107-113,116
+  s_ba8dd89de9aac7::t_a740f1d242d6f3 114-115
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_ba8dd89de9aac7::t_a2edf0a33b51ff 1983,2001-2002,2006,2010-2166
+  s_ba8dd89de9aac7::t_232768d269e898 2167-2216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d3602106b7c8358dc45b8b8dd5b927a2b9b1039",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
