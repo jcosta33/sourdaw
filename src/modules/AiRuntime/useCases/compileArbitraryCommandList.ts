@@ -234,25 +234,25 @@ function resolveSelector(input: {
     const explicitlyExcludedIds = input.selector.excludeIds ?? [];
     const evidence: ArbitraryCommandListSelectorEvidence = {
         itemId: input.itemId,
-            stableIds,
-            excludedIds: [...explicitlyExcludedIds],
-            protectedExclusions: [],
-            preconditions: stableIds.map((stableId) => {
-                const candidate = input.candidates.find((entry) => entry.id === stableId);
-                return { stableId, fingerprint: JSON.stringify(candidate) };
-            }),
-            ...(input.selector.match === undefined
-                ? {}
-                : {
-                      predicate: {
-                          entity: input.selector.entity,
-                          where: input.selector.where,
-                          match: input.selector.match,
-                          condition: input.selector.condition,
-                          excludeIds: input.selector.excludeIds,
-                          quantity: input.selector.quantity,
-                      },
-                  }),
+        stableIds,
+        excludedIds: [...explicitlyExcludedIds],
+        protectedExclusions: [],
+        preconditions: stableIds.map((stableId) => {
+            const candidate = input.candidates.find((entry) => entry.id === stableId);
+            return { stableId, fingerprint: JSON.stringify(candidate) };
+        }),
+        ...(input.selector.match === undefined
+            ? {}
+            : {
+                  predicate: {
+                      entity: input.selector.entity,
+                      where: input.selector.where,
+                      match: input.selector.match,
+                      condition: input.selector.condition,
+                      excludeIds: input.selector.excludeIds,
+                      quantity: input.selector.quantity,
+                  },
+              }),
     };
     if (input.selector.where !== undefined) {
         evidence.where = structuredClone(input.selector.where);

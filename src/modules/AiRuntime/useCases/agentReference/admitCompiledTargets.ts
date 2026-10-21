@@ -67,8 +67,7 @@ export type CompiledTargetAuthorityInput = {
 };
 
 export type CompiledTargetAuthority =
-    | { status: 'admitted' }
-    | { status: 'refused'; reason: 'unauthorized' | 'reference-mismatch' };
+    { status: 'admitted' } | { status: 'refused'; reason: 'unauthorized' | 'reference-mismatch' };
 
 /** Owned capabilities whose candidates a track dependency narrows to that track's objects. */
 const TRACK_DEPENDENT_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
@@ -86,8 +85,14 @@ function readReferences(
     dependencyId?: string,
     excludedIds: readonly string[] = []
 ) {
-    return resolveAgentReference({ prompt: text, assertedId: undefined, capability, context, dependencyId, excludedIds })
-        .candidates;
+    return resolveAgentReference({
+        prompt: text,
+        assertedId: undefined,
+        capability,
+        context,
+        dependencyId,
+        excludedIds,
+    }).candidates;
 }
 
 /** Objects of the capability the text names by literal id, whole name or selection. */
@@ -285,7 +290,14 @@ function getSelectorTermPhrases(terms: CompiledSelectorTerms, context: ProjectCo
     if (terms.condition !== undefined) {
         phrases.push([terms.condition.equals ? terms.condition.field : `un${terms.condition.field}`]);
     }
-    const predicates = [...(terms.match?.all ?? []), ...(terms.match?.any ?? [])];
+    const match: SemanticCommandListMatch = terms.match ?? {};
+    const predicates: SemanticCommandListPredicate[] = [];
+    if (match.all !== undefined) {
+        predicates.push(...match.all);
+    }
+    if (match.any !== undefined) {
+        predicates.push(...match.any);
+    }
     phrases.push(...predicates.map((predicate) => getPredicatePhrases(predicate, context)));
     return phrases;
 }

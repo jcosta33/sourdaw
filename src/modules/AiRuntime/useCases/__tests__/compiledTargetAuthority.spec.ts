@@ -346,7 +346,11 @@ describe('a compiled selector cannot replace a target the request names', () => 
     });
 
     it('refuses a device selector off the track that owns the devices the request selects', () => {
-        const result = compileAndBridge('bypass every device on Vocals', [bypassTrackDevicesItem(keys.id)], [keysEq.id]);
+        const result = compileAndBridge(
+            'bypass every device on Vocals',
+            [bypassTrackDevicesItem(keys.id)],
+            [keysEq.id]
+        );
 
         expectRefused(result, keysEq.id, 'deviceId');
         expect(result.actions).toEqual([]);
@@ -832,7 +836,19 @@ const auxDelay = roleTrack('track-role-aux-delay', 'Aux Delay', 'bus', [], 'bus'
 
 const roleContext: ProjectContext = {
     ...projectContext,
-    tracks: [leadVox, backingVoxOne, backingVoxTwo, kickIn, snareTop, bassDi, gtrLeft, gtrRight, auxVerb, auxDelay, master],
+    tracks: [
+        leadVox,
+        backingVoxOne,
+        backingVoxTwo,
+        kickIn,
+        snareTop,
+        bassDi,
+        gtrLeft,
+        gtrRight,
+        auxVerb,
+        auxDelay,
+        master,
+    ],
     availableDeviceTypes: [
         { id: 'builtin-compressor', name: 'Compressor' },
         { id: 'builtin-reverb', name: 'Reverb' },
@@ -845,11 +861,21 @@ function roleItem(
     selector: Omit<NonNullable<CompiledItem['selector']>, 'quantity'>,
     exactly: number
 ): CompiledItem {
-    return { id: `${name}-role-selection`, name, arguments: arguments_, selector: { ...selector, quantity: { unit: 'targets', exactly } } };
+    return {
+        id: `${name}-role-selection`,
+        name,
+        arguments: arguments_,
+        selector: { ...selector, quantity: { unit: 'targets', exactly } },
+    };
 }
 
 function turnDown(match: Record<string, string>, exactly: number): CompiledItem {
-    return roleItem('setTrackGain', { deltaDb: -3 }, { targetArgument: 'trackId', entity: 'track', match: { all: [match] } }, exactly);
+    return roleItem(
+        'setTrackGain',
+        { deltaDb: -3 },
+        { targetArgument: 'trackId', entity: 'track', match: { all: [match] } },
+        exactly
+    );
 }
 
 describe('compiled selectors whose terms the request states still ground', () => {
@@ -877,7 +903,14 @@ describe('compiled selectors whose terms the request states still ground', () =>
     it('grounds every bus a request for all aux tracks selects', () => {
         const result = compileAndBridge(
             'mute all aux tracks',
-            [roleItem('muteTrack', { muted: true }, { targetArgument: 'trackId', entity: 'track', where: { kind: 'bus' } }, 2)],
+            [
+                roleItem(
+                    'muteTrack',
+                    { muted: true },
+                    { targetArgument: 'trackId', entity: 'track', where: { kind: 'bus' } },
+                    2
+                ),
+            ],
             [],
             roleContext
         );
