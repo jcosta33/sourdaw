@@ -198,6 +198,75 @@ describe('materializeActionStateGuards', () => {
         });
     });
 
+    it.each([true, false])(
+        'retains a presence-only parameter guard of %s through materialization',
+        (expectedValuePresent) => {
+            const track = createExistingTrack();
+            track.devices[0]!.parameters = [{ ...filterTypeParameter, valuePresent: expectedValuePresent }];
+            expect(
+                materializeActionStateGuards(
+                    [
+                        {
+                            type: 'setDeviceParameter',
+                            payload: { deviceId: 'filter-a', paramId: 'filter-type', value: 1, expectedValuePresent },
+                        },
+                    ],
+                    { ...context, tracks: [track] }
+                )
+            ).toMatchObject({
+                status: 'accepted',
+                actions: [
+                    { type: 'setDeviceParameter', payload: { expectedValuePresent, expectedDeviceIds: ['filter-a'] } },
+                ],
+            });
+        }
+    );
+
+    it.each([
+        ['newly present at the same value', undefined, false],
+        ['explicitly present', true, false],
+        ['now absent', false, true],
+    ] as const)(
+        'refuses a stale presence guard when the parameter is %s',
+        (_label, valuePresent, expectedValuePresent) => {
+            const track = createExistingTrack();
+            track.devices[0]!.parameters = [{ ...filterTypeParameter, valuePresent }];
+            expect(
+                materializeActionStateGuards(
+                    [
+                        {
+                            type: 'setDeviceParameter',
+                            payload: { deviceId: 'filter-a', paramId: 'filter-type', value: 1, expectedValuePresent },
+                        },
+                    ],
+                    { ...context, tracks: [track] }
+                )
+            ).toEqual({
+                status: 'rejected',
+                reason: 'Device parameter state is unavailable or protected: filter-a/filter-type',
+            });
+        }
+    );
+
+    it('refuses a stored-value guard against an absent parameter with the same effective value', () => {
+        const track = createExistingTrack();
+        track.devices[0]!.parameters = [{ ...filterTypeParameter, valuePresent: false }];
+        expect(
+            materializeActionStateGuards(
+                [
+                    {
+                        type: 'setDeviceParameter',
+                        payload: { deviceId: 'filter-a', paramId: 'filter-type', value: 1, expectedValue: 0 },
+                    },
+                ],
+                { ...context, tracks: [track] }
+            )
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Device parameter state is unavailable or protected: filter-a/filter-type',
+        });
+    });
+
     it.each([
         ['wrong owner', { expectedTrackId: 'track-other' }, false],
         ['wrong type', { expectedDeviceType: 'builtin-eq' }, false],

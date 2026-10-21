@@ -298,6 +298,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
         'expectedDeviceType',
         'expectedDeviceIds',
         'expectedValue',
+        'expectedValuePresent',
         'expectedTrackFrozen',
     ],
     createBus: ['name'],

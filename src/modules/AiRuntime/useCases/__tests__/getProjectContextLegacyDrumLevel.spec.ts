@@ -19,6 +19,8 @@ import {
 import { buildLlmActionUserMessage } from '../../transformers/llmActionBridge';
 import { bridgeDeviceToolCall } from '../../transformers/llmActionStrategies/deviceStrategy';
 import { getProjectContext } from '../getProjectContext';
+import { materializeActionStateGuards } from '../materializeActionStateGuards';
+import { validateActions } from '../validateActions';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -26,14 +28,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 
 function seedLegacyKit(type: string): void {
-    const track = createTrack({ id: 'legacy-drums', name: 'Drums', kind: 'midi', color: '#456789' });
+    const track = createTrack({ id: 'legacy-drums', name: 'Drums', kind: 'midi' });
     track.devices = [{ id: 'old-kit', name: 'Old kit', type, bypassed: false, parameterValues: { kit: 0, gain: 0.8 } }];
     trackStore.set(sanitizeTrackSnapshot({ tracks: [track], selectedTrackId: track.id }));
     flushAutomergeStorageWrites();
     clearUndoHistory();
 }
 
-function levelAction(value = -6) {
+function levelProposal(value = -6) {
     const result = bridgeDeviceToolCall({
         call: {
             id: 'level-call',
@@ -48,6 +50,21 @@ function levelAction(value = -6) {
         throw new Error(`Expected an admitted Level action: ${JSON.stringify(result)}`);
     }
     return result;
+}
+
+function levelAction(value = -6) {
+    const proposal = levelProposal(value);
+    const validated = validateActions([proposal]);
+    expect(validated, 'The real runtime validator must admit the bridge proposal').toEqual([proposal]);
+    const materialized = materializeActionStateGuards(validated, getProjectContext());
+    if (materialized.status !== 'accepted') {
+        throw new Error(`Expected materialized Level guards: ${materialized.reason}`);
+    }
+    const action = materialized.actions[0];
+    if (!action || action.type !== 'setDeviceParameter') {
+        throw new Error('Expected one materialized Level action');
+    }
+    return action;
 }
 
 function values() {
@@ -154,6 +171,25 @@ describe('legacy drum Level through project context and Command', () => {
         await redo();
         expect(values()).toEqual({ ...before, level: -6 });
         expect(storedValues()).toEqual(values());
+    });
+
+    it('rejects an absent-Level proposal after a concurrent writer stores the same effective unity', async () => {
+        seedLegacyKit('builtin-drum-kit');
+        const proposal = levelProposal();
+        const command = levelAction();
+        await executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'old-kit', paramId: 'level', value: 0 },
+        });
+        const validated = validateActions([proposal]);
+        expect(validated).toEqual([proposal]);
+        expect(materializeActionStateGuards(validated, getProjectContext())).toEqual({
+            status: 'rejected',
+            reason: 'Device parameter state is unavailable or protected: old-kit/level',
+        });
+        await expect(executeAppAction(command)).rejects.toMatchObject({ name: 'AppActionConflictError' });
+        expect(values().level).toBe(0);
+        expect(storedValues().level).toBe(0);
     });
 
     it('refuses an absent-value proposal after a concurrent writer installs Level', async () => {
