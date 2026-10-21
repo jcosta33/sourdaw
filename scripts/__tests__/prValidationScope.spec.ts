@@ -429,7 +429,10 @@ function relativeImportClosure(roots: readonly string[]): string[] {
             continue;
         }
         reached.add(path);
-        for (const [, specifier] of readFileSync(resolve(path), 'utf8').matchAll(RELATIVE_IMPORT)) {
+        for (const [statement, specifier] of readFileSync(resolve(path), 'utf8').matchAll(RELATIVE_IMPORT)) {
+            if (specifier === undefined) {
+                throw new Error(`${path} import ${statement} captured no specifier`);
+            }
             pending.push(resolveRelativeImport(path, specifier));
         }
     }
