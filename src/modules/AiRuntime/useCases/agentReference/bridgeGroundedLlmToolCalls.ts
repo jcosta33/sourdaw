@@ -44,7 +44,12 @@ import {
     validateArbitraryCommandListEvidence,
 } from '../validateArbitraryCommandListEvidence';
 
-import { admitsCompiledTargets, type CompiledTargetAuthorityInput } from './admitCompiledTargets';
+import {
+    admitsCompiledTargets,
+    type CompiledSelectorTerms,
+    type CompiledTargetAuthority,
+    type CompiledTargetAuthorityInput,
+} from './admitCompiledTargets';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
@@ -170,6 +175,8 @@ type GroundToolCallInput = {
     catalog: GroundingCatalog;
     /** Every id the compiled list's own selectors excluded or protected; empty off the compiled route. */
     compilerExcludedIds: ReadonlySet<string>;
+    /** The selector this call's compiled targets came from, when the compiler resolved one. */
+    compiledSelectorTerms?: CompiledSelectorTerms;
     context: ProjectContext;
     /** What the admitted creative authority says about this call, when the run has one. */
     creativeAdmission?: CreativeCallAdmission;
@@ -4022,8 +4029,66 @@ function getBatchCreatedIds(bindings: ReadonlyMap<string, BatchLocalCreationBind
     return new Set([...bindings.values()].map((binding) => binding.createdId));
 }
 
-function unauthorizedCompiledTargetReason(argument: string): string {
+function compiledTargetRefusalReason(authority: CompiledTargetAuthority, argument: string): string | null {
+    if (authority.status === 'admitted') {
+        return null;
+    }
+    if (authority.reason === 'reference-mismatch') {
+        return `Provider target ${argument} does not match the uniquely grounded project reference`;
+    }
     return `Compiled target ${argument} is not authorized by the user request`;
+}
+
+/**
+ * The selector each compiled call's targets came from, keyed by call index across the whole batch:
+ * a `match` selector's compiled fields, a set slice's replay fields, or a `where`-only selector's own.
+ */
+function getCompiledSelectorTermsByCallIndex(
+    evidence: ArbitraryCommandListEvidence | undefined,
+    callIndexOffset: number
+): ReadonlyMap<number, CompiledSelectorTerms> {
+    const termsByCallIndex = new Map<number, CompiledSelectorTerms>();
+    for (const item of evidence?.items ?? []) {
+        const selector = evidence?.selectors.find((candidate) => candidate.itemId === item.itemId);
+        if (selector === undefined) {
+            continue;
+        }
+        const replay = selector.slice?.selector;
+        const terms: CompiledSelectorTerms = {
+            where: selector.where ?? selector.predicate?.where ?? replay?.where,
+            match: selector.predicate?.match ?? replay?.match,
+            condition: selector.predicate?.condition ?? replay?.condition,
+        };
+        const ownIndexes = Array.from({ length: item.commandCount }, (_, offset) => item.commandStart + offset);
+        for (const commandIndex of new Set([...ownIndexes, ...item.representativeCommandIndexes])) {
+            termsByCallIndex.set(commandIndex + callIndexOffset, terms);
+        }
+    }
+    return termsByCallIndex;
+}
+
+function getAssertedIds(value: unknown): string[] {
+    if (typeof value === 'string') {
+        return [value];
+    }
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+}
+
+/** Every id the calls assert for the argument, and every id they bind to their other target arguments. */
+function getSameActionTargetIds(
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
+    groundingRules: GroundingRules,
+    argument: string
+): { compiledArgumentIds: string[]; otherArgumentIds: string[] } {
+    const otherArguments = groundingRules.targetRules
+        .map((rule) => rule.argument)
+        .filter((candidate) => candidate !== argument);
+    return {
+        compiledArgumentIds: sameActionAssertedArguments.flatMap((arguments_) => getAssertedIds(arguments_[argument])),
+        otherArgumentIds: sameActionAssertedArguments.flatMap((arguments_) =>
+            otherArguments.flatMap((other) => getAssertedIds(arguments_[other]))
+        ),
+    };
 }
 
 function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
@@ -4327,6 +4392,7 @@ function groundToolCall({
     batchLocalCreationBindings,
     call,
     catalog,
+    compiledSelectorTerms,
     compilerExcludedIds,
     context,
     creativeAdmission,
@@ -4620,8 +4686,8 @@ function groundToolCall({
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
             }
-            if (
-                !admitsCompiledTargets({
+            const setRefusal = compiledTargetRefusalReason(
+                admitsCompiledTargets({
                     capability: targetRule.capability,
                     catalog,
                     clauseStart: resolvedActionScope?.start,
@@ -4630,12 +4696,16 @@ function groundToolCall({
                     createdIds: getBatchCreatedIds(batchLocalCreationBindings),
                     prompt,
                     referenceResolved: false,
+                    selectorTerms: compiledSelectorTerms,
                     sendBusIds: [],
                     targetPrompt,
                     targetIds: compilerTargetOverride.stableIds,
-                })
-            ) {
-                return rejection(index, call.name, unauthorizedCompiledTargetReason(targetRule.argument));
+                    ...getSameActionTargetIds(sameActionAssertedArguments, groundingRules, targetRule.argument),
+                }),
+                targetRule.argument
+            );
+            if (setRefusal !== null) {
+                return rejection(index, call.name, setRefusal);
             }
             groundedArguments[targetRule.argument] = [...compilerTargetOverride.stableIds];
             continue;
@@ -4768,8 +4838,10 @@ function groundToolCall({
                               ? getAutomatedSendBusIds(groundedArguments.parameterId, assertedValue, context)
                               : [],
                       referenceResolved: false,
+                      selectorTerms: compiledSelectorTerms,
                       targetPrompt,
                       targetIds: compilerTargetOverride.stableIds,
+                      ...getSameActionTargetIds(sameActionAssertedArguments, groundingRules, targetRule.argument),
                   }
                 : null;
         if (
@@ -4790,8 +4862,12 @@ function groundToolCall({
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
             }
-            if (!admitsCompiledTargets(compiledTargetAuthority)) {
-                return rejection(index, call.name, unauthorizedCompiledTargetReason(targetRule.argument));
+            const compiledRefusal = compiledTargetRefusalReason(
+                admitsCompiledTargets(compiledTargetAuthority),
+                targetRule.argument
+            );
+            if (compiledRefusal !== null) {
+                return rejection(index, call.name, compiledRefusal);
             }
             groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
             continue;
@@ -4851,11 +4927,15 @@ function groundToolCall({
         }
         // An action that resolves compiled targets against the request like a direct call has its
         // naming evidence from that resolution, and still answers to the request's protections.
-        if (
-            compiledTargetAuthority !== null &&
-            !admitsCompiledTargets({ ...compiledTargetAuthority, referenceResolved: true })
-        ) {
-            return rejection(index, call.name, unauthorizedCompiledTargetReason(targetRule.argument));
+        const resolvedRefusal =
+            compiledTargetAuthority === null
+                ? null
+                : compiledTargetRefusalReason(
+                      admitsCompiledTargets({ ...compiledTargetAuthority, referenceResolved: true }),
+                      targetRule.argument
+                  );
+        if (resolvedRefusal !== null) {
+            return rejection(index, call.name, resolvedRefusal);
         }
 
         groundedArguments[targetRule.argument] = result.id;
@@ -5883,6 +5963,10 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
+    const compiledSelectorTermsByCallIndex = getCompiledSelectorTermsByCallIndex(
+        compilerEvidence,
+        transformCalls.length
+    );
     const compilerExcludedIds: ReadonlySet<string> = new Set(
         compilerEvidence?.selectors.flatMap((selector) => [...selector.excludedIds, ...selector.protectedExclusions]) ??
             []
@@ -6670,6 +6754,7 @@ export function bridgeGroundedLlmToolCalls({
                 batchLocalCreationBindings: visibleBindings,
                 call,
                 catalog,
+                compiledSelectorTerms: compiledSelectorTermsByCallIndex.get(index),
                 compilerExcludedIds,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),

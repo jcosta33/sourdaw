@@ -54,6 +54,11 @@ export type ArbitraryCommandListSelectorEvidence = {
     protectedExclusions: string[];
     preconditions: Array<{ stableId: string; fingerprint: string }>;
     /**
+     * The selector's `where` fields, present only when the selector used them, so grounding can ask
+     * whether the request states every term the selection rests on.
+     */
+    where?: SemanticCommandListSelector['where'];
+    /**
      * The selector fields a `match` was compiled with, present only when the selector used one.
      * The evidence validator re-resolves this against its own context through the same shared
      * resolver; a different resolved id set means the precondition no longer holds.
@@ -227,10 +232,8 @@ function resolveSelector(input: {
     }
     const { stableIds } = resolution;
     const explicitlyExcludedIds = input.selector.excludeIds ?? [];
-    return {
-        stableIds,
-        evidence: {
-            itemId: input.itemId,
+    const evidence: ArbitraryCommandListSelectorEvidence = {
+        itemId: input.itemId,
             stableIds,
             excludedIds: [...explicitlyExcludedIds],
             protectedExclusions: [],
@@ -250,8 +253,11 @@ function resolveSelector(input: {
                           quantity: input.selector.quantity,
                       },
                   }),
-        },
     };
+    if (input.selector.where !== undefined) {
+        evidence.where = structuredClone(input.selector.where);
+    }
+    return { stableIds, evidence };
 }
 
 function toBulkSetReplaySelector(selector: SemanticCommandListSelector): BulkSetReplaySelector {

@@ -1,6 +1,12 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
+import { PRESET_ACTIONS } from '../../models/PresetActions/Registry';
 import { type ProjectContext } from '../../models/ProjectContext';
+import {
+    type SemanticCommandListMatch,
+    type SemanticCommandListPredicate,
+    type SemanticCommandListSelector,
+} from '../../models/SemanticCommandList';
 import {
     collectSemanticCommandListCandidates,
     type SemanticCommandListCandidate,
@@ -22,30 +28,47 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
 type Capability = ResolveAgentReferenceInput['capability'];
 
+/** The fields of the selector a compiled target came from, read from the compiler's evidence. */
+export type CompiledSelectorTerms = {
+    where?: SemanticCommandListSelector['where'];
+    match?: SemanticCommandListMatch;
+    condition?: SemanticCommandListSelector['condition'];
+};
+
 export type CompiledTargetAuthorityInput = {
     capability: Capability;
     catalog: GroundingCatalog;
     /** Where the clause the targets belong to starts in the request, when the scope knows it. */
     clauseStart?: number;
+    /** Every id the batch's calls of this action assert for this argument. */
+    compiledArgumentIds: readonly string[];
     /** Every id the compiled list's own selectors excluded or protected. */
     compilerExcludedIds: ReadonlySet<string>;
     context: ProjectContext;
     /** Objects this batch creates; a compiled selector resolved only objects that already exist. */
     createdIds: ReadonlySet<string>;
     dependencyId?: string;
+    /** Ids the batch's calls of this action bind to their other target arguments. */
+    otherArgumentIds: readonly string[];
     /** The whole original request, where protections and exclusions are read. */
     prompt: string;
-    /** Buses a send parameter of the call names and its asserted track already sends to. */
-    sendBusIds: readonly string[];
     /**
      * Set when each target already resolved against the request the way a direct call does; that
      * resolution is the naming evidence, so only the request's protections remain to apply.
      */
     referenceResolved: boolean;
+    /** The selector the targets came from, absent when the compiler named them literally. */
+    selectorTerms?: CompiledSelectorTerms;
+    /** Buses a send parameter of the call names and its asserted track already sends to. */
+    sendBusIds: readonly string[];
     /** The original text of the clause the targets belong to. */
     targetPrompt: string;
     targetIds: readonly string[];
 };
+
+export type CompiledTargetAuthority =
+    | { status: 'admitted' }
+    | { status: 'refused'; reason: 'unauthorized' | 'reference-mismatch' };
 
 /** Owned capabilities whose candidates a track dependency narrows to that track's objects. */
 const TRACK_DEPENDENT_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
@@ -53,41 +76,18 @@ const TRACK_DEPENDENT_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability
     'sidechain-capable-device',
 ]);
 
-const SELECTION_QUANTIFIERS: ReadonlySet<string> = new Set(['all', 'every', 'each', 'the']);
-const SELECTION_QUANTIFIER_FILLERS: ReadonlySet<string> = new Set(['of', 'the']);
-const SELECTION_QUALIFIER_BREAKS: ReadonlySet<string> = new Set([
-    'a',
-    'all',
-    'an',
-    'and',
-    'at',
-    'by',
-    'each',
-    'every',
-    'for',
-    'from',
-    'in',
-    'of',
-    'on',
-    'the',
-    'to',
-    'with',
-]);
-const MAX_SELECTION_QUALIFIERS = 2;
+const ADMITTED: CompiledTargetAuthority = { status: 'admitted' };
+const UNAUTHORIZED: CompiledTargetAuthority = { status: 'refused', reason: 'unauthorized' };
 
-const TRACK_SELECTION_NOUNS = {
-    singular: ['track', 'channel', 'bus'],
-    plural: ['tracks', 'channels', 'buses', 'busses'],
-};
-const DEVICE_SELECTION_NOUNS = { singular: ['device', 'plugin', 'effect', 'insert'], plural: [] as string[] };
-const CLIP_SELECTION_NOUNS = { singular: ['clip', 'region'], plural: [] as string[] };
-const LANE_SELECTION_NOUNS = { singular: ['lane'], plural: [] as string[] };
-
-type SelectionNoun = { word: string; singular: string; plural: boolean; deviceTypeName?: string };
-type BoundedSelection = { noun: SelectionNoun; qualifiers: string[] };
-
-function readReferences(text: string, capability: Capability, context: ProjectContext, dependencyId?: string) {
-    return resolveAgentReference({ prompt: text, assertedId: undefined, capability, context, dependencyId }).candidates;
+function readReferences(
+    text: string,
+    capability: Capability,
+    context: ProjectContext,
+    dependencyId?: string,
+    excludedIds: readonly string[] = []
+) {
+    return resolveAgentReference({ prompt: text, assertedId: undefined, capability, context, dependencyId, excludedIds })
+        .candidates;
 }
 
 /** Objects of the capability the text names by literal id, whole name or selection. */
@@ -95,9 +95,10 @@ function getTieredReferenceIds(
     text: string,
     capability: Capability,
     context: ProjectContext,
-    dependencyId?: string
+    dependencyId?: string,
+    excludedIds: readonly string[] = []
 ): string[] {
-    return readReferences(text, capability, context, dependencyId)
+    return readReferences(text, capability, context, dependencyId, excludedIds)
         .filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
         .map((candidate) => candidate.id);
 }
@@ -106,21 +107,21 @@ function getTieredReferenceIds(
  * The objects the text names, reading an owned object against every track the text names as well,
  * so "the EQ on Vocals and the EQ on Keys" names both EQs although no single owner holds them.
  */
-function getNamedObjectIds(text: string, capability: Capability, context: ProjectContext, dependencyId?: string) {
-    const named = getTieredReferenceIds(text, capability, context, dependencyId);
+function getNamedObjectIds(
+    text: string,
+    capability: Capability,
+    context: ProjectContext,
+    dependencyId?: string,
+    excludedIds: readonly string[] = []
+) {
+    const named = getTieredReferenceIds(text, capability, context, dependencyId, excludedIds);
     if (dependencyId !== undefined || !TRACK_DEPENDENT_CAPABILITIES.has(capability)) {
         return named;
     }
     const ownedByNamedTracks = getTieredReferenceIds(text, 'track', context).flatMap((trackId) =>
-        getTieredReferenceIds(text, capability, context, trackId)
+        getTieredReferenceIds(text, capability, context, trackId, excludedIds)
     );
     return [...new Set([...named, ...ownedByNamedTracks])];
-}
-
-function hasFuzzyOnlyMention(text: string, capability: Capability, context: ProjectContext, dependencyId?: string) {
-    return readReferences(text, capability, context, dependencyId).some((candidate) =>
-        candidate.evidence.every((evidence) => evidence === 'fuzzy-name')
-    );
 }
 
 function getTrackOwnedObjectIds(trackId: string, context: ProjectContext): string[] {
@@ -201,132 +202,131 @@ function getProtectedIds(input: CompiledTargetAuthorityInput, request: MaskedReq
     return protectedIds;
 }
 
-function getDeviceTypeName(type: string | undefined, context: ProjectContext): string {
-    const name = (context.availableDeviceTypes ?? []).find((deviceType) => deviceType.id === type)?.name;
-    return normalizePromptText(name ?? (type ?? '').replace(/^builtin-/u, ''));
+/** Whether the text states the phrase as whole words, its last word in the singular or the plural. */
+function statesPhrase(normalizedText: string, phrase: string): boolean {
+    const normalizedPhrase = normalizePromptText(phrase);
+    return (
+        normalizedPhrase.length > 0 &&
+        new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(normalizedPhrase)}(?:e?s)?(?![\\p{L}\\p{N}])`, 'u').test(
+            normalizedText
+        )
+    );
 }
 
-function getSelectionNouns(capability: Capability, context: ProjectContext): SelectionNoun[] {
-    const fromWords = (words: { singular: string[]; plural: string[] }): SelectionNoun[] => [
-        ...words.singular.flatMap((singular) => [
-            { word: singular, singular, plural: false },
-            { word: `${singular}s`, singular, plural: true },
-        ]),
-        ...words.plural.map((word) => ({
-            word,
-            singular: words.singular.find((singular) => word.startsWith(singular)) ?? word,
-            plural: true,
-        })),
-    ];
-    const kind = getAgentReferenceCapabilityKind(capability);
-    if (kind === 'track') {
-        return fromWords(TRACK_SELECTION_NOUNS);
+/** The word for a track kind and every one-word keyword of the preset that creates that kind. */
+function getTrackKindWords(kind: string): string[] {
+    const preset = PRESET_ACTIONS.find((candidate) => candidate.id === `add-${kind}-track`);
+    const keywords: readonly string[] = preset?.keywords ?? [];
+    return [kind, ...keywords.filter((keyword) => !keyword.includes(' '))];
+}
+
+/** The device type's catalogue name and its id's own words. */
+function getDeviceTypeWords(type: string, context: ProjectContext): string[] {
+    const name = (context.availableDeviceTypes ?? []).find((deviceType) => deviceType.id === type)?.name;
+    const idWords = type.replace(/^builtin-/u, '').replaceAll('-', ' ');
+    return name === undefined ? [idWords] : [name, idWords];
+}
+
+function getTrackNameWords(trackId: string, context: ProjectContext): string[] {
+    const track = context.tracks.find((candidate) => candidate.id === trackId);
+    return track === undefined ? [] : [track.name];
+}
+
+function getSectionWords(sectionId: string, context: ProjectContext): string[] {
+    const section = (context.sections ?? []).find((candidate) => candidate.id === sectionId);
+    return section === undefined ? [sectionId] : [section.name];
+}
+
+/** The phrases any one of which states one selector predicate. */
+function getPredicatePhrases(predicate: SemanticCommandListPredicate, context: ProjectContext): string[] {
+    if ('role' in predicate) {
+        return [predicate.role];
     }
-    if (kind === 'clip') {
-        return fromWords(CLIP_SELECTION_NOUNS);
+    if ('roleFamily' in predicate) {
+        return [predicate.roleFamily];
     }
-    if (capability === 'automation-lane') {
-        return fromWords(LANE_SELECTION_NOUNS);
+    if ('nameIncludes' in predicate) {
+        return [predicate.nameIncludes];
     }
-    if (!TRACK_DEPENDENT_CAPABILITIES.has(capability)) {
-        return [];
+    if ('tag' in predicate) {
+        return [predicate.tag];
     }
-    const typeNames = [...new Set((context.availableDeviceTypes ?? []).map((type) => normalizePromptText(type.name)))];
-    return [
-        ...fromWords(DEVICE_SELECTION_NOUNS),
-        ...typeNames
-            .filter((name) => name.length > 0 && !name.includes(' '))
-            .flatMap((name) => [
-                { word: `${name}s`, singular: name, plural: true, deviceTypeName: name },
-                { word: `${name}es`, singular: name, plural: true, deviceTypeName: name },
-            ]),
-    ];
+    if ('kind' in predicate) {
+        return getTrackKindWords(predicate.kind);
+    }
+    if ('hasDeviceType' in predicate) {
+        return getDeviceTypeWords(predicate.hasDeviceType, context);
+    }
+    if ('isMuted' in predicate) {
+        return [predicate.isMuted ? 'muted' : 'unmuted'];
+    }
+    if ('isFrozen' in predicate) {
+        return [predicate.isFrozen ? 'frozen' : 'unfrozen'];
+    }
+    return getSectionWords(predicate.inSection, context);
+}
+
+/** One list of alternative phrases per term the selector rests on. */
+function getSelectorTermPhrases(terms: CompiledSelectorTerms, context: ProjectContext): string[][] {
+    const where = terms.where ?? {};
+    const phrases: string[][] = [];
+    if (where.name !== undefined) {
+        phrases.push([where.name]);
+    }
+    if (where.kind !== undefined) {
+        phrases.push(getTrackKindWords(where.kind));
+    }
+    if (where.type !== undefined) {
+        phrases.push(getDeviceTypeWords(where.type, context));
+    }
+    if (where.trackId !== undefined) {
+        phrases.push(getTrackNameWords(where.trackId, context));
+    }
+    if (terms.condition !== undefined) {
+        phrases.push([terms.condition.equals ? terms.condition.field : `un${terms.condition.field}`]);
+    }
+    const predicates = [...(terms.match?.all ?? []), ...(terms.match?.any ?? [])];
+    phrases.push(...predicates.map((predicate) => getPredicatePhrases(predicate, context)));
+    return phrases;
+}
+
+function matchesWhere(candidate: SemanticCommandListCandidate | undefined, terms: CompiledSelectorTerms): boolean {
+    return (
+        candidate !== undefined &&
+        Object.entries(terms.where ?? {}).every(
+            ([field, value]) => candidate[field as keyof SemanticCommandListCandidate] === value
+        )
+    );
 }
 
 /**
- * The bounded selections the clause states: a quantifier ("all", "every", "each", or "the" before a
- * plural), at most two qualifying words, and a noun of the target's capability ("all audio tracks",
- * "every device", "the EQs").
+ * Whether the clause states every term of the selector the targets came from, and the targets are
+ * what those terms select: "turn down the lead vocal" states a `lead vocal` role, "set volume to 75%"
+ * states no `Keys` name.
  */
-function getBoundedSelections(text: string, capability: Capability, context: ProjectContext): BoundedSelection[] {
-    const nouns = getSelectionNouns(capability, context);
-    const tokens = normalizePromptText(scanPromptQuotedText(text).maskedText).split(' ');
-    return tokens.flatMap((token, index) => {
-        if (!SELECTION_QUANTIFIERS.has(token)) {
-            return [];
-        }
-        const selection = readSelectionAfterQuantifier(tokens, index, nouns);
-        return selection === null ? [] : [selection];
+function statesSelectorTerms(input: CompiledTargetAuthorityInput, text: string): boolean {
+    const terms = input.selectorTerms;
+    if (terms === undefined) {
+        return false;
+    }
+    const phrases = getSelectorTermPhrases(terms, input.context);
+    if (phrases.length === 0) {
+        return false;
+    }
+    const normalizedText = normalizePromptText(scanPromptQuotedText(text).maskedText);
+    if (!phrases.every((alternatives) => alternatives.some((phrase) => statesPhrase(normalizedText, phrase)))) {
+        return false;
+    }
+    const candidates = collectSemanticCommandListCandidates({
+        context: input.context,
+        roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
     });
-}
-
-function readSelectionAfterQuantifier(
-    tokens: readonly string[],
-    quantifierIndex: number,
-    nouns: readonly SelectionNoun[]
-): BoundedSelection | null {
-    const quantifier = tokens[quantifierIndex];
-    let cursor = quantifierIndex + 1;
-    while (quantifier !== 'the' && SELECTION_QUANTIFIER_FILLERS.has(tokens[cursor] ?? '')) {
-        cursor += 1;
-    }
-    const qualifiers: string[] = [];
-    for (const word of tokens.slice(cursor)) {
-        const noun = nouns.find((candidate) => candidate.word === word && (quantifier !== 'the' || candidate.plural));
-        if (noun !== undefined) {
-            return { noun, qualifiers };
-        }
-        if (SELECTION_QUALIFIER_BREAKS.has(word) || qualifiers.length === MAX_SELECTION_QUALIFIERS) {
-            return null;
-        }
-        qualifiers.push(word);
-    }
-    return null;
-}
-
-function stem(word: string): string {
-    return word.replace(/s$/u, '');
-}
-
-function getCandidateFacts(candidate: SemanticCommandListCandidate, context: ProjectContext): Set<string> {
-    const phrases: string[] = [
-        candidate.kind,
-        candidate.name,
-        candidate.ownerKind,
-        candidate.ownerCanonicalRole,
-        candidate.ownerRoleFamily,
-    ].filter((phrase): phrase is string => typeof phrase === 'string');
-    if (candidate.ownerTags !== undefined) {
-        phrases.push(...candidate.ownerTags);
-    }
-    if (candidate.entity === 'device') {
-        phrases.push(getDeviceTypeName(candidate.type, context));
-    }
-    const words = phrases.flatMap((phrase) => normalizePromptText(phrase).split(' '));
-    return new Set(words.filter((word) => word.length > 0).map(stem));
-}
-
-function satisfiesSelection(
-    selection: BoundedSelection,
-    candidate: SemanticCommandListCandidate | undefined,
-    context: ProjectContext
-): boolean {
-    if (candidate === undefined) {
-        return false;
-    }
-    if (selection.noun.deviceTypeName !== undefined) {
-        if (
-            candidate.entity !== 'device' ||
-            getDeviceTypeName(candidate.type, context) !== selection.noun.deviceTypeName
-        ) {
-            return false;
-        }
-    }
-    if (selection.noun.singular === 'bus' && candidate.kind !== 'bus') {
-        return false;
-    }
-    const facts = getCandidateFacts(candidate, context);
-    return selection.qualifiers.every((qualifier) => facts.has(stem(qualifier)));
+    return input.targetIds.every((targetId) =>
+        matchesWhere(
+            candidates.find((candidate) => candidate.id === targetId),
+            terms
+        )
+    );
 }
 
 function getOwningTrackId(objectId: string, context: ProjectContext): string | undefined {
@@ -338,59 +338,82 @@ function getOwningTrackId(objectId: string, context: ProjectContext): string | u
 }
 
 /**
+ * Whether a single target resolves against the clause the way a direct call does: the unique
+ * reference the clause grounds, a different unique reference, or no unique reference at all.
+ */
+function resolveLikeDirectCall(
+    input: CompiledTargetAuthorityInput,
+    text: string,
+    excludedIds: readonly string[]
+): 'target' | 'other' | 'none' {
+    const [targetId] = input.targetIds;
+    if (input.targetIds.length !== 1 || targetId === undefined) {
+        return 'none';
+    }
+    const result = resolveAgentReference({
+        prompt: text,
+        assertedId: targetId,
+        capability: input.capability,
+        context: input.context,
+        dependencyId: input.dependencyId,
+        excludedIds: excludedIds.filter((id) => id !== targetId),
+    });
+    if (result.status === 'resolved') {
+        return 'target';
+    }
+    return result.reason === 'asserted-target-mismatch' ? 'other' : 'none';
+}
+
+/**
  * Whether the request authorizes every target a compiled selector resolved for one argument.
  *
  * Compiler evidence proves which objects a selector resolves to, never that the request asked for
- * them. A target the request protects or excludes is refused. A clause that names objects of the
- * target's capability authorizes exactly those, so every compiled target must be one of them. A
- * clause whose only mention is an approximate name authorizes nothing. A clause that names nothing
- * authorizes only a bounded selection it states, every compiled target meeting it, and an owned
- * object only on a track the clause names when it names any.
+ * them. A target the request protects or excludes is refused. A single target the clause grounds
+ * the way a direct call would is admitted, and one the clause grounds differently is refused. Past
+ * that, a clause that names objects of the target's capability admits exactly that set; a clause
+ * that names none admits only targets whose every selector term it states, and an owned object only
+ * on a track the clause names when it names any.
  */
-export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): boolean {
+export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): CompiledTargetAuthority {
     const { capability, context, dependencyId, targetIds } = input;
     const request = maskRequest(input.prompt, context);
     const protectedIds = getProtectedIds(input, request);
     if (targetIds.some((targetId) => protectedIds.has(targetId))) {
-        return false;
+        return UNAUTHORIZED;
     }
     if (input.referenceResolved) {
-        return true;
+        return ADMITTED;
     }
-    let targetPrompt = input.targetPrompt;
+    let text = input.targetPrompt;
     if (input.clauseStart !== undefined) {
-        targetPrompt = getInstructionText(request, input.clauseStart, input.catalog);
+        text = getInstructionText(request, input.clauseStart, input.catalog);
     }
-    const setAside = new Set([...input.createdIds, ...protectedIds, ...input.sendBusIds]);
-    const named = getNamedObjectIds(targetPrompt, capability, context, dependencyId).filter((id) => !setAside.has(id));
+    const setAside = [
+        ...new Set([...input.createdIds, ...protectedIds, ...input.sendBusIds, ...input.otherArgumentIds]),
+    ];
+    const direct = resolveLikeDirectCall(input, text, setAside);
+    if (direct === 'target') {
+        return ADMITTED;
+    }
+    if (direct === 'other') {
+        return { status: 'refused', reason: 'reference-mismatch' };
+    }
+    const named = getNamedObjectIds(text, capability, context, dependencyId, setAside);
     if (named.length > 0) {
-        return targetIds.every((targetId) => named.includes(targetId));
+        const compiledIds = new Set(input.compiledArgumentIds);
+        const admitsNamedSet =
+            targetIds.every((targetId) => named.includes(targetId)) && named.every((id) => compiledIds.has(id));
+        return admitsNamedSet ? ADMITTED : UNAUTHORIZED;
     }
-    if (hasFuzzyOnlyMention(targetPrompt, capability, context, dependencyId)) {
-        return false;
-    }
-    const candidates = collectSemanticCommandListCandidates({
-        context,
-        roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
-    });
-    const satisfiesStatedSelection = getBoundedSelections(targetPrompt, capability, context).some((selection) =>
-        targetIds.every((targetId) =>
-            satisfiesSelection(
-                selection,
-                candidates.find((candidate) => candidate.id === targetId),
-                context
-            )
-        )
-    );
-    if (!satisfiesStatedSelection) {
-        return false;
+    if (!statesSelectorTerms(input, text)) {
+        return UNAUTHORIZED;
     }
     if (getAgentReferenceCapabilityKind(capability) === 'track') {
-        return true;
+        return ADMITTED;
     }
-    const namedTrackIds = getTieredReferenceIds(targetPrompt, 'track', context).filter((id) => !setAside.has(id));
-    return (
+    const namedTrackIds = getTieredReferenceIds(text, 'track', context, undefined, setAside);
+    const ownedOnNamedTracks =
         namedTrackIds.length === 0 ||
-        targetIds.every((targetId) => namedTrackIds.includes(getOwningTrackId(targetId, context) ?? ''))
-    );
+        targetIds.every((targetId) => namedTrackIds.includes(getOwningTrackId(targetId, context) ?? ''));
+    return ownedOnNamedTracks ? ADMITTED : UNAUTHORIZED;
 }
