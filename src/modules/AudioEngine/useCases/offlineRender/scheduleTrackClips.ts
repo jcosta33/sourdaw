@@ -1035,10 +1035,13 @@ export async function scheduleTrackClips({
             // predates RPN 0 decoding — is the range it was performed under,
             // and `normalizeNoteExpression` owns the conversion to engine
             // units for both paths.
-            const updates = [
-                ...(event.mpe ? [{ time: event.time, mpe: event.mpe }] : []),
-                ...(event.expressionChanges ?? []),
-            ];
+            const updates: NonNullable<WorkletMidiEvent['expressionChanges']> = [];
+            if (event.mpe) {
+                updates.push({ time: event.time, mpe: event.mpe });
+            }
+            if (event.expressionChanges) {
+                updates.push(...event.expressionChanges);
+            }
             for (const { time, mpe } of updates) {
                 const { bendSemitones, pressure, slide } = normalizeNoteExpression(mpe, mpe.pitchBendRangeSemitones);
                 pendingWorkletEvents.push({
