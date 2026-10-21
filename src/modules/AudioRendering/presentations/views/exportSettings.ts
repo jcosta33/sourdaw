@@ -33,6 +33,8 @@ export type ExportSettings = {
     dither: ExportDither;
     normalization: ExportNormalization;
     targetLufs?: number;
+    channels?: 1 | 2;
+    ceilingDbTp?: number;
 };
 
 /**
@@ -141,6 +143,13 @@ function sanitizeExportSettings(value: unknown): ExportSettings {
         mp3BitRate: readMp3BitRate(value.mp3BitRate),
         dither: readDither(value.dither),
         normalization: readNormalization(value.normalization),
+        ...(value.channels === 1 || value.channels === 2 ? { channels: value.channels } : {}),
+        ...(typeof value.ceilingDbTp === 'number' &&
+        Number.isFinite(value.ceilingDbTp) &&
+        value.ceilingDbTp >= -20 &&
+        value.ceilingDbTp <= 0
+            ? { ceilingDbTp: value.ceilingDbTp }
+            : {}),
         targetLufs:
             typeof value.targetLufs === 'number' &&
             Number.isFinite(value.targetLufs) &&

@@ -39,14 +39,14 @@ import { transportStore, defaultTransportState } from '#/modules/Transport/store
 import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type audioBufferToMp3 as encodeMp3 } from '../../useCases/audioBufferToMp3';
+import { applyDeliveryPreset } from '../../useCases/applyDeliveryPreset';
+import { getDeliveryPresets } from '../../useCases/getDeliveryPresets';
+import { resolveDeliveryTargets } from '../../useCases/resolveDeliveryTargets';
 import { selectNativeAudioExportDirectory } from '../../useCases/audioExport/selectNativeAudioExportDirectory';
 import { selectNativeAudioExportFile } from '../../useCases/audioExport/selectNativeAudioExportFile';
 import { streamExport } from '../../useCases/audioExport/streamExport';
 import { renderToClip } from '../../useCases/renderToClip';
-import { validatePodcastMetadata } from '../../useCases/validatePodcastMetadata';
 
-import { PODCAST_RSS_MP3_PRESET } from './deliveryPresets';
 import { deriveStemFileBaseNames } from './deriveStemFileBaseNames';
 import {
     EXPORT_SAMPLE_RATES,
@@ -74,6 +74,8 @@ type TailDetectionSnapshot = {
 };
 
 const DEFAULT_EXPORT_TAIL_SECONDS = 2;
+const deliveryPresets = getDeliveryPresets();
+type DeliveryDraft = { settings: ReturnType<typeof applyDeliveryPreset>; dither: ExportDither };
 
 type ExportDialogProps = {
     open: boolean;
@@ -156,19 +158,35 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const workspace = useStore(workspaceStore, defaultWorkspaceState);
     const automation = useStore(automationStore, { lanes: [] });
     const midi = useStore(midiStore, defaultMidiStoreState);
-    const [formats, setFormats] = useState<Set<ExportFormat>>(() => new Set(defaults.formats));
     const [mode, setMode] = useState<ExportMode>('mixdown');
     const [range, setRange] = useState<ExportRange>('project');
     const [tailSeconds, setTailSeconds] = useState(DEFAULT_EXPORT_TAIL_SECONDS);
     const [autoTail, setAutoTail] = useState(true);
     const [renderTargetTrackId, setRenderTargetTrackId] = useState<string>('new');
-    const [sampleRate, setSampleRate] = useState(defaults.sampleRate);
-    const [bitDepth, setBitDepth] = useState(defaults.bitDepth);
-    const [mp3BitRate, setMp3BitRate] = useState<Mp3BitRate>(defaults.mp3BitRate);
-    const [dither, setDither] = useState<ExportDither>(defaults.dither);
-    const [normalization, setNormalization] = useState<ExportNormalization>(defaults.normalization);
-    const [targetLufs, setTargetLufs] = useState(defaults.targetLufs ?? R128_TARGET_LUFS);
+    const [customDraft, setCustomDraft] = useState<DeliveryDraft>(() => ({
+        settings: {
+            formats: [...defaults.formats],
+            sampleRate: defaults.sampleRate,
+            bitDepth: defaults.bitDepth === 16 ? 16 : defaults.bitDepth === 32 ? 32 : 24,
+            channels: defaults.channels ?? 2,
+            mp3BitRate: defaults.mp3BitRate,
+            normalization: defaults.normalization,
+            targetLufs: defaults.targetLufs ?? R128_TARGET_LUFS,
+            ceilingDbTp: defaults.ceilingDbTp ?? R128_CEILING_DB_TP,
+        },
+        dither: defaults.dither,
+    }));
+    const [targetDrafts, setTargetDrafts] = useState<Record<string, DeliveryDraft>>({});
+    const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
     const [deliveryPreset, setDeliveryPreset] = useState('custom');
+    const activeTargetId = mode === 'render-to-clip' ? 'custom' : deliveryPreset;
+    const activeDraft = activeTargetId === 'custom' ? customDraft : (targetDrafts[activeTargetId] ?? customDraft);
+    const { bitDepth, mp3BitRate, normalization, targetLufs, channels, ceilingDbTp } = activeDraft.settings;
+    const formats = new Set(activeDraft.settings.formats);
+    const dither = activeDraft.dither;
+    const sourceRate = getAudioContext()?.sampleRate;
+    const sampleRate = activeDraft.settings.sampleRate === 'source' ? sourceRate : activeDraft.settings.sampleRate;
+    const activeFactory = deliveryPresets.find((preset) => preset.id === activeTargetId);
     const [podcastMetadata, setPodcastMetadata] = useState({ title: '', artist: '', description: '' });
     const [exporting, setExporting] = useState(false);
     const [progress, setProgress] = useState(0);
@@ -259,123 +277,65 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         return Math.max(DEFAULT_EXPORT_TAIL_SECONDS, detectTail(honorMuted, snapshot).seconds);
     };
 
-    const toggleFormat = (freq: ExportFormat) => {
+    const updateDraft = (settings: DeliveryDraft['settings'], nextDither = dither) => {
+        const draft = { settings, dither: nextDither };
+        if (activeTargetId !== 'custom') {
+            setTargetDrafts((current) => ({ ...current, [activeTargetId]: draft }));
+            return;
+        }
+        setCustomDraft(draft);
+        if (typeof settings.sampleRate === 'number')
+            saveExportSettings({
+                ...settings,
+                formats: [...settings.formats],
+                sampleRate: settings.sampleRate,
+                dither: nextDither,
+            });
+    };
+    const toggleFormat = (format: ExportFormat) => {
         const next = new Set(formats);
-        // Don't allow empty selections
-        if (next.has(freq) && next.size > 1) {
-            next.delete(freq);
-        } else {
-            next.add(freq);
-        }
-        // The stored bit depth is the user's own choice and stays untouched: a
-        // format change only constrains which depths are OFFERED and which one
-        // the encode resolves to, so unchecking FLAC restores 32-bit.
-        setFormats(next);
-        saveExportSettings({
-            formats: Array.from(next),
-            sampleRate,
-            bitDepth,
-            mp3BitRate,
-            dither,
-            normalization,
-            targetLufs,
-        });
+        if (next.has(format) && next.size > 1) next.delete(format);
+        else next.add(format);
+        updateDraft({ ...activeDraft.settings, formats: [...next] });
     };
-
-    const updateSampleRate = (sr: number) => {
-        setSampleRate(sr);
-        saveExportSettings({
-            formats: Array.from(formats),
-            sampleRate: sr,
-            bitDepth,
-            mp3BitRate,
-            dither,
-            normalization,
-            targetLufs,
-        });
+    const updateSampleRate = (rate: number) => updateDraft({ ...activeDraft.settings, sampleRate: rate });
+    const updateBitDepth = (depth: number) => {
+        if (depth === 16 || depth === 24 || depth === 32) updateDraft({ ...activeDraft.settings, bitDepth: depth });
     };
-
-    const updateBitDepth = (bd: number) => {
-        setBitDepth(bd);
-        saveExportSettings({
-            formats: Array.from(formats),
-            sampleRate,
-            bitDepth: bd,
-            mp3BitRate,
-            dither,
-            normalization,
-            targetLufs,
-        });
+    const updateMp3BitRate = (rate: Mp3BitRate) => updateDraft({ ...activeDraft.settings, mp3BitRate: rate });
+    const updateDither = (value: ExportDither) => updateDraft(activeDraft.settings, value);
+    const updateNormalization = (value: ExportNormalization) =>
+        updateDraft({ ...activeDraft.settings, normalization: value });
+    const updateTargetLufs = (value: number) => {
+        if (Number.isFinite(value) && value >= MIN_EXPORT_TARGET_LUFS && value <= MAX_EXPORT_TARGET_LUFS)
+            updateDraft({ ...activeDraft.settings, targetLufs: value });
     };
-
-    const updateMp3BitRate = (br: Mp3BitRate) => {
-        setMp3BitRate(br);
-        saveExportSettings({
-            formats: Array.from(formats),
-            sampleRate,
-            bitDepth,
-            mp3BitRate: br,
-            dither,
-            normalization,
-            targetLufs,
-        });
-    };
-
-    const updateDither = (next: ExportDither) => {
-        setDither(next);
-        saveExportSettings({
-            formats: Array.from(formats),
-            sampleRate,
-            bitDepth,
-            mp3BitRate,
-            dither: next,
-            normalization,
-            targetLufs,
-        });
-    };
-
-    const updateNormalization = (next: ExportNormalization) => {
-        setNormalization(next);
-        saveExportSettings({
-            formats: Array.from(formats),
-            sampleRate,
-            bitDepth,
-            mp3BitRate,
-            dither,
-            normalization: next,
-            targetLufs,
-        });
-    };
-
-    const updateTargetLufs = (next: number) => {
-        if (!Number.isFinite(next) || next < MIN_EXPORT_TARGET_LUFS || next > MAX_EXPORT_TARGET_LUFS) {
-            return;
-        }
-        setTargetLufs(next);
-        saveExportSettings({
-            formats: Array.from(formats),
-            sampleRate,
-            bitDepth,
-            mp3BitRate,
-            dither,
-            normalization,
-            targetLufs: next,
-        });
-    };
-
     const selectDeliveryPreset = (id: string) => {
-        setDeliveryPreset(id);
-        if (id !== PODCAST_RSS_MP3_PRESET.id) {
+        if (id === 'custom') {
+            setDeliveryPreset(id);
+            setSelectedTargetIds([]);
             return;
         }
-        const settings = PODCAST_RSS_MP3_PRESET.settings;
-        setFormats(new Set(settings.formats));
-        setSampleRate(settings.sampleRate);
-        setBitDepth(settings.bitDepth);
-        setMp3BitRate(settings.mp3BitRate);
-        setNormalization(settings.normalization);
-        setTargetLufs(settings.targetLufs);
-        saveExportSettings({ ...settings, formats: [...settings.formats], dither });
+        const preset = deliveryPresets.find((candidate) => candidate.id === id);
+        if (!preset) return;
+        setTargetDrafts((current) => ({
+            ...current,
+            [id]: current[id] ?? { settings: applyDeliveryPreset({ preset }), dither: customDraft.dither },
+        }));
+        setSelectedTargetIds((current) => (current.includes(id) ? current : [...current, id]));
+        setDeliveryPreset(id);
+    };
+    const toggleDeliveryTarget = (id: string) => {
+        if (!selectedTargetIds.includes(id)) {
+            selectDeliveryPreset(id);
+            return;
+        }
+        const remaining = selectedTargetIds.filter((selected) => selected !== id);
+        setSelectedTargetIds(remaining);
+        if (deliveryPreset === id) setDeliveryPreset(remaining[0] ?? 'custom');
+    };
+    const resetDeliveryTarget = () => {
+        if (activeFactory) updateDraft(applyDeliveryPreset({ preset: activeFactory, reset: true }));
     };
 
     const handleCancel = () => {
@@ -393,20 +353,40 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setErrorText('');
         cancelledRef.current = false;
         commitStartedRef.current = false;
-        let metadataSnapshot: Parameters<typeof encodeMp3>[4];
-        if (mode === 'mixdown' && deliveryPreset === PODCAST_RSS_MP3_PRESET.id && formats.has('mp3')) {
-            metadataSnapshot = podcastMetadata;
-        }
-        const targetLufsSnapshot = targetLufs;
+        const audioContextSnapshot = getAudioContext();
+        let targetPlan: ReturnType<typeof resolveDeliveryTargets> = [];
         try {
-            if (metadataSnapshot) {
-                validatePodcastMetadata(metadataSnapshot);
+            if (mode !== 'render-to-clip') {
+                const ids = selectedTargetIds.length > 0 ? selectedTargetIds : ['custom'];
+                targetPlan = resolveDeliveryTargets({
+                    sourceSampleRate: audioContextSnapshot?.sampleRate,
+                    targets: ids.map((id) => {
+                        const draft = id === 'custom' ? customDraft : targetDrafts[id];
+                        if (!draft) throw new Error('Delivery target settings are unavailable.');
+                        const settings = {
+                            ...draft.settings,
+                            bitDepth: resolveExportBitDepths({
+                                formats: new Set(draft.settings.formats),
+                                selectedBitDepth: draft.settings.bitDepth,
+                            }).bitDepth,
+                        };
+                        return {
+                            id,
+                            name: deliveryPresets.find((preset) => preset.id === id)?.name ?? 'Custom',
+                            settings,
+                            dither: resolveExportDither(draft.dither),
+                            metadata: id === 'podcast-rss-mp3' ? { ...podcastMetadata } : undefined,
+                        };
+                    }),
+                });
             }
         } catch (error) {
-            setErrorText(error instanceof Error ? error.message : 'Invalid podcast metadata.');
+            setErrorText(error instanceof Error ? error.message : 'Invalid delivery target.');
             setProgress(0);
             return;
         }
+        const canonicalSampleRate =
+            targetPlan.length > 0 ? Math.max(...targetPlan.map((target) => target.sampleRate)) : sampleRate;
         const session = openSessionRef.current;
         const ts = Date.now();
         const baseName = `Sourdaw_Bake_${ts}`;
@@ -423,33 +403,53 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             try {
                 const native = isNativeProjectRuntimeAvailable();
                 if (native) {
-                    if (mode === 'stems') {
+                    if (
+                        mode === 'stems' ||
+                        targetPlan.reduce((count, target) => count + target.formats.length, 0) > 1
+                    ) {
                         nativeDirPath = await selectNativeAudioExportDirectory();
                         if (!nativeDirPath) return;
                     } else {
-                        nativeFilePath = await selectNativeAudioExportFile({ formats: Array.from(formats),
-                            suggestedName: `${baseName}.${Array.from(formats)[0] ?? 'wav'}` });
+                        nativeFilePath = await selectNativeAudioExportFile({
+                            formats: targetPlan[0]!.formats,
+                            suggestedName: `${baseName}.${targetPlan[0]!.formats[0] ?? 'wav'}`,
+                        });
                         if (!nativeFilePath) return;
                     }
                 }
-                const archive = mode === 'stems' || formats.size > 1;
-                const primaryExt = Array.from(formats)[0] ?? 'wav';
+                const archive =
+                    mode === 'stems' || targetPlan.reduce((count, target) => count + target.formats.length, 0) > 1;
+                const primaryExt = targetPlan[0]!.formats[0] ?? 'wav';
                 const extension = archive ? '.zip' : `.${primaryExt}`;
                 setExporting(true);
                 setStatusText('Opening export storage...');
                 output = await streamExport({
-                    destination: native ? { kind: 'native', directoryPath: nativeDirPath ?? undefined, selectedFilePath: nativeFilePath ?? undefined }
-                        : { kind: 'browser', archive, suggestedName: `${baseName}${extension}`, extension, mime: resolveExportMime(archive, primaryExt) },
-                    formats: Array.from(formats), bitDepth: resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth,
-                    mp3BitRate, dither: resolveExportDither(dither), metadata: metadataSnapshot,
-                    normalization: normalization === 'r128' ? { targetLufs: targetLufsSnapshot, ceilingDbTp: R128_CEILING_DB_TP } : undefined,
+                    destination: native
+                        ? {
+                              kind: 'native',
+                              directoryPath: nativeDirPath ?? undefined,
+                              selectedFilePath: nativeFilePath ?? undefined,
+                          }
+                        : {
+                              kind: 'browser',
+                              archive,
+                              suggestedName: `${baseName}${extension}`,
+                              extension,
+                              mime: resolveExportMime(archive, primaryExt),
+                          },
+                    targets: targetPlan,
                     checkCancelled,
                 });
             } catch (error) {
-                if (error instanceof Error && error.name === 'AbortError') { setExporting(false); return; }
+                if (error instanceof Error && error.name === 'AbortError') {
+                    setExporting(false);
+                    return;
+                }
                 const message = error instanceof Error ? error.message : 'Export storage is unavailable.';
                 setExporting(false);
-                setErrorText(message); setStatusText('The bread burned...'); setProgress(0);
+                setErrorText(message);
+                setStatusText('The bread burned...');
+                setProgress(0);
                 notifyUser(message, 'error');
                 return;
             }
@@ -483,7 +483,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             // call restoreFromIdb, so on a cold page reload the in-memory cache is empty.
             // This call is idempotent — it skips IDs already in cache — so it is safe
             // to call on every export regardless of how the project was loaded.
-            const ctx = getAudioContext();
+            const ctx = audioContextSnapshot;
             if (ctx) {
                 // Pass only the buffer IDs referenced by this project's clips so
                 // that unrelated takes from other sessions are not mass-loaded.
@@ -521,18 +521,31 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             const tail = effectiveTailSeconds(mode !== 'stems', tailSnapshot);
             const serializeAudio = async (
                 buffer: Parameters<NonNullable<Parameters<typeof renderOffline>[0]['onRendered']>>[0],
-                name: string, index: number, total: number
+                name: string,
+                index: number,
+                total: number
             ) => {
                 if (!output) throw new Error('Export storage is unavailable.');
-                const formatList = Array.from(formats);
-                await output.writeAudio({ source: buffer, name,
-                    onProgress: whileNotCancelled((format, fraction) => {
-                        const pass = formatList.indexOf(format);
-                        setStatusText(`Kneading ${name} (${format.toUpperCase()})...`);
-                        setProgress(((index + (pass + fraction) / formatList.length) / total) * 100);
+                const passes = targetPlan.flatMap((target) =>
+                    target.formats.map((format) => ({ id: target.id, format }))
+                );
+                await output.writeAudio({
+                    source: buffer,
+                    name,
+                    onProgress: whileNotCancelled((format, fraction, targetId) => {
+                        const pass = passes.findIndex(
+                            (candidate) => candidate.id === targetId && candidate.format === format
+                        );
+                        const target = targetPlan.find((candidate) => candidate.id === targetId)!;
+                        setStatusText(`Kneading ${name} — ${target.name} (${format.toUpperCase()})...`);
+                        setProgress(((index + (pass + fraction) / passes.length) / total) * 100);
                     }),
-                    onLimited: () => notifyUser(`${name} needed more gain than the ${R128_CEILING_DB_TP} dBTP ceiling allows, ` +
-                        `so it was normalized to the ceiling rather than to ${targetLufsSnapshot} LUFS.`, 'warning'),
+                    onLimited: (target) =>
+                        notifyUser(
+                            `${name} — ${target.name} needed more gain than the ${target.ceilingDbTp} dBTP ceiling allows, ` +
+                                `so it was normalized to the ceiling rather than to ${target.targetLufs} LUFS.`,
+                            'warning'
+                        ),
                 });
             };
 
@@ -544,7 +557,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     durationBeats,
                     startBeat,
                     tailSeconds: tail,
-                    sampleRate,
+                    sampleRate: canonicalSampleRate,
                     onProgress: whileNotCancelled((frac: number) => {
                         const barPct = frac * 100;
                         setProgress(barPct);
@@ -598,13 +611,21 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 const stemWarnings = new Set<string>();
                 let stemBaseNames = new Map<string, string>();
                 await exportStems({
-                    durationBeats, startBeat, tailSeconds: tail, sampleRate,
-                    onStemPlan: (ids) => { stemBaseNames = deriveStemFileBaseNames({ stemTrackIds: ids, orderedTracks: tracks }); },
+                    durationBeats,
+                    startBeat,
+                    tailSeconds: tail,
+                    sampleRate: canonicalSampleRate,
+                    onStemPlan: (ids) => {
+                        stemBaseNames = deriveStemFileBaseNames({ stemTrackIds: ids, orderedTracks: tracks });
+                    },
                     onStem: async (trackId, buffer, index, total) => {
                         await serializeAudio(buffer, stemBaseNames.get(trackId) ?? trackId, index, total);
                     },
                     onProgress: whileNotCancelled((fraction: number) => setProgress(fraction * 100)),
-                    onWarning: whileNotCancelled((message: string) => { logger.warn(message); stemWarnings.add(message); }),
+                    onWarning: whileNotCancelled((message: string) => {
+                        logger.warn(message);
+                        stemWarnings.add(message);
+                    }),
                 });
                 if (stemWarnings.size > 0) {
                     notifyUser(
@@ -617,7 +638,6 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 if (cancelledRef.current) {
                     return;
                 }
-
             } else {
                 setStatusText('Proofing Whole Loaf (offline mixdown)...');
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
@@ -627,7 +647,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     durationBeats,
                     startBeat,
                     tailSeconds: tail,
-                    sampleRate,
+                    sampleRate: canonicalSampleRate,
                     onProgress: whileNotCancelled((frac: number) => {
                         const barPct = frac * 60;
                         setProgress(barPct);
@@ -651,14 +671,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 if (cancelledRef.current) {
                     return;
                 }
-
             }
 
             if (endedCancelled()) {
                 return;
             }
 
-            if (output) await output.commit(() => { committed = true; commitStartedRef.current = true; });
+            if (output)
+                await output.commit(() => {
+                    committed = true;
+                    commitStartedRef.current = true;
+                });
 
             setProgress(100);
             setStatusText('Ding! Baking Complete! 🍞');
@@ -681,8 +704,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setProgress(0);
             }
         } finally {
-            try { await output?.abort(); }
-            catch (cleanupError) {
+            try {
+                await output?.abort();
+            } catch (cleanupError) {
                 const message = cleanupError instanceof Error ? cleanupError.message : 'Export cleanup failed.';
                 logger.error(new Error('Export cleanup failed', { cause: cleanupError }));
                 setErrorText(message);
@@ -1013,8 +1037,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         </DawDialogSection>
                     ) : null}
 
-                    {mode === 'mixdown' ? (
-                        <DawDialogSection tone="warm" title="Delivery preset">
+                    {mode !== 'render-to-clip' ? (
+                        <DawDialogSection tone="warm" title="Delivery targets">
                             <DawCompactSelect
                                 aria-label="Delivery preset"
                                 value={deliveryPreset}
@@ -1022,10 +1046,43 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 onChange={(event) => selectDeliveryPreset(event.target.value)}
                             >
                                 <option value="custom">Custom</option>
-                                <option value={PODCAST_RSS_MP3_PRESET.id}>{PODCAST_RSS_MP3_PRESET.name}</option>
+                                {deliveryPresets.map((preset) => (
+                                    <option key={preset.id} value={preset.id}>
+                                        {preset.name}
+                                    </option>
+                                ))}
                             </DawCompactSelect>
-                            <p className="mt-2 text-dense text-muted-foreground">Stereo (2 channels)</p>
-                            {deliveryPreset === PODCAST_RSS_MP3_PRESET.id ? (
+                            <Stack gap={2} className="mt-2">
+                                {deliveryPresets.map((preset) => (
+                                    <label key={preset.id} className="flex items-center gap-2 text-dense">
+                                        <DawCompactCheckbox
+                                            aria-label={`Export ${preset.name}`}
+                                            checked={selectedTargetIds.includes(preset.id)}
+                                            disabled={exporting}
+                                            onChange={() => toggleDeliveryTarget(preset.id)}
+                                        />
+                                        <span>{preset.name}</span>
+                                    </label>
+                                ))}
+                            </Stack>
+                            {activeFactory ? (
+                                <>
+                                    <p className="mt-2 text-dense text-muted-foreground">{activeFactory.description}</p>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={exporting}
+                                        onClick={resetDeliveryTarget}
+                                    >
+                                        Reset this target
+                                    </Button>
+                                </>
+                            ) : null}
+                            <p className="mt-2 text-dense text-muted-foreground">
+                                {channels === 2 ? 'Stereo (2 channels)' : 'Mono (1 channel)'}
+                            </p>
+                            {deliveryPreset === 'podcast-rss-mp3' ? (
                                 <Stack gap={2}>
                                     <p className="text-dense text-muted-foreground">
                                         Loudness and peak targets apply before encoding. MP3 encoding can alter peaks.
@@ -1109,12 +1166,42 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 bodyClassName={`grid gap-4 ${formats.has('mp3') ? 'grid-cols-3' : 'grid-cols-2'}`}
                             >
                                 <div className="rounded-lg border border-border-hairline bg-surface-well/50 p-3">
+                                    <label
+                                        className="text-dense text-muted-foreground"
+                                        htmlFor="export-output-channels"
+                                    >
+                                        Output channels
+                                    </label>
+                                    <DawCompactSelect
+                                        id="export-output-channels"
+                                        aria-label="Output channels"
+                                        value={channels}
+                                        disabled={exporting}
+                                        onChange={(event) =>
+                                            updateDraft({
+                                                ...activeDraft.settings,
+                                                channels: event.target.value === '1' ? 1 : 2,
+                                            })
+                                        }
+                                    >
+                                        <option value="1">Mono</option>
+                                        <option value="2">Stereo</option>
+                                    </DawCompactSelect>
+                                </div>
+                                <div className="rounded-lg border border-border-hairline bg-surface-well/50 p-3">
                                     <DawEyebrowLabel
                                         size="sm"
                                         className="mb-2 block font-bold tracking-widest text-muted-foreground/70"
                                     >
                                         Sample Rate
                                     </DawEyebrowLabel>
+                                    {activeDraft.settings.sampleRate === 'source' ? (
+                                        <p className="text-dense text-muted-foreground">
+                                            {sampleRate
+                                                ? `Source rate (${(sampleRate / 1000).toFixed(1)}k)`
+                                                : 'Source rate unavailable — choose an output rate'}
+                                        </p>
+                                    ) : null}
                                     <Row align="stretch" wrap gap={1}>
                                         {sampleRates.map((sr) => (
                                             <Button
@@ -1127,6 +1214,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                         : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                 }`}
                                                 onClick={() => updateSampleRate(sr)}
+                                                aria-pressed={sampleRate === sr}
                                                 disabled={exporting}
                                             >
                                                 {(sr / 1000).toFixed(1)}k
@@ -1140,7 +1228,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         size="sm"
                                         className="mb-2 block font-bold tracking-widest text-muted-foreground/70"
                                     >
-                                        Bit Depth
+                                        {formats.size === 1 && formats.has('mp3')
+                                            ? 'PCM input preference (MP3 uses 16-bit)'
+                                            : 'Bit Depth'}
                                     </DawEyebrowLabel>
                                     <Row align="stretch" wrap gap={1}>
                                         {availableBitDepths.map((bd) => (
@@ -1204,9 +1294,23 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             onChange={(event) => updateTargetLufs(Number(event.target.value))}
                                         />
                                     ) : null}
+                                    <Input
+                                        aria-label="True peak ceiling"
+                                        type="number"
+                                        min={-20}
+                                        max={0}
+                                        step={0.1}
+                                        value={ceilingDbTp}
+                                        disabled={exporting}
+                                        onChange={(event) => {
+                                            const value = Number(event.target.value);
+                                            if (Number.isFinite(value) && value >= -20 && value <= 0)
+                                                updateDraft({ ...activeDraft.settings, ceilingDbTp: value });
+                                        }}
+                                    />
                                     <p className="mt-1.5 text-dense text-muted-foreground/70">
                                         Measures programme loudness and inter-sample peaks, then applies one gain to
-                                        reach the target without exceeding {R128_CEILING_DB_TP} dBTP.
+                                        reach the target without exceeding {ceilingDbTp} dBTP.
                                     </p>
                                 </div>
 

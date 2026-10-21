@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { measureIntegratedLoudness } from '../measureIntegratedLoudness';
+import { createIntegratedLoudnessAccumulator, measureIntegratedLoudness } from '../measureIntegratedLoudness';
 
 const SAMPLE_RATE = 48000;
 
@@ -133,5 +133,37 @@ describe('measureIntegratedLoudness', () => {
 
         expect(result).not.toBeNull();
         expect(Number.isFinite(result)).toBe(true);
+    });
+});
+
+// The two replay passes must retain filter/window carry without retaining programme-length arrays.
+describe('incremental integrated loudness', () => {
+    it('matches the calibrated batch law across arbitrary partitions and both gates', () => {
+        const tone = sine(SAMPLE_RATE * 4, 1000, 0.1);
+        tone.fill(0, SAMPLE_RATE, SAMPLE_RATE * 2);
+        const channels = [tone, tone];
+        const first = createIntegratedLoudnessAccumulator({ numberOfChannels: 2, sampleRate: SAMPLE_RATE });
+        for (let frame = 0; frame < tone.length; frame += 997)
+            first.push(channels.map((c) => c.subarray(frame, frame + 997)));
+        const relativeGatePower = first.relativeGatePower();
+        const second = createIntegratedLoudnessAccumulator({
+            numberOfChannels: 2,
+            sampleRate: SAMPLE_RATE,
+            relativeGatePower,
+        });
+        for (let frame = 0; frame < tone.length; frame += 4096)
+            second.push(channels.map((c) => c.subarray(frame, frame + 4096)));
+        expect(second.integratedLufs()).toBeCloseTo(
+            measureIntegratedLoudness({ channels, length: tone.length, sampleRate: SAMPLE_RATE })!,
+            9
+        );
+        const continuous = sine(SAMPLE_RATE * 2, 1000, 0.1);
+        expect(
+            measureIntegratedLoudness({
+                channels: [continuous, continuous],
+                length: continuous.length,
+                sampleRate: SAMPLE_RATE,
+            })
+        ).toBeCloseTo(-20, 1);
     });
 });

@@ -228,4 +228,12 @@ describe('exportSettings', () => {
             })
         );
     });
+    it('round-trips explicit custom channel and peak overrides while keeping legacy defaults', () => {
+        const settings = { ...loadExportSettings(), channels: 1 as const, ceilingDbTp: -2 };
+        saveExportSettings(settings);
+        expect(loadExportSettings()).toEqual(settings);
+        window.localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify({ ...settings, channels: 7, ceilingDbTp: 6 }));
+        expect(loadExportSettings().channels ?? 2).toBe(2);
+        expect(loadExportSettings().ceilingDbTp ?? -1).toBe(-1);
+    });
 });
