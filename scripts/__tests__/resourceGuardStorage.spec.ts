@@ -3246,6 +3246,67 @@ process.stdout.write(catalog);
         20_000
     );
 
+    it.skipIf(process.platform !== 'darwin')(
+        'takes a fresh observation when a missed holder exits at its scoped read after a covered process starts a storage user',
+        async () => {
+            const root = fixture();
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
+            const outside = outsideDirectory(root);
+            // The holder is detached, so launchd reaps it and its exit reads as exact absence.
+            const { holder } = await startForkingHolder(root, storage.tempDirectory);
+            // A covered spawner outside storage starts the storage user, so the user's parent is
+            // neither a missed process nor launchd and the closing parent listing cannot reach it.
+            const ready = join(root, 'spawner.ready');
+            const userPath = join(root, 'user.pid');
+            const spawner = spawn(
+                process.execPath,
+                [
+                    '-e',
+                    "const [temp,userPath,ready]=process.argv.slice(1);const fs=require('node:fs');process.on('SIGUSR2',()=>{const user=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',cwd:temp});user.unref();fs.writeFileSync(userPath,String(user.pid))});fs.writeFileSync(ready,'ready');setInterval(()=>{},1000)",
+                    storage.tempDirectory,
+                    userPath,
+                    ready,
+                ],
+                { cwd: outside, stdio: 'ignore' }
+            );
+            if (spawner.pid === undefined) {
+                throw new Error('covered spawner did not start');
+            }
+            childPids.add(spawner.pid);
+            await waitUntil(() => existsSync(ready));
+            // Whole catalogs omit the holder and cover the spawner and its storage user. At the
+            // scoped read the spawner starts that user, then the holder exits unlisted.
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { holder, spawner: spawner.pid, userPath, outside, temp: storage.tempDirectory },
+                {
+                    listed: "[fixture.holder,fixture.spawner,...(fs.existsSync(fixture.userPath)?[Number(fs.readFileSync(fixture.userPath,'utf8'))]:[])]",
+                    lsof: `if(scoped){if(!fs.existsSync(fixture.userPath)){
+ const deadline=Date.now()+3000;const pause=()=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);
+ process.kill(fixture.spawner,'SIGUSR2');while(!fs.existsSync(fixture.userPath)&&Date.now()<deadline)pause();
+ process.kill(fixture.holder,'SIGKILL');let gone=false;
+ while(!gone&&Date.now()<deadline){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'}if(!gone)pause()}
+ if(!gone||!fs.existsSync(fixture.userPath))process.exit(3);
+}}else{catalog+=entry(fixture.spawner,fixture.outside);if(fs.existsSync(fixture.userPath))catalog+=entry(Number(fs.readFileSync(fixture.userPath,'utf8')),fixture.temp)}`,
+                }
+            );
+            try {
+                const state = await withCensusPath(bin, () =>
+                    storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+                );
+                expect(state, reasons.join('; ')).toBe('alive');
+                expect(reads()).toEqual(['whole', 'scoped', 'whole']);
+                expect(isAlive(holder)).toBe(false);
+            } finally {
+                if (existsSync(userPath)) {
+                    childPids.add(Number(readFileSync(userPath, 'utf8')));
+                }
+            }
+        },
+        20_000
+    );
+
     it.skipIf(process.platform !== 'darwin').each([
         { heir: 'a child', signal: 'SIGUSR2' },
         { heir: 'a launchd-parented grandchild', signal: 'SIGHUP' },
