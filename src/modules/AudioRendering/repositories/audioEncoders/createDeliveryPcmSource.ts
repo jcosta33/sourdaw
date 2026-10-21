@@ -48,7 +48,15 @@ export function createDeliveryPcmSource(input: {
         sampleRate,
         gain: source.gain,
         readChannels(start, count) {
-            if (!Number.isSafeInteger(count) || count < 0 || count > MAX_BLOCK || start < 0 || start + count > length)
+            if (
+                !Number.isSafeInteger(start) ||
+                !Number.isSafeInteger(count) ||
+                !Number.isSafeInteger(start + count) ||
+                count < 0 ||
+                count > MAX_BLOCK ||
+                start < 0 ||
+                start + count > length
+            )
                 throw new Error('Invalid bounded delivery PCM window.');
             const output = Array.from({ length: channels }, () => new Float32Array(count));
             if (count === 0 || source.length === 0) return output;

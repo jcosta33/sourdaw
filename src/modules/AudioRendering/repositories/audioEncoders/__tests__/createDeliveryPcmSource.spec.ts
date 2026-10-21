@@ -13,6 +13,20 @@ function source(rate: number, channels: Float32Array[]) {
 }
 
 describe('delivery PCM source', () => {
+    it('refuses malformed spans directly at the replayable provider boundary', () => {
+        const converted = createDeliveryPcmSource({
+            source: source(48000, [new Float32Array(100)]),
+            sampleRate: 44100,
+            channels: 1,
+        });
+        const read = converted.readChannels;
+        if (!read) throw new Error('Expected converted PCM provider');
+        for (const start of [Number.NaN, Number.POSITIVE_INFINITY, 0.5, -1, Number.MAX_SAFE_INTEGER]) {
+            expect(() => read(start, 1)).toThrow(/window/i);
+        }
+        expect(() => read(0, Number.NaN)).toThrow(/window/i);
+        expect(() => read(0, 0.5)).toThrow(/window/i);
+    });
     it('borrows unchanged PCM and performs the actual mono average and stereo duplication', () => {
         const left = new Float32Array([1, 0.5, -0.25]);
         const right = new Float32Array([-1, 0.25, 0.75]);
