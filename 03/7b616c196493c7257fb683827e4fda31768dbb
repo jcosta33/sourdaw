@@ -1,0 +1,57 @@
+src/components/daw/DawEffectDisclosure.tsx
+  s_59e31a5c6f3e31::t_f5385125061489 10-13,16-23,25-26,35
+src/components/daw/__tests__/DawEffectDisclosure.spec.tsx
+  s_59e31a5c6f3e31::t_d931ece953b58b 22-34
+src/modules/Levain/models/LevainDeviceState.ts
+  s_59e31a5c6f3e31::t_869bf886a677f3 42-43,47,50-54,63,101
+src/modules/Levain/models/__tests__/LevainDeviceState.spec.ts
+  s_59e31a5c6f3e31::t_5790ee3441946e 12,24,66-76
+src/modules/Levain/presentations/components/ArticulationList.tsx
+  s_59e31a5c6f3e31::t_d09c1a19674fcc 39,71
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  s_59e31a5c6f3e31::t_884afee41d66de 12,24-25,37-38,90-105,118-119,127-128
+src/modules/Levain/presentations/components/__tests__/MicBlendSlider.spec.tsx
+  s_59e31a5c6f3e31::t_9ca0cf127dd7a0 224-239
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  s_59e31a5c6f3e31::t_38446b3a7479c0 3,21,76-82,103-110,213-224,241,243-250,265-278,280-300,302-313,315-326,328-346,363-385,387-416,418-440
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  s_59e31a5c6f3e31::t_b9e655f685a671 5,70,93-94,121-122,436-480
+src/modules/Levain/presentations/views/__tests__/levainPanelReachesTheEngine.spec.tsx
+  s_59e31a5c6f3e31::t_ba8bedf76ee2b2 83-86,213,249,251-253
+src/modules/Levain/stores/__tests__/levainStore.spec.ts
+  s_59e31a5c6f3e31::t_0ed2a1a437a473 156-160
+src/modules/Levain/stores/levainStore.ts
+  s_59e31a5c6f3e31::t_a3ef5e997d138b 26
+src/modules/Levain/useCases/__tests__/commitLevainDeviceState.spec.ts
+  s_59e31a5c6f3e31::t_9da23ca4a611f5 5,7-8,10-11,17-20,23-27,30-35,39-43
+src/modules/Levain/useCases/__tests__/initLevainDeviceStatePersistence.spec.ts
+  s_59e31a5c6f3e31::t_1410f4ffbdec4c 26,128-138
+src/modules/Levain/useCases/__tests__/reconcileLevainDeviceStatesFromProject.spec.ts
+  s_59e31a5c6f3e31::t_ad271a915347af 152-170
+src/modules/Levain/useCases/__tests__/setLevainPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_b93a647c78595a 1-82
+src/modules/Levain/useCases/commitLevainDeviceState.ts
+  s_59e31a5c6f3e31::t_50742786342e11 1,4,29-42,44
+src/modules/Levain/useCases/hydrateLevainStateFromDevice.ts
+  s_59e31a5c6f3e31::t_520ad2ab0fc731 26
+src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts
+  s_59e31a5c6f3e31::t_684bce5de7b920 26-28,36-38,53-58
+src/modules/Levain/useCases/setLevainPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_0747b959c6c44a 1-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "037b616c196493c7257fb683827e4fda31768dbb",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
