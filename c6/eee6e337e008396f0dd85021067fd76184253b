@@ -1,0 +1,21 @@
+crates/daw-dsp/src/levain/expression.rs
+  s_1c08b47ac3792f::t_719dd1db189a6f 134-135,175-180
+public/wasm/manifest.json
+  s_1c08b47ac3792f::t_083982c5358e13 12,16-18,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c6eee6e337e008396f0dd85021067fd76184253b",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
