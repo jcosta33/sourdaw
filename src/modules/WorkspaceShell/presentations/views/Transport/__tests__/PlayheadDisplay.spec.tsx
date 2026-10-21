@@ -26,6 +26,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     defaultTransportState: { isPlaying: false, playheadPosition: 0 },
 }));
 

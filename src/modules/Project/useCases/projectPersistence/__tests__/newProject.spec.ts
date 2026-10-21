@@ -58,6 +58,7 @@ function createDeferred<T>(): Deferred<T> {
 
 // newProject imports ensureTrackStrips and stopPlayback.
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: vi.fn(),
     stopPlayback: vi.fn(),
 }));
