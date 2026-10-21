@@ -1,3 +1,5 @@
+import { createVersionedCommandReceipt, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
+
 import { updateChatMessage } from '../../stores/chatStore';
 import {
     getPendingActionConfirmation,
@@ -36,6 +38,15 @@ function restoreVerifiedExecutions(
     const current = getPendingActionConfirmation(confirmation.id) ?? confirmation;
     const recordedCommandIds = new Set(current.executedActions.map((execution) => execution.commandId));
     const approvedLabels = confirmedBatchOutcomeSupport.getApprovalLabelsByCommandId(confirmation);
+    const approvedCommands = new Map(
+        (confirmation.approvalSnapshot.commandEnvelopes ?? []).flatMap((serialized) => {
+            const parsed = parseVersionedCommandEnvelope(serialized);
+            if (parsed.status !== 'valid') {
+                return [];
+            }
+            return [[parsed.envelope.commandId, parsed.envelope] as const];
+        })
+    );
     for (const [index, command] of receipt.commandOutcomes.entries()) {
         if (
             (command.outcome !== 'committed' && command.outcome !== 'executed') ||
@@ -50,11 +61,24 @@ function restoreVerifiedExecutions(
         if (receipt.outcome === 'executed-with-warning') {
             outcome = 'executed-with-warning';
         }
+        const approvedCommand = approvedCommands.get(command.commandId);
+        let commandMetadata: Pick<PendingActionExecution, 'commandSchemaVersion' | 'applicationAssigned'> = {};
+        if (approvedCommand?.operation === command.operation) {
+            const approvedReceipt = createVersionedCommandReceipt({ envelope: approvedCommand });
+            commandMetadata = {
+                commandSchemaVersion: approvedCommand.schemaVersion,
+                applicationAssigned: {
+                    ids: [...approvedReceipt.applicationAssigned.ids],
+                    timestamps: [...approvedReceipt.applicationAssigned.timestamps],
+                },
+            };
+        }
         recordPendingActionExecution({
             confirmationId: confirmation.id,
             execution: {
                 actionType: command.operation,
                 commandId: command.commandId,
+                ...commandMetadata,
                 label:
                     approvedLabels.get(command.commandId) ??
                     confirmation.approvalSnapshot.actionLabels[index] ??

@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { undoHistoryStore } from '#/modules/Command/stores';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     compileVersionedCommandBatchEnvelope,
     createVerifiedBatchReceipt,
     createVersionedCommandEnvelope,
     createVersionedCommandReceipt,
+    migrateLegacyAppActionToVersionedCommandEnvelope,
     parseVersionedCommandBatchEnvelope,
+    parseVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
@@ -22,10 +25,13 @@ import {
 } from '../../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { readChatThreadContext } from '../../readChatThreadContext';
+import { admitCommittedSectionRenderRetry } from '../admitCommittedSectionRenderRetry';
+import { projectSectionRenderConfirmation } from '../projectSectionRenderConfirmation';
 import { settleVerifiedBatchReplay } from '../settleVerifiedBatchReplay';
 
 type ReplayInput = Parameters<typeof settleVerifiedBatchReplay>[0];
 type Actions = PendingAppActionConfirmation['actions'];
+type ReceiptWarning = NonNullable<Parameters<typeof createVerifiedBatchReceipt>[0]['result']['warningDetails']>[number];
 
 const TEMPO = { type: 'setTempo', payload: { bpm: 132 } } satisfies Actions[number];
 const SEEK = { type: 'seekPlayhead', payload: { beat: 8 } } satisfies Actions[number];
@@ -33,29 +39,52 @@ const SEEK = { type: 'seekPlayhead', payload: { beat: 8 } } satisfies Actions[nu
 function createReplay(input: {
     id: string;
     actions: Actions;
-    status: 'committed' | 'executed' | 'executed-with-warning';
+    status: 'committed' | 'committed-with-warning' | 'executed' | 'executed-with-warning';
     appliedIndexes?: number[];
 }): ReplayInput {
     const runId = `run-${input.id}`;
     const batchId = `batch-${input.id}`;
-    const commands = input.actions.map((action) =>
-        createVersionedCommandEnvelope({
+    const commands = input.actions.map((action) => {
+        if (action.type === 'addDevice') {
+            return createVersionedCommandEnvelope({
+                action,
+                applicationAssignedIds: [{ argument: 'deviceId', value: 'device-restored' }],
+                availableDeviceVersions: {},
+                expectedEffect: 'Add effect.',
+                normalizedProjectRevision: 'revision-1',
+                objectReferences: [
+                    { argument: 'trackId', id: action.payload.trackId, scope: 'stable' },
+                    { argument: 'deviceId', id: 'device-restored', scope: 'stable' },
+                ],
+                parameterUnits: [],
+                reason: 'Add effect.',
+                time: [],
+            });
+        }
+        if (action.type !== 'setTempo' && action.type !== 'seekPlayhead') {
+            return migrateLegacyAppActionToVersionedCommandEnvelope({
+                action,
+                expectedEffect: `Apply ${action.type}.`,
+                normalizedProjectRevision: 'revision-1',
+            });
+        }
+        let parameterUnits = [{ argument: 'bpm', unit: 'beats-per-minute' }];
+        const time: Parameters<typeof createVersionedCommandEnvelope>[0]['time'][number][] = [];
+        if (action.type === 'seekPlayhead') {
+            parameterUnits = [{ argument: 'beat', unit: 'beats' }];
+            time.push({ argument: 'beat', domain: 'musical', unit: 'beats', value: action.payload.beat });
+        }
+        return createVersionedCommandEnvelope({
             action,
             availableDeviceVersions: {},
             expectedEffect: `Apply ${action.type}.`,
             normalizedProjectRevision: 'revision-1',
             objectReferences: [],
-            parameterUnits:
-                action.type === 'setTempo'
-                    ? [{ argument: 'bpm', unit: 'beats-per-minute' }]
-                    : [{ argument: 'beat', unit: 'beats' }],
+            parameterUnits,
             reason: `Requested ${action.type}.`,
-            time:
-                action.type === 'seekPlayhead'
-                    ? [{ argument: 'beat', domain: 'musical', unit: 'beats', value: action.payload.beat }]
-                    : [],
-        })
-    );
+            time,
+        });
+    });
     const commandEnvelopes = commands.map(serializeVersionedCommandEnvelope);
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId,
@@ -70,6 +99,12 @@ function createReplay(input: {
         throw new Error(parsed.reason);
     }
     const appliedIndexes = input.appliedIndexes ?? input.actions.map((_, index) => index);
+    let warning: string | undefined;
+    if (input.status === 'executed-with-warning') {
+        warning = 'Transport observer failed.';
+    } else if (input.status === 'committed-with-warning') {
+        warning = 'Section rendering remains incomplete.';
+    }
     const receipt = createVerifiedBatchReceipt({
         contentHash: `sha256:${'a'.repeat(64)}`,
         envelope: parsed.envelope,
@@ -77,7 +112,27 @@ function createReplay(input: {
         resultingRevision: input.status === 'committed' ? 'revision-2' : 'revision-1',
         result: {
             status: input.status,
-            ...(input.status === 'executed-with-warning' ? { warning: 'Transport observer failed.' } : {}),
+            warning,
+            warningDetails: commands.flatMap((command) => {
+                if (input.status !== 'committed-with-warning' || command.operation !== 'renderProjectSections') {
+                    return [];
+                }
+                return [
+                    {
+                        kind: 'external-effect',
+                        message: 'Renderer unavailable.',
+                        commandId: command.commandId,
+                        pendingEffect: {
+                            commandId: command.commandId,
+                            operation: command.operation,
+                            reason: 'Renderer unavailable.',
+                            state: 'pending',
+                            kind: 'external-effect',
+                            remediation: 'reconcile',
+                        },
+                    } satisfies ReceiptWarning,
+                ];
+            }),
             actions: input.actions.flatMap((action, index) => {
                 const command = commands[index];
                 if (command === undefined || !appliedIndexes.includes(index)) {
@@ -122,6 +177,7 @@ function createReplay(input: {
 }
 
 function resetThread(): void {
+    clearHandlerRegistry();
     clearPendingActionConfirmations();
     clearChatMessages();
     clearAiHistory();
@@ -129,10 +185,101 @@ function resetThread(): void {
     undoHistoryStore.set({ past: [], future: [] });
 }
 
-beforeEach(resetThread);
+beforeEach(() => {
+    resetThread();
+    registerHandlerMap(getAudioRenderingHandlers());
+});
 afterEach(resetThread);
 
 describe('verified replay settlement read by the planner thread', () => {
+    it('restores approved metadata in the real receipt presentation without replacing a rich sibling', async () => {
+        const device = {
+            type: 'addDevice',
+            payload: { trackId: 'track-a', deviceType: 'builtin-compressor', deviceId: 'device-restored' },
+        } satisfies Actions[number];
+        const replay = createReplay({ id: 'metadata', actions: [TEMPO, device], status: 'committed' });
+        const richExecution = {
+            commandId: replay.receipt.commandOutcomes[0]?.commandId,
+            actionType: 'setTempo',
+            commandSchemaVersion: 1,
+            label: 'Original detailed tempo',
+            executionKind: 'project',
+            affectedIds: ['tempo-original'],
+            applicationAssigned: {
+                ids: [{ field: 'historyId', value: 'history-original' }],
+                timestamps: [{ field: 'committedAt', value: 42 }],
+            },
+            outcome: 'committed',
+        } satisfies PendingAppActionConfirmation['executedActions'][number];
+        recordPendingActionExecution({ confirmationId: replay.confirmation.id, execution: richExecution });
+        const serialized = replay.confirmation.approvalSnapshot.commandEnvelopes?.[1];
+        if (!serialized) {
+            throw new Error('Expected approved device command.');
+        }
+        const approved = parseVersionedCommandEnvelope(serialized);
+        if (approved.status !== 'valid') {
+            throw new Error(approved.reason);
+        }
+
+        await settleVerifiedBatchReplay(replay);
+        await settleVerifiedBatchReplay(replay);
+
+        const restored = getPendingActionConfirmation(replay.confirmation.id);
+        if (!restored) {
+            throw new Error('Expected restored confirmation.');
+        }
+        const presentation = projectSectionRenderConfirmation({ confirmation: restored });
+        expect(presentation.receipt).toContain(`Command: v1 ${approved.envelope.commandId}`);
+        expect(presentation.receipt).toContain(`commandId=${approved.envelope.commandId}, objectId=device-restored`);
+        expect(presentation.receipt).toContain(`issuedAt=${String(approved.envelope.issuedAt)}`);
+        expect(restored.executedActions).toHaveLength(2);
+        expect(restored.executedActions[0]).toEqual(richExecution);
+        expect(restored.executedActions[1]?.applicationAssigned).toEqual({
+            ids: [
+                { field: 'commandId', value: approved.envelope.commandId },
+                { field: 'objectId', value: 'device-restored' },
+            ],
+            timestamps: [{ field: 'issuedAt', value: approved.envelope.issuedAt }],
+        });
+    });
+
+    it('restores schema metadata required by the real committed section-render retry admission', async () => {
+        const action = {
+            type: 'renderProjectSections',
+            payload: {
+                sectionIds: ['section-verse'],
+                jobs: [
+                    {
+                        jobId: 'render-verse',
+                        sectionId: 'section-verse',
+                        sectionName: 'Verse',
+                        startBeat: 0,
+                        endBeat: 16,
+                        sampleRate: 44_100,
+                        tailSeconds: 0,
+                    },
+                ],
+            },
+        } satisfies Actions[number];
+        const replay = createReplay({ id: 'render', actions: [action], status: 'committed-with-warning' });
+
+        await expect(settleVerifiedBatchReplay(replay)).resolves.toMatchObject({
+            status: 'failed',
+            durableCommit: true,
+        });
+
+        const restored = getPendingActionConfirmation(replay.confirmation.id);
+        if (!restored) {
+            throw new Error('Expected restored render confirmation.');
+        }
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: restored,
+                durableReceipt: replay.receipt,
+                phase: 'arming',
+            })
+        ).toEqual({ status: 'admitted', durableReceipt: replay.receipt });
+    });
     it.each(['executed', 'executed-with-warning'] as const)(
         'keeps the earlier project commit after an interrupted %s seek settlement',
         async (status) => {
