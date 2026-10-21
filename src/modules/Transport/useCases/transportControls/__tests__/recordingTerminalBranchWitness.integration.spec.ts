@@ -10,6 +10,7 @@ import { sanitizeTrackSnapshot } from '#/modules/Arrangement/stores/trackStore';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
+import { branchStore } from '#/modules/CrdtDocument/stores';
 import {
     DOC_PREFIX_ROOT,
     createCrdtDoc,
@@ -65,14 +66,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
 }));
-// The storage flush is persistence bookkeeping (the port is null in-memory
-// here): a staged optimistic take-lane write crossing a root replacement
-// reconciles against the replacement in the adapter and aborts the switch,
-// which is orthogonal to the root-identity ownership this spec pins. The
-// document replacement, branch records, and the recording route all stay real.
+// A staged optimistic take-lane write crossing a root replacement reconciles
+// against the replacement in the matching flush and aborts the branch switch,
+// which is orthogonal to the root-identity ownership this spec pins. Only that
+// matching flush is a no-op: the plain flush stays real so afterEach empties
+// the storage this spec wrote, and the document replacement, branch records,
+// and the recording route all stay real.
 vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
-    flushAutomergeStorageWrites: vi.fn(() => Promise.resolve()),
     flushMatchingAutomergeStorageWrites: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
