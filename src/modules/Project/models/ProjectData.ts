@@ -336,6 +336,7 @@ export type ProjectArrangementMidi = {
 };
 
 export type ProjectMidiNote = {
+    recordingPassId?: string;
     id: string;
     pitch: number;
     startBeat: number;
@@ -797,6 +798,7 @@ export type ProjectExportedAudioBuffer = {
 };
 
 export type ProjectTake = {
+    recordingPassId?: string;
     id: string;
     clipId: string;
     name: string;
@@ -807,6 +809,7 @@ export type ProjectTake = {
     sourceOffsetSeconds?: number;
     passAnchorSeconds?: number;
     passDepthSeconds?: number;
+    passSourceEndSeconds?: number;
 };
 
 export type ProjectTakeLane = {

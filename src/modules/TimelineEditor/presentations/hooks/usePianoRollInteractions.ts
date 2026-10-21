@@ -21,18 +21,18 @@ import { playAuditionNote } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { stepRecordStore } from '#/modules/MIDI/stores';
 import {
-    addMidiNote,
-    batchAddMidiNotes,
+    addMidiNote as addMidiNoteInSource,
+    batchAddMidiNotes as batchAddMidiNotesInSource,
     getNotesForClip,
     removeMidiNote,
-    moveMidiNote,
+    moveMidiNote as moveMidiNoteInSource,
     removeNotesByIds,
     replaceMidiNotesIfUnchanged,
     restoreMidiNoteMembershipIfUnchanged,
-    resizeMidiNote,
+    resizeMidiNote as resizeMidiNoteInSource,
     setNoteVelocity,
     setNotesForClip,
-    stampChord,
+    stampChord as stampChordInSource,
     joinNotes,
     legatoNotes,
     splitNoteAtBeat,
@@ -49,6 +49,8 @@ import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { clampMidiData7 } from '#/utils/midiData';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 import { valuesEqual } from '#/utils/structuralEquality';
+
+import { readPianoRollRecordingPass } from '../helpers/pianoRollRecordingPass';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import {
@@ -130,6 +132,15 @@ function resolveClipPlacement(clipId: string): ClipPlacement | undefined {
     for (const track of trackStore.value?.tracks ?? []) {
         const clip = track.clips.find((candidate) => candidate.id === clipId);
         if (clip) {
+            const pass = readPianoRollRecordingPass(clipId);
+            if (pass) {
+                return {
+                    startBeat: pass.startBeat,
+                    endBeat: pass.endBeat,
+                    midiOffsetBeats: pass.sourceStartBeat,
+                    loopEnabled: false,
+                };
+            }
             return {
                 startBeat: clip.startBeat ?? 0,
                 endBeat: clip.endBeat ?? Number.POSITIVE_INFINITY,
@@ -406,6 +417,93 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     // paint undo snapshot) must read the target's own list: the primary's
     // `notes` prop describes only the primary clip.
     const targetClipNotes = targetClipId === clipId ? notes : (openedClipNotes?.[targetClipId] ?? []);
+
+    const sourceBeat = (id: string, beat: number): number => {
+        const pass = readPianoRollRecordingPass(id);
+        if (!pass) {
+            return beat;
+        }
+        return (
+            pass.sourceStartBeat +
+            Math.max(0, Math.min(beat, Math.max(0, pass.sourceEndBeat - pass.sourceStartBeat - 0.0625)))
+        );
+    };
+    const sourceDuration = (id: string, beat: number, duration: number): number => {
+        const pass = readPianoRollRecordingPass(id);
+        return pass ? Math.min(duration, Math.max(0.0625, pass.sourceEndBeat - beat)) : duration;
+    };
+    const addMidiNote: typeof addMidiNoteInSource = (id, pitch, beat, duration, velocity) => {
+        const pass = readPianoRollRecordingPass(id);
+        if (!pass) {
+            return addMidiNoteInSource(id, pitch, beat, duration, velocity);
+        }
+        const startBeat = sourceBeat(id, beat);
+        return batchAddMidiNotesInSource(id, [
+            {
+                pitch,
+                startBeat,
+                duration: sourceDuration(id, startBeat, duration),
+                velocity,
+                recordingPassId: pass.recordingPassId,
+            },
+        ])[0]!;
+    };
+    const batchAddMidiNotes: typeof batchAddMidiNotesInSource = (id, inputs) =>
+        batchAddMidiNotesInSource(
+            id,
+            inputs.map((note) => {
+                const pass = readPianoRollRecordingPass(id);
+                if (!pass) {
+                    return note;
+                }
+                const startBeat = sourceBeat(id, note.startBeat);
+                return {
+                    ...note,
+                    startBeat,
+                    duration: sourceDuration(id, startBeat, note.duration),
+                    recordingPassId: pass.recordingPassId,
+                };
+            })
+        );
+    const moveMidiNote: typeof moveMidiNoteInSource = (id, noteId, pitch, beat) =>
+        moveMidiNoteInSource(id, noteId, pitch, sourceBeat(id, beat));
+    const resizeMidiNote: typeof resizeMidiNoteInSource = (id, noteId, beat, duration) => {
+        if (!readPianoRollRecordingPass(id)) {
+            return resizeMidiNoteInSource(id, noteId, beat, duration);
+        }
+        const startBeat =
+            beat === undefined
+                ? (getNotesForClip(id).find((note) => note.id === noteId)?.startBeat ?? 0)
+                : sourceBeat(id, beat);
+        return resizeMidiNoteInSource(
+            id,
+            noteId,
+            beat === undefined ? undefined : startBeat,
+            duration === undefined ? undefined : sourceDuration(id, startBeat, duration)
+        );
+    };
+    const stampChord: typeof stampChordInSource = (id, pitch, beat, duration, velocity, chord) => {
+        const pass = readPianoRollRecordingPass(id);
+        const startBeat = sourceBeat(id, beat);
+        const created = stampChordInSource(
+            id,
+            pitch,
+            startBeat,
+            sourceDuration(id, startBeat, duration),
+            velocity,
+            chord
+        );
+        if (!pass) {
+            return created;
+        }
+        const ids = new Set(created.map((note) => note.id));
+        const tagged = created.map((note) => ({ ...note, recordingPassId: pass.recordingPassId }));
+        setNotesForClip(
+            id,
+            getNotesForClip(id).map((note) => (ids.has(note.id) ? tagged.find((row) => row.id === note.id)! : note))
+        );
+        return tagged;
+    };
 
     // ── Wheel: ctrl/cmd zooms the editor, and carries trackpad pinch ──
     //
@@ -1262,7 +1360,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             if (paintedIds.length > 0) {
                 // The painted notes live in the target clip, so the undo
                 // snapshot must be read from — and retracted in — that clip.
-                const paintedNotes = targetClipNotes
+                const paintedNotes = getNotesForClip(targetClipId)
                     .filter((node) => paintNotesRef.current.has(node.id))
                     .map((node) => ({ ...node }));
                 pushUndoEntry(

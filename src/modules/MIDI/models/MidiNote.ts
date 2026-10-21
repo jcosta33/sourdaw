@@ -38,6 +38,8 @@ export const MIDI_EXPRESSION_DIMENSIONS = [
 const EXPRESSION_POINT_KEYS = ['offsetBeats', 'value'] as const;
 
 export type MidiNote = {
+    /** Onset-owned cycle pass; absent on legacy and ordinary notes. */
+    recordingPassId?: string;
     id: string;
     pitch: number;
     startBeat: number;
@@ -69,6 +71,7 @@ export type MidiNote = {
 
 export const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
 export const MIDI_NOTE_OPTIONAL_KEYS = [
+    'recordingPassId',
     'probability',
     'pressure',
     'slide',
@@ -87,6 +90,14 @@ export type MidiCC = {
     channel: number;
 };
 
+/**
+ * A channel pitch-bend event recorded into a clip.
+ *
+ * `value` is the signed 14-bit wire delta, `PITCH_BEND_MIN`..`PITCH_BEND_MAX`
+ * (-8192..8191) with 0 at centre — the same unit as `MidiNote.pitchBend`. Like
+ * that scalar it carries no depth of its own: the semitone range is the
+ * channel's, declared through RPN 0.
+ */
 export type MidiPitchBend = {
     id: string;
     value: number;

@@ -167,6 +167,72 @@ describe('NotePropertyLane', () => {
             expect(roundRect).toHaveBeenCalledWith(1, 2, 38, 127, [2, 2, 0, 0]);
         });
 
+        it('uses a selected-pass primary projection for bars and hit tests while velocity Undo/Redo preserves raw source geometry', () => {
+            const raw = [makeNote('lap1', 1, 30), makeNote('lap2', 5, 70), makeNote('lap3', 9, 90)];
+            raw[1]!.expression = {
+                pressure: [
+                    { offsetBeats: 0.25, value: 80 },
+                    { offsetBeats: 0.75, value: 40 },
+                ],
+            };
+            seedNotes(raw);
+            const original = structuredClone(raw);
+            const projected = [
+                {
+                    ...raw[1]!,
+                    startBeat: 1,
+                    duration: 0.5,
+                    expression: { pressure: [{ offsetBeats: 0.25, value: 80 }] },
+                },
+            ];
+            const roundRect = vi.spyOn(ctx2d, 'roundRect');
+            const lineTo = vi.spyOn(ctx2d, 'lineTo');
+            roundRect.mockClear();
+            lineTo.mockClear();
+            render(
+                <NotePropertyLane
+                    {...defaultProps}
+                    primaryNotes={projected}
+                    scrollRef={scrollContainer(0, 480)}
+                    selectedNoteIds={new Set(['lap1', 'lap2', 'lap3'])}
+                    getCurve={(note: LaneNote) => note.expression?.pressure}
+                    setValue={liveSetValue}
+                />
+            );
+            expect(roundRect).toHaveBeenCalledTimes(1);
+            expect(roundRect).toHaveBeenCalledWith(41, 59, 18, 70, [2, 2, 0, 0]);
+            expect(lineTo.mock.calls).toEqual([
+                [50, 59],
+                [50, 49],
+                [60, 49],
+            ]);
+            const canvas = getCanvas();
+            fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 50, clientY: 2 });
+            fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 50, clientY: 2 });
+            expect(liveSetValue).toHaveBeenCalledWith('clip-1', 'lap2', 127);
+            expect(liveSetValue).not.toHaveBeenCalledWith('clip-1', 'lap1', expect.anything());
+            expect(liveSetValue).not.toHaveBeenCalledWith('clip-1', 'lap3', expect.anything());
+            expect(raw).toEqual([original[0], { ...original[1], velocity: 127 }, original[2]]);
+            const [, undoValue, redoValue] = vi.mocked(pushUndoEntry).mock.lastCall!;
+            undoValue();
+            expect(raw).toEqual(original);
+            redoValue();
+            expect(raw).toEqual([original[0], { ...original[1], velocity: 127 }, original[2]]);
+            liveSetValue.mockClear();
+            fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 210, clientY: 2 });
+            expect(liveSetValue).not.toHaveBeenCalled();
+        });
+
+        it('treats an empty primary projection as empty instead of falling back to hidden passes', () => {
+            seedNotes([makeNote('hidden', 1, 100)]);
+            const roundRect = vi.spyOn(ctx2d, 'roundRect');
+            roundRect.mockClear();
+            render(<NotePropertyLane {...defaultProps} primaryNotes={[]} setValue={liveSetValue} />);
+            expect(roundRect).not.toHaveBeenCalled();
+            fireEvent.pointerDown(getCanvas(), { pointerId: 1, clientX: 50, clientY: 2 });
+            expect(liveSetValue).not.toHaveBeenCalled();
+        });
+
         it('draws a recorded curve as a step line with one step per point across the note span', () => {
             const moveTo = vi.spyOn(ctx2d, 'moveTo');
             const lineTo = vi.spyOn(ctx2d, 'lineTo');

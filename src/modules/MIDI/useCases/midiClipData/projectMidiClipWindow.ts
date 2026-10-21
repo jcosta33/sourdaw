@@ -4,7 +4,10 @@ import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/Mid
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 
+import { selectMidiRecordingPassNotes } from './selectMidiRecordingPassNotes';
+
 type MidiClipWindow = {
+    recordingPassId?: string;
     /** Added to every projected beat; places the window's content on the destination timeline. */
     beatOffset: number;
     /** Content beats `[visibleStartBeat, visibleEndBeat)` are what the clip plays for one pass. */
@@ -152,7 +155,11 @@ export function projectMidiClipWindow({ notes, controlChanges, pitchBends, windo
         window.closingLineBeat
     );
     return {
-        notes: notes.flatMap((note) => projectVisibleNote(note, window) ?? []),
+        notes: selectMidiRecordingPassNotes(notes, {
+            recordingPassId: window.recordingPassId,
+            sourceStartBeat: window.visibleStartBeat,
+            sourceEndBeat: window.visibleEndBeat,
+        }).flatMap((note) => projectVisibleNote(note, window) ?? []),
         controlChanges: controllers.rows,
         closingControlChanges: controllers.closing.filter(playsOnClosingLine),
         pitchBends: projectVisibleControllerRows(pitchBends, (row) => `${row.channel}`, window, undefined).rows,

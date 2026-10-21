@@ -374,6 +374,7 @@ export type CompSelectionSpanSnapshot = {
 };
 export type MidiNotesSnapshot = readonly { readonly id: string }[];
 export type MidiClipNoteSnapshot = {
+    readonly recordingPassId?: string;
     readonly id: string;
     readonly pitch: number;
     readonly startBeat: number;
@@ -606,6 +607,7 @@ export type RippleShiftSnapshot = {
  *  stay mutable so a snapshot is assignable where the take-lane store's
  *  concrete model is expected. */
 export type TakeSnapshot = {
+    recordingPassId?: string;
     id: string;
     clipId: string;
     name: string;
@@ -616,6 +618,7 @@ export type TakeSnapshot = {
     sourceOffsetSeconds?: number;
     passAnchorSeconds?: number;
     passDepthSeconds?: number;
+    passSourceEndSeconds?: number;
 };
 /** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
 export type CompRegionSnapshot = {
@@ -3154,6 +3157,10 @@ export type AppAction =
            *  back. */
           type: 'commitRecording';
           payload: {
+              midiRecording?: {
+                  readonly data: MidiClipDataActionSnapshot;
+                  readonly takeLanes: readonly RetiredTakeLaneSnapshot[];
+              };
               /** The recorded clip exactly as it must stand after the commit,
                *  including its final placement and its captured media reference. */
               clip: ClipStateSnapshot;

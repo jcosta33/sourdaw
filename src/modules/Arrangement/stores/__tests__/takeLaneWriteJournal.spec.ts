@@ -70,6 +70,27 @@ const intervalPatch: TakeLaneCompRegionPatch = {
 };
 
 describe('takeLaneWriteJournal', () => {
+    it('replays optional pass identity changes without overwriting peer selection', () => {
+        const before = { lanes: [structuredClone(firstLane)] };
+        const next = structuredClone(before);
+        next.lanes[0]!.takes[0]!.recordingPassId = 'pass-a';
+        const journal = captureTakeLaneWriteJournal({ beforeValue: before, nextValue: next });
+        const authority = structuredClone(before);
+        authority.lanes[0]!.takes[0]!.selected = false;
+        const expected = structuredClone(authority);
+        expected.lanes[0]!.takes[0]!.recordingPassId = 'pass-a';
+
+        const replay = replayTakeLaneWriteJournal(authority, journal);
+        expect(replay).toEqual({ status: 'applied', value: expected });
+
+        const removal = captureTakeLaneWriteJournal({ beforeValue: next, nextValue: before });
+        const removed = replayTakeLaneWriteJournal(next, removal);
+        expect(removed).toEqual({ status: 'applied', value: before });
+        expect(removed.status === 'applied' ? removed.value?.lanes[0]?.takes[0] : undefined).not.toHaveProperty(
+            'recordingPassId'
+        );
+    });
+
     it('replays only actual field and membership deltas over unrelated authoritative edits', () => {
         const before = { lanes: [structuredClone(firstLane), structuredClone(secondLane)] };
         const next = {
@@ -86,6 +107,7 @@ describe('takeLaneWriteJournal', () => {
                                 sourceOffsetSeconds: 1,
                                 passAnchorSeconds: -1.5,
                                 passDepthSeconds: 1,
+                                passSourceEndSeconds: 3,
                             };
                         }
                         return structuredClone(take);
@@ -126,6 +148,7 @@ describe('takeLaneWriteJournal', () => {
             sourceOffsetSeconds: 1,
             passAnchorSeconds: -1.5,
             passDepthSeconds: 1,
+            passSourceEndSeconds: 3,
         });
         expect(replay.value?.lanes[0]?.activeCompRegions).toEqual(authority.lanes[0]?.activeCompRegions);
         expect(replay.value?.lanes[1]?.takes[0]?.name).toBe('D authoritative');

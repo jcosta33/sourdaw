@@ -1,5 +1,6 @@
+import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases';
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { getSynthParamsForTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
@@ -997,13 +998,32 @@ export async function scheduleMidiNotes(
 
         const resumesAfterMute = takeResumeAfterMute(track);
         const windowMidiClips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
+        const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === track.id);
+        const additionalSourceIds = new Set<string>();
+        for (const take of lane?.takes ?? []) {
+            if (take.recordingPassId === undefined || take.startBeat >= toBeat || take.endBeat <= fromBeat) continue;
+            const selectedHere =
+                lane!.activeCompRegions.length === 0
+                    ? take.selected
+                    : lane!.activeCompRegions.some(
+                          (region) =>
+                              region.takeId === take.id && region.startBeat < toBeat && region.endBeat > fromBeat
+                      );
+            if (selectedHere) additionalSourceIds.add(take.clipId);
+        }
+        // A later pass can start before the carrier's original record point.
+        // Include that selected source without bypassing the ordinary clip index.
+        if (additionalSourceIds.size > 0) {
+            const admitted = new Set(windowMidiClips.map((clip) => clip.id));
+            for (const clip of track.clips) {
+                if (additionalSourceIds.has(clip.id) && !admitted.has(clip.id)) windowMidiClips.push(clip);
+            }
+        }
         if (windowMidiClips.length === 0) {
             restoreStoredControllersAtGap(track, resumesAfterMute);
             continue;
         }
-
-        const resolvedClips = resolveClipsWithComping(track.id, windowMidiClips);
-        const activeMidiClips = resolvedClips.filter(
+        const activeMidiClips = resolveClipsWithComping(track.id, windowMidiClips).filter(
             (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
         );
         if (activeMidiClips.length === 0) {
@@ -1023,7 +1043,13 @@ export async function scheduleMidiNotes(
 
         if (yeastDevice) {
             for (const clip of activeMidiClips) {
-                const sourceNotes = midiState.notesByClipId[clip.id];
+                const sourceNotes =
+                    midiState.notesByClipId[clip.id] &&
+                    selectMidiRecordingPassNotes(midiState.notesByClipId[clip.id]!, {
+                        recordingPassId: clip.recordingPassId,
+                        sourceStartBeat: clip.midiOffsetBeats ?? 0,
+                        sourceEndBeat: (clip.midiOffsetBeats ?? 0) + clip.endBeat - clip.startBeat,
+                    });
                 if (!sourceNotes) {
                     continue;
                 }
@@ -1176,7 +1202,13 @@ export async function scheduleMidiNotes(
         const posts = createSameFramePostQueue();
         const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
         for (const clip of activeMidiClips) {
-            const notes = midiState.notesByClipId[clip.id];
+            const notes =
+                midiState.notesByClipId[clip.id] &&
+                selectMidiRecordingPassNotes(midiState.notesByClipId[clip.id]!, {
+                    recordingPassId: clip.recordingPassId,
+                    sourceStartBeat: clip.midiOffsetBeats ?? 0,
+                    sourceEndBeat: (clip.midiOffsetBeats ?? 0) + clip.endBeat - clip.startBeat,
+                });
             if (!notes) {
                 continue;
             }

@@ -1,6 +1,11 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { isValidMidiNoteExpression, isValidMidiProbabilitySeed, sanitizeMidiStoreState } from '#/modules/MIDI/stores';
+import {
+    decodeExactTakeLaneSnapshots,
+    sanitize_take_lane_store_state,
+} from '#/modules/Arrangement/stores/takeLaneStore';
+import { isRecordingPassId } from '#/utils/recordingPassId';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -223,6 +228,7 @@ export type ProjectMarkerState = {
 };
 
 export type ProjectTake = {
+    recordingPassId?: string;
     id: string;
     clipId: string;
     name: string;
@@ -233,6 +239,7 @@ export type ProjectTake = {
     sourceOffsetSeconds?: number;
     passAnchorSeconds?: number;
     passDepthSeconds?: number;
+    passSourceEndSeconds?: number;
 };
 
 export type ProjectCompRegion = {
@@ -300,6 +307,7 @@ export type ProjectAutomationState = {
 };
 
 export type ProjectMidiNote = {
+    recordingPassId?: string;
     id: string;
     pitch: number;
     startBeat: number;
@@ -687,6 +695,7 @@ function has_canonical_note_expressions(value: unknown): boolean {
                 rows.every(
                     (note) =>
                         is_plain_object(note) &&
+                        (!Object.hasOwn(note, 'recordingPassId') || isRecordingPassId(note.recordingPassId)) &&
                         (note.expression === undefined ||
                             (typeof note.duration === 'number' &&
                                 isValidMidiNoteExpression(note.expression, note.duration)))
@@ -792,7 +801,8 @@ function is_exact_take_lanes_section(value: unknown): boolean {
     return (
         is_plain_object(value) &&
         has_exact_keys({ value, required_keys: TAKE_LANES_SECTION_KEYS }) &&
-        is_row_array(value.lanes)
+        Array.isArray(value.lanes) &&
+        decodeExactTakeLaneSnapshots(value.lanes) !== null
     );
 }
 
@@ -800,7 +810,7 @@ function normalize_take_lanes_section(value: unknown): ProjectTakeLaneStoreState
     if (!is_plain_object(value)) {
         return undefined;
     }
-    return { lanes: filter_identified_rows<ProjectTakeLane>(value.lanes) };
+    return sanitize_take_lane_store_state(value);
 }
 
 function is_exact_snapshot(value: unknown): value is ArrangementSnapshot {

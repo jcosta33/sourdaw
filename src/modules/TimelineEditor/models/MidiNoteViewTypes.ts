@@ -4,6 +4,7 @@
  */
 
 export type MidiNote = {
+    recordingPassId?: string;
     id: string;
     pitch: number;
     startBeat: number;

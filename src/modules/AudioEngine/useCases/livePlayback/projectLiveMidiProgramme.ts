@@ -1,3 +1,4 @@
+import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases';
 /**
  * The notes each natively voiced instrument plays over one span (#3892).
  *
@@ -283,7 +284,13 @@ function projectClipNotes({
     input,
     projectBeatToSeconds,
 }: ClipProjectionInput): ProjectedNote[] {
-    const sourceNotes = input.notesByClipId[clip.id];
+    const sourceNotes =
+        input.notesByClipId[clip.id] &&
+        selectMidiRecordingPassNotes(input.notesByClipId[clip.id]!, {
+            recordingPassId: clip.recordingPassId,
+            sourceStartBeat: clip.midiOffsetBeats ?? 0,
+            sourceEndBeat: (clip.midiOffsetBeats ?? 0) + clip.endBeat - clip.startBeat,
+        });
     const clipVisualLength = clip.endBeat - clip.startBeat;
     if (!sourceNotes || clipVisualLength <= 0) {
         return [];

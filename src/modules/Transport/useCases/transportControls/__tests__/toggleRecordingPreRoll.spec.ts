@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getTempoAtBeat, secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
@@ -19,7 +20,9 @@ type TestRecordingClip = {
     audioOffsetBeats?: number;
 };
 
-type TestRecordingResult = { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed'; reason: string };
+type TestRecordingResult =
+    | { kind: 'completed'; buffer: { duration: number }; sampleZeroContextFrame: number; sampleRate: number }
+    | { kind: 'failed'; reason: string };
 
 type StartAudioRecording = (trackId: string, callback: (result: TestRecordingResult) => void) => Promise<boolean>;
 
@@ -44,6 +47,7 @@ const mocks = vi.hoisted(() => ({
     stopRecording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     startNativeLiveGraphSession: vi.fn<() => Promise<unknown>>(),
     startAudioRecording: vi.fn<StartAudioRecording>(),
+    sampleZeroContextFrame: 0,
     startPlayheadScheduler: vi.fn<() => void>(),
     scheduleClick: vi.fn<(...args: unknown[]) => void>(),
     startSource: vi.fn<StartSource>(),
@@ -52,7 +56,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: mocks.ensureTrackStrips }));
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
-    startPlayheadScheduler: mocks.startPlayheadScheduler,
+    startPlayheadScheduler: () => {
+        mocks.startPlayheadScheduler();
+        playheadClockRef.beat = transportStore.value!.playheadPosition;
+        playheadClockRef.audioTimeSeconds = mocks.getAudioContext().currentTime;
+    },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: mocks.resolveClipsWithComping,
@@ -127,6 +135,7 @@ const BASE_LATENCY_SEC = 0.02;
 const BEATS_PER_SECOND_AT_120 = 2;
 const LATENCY_BEATS = BASE_LATENCY_SEC * BEATS_PER_SECOND_AT_120;
 const BASE_TEMPO_BPM = 120;
+const RECORDING_SAMPLE_RATE = 48_000;
 
 function instantTempoChanges(points: readonly (readonly [beat: number, tempo: number])[]): TempoChange[] {
     return points.map(([beat, tempo]) => ({ id: `tempo-${beat}`, beat, tempo, curve: 'instant' }));
@@ -172,7 +181,12 @@ async function recordTakeFromStoppedTransport(options: {
     if (!finishCapture) {
         throw new Error('Expected the recording callback to be registered');
     }
-    finishCapture({ kind: 'completed', buffer: { duration: options.takeSeconds } });
+    finishCapture({
+        kind: 'completed',
+        buffer: { duration: options.takeSeconds },
+        sampleZeroContextFrame: mocks.sampleZeroContextFrame,
+        sampleRate: RECORDING_SAMPLE_RATE,
+    });
     await vi.waitFor(() => expect(mocks.commitRecording).toHaveBeenCalledOnce());
 
     const committed = mocks.commitRecording.mock.calls[0]?.[0];
@@ -187,7 +201,10 @@ describe('toggleRecording — take aligned to the timeline under pre-roll', () =
         vi.clearAllMocks();
         mocks.resolveClipsWithComping.mockReturnValue([]);
         mocks.resumeEngine.mockResolvedValue(undefined);
-        mocks.startAudioRecording.mockResolvedValue(true);
+        mocks.startAudioRecording.mockImplementation(async () => {
+            mocks.sampleZeroContextFrame = Math.round(audioClock.currentTime * RECORDING_SAMPLE_RATE);
+            return true;
+        });
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         audioClock.currentTime = 0;
         audioClock.baseLatency = BASE_LATENCY_SEC;
@@ -230,7 +247,7 @@ describe('toggleRecording — take aligned to the timeline under pre-roll', () =
         });
 
         // The take opens on the boundary beat the count-in counted to, not on a default.
-        expect(mocks.startRecording).toHaveBeenCalledExactlyOnceWith(RECORD_POINT_BEAT);
+        expect(mocks.startRecording).toHaveBeenCalledExactlyOnceWith(RECORD_POINT_BEAT, expect.any(Function));
 
         const mediaOriginBeat = committed.startBeat - (committed.audioOffsetBeats ?? 0);
         expect(mediaOriginBeat).toBeCloseTo(RECORD_POINT_BEAT - 8 - LATENCY_BEATS, 9);

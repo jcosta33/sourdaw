@@ -149,8 +149,8 @@ describe('midiStore', () => {
             },
             pitchBendByClipId: {
                 'clip-pitch': [
-                    { id: 'pitch-1', value: -0.25, beat: 2, channel: 1 },
-                    { id: 'bad-pitch', value: -0.25, beat: null, channel: 1 },
+                    { id: 'pitch-1', value: -2048, beat: 2, channel: 1 },
+                    { id: 'bad-pitch', value: -2048, beat: null, channel: 1 },
                 ],
                 'clip-bad-pitch': 'not-an-array',
             },
@@ -167,9 +167,37 @@ describe('midiStore', () => {
                 'clip-cc': [{ id: 'cc-1', controller: 74, value: 0.5, beat: 1, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-pitch': [{ id: 'pitch-1', value: -0.25, beat: 2, channel: 1 }],
+                'clip-pitch': [{ id: 'pitch-1', value: -2048, beat: 2, channel: 1 }],
             },
         });
+    });
+
+    it('should admit only integer pitch-bend rows inside the signed 14-bit wire range', () => {
+        const row = (id: string, value: number) => ({ id, value, beat: 1, channel: 0 });
+        fake_doc.midi = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {
+                'clip-pitch': [
+                    row('top', 8191),
+                    row('bottom', -8192),
+                    row('above-top', 8192),
+                    row('below-bottom', -8193),
+                    row('fractional', 1.5),
+                    row('not-a-number', Number.NaN),
+                ],
+            },
+        };
+
+        midiStore.hydrate();
+        expect(midiStore.value?.pitchBendByClipId['clip-pitch']?.map((point) => point.id)).toEqual(['top', 'bottom']);
+
+        midiStore.set({
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: { 'clip-pitch': [row('top', 8191), row('above-top', 8192), row('fractional', 1.5)] },
+        });
+        expect(midiStore.value?.pitchBendByClipId['clip-pitch']?.map((point) => point.id)).toEqual(['top']);
     });
 
     it('should strip malformed optional note fields without dropping the valid parent note or clip', () => {
@@ -245,7 +273,7 @@ describe('midiStore', () => {
                 'clip-cc': [{ id: 'cc-1', controller: 74, value: 0.5, beat: 1, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-pitch': [{ id: 'pitch-1', value: -0.25, beat: 2, channel: 1 }],
+                'clip-pitch': [{ id: 'pitch-1', value: -2048, beat: 2, channel: 1 }],
             },
         } satisfies MidiStoreState;
         fake_doc.midi = valid_state;
@@ -301,6 +329,35 @@ describe('midiStore', () => {
 });
 
 describe('sanitizeMidiStoreState', () => {
+    it('keeps recorded pass identities and advancing source beats while stripping malformed optional identities', () => {
+        const note = { id: 'lap-1', pitch: 60, startBeat: 1, duration: 1, velocity: 90 };
+        const state = {
+            probabilitySeed: 7,
+            notesByClipId: {
+                'clip-1': [
+                    { ...note, recordingPassId: 'pass-1' },
+                    { ...note, id: 'lap-2', pitch: 72, startBeat: 5, recordingPassId: 'pass-2' },
+                    { ...note, id: 'legacy', startBeat: 9 },
+                    { ...note, id: 'malformed', startBeat: 13, recordingPassId: ' pass-4 ' },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        const sanitized = sanitizeMidiStoreState(state);
+        expect(
+            sanitized.notesByClipId['clip-1']?.map(({ startBeat, recordingPassId }) => [startBeat, recordingPassId])
+        ).toEqual([
+            [1, 'pass-1'],
+            [5, 'pass-2'],
+            [9, undefined],
+            [13, undefined],
+        ]);
+        expect(sanitized.notesByClipId['clip-1']?.[2]).not.toHaveProperty('recordingPassId');
+        expect(sanitized.notesByClipId['clip-1']?.[3]).not.toHaveProperty('recordingPassId');
+    });
+
     it('returns the default state with the fallback seed for a non-object input', () => {
         const result = sanitizeMidiStoreState('not-an-object', 42);
         expect(result).toEqual({ ...defaultMidiStoreState, probabilitySeed: 42 });

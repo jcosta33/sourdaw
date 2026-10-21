@@ -1,5 +1,7 @@
+import { sealMidiRecordingSession } from '#/modules/MIDI/useCases';
 import { stopRecording } from '#/modules/Arrangement/useCases';
 
+import { captureRecordingEnd } from './captureRecordingEnd';
 import { recordingLifecycle } from './recordingLifecycle';
 
 /**
@@ -13,6 +15,16 @@ import { recordingLifecycle } from './recordingLifecycle';
  * flight (#4439). `trackCommit` only registers the promise: the scheduler call
  * sites never await it, so the tick path stays unblocked.
  */
-export function finalizeAutomaticRecording(atBeat: number): void {
-    recordingLifecycle.trackCommit(stopRecording(atBeat));
+export function finalizeAutomaticRecording(atBeat: number, atAudioTime?: number): void {
+    const ending = captureRecordingEnd(
+        atAudioTime === undefined ? undefined : { contextSeconds: atAudioTime, beat: atBeat }
+    );
+    const frozenMidi = ending
+        ? sealMidiRecordingSession({
+              audioTime: ending.contextSeconds,
+              timelineBeat: atBeat,
+          })
+        : undefined;
+    recordingLifecycle.endRecording();
+    recordingLifecycle.trackCommit(stopRecording(atBeat, ending, frozenMidi));
 }

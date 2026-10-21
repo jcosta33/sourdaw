@@ -1,4 +1,7 @@
-import { transportStore } from '#/modules/Transport/stores';
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { beginMidiRecordingSession } from '#/modules/MIDI/useCases';
+
+import { captureGestureBeat, readSecondsAtBeat, transportStore } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
@@ -7,6 +10,7 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip } from '../../stores/trackStore';
 import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
 
+import { recordingPassTiming } from './recordingPassTiming';
 import { stageRecordingTake } from './stageRecordingTake';
 
 const recordClipId = 1;
@@ -17,8 +21,8 @@ const recordClipId = 1;
  * Every take a recording opens is provisional: the clip, its take lane, and its
  * takes are staged without history, and `commitRecording` turns the whole result
  * into one entry — from the capture terminal for an audio track, and from
- * `stopRecording` for a MIDI track, whose notes are committed by their own
- * actions. Pushing the ordinary take-lane entries here would leave the lane and
+ * `stopRecording` for a MIDI track. MIDI ingress buffers its owned notes
+ * until that single command materializes the sealed gesture. Pushing the ordinary take-lane entries here would leave the lane and
  * the take as separate history above a clip no entry covers.
  *
  * `atBeat` anchors the new clips. Callers that record from a moving transport
@@ -27,7 +31,11 @@ const recordClipId = 1;
  * playback *started* at, not the live position. Omitting it keeps the
  * stationary behaviour — anchor at the store playhead.
  */
-export function startRecording(atBeat?: number): Clip[] {
+export function startRecording(
+    atBeat?: number,
+    firstPassClock?: () => number | null,
+    midiPunch?: { outBeat: number; leadInBeats: (trackId: string) => number }
+): Clip[] {
     const trackState = getTrackState();
     const transportState = transportStore.value;
     if (!trackState || !transportState) {
@@ -78,7 +86,16 @@ export function startRecording(atBeat?: number): Clip[] {
             locked: false,
             muted: false,
         };
+        // Punch latency belongs to the carrier before the journal clones it.
+        // Both the visible media origin and captured source use this lead-in.
+        if (clip.type === 'midi' && midiPunch) {
+            const leadIn = midiPunch.leadInBeats(track.id);
+            if (leadIn > 0) clip.midiOffsetBeats = leadIn;
+        }
         newClips.push(clip);
+        if (clip.type === 'audio') {
+            recordingPassTiming.begin(clipId, recordBeat, firstPassClock);
+        }
 
         // Take labels count per lane, the way the scheduler's wrap path mints
         // them, so takes on different lanes never share or duplicate labels.
@@ -108,5 +125,23 @@ export function startRecording(atBeat?: number): Clip[] {
         activeRecordingRef.current = newClips.map((context) => context.id);
     }
 
+    const midiClips = newClips.filter((clip) => clip.type === 'midi');
+    if (midiClips.length > 0) {
+        beginMidiRecordingSession({
+            carriers: midiClips.map((clip) => ({
+                trackId: clip.trackId,
+                clipId: clip.id,
+                clipStartBeat: clip.startBeat,
+                midiOffsetBeats: clip.midiOffsetBeats,
+            })),
+            audioTime:
+                getAudioContext().currentTime +
+                (transportState.isPlaying
+                    ? readSecondsAtBeat({ beat: recordBeat }) - readSecondsAtBeat({ beat: captureGestureBeat() })
+                    : 0),
+            recordPointBeat: recordBeat,
+            ...(midiPunch ? { punchOutBeat: midiPunch.outBeat } : {}),
+        });
+    }
     return newClips;
 }

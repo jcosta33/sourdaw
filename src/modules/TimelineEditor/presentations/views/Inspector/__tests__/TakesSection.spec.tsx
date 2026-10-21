@@ -72,6 +72,7 @@ vi.mock('../../../components/Inspector/MetaText', () => ({
 describe('TakesSection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockSelectTake.mockResolvedValue(true);
     });
 
     it('should return null when no takes exist for track', () => {
@@ -187,8 +188,8 @@ describe('TakesSection', () => {
         let settleSelection: (() => void) | undefined;
         mockSelectTake.mockImplementation(
             () =>
-                new Promise<void>((resolve) => {
-                    settleSelection = resolve;
+                new Promise<boolean>((resolve) => {
+                    settleSelection = () => resolve(true);
                 })
         );
         render(<TakesSection trackId="track-1" />);
@@ -218,4 +219,28 @@ describe('TakesSection', () => {
         fireEvent.click(flattenButton);
         expect(mockFlattenComp).toHaveBeenCalledWith('track-1');
     });
+});
+
+it('keeps the editor selection and comp unchanged when take selection is refused', async () => {
+    mockSetCompRegion.mockClear();
+    mockSelectTake.mockResolvedValue(false);
+    mockUseStore.mockReturnValue({
+        lanes: [
+            {
+                trackId: 'track-1',
+                takes: [
+                    { id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 4, selected: true },
+                    { id: 'take-2', name: 'Take 2', startBeat: 0, endBeat: 4, selected: false },
+                ],
+            },
+        ],
+    });
+    render(<TakesSection trackId="track-1" />);
+    fireEvent.click(screen.getByText('Set Active'));
+    await vi.waitFor(() => expect(mockSelectTake).toHaveBeenCalledWith('track-1', 'take-2'));
+    expect(mockSetCompRegion).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId('choice-card').map((card) => card.getAttribute('data-selected'))).toEqual([
+        'true',
+        'false',
+    ]);
 });

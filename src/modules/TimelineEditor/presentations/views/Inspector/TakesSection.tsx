@@ -23,6 +23,8 @@ type TakeLaneView = {
         startBeat: number;
         endBeat: number;
         selected: boolean;
+        clipId?: string;
+        recordingPassId?: string;
     }>;
 };
 
@@ -45,11 +47,29 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
         }
         // Keep the region write ordered after the selection write, as when both
         // were synchronous. A refused selection must not move the comp region.
-        await selectTake(trackId, takeId);
+        if (!(await selectTake(trackId, takeId))) {
+            return;
+        }
         setCompRegion(trackId, {
             takeId,
-            startBeat: take.startBeat,
-            endBeat: take.endBeat,
+            startBeat:
+                take.recordingPassId === undefined
+                    ? take.startBeat
+                    : Math.min(
+                          take.startBeat,
+                          ...lane.takes
+                              .filter((candidate) => candidate.clipId === take.clipId)
+                              .map((candidate) => candidate.startBeat)
+                      ),
+            endBeat:
+                take.recordingPassId === undefined
+                    ? take.endBeat
+                    : Math.max(
+                          take.endBeat,
+                          ...lane.takes
+                              .filter((candidate) => candidate.clipId === take.clipId)
+                              .map((candidate) => candidate.endBeat)
+                      ),
         });
     };
 

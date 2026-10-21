@@ -9,6 +9,8 @@ export type ResolvedClip = Clip & {
     regionStartBeat: number;
     regionEndBeat: number;
     sourceStartBeat: number;
+    /** Projection only: the onset pass this fragment may sound. */
+    recordingPassId?: string;
 };
 
 export function resolveClipsWithComping(trackId: string, clips: Clip[]): ResolvedClip[] {
@@ -27,7 +29,26 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
     }
 
     const lane = laneState.lanes.find((length) => length.trackId === trackId);
-    if (!lane || lane.activeCompRegions.length === 0) {
+    const selectedPass = lane?.takes.find((take) => take.selected && take.recordingPassId !== undefined);
+    // Recorded-pass promotion is derived from the guarded selection. Undo and
+    // peer changes therefore publish the audible selection atomically too.
+    const regions =
+        selectedPass && lane?.activeCompRegions.length === 0
+            ? [
+                  {
+                      takeId: selectedPass.id,
+                      startBeat: Math.min(
+                          selectedPass.startBeat,
+                          clips.find((clip) => clip.id === selectedPass.clipId)?.startBeat ?? selectedPass.startBeat
+                      ),
+                      endBeat: Math.max(
+                          selectedPass.endBeat,
+                          clips.find((clip) => clip.id === selectedPass.clipId)?.endBeat ?? selectedPass.endBeat
+                      ),
+                  },
+              ]
+            : (lane?.activeCompRegions ?? []);
+    if (!lane || regions.length === 0) {
         return clips.map((context) => ({
             ...context,
             regionStartBeat: context.startBeat,
@@ -42,7 +63,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
 
     const resolved: ResolvedClip[] = [];
 
-    for (const region of lane.activeCompRegions) {
+    for (const region of regions) {
         const take = lane.takes.find((time) => time.id === region.takeId);
         if (!take) {
             continue;
@@ -55,7 +76,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
 
         const media = resolveTakeMedia(take, sourceClip, liveTempoTimeline);
         const overlapStart = Math.max(region.startBeat, media.earliestBeat);
-        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat);
+        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeatAt?.(overlapStart) ?? Infinity);
         if (overlapStart >= overlapEnd) {
             continue;
         }
@@ -67,6 +88,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
             sourceStartBeat: media.sourceStartBeat,
+            ...(take.recordingPassId === undefined ? {} : { recordingPassId: take.recordingPassId }),
         });
     }
 
@@ -74,7 +96,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
     // insert, so activeCompRegions is always already sorted. Use the
     // array directly instead of allocating a fresh \`[...x].sort(...)\`
     // copy on every comping resolution call.
-    const sortedRegions = lane.activeCompRegions;
+    const sortedRegions = regions;
 
     for (const clip of clips) {
         const gaps: { start: number; end: number }[] = [];

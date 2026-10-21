@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -221,6 +221,7 @@ describe('exportProjectFile round-trip shape', () => {
         });
         transportStore.set({ ...transportStore.value!, tempo: 99 });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        takeLaneStore.set({ lanes: [] });
     });
 
     afterEach(() => {
@@ -233,6 +234,7 @@ describe('exportProjectFile round-trip shape', () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         transportStore.set({ ...defaultTransportState });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        takeLaneStore.set({ lanes: [] });
         projectStore.set(structuredClone(defaultProjectStoreState));
         vi.unstubAllGlobals();
     });
@@ -291,6 +293,68 @@ describe('exportProjectFile round-trip shape', () => {
         const saved = written().midi;
         expect(saved.notesByClipId['clip-midi']).toEqual([note]);
         expect(hydrateProjectMidi(saved).notesByClipId['clip-midi']).toEqual([note]);
+    });
+
+    it('exports matching note and take pass identities for a reopened MIDI lap', async () => {
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: {
+                'clip-midi': [
+                    { id: 'lap-1', pitch: 60, startBeat: 1, duration: 1, velocity: 100, recordingPassId: 'pass-1' },
+                    { id: 'lap-2', pitch: 72, startBeat: 5, duration: 1, velocity: 100, recordingPassId: 'pass-2' },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-midi',
+                    trackId: 'track-midi',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-midi',
+                            name: 'Lap 1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                            recordingPassId: 'pass-1',
+                        },
+                        {
+                            id: 'take-2',
+                            clipId: 'clip-midi',
+                            name: 'Lap 2',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            sourceOffsetBeats: 4,
+                            recordingPassId: 'pass-2',
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-2' }],
+                },
+            ],
+        });
+
+        await exportProjectFile();
+
+        const saved = written();
+        expect(saved.takeLanes?.lanes[0]?.takes.map(({ recordingPassId }) => recordingPassId)).toEqual([
+            'pass-1',
+            'pass-2',
+        ]);
+        expect(
+            hydrateProjectMidi(saved.midi).notesByClipId['clip-midi']?.map(({ startBeat, recordingPassId }) => [
+                startBeat,
+                recordingPassId,
+            ])
+        ).toEqual([
+            [1, 'pass-1'],
+            [5, 'pass-2'],
+        ]);
     });
 
     it('writes the live transport tempo into the export', async () => {

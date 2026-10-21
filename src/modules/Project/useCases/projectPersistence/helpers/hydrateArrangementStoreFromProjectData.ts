@@ -1,4 +1,5 @@
 import { hydrateMidiProjectState } from '#/modules/MIDI/useCases';
+import { isRecordingPassId } from '#/utils/recordingPassId';
 
 import { type ProjectMidi, type ProjectTempoMap, type ProjectTimeSignatureMap } from '../../../models/ProjectData';
 import { type ArrangementSnapshot, arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
@@ -30,6 +31,9 @@ function hydrateInlineMidiNotes(notes: ProjectMidi['notesByClipId'][string]): Pr
         };
         if (note.expression) {
             hydrated.expression = structuredClone(note.expression);
+        }
+        if (!isRecordingPassId(note.recordingPassId)) {
+            delete hydrated.recordingPassId;
         }
         return hydrated;
     });
