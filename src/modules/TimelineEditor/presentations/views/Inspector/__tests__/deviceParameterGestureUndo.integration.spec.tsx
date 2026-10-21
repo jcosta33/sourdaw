@@ -411,7 +411,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
     it('keeps logarithmic previews in native units and restores the prior value', async () => {
         render(<Control paramId="filterCutoff" />);
         const parameter = getPluginById(synth.type)?.parameters.find((candidate) => candidate.id === 'filterCutoff');
-        if (!parameter) throw new Error('Missing Synth cutoff descriptor');
+        if (!parameter) {
+            throw new Error('Missing Synth cutoff descriptor');
+        }
         const control = screen.getByRole('slider', { name: parameter.name });
         beginKnob(control);
         moveKnob(85, control);
@@ -465,10 +467,15 @@ describe('Inspector continuous parameter gestures through real history', () => {
             const control = knob();
             beginKnob(control);
             moveKnob(85, control);
-            if (finish === 'pointerCancel') fireEvent.pointerCancel(control, { pointerId: 1 });
-            else if (finish === 'lostPointerCapture') fireEvent.lostPointerCapture(control, { pointerId: 1 });
-            else if (finish === 'blur') fireEvent.blur(control);
-            else fireEvent.blur(window);
+            if (finish === 'pointerCancel') {
+                fireEvent.pointerCancel(control, { pointerId: 1 });
+            } else if (finish === 'lostPointerCapture') {
+                fireEvent.lostPointerCapture(control, { pointerId: 1 });
+            } else if (finish === 'blur') {
+                fireEvent.blur(control);
+            } else {
+                fireEvent.blur(window);
+            }
             endKnob(control);
             await expectCommitted('detune', 25, 1);
             expect(writes()).toEqual([25, 25, 25]);
@@ -502,12 +509,14 @@ describe('Inspector continuous parameter gestures through real history', () => {
                     type: change === 'changed-type' ? 'crust' : synth.type,
                     parameterValues: { ...synth.parameterValues, detune: change === 'changed-value' ? 17 : 5 },
                 };
+                let devices: Device[];
+                if (change === 'removed-device') {
+                    devices = [structuredClone(compressor)];
+                } else {
+                    devices = [replacement, structuredClone(compressor)];
+                }
                 const track = {
-                    ...testTrack(
-                        change === 'removed-device'
-                            ? [structuredClone(compressor)]
-                            : [replacement, structuredClone(compressor)]
-                    ),
+                    ...testTrack(devices),
                     frozen: change === 'frozen-change',
                 };
                 trackStore.set({
@@ -521,7 +530,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
             await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
             expect(trackStore.value?.tracks).toEqual(before);
             expect(depth()).toBe(0);
-            if (change === 'changed-value') expect(writes().at(-1)).toBe(17);
+            if (change === 'changed-value') {
+                expect(writes().at(-1)).toBe(17);
+            }
         }
     );
 
@@ -609,7 +620,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
         beginKnob();
         moveKnob(85);
         afterEngineWrite = () => {
-            if (engineWrites.length === 3) throw new Error('Gesture engine rejected');
+            if (engineWrites.length === 3) {
+                throw new Error('Gesture engine rejected');
+            }
         };
         endKnob();
         await waitFor(() => expect(notifyUser).toHaveBeenCalledWith('Gesture engine rejected', 'error'));
@@ -783,8 +796,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
             const view = render(<Control deviceId={compressor.id} paramId="comp-threshold" />);
             const root = sliderTrack();
             const control = screen.getByRole('slider', { name: 'Threshold' });
-            if (finish === 'keyboard') fireEvent.keyDown(control, { key: 'End' });
-            else if (finish === 'numeric') {
+            if (finish === 'keyboard') {
+                fireEvent.keyDown(control, { key: 'End' });
+            } else if (finish === 'numeric') {
                 fireEvent.doubleClick(control);
                 fireEvent.change(screen.getByRole('textbox'), { target: { value: '50' } });
                 fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
@@ -792,10 +806,15 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 fireEvent.pointerDown(root, { button: 0, pointerId: 2, [finish]: true });
             } else {
                 fireEvent.pointerDown(root, { button: 0, pointerId: 2, clientX: 40, clientY: 10 });
-                if (finish === 'blur') fireEvent.blur(control);
-                else if (finish === 'windowBlur') fireEvent.blur(window);
-                else if (finish === 'pointerCancel') fireEvent.pointerCancel(root, { pointerId: 2 });
-                else view.unmount();
+                if (finish === 'blur') {
+                    fireEvent.blur(control);
+                } else if (finish === 'windowBlur') {
+                    fireEvent.blur(window);
+                } else if (finish === 'pointerCancel') {
+                    fireEvent.pointerCancel(root, { pointerId: 2 });
+                } else {
+                    view.unmount();
+                }
             }
             // Drain real queued work using a separate same-value command, never a fixed delay.
             await executeUserAppAction({

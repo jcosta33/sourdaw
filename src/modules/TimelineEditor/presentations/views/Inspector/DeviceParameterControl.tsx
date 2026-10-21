@@ -411,14 +411,13 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         }
         // Knob release is a physical recording sample; slider settlement is not.
         // Capture event time before the canonical action can wait on a snapshot.
+        const previewOptions: NonNullable<Parameters<typeof setDeviceParameter>[3]> = { transient: true };
+        if (!recordingSample) {
+            previewOptions.automationRecordingPolicy = 'suppressed';
+        }
         gesture.previewValue = nextValue;
         try {
-            if (
-                !setDeviceParameter(gesture.deviceId, gesture.paramId, nextValue, {
-                    transient: true,
-                    ...(recordingSample ? {} : { automationRecordingPolicy: 'suppressed' }),
-                })
-            ) {
+            if (!setDeviceParameter(gesture.deviceId, gesture.paramId, nextValue, previewOptions)) {
                 cancelGesture(gesture);
                 return;
             }

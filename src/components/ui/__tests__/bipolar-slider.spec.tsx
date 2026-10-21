@@ -57,7 +57,9 @@ describe('BipolarSlider', () => {
                 <BipolarSlider value={0} onValueChange={vi.fn()} onValueCommit={onValueCommit} min={-1} max={1} />
             );
             const root = screen.getByRole('slider', { name: 'Bipolar value' }).closest('[data-slot="slider"]');
-            if (!(root instanceof HTMLElement)) throw new Error('Missing Slider root');
+            if (!(root instanceof HTMLElement)) {
+                throw new Error('Missing Slider root');
+            }
             Object.defineProperties(root, {
                 setPointerCapture: { configurable: true, value: vi.fn() },
                 releasePointerCapture: { configurable: true, value: vi.fn() },
@@ -76,10 +78,15 @@ describe('BipolarSlider', () => {
             });
             fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
             fireEvent.pointerMove(root, { pointerId: 1, clientX: 80, clientY: 10 });
-            if (finish === 'pointerCancel') fireEvent.pointerCancel(root, { pointerId: 1 });
-            else if (finish === 'lostPointerCapture') fireEvent.lostPointerCapture(root, { pointerId: 1 });
-            else if (finish === 'windowBlur') fireEvent.blur(window);
-            else view.unmount();
+            if (finish === 'pointerCancel') {
+                fireEvent.pointerCancel(root, { pointerId: 1 });
+            } else if (finish === 'lostPointerCapture') {
+                fireEvent.lostPointerCapture(root, { pointerId: 1 });
+            } else if (finish === 'windowBlur') {
+                fireEvent.blur(window);
+            } else {
+                view.unmount();
+            }
             fireEvent.pointerUp(root, { pointerId: 1 });
             expect(onValueCommit).toHaveBeenCalledTimes(1);
             expect(onValueCommit.mock.calls[0]![0]).toBeCloseTo(0.6);

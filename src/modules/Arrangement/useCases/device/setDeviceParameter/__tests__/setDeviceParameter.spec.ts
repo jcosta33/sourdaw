@@ -124,9 +124,13 @@ describe('setDeviceParameter', () => {
 
     it.each(['missing', 'duplicate', 'vca'])('refuses an invalid transient target: %s', (kind) => {
         const track = makeTrack('t1');
-        if (kind === 'missing') setTrackState([makeTrackWithoutDevices('t1')]);
-        else if (kind === 'duplicate') setTrackState([track, makeTrack('t2')]);
-        else setTrackState([setRuntimeKind(track, 'vca')]);
+        if (kind === 'missing') {
+            setTrackState([makeTrackWithoutDevices('t1')]);
+        } else if (kind === 'duplicate') {
+            setTrackState([track, makeTrack('t2')]);
+        } else {
+            setTrackState([setRuntimeKind(track, 'vca')]);
+        }
         expect(setDeviceParameter('d1', 'gain', 0.5, { transient: true })).toBe(false);
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(mocks.updateTrack).not.toHaveBeenCalled();

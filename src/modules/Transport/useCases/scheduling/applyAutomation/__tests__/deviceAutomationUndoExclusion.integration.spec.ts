@@ -30,7 +30,6 @@ import { tempoMapStore } from '../../../../stores/tempoMapStore';
 // Command, Arrangement, Automerge and history stay real. This is the engine's
 // shared Web Audio/native parameter boundary; no live graph exists in Vitest.
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
-let afterEngineWrite: (() => void) | null = null;
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
@@ -47,7 +46,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     discardDecodedAudioFile: vi.fn(),
     updateDeviceParam: (trackId: string, deviceId: string, paramId: string, value: number) => {
         engineWrites.push({ trackId, deviceId, paramId, value });
-        afterEngineWrite?.();
     },
     updateDevicePatch: vi.fn(),
     addMidiFxToStrip: vi.fn(),
@@ -228,7 +226,9 @@ describe('device automation bypasses manual command history', () => {
         // Spies call through; Command, handler, storage and history are not mocked.
         const dispatch = vi.spyOn(Command, 'executeAppAction');
         const revision = settlePendingProjectWritesAndCaptureRevision();
-        for (const beat of [0.5, 1, 1.5]) applyAutomation(beat);
+        for (const beat of [0.5, 1, 1.5]) {
+            applyAutomation(beat);
+        }
         expect(engineWrites.length).toBeGreaterThanOrEqual(3);
         expect(engineWrites.every((write) => write.deviceId === synth.id && write.paramId === 'detune')).toBe(true);
         expect(new Set(engineWrites.map((write) => write.value)).size).toBeGreaterThan(1);
