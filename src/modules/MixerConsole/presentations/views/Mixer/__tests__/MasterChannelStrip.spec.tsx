@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
@@ -172,12 +172,8 @@ describe('MasterChannelStrip', () => {
         });
 
         expect(screen.getByRole('menu', { name: 'Master gain actions' })).toBeInTheDocument();
-        await act(async () => {
-            fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to Default' }));
-            await Promise.resolve();
-        });
-
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to Default' }));
+        await waitFor(() => expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1));
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'setMasterGain',
             payload: { gain: 0.8, expectedPercent: 60 },
@@ -202,14 +198,13 @@ describe('MasterChannelStrip', () => {
         expect(screen.queryByRole('menu', { name: 'Master gain actions' })).not.toBeInTheDocument();
         expect(fader).toHaveFocus();
 
-        await act(async () => {
-            fireEvent.keyDown(fader, { key: 'ArrowUp' });
-            await Promise.resolve();
-        });
-        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'setMasterGain',
-            payload: { gain: 0.81, expectedPercent: 80 },
-        });
+        fireEvent.keyDown(fader, { key: 'ArrowUp' });
+        await waitFor(() =>
+            expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+                type: 'setMasterGain',
+                payload: { gain: 0.81, expectedPercent: 80 },
+            })
+        );
     });
 
     it('dispatches the settled change through the app action instead of writing the use case directly', async () => {
