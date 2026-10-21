@@ -319,8 +319,26 @@ test.describe('provider tool authority through the live chat composition', () =>
                 expect(proposed.revision).toBe(before.revision);
                 expect(proposed.history).toEqual(before.history);
                 await expectGains(page, before.tracks);
-                await confirm.focus();
-                await confirm.press('Enter');
+                const privacyToast = page.getByRole('status').filter({ hasText: 'Hosted AI privacy disclosure' });
+                // Each hosted request publishes one queued notice; dismiss through its real UI.
+                for (let remaining = provider.requests.length; remaining > 0; remaining -= 1) {
+                    if ((await privacyToast.count()) === 0) {
+                        break;
+                    }
+                    await privacyToast.getByRole('button', { name: 'Dismiss', exact: true }).click();
+                }
+                await expect(privacyToast).toHaveCount(0);
+                const beforeConfirm = await readProject(page);
+                expect(beforeConfirm.document).toBe(before.document);
+                expect(beforeConfirm.revision).toBe(pending.envelope.baseRevision);
+                expect(beforeConfirm.history).toEqual(before.history);
+                const currentApproval = (await readAgent(page)).confirmations.find((entry) => entry.id === pending.id);
+                expect(currentApproval?.view?.freshness.status).toBe('current');
+                await testInfo.attach('before-pointer-confirmation', {
+                    body: JSON.stringify({ pending, currentApproval, project: beforeConfirm }, null, 2),
+                    contentType: 'application/json',
+                });
+                await confirm.click();
                 const expected = targets.map((track, index) => ({ id: track.id, gain: 10 ** ([-6, -9][index] / 20) }));
                 await expectGains(page, expected);
                 await expect
