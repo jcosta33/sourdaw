@@ -754,12 +754,19 @@ host keeps starting such processes, so a fresh whole catalog may never be comple
 process found gone, at its first liveness check, before its state sample, or by its scoped read,
 never contributes to proof of release: it may have forked a storage user after the process lists
 were taken, so the census takes a fresh whole observation, whose lists include any heir. A
-same-UID zombie is still skipped: XNU closes its file table first and it cannot fork. The census
-excludes its own exited `ps` from each process list. An omitted process
+same-UID zombie is still skipped: XNU closes its file table first and it cannot fork. An
+observation with such an exited process spends no scoped read. An omitted process
 with another or unsampled UID retains storage at once. Every other omitted process, in any sampled
 state including `ps`'s undetermined `?`, is read directly in the same observation with a PID-scoped,
 same-UID `lsof`: a storage path there is a live use, a failed or unusable scoped read retains
-storage, and a scoped read that does not list a missed process leaves it uncovered. Coverage
+storage, and a scoped read that does not list a missed process leaves it uncovered. A missed
+process read clean may already have handed storage to a new process, so before such a read can
+prove release the census takes one closing same-UID process list with parents. A process absent
+from the observation's earlier lists whose parent is a missed process, another such newcomer, or
+launchd sends the census to a fresh whole observation; newcomers with other parents are ignored
+so the census converges while other work starts processes. A process already listed and
+inspected that opens storage, or starts a storage user, afterwards remains outside this sampled
+proof. Coverage
 counts only within one observation and is never pooled across catalogs. An observation left
 uncovered, or a catalog missing a descriptor type, is discarded for a wholly fresh catalog and
 process list until one is covered or the five-second proof deadline expires; expiry retains

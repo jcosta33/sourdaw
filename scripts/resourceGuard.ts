@@ -1158,6 +1158,56 @@ function scopedDarwinFileState(
     return { kind: 'uncovered', pids: pids.filter((pid) => !census.pids.has(pid)) };
 }
 
+// Takes one closing same-UID process list after a scoped read. A process absent from the
+// observation's earlier lists whose parent is a missed process, another such newcomer, or
+// launchd may hold storage handed over after its parent's lists were taken; newcomers with
+// other parents are ignored so the census converges while other work starts processes. A
+// process already listed that opens storage later remains the open-after-inspection gap.
+function missedProcessHeirs(missed: number[], listed: Set<number>, uid: number, deadline: number): number[] | string {
+    const result = spawnSync('ps', ['-axo', 'pid=,ppid=,uid='], {
+        encoding: 'utf8',
+        timeout: Math.max(1, deadline - Date.now()),
+        maxBuffer: 16 * 1024 * 1024,
+    });
+    if (killedByTimeout(result.error)) {
+        return 'file-census-time-bound';
+    }
+    if (result.status !== 0 || result.stderr !== '') {
+        return 'process-parents-unavailable';
+    }
+    const parents = new Map<number, number>();
+    for (const line of result.stdout.trim().split('\n')) {
+        const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/.exec(line);
+        if (match === null) {
+            return 'process-parents-unusable';
+        }
+        const pid = Number(match[1]);
+        const parent = Number(match[2]);
+        if (parents.has(pid)) {
+            return 'process-parents-unusable';
+        }
+        if (Number(match[3]) === uid) {
+            parents.set(pid, parent);
+        }
+    }
+    if (!parents.has(process.pid)) {
+        return 'process-parents-unusable';
+    }
+    const reached = new Set(missed);
+    const heirs: number[] = [];
+    for (let grew = true; grew;) {
+        grew = false;
+        for (const [pid, parent] of parents) {
+            if (!listed.has(pid) && !reached.has(pid) && (parent === 1 || reached.has(parent))) {
+                reached.add(pid);
+                heirs.push(pid);
+                grew = true;
+            }
+        }
+    }
+    return heirs;
+}
+
 function processFileSnapshot(pid: number, timeout: number): { uid: number; state: string } | undefined {
     const result = spawnSync('ps', ['-p', String(pid), '-o', 'uid=,stat='], {
         encoding: 'utf8',
@@ -1442,12 +1492,10 @@ export function storageFileState(
             if (users.status !== 0 || users.stderr !== '') {
                 return 'process-users-unavailable';
             }
-            const listed = sameUserProcessIds(users.stdout, uid, process.pid, ownedPids);
-            if (listed === undefined || listed.length > 8192) {
+            const pids = sameUserProcessIds(users.stdout, uid, process.pid, ownedPids);
+            if (pids === undefined || pids.length > 8192) {
                 return 'process-users-unusable';
             }
-            // The listing lists its own ps, which has exited by inspection time.
-            const pids = listed.filter((pid) => pid !== users.pid);
             return Date.now() >= deadline ? 'file-census-time-bound' : pids;
         };
         let pids = readProcessUsers();
@@ -1535,24 +1583,23 @@ export function storageFileState(
                 if (Date.now() >= deadline) {
                     return expired();
                 }
-                const describeExited = () =>
-                    `lsof-missed-pid-exited:count=${exited.length}:pid=${exited.slice(0, 4).join(',')}`;
-                if (missing.size === 0) {
-                    if (exited.length === 0) {
-                        return 'dead';
-                    }
-                    uncovered = describeExited();
-                    continue;
+                if (missing.size === 0 && exited.length === 0) {
+                    return 'dead';
                 }
                 const describe = (pids: number[]) =>
                     `lsof-live-pid-missing:count=${pids.length}:pid/uid/state=${pids
                         .slice(0, 4)
                         .map((pid) => missing.get(pid))
                         .join(',')}`;
-                uncovered = describe([...missing.keys()]);
                 if (!onlySameUidPids) {
-                    return unknown(uncovered);
+                    return unknown(describe([...missing.keys()]));
                 }
+                if (exited.length > 0) {
+                    // This observation cannot prove release, so it spends no scoped read.
+                    uncovered = `lsof-missed-pid-exited:count=${exited.length}:pid=${exited.slice(0, 4).join(',')}`;
+                    continue;
+                }
+                uncovered = describe([...missing.keys()]);
                 // lsof can omit a live same-UID process, or finish before one is born. Other
                 // work keeps starting processes, so read the missed ones directly; coverage
                 // stays within this observation and is never pooled with earlier catalogs.
@@ -1566,11 +1613,28 @@ export function storageFileState(
                 if (scoped.kind === 'unavailable') {
                     return unknown(scoped.reason);
                 }
-                if (scoped.pids.length === 0 && exited.length === 0) {
+                if (scoped.pids.length > 0) {
+                    // Discard the whole observation: a fresh catalog must cover what stayed missed.
+                    uncovered = describe(scoped.pids);
+                    continue;
+                }
+                // A missed holder read clean may already have handed storage to a new process.
+                const heirs = missedProcessHeirs(
+                    [...missing.keys()],
+                    new Set([...pids, ...currentPids]),
+                    uid,
+                    deadline
+                );
+                if (heirs === 'file-census-time-bound' || Date.now() >= deadline) {
+                    return expired();
+                }
+                if (typeof heirs === 'string') {
+                    return unknown(heirs);
+                }
+                if (heirs.length === 0) {
                     return 'dead';
                 }
-                // Discard the whole observation: a fresh catalog must cover what stayed missed.
-                uncovered = scoped.pids.length === 0 ? describeExited() : describe(scoped.pids);
+                uncovered = `lsof-missed-pid-heir:count=${heirs.length}:pid=${heirs.slice(0, 4).join(',')}`;
             }
             return expired();
         }
