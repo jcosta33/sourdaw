@@ -1,0 +1,69 @@
+Cargo.lock
+  s_59e31a5c6f3e31::t_5926dd8c0c9f15 2366
+crates/daw-dsp/src/knead/utils.rs
+  s_59e31a5c6f3e31::t_c4e322dbb41f02 3
+crates/daw-dsp/src/knead/yin.rs
+  s_59e31a5c6f3e31::t_96790a945385d0 1-2
+crates/daw-dsp/src/primitives/mod.rs
+  s_59e31a5c6f3e31::t_f5b2c9e00e8308 10
+crates/daw-dsp/src/primitives/pitch/mod.rs
+  s_59e31a5c6f3e31::t_76f9f91bb48962 1-16
+crates/daw-dsp/src/primitives/pitch/mpm.rs
+  s_59e31a5c6f3e31::t_7b6bb763beab65 1-308
+crates/daw-dsp/src/primitives/pitch/overlap.rs
+  s_59e31a5c6f3e31::t_0c4940a3ee9774 1-77
+crates/daw-dsp/src/primitives/pitch/pipeline.rs
+  s_59e31a5c6f3e31::t_3a6df0c5cfaf6c 1-158
+crates/daw-dsp/src/primitives/pitch/pipeline_tests.rs
+  s_59e31a5c6f3e31::t_c4dea5b72e04b1 1-59
+crates/daw-dsp/src/primitives/pitch/scoring.rs
+  s_59e31a5c6f3e31::t_b6c8fc2eb4bc3b 1-348
+crates/daw-dsp/tests/shared_pitch_contract.rs
+  s_59e31a5c6f3e31::t_2703aff5b75d05 1-144
+crates/daw-dsp/tests/shared_pitch_rt.rs
+  s_59e31a5c6f3e31::t_036d99af66f949 1-77
+crates/daw-dsp/tests/support/pitch_baseline/crumbs.rs
+  s_59e31a5c6f3e31::t_4d33b449beaa57 1-158
+crates/daw-dsp/tests/support/pitch_baseline/engine.rs
+  s_59e31a5c6f3e31::t_8033399be0347f 1-572
+crates/daw-dsp/tests/support/pitch_baseline/mod.rs
+  s_59e31a5c6f3e31::t_1076e78addff78 1-25
+crates/daw-dsp/tests/support/pitch_baseline/yin.rs
+  s_59e31a5c6f3e31::t_16560d6d553c95 1-119
+crates/scoring/AGENTS.md
+  s_59e31a5c6f3e31::t_e906eabef8935d 7-12
+crates/scoring/Cargo.toml
+  s_59e31a5c6f3e31::t_08bef6b6227c08 14
+crates/scoring/src/lib.rs
+  s_59e31a5c6f3e31::t_45edf5a72bb97c 371-374
+crates/scoring/src/mpm.rs
+  s_59e31a5c6f3e31::t_4b8a88385a2959 1-2
+crates/scoring/src/yin.rs
+  s_59e31a5c6f3e31::t_0a30a150b8f946 1-2
+crates/scoring/tests/shared_pitch_contract.rs
+  s_59e31a5c6f3e31::t_70593e2d4a9d76 1-113
+crates/scoring/tests/support/pitch_baseline/mod.rs
+  s_59e31a5c6f3e31::t_5e26ec4c539c7a 1-633
+crates/scoring/tests/support/pitch_baseline/mpm.rs
+  s_59e31a5c6f3e31::t_7a5c6af9a52617 1-215
+crates/scoring/tests/support/pitch_baseline/poly.rs
+  s_59e31a5c6f3e31::t_9571bd317d162d 1-225
+crates/scoring/tests/support/pitch_baseline/yin.rs
+  s_59e31a5c6f3e31::t_ccea53647d4a1b 1-343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2531ee23165c38cb6b32e3245b0fe27ec030c8c0",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
