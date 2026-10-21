@@ -312,7 +312,10 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     />
                                 </SectionCard>
 
-                                <SectionCard title="Spread" detail="Keep the ensemble alive without turning it into soup.">
+                                <SectionCard
+                                    title="Spread"
+                                    detail="Keep the ensemble alive without turning it into soup."
+                                >
                                     <HumanizePanel
                                         config={patch.humanize}
                                         onChange={(partial) =>
@@ -325,21 +328,28 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 </SectionCard>
                             </div>
 
-                            <SectionCard title="Stage" detail="Mic balance should feel spatial, not like raw mixer math.">
+                            <SectionCard
+                                title="Stage"
+                                detail="Mic balance should feel spatial, not like raw mixer math."
+                            >
                                 <MicBlendSlider
                                     micPositions={visibleMicPositions}
                                     selectedMicIndex={selectedMicIndex}
-                                    onSelectMic={(index) => setMicSelection({
-                                        deviceId,
-                                        instrumentId: patch.instrumentId,
-                                        bank: loadedMicPositions,
-                                        index,
-                                    })}
+                                    onSelectMic={(index) =>
+                                        setMicSelection({
+                                            deviceId,
+                                            instrumentId: patch.instrumentId,
+                                            bank: loadedMicPositions,
+                                            index,
+                                        })
+                                    }
                                     showFull
                                     onSendMicParam={(micIndex, name, value) =>
                                         sendMicParamToEngine(deviceId, micIndex, name, value)
                                     }
-                                    onUpdateMicPosition={(index, partial) => updateMicPosition(deviceId, index, partial)}
+                                    onUpdateMicPosition={(index, partial) =>
+                                        updateMicPosition(deviceId, index, partial)
+                                    }
                                 />
                             </SectionCard>
                         </>
@@ -415,15 +425,26 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 </Row>
                             </SectionCard>
 
-                            <SectionCard title="Quick read" detail="A compact performance summary for the current line.">
+                            <SectionCard
+                                title="Quick read"
+                                detail="A compact performance summary for the current line."
+                            >
                                 <Stack gap={2}>
-                                    <DawReadoutRow label="Instrument" value={instLabel} valueClassName="text-foreground/85" />
+                                    <DawReadoutRow
+                                        label="Instrument"
+                                        value={instLabel}
+                                        valueClassName="text-foreground/85"
+                                    />
                                     <DawReadoutRow
                                         label="Family"
                                         value={patch.instrumentFamily}
                                         valueClassName="text-foreground/85"
                                     />
-                                    <DawReadoutRow label="Phrase" value={currentArt} valueClassName="text-foreground/85" />
+                                    <DawReadoutRow
+                                        label="Phrase"
+                                        value={currentArt}
+                                        valueClassName="text-foreground/85"
+                                    />
                                     <DawReadoutRow
                                         label="Humanize"
                                         value={`${Math.round(patch.humanize.amount * 100)}%`}

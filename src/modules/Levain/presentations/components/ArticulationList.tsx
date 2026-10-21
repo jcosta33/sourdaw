@@ -36,7 +36,7 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
                         <DawPluginChip
                             key={art.type}
                             active={isActive}
-                        aria-pressed={isActive}
+                            aria-pressed={isActive}
                             tone="amber"
                             caps={false}
                             shape="soft"

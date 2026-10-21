@@ -40,8 +40,5 @@ export function commitLevainDeviceState(deviceId: string): void {
     const tier = device.deviceState?.data.disclosureTier === 'expert' ? 'expert' : 'basic';
     const encoded = toLevainDeviceState(patch, tier);
     const state = { ...encoded, data: { ...device.deviceState?.data, ...encoded.data } };
-    void executeAppAction(
-        { type: 'setDeviceState', payload: { deviceId, state } },
-        { skipMacroRecording: true }
-    );
+    void executeAppAction({ type: 'setDeviceState', payload: { deviceId, state } }, { skipMacroRecording: true });
 }

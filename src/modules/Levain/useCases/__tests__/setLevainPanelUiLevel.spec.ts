@@ -1,7 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    trackStore: { value: { tracks: [] as { devices: { id: string; type: string; parameterValues: Record<string, number>; deviceState?: { version: number; data: Record<string, string> } }[] }[] } },
+    trackStore: {
+        value: {
+            tracks: [] as {
+                devices: {
+                    id: string;
+                    type: string;
+                    parameterValues: Record<string, number>;
+                    deviceState?: { version: number; data: Record<string, string> };
+                }[];
+            }[],
+        },
+    },
     executeUserAppAction: vi.fn(async (_action: unknown) => {}),
     notifyUser: vi.fn(),
 }));
@@ -21,19 +32,40 @@ describe('setLevainPanelUiLevel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.executeUserAppAction.mockImplementation(async () => {});
-        mocks.trackStore.value = { tracks: [{ devices: ['a', 'b'].map((id) => ({ id, type: 'levain', parameterValues: {},
-            deviceState: { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'sustain' } },
-        })) }] };
+        mocks.trackStore.value = {
+            tracks: [
+                {
+                    devices: ['a', 'b'].map((id) => ({
+                        id,
+                        type: 'levain',
+                        parameterValues: {},
+                        deviceState: { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'sustain' } },
+                    })),
+                },
+            ],
+        };
         levainStore.set({ a: { ...defaultLevainState }, b: { ...defaultLevainState } });
     });
 
     it('requests a typed addressed chunk preserving identity and paints only authoritative projection', async () => {
         await setLevainPanelUiLevel('a', 6);
-        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({ type: 'setDeviceState', payload: {
-            deviceId: 'a', state: { version: 1, data: {
-                instrumentId: 'violin-1', currentArticulation: 'sustain', disclosureTier: 'expert',
-            } },
-        } }, { skipMacroRecording: true });
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setDeviceState',
+                payload: {
+                    deviceId: 'a',
+                    state: {
+                        version: 1,
+                        data: {
+                            instrumentId: 'violin-1',
+                            currentArticulation: 'sustain',
+                            disclosureTier: 'expert',
+                        },
+                    },
+                },
+            },
+            { skipMacroRecording: true }
+        );
         expect(levainStore.value?.a?.uiLevel).toBe(1);
         const patch = levainStore.value?.a?.patch;
         const device = mocks.trackStore.value.tracks[0]!.devices[0]!;
@@ -60,7 +92,9 @@ describe('setLevainPanelUiLevel', () => {
 
     it('does not paint after a refused or stale request completes', async () => {
         const before = levainStore.value;
-        mocks.executeUserAppAction.mockImplementation(async () => { mocks.trackStore.value = { tracks: [] }; });
+        mocks.executeUserAppAction.mockImplementation(async () => {
+            mocks.trackStore.value = { tracks: [] };
+        });
         await setLevainPanelUiLevel('a', 6);
         reconcileLevainDeviceStateFromProject('a');
         expect(levainStore.value).toBe(before);

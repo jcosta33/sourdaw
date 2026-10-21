@@ -23,7 +23,10 @@ function makeState(instrumentId: string, currentArticulation: string) {
     return { patch: makePatch(instrumentId, currentArticulation) };
 }
 
-type LevainInstance = Record<string, { patch: { instrumentId: string; currentArticulation: string }; uiLevel?: number }>;
+type LevainInstance = Record<
+    string,
+    { patch: { instrumentId: string; currentArticulation: string }; uiLevel?: number }
+>;
 
 function captureSubscriber() {
     return () => {
@@ -125,7 +128,6 @@ describe('initLevainDeviceStatePersistence', () => {
         expect(mocks.commitLevainDeviceState).not.toHaveBeenCalled();
     });
 });
-
 
 it('does not mirror a tier-only projection as another identity write', () => {
     const getSubscriber = captureSubscriber();

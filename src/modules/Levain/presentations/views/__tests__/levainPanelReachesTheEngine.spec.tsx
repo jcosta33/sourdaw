@@ -81,9 +81,14 @@ function makeLevainTracks(): Track[] {
                         bypassed: false,
                         parameterValues: {},
                         // Reopen this device's saved Expert choice before reaching its rail.
-                        deviceState: { version: 1, data: {
-                            instrumentId: 'violin-1', currentArticulation: 'sustain', disclosureTier: 'expert',
-                        } },
+                        deviceState: {
+                            version: 1,
+                            data: {
+                                instrumentId: 'violin-1',
+                                currentArticulation: 'sustain',
+                                disclosureTier: 'expert',
+                            },
+                        },
                     },
                 ],
             },

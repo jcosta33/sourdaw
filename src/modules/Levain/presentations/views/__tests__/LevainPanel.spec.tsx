@@ -434,16 +434,41 @@ describe('LevainPanel', () => {
     });
 });
 
-
 it('Basic keeps the browser, selection detail and macros while Expert reveals the same patch controls', () => {
     vi.clearAllMocks();
-    panelState = { ...baseState(), uiLevel: 1, loadedMicPositions: [null, 'room', 'close'] };
+    const macroControls = [
+        ['Dynamics', 0.2, 0.21],
+        ['Expression', 0.8, 0.81],
+        ['Vibrato', 0.1, 0.11],
+        ['Tightness', 0.3, 0.31],
+        ['Space', 0.4, 0.41],
+        ['Tone', 0.6, 0.61],
+        ['Attack', 0.7, 0.71],
+        ['Release', 0.9, 0.91],
+    ] as const;
+    panelState = {
+        ...baseState(),
+        patch: {
+            ...createDefaultPatch('violin-1'),
+            micPositions: basePatchMicPositions(),
+            macros: macroControls.map(([, value]) => value),
+        },
+        uiLevel: 1,
+        loadedMicPositions: [null, 'room', 'close'],
+    };
     const { rerender } = render(<LevainPanel deviceId="test-device" />);
     const group = screen.getByRole('group', { name: 'Levain control detail' });
     expect(within(group).getAllByRole('button')).toHaveLength(2);
     expect(within(group).getByRole('button', { name: 'Basic' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /Solo Violin/ })).toBeInTheDocument();
-    expect(screen.getByTestId('macro-strip')).toBeInTheDocument();
+    for (const [index, [name, value, nextValue]] of macroControls.entries()) {
+        const knob = screen.getByRole('slider', { name });
+        expect(knob).toHaveAttribute('aria-valuenow', String(value));
+        expect(knob).not.toHaveAttribute('aria-disabled', 'true');
+        fireEvent.keyDown(knob, { key: 'ArrowUp' });
+        expect(setMacroWithAudio).toHaveBeenNthCalledWith(index + 1, 'test-device', index, nextValue);
+    }
+    expect(setMacroWithAudio).toHaveBeenCalledTimes(8);
     const detail = screen.getByRole('region', { name: 'Selection detail' });
     expect(detail).toHaveTextContent('Selected patch articulation');
     expect(detail).toHaveTextContent('Long');
@@ -461,6 +486,10 @@ it('Basic keeps the browser, selection detail and macros while Expert reveals th
     expect(screen.getByTestId('expression-panel')).toBeInTheDocument();
     expect(screen.getByTestId('articulation-list')).toBeInTheDocument();
     expect(screen.getByText('Desk')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Solo Violin/ })).toHaveAttribute('aria-current', 'true');
+    for (const [name, value] of macroControls) {
+        expect(screen.getByRole('slider', { name })).toHaveAttribute('aria-valuenow', String(value));
+    }
     fireEvent.click(screen.getByRole('button', { name: 'Select Room mic' }));
     expect(detail).toHaveTextContent('Selected micRoom');
     fireEvent.click(screen.getByRole('button', { name: 'Select Close mic' }));
@@ -470,6 +499,10 @@ it('Basic keeps the browser, selection detail and macros while Expert reveals th
     rerender(<LevainPanel deviceId="test-device" />);
     expect(detail).toHaveTextContent('Tremolo');
     expect(detail).toHaveTextContent('Selected micClose');
+    for (const [name, value] of macroControls) {
+        expect(screen.getByRole('slider', { name })).toHaveAttribute('aria-valuenow', String(value));
+    }
+    expect(setMacroWithAudio).toHaveBeenCalledTimes(8);
     expect(screen.queryByTestId('fader')).not.toBeInTheDocument();
 });
 
