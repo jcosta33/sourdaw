@@ -1,0 +1,24 @@
+crates/daw-dsp/src/levain/expression.rs
+  h_beb54bf43b47b7 177-179
+crates/daw-engine/src/scheduler.rs
+  h_beb54bf43b47b7 4151-4154,4163-4167,26964,26994-26996,27000,27025,27038-27039,27072-27086
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,17-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88ab7297889383ab117e07aa857d29a19bddecca",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
