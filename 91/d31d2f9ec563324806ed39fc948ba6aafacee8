@@ -102,6 +102,11 @@ scripts/resourceGuardStorage.ts
   "git_ai_version": "1.7.5",
   "base_commit_sha": "91d31d2f9ec563324806ed39fc948ba6aafacee8",
   "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
   "sessions": {
     "s_1c08b47ac3792f": {
       "agent_id": {
