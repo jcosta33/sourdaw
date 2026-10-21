@@ -483,34 +483,60 @@ function carryTimeSignatureToSpanStart(input: CarryAcrossDeletionInput<TimeSigna
     return [createTimeSignatureChange(carriedBeat, governingAtEnd.numerator, governingAtEnd.denominator)];
 }
 
-// Bars are counted from the change that opens them, so material from the insert
-// point on keeps its bars only if the span ends on a downbeat of the meter in force
-// there. The first original downbeat at or after the point is where the material's
-// bar grid resumes; it lands `durationBeats` later, and the bar it falls in runs
-// longer by the inserted span, as a partial bar, up to that beat. Nothing is
-// carried when the shifted grid already has a downbeat there (the span is a whole
-// number of bars), or when a change at or before that downbeat shifts onto it and
-// opens its own bar.
-function carryTimeSignatureAcrossInsertion({
-    original,
-    atBeat,
-    durationBeats,
-}: CarryAcrossInsertionInput<TimeSignatureChange>): CarriedChanges<TimeSignatureChange> {
+// Bars are counted from the change that opens them, so moved material keeps its
+// beat in the bar only if the meter in force at the point restarts its bar grid
+// exactly `durationBeats` after the old one. The grid starts at the bar start `B`
+// at or before the point, which lands at `B + durationBeats`; the bar the point
+// falls in runs on, as a partial bar, up to that beat. When that beat is not
+// before the point it is where the meter is carried, so every moved position,
+// not only the downbeats, keeps its beat. When the span is shorter than the gap
+// back to `B` the beat is before the point, in material that does not move, and
+// the grid resumes at the first downbeat at or after the point instead, shifted
+// by the span: only the downbeats of the moved material are kept then.
+// Nothing is carried when the shifted grid already has a downbeat there (the
+// span is a whole number of bars), when a change that shifts onto it opens its
+// own bar, or, in the fallback, when a change at or before that downbeat does.
+function carryTimeSignatureAcrossInsertion(
+    input: CarryAcrossInsertionInput<TimeSignatureChange>
+): CarriedChanges<TimeSignatureChange> {
+    const { original, atBeat, durationBeats } = input;
     const governing = lastChangeAtOrBefore(original, atBeat) ?? readImpliedTimeSignature();
+    const barBeats = meterBarBeats(governing);
+    const barStart = governing.beat + Math.floor((atBeat - governing.beat + BEAT_EPSILON) / barBeats) * barBeats;
+    const carriedBeat =
+        barStart + durationBeats >= atBeat ? barStart + durationBeats : findShiftedFirstDownbeat(input, governing);
+    if (carriedBeat === null || isMeterBarStart(governing, carriedBeat)) {
+        return { arrivals: [], carried: [] };
+    }
+    const opensItsOwnBar = original.some(
+        (change) => change.beat >= atBeat && Math.abs(change.beat + durationBeats - carriedBeat) <= BEAT_EPSILON
+    );
+    if (opensItsOwnBar) {
+        return { arrivals: [], carried: [] };
+    }
+    return {
+        arrivals: [],
+        carried: [createTimeSignatureChange(carriedBeat, governing.numerator, governing.denominator)],
+    };
+}
+
+// The first downbeat of the governing meter at or after the point, shifted by the
+// span. Null when a change at or before that downbeat opens a bar of its own
+// there, so the meter has nothing to carry.
+function findShiftedFirstDownbeat(
+    { original, atBeat, durationBeats }: CarryAcrossInsertionInput<TimeSignatureChange>,
+    governing: TimeSignatureChange
+): number | null {
     const barBeats = meterBarBeats(governing);
     const firstDownbeat = governing.beat + Math.ceil((atBeat - governing.beat - BEAT_EPSILON) / barBeats) * barBeats;
     const nextChange = Math.min(
         Infinity,
         ...original.filter((change) => change.beat >= atBeat).map(({ beat }) => beat)
     );
-    const shiftedDownbeat = firstDownbeat + durationBeats;
-    if (firstDownbeat >= nextChange - BEAT_EPSILON || isMeterBarStart(governing, shiftedDownbeat)) {
-        return { arrivals: [], carried: [] };
+    if (firstDownbeat >= nextChange - BEAT_EPSILON) {
+        return null;
     }
-    return {
-        arrivals: [],
-        carried: [createTimeSignatureChange(shiftedDownbeat, governing.numerator, governing.denominator)],
-    };
+    return firstDownbeat + durationBeats;
 }
 
 function prepareDeletedChanges<TChange extends TimelineChange>(

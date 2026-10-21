@@ -1250,17 +1250,113 @@ describe('prepareTimelineMapTimeOperation', () => {
             expect(barBeatAt(6)).toEqual({ bar: 2, beat: 1, tick: 0 });
         });
 
-        it('carries the meter to the first downbeat after a mid-bar insert point', () => {
+        it('carries the meter from the start of the split bar, so a clip on beat 3 of it stays on beat 3', () => {
             setStoreStates(tempoState([]), timeSignatureState([timeSignatureChange('m-a', 0, 4)]));
+            const clipBeat = 6;
+            expect(barBeatAt(clipBeat)).toEqual({ bar: 2, beat: 3, tick: 0 });
 
             insertTime(5, 2);
 
-            // Beat 8 was the next downbeat and moves to 10.
+            // The bar from beat 4 runs on to beat 6, and the carried meter restarts the grid there.
             expect(meterEvents()).toEqual([
                 [0, 4, 4],
-                [10, 4, 4],
+                [6, 4, 4],
             ]);
+            expect(barBeatAt(clipBeat + 2)).toEqual({ bar: 2, beat: 3, tick: 0 });
             expect(barBeatAt(10)).toEqual({ bar: 3, beat: 1, tick: 0 });
+        });
+
+        it.each([
+            {
+                name: '4/4, a 9-beat span',
+                numerator: 4,
+                denominator: 4,
+                from: 0,
+                atBeat: 5,
+                durationBeats: 9,
+                carriedBeat: 13,
+            },
+            {
+                name: '3/4, the palette 4-beat span',
+                numerator: 3,
+                denominator: 4,
+                from: 0,
+                atBeat: 3,
+                durationBeats: 4,
+                carriedBeat: 7,
+            },
+            {
+                name: '3/4, 4 beats from mid-bar',
+                numerator: 3,
+                denominator: 4,
+                from: 0,
+                atBeat: 4,
+                durationBeats: 4,
+                carriedBeat: 7,
+            },
+            { name: '5/8', numerator: 5, denominator: 8, from: 0, atBeat: 3, durationBeats: 1, carriedBeat: 3.5 },
+            { name: '6/8', numerator: 6, denominator: 8, from: 0, atBeat: 4, durationBeats: 2, carriedBeat: 5 },
+            {
+                name: '7/8 off a change',
+                numerator: 7,
+                denominator: 8,
+                from: 2,
+                atBeat: 10,
+                durationBeats: 1,
+                carriedBeat: 10,
+            },
+        ])(
+            'keeps every moved position on its beat of the bar: $name',
+            ({ numerator, denominator, from, atBeat, durationBeats, carriedBeat }) => {
+                const meter = { id: 'm-a', beat: from, numerator, denominator };
+                setStoreStates(tempoState([]), timeSignatureState([meter]));
+                const probes = [atBeat, atBeat + 0.5, atBeat + 1, atBeat + 1.75, atBeat + 3, atBeat + 7.25];
+                // The bar number grows with the bars the span adds; the beat in the bar must not move.
+                const beatInBar = (beat: number): { beat: number; tick: number } => {
+                    const { beat: inBar, tick } = barBeatAt(beat);
+                    return { beat: inBar, tick };
+                };
+                const original = probes.map(beatInBar);
+
+                insertTime(atBeat, durationBeats);
+
+                expect(meterEvents().at(-1)).toEqual([carriedBeat, numerator, denominator]);
+                expect(meterEvents()).toHaveLength(2);
+                expect(probes.map((beat) => beatInBar(beat + durationBeats))).toEqual(original);
+            }
+        );
+
+        it('carries the meter before a later change that falls ahead of the next downbeat', () => {
+            setStoreStates(
+                tempoState([]),
+                timeSignatureState([timeSignatureChange('m-a', 0, 4), timeSignatureChange('m-b', 7, 3)])
+            );
+            const original = [5, 6, 6.5, 7, 8].map((beat) => barBeatAt(beat));
+
+            insertTime(5, 2);
+
+            expect(timeSignatureMapStore.value?.changes.map(({ id, beat }) => [id, beat])).toEqual([
+                ['m-a', 0],
+                [expect.any(String), 6],
+                ['m-b', 9],
+            ]);
+            expect(meterEvents()[1]).toEqual([6, 4, 4]);
+            expect([5, 6, 6.5, 7, 8].map((beat) => barBeatAt(beat + 2))).toEqual(original);
+        });
+
+        it('falls back to the first downbeat when the span is shorter than the gap back to the bar start', () => {
+            setStoreStates(tempoState([]), timeSignatureState([timeSignatureChange('m-a', 0, 4)]));
+            const downbeat = barBeatAt(8);
+
+            insertTime(7, 0.5);
+
+            // The bar start is beat 4 and 4.5 is before the point, so the grid resumes at the
+            // shifted downbeat: beat 8 moves to 8.5.
+            expect(meterEvents()).toEqual([
+                [0, 4, 4],
+                [8.5, 4, 4],
+            ]);
+            expect(barBeatAt(8.5)).toEqual(downbeat);
         });
 
         it('writes no meter when the span is a whole number of bars', () => {
@@ -1280,16 +1376,13 @@ describe('prepareTimelineMapTimeOperation', () => {
             expect(transaction.status).toBe('ready');
         });
 
-        it.each([
-            { name: 'ahead of the insert point', atBeat: 5 },
-            { name: 'on the insert point', atBeat: 8 },
-        ])('adds no duplicate when a meter change $name already sits on the first downbeat', ({ atBeat }) => {
+        it('adds no duplicate when a meter change on the insert point already shifts onto the carried beat', () => {
             setStoreStates(
                 tempoState([]),
                 timeSignatureState([timeSignatureChange('m-a', 0, 4), timeSignatureChange('m-b', 8, 3)])
             );
 
-            insertTime(atBeat, 2);
+            insertTime(8, 2);
 
             expect(timeSignatureMapStore.value?.changes.map(({ id, beat }) => [id, beat])).toEqual([
                 ['m-a', 0],
@@ -1297,7 +1390,7 @@ describe('prepareTimelineMapTimeOperation', () => {
             ]);
         });
 
-        it('carries a meter that is not 4/4 past its last change, keeping the meter of the material', () => {
+        it('carries a meter that is not 4/4 past its last change, from the start of the split bar', () => {
             setStoreStates(tempoState([]), timeSignatureState([{ id: 'm-a', beat: 2, numerator: 7, denominator: 8 }]));
             // 7/8 bars are 3.5 beats: from beat 2 they open on 5.5, 9, 12.5, 16.
             const originalDownbeat = barBeatAt(12.5);
@@ -1305,9 +1398,10 @@ describe('prepareTimelineMapTimeOperation', () => {
 
             insertTime(10, 1);
 
+            // The bar from beat 9 runs on to beat 10, where the carried meter restarts the grid.
             expect(meterEvents()).toEqual([
                 [2, 7, 8],
-                [13.5, 7, 8],
+                [10, 7, 8],
             ]);
             expect(barBeatAt(13.5)).toEqual(originalDownbeat);
             expect(barBeatAt(17)).toEqual({ bar: 5, beat: 1, tick: 0 });

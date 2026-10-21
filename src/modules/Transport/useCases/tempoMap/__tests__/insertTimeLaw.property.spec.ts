@@ -57,7 +57,17 @@ const frameCoverage = { inserts: 0, tempoChecked: 0, meterChecked: 0 };
 // change within ε on each side of it, and an insert inside such a narrow ramp.
 const shapeCoverage = { narrowRampCases: 0, straddledInserts: 0, narrowRampInserts: 0 };
 // The bar law reaches inserts whose point is off a downbeat and whose span is not whole bars.
-const barCoverage = { inserts: 0, midBar: 0, partialBars: 0, midBarPartialBars: 0, onDownbeat: 0, wholeBars: 0 };
+const barCoverage = {
+    inserts: 0,
+    midBar: 0,
+    partialBars: 0,
+    midBarPartialBars: 0,
+    onDownbeat: 0,
+    wholeBars: 0,
+    splitBars: 0,
+    splitBarsCheckedBeats: 0,
+    shortSpans: 0,
+};
 
 function createRandom(seed: number): Random {
     let state = seed >>> 0;
@@ -607,6 +617,79 @@ function expectBarsKeptOnTheirDownbeats(before: Maps, after: Maps, insert: Inser
     }
 }
 
+// The downbeat of the original grid that opens the bar the point falls in (a downbeat within
+// tolerance of the point opens it), or undefined when no change or beat zero precedes it.
+function barStartAtPoint(before: Maps, { atBeat }: Insert): number | undefined {
+    const downbeats = gridDownbeats(before.meter, atBeat + BEAT_EPSILON);
+    return downbeats.findLast(({ beat }) => beat <= atBeat + BEAT_EPSILON)?.beat;
+}
+
+// A span that reaches the point from the start of its bar leaves the carried meter room to restart
+// the grid in the inserted span; a shorter one cannot, and only the downbeats are kept.
+function isSplitBarCarry(before: Maps, insert: Insert): boolean {
+    const barStart = barStartAtPoint(before, insert);
+    return barStart !== undefined && barStart + insert.durationBeats >= insert.atBeat;
+}
+
+function offsetInBar(downbeats: readonly Downbeat[], beat: number): number {
+    const opening = downbeats.findLast((downbeat) => downbeat.beat <= beat + DOWNBEAT_TOLERANCE);
+    return opening === undefined ? Number.NaN : beat - opening.beat;
+}
+
+function samplePositions(before: Maps, insert: Insert, horizon: number): number[] {
+    const anchors = uniqueSorted([
+        insert.atBeat,
+        ...before.meter.map(({ beat }) => beat).filter((beat) => beat >= insert.atBeat),
+        horizon,
+    ]);
+    const samples = anchors.flatMap((beat, index) => {
+        const next = anchors[index + 1];
+        return next === undefined ? [beat] : [beat, beat + 0.5, beat + (next - beat) / 2];
+    });
+    return uniqueSorted(samples.filter((beat) => beat >= insert.atBeat && beat <= horizon));
+}
+
+// The stronger law when the span reaches the point from its bar start: not only the downbeats but
+// every moved position keeps its beat in the bar, and no downbeat appears in the moved material that
+// the original grid did not have there.
+function expectMovedMaterialKeepsItsBeats(before: Maps, after: Maps, insert: Insert, context: string): void {
+    if (!isSplitBarCarry(before, insert)) {
+        barCoverage.shortSpans += 1;
+        return;
+    }
+    barCoverage.splitBars += 1;
+    // A point within tolerance before a downbeat takes that downbeat as its bar start, so the
+    // sliver between them is not moved material of that bar.
+    const firstMoved = Math.max(insert.atBeat, barStartAtPoint(before, insert) ?? insert.atBeat);
+    const horizon = horizonOf(before, insert);
+    const beforeDownbeats = gridDownbeats(before.meter, horizon);
+    const afterDownbeats = gridDownbeats(after.meter, horizon + insert.durationBeats + 1);
+    for (const oldBeat of samplePositions(before, insert, horizon)) {
+        if (oldBeat < firstMoved || isBetweenNearEqualChanges(before.meter, oldBeat)) {
+            continue;
+        }
+        const newBeat = shiftedByInsert(oldBeat, insert);
+        barCoverage.splitBarsCheckedBeats += 1;
+        expect(
+            offsetInBar(afterDownbeats, newBeat),
+            `${context}: beat in the bar at old beat ${oldBeat}, moved to ${newBeat}`
+        ).toBeCloseTo(offsetInBar(beforeDownbeats, oldBeat), 6);
+    }
+    const movedFrom = shiftedByInsert(insert.atBeat, insert);
+    const shiftedOriginal = beforeDownbeats
+        .filter(({ beat }) => beat >= insert.atBeat - BEAT_EPSILON)
+        .map(({ beat }) => shiftedByInsert(beat, insert));
+    for (const downbeat of afterDownbeats) {
+        if (downbeat.beat < movedFrom - DOWNBEAT_TOLERANCE || downbeat.beat > horizon) {
+            continue;
+        }
+        expect(
+            shiftedOriginal.some((beat) => Math.abs(beat - downbeat.beat) <= DOWNBEAT_TOLERANCE),
+            `${context}: downbeat at ${downbeat.beat} of the moved material has an original downbeat`
+        ).toBe(true);
+    }
+}
+
 function tempoBoundaryBeats(changes: readonly TempoChange[]): number[] {
     const governing = collapseWithinTolerance(changes);
     const beats = [0];
@@ -698,6 +781,7 @@ function runCase(index: number): void {
         expectTempoAfterPointShifted(before, after, insert, context);
         expectMeterDownbeatsShifted(before, after, insert, context);
         expectBarsKeptOnTheirDownbeats(before, after, insert, context);
+        expectMovedMaterialKeepsItsBeats(before, after, insert, context);
         expectProjectedFramesIncrease(after, context);
         applied.push({ before, after, inversePlan: transaction.inversePlan });
     }
@@ -737,6 +821,9 @@ describe('Insert Time keeps the maps before the point, holds the arriving tempo 
         expect(barCoverage.partialBars).toBeGreaterThanOrEqual(1000);
         expect(barCoverage.wholeBars).toBeGreaterThanOrEqual(100);
         expect(barCoverage.midBarPartialBars).toBeGreaterThanOrEqual(1000);
+        expect(barCoverage.splitBars).toBeGreaterThanOrEqual(1000);
+        expect(barCoverage.splitBarsCheckedBeats).toBeGreaterThanOrEqual(5000);
+        expect(barCoverage.shortSpans).toBeGreaterThanOrEqual(100);
     });
 
     it('reached narrow ramps and insert points with a change within tolerance on each side', () => {

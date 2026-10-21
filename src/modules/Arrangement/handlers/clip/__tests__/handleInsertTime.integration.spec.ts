@@ -166,4 +166,69 @@ describe('Insert Time moves each tempo and meter change with the material on its
         expect(clipStart).toBe(clipBeat + 2);
         expect(readBarStartBeat({ bar: 3 })).toBe(clipStart);
     });
+
+    describe('a point inside a bar keeps the clips after it on their beats', () => {
+        function arrangeClipsInFourFour(): void {
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({
+                        id: 'track-1',
+                        kind: 'midi',
+                        clips: [
+                            ClipDummy.create({
+                                id: 'beat-three',
+                                trackId: 'track-1',
+                                type: 'midi',
+                                startBeat: 6,
+                                endBeat: 7,
+                            }),
+                            ClipDummy.create({
+                                id: 'bar-three',
+                                trackId: 'track-1',
+                                type: 'midi',
+                                startBeat: 8,
+                                endBeat: 16,
+                            }),
+                        ],
+                    }),
+                ],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+            timeSignatureMapStore.set({ changes: [{ id: 'meter-start', beat: 0, numerator: 4, denominator: 4 }] });
+            flushAutomergeStorageWrites();
+            expect(readBarStartBeat({ bar: 3 })).toBe(8);
+        }
+
+        function clipStart(id: string): number | undefined {
+            return trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === id)?.startBeat;
+        }
+
+        function meterBeats(): number[] {
+            return (timeSignatureMapStore.value?.changes ?? []).map(({ beat }) => beat);
+        }
+
+        it.each([
+            {
+                name: 'Insert Time',
+                action: { type: 'insertTime' as const, payload: { atBeat: 5, durationBeats: 2 } },
+            },
+            {
+                // The copy goes in at the range end, so this is the same insert of two beats at beat 5.
+                name: 'Duplicate Time Range',
+                action: { type: 'duplicateTimeRange' as const, payload: { startBeat: 3, endBeat: 5 } },
+            },
+        ])('$name restarts the bar grid at the end of the split bar', async ({ action }) => {
+            arrangeClipsInFourFour();
+
+            await executeAppAction(action);
+
+            // Beat 3 of bar 2 is now beat 3 of the bar the carried meter opens on beat 6, and the
+            // downbeat clip is on the downbeat of bar 3.
+            expect(clipStart('beat-three')).toBe(8);
+            expect(clipStart('bar-three')).toBe(10);
+            expect(meterBeats()).toEqual([0, 6]);
+            expect(readBarStartBeat({ bar: 3 })).toBe(10);
+        });
+    });
 });
