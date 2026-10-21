@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
-import { diffProposalCommands } from './diffProposalCommands';
+import { proposalCommandShape } from '../../useCases/agentReference/proposalCommandShape';
+import { diffProposalCommands } from '../diffProposalCommands';
+
+type Proposal = Parameters<typeof diffProposalCommands>[0];
+
+/** The diff as the approval view runs it, with command identity read from the action registry. */
+function diff(previous: Proposal, next: Proposal) {
+    return diffProposalCommands(previous, next, proposalCommandShape.identityArguments);
+}
 
 describe('diffProposalCommands', () => {
     it('retains the actual unchanged occurrence when an earlier clip on the same track is removed', () => {
@@ -10,7 +18,7 @@ describe('diffProposalCommands', () => {
         const bar2 = { type: 'addClip', payload: { trackId: 'midi-1', startBeat: 4, endBeat: 8 } };
 
         expect(
-            diffProposalCommands(
+            diff(
                 { actions: [bar1, bar2], actionLabels: ['Bar 1', 'Bar 2'] },
                 { actions: [bar2], actionLabels: ['Bar 2'] }
             )
@@ -27,7 +35,7 @@ describe('diffProposalCommands', () => {
         const added = { type: 'addClip', payload: { trackId: 'midi-2', startBeat: 8, endBeat: 12 } };
 
         expect(
-            diffProposalCommands(
+            diff(
                 { actions: [first, second], actionLabels: ['Bar 1', 'Bar 2'] },
                 { actions: [second, changed, added], actionLabels: ['Bar 2', 'Long bar 1', 'New clip'] }
             )
@@ -60,7 +68,7 @@ describe('diffProposalCommands', () => {
         };
 
         expect(
-            diffProposalCommands(
+            diff(
                 { actions: [first, second], actionLabels: ['Verse clip', 'Chorus clip'] },
                 { actions: [replacement], actionLabels: ['Bridge clip'] }
             )
@@ -88,7 +96,7 @@ describe('diffProposalCommands', () => {
         const keepRename = { type: 'renameClip', payload: { clipId: 'clip-c', name: 'Intro' } } satisfies AppAction;
 
         expect(
-            diffProposalCommands(
+            diff(
                 {
                     actions: [moveFromTrackA, removeClipA, keepRename],
                     actionLabels: ['Move clip', 'Remove clip A', 'Keep clip name'],
@@ -122,7 +130,7 @@ describe('diffProposalCommands', () => {
         const sameClip = { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Chorus' } } satisfies AppAction;
 
         expect(
-            diffProposalCommands(
+            diff(
                 { actions: [before], actionLabels: ['Rename Verse clip'] },
                 { actions: [otherClip], actionLabels: ['Rename Chorus clip'] }
             )
@@ -134,7 +142,7 @@ describe('diffProposalCommands', () => {
             unchangedCount: 0,
         });
         expect(
-            diffProposalCommands(
+            diff(
                 { actions: [before], actionLabels: ['Rename Verse clip'] },
                 { actions: [sameClip], actionLabels: ['Rename clip to Chorus'] }
             )
@@ -145,6 +153,42 @@ describe('diffProposalCommands', () => {
                     actionType: 'renameClip',
                     label: 'Rename clip to Chorus',
                     fields: [{ field: 'name', previous: 'Verse', next: 'Chorus' }],
+                },
+            ],
+            unchangedCount: 0,
+        });
+    });
+
+    it('pairs two parameter changes on one device by parameter, not by their order (#4380 row 22)', () => {
+        const frequency = (value: number) =>
+            ({
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-eq', paramId: 'eq-mid-freq', value },
+            }) satisfies AppAction;
+        const gain = (value: number) =>
+            ({
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-eq', paramId: 'eq-mid-gain', value },
+            }) satisfies AppAction;
+
+        expect(
+            diff(
+                { actions: [frequency(1000), gain(-3)], actionLabels: ['EQ mid frequency', 'EQ mid gain'] },
+                { actions: [gain(-6), frequency(2000)], actionLabels: ['EQ mid gain', 'EQ mid frequency'] }
+            )
+        ).toEqual({
+            changes: [
+                {
+                    kind: 'changed',
+                    actionType: 'setDeviceParameter',
+                    label: 'EQ mid gain',
+                    fields: [{ field: 'value', previous: '-3', next: '-6' }],
+                },
+                {
+                    kind: 'changed',
+                    actionType: 'setDeviceParameter',
+                    label: 'EQ mid frequency',
+                    fields: [{ field: 'value', previous: '1000', next: '2000' }],
                 },
             ],
             unchangedCount: 0,

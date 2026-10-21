@@ -8,6 +8,7 @@ import {
 } from '../stores/pendingActionConfirmationStore';
 import { diffProposalCommands } from '../transformers/diffProposalCommands';
 
+import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { getProviderRouteView } from './getProviderRouteView';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
@@ -328,7 +329,11 @@ function projectPreviousProposalDiff(
     }
     return {
         previousConfirmationId: previous.id,
-        ...diffProposalCommands(previous.approvalSnapshot, confirmation.approvalSnapshot),
+        ...diffProposalCommands(
+            previous.approvalSnapshot,
+            confirmation.approvalSnapshot,
+            proposalCommandShape.identityArguments
+        ),
     };
 }
 

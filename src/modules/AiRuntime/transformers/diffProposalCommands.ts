@@ -1,6 +1,5 @@
 import { formatDecibels } from '#/utils/audioLevelLaw';
 import { canonicalJson } from '#/utils/canonicalDigest';
-import { type AppActionType } from '#/utils/handlerContract';
 
 type ProposalCommands = {
     actions: ReadonlyArray<{ type: string; payload?: unknown }>;
@@ -17,46 +16,10 @@ type ProposalCommandChange =
 type ProposalCommandDiff = { changes: ProposalCommandChange[]; unchangedCount: number };
 
 /**
- * The payload fields that say which object a command acts on, as the payload carries them.
- * Repeated commands on one target still need occurrence evidence before a changed-value pairing.
+ * The arguments that say which object a command of a type acts on, read from the action registry
+ * by the caller. A creation id is no target, so it never pairs a fresh object with an old one.
  */
-const TARGET_IDENTITY_FIELDS = ['trackId', 'busId', 'deviceId', 'parameterId', 'sendId'] as const;
-/** Typed clip commands whose clipId names the existing clip they act on. Creation IDs are excluded. */
-const CLIP_TARGET_ACTIONS = new Set<string>([
-    'removeClip',
-    'moveClip',
-    'splitClip',
-    'duplicateClip',
-    'duplicateClipToNextBar',
-    'duplicateClipAt',
-    'renameClip',
-    'trimClipStart',
-    'trimClipEnd',
-    'nudgeClip',
-    'slipClipContent',
-    'setClipGain',
-    'muteClip',
-    'setClipColor',
-    'setClipFade',
-    'lockClip',
-    'setClipLoop',
-    'setClipLoopLength',
-    'normalizeClip',
-    'setClipStretchMode',
-    'setClipStretchRatio',
-    'fitClipToBeats',
-    'quantizeNotes',
-    'quantizeNoteLengths',
-    'transposeNotes',
-    'invertNotes',
-    'retrogradeNotes',
-    'scaleAllVelocities',
-    'setAllVelocities',
-    'removeShortMidiOverlaps',
-    'addNotes',
-    'arpeggiate',
-    'exportMidi',
-] satisfies AppActionType[]);
+export type CommandTargetArguments = (actionType: string) => readonly string[];
 
 type KeyedCommand = { identity: string; actionType: string; label: string; payload: Readonly<Record<string, unknown>> };
 
@@ -64,22 +27,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function targetIdentity(actionType: string, payload: Readonly<Record<string, unknown>>): string {
-    if (CLIP_TARGET_ACTIONS.has(actionType)) {
-        return typeof payload.clipId === 'string' ? `${actionType}|clipId=${payload.clipId}` : actionType;
-    }
-    const targets = TARGET_IDENTITY_FIELDS.flatMap((field) =>
-        typeof payload[field] === 'string' ? [`${field}=${payload[field]}`] : []
+function targetIdentity(
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>,
+    targetArguments: CommandTargetArguments
+): string {
+    const targets = targetArguments(actionType).flatMap((argument) =>
+        payload[argument] === undefined ? [] : [`${argument}=${canonicalJson(payload[argument])}`]
     );
     return [actionType, ...targets].join('|');
 }
 
 /** Keep the command's target identity and payload separate so exact occurrences can pair first. */
-function keyCommands(proposal: ProposalCommands): KeyedCommand[] {
+function keyCommands(proposal: ProposalCommands, targetArguments: CommandTargetArguments): KeyedCommand[] {
     return proposal.actions.map((action, index) => {
         const payload = isRecord(action.payload) ? action.payload : {};
         return {
-            identity: targetIdentity(action.type, payload),
+            identity: targetIdentity(action.type, payload, targetArguments),
             actionType: action.type,
             label: proposal.actionLabels[index] ?? action.type,
             payload,
@@ -121,14 +85,18 @@ function changedFields(
 }
 
 /**
- * What a replacement proposal changes against the proposal it replaced, command by command. A
+ * What a replacement proposal changes against the proposal it replaced, command by command.
  * Exact command occurrences match first. A differing command is paired by type and target only
  * when one unmatched occurrence remains on each side; otherwise its lineage is ambiguous and the
  * comparison reports additions and removals without claiming which old value changed.
  */
-export function diffProposalCommands(previous: ProposalCommands, next: ProposalCommands): ProposalCommandDiff {
-    const previousCommands = keyCommands(previous);
-    const nextCommands = keyCommands(next);
+export function diffProposalCommands(
+    previous: ProposalCommands,
+    next: ProposalCommands,
+    targetArguments: CommandTargetArguments
+): ProposalCommandDiff {
+    const previousCommands = keyCommands(previous, targetArguments);
+    const nextCommands = keyCommands(next, targetArguments);
     const matchedPrevious = new Set<number>();
     const exactNext = new Set<number>();
     // Preserve exact occurrences before pairing changed peers. Removing the first of two clips on
