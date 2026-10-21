@@ -79,7 +79,7 @@ function preservesNativeButtonActivation(event: KeyboardEvent): boolean {
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
-            if (preservesNativeTabTraversal(event) || preservesNativeButtonActivation(event)) {
+            if (preservesNativeTabTraversal(event)) {
                 return;
             }
             // A load that replaced the CRDT authority and then failed leaves the
