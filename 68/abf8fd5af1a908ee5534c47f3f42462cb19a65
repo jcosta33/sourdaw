@@ -1,0 +1,26 @@
+scripts/e2eSelectionShadowAgreement.ts
+  s_ba8dd89de9aac7::t_29e77dda09391f 1-160
+  s_ba8dd89de9aac7::t_99f10ef1d51134 161-225
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_ba8dd89de9aac7::t_9048538086ac13 132-134,165,192,241-244,271-273,275,281-285,296,324,339,352-360,534,536-562,652,657-661,1212,1215-1219,1223,1226-1230,1265-1338
+scripts/e2eSelectionShadow.ts
+  s_ba8dd89de9aac7::t_7f33d822d90a98 8-15,58,238,250,261-265,267,273,284-288,298,300,430,478,528,610
+scripts/e2eSelectionShadowCompatibility.ts
+  s_ba8dd89de9aac7::t_ab0863035e7a1e 8-13,22,74,159-162,184-187,200-204,206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "68abf8fd5af1a908ee5534c47f3f42462cb19a65",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
