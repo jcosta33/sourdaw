@@ -19,6 +19,7 @@ const mocks = vi.hoisted<SetPlayheadFromClickMocks>(() => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     seekPlayhead: mocks.seekPlayhead,
 }));
 

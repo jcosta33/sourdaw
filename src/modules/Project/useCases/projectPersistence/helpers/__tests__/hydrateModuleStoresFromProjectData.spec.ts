@@ -54,6 +54,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     restoreTransportSnapshot: mocks.restoreTransportSnapshot,
 }));
 

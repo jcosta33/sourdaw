@@ -32,7 +32,8 @@ vi.mock('../../../repositories/project/writeProjectJson', () => ({
     writeProjectJson: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(), ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
