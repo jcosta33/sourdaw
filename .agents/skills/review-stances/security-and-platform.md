@@ -22,6 +22,20 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
+
+PR #5345 excused an uninspectable same-UID process only when it predated the run's live
+supervisor. Every runner-account row that reclaims an exited or crashed run through a later guard
+start, including a moved claim, still met the boot-time process denying `/proc/<pid>/cwd` and
+retained that storage indefinitely, so the "Review tooling unit suite" stayed red on main. The
+review accepted "recovery excuses nothing" as the safe side without running a recovery row beside
+an older denied process; a dead owner's start still bounds what could have inherited from it.
+
+Probe: recover a dead owner's storage, directly and from a moved claim, beside a denied process
+older than that owner, and require reclamation. Bound the excuse by the start ticks the creating
+supervisor recorded in its ownership record, never by the reclaimer's start; require retention for
+a denied process started at or after that owner and for a record that carries no start ticks.
+
 ### 2026-10-21 — the storage census attributed foreign same-UID processes to every run (introduced by PR #5274)
 
 PR #5274 proved its Linux file census only in a fresh isolated account. In the runner account a
@@ -32,8 +46,8 @@ processes.
 
 Probe: run a guarded no-op in a populated Linux account beside an uninspectable process that
 predates the supervisor, and require reclamation. Keep the denial retained for a process started
-after the supervisor, and for every denial during crash recovery or under any owner other than the
-run's own live supervisor.
+at or after the supervisor that created the storage, and for every denial whose owner start cannot
+be established; the next escape shows why recovery must still apply the dead owner's recorded start.
 
 ### 2026-10-12 — transient Darwin descriptor omission exhausted complete-census admission
 
@@ -77,8 +91,9 @@ Require matching PID/thread-group/four UIDs and one thread; denied, incomplete o
 retains. File release never grants authority to treat a registered PID as gone.
 UID equality does not grant `/proc` readlink access: dumpability and access policy can deny a live
 same-UID cwd or file descriptor. Keep denial unknown and retain storage, except for a process that
-started before the run's live supervisor and so inherited no cwd or descriptor from it; that start
-time does not prove it never opens a storage path it is later handed. For hosted test isolation,
+started before the supervisor that created the storage (read live, or from its recorded start ticks
+during recovery) and so inherited no cwd or descriptor from it; that start time does not prove it
+never opens a storage path it is later handed. For hosted test isolation,
 prove the account's UID unused before install, all runtime identity fields unprivileged, groups and
 capabilities cleared, and private storage owned. Attack denied same-test-UID consumers before worker
 concurrency and require actual retention followed by reclamation after reaping. Account isolation

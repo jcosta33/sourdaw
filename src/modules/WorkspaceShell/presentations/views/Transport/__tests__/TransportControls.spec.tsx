@@ -22,6 +22,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     togglePlayback: mocks.togglePlayback,
     stopPlayback: mocks.stopPlayback,
     toggleOverdub: mocks.toggleOverdub,

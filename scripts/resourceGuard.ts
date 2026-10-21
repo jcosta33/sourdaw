@@ -1042,8 +1042,9 @@ function storageIdentityState(identity: StorageProcessIdentity): 'alive' | 'dead
     return startedAt === identity.startedAt ? 'alive' : 'unknown';
 }
 
-// Only this run's own live supervisor bounds which processes predate it. A recovered
-// owner, a foreign live owner, or a reused PID bounds nothing, so it excuses nothing.
+// Only this run's own live supervisor can be read live to bound which processes predate it.
+// Any other owner, recovered or reused, bounds the excuse only by the start ticks its storage
+// record carries from creation (owner.startTicks), and by nothing when it carries none.
 export function startTimeExcuseSupervisor(
     owner: StorageProcessIdentity,
     currentPid: number,
@@ -1065,7 +1066,8 @@ type StorageRecoveryHost = {
         tempDirectories: string[],
         ownedPids: number[],
         report: (reason: string) => void,
-        supervisorPid?: number
+        supervisorPid?: number,
+        ownerStartTicks?: number
     ) => 'alive' | 'dead' | 'unknown';
 };
 
@@ -1119,6 +1121,7 @@ export function storageRecoveryPorts(
                 host.platform(),
                 host.identityState
             );
+            const ownerStartTicks = host.platform() === 'linux' ? owner.owner.startTicks : undefined;
             return host.fileState(
                 [tempDirectory, currentTempDirectory],
                 [
@@ -1127,7 +1130,8 @@ export function storageRecoveryPorts(
                     ...(owner.child === undefined ? [] : [owner.child.pid]),
                 ],
                 report,
-                supervisorPid
+                supervisorPid,
+                ownerStartTicks
             );
         },
         localReleaseAllowed: (owner, tempDirectory, currentTempDirectory) => {
@@ -1273,9 +1277,24 @@ function readLinuxStartTicks(pid: number): number | undefined {
     return parseLinuxStartTicks(readFileSync(`/proc/${pid}/stat`, 'utf8'));
 }
 
+function currentLinuxStartTicks(): number | undefined {
+    if (platform() !== 'linux') {
+        return undefined;
+    }
+    try {
+        return readLinuxStartTicks(process.pid);
+    } catch {
+        return undefined;
+    }
+}
+
+// The bound is the live supervisor's start when it is given, otherwise the start ticks
+// recorded by the dead supervisor that created the storage. Ticks count from boot, so a
+// record from an earlier boot compares only against processes that cannot descend from it.
 export function linuxFilePorts(
     supervisorPid?: number,
-    startTicks: (pid: number) => number | undefined = readLinuxStartTicks
+    startTicks: (pid: number) => number | undefined = readLinuxStartTicks,
+    ownerStartTicks?: number
 ): LinuxFilePorts {
     return {
         inspectUid: (pid) => lstatSync(`/proc/${pid}`).uid,
@@ -1285,12 +1304,12 @@ export function linuxFilePorts(
         readStatus: (pid) => readFileSync(`/proc/${pid}/status`, 'utf8'),
         isGone: processIsGone,
         startedBeforeSupervisor: (pid) => {
-            if (supervisorPid === undefined) {
+            if (supervisorPid === undefined && ownerStartTicks === undefined) {
                 return false;
             }
             try {
                 const started = startTicks(pid);
-                const supervisorStarted = startTicks(supervisorPid);
+                const supervisorStarted = supervisorPid === undefined ? ownerStartTicks : startTicks(supervisorPid);
                 return started !== undefined && supervisorStarted !== undefined && started < supervisorStarted;
             } catch {
                 return false;
@@ -1448,11 +1467,13 @@ export function linuxStorageFileCensus(
 
 // supervisorPid names the live process that spawned the run, never a later reclaimer:
 // only processes that predate it are known not to have inherited from the run.
+// ownerStartTicks is that supervisor's recorded start, which outlives it for recovery.
 export function storageFileState(
     tempDirectories: string[],
     ownedPids: number[],
     report: (reason: string) => void = () => {},
-    supervisorPid?: number
+    supervisorPid?: number,
+    ownerStartTicks?: number
 ): 'alive' | 'dead' | 'unknown' {
     const unknown = (reason: string): 'unknown' => {
         report(reason);
@@ -1585,7 +1606,7 @@ export function storageFileState(
         return linuxStorageFileCensus(pids, uid, tempDirectories, deadline, report, {
             readProcessUsers,
             isGone: processIsGone,
-            files: linuxFilePorts(supervisorPid),
+            files: linuxFilePorts(supervisorPid, readLinuxStartTicks, ownerStartTicks),
         });
     } catch {
         return unknown('file-census-unavailable');
@@ -1710,7 +1731,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         storage = (input.storageFactory ?? createGuardStorage)({
             root: input.storageRoot ?? resolveGuardStorageRoot(cwd),
             token: processToken,
-            owner: { pid: process.pid, startedAt: supervisorStart },
+            owner: { pid: process.pid, startedAt: supervisorStart, startTicks: currentLinuxStartTicks() },
             ports: storagePorts,
         });
     } catch (error) {
