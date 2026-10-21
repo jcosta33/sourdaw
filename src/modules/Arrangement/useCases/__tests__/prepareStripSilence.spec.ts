@@ -779,6 +779,72 @@ describe('prepareStripSilence', () => {
         });
     });
 
+    describe('a looped stretched clip', () => {
+        // A looped clip (anchor 0, loop 4) stretched at ratio 2 consumes 20
+        // buffer beats over its 10 timeline beats. Sound at buffer beat 10
+        // sounded at timeline 5, so its segment advances the offset to 10
+        // while advancing the start by only 5 — the carried anchor must
+        // shift by `timelineDelta - contentDelta` = -5 for the derived
+        // region `offset - advance` to stay the source's own [0, 4). Carried
+        // verbatim through the spread, anchor 0 derives advance 5 and the
+        // segment reads region 5 — material the loop never covered.
+        function loopedStretchedChannelData(): Float32Array<ArrayBuffer> {
+            const channelData = new Float32Array(20 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 10 * SAMPLES_PER_BEAT, 11 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 14 * SAMPLES_PER_BEAT, 16 * SAMPLES_PER_BEAT);
+            return channelData;
+        }
+
+        function createLoopedStretchedClip(): Clip {
+            return ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 10,
+                stretchMode: 'repitch',
+                stretchRatio: 2,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+            });
+        }
+
+        it('shifts each segment anchor by the timeline minus content delta so the region stays the source loop', () => {
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([createLoopedStretchedClip()])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(loopedStretchedChannelData()));
+
+            const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+            expect(plan).not.toBeNull();
+            const [first, second] = plan!.next.clips;
+            // Segment 1: region buffer [10,11) at timeline [5,5.5), offset 10,
+            // anchor -5 -> advance 10 -> derived region 10 - 10 = 0. Segment
+            // 2: region buffer [14,16) at timeline [7,8), offset 14, anchor
+            // -7 -> advance 14 -> derived region 0. Both cycle the source's
+            // loop region [0, 4).
+            expect(first).toMatchObject({ startBeat: 5, endBeat: 5.5, audioOffsetBeats: 10, loopOriginBeat: -5 });
+            expect(second).toMatchObject({ startBeat: 7, endBeat: 8, audioOffsetBeats: 14, loopOriginBeat: -7 });
+            for (const segment of [first, second]) {
+                const advance = segment!.startBeat - (segment!.loopOriginBeat ?? segment!.startBeat);
+                expect((segment!.audioOffsetBeats ?? 0) - advance).toBe(0);
+            }
+        });
+
+        it('keeps the anchor key absent for an unanchored source', () => {
+            const clip = createLoopedStretchedClip();
+            delete (clip as { loopOriginBeat?: number }).loopOriginBeat;
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(loopedStretchedChannelData()));
+
+            const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+            expect(plan).not.toBeNull();
+            for (const segment of plan!.next.clips) {
+                expect(Object.hasOwn(segment, 'loopOriginBeat')).toBe(false);
+            }
+        });
+    });
+
     describe('a pre-rolled clip (audioOffsetBeats < 0)', () => {
         // The scheduler and `computeAudioWaveformDrawSpan` agree: a negative
         // offset is a silent pre-roll costing `max(0, -audioOffsetBeats) /

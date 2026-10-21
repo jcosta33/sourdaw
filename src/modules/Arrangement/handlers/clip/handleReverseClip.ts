@@ -73,6 +73,7 @@ export const handleReverseClip = createHandler<'reverseClip'>({
             // The forward path mirrors the fades along with the audio.
             fadeInBeats: clip.fadeOutBeats,
             fadeOutBeats: clip.fadeInBeats,
+            ...(clip.loopOriginBeat !== undefined ? { loopOriginBeat: clip.startBeat } : {}),
         };
         if (remappedAudioSource) {
             redoPayload.audioOffsetBeats = remappedAudioSource.audioOffsetBeats;
@@ -94,6 +95,12 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                         audioOffsetSeconds: clip.audioOffsetSeconds ?? null,
                         audioOffsetBeats: clip.audioOffsetBeats ?? null,
                     },
+                    // The forward run restamps the anchor at the clip's own start (the
+                    // mirrored buffer is a fresh media basis), so undo must put the
+                    // pre-reverse anchor back. Absent when the source was unanchored:
+                    // the restamp keeps the key absent then, so leaving it out of the
+                    // payload matches the restore's untouched default.
+                    ...(clip.loopOriginBeat !== undefined ? { loopOriginBeat: clip.loopOriginBeat } : {}),
                     ...analysis,
                 },
             },

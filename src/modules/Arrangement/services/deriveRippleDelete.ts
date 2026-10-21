@@ -1,3 +1,5 @@
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+
 import { type Clip } from '../models/Track';
 
 type RippleDeleteShift = {
@@ -51,7 +53,7 @@ export function deriveRippleDelete<TClip extends Pick<Clip, 'id' | 'startBeat' |
                 origEndBeat: clip.endBeat,
                 automationDelta: -gap,
             });
-            accumulator.push({ ...clip, startBeat: clip.startBeat - gap, endBeat: clip.endBeat - gap });
+            accumulator.push({ ...clip, startBeat: clip.startBeat - gap, endBeat: clip.endBeat - gap, ...shiftLoopOriginEntry(clip, -gap) });
             return accumulator;
         }
         accumulator.push(clip);

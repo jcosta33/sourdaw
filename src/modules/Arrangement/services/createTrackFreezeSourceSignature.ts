@@ -1,4 +1,5 @@
 import { canonicalJson } from '#/utils/canonicalDigest';
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { type Clip, type DeviceStateChunk } from '../models/Track';
@@ -9,7 +10,10 @@ import { type Clip, type DeviceStateChunk } from '../models/Track';
  * MIDI note projection to decide what a clip sounds like. An edit to any of
  * them must change the freeze source signature, or a frozen track keeps
  * playing its stale buffer (audit #4591: mute, fades, slip and reverse all
- * left the old id/start/duration/hash/gain signature untouched).
+ * left the old id/start/duration/hash/gain signature untouched). The loop
+ * anchor belongs here because it can differ alone: a trim chain can return
+ * every other listed field to its frozen value while `loopOriginBeat` — and
+ * with it the loop region the render reads — moved (#4988).
  */
 type RenderAffectingClipFields = Pick<
     Clip,
@@ -30,6 +34,7 @@ type RenderAffectingClipFields = Pick<
     | 'stretchRatio'
     | 'loopEnabled'
     | 'loopLength'
+    | 'loopOriginBeat'
 >;
 
 type TrackFreezeSource = {
@@ -51,7 +56,17 @@ function clipSignatureEntry(clip: RenderAffectingClipFields): string {
     // (`?? 0`, `?? false`), so a handler writing the default over an absent
     // field does not mark a render-identical track stale. Identity strings
     // (`audioBufferId`, `stretchMode`, `stretchRatio`) stay raw: absent
-    // means absent.
+    // means absent. The loop anchor folds through the same law the render
+    // applies (`projectOfflineAudioClipPlaybacks`'s advance): the renderer
+    // enters the loop region at `startBeat - advance`, and an absent anchor —
+    // or one the loop is off and cannot read — advances zero, so
+    // `resolveLoopAnchoredStartBeat` is the source start the window math
+    // actually reads and the anchor only signs when it moves that entry.
+    const loopAnchoredStartBeat = resolveLoopAnchoredStartBeat({
+        startBeat: clip.startBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
     const signature = [
         clip.id,
         clip.startBeat,
@@ -69,6 +84,7 @@ function clipSignatureEntry(clip: RenderAffectingClipFields): string {
         clip.stretchRatio ?? '',
         clip.loopEnabled ?? false,
         clip.loopLength ?? 0,
+        loopAnchoredStartBeat,
     ].join(':');
 
     // Preserve legacy signatures byte-for-byte. When the authoritative source

@@ -54,6 +54,7 @@ export type ProjectClip = {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    loopOriginBeat?: number;
     followAction?: ProjectFollowAction;
     generating?: boolean;
     isGhost?: boolean;

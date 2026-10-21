@@ -1,6 +1,7 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
 import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { type AudioSourceStateSnapshot, type TakeSourceDepthSnapshot } from '#/utils/handlerContract';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -111,6 +112,7 @@ function prepareClipMovement(
             movedClip = {
                 ...clip,
                 trackId: targetTrackId,
+                ...shiftLoopOriginEntry(clip, startBeat - clip.startBeat),
                 startBeat,
                 endBeat: options?.historicalEndBeat ?? startBeat + (clip.endBeat - clip.startBeat),
             };

@@ -250,6 +250,7 @@ export type ProjectClip = {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    loopOriginBeat?: number;
     followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
     generating?: boolean;
     isGhost?: boolean;

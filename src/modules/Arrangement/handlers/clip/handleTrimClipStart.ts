@@ -42,6 +42,7 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
             const written = trimClipStart(
                 alpha.payload.clipId,
                 alpha.payload.newStartBeat,
+                alpha.payload.loopOriginBeat,
                 alpha.payload.restoreAudioSource
             );
             if (written && pending) {
@@ -72,6 +73,7 @@ function describeTrim(alpha: TrimClipStartAction): Description {
         const inversePayload: Extract<AppAction, { type: 'trimClipStart' }>['payload'] = {
             clipId: clip.id,
             newStartBeat: clip.startBeat,
+            loopOriginBeat: clip.loopOriginBeat ?? null,
         };
         let redoAction: TrimClipStartAction | undefined;
         if (clip.type === 'audio') {
@@ -85,6 +87,7 @@ function describeTrim(alpha: TrimClipStartAction): Description {
                 payload: {
                     clipId: clip.id,
                     newStartBeat: alpha.payload.newStartBeat,
+                    loopOriginBeat: alpha.payload.loopOriginBeat ?? clip.loopOriginBeat ?? (clip.loopEnabled ? clip.startBeat : null),
                     expectedAudioSource: previousSource,
                     restoreAudioSource: nextSource,
                 },

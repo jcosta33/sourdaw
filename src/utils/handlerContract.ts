@@ -147,6 +147,7 @@ export type ClipStateSnapshot = {
     readonly stretchRatio?: number;
     readonly loopEnabled?: boolean;
     readonly loopLength?: number;
+    readonly loopOriginBeat?: number;
     readonly followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
     readonly generating?: boolean;
     readonly isGhost?: boolean;
@@ -1500,6 +1501,16 @@ export type AppAction =
               restoreAudioSource?: AudioSourceStateSnapshot;
               /** Source state written by the original edit; undo refuses divergence. */
               expectedAudioSource?: AudioSourceStateSnapshot;
+              /**
+               * The exact pre-action loop anchor the recorded inverse restores
+               * (#5198): a value puts that anchor back and `null` restores "no
+               * anchor", removing a key the action minted, so both replay
+               * directions restore the pre-action state. Optional so entries
+               * persisted before the field existed still decode; absent replays
+               * the mint law they always did. AiRuntime-produced trims never
+               * set it.
+               */
+              loopOriginBeat?: number | null;
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
@@ -2200,6 +2211,8 @@ export type AppAction =
               /** Exact canonical and legacy field presence for current undo/redo entries.
                *  Historical entries omit this and retain their beat-only restore. */
               audioSource?: AudioSourceStateSnapshot;
+              /** Loop anchor the restore puts back; optional so older undo entries still decode. */
+              loopOriginBeat?: number;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };
@@ -2260,6 +2273,14 @@ export type AppAction =
                   clipBFadeInBeats: number;
                   clipBAudioOffsetBeats?: number;
                   clipBMidiOffsetBeats?: number;
+                  /**
+                   * The loop anchor the captured clip B carried, so the undo
+                   * of a stretched crossfade restores the pre-crossfade anchor
+                   * the forward leg displaced (#5198). Absent on legacy
+                   * entries, which decode and restore exactly as before: the
+                   * live anchor is left untouched.
+                   */
+                  clipBLoopOriginBeat?: number;
               };
               replacement: {
                   clipAEndBeat: number;
@@ -2268,6 +2289,7 @@ export type AppAction =
                   clipBFadeInBeats: number;
                   clipBAudioOffsetBeats?: number;
                   clipBMidiOffsetBeats?: number;
+                  clipBLoopOriginBeat?: number;
               };
           };
       }
@@ -2500,8 +2522,34 @@ export type AppAction =
           type: 'restoreClipLoop';
           payload: {
               clipId: string;
-              expected: { present: boolean; enabled: boolean };
-              replacement: { present: boolean; enabled: boolean };
+              expected: {
+                  present: boolean;
+                  enabled: boolean;
+                  /**
+                   * The loop anchor the captured clip carried (#5198). Absent
+                   * on legacy entries, which decode and behave exactly as
+                   * before. The compare-and-swap guard reads only present and
+                   * enabled: the anchor is inert while the loop is off, and a
+                   * legacy expected snapshot must not conflict with a live
+                   * anchor a later edit minted. `null` rides on entries whose
+                   * captured clip carried none.
+                   */
+                  loopOriginBeat?: number | null;
+              };
+              replacement: {
+                  present: boolean;
+                  enabled: boolean;
+                  /**
+                   * The anchor to put back: the inverse of a loop disable
+                   * restores the pre-disable anchor instead of the enable
+                   * branch's restamp (#5198). `null` records a captured clip
+                   * that carried no anchor, so the inverse of an enable
+                   * removes the key the enable minted instead of leaving it on
+                   * a never-looped clip. Absent — legacy entries — replays the
+                   * enable's restamp exactly as before.
+                   */
+                  loopOriginBeat?: number | null;
+              };
           };
       }
     | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }

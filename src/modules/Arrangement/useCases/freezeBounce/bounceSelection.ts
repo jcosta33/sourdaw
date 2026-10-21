@@ -6,6 +6,7 @@ import {
     restoreMidiClipData,
     splitMidiNotesAtBeat,
 } from '#/modules/MIDI/useCases';
+import { restampLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../models/Track';
