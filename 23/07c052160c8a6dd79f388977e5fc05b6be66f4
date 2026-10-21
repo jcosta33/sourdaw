@@ -1,0 +1,22 @@
+crates/sourdaw-native/src/commands/engine_lifecycle.rs
+  s_59e31a5c6f3e31::t_a6e24373ddb25e 863-864,885-887,896
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_59e31a5c6f3e31::t_a6e24373ddb25e 2178-2197,2200-2233,3022-3023,3212-3213,3226-3239,3252-3255
+  s_59e31a5c6f3e31::t_2f0da392b35252 2198-2199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2307c052160c8a6dd79f388977e5fc05b6be66f4",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
