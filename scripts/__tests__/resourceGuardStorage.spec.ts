@@ -1509,18 +1509,20 @@ if(process.argv[2]==='-axo'){
     // residents (`call` counts process listings) and may override their state samples. The
     // fake `lsof` logs whole and PID-scoped reads; `whole` numbers the whole catalogs. Both
     // read their values as `fixture` from fixture.json beside them, never from generated source.
+    // Scenario code may append to `fixture.events` to prove which branch actually ran.
     function darwinCensusFixture(
         root: string,
         values: Record<string, unknown>,
         scripts: { listed: string; sample?: string; lsof: string }
-    ): { bin: string; reads: () => string[] } {
+    ): { bin: string; reads: () => string[]; events: () => string[] } {
         const bin = join(root, 'bin');
         const log = join(root, 'lsof-reads');
+        const events = join(root, 'fixture-events');
         mkdirSync(bin, { mode: 0o700 });
         writeFileSync(join(bin, 'package.json'), '{}\n', { mode: 0o600 });
         writeFileSync(
             join(bin, 'fixture.json'),
-            JSON.stringify({ ...values, runner: process.pid, calls: join(root, 'ps-calls'), log }),
+            JSON.stringify({ ...values, runner: process.pid, calls: join(root, 'ps-calls'), log, events }),
             { mode: 0o600 }
         );
         const prologue =
@@ -1534,7 +1536,9 @@ const args=process.argv.slice(2);
 if(args[0]==='-axo'){
  const call=fs.existsSync(fixture.calls)?Number(fs.readFileSync(fixture.calls,'utf8'))+1:1;
  fs.writeFileSync(fixture.calls,String(call));
- const ids=[fixture.runner,...(${scripts.listed})];
+ // Like the real process list, list only processes that still exist.
+ const live=(pid)=>{try{process.kill(pid,0);return true}catch{return false}};
+ const ids=[fixture.runner,...(${scripts.listed})].filter(live);
  process.stdout.write(execFileSync('/bin/ps',['-p',ids.join(','),'-o','pid=,uid='],{encoding:'utf8'}));
 }else{
  ${scripts.sample ?? ''}
@@ -1562,6 +1566,7 @@ process.stdout.write(catalog);
         return {
             bin,
             reads: () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []),
+            events: () => (existsSync(events) ? readFileSync(events, 'utf8').trim().split('\n') : []),
         };
     }
 
@@ -1727,10 +1732,11 @@ process.stdout.write(catalog);
             const replies = {
                 failed: 'process.exit(1)',
                 foreign: "process.stdout.write('0 S\\n');process.exit(0)",
-                undetermined: "process.stdout.write(process.getuid()+' ?\\n');process.exit(0)",
+                undetermined:
+                    "fs.appendFileSync(fixture.events,'served ?\\n');process.stdout.write(process.getuid()+' ?\\n');process.exit(0)",
             };
             // Whole catalogs never list the resident; a scoped read shows its storage cwd.
-            const { bin, reads } = darwinCensusFixture(
+            const { bin, reads, events } = darwinCensusFixture(
                 root,
                 { resident, temp: storage.tempDirectory },
                 {
@@ -1746,6 +1752,7 @@ process.stdout.write(catalog);
             expect(isAlive(resident)).toBe(true);
             if (sample === 'undetermined') {
                 // `?` earns inspection: the scoped read finds the storage cwd.
+                expect(events()).toEqual(['served ?']);
                 expect(reads()).toEqual(['whole', 'scoped']);
                 return;
             }
@@ -1754,6 +1761,98 @@ process.stdout.write(catalog);
             expect(reasons.at(-1)).toBe(
                 `lsof-live-pid-missing:count=1:pid/uid/state=${resident}/${sample === 'failed' ? 'unknown/unknown' : '0/S'}`
             );
+        },
+        20_000
+    );
+
+    it.skipIf(process.platform !== 'darwin').each([
+        { scenario: 'exit status 2', ending: 'process.exit(2)' },
+        { scenario: 'signal', ending: "process.kill(process.pid,'SIGKILL')" },
+    ])(
+        'retains when a scoped read ends abnormally after listing the missed process: $scenario',
+        async ({ ending }) => {
+            const root = fixture();
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
+            const outside = outsideDirectory(root);
+            const resident = spawnResident(outside);
+            // The scoped read lists the missed resident outside storage, with no diagnostics,
+            // then ends abnormally; its partial output cannot count as coverage.
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { resident, outside },
+                {
+                    listed: '[fixture.resident]',
+                    lsof: `if(scoped){fs.writeSync(1,entry(fixture.resident,fixture.outside));${ending}}`,
+                }
+            );
+            const state = await withCensusPath(bin, () =>
+                storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+            );
+            expect(state, reasons.join('; ')).toBe('unknown');
+            expect(reasons.at(-1)).toBe('lsof-scoped-command-unavailable');
+            expect(reads()).toEqual(['whole', 'scoped']);
+        },
+        20_000
+    );
+
+    it.skipIf(process.platform !== 'darwin')(
+        'takes a fresh observation when a missed holder forks into storage and exits before its scoped read',
+        async () => {
+            const root = fixture();
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
+            const holderPath = join(root, 'holder.pid');
+            const childPath = join(root, 'child.pid');
+            // A detached holder with its cwd in storage is reaped by launchd once it exits. On
+            // SIGUSR1 it forks a child into storage, records it, and exits.
+            const holderProgram =
+                "const [temp,childPath,holderPath]=process.argv.slice(1);const fs=require('node:fs');process.on('SIGUSR1',()=>{const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',cwd:temp});child.unref();fs.writeFileSync(childPath,String(child.pid));process.exit(0)});fs.writeFileSync(holderPath,String(process.pid));setInterval(()=>{},1000)";
+            const launcher = spawn(
+                process.execPath,
+                [
+                    '-e',
+                    "const [program,...rest]=process.argv.slice(1);require('node:child_process').spawn(process.execPath,['-e',program,...rest],{detached:true,stdio:'ignore',cwd:rest[0]}).unref()",
+                    holderProgram,
+                    storage.tempDirectory,
+                    childPath,
+                    holderPath,
+                ],
+                { stdio: 'ignore' }
+            );
+            if (launcher.pid !== undefined) {
+                childPids.add(launcher.pid);
+            }
+            await waitUntil(() => existsSync(holderPath));
+            const holder = Number(readFileSync(holderPath, 'utf8'));
+            childPids.add(holder);
+            // Whole catalogs omit the holder and list its child once it exists. The scoped read of
+            // the missed holder makes it fork and exit first, then lists nothing.
+            const { bin, reads } = darwinCensusFixture(
+                root,
+                { holder, childPath, temp: storage.tempDirectory },
+                {
+                    listed: "[fixture.holder,...(fs.existsSync(fixture.childPath)?[Number(fs.readFileSync(fixture.childPath,'utf8'))]:[])]",
+                    lsof: `if(scoped){
+ process.kill(fixture.holder,'SIGUSR1');
+ const deadline=Date.now()+3000;let gone=false;
+ while(Date.now()<deadline&&!gone){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'&&fs.existsSync(fixture.childPath)}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
+ if(!gone)process.exit(3);
+}else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(fixture.childPath,'utf8')),fixture.temp);`,
+                }
+            );
+            try {
+                const state = await withCensusPath(bin, () =>
+                    storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+                );
+                expect(state, reasons.join('; ')).toBe('alive');
+                expect(reads()).toEqual(['whole', 'scoped', 'whole']);
+                expect(isAlive(holder)).toBe(false);
+            } finally {
+                if (existsSync(childPath)) {
+                    childPids.add(Number(readFileSync(childPath, 'utf8')));
+                }
+            }
         },
         20_000
     );
