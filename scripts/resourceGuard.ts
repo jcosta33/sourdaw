@@ -1169,25 +1169,48 @@ function darwinFileCatalog(uid: number, deadline: number, selectedPids?: number[
 
 type UncoveredDarwinProcess = { pid: number; snapshot: { uid: number; state: string } | undefined };
 
+type DarwinFilePorts = {
+    readProcessUsers: () => number[] | string;
+    fileCatalog: (uid: number, deadline: number, selectedPids?: number[]) => DarwinFileCatalog | string;
+    snapshot: (pid: number, timeout: number) => { uid: number; state: string } | undefined;
+    isGone: (pid: number) => boolean;
+    now: () => number;
+    pause: (ms: number) => void;
+};
+
+function darwinFilePorts(readProcessUsers: () => number[] | string): DarwinFilePorts {
+    return {
+        readProcessUsers,
+        fileCatalog: darwinFileCatalog,
+        snapshot: processFileSnapshot,
+        isGone: processIsGone,
+        now: Date.now,
+        pause: (ms) => {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+        },
+    };
+}
+
 function uncoveredDarwinProcesses(
     candidates: Iterable<number>,
     inspected: Set<number>,
     uid: number,
-    deadline: number
+    deadline: number,
+    ports: DarwinFilePorts
 ): UncoveredDarwinProcess[] | undefined {
     const uncovered: UncoveredDarwinProcess[] = [];
     for (const pid of candidates) {
-        if (inspected.has(pid) || processIsGone(pid)) {
+        if (inspected.has(pid) || ports.isGone(pid)) {
             continue;
         }
-        if (Date.now() > deadline) {
+        if (ports.now() > deadline) {
             return undefined;
         }
-        const snapshot = processFileSnapshot(pid, Math.max(1, deadline - Date.now()));
+        const snapshot = ports.snapshot(pid, Math.max(1, deadline - ports.now()));
         // XNU closes the file table before publishing SZOMB. This only proves
         // absence of file use, never release of the PID identity. A process that
         // exits during its snapshot holds no files either.
-        if ((snapshot?.uid === uid && snapshot.state === 'Z') || processIsGone(pid)) {
+        if ((snapshot?.uid === uid && snapshot.state === 'Z') || ports.isGone(pid)) {
             continue;
         }
         uncovered.push({ pid, snapshot });
@@ -1197,12 +1220,17 @@ function uncoveredDarwinProcesses(
 
 // lsof cannot read an exiting process that ps still lists. A process that stays
 // unreadable by PID proves it holds no files only by exiting within this bound.
-function awaitDarwinExits(pids: number[], uid: number, deadline: number): UncoveredDarwinProcess[] | undefined {
-    const exitDeadline = Math.min(deadline, Date.now() + 500);
-    while (pids.some((pid) => !processIsGone(pid)) && Date.now() < exitDeadline) {
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+function awaitDarwinExits(
+    pids: number[],
+    uid: number,
+    deadline: number,
+    ports: DarwinFilePorts
+): UncoveredDarwinProcess[] | undefined {
+    const exitDeadline = Math.min(deadline, ports.now() + 500);
+    while (pids.some((pid) => !ports.isGone(pid)) && ports.now() < exitDeadline) {
+        ports.pause(20);
     }
-    return uncoveredDarwinProcesses(pids, new Set(), uid, deadline);
+    return uncoveredDarwinProcesses(pids, new Set(), uid, deadline, ports);
 }
 
 function darwinMissingReason(missing: UncoveredDarwinProcess[]): string {
@@ -1489,6 +1517,90 @@ export function linuxStorageFileCensus(
     return unknown('file-census-unavailable');
 }
 
+export function darwinStorageFileCensus(
+    initialPids: number[],
+    uid: number,
+    tempDirectories: string[],
+    deadline: number,
+    report: (reason: string) => void,
+    ports: DarwinFilePorts
+): 'alive' | 'dead' | 'unknown' {
+    const unknown = (reason: string): 'unknown' => {
+        report(reason);
+        return 'unknown';
+    };
+    let pids = initialPids;
+    for (let observation = 0; observation < 2; observation += 1) {
+        if (ports.now() >= deadline) {
+            return unknown('file-census-time-bound');
+        }
+        if (observation === 1) {
+            const replacement = ports.readProcessUsers();
+            if (typeof replacement === 'string') {
+                return unknown(replacement);
+            }
+            pids = replacement;
+        }
+        const census = ports.fileCatalog(uid, deadline);
+        if (typeof census === 'string') {
+            return unknown(census);
+        }
+        if (ports.now() >= deadline) {
+            return unknown('file-census-time-bound');
+        }
+        if (census.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
+            return 'alive';
+        }
+        // A descriptor can close between lsof's field reads. Discard that catalog
+        // once; a process left incomplete by the replacement is inspected again by PID.
+        if (observation === 0 && census.incomplete.size > 0) {
+            continue;
+        }
+        // lsof can finish a catalog captured before a new borrower starts.
+        // Require coverage of processes observed on both sides of inspection.
+        const currentPids = ports.readProcessUsers();
+        if (typeof currentPids === 'string') {
+            return unknown(currentPids);
+        }
+        const uncovered = uncoveredDarwinProcesses(
+            new Set([...pids, ...currentPids]),
+            census.inspected,
+            uid,
+            deadline,
+            ports
+        );
+        if (uncovered === undefined || ports.now() >= deadline) {
+            return unknown('lsof-coverage-time-bound');
+        }
+        if (uncovered.length === 0) {
+            return 'dead';
+        }
+        // Same-UID work elsewhere on the host starts processes and closes descriptors
+        // during every whole-account catalog, and lsof transiently skips a busy
+        // long-lived process. Inspect exactly the uncovered processes by PID; a
+        // replacement whole-account catalog races the next unrelated process.
+        const candidates = uncovered.map(({ pid }) => pid);
+        const retried = ports.fileCatalog(uid, deadline, candidates);
+        if (typeof retried === 'string') {
+            return unknown(retried);
+        }
+        if (retried.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
+            return 'alive';
+        }
+        const remaining = awaitDarwinExits(
+            candidates.filter((pid) => !retried.inspected.has(pid)),
+            uid,
+            deadline,
+            ports
+        );
+        if (remaining === undefined || ports.now() >= deadline) {
+            return unknown('lsof-coverage-time-bound');
+        }
+        return remaining.length === 0 ? 'dead' : unknown(darwinMissingReason(remaining));
+    }
+    return unknown('file-census-unavailable');
+}
+
 // supervisorPid names the live process that spawned the run, never a later reclaimer:
 // only processes that predate it are known not to have inherited from the run.
 export function storageFileState(
@@ -1539,77 +1651,19 @@ export function storageFileState(
             }
             return Date.now() >= deadline ? 'file-census-time-bound' : pids;
         };
-        let pids = readProcessUsers();
+        const pids = readProcessUsers();
         if (typeof pids === 'string') {
             return unknown(pids);
         }
         if (platform() === 'darwin') {
-            for (let observation = 0; observation < 2; observation += 1) {
-                if (Date.now() >= deadline) {
-                    return unknown('file-census-time-bound');
-                }
-                if (observation === 1) {
-                    pids = readProcessUsers();
-                    if (typeof pids === 'string') {
-                        return unknown(pids);
-                    }
-                }
-                const census = darwinFileCatalog(uid, deadline);
-                if (typeof census === 'string') {
-                    return unknown(census);
-                }
-                if (Date.now() >= deadline) {
-                    return unknown('file-census-time-bound');
-                }
-                if (census.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
-                    return 'alive';
-                }
-                // A descriptor can close between lsof's field reads. Discard that catalog
-                // once; a process left incomplete by the replacement is inspected again by PID.
-                if (observation === 0 && census.incomplete.size > 0) {
-                    continue;
-                }
-                // lsof can finish a catalog captured before a new borrower starts.
-                // Require coverage of processes observed on both sides of inspection.
-                const currentPids = readProcessUsers();
-                if (typeof currentPids === 'string') {
-                    return unknown(currentPids);
-                }
-                const uncovered = uncoveredDarwinProcesses(
-                    new Set([...pids, ...currentPids]),
-                    census.inspected,
-                    uid,
-                    deadline
-                );
-                if (uncovered === undefined || Date.now() >= deadline) {
-                    return unknown('lsof-coverage-time-bound');
-                }
-                if (uncovered.length === 0) {
-                    return 'dead';
-                }
-                // Same-UID work elsewhere on the host starts processes and closes descriptors
-                // during every whole-account catalog, and lsof transiently skips a busy
-                // long-lived process. Inspect exactly the uncovered processes by PID; a
-                // replacement whole-account catalog races the next unrelated process.
-                const candidates = uncovered.map(({ pid }) => pid);
-                const retried = darwinFileCatalog(uid, deadline, candidates);
-                if (typeof retried === 'string') {
-                    return unknown(retried);
-                }
-                if (retried.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
-                    return 'alive';
-                }
-                const remaining = awaitDarwinExits(
-                    candidates.filter((pid) => !retried.inspected.has(pid)),
-                    uid,
-                    deadline
-                );
-                if (remaining === undefined || Date.now() >= deadline) {
-                    return unknown('lsof-coverage-time-bound');
-                }
-                return remaining.length === 0 ? 'dead' : unknown(darwinMissingReason(remaining));
-            }
-            return unknown('file-census-unavailable');
+            return darwinStorageFileCensus(
+                pids,
+                uid,
+                tempDirectories,
+                deadline,
+                report,
+                darwinFilePorts(readProcessUsers)
+            );
         }
         if (platform() !== 'linux') {
             return unknown('file-census-platform-unavailable');

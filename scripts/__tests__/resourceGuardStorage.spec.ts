@@ -30,6 +30,7 @@ import {
     parseLinuxFileSnapshot,
     parseLinuxStartTicks,
     startTimeExcuseSupervisor,
+    darwinStorageFileCensus,
 } from '../resourceGuard';
 import {
     createGuardStorage,
@@ -1240,6 +1241,61 @@ describe('storage ownership recovery', () => {
             expect(await storage.release(true)).toBe(true);
             expect(existsSync(storage.tempDirectory)).toBe(false);
             expect(reports).toEqual([]);
+        }
+    );
+
+    it.each([
+        { scenario: 'exits within the exit window', exitsAt: 200, finalSnapshotExit: false, reclaimed: true },
+        { scenario: 'stays alive past the exit window', exitsAt: Infinity, finalSnapshotExit: false, reclaimed: false },
+        { scenario: 'exits during its final snapshot', exitsAt: Infinity, finalSnapshotExit: true, reclaimed: true },
+    ])(
+        'recovers macOS storage beside an unrelated same-UID process lsof cannot read that $scenario',
+        ({ exitsAt, finalSnapshotExit, reclaimed }) => {
+            const root = fixture();
+            const storage = ownedStorage(root);
+            const reports: string[] = [];
+            let clock = 0;
+            let snapshots = 0;
+            let exitedDuringSnapshot = false;
+            const files: Parameters<typeof darwinStorageFileCensus>[5] = {
+                readProcessUsers: () => [123],
+                // Neither the whole-account catalog nor the PID inspection reads process 123.
+                fileCatalog: () => ({ inspected: new Set(), incomplete: new Set(), paths: [] }),
+                snapshot: () => {
+                    snapshots += 1;
+                    if (finalSnapshotExit && snapshots === 2) {
+                        exitedDuringSnapshot = true;
+                        return undefined;
+                    }
+                    return { uid: 501, state: 'S' };
+                },
+                isGone: () => exitedDuringSnapshot || clock >= exitsAt,
+                now: () => clock,
+                pause: (ms) => {
+                    clock += ms;
+                },
+            };
+            const ports: StorageRecoveryPorts = {
+                identityState: () => 'dead',
+                sessionState: (_owner, original, current = original) =>
+                    darwinStorageFileCensus(
+                        [123],
+                        501,
+                        [original, current],
+                        5_000,
+                        (reason) => reports.push(reason),
+                        files
+                    ),
+            };
+            recoverGuardStorage(root, ports, fakeReclaimer);
+            expect(existsSync(storage.tempDirectory)).toBe(!reclaimed);
+            expect(reports).toEqual(reclaimed ? [] : ['lsof-live-pid-missing:count=1:pid/uid/state=123/501/S']);
+            if (exitsAt === Infinity) {
+                expect(clock).toBeGreaterThanOrEqual(500);
+                expect(clock).toBeLessThan(600);
+            } else {
+                expect(clock).toBe(exitsAt);
+            }
         }
     );
 
