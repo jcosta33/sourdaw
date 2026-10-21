@@ -1,0 +1,37 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleSlipClipContent.spec.ts
+  s_59e31a5c6f3e31::t_9c299770d618bb 37-40,68,78-81,84
+src/modules/Arrangement/handlers/clip/handleSlipClipContent.ts
+  s_59e31a5c6f3e31::t_028212e8515dd4 46-50,57
+src/modules/Arrangement/useCases/clipEditing/__tests__/slipClipContentLoopWrap.spec.ts
+  s_59e31a5c6f3e31::t_b4643a08bac8f8 5,9,88-96,234-241,250,316-374
+src/modules/Arrangement/useCases/clipEditing/slipClipContent.ts
+  s_59e31a5c6f3e31::t_68687b80fc0e33 69-76
+src/modules/Command/useCases/index.ts
+  s_59e31a5c6f3e31::t_2130393eac7bd4 120
+src/modules/Command/useCases/normalizeLegacyLoopAnchorInverse.ts
+  s_59e31a5c6f3e31::t_4152ac8b5e6803 23-33,48-54
+src/modules/Command/useCases/revertActionGroup.ts
+  s_59e31a5c6f3e31::t_c15976bdf63569 18-20
+src/modules/Command/useCases/undo.ts
+  s_59e31a5c6f3e31::t_5065ba480a4a60 116-121
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_59e31a5c6f3e31::t_81782eedd8c71b 963-1007
+src/utils/handlerContract.ts
+  s_59e31a5c6f3e31::t_7f0c94457420cc 1436-1438,1440-1442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ad6fc9f8241a0bdc7bda0e65d4cc3682969a160",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
