@@ -6,6 +6,7 @@ import { resolveDdspInstrument } from '../../models/DdspInstrumentCatalog';
 import { inferenceWorkerBridge } from '../../repositories/inferenceWorkerBridge';
 import { renderRequestCancellation } from '../../repositories/renderRequestCancellation';
 import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
+import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../cancelRender';
 import { renderDdspInstrument } from '../renderDdspInstrument';
@@ -23,6 +24,7 @@ const checkDdspInstrumentReady = vi.fn();
 const computeRenderCacheKey = vi.fn();
 const readRenderCache = vi.fn();
 const writeRenderCache = vi.fn();
+const getStorageStatus = vi.fn();
 const withDdspInstrumentLock = vi.fn();
 const resampleTo44100 = vi.fn();
 const applyFades = vi.fn();
@@ -88,6 +90,8 @@ describe('renderDdspInstrument', () => {
             );
         readRenderCache.mockReset().mockResolvedValue(null);
         writeRenderCache.mockReset().mockResolvedValue(undefined);
+        getStorageStatus.mockReset().mockResolvedValue({ usedBytes: 321 });
+        modelRegistryStore.update((state) => (state ? { ...state, storageUsedBytes: 12 } : state));
         withDdspInstrumentLock
             .mockReset()
             .mockImplementation(
@@ -121,11 +125,42 @@ describe('renderDdspInstrument', () => {
             supersedeBrowserRender,
             withDdspInstrumentLock,
             writeRenderCache,
+            getStorageStatus,
         });
     });
 
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it('refreshes the model manager from measured storage after writing the render', async () => {
+        getStorageStatus.mockImplementation(async () => {
+            expect(writeRenderCache).toHaveBeenCalledOnce();
+            return { usedBytes: 321 };
+        });
+        await render();
+        expect(getStorageStatus).toHaveBeenCalledOnce();
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(321);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
+    });
+
+    it('does not publish storage or completion after cancellation during measurement', async () => {
+        let finishMeasurement = (_value: { usedBytes: number }): void => undefined;
+        getStorageStatus.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    finishMeasurement = resolve;
+                })
+        );
+        const pending = render().catch((error: unknown) => error);
+        await vi.waitFor(() => expect(getStorageStatus).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        finishMeasurement({ usedBytes: 321 });
+        expect(await pending).toMatchObject({ name: 'AbortError' });
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(12);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).not.toBe('preview');
     });
 
     it('rejects when DDSP admission is disabled before queue, lock, storage, or worker work', async () => {
