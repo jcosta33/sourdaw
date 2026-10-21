@@ -4,6 +4,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { type Track } from '#/modules/Arrangement/stores';
+import {
+    configureOfflineMidiEventProjection,
+    configureOfflinePpqEndpointProjection,
+} from '#/modules/AudioEngine/useCases';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
@@ -198,7 +203,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     persistDeviceParam: vi.fn(),
     readMusicalRange: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
-    
+
     gainEnvelopeStore: { value: null },
     warpStateStore: { value: null },
     markerStore: { value: null },
@@ -260,95 +265,97 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
 // and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    return ({
-    rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
-    reconcileAutoInputMonitoring: vi.fn(),
-    stopTrackInputMonitoring: vi.fn(),
+    return {
+        configureOfflineMidiEventProjection: actual.configureOfflineMidiEventProjection,
+        configureOfflinePpqEndpointProjection: actual.configureOfflinePpqEndpointProjection,
+        rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
+        reconcileAutoInputMonitoring: vi.fn(),
+        stopTrackInputMonitoring: vi.fn(),
 
-    startFaustNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    writeNativeBuiltinParameters: vi.fn(),
-    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
-    projectsToDifferentNativeBank: vi.fn(() => false),
-    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
-    discardDecodedAudioFile: vi.fn(),
-    cancelExport: vi.fn(),
-    exportStems: async (options: Parameters<typeof actual.exportStems>[0]) => {
-        if (typeof options === 'number') throw new Error('Expected options');
-        const consume = Reflect.get(options, 'onStem');
-        return actual.exportStems({ ...options, onStem: typeof consume === 'function' ? async (...args: unknown[]) => {
-            await consume(...args);
-            ownership.consumed++;
-        } : undefined });
-    },
-    getAudioContext: mocks.getAudioContext,
-    getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
-    isExportActive: mocks.isExportActive,
-    renderOffline: mocks.renderOffline,
-    restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
-    addMidiFxToStrip: vi.fn(),
-    analyzePitchForClip: vi.fn(),
-    applyNoteExpression: vi.fn(),
-    applyRuntimeGraphDelta: vi.fn(),
-    audioEngine: {},
-    cacheAudioBuffer: vi.fn(),
-    clearReportedLatency: vi.fn(),
-    createRuntimeGraphTopologyFingerprint: vi.fn(),
-    decodeAudioFile: vi.fn(),
-    ensureBusStrip: vi.fn(),
-    garbageCollectCachedAudioBuffersByAge: vi.fn(),
-    garbageCollectCachedAudioBuffersBySize: vi.fn(),
-    garbageCollectFreezeAudioBuffers: vi.fn(),
-    getCachedAudioBuffer: vi.fn(),
-    getCompensationDelay: vi.fn(),
-    getDefaultBendRangeSemitones: vi.fn(),
-    getDeviceChainTailSeconds: vi.fn(),
-    getEngineState: vi.fn(),
-    getFactoryDrumKitByIndex: vi.fn(),
-    getRuntimeGraphRevision: vi.fn(),
-    getTrackStrip: vi.fn(),
-    initializeTrackStripFromSnapshot: vi.fn(),
-    matchesRuntimeDeviceChainTopology: vi.fn(),
-    removeBusStrip: vi.fn(),
-    removeMidiFxFromStrip: vi.fn(),
-    removeSend: vi.fn(),
-    removeTrackStrip: vi.fn(),
-    deactivateTrackStrip: vi.fn(),
-    renderTrackSubgraphOffline: vi.fn(),
-    reportLatency: vi.fn(),
-    resolveToasterPadBinding: vi.fn(),
-    setBusGain: vi.fn(),
-    setSend: vi.fn(),
-    setTrackGain: vi.fn(),
-    setTrackMute: vi.fn(),
-    setTrackOutput: vi.fn(),
-    setTrackPan: vi.fn(),
-    setTrackSoloGate: vi.fn(),
-    startInputMonitoring: vi.fn(),
-    stopInputMonitoring: vi.fn(),
-    unwireSidechainRoute: vi.fn(),
-    updateDeviceBypass: vi.fn(),
-    updateDeviceParam: vi.fn(),
-    updateMidiFxBypass: vi.fn(),
-    updateMidiFxParam: vi.fn(),
-    wireSidechainRoute: vi.fn(),
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: () => Promise.resolve(true),
-    sendNativeLiveMidiNote: () => Promise.resolve(true),
-}); });
-
-
-
-
-
-
+        startFaustNote: vi.fn(),
+        soundsNativeNotes: vi.fn(() => false),
+        writeNativeBuiltinParameters: vi.fn(),
+        mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+        projectsToDifferentNativeBank: vi.fn(() => false),
+        nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+        discardDecodedAudioFile: vi.fn(),
+        cancelExport: vi.fn(),
+        exportStems: async (options: Parameters<typeof actual.exportStems>[0]) => {
+            if (typeof options === 'number') throw new Error('Expected options');
+            const consume = Reflect.get(options, 'onStem');
+            return actual.exportStems({
+                ...options,
+                onStem:
+                    typeof consume === 'function'
+                        ? async (...args: unknown[]) => {
+                              await consume(...args);
+                              ownership.consumed++;
+                          }
+                        : undefined,
+            });
+        },
+        getAudioContext: mocks.getAudioContext,
+        getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
+        isExportActive: mocks.isExportActive,
+        renderOffline: mocks.renderOffline,
+        restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
+        addMidiFxToStrip: vi.fn(),
+        analyzePitchForClip: vi.fn(),
+        applyNoteExpression: vi.fn(),
+        applyRuntimeGraphDelta: vi.fn(),
+        audioEngine: {},
+        cacheAudioBuffer: vi.fn(),
+        clearReportedLatency: vi.fn(),
+        createRuntimeGraphTopologyFingerprint: vi.fn(),
+        decodeAudioFile: vi.fn(),
+        ensureBusStrip: vi.fn(),
+        garbageCollectCachedAudioBuffersByAge: vi.fn(),
+        garbageCollectCachedAudioBuffersBySize: vi.fn(),
+        garbageCollectFreezeAudioBuffers: vi.fn(),
+        getCachedAudioBuffer: vi.fn(),
+        getCompensationDelay: vi.fn(),
+        getDefaultBendRangeSemitones: vi.fn(),
+        getDeviceChainTailSeconds: vi.fn(),
+        getEngineState: vi.fn(),
+        getFactoryDrumKitByIndex: vi.fn(),
+        getRuntimeGraphRevision: vi.fn(),
+        getTrackStrip: vi.fn(),
+        initializeTrackStripFromSnapshot: vi.fn(),
+        matchesRuntimeDeviceChainTopology: vi.fn(),
+        removeBusStrip: vi.fn(),
+        removeMidiFxFromStrip: vi.fn(),
+        removeSend: vi.fn(),
+        removeTrackStrip: vi.fn(),
+        deactivateTrackStrip: vi.fn(),
+        renderTrackSubgraphOffline: vi.fn(),
+        reportLatency: vi.fn(),
+        resolveToasterPadBinding: vi.fn(),
+        setBusGain: vi.fn(),
+        setSend: vi.fn(),
+        setTrackGain: vi.fn(),
+        setTrackMute: vi.fn(),
+        setTrackOutput: vi.fn(),
+        setTrackPan: vi.fn(),
+        setTrackSoloGate: vi.fn(),
+        startInputMonitoring: vi.fn(),
+        stopInputMonitoring: vi.fn(),
+        unwireSidechainRoute: vi.fn(),
+        updateDeviceBypass: vi.fn(),
+        updateDeviceParam: vi.fn(),
+        updateMidiFxBypass: vi.fn(),
+        updateMidiFxParam: vi.fn(),
+        wireSidechainRoute: vi.fn(),
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: () => Promise.resolve(true),
+        sendNativeLiveMidiNote: () => Promise.resolve(true),
+    };
+});
 
 // Partial mock: the dialog now also reaches Arrangement's use-case barrel for
 // device tail declarations, which pulls in MIDI/Transport consumers that need
 // the real module's other exports.
 vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
-    defaultTransportState: { loopStart: 0, loopEnd: 0 },
     transportStore: mocks.transportStore,
 }));
 
@@ -396,67 +403,155 @@ vi.mock('../exportSettings', async (importOriginal) => ({
     saveExportSettings: vi.fn(),
 }));
 
-
 const zipAllocation = vi.hoisted(() => ({ observe: (_bytes: Uint8Array) => {} }));
 vi.mock('fflate', async (importOriginal) => {
     const actual = await importOriginal<typeof import('fflate')>();
-    return { ...actual, Zip: class extends actual.Zip {
-        constructor(handler: ConstructorParameters<typeof actual.Zip>[0]) {
-            super((error, bytes, final) => { zipAllocation.observe(bytes); handler?.(error, bytes, final); });
-        }
-    } };
+    return {
+        ...actual,
+        Zip: class extends actual.Zip {
+            constructor(handler: ConstructorParameters<typeof actual.Zip>[0]) {
+                super((error, bytes, final) => {
+                    zipAllocation.observe(bytes);
+                    handler?.(error, bytes, final);
+                });
+            }
+        },
+    };
 });
 
 const ownership = vi.hoisted(() => ({ rendered: 0, consumed: 0, peakRetained: 0 }));
 const stemRender = vi.hoisted(() => ({
     frames: 44100,
-    tracks: Array.from({ length: 64 }, (_, index) => ({
-        id: `track-${index}`, name: `Track ${index}`, kind: 'midi', disabled: false,
-        devices: [], clips: [], muted: false,
-    })),
+    tracks: Array.from(
+        { length: 64 },
+        (_, index) =>
+            ({
+                id: `track-${index}`,
+                name: `Track ${index}`,
+                kind: 'midi',
+                disabled: false,
+                devices: [],
+                clips: [],
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                color: '#ffffff',
+                sends: [],
+                midiFx: [],
+                frozen: false,
+                freezeState: { status: 'unfrozen' },
+                parentId: null,
+                collapsed: false,
+                inputMonitoring: 'off',
+                hidden: false,
+                height: 80,
+                outputId: 'master',
+                automationMode: 'read',
+                groupId: null,
+                soloSafe: false,
+                notes: '',
+                inputId: null,
+                activeAlternativeId: `alt-${index}`,
+                alternatives: [{ id: `alt-${index}`, name: 'Alternative 1', clips: [] }],
+                vcaGroupId: null,
+                midiOutputTrackId: null,
+                followChordTrack: false,
+            }) satisfies Track
+    ),
 }));
-vi.mock('#/modules/AudioEngine/useCases/offlineRender/resolveRenderContext', () => ({
-    resolveRenderContext: () => ({
-        tracks: { tracks: stemRender.tracks }, midi: { notesByClipId: {} }, defaultTempo: 120,
-        changes: [], startBeat: 0, durationSeconds: 1, tailSeconds: 0,
-        projectMidiEvents: () => [], selectMidiEventProbability: () => true,
-        projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
-        projectPpqEndpoints: () => ({ durationSeconds: 1 }), resolveTempoAtBeat: () => 120,
-    }),
-}));
-vi.mock('#/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip', () => ({
-    createOfflineTrackStrip: async () => ({
-        inputNode: {}, faderNode: {}, panNode: {}, outputNode: { connect: () => {} }, deviceEntries: [],
-    }),
-}));
-vi.mock('#/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips', () => ({ scheduleTrackClips: async () => {} }));
-
 // This observes production render admission and awaited consumer completion. It is an ownership
 // bound, not process RSS. Codec/sink bytes are also observed; Chrome RSS remains a separate gate.
 describe('connected stem export output ownership', () => {
     beforeEach(() => {
-        ownership.rendered = 0; ownership.consumed = 0; ownership.peakRetained = 0;
+        ownership.rendered = 0;
+        ownership.consumed = 0;
+        ownership.peakRetained = 0;
         stemRender.frames = 44100;
         mocks.trackStore.value = { tracks: stemRender.tracks, selectedTrackId: null, ghostClips: [] };
-        vi.stubGlobal('OfflineAudioContext', class {
-            readonly sampleRate = 44100;
-            readonly destination = {};
-            async startRendering() {
-                ownership.rendered++;
-                ownership.peakRetained = Math.max(ownership.peakRetained, ownership.rendered - ownership.consumed);
-                const channels = [new Float32Array(stemRender.frames).fill(0.125), new Float32Array(stemRender.frames).fill(-0.125)];
-                return { sampleRate: 44100, numberOfChannels: 2, length: stemRender.frames, getChannelData: (channel: number) => channels[channel]! };
-            }
+        vi.clearAllMocks();
+        mocks.audioContext = asBaseAudioContext(createMockAudioContext());
+        mocks.getAudioContext.mockImplementation(() => mocks.audioContext);
+        mocks.restoreCachedAudioBuffersFromIdb.mockResolvedValue(0);
+        mocks.automationStore.value = { lanes: [] };
+        mocks.midiStore.value = { notesByClipId: {} };
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        configureOfflinePpqEndpointProjection({
+            project: ({ startPpq, endPpq, defaultTempo, sampleRate }) => {
+                const startSeconds = (startPpq * 60) / defaultTempo;
+                const endSeconds = (endPpq * 60) / defaultTempo;
+                return {
+                    startSeconds,
+                    endSeconds,
+                    durationSeconds: endSeconds - startSeconds,
+                    startSamples: Math.round(startSeconds * sampleRate),
+                    endSamples: Math.round(endSeconds * sampleRate),
+                    durationSamples: Math.round((endSeconds - startSeconds) * sampleRate),
+                };
+            },
+            resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
         });
+        configureOfflineMidiEventProjection({
+            createProjector:
+                () =>
+                ({ events }) =>
+                    events,
+            selectProbability: () => true,
+            createChordPitchProjector:
+                () =>
+                ({ pitch }) =>
+                    pitch,
+            evaluateAutomationValue: () => null,
+        });
+        // Only the Web Audio platform is synthetic. The actual context/strip/scheduler and
+        // public exportStems consumer run; no private AudioEngine route is substituted.
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function () {
+                const context = createMockAudioContext();
+                return {
+                    ...context,
+                    sampleRate: 44100,
+                    suspend: undefined,
+                    resume: undefined,
+                    async startRendering() {
+                        ownership.rendered++;
+                        ownership.peakRetained = Math.max(
+                            ownership.peakRetained,
+                            ownership.rendered - ownership.consumed
+                        );
+                        const channels = [
+                            new Float32Array(stemRender.frames).fill(0.125),
+                            new Float32Array(stemRender.frames).fill(-0.125),
+                        ];
+                        return {
+                            sampleRate: 44100,
+                            numberOfChannels: 2,
+                            length: stemRender.frames,
+                            getChannelData: (channel: number) => channels[channel]!,
+                        };
+                    },
+                };
+            })
+        );
     });
     it('drains 64 real stem renders through WAV and ZIP before admitting the next render', async () => {
         const chunks: Uint8Array[] = [];
         let maxWrite = 0;
         let closed = false;
-        vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => ({
-            write: async (bytes: Uint8Array) => { maxWrite = Math.max(maxWrite, bytes.byteLength); chunks.push(bytes.slice()); },
-            close: async () => { closed = true; }, abort: async () => {},
-        }) }));
+        vi.stubGlobal('showSaveFilePicker', async () => ({
+            createWritable: async () => ({
+                write: async (bytes: Uint8Array) => {
+                    maxWrite = Math.max(maxWrite, bytes.byteLength);
+                    chunks.push(bytes.slice());
+                },
+                close: async () => {
+                    closed = true;
+                },
+                abort: async () => {},
+            }),
+        }));
         render(<ExportDialog open onClose={() => {}} />);
         fireEvent.click(screen.getByTestId('export-mode-stems'));
         fireEvent.click(screen.getByTestId('export-start'));
@@ -467,7 +562,10 @@ describe('connected stem export output ownership', () => {
         const size = chunks.reduce((sum, bytes) => sum + bytes.length, 0);
         const archive = new Uint8Array(size);
         let offset = 0;
-        for (const bytes of chunks) { archive.set(bytes, offset); offset += bytes.length; }
+        for (const bytes of chunks) {
+            archive.set(bytes, offset);
+            offset += bytes.length;
+        }
         const entries = unzipSync(archive);
         expect(Object.keys(entries)).toHaveLength(64);
         for (const bytes of Object.values(entries)) {
@@ -485,65 +583,115 @@ describe('connected stem export output ownership', () => {
         if (typeof gc !== 'function') throw new Error('Run this ownership probe with node --expose-gc.');
         stemRender.frames = 44100 * 3;
         const b = stemRender.frames * 2 * Float32Array.BYTES_PER_ELEMENT;
-        vi.mocked(loadExportSettings).mockReturnValueOnce({ formats: ['wav', 'mp3', 'flac'], sampleRate: 44100,
-            bitDepth: 24, mp3BitRate: 128, dither: 'seeded', normalization: 'off' });
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav', 'mp3', 'flac'],
+            sampleRate: 44100,
+            bitDepth: 24,
+            mp3BitRate: 128,
+            dither: 'seeded',
+            normalization: 'off',
+        });
         const observed = new WeakSet<ArrayBufferLike>();
         const allocations: WeakRef<ArrayBufferLike>[] = [];
         const track = (buffer: ArrayBufferLike) => {
-            if (!observed.has(buffer)) { observed.add(buffer); allocations.push(new WeakRef(buffer)); }
+            if (!observed.has(buffer)) {
+                observed.add(buffer);
+                allocations.push(new WeakRef(buffer));
+            }
         };
         let collecting = true;
         let peak = 0;
-        const constructors = ['ArrayBuffer', 'Float32Array', 'Int32Array', 'Int16Array', 'Int8Array', 'Uint8Array', 'Uint16Array', 'Uint32Array'] as const;
+        const constructors = [
+            'ArrayBuffer',
+            'Float32Array',
+            'Int32Array',
+            'Int16Array',
+            'Int8Array',
+            'Uint8Array',
+            'Uint16Array',
+            'Uint32Array',
+        ] as const;
         for (const name of constructors) {
             const Original = globalThis[name];
-            vi.stubGlobal(name, new Proxy(Original, { construct(target, args) {
-                const value = Reflect.construct(target, args);
-                if (collecting) {
-                    if (ArrayBuffer.isView(value)) track(value.buffer);
-                    else if (value instanceof ArrayBuffer) track(value);
-                }
-                return value;
-            } }));
+            vi.stubGlobal(
+                name,
+                new Proxy(Original, {
+                    construct(target, args) {
+                        const value = Reflect.construct(target, args);
+                        if (collecting) {
+                            if (ArrayBuffer.isView(value)) track(value.buffer);
+                            else if (value instanceof ArrayBuffer) track(value);
+                        }
+                        return value;
+                    },
+                })
+            );
         }
-        zipAllocation.observe = (bytes) => { if (collecting) track(bytes.buffer); };
+        zipAllocation.observe = (bytes) => {
+            if (collecting) track(bytes.buffer);
+        };
         let closed = false;
         let writes = 0;
         let samples = 0;
         let resolveFinished: () => void = () => {};
         let rejectFinished: (reason: unknown) => void = () => {};
-        const finished = new Promise<void>((resolve, reject) => { resolveFinished = resolve; rejectFinished = reject; });
-        vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => ({
-            write: async (bytes: Uint8Array) => {
-                track(bytes.buffer); writes++;
-                // Sample at fixed ownership checkpoints. Full collections for every small MPEG
-                // packet dominated the test itself; each checkpoint still includes every observed buffer.
-                if (writes % 32 !== 1) return;
-                samples++;
-                // WeakRef targets are kept alive for the job that observed them. Advance a real
-                // turn before GC; no fixed microtask count stands in for collection completion.
-                await new Promise<void>((resolve) => setTimeout(resolve, 0));
-                gc();
-                let live = 0;
-                for (const reference of allocations) live += reference.deref()?.byteLength ?? 0;
-                peak = Math.max(peak, live);
-                expect(live).toBeLessThanOrEqual(2 * b);
-            }, close: async () => { closed = true; resolveFinished(); }, abort: async () => {
-                rejectFinished(mocks.loggerError.mock.calls.at(-1)?.[0] ?? new Error('Streaming export aborted before commit.'));
-            },
-        }) }));
+        const finished = new Promise<void>((resolve, reject) => {
+            resolveFinished = resolve;
+            rejectFinished = reject;
+        });
+        vi.stubGlobal('showSaveFilePicker', async () => ({
+            createWritable: async () => ({
+                write: async (bytes: Uint8Array) => {
+                    track(bytes.buffer);
+                    writes++;
+                    // Sample at fixed ownership checkpoints. Full collections for every small MPEG
+                    // packet dominated the test itself; each checkpoint still includes every observed buffer.
+                    if (writes % 32 !== 1) return;
+                    samples++;
+                    // WeakRef targets are kept alive for the job that observed them. Advance a real
+                    // turn before GC; no fixed microtask count stands in for collection completion.
+                    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                    gc();
+                    let live = 0;
+                    for (const reference of allocations) live += reference.deref()?.byteLength ?? 0;
+                    peak = Math.max(peak, live);
+                    expect(live).toBeLessThanOrEqual(2 * b);
+                },
+                close: async () => {
+                    closed = true;
+                    resolveFinished();
+                },
+                abort: async () => {
+                    rejectFinished(
+                        mocks.loggerError.mock.calls.at(-1)?.[0] ?? new Error('Streaming export aborted before commit.')
+                    );
+                },
+            }),
+        }));
         try {
             render(<ExportDialog open onClose={() => {}} />);
             fireEvent.click(screen.getByTestId('export-mode-stems'));
             fireEvent.click(screen.getByTestId('export-start'));
             await finished;
             expect(closed).toBe(true);
-            expect(ownership.rendered).toBe(64); expect(ownership.peakRetained).toBe(1);
+            expect(ownership.rendered).toBe(64);
+            expect(ownership.peakRetained).toBe(1);
             expect(writes).toBeGreaterThan(64 * 3);
             expect(samples).toBeGreaterThan(64);
-            process.stdout.write(JSON.stringify({ pcmBytesB: b, sampledLiveExportBytesPeak: peak, sinkWrites: writes, ownershipCheckpoints: samples }) + '\n');
-            expect(peak).toBeGreaterThan(b); expect(peak).toBeLessThanOrEqual(2 * b);
-        } finally { collecting = false; zipAllocation.observe = () => {}; vi.unstubAllGlobals(); }
+            process.stdout.write(
+                JSON.stringify({
+                    pcmBytesB: b,
+                    sampledLiveExportBytesPeak: peak,
+                    sinkWrites: writes,
+                    ownershipCheckpoints: samples,
+                }) + '\n'
+            );
+            expect(peak).toBeGreaterThan(b);
+            expect(peak).toBeLessThanOrEqual(2 * b);
+        } finally {
+            collecting = false;
+            zipAllocation.observe = () => {};
+            vi.unstubAllGlobals();
+        }
     }, 120000);
-
 });
