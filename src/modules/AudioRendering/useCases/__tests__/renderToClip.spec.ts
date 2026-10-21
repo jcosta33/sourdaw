@@ -6,6 +6,7 @@ import {
     type TempoMapStoreState,
     transportStore,
 } from '#/modules/Transport/stores';
+import { projectPpqEndpoints } from '#/modules/Transport/useCases';
 
 import { renderToClip, type RenderToClipInput } from '../renderToClip';
 
@@ -107,14 +108,15 @@ describe('renderToClip', () => {
     });
 
     describe('a render that carried a tail', () => {
-        it('ends at the returned audio when the offline cap cuts off the selection across a tempo change', () => {
+        it('places a shorter returned buffer across a tempo change from a nonzero start', () => {
             setTempoMap([
                 { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' },
                 { id: 'tempo-b', beat: 8, tempo: 60, curve: 'instant' },
             ]);
 
-            // Beat 4 starts at 2 s. The cap ends after the change at beat 8
-            // (4 s), where each remaining second is one beat.
+            // Consumer-level endpoint coverage: the history-aware offline
+            // producer refuses this oversized nonzero-start request. Beat 4
+            // starts at 2 s; after beat 8, each second is one beat.
             const buffer = createBufferMetadata(2 ** 30);
             const expectedEndBeat = 8 + (2 + buffer.duration - 4);
             const ends = placeRender({
@@ -233,6 +235,36 @@ describe('renderToClip', () => {
             expect(ends.redo).toBe(16);
         });
     });
+
+    it.each([0, 2])(
+        'ends at the returned audio when the request exceeds the cap by one frame with %i s tail',
+        (tailSeconds) => {
+            const cappedFrames = 2 ** 30;
+            const endBeat = (cappedFrames + 1) / (SAMPLE_RATE / 2);
+            const projection = projectPpqEndpoints({
+                startPpq: 0,
+                endPpq: endBeat,
+                defaultTempo: 120,
+                sampleRate: SAMPLE_RATE,
+                changes: [],
+            });
+            expect(projection.durationSamples).toBe(cappedFrames + 1);
+            expect(Math.ceil(projection.durationSeconds * SAMPLE_RATE)).toBe(cappedFrames + 1);
+            expect(Math.ceil((projection.durationSeconds + tailSeconds) * SAMPLE_RATE)).toBeGreaterThan(cappedFrames);
+
+            const ends = placeRender({
+                startBeat: 0,
+                endBeat,
+                tailSeconds,
+                buffer: createBufferMetadata(cappedFrames),
+            });
+            const returnedEndBeat = cappedFrames / (SAMPLE_RATE / 2);
+
+            expect(ends.first).toBeCloseTo(returnedEndBeat, 5);
+            expect(ends.redo).toBeCloseTo(returnedEndBeat, 5);
+            expect(ends.first).toBeLessThan(endBeat);
+        }
+    );
 
     it('re-adds the clip with the same start beat as the first add when redo is run with a non-zero startBeat', () => {
         const input: Omit<RenderToClipInput, 'targetTrackId' | 'name'> = {

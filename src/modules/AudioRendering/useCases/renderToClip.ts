@@ -31,14 +31,15 @@ export type RenderToClipOutput = {
 };
 
 // A capped render may end before the selection even when a tail was requested.
-// Compare in frames so ordinary one-frame rounding keeps the musical endpoint.
+// Compare in frames: a complete render rounds its requested frame count up,
+// whereas even a one-frame shortfall means its returned audio ends first.
 // A complete render with a tail spans the buffer; without one it ends on the grid.
 function resolveClipEndBeat(input: RenderToClipInput): number {
     const sampleRate = input.buffer.sampleRate;
     const startSamples = Math.round(readSecondsAtBeat({ beat: input.startBeat }) * sampleRate);
     const requestedEndSamples = Math.round(readSecondsAtBeat({ beat: input.endBeat }) * sampleRate);
     const renderedEndSamples = startSamples + input.buffer.length;
-    if (renderedEndSamples + 1 < requestedEndSamples) {
+    if (renderedEndSamples < requestedEndSamples) {
         return readBeatAtSamples({ samples: renderedEndSamples, sampleRate });
     }
 
