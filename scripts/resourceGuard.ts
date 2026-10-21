@@ -1116,7 +1116,9 @@ type ScopedFileState =
     | { kind: 'unavailable'; reason: string };
 
 // Reads only the processes a whole catalog missed. A PID absent from a usable read stays
-// uncovered unless exact ESRCH proves it gone; any other failure leaves the proof unavailable.
+// uncovered even when it has exited: it may have forked a storage user after the process
+// lists were taken, so only a fresh observation can cover it. Any other failure leaves the
+// proof unavailable.
 function scopedDarwinFileState(
     pids: number[],
     uid: number,
@@ -1131,7 +1133,7 @@ function scopedDarwinFileState(
     if (killedByTimeout(result.error)) {
         return { kind: 'expired' };
     }
-    // lsof exits 1 without diagnostics when a selected PID no longer exists.
+    // lsof exits 1 without diagnostics when a selected PID no longer exists; that PID stays uncovered.
     if ((result.status !== 0 && result.status !== 1) || result.stderr !== '') {
         return { kind: 'unavailable', reason: 'lsof-scoped-command-unavailable' };
     }
@@ -1153,7 +1155,7 @@ function scopedDarwinFileState(
     if (census.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
         return { kind: 'alive' };
     }
-    return { kind: 'uncovered', pids: pids.filter((pid) => !census.pids.has(pid) && !processIsGone(pid)) };
+    return { kind: 'uncovered', pids: pids.filter((pid) => !census.pids.has(pid)) };
 }
 
 function processFileSnapshot(pid: number, timeout: number): { uid: number; state: string } | undefined {
