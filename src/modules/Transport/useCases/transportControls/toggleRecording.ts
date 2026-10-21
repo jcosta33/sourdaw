@@ -118,7 +118,7 @@ function placeCapture(input: CapturePlacementInput): CapturePlacement {
  */
 function commitResolvedCapture(input: {
     readonly recClip: ReturnType<typeof startRecording>[number];
-    readonly buffer: { readonly duration: number };
+    readonly buffer: AudioBuffer;
     readonly totalLatencySec: number;
     readonly transportHold: TransportHold;
     readonly contextClockSeconds: number;

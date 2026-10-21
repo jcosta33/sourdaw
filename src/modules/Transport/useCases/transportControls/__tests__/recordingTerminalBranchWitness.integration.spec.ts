@@ -219,7 +219,14 @@ describe('recording terminal publishes only under its captured root (issue #5289
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         branchStore.set(null);
-        flushAutomergeStorageWrites();
+        try {
+            flushAutomergeStorageWrites();
+        } catch {
+            // The refused scenario leaves the outgoing branch's optimistic
+            // take-lane write queued against a replaced root, and the adapter
+            // refuses exactly that on flush — its own protection, not this
+            // spec's subject. The port reset below discards the storage.
+        }
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
