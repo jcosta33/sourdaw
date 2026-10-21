@@ -140,6 +140,55 @@ describe('offline modulation composes device units and actual terminal writes', 
         run(binding, [plan(1)], [lane(5, 'first'), lane(5, 'last')], Math.round);
         expect(target.writes.map(({ value }) => value)).toEqual([6, 6, 6]);
     });
+
+    it.each([false, true])('keeps a material curve over a later held duplicate, linked=%s', (linked) => {
+        const { target, binding } = audioBinding();
+        const material = lane(5, 'material');
+        material.points[0]!.curve = 'linear';
+        material.points.push({ beat: 0.04, value: 7, curve: 'linear', tension: 0 });
+        const source = { ...material, id: 'source', trackId: 'other' };
+        const follower = { ...lane(0, 'follower'), linkedLaneId: 'source' };
+        run(binding, [plan(1)], linked ? [source, follower, lane(20, 'held')] : [material, lane(20, 'held')]);
+        expect(target.writes.map(({ time }) => time)).toEqual([0, 0.01, 0.02]);
+        for (const [index, value] of [6, 6.16, 6.512].entries()) {
+            expect(target.writes[index]?.value).toBeCloseTo(value, 10);
+        }
+    });
+
+    it('counts a suppressed held duplicate when forcing competing modulation delivery', () => {
+        const { target, binding } = audioBinding();
+        const material = lane(5, 'material');
+        material.points.push({ beat: 0.04, value: 5, curve: 'step', tension: 0 });
+        run(binding, [plan(1)], [material, lane(20, 'held')]);
+        expect(target.writes.map(({ value }) => value)).toEqual([6, 6, 6]);
+    });
+
+    it.each(['lone', 'equal-zero-span', 'disabled-material', 'clip-held'] as const)(
+        'preserves held-lane admission for %s',
+        (scope) => {
+            const { target, binding } = audioBinding();
+            const material = lane(5, 'material');
+            material.points.push({ beat: 0.04, value: 7, curve: 'linear', tension: 0 });
+            const held = lane(20, 'held');
+            let lanes: AutomationLane[] = [held];
+            if (scope === 'equal-zero-span') {
+                lanes = [lane(5, 'earlier'), held];
+            }
+            if (scope === 'disabled-material') {
+                lanes = [{ ...material, enabled: false }, held];
+            }
+            if (scope === 'clip-held') {
+                lanes = [material, { ...held, clipId: 'clip' }];
+            }
+            run(binding, [plan(1)], lanes, undefined, {
+                clipBoundsById: new Map([['clip', { startBeat: 0, endBeat: 0.06 }]]),
+            });
+            expect(target.writes.map(({ value }) => value)).toEqual(
+                scope === 'equal-zero-span' || scope === 'clip-held' ? [21, 21, 21] : [21]
+            );
+        }
+    );
+
     it('retains continuous state through quantised skips across ordered mappings', () => {
         const { target, binding } = audioBinding();
         run(binding, [plan(5), plan(6)], [], Math.round);

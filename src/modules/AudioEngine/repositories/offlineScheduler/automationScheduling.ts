@@ -60,6 +60,8 @@ export type OfflineModulatorPlan = {
     deltaAtBeat: (beat: number) => number;
 };
 
+type ModulatedAutomationStream = AutomationEventStream & { curveCoversNoSpan: boolean };
+
 type AutomationTempoChange = {
     beat: number;
     tempo: number;
@@ -391,7 +393,7 @@ function scheduleModulatedGroup(input: {
     plans: readonly OfflineModulatorPlan[];
     binding: OfflineAutomationBinding;
     /** Canonical device-unit lane streams, before any binding conversion or slew. */
-    streams: readonly AutomationEventStream[];
+    streams: readonly ModulatedAutomationStream[];
     scheduleFrame?: ScheduleCall;
     renderFrames: number;
     durationSeconds: number;
@@ -408,6 +410,7 @@ function scheduleModulatedGroup(input: {
     let previous: number | undefined;
     let terminal = plans[0]!.baseValue;
     let laneState: { laneId: string; value: number } | undefined;
+    const hasMaterialTrackLane = streams.some((stream) => stream.scope === 'track' && !stream.curveCoversNoSpan);
     for (let tick = 0; tick * input.slewTickSeconds < input.durationSeconds; tick++) {
         const timeSeconds = tick * input.slewTickSeconds;
         const beat = input.projectSecondsToBeat(timeSeconds);
@@ -422,6 +425,12 @@ function scheduleModulatedGroup(input: {
                 continue;
             }
             activeLaneCount++;
+            // Live counts every active lane for modulation's delivery gate,
+            // but its automation pass suppresses a held track duplicate when
+            // a material sibling owns the curve (#4928).
+            if (stream.scope === 'track' && stream.curveCoversNoSpan && hasMaterialTrackLane) {
+                continue;
+            }
             if (!winner || stream.scope === 'clip' || winner.stream.scope !== 'clip') {
                 winner = { stream, value };
             }
@@ -605,7 +614,7 @@ export function scheduleTrackAutomation({
             modulatorPlansByGroup.set(key, [plan]);
         }
     }
-    const deviceUnitStreamsByKey = new Map<string, AutomationEventStream[]>();
+    const deviceUnitStreamsByKey = new Map<string, ModulatedAutomationStream[]>();
 
     for (const lane of trackLanes) {
         let activeWindowSeconds: { startSeconds: number; endSeconds: number } | undefined;
@@ -885,6 +894,7 @@ export function scheduleTrackAutomation({
                     scope: lane.clipId ? 'clip' : 'track',
                     events,
                     windowEndSeconds: clipWindowEndSeconds,
+                    curveCoversNoSpan: points.every((point) => point.beat === points[0]!.beat),
                 });
                 deviceUnitStreamsByKey.set(groupKey, streams);
                 continue;
@@ -1155,7 +1165,7 @@ export function scheduleTrackAutomation({
     // about it through `onWithheldDeviceLanes`, which the total law leaves
     // silent.
     const deviceEntryById = new Map(deviceEntries.map((entry) => [entry.deviceId, entry]));
-    const scheduleModulatedForKey = (key: string, streams: readonly AutomationEventStream[]): boolean => {
+    const scheduleModulatedForKey = (key: string, streams: readonly ModulatedAutomationStream[]): boolean => {
         const plans = modulatorPlansByGroup.get(key);
         if (!plans || plans.length === 0) {
             return false;
