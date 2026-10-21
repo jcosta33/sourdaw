@@ -104,6 +104,8 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
         if (event.button !== 0) {
             return;
         }
+        // Keep the parent track's native drag from consuming this comp gesture's mouseup.
+        event.preventDefault();
         const startBeat = beatFromPointer(event.clientX);
         setDrag({ startBeat, endBeat: startBeat });
     };
