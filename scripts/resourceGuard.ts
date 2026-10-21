@@ -1056,18 +1056,42 @@ export function startTimeExcuseSupervisor(
     return identityState(owner) === 'alive' ? currentPid : undefined;
 }
 
-function storageRecoveryPorts(report: (reason: string) => void): StorageRecoveryPorts {
+type StorageRecoveryHost = {
+    platform: () => NodeJS.Platform;
+    currentPid: number;
+    identityState: (identity: StorageProcessIdentity) => 'alive' | 'dead' | 'unknown';
+    processCensus: (sessionToken: string) => { rows: ProcessRow[]; rawOutput?: string } | undefined;
+    fileState: (
+        tempDirectories: string[],
+        ownedPids: number[],
+        report: (reason: string) => void,
+        supervisorPid?: number
+    ) => 'alive' | 'dead' | 'unknown';
+};
+
+const storageRecoveryHost: StorageRecoveryHost = {
+    platform,
+    currentPid: process.pid,
+    identityState: storageIdentityState,
+    processCensus,
+    fileState: storageFileState,
+};
+
+export function storageRecoveryPorts(
+    report: (reason: string) => void,
+    host: StorageRecoveryHost = storageRecoveryHost
+): StorageRecoveryPorts {
     const ports: StorageRecoveryPorts = {
-        identityState: storageIdentityState,
+        identityState: host.identityState,
         sessionState: (owner, tempDirectory, currentTempDirectory = tempDirectory) => {
-            if (platform() === 'win32' && owner.phase !== 'ready') {
+            if (host.platform() === 'win32' && owner.phase !== 'ready') {
                 return 'unknown';
             }
-            const census = processCensus(owner.token);
+            const census = host.processCensus(owner.token);
             if (census === undefined) {
                 return 'unknown';
             }
-            if (platform() !== 'win32') {
+            if (host.platform() !== 'win32') {
                 const references = storageReferenceState(census.rawOutput, tempDirectory);
                 if (references !== 'dead') {
                     return references;
@@ -1081,16 +1105,21 @@ function storageRecoveryPorts(report: (reason: string) => void): StorageRecovery
                 return 'alive';
             }
             for (const identity of [...owner.tracked, ...(owner.child === undefined ? [] : [owner.child])]) {
-                const state = storageIdentityState(identity);
+                const state = host.identityState(identity);
                 if (state !== 'dead') {
                     return state;
                 }
             }
-            if (platform() === 'win32') {
+            if (host.platform() === 'win32') {
                 return 'dead';
             }
-            const supervisorPid = startTimeExcuseSupervisor(owner.owner, process.pid, platform(), storageIdentityState);
-            return storageFileState(
+            const supervisorPid = startTimeExcuseSupervisor(
+                owner.owner,
+                host.currentPid,
+                host.platform(),
+                host.identityState
+            );
+            return host.fileState(
                 [tempDirectory, currentTempDirectory],
                 [
                     owner.owner.pid,
@@ -1104,7 +1133,7 @@ function storageRecoveryPorts(report: (reason: string) => void): StorageRecovery
         localReleaseAllowed: (owner, tempDirectory, currentTempDirectory) => {
             // Windows normal cleanup keeps its tracked-tree contract. Its unavailable
             // environment census remains unknown for crash recovery, never reported dead.
-            if (platform() === 'win32') {
+            if (host.platform() === 'win32') {
                 return true;
             }
             return ports.sessionState(owner, tempDirectory, currentTempDirectory) === 'dead';
@@ -1343,9 +1372,11 @@ export function linuxStorageFileState(
                 ports.startedBeforeSupervisor?.(pid) === true
             ) {
                 // A same-UID process this account cannot inspect holds credentials beyond
-                // the guard's, as long-lived session services can. Having started before the
-                // supervisor, it inherited nothing from the run; like a descendant that
-                // changes privilege, it is outside what this census can prove.
+                // the guard's, as long-lived session services can. Starting before the
+                // supervisor proves only that it inherited no working directory or descriptor
+                // from the run, not that it never opens the storage path later. An older
+                // same-account process explicitly handed that path is, like a descendant that
+                // changes privilege, outside what this census can prove.
                 continue;
             }
             let snapshot: LinuxFileSnapshot | undefined;

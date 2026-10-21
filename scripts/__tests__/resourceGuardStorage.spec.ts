@@ -30,6 +30,7 @@ import {
     parseLinuxFileSnapshot,
     parseLinuxStartTicks,
     startTimeExcuseSupervisor,
+    storageRecoveryPorts,
 } from '../resourceGuard';
 import {
     createGuardStorage,
@@ -1676,6 +1677,64 @@ describe('storage ownership recovery', () => {
             expect(reports).toEqual([]);
         }
     );
+
+    it.each([
+        { scenario: 'a crashed owner retains its storage', recovered: true },
+        { scenario: 'this live supervisor reclaims its own storage', recovered: false },
+    ])('bounds the Linux start-time excuse through the guard recovery ports: $scenario', async ({ recovered }) => {
+        const root = fixture();
+        const supervisor = { pid: process.pid, startedAt: 'supervisor-start' };
+        const reports: string[] = [];
+        const supervisorBounds: (number | undefined)[] = [];
+        const denied = Object.assign(new Error('private path must not be emitted'), { code: 'EACCES' });
+        // pid 123 shares the account, started before this process, and denies inspection.
+        const startTicks = (pid: number) => (pid === 123 ? 1 : 2);
+        const ports = storageRecoveryPorts((reason) => reports.push(reason), {
+            platform: () => 'linux',
+            currentPid: supervisor.pid,
+            identityState: (identity) =>
+                !recovered && identity.pid === supervisor.pid && identity.startedAt === supervisor.startedAt
+                    ? 'alive'
+                    : 'dead',
+            processCensus: () => ({ rows: [], rawOutput: 'unrelated process output' }),
+            fileState: (tempDirectories, _ownedPids, report, supervisorPid) => {
+                supervisorBounds.push(supervisorPid);
+                return linuxStorageFileState([123], 501, tempDirectories, 5_000, report, {
+                    inspectUid: () => 501,
+                    readCwd: () => {
+                        throw denied;
+                    },
+                    listDescriptors: () => [],
+                    readDescriptor: () => undefined,
+                    readStatus: () =>
+                        'Pid:\t123\nTgid:\t123\nUid:\t501\t501\t501\t501\nState:\tS (sleeping)\nThreads:\t1\n',
+                    isGone: () => false,
+                    startedBeforeSupervisor: linuxFilePorts(supervisorPid, startTicks).startedBeforeSupervisor,
+                    now: () => 0,
+                });
+            },
+        });
+        const storage = createGuardStorage({
+            root,
+            token: randomUUID(),
+            owner: recovered ? fakeOwner : supervisor,
+            ports,
+        });
+        if (recovered) {
+            recoverGuardStorage(root, ports, fakeReclaimer);
+            expect(existsSync(storage.tempDirectory)).toBe(true);
+            expect(supervisorBounds).toEqual([undefined]);
+            expect(reports).toEqual([
+                'proc-inspection-unavailable:pid=123:phase=cwd:error=EACCES:pid/tgid/uids/state/threads=123/123/501,501,501,501/S/1',
+            ]);
+            return;
+        }
+        expect(await storage.release(true)).toBe(true);
+        expect(existsSync(storage.tempDirectory)).toBe(false);
+        expect(supervisorBounds.length).toBeGreaterThan(0);
+        expect(supervisorBounds.every((bound) => bound === supervisor.pid)).toBe(true);
+        expect(reports).toEqual([]);
+    });
 
     it.each([
         {

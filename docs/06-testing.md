@@ -743,8 +743,10 @@ and whose thread count is exactly one. A zombie leader with other threads remain
 This evidence must arrive within the existing proof deadline and never releases PID ownership
 or signaling fences. Denied inspection and unavailable or malformed status still retain storage,
 with one exception: a denied process whose `/proc` start time precedes the run's live supervisor
-inherited nothing from the run and, like an elevated descendant, is outside this proof. Crash
-recovery has no live supervisor, so every denial retains a crashed run's storage.
+is excused. Its start time proves only that it inherited no working directory or descriptor from
+the run, not that it never opens the storage path later; an older same-account process explicitly
+handed that path is, like an elevated descendant, outside this proof. Crash recovery has no live
+supervisor, so every denial retains a crashed run's storage.
 On macOS, an unreaped same-UID process positively sampled in zombie state has already released
 its file table; this exception never releases process-identity or signaling fences.
 File inspection checks same-UID process coverage again after reading files, so a process born

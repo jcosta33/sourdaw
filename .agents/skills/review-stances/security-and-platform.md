@@ -77,7 +77,8 @@ Require matching PID/thread-group/four UIDs and one thread; denied, incomplete o
 retains. File release never grants authority to treat a registered PID as gone.
 UID equality does not grant `/proc` readlink access: dumpability and access policy can deny a live
 same-UID cwd or file descriptor. Keep denial unknown and retain storage, except for a process that
-started before the run's live supervisor and so inherited nothing from it. For hosted test isolation,
+started before the run's live supervisor and so inherited no cwd or descriptor from it; that start
+time does not prove it never opens a storage path it is later handed. For hosted test isolation,
 prove the account's UID unused before install, all runtime identity fields unprivileged, groups and
 capabilities cleared, and private storage owned. Attack denied same-test-UID consumers before worker
 concurrency and require actual retention followed by reclamation after reaping. Account isolation
