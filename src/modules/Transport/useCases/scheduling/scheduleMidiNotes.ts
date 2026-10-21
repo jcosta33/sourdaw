@@ -688,7 +688,7 @@ function selectYeastNotesForSchedulerWindow({
     // candidate here (its audible beat sits inside the scheduler window) and
     // must never reach the rack's ownership. An unanchored clip admits
     // without the test, byte-identically to the pre-anchor selector.
-    return [...candidates]
+    return Array.from(candidates)
         .filter((note) =>
             isBeatAdmittedByAnchoredClipLoopWindow({
                 relativeBeat: note.startBeat - midiOffsetBeats,

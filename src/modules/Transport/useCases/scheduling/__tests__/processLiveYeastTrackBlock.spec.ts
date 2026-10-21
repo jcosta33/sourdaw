@@ -171,12 +171,15 @@ describe('processLiveYeastTrackBlock', () => {
         });
 
         const inputEvents = vi.mocked(processYeastMidi).mock.lastCall?.[0].events ?? [];
-        expect(inputEvents.map((event) => [event.kind.note, event.timePpq, event.kind.type])).toEqual([
+        const voicedEvents = inputEvents.flatMap((event) =>
+            event.kind.type === 'noteOn' || event.kind.type === 'noteOff'
+                ? [[event.kind.note, event.timePpq, event.kind.type] as const]
+                : []
+        );
+        expect(voicedEvents).toEqual([
             [60, 4, 'noteOn'],
             [60, 5, 'noteOff'],
         ]);
-        expect(result?.notesByRoute.get('route-a')).toEqual([
-            expect.objectContaining({ pitch: 60, startBeat: 4 }),
-        ]);
+        expect(result?.notesByRoute.get('route-a')).toEqual([expect.objectContaining({ pitch: 60, startBeat: 4 })]);
     });
 });

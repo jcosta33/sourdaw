@@ -43,24 +43,22 @@ export function slipClipContent(
         }
         const loopEnabled = context.loopEnabled ?? false;
         const clipDurationBeats = context.endBeat - context.startBeat;
-        // The recorded-inverse leg restores the captured figure verbatim: it is
+        const wrappedOffsetBeats = resolveLoopedOffsetBeats({
+            offsetBeats: newOffset,
+            loopEnabled,
+            clipDurationBeats,
+            configuredLoopLengthBeats: context.loopLength,
+        });
+        // The recorded-inverse leg stores the captured figure verbatim: it is
         // a restoration of the state the entry captured, not a fresh slip to
         // re-wrap. A captured figure that is not a phase of the loop config at
         // replay time — a legacy raw offset, or a phase a later loop-length
         // change de-phased — would wrap to a different offset and the undo
-        // would write a state the pre-action clip never carried. The wrap stays
-        // a forward-write law: the next fresh slip wraps its own offset anyway,
-        // and every reader consumes the offset through
+        // would write a state the pre-action clip never carried. The wrap
+        // stays a forward-write law: the next fresh slip wraps its own offset
+        // anyway, and every reader consumes the offset through
         // `note.startBeat - midiOffsetBeats` relatives, never as a phase.
-        const midiOffsetBeats =
-            inverseRowShiftBeats !== undefined
-                ? newOffset
-                : resolveLoopedOffsetBeats({
-                      offsetBeats: newOffset,
-                      loopEnabled,
-                      clipDurationBeats,
-                      configuredLoopLengthBeats: context.loopLength,
-                  });
+        const midiOffsetBeats = inverseRowShiftBeats !== undefined ? newOffset : wrappedOffsetBeats;
         const rowLiftBeats = slipWrapRowLiftBeats({
             loopEnabled,
             clipDurationBeats,

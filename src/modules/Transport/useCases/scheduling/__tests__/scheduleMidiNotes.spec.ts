@@ -4191,8 +4191,9 @@ describe('scheduleMidiNotes carries the loop anchor through selection, admission
         };
 
         await scheduleMidiNotes(2, 10, 2, new Set<string>(), [], defaultTransportState, 120);
-        const voices = vi.mocked(scheduleNote).mock.calls
-            .map((call) => ({ pitch: call[2] as number, time: call[3] as number }))
+        const voices = vi
+            .mocked(scheduleNote)
+            .mock.calls.map((call) => ({ pitch: call[2], time: call[3] }))
             .sort((left, right) => left.time - right.time || left.pitch - right.pitch);
         expect(voices).toEqual([
             { pitch: 72, time: 0.5 },
@@ -4220,8 +4221,9 @@ describe('scheduleMidiNotes carries the loop anchor through selection, admission
 
         await scheduleMidiNotes(4, 8, 4, new Set<string>(), [], defaultTransportState, 120);
         await scheduleMidiNotes(8, 12, 8, new Set<string>(), [], defaultTransportState, 120);
-        const voices = vi.mocked(scheduleNote).mock.calls
-            .map((call) => ({ pitch: call[2] as number, time: call[3] as number, duration: call[4] as number }))
+        const voices = vi
+            .mocked(scheduleNote)
+            .mock.calls.map((call) => ({ pitch: call[2], time: call[3], duration: call[4] }))
             .sort((left, right) => left.time - right.time || left.pitch - right.pitch);
         expect(voices).toEqual([
             { pitch: 60, time: 0, duration: 0.5 },

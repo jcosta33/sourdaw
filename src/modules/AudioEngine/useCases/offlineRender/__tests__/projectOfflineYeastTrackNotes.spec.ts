@@ -308,7 +308,9 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
         ): readonly Event[] {
             return input.events as readonly Event[];
         }
-        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>((input) => [...input.events]);
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>((input) =>
+            input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? event.timeSamples / 100 }))
+        );
         return projectOfflineYeastTrackNotes({
             trackId: 'track-1',
             iterations: [2, 6].map((iterationStartBeat) => ({
