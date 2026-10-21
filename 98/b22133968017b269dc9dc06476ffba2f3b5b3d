@@ -1,0 +1,27 @@
+src/modules/Collaboration/useCases/__tests__/assetTransferResume.spec.ts
+  s_59e31a5c6f3e31::t_3505c10a26f28c 1-541
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_59e31a5c6f3e31::t_3370b9c44a0048 63-83,86-88,97-98,100,232-236,284-286,288,329-343,853,1034-1044,1050-1055,1075-1088,1105,1133,1138-1140,1156-1161,1163,1166-1181,1184-1198,1201-1212,1214-1230,1234,1244-1245,1260,1268-1272,1282-1283,1287,1294,1306,1316,1320-1323,1348-1359,1362-1365,1372,1381,1432-1434,1448-1452,1473-1475,1488-1491,1503,1522,1528-1530,1591-1594,1596-1598,1641-1659
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_59e31a5c6f3e31::t_27293148a107b7 110,118,329-330,332-334,475,706
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_59e31a5c6f3e31::t_02e3ebe1041743 112,248,1049-1050,2439-2452,2460-2464,2467,2478,2488,2596
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_59e31a5c6f3e31::t_d5583ee919c24c 763-765,768-771,773
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98b22133968017b269dc9dc06476ffba2f3b5b3d",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
