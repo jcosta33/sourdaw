@@ -1,0 +1,27 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_59e31a5c6f3e31::t_288de3109da295 414-416,470-478,512-517,519,533-535,623-625,799-801,809-817
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_59e31a5c6f3e31::t_288de3109da295 414-417,420
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/deviceAutomationUndoExclusion.integration.spec.ts
+  s_59e31a5c6f3e31::t_288de3109da295 229-231
+src/components/ui/__tests__/bipolar-slider.spec.tsx
+  s_59e31a5c6f3e31::t_288de3109da295 60-62,81-89
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
+  s_59e31a5c6f3e31::t_288de3109da295 127-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0f8771baaa1af7108f272a94012abb844a441fb",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
