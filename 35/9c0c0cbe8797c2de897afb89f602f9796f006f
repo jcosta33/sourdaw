@@ -1,0 +1,37 @@
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveMidiWriter.ts
+  s_59e31a5c6f3e31::t_ed224be2e20b1e 8-9
+  s_59e31a5c6f3e31::t_0dbf71e2321928 58,201-227
+  s_59e31a5c6f3e31::t_a57ea4b1e95731 62
+  s_59e31a5c6f3e31::t_74f943e0399f86 59-61,66,228-231,275
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  s_59e31a5c6f3e31::t_ed224be2e20b1e 771-795
+  s_59e31a5c6f3e31::t_58b7d149058597 648-664,666-700,708-714,835-836
+  s_59e31a5c6f3e31::t_994abd2572715b 189-191,232-235,513,520,522-550,665
+  s_59e31a5c6f3e31::t_aede8faa162293 701-707,715-770,796-798,801-807,809-834
+  s_59e31a5c6f3e31::t_c75b54611ceb16 143-144,159,167-169,192-200,210-211,219-231
+  s_59e31a5c6f3e31::t_2502103cd37c31 799-800,808
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveMidiWriterState.ts
+  s_59e31a5c6f3e31::t_ed224be2e20b1e 30-31
+  s_59e31a5c6f3e31::t_a57ea4b1e95731 77-80
+src/modules/AudioEngine/useCases/livePlayback/loopMidiWindowBatch.ts
+  s_59e31a5c6f3e31::t_87f8d3a041dfd7 41-42,44-60,90-91,93,97,111-112,115,137-156,163,165,181,189,191-205,208,237-242,250-258,268-269,272,277,281-286,293
+  s_59e31a5c6f3e31::t_0dbf71e2321928 96,119,168,178,180,186-187,244-248,278-280,287
+  s_59e31a5c6f3e31::t_2502103cd37c31 43
+  s_59e31a5c6f3e31::t_8f40d6da4a37fd 185,188,190,243,249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "359c0c0cbe8797c2de897afb89f602f9796f006f",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
