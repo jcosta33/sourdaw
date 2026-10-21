@@ -256,9 +256,11 @@ function retainedStorageTokens(root: string): { direct: string[]; claims: string
     return { direct, claims };
 }
 
+type PriorMarkedGuard = { tempDirectory: string; token: string; supervisorPid?: number };
+
 function expectMarkedRecovery(
     root: string,
-    prior: { tempDirectory: string; token: string; supervisorPid?: number }[],
+    prior: PriorMarkedGuard[],
     fresh: Awaited<ReturnType<typeof runMarkedGuard>>,
     originalStillLive = false
 ): void {
@@ -843,7 +845,7 @@ describe('guard-owned temporary storage', () => {
             const tempExists = existsSync(started.tmp);
             console.log(JSON.stringify({ scenario, program, pid: started.pid, startedAt, alive, tempExists }));
             expect(alive && !tempExists).toBe(false);
-            const prior = [{ tempDirectory: started.tmp, token: originalToken }];
+            const prior: PriorMarkedGuard[] = [{ tempDirectory: started.tmp, token: originalToken }];
             if (alive) {
                 if (scenario === 'parent exit') {
                     expect(JSON.parse(readFileSync(resultPath, 'utf8')).reason).toBe('leak');
