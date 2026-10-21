@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
@@ -26,6 +26,7 @@ import {
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { readChatThreadContext } from '../../readChatThreadContext';
 import { admitCommittedSectionRenderRetry } from '../admitCommittedSectionRenderRetry';
+import { pendingActionResourceSettlement } from '../pendingActionResourceSettlement';
 import { projectSectionRenderConfirmation } from '../projectSectionRenderConfirmation';
 import { settleVerifiedBatchReplay } from '../settleVerifiedBatchReplay';
 
@@ -189,7 +190,10 @@ beforeEach(() => {
     resetThread();
     registerHandlerMap(getAudioRenderingHandlers());
 });
-afterEach(resetThread);
+afterEach(() => {
+    resetThread();
+    vi.restoreAllMocks();
+});
 
 describe('verified replay settlement read by the planner thread', () => {
     it('presents canonical batch metadata despite a divergent valid standalone copy and preserves a rich sibling', async () => {
@@ -354,7 +358,7 @@ describe('verified replay settlement read by the planner thread', () => {
         ).toEqual({ status: 'admitted', durableReceipt: replay.receipt });
     });
     it.each(['executed', 'executed-with-warning'] as const)(
-        'keeps the earlier project commit after an interrupted %s seek settlement',
+        'keeps the earlier project commit while verified %s seek resource retention is pending',
         async (status) => {
             const project = createReplay({ id: 'tempo', actions: [TEMPO], status: 'committed' });
             await settleVerifiedBatchReplay(project);
@@ -363,7 +367,48 @@ describe('verified replay settlement read by the planner thread', () => {
             const runtime = createReplay({ id: 'seek', actions: [SEEK], status });
             expect(getPendingActionConfirmation(runtime.confirmation.id)?.executedActions).toEqual([]);
 
-            await expect(settleVerifiedBatchReplay(runtime)).resolves.toEqual({ status: 'executed' });
+            let markRetentionStarted: () => void = () => undefined;
+            let releaseRetention: () => void = () => undefined;
+            const retentionStarted = new Promise<void>((resolve) => {
+                markRetentionStarted = resolve;
+            });
+            const retentionHeld = new Promise<void>((resolve) => {
+                releaseRetention = resolve;
+            });
+            const retainCommitted = pendingActionResourceSettlement.retainCommitted;
+            const retention = vi
+                .spyOn(pendingActionResourceSettlement, 'retainCommitted')
+                .mockImplementation(async (confirmationId) => {
+                    markRetentionStarted();
+                    await retentionHeld;
+                    await retainCommitted(confirmationId);
+                });
+            const settlement = settleVerifiedBatchReplay(runtime);
+            let pendingContext: ReturnType<typeof readChatThreadContext> = null;
+            let pendingExecutions: PendingAppActionConfirmation['executedActions'] | undefined;
+
+            try {
+                await retentionStarted;
+                pendingContext = readChatThreadContext();
+                pendingExecutions = getPendingActionConfirmation(runtime.confirmation.id)?.executedActions;
+            } finally {
+                releaseRetention();
+                try {
+                    await settlement;
+                } finally {
+                    retention.mockRestore();
+                }
+            }
+
+            await expect(settlement).resolves.toEqual({ status: 'executed' });
+            expect(pendingContext?.lastCommit).toEqual(priorCommit);
+            expect(pendingExecutions).toMatchObject([
+                {
+                    actionType: 'seekPlayhead',
+                    executionKind: 'runtime',
+                    outcome: status,
+                },
+            ]);
 
             expect(readChatThreadContext()?.lastCommit).toEqual(priorCommit);
             expect(getPendingActionConfirmation(runtime.confirmation.id)).toMatchObject({
@@ -382,6 +427,73 @@ describe('verified replay settlement read by the planner thread', () => {
             ]);
         }
     );
+
+    it('exposes a partial project commit while verified resource retention is pending', async () => {
+        const action = {
+            type: 'renderProjectSections',
+            payload: {
+                sectionIds: ['section-verse'],
+                jobs: [
+                    {
+                        jobId: 'render-verse',
+                        sectionId: 'section-verse',
+                        sectionName: 'Verse',
+                        startBeat: 0,
+                        endBeat: 16,
+                        sampleRate: 44_100,
+                        tailSeconds: 0,
+                    },
+                ],
+            },
+        } satisfies Actions[number];
+        const replay = createReplay({ id: 'pending-render', actions: [action], status: 'committed-with-warning' });
+
+        let markRetentionStarted: () => void = () => undefined;
+        let releaseRetention: () => void = () => undefined;
+        const retentionStarted = new Promise<void>((resolve) => {
+            markRetentionStarted = resolve;
+        });
+        const retentionHeld = new Promise<void>((resolve) => {
+            releaseRetention = resolve;
+        });
+        const retainCommitted = pendingActionResourceSettlement.retainCommitted;
+        const retention = vi
+            .spyOn(pendingActionResourceSettlement, 'retainCommitted')
+            .mockImplementation(async (confirmationId) => {
+                markRetentionStarted();
+                await retentionHeld;
+                await retainCommitted(confirmationId);
+            });
+        const settlement = settleVerifiedBatchReplay(replay);
+        let pendingContext: ReturnType<typeof readChatThreadContext> = null;
+        let pendingExecutions: PendingAppActionConfirmation['executedActions'] | undefined;
+
+        try {
+            await retentionStarted;
+            pendingContext = readChatThreadContext();
+            pendingExecutions = getPendingActionConfirmation(replay.confirmation.id)?.executedActions;
+        } finally {
+            releaseRetention();
+            try {
+                await settlement;
+            } finally {
+                retention.mockRestore();
+            }
+        }
+
+        await expect(settlement).resolves.toMatchObject({ status: 'failed', durableCommit: true });
+        expect(pendingContext?.lastCommit).toMatchObject({
+            runId: replay.confirmation.runId,
+            commands: [{ name: 'renderProjectSections' }],
+        });
+        expect(pendingExecutions).toMatchObject([
+            {
+                actionType: 'renderProjectSections',
+                executionKind: 'project',
+                outcome: 'committed-with-warning',
+            },
+        ]);
+    });
 
     it('keeps a replayed project commit newest and unknown when its undo entries have no group', async () => {
         const older = createReplay({ id: 'older', actions: [TEMPO], status: 'committed' });

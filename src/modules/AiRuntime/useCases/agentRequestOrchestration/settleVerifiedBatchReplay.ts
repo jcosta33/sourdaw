@@ -122,6 +122,7 @@ export async function settleVerifiedBatchReplay(
         leaseSettlement = { accepted: true, warning: null },
     } = input;
     if (receipt.outcome === 'partially-committed' && receipt.pendingEffects.length > 0) {
+        restoreVerifiedExecutions(confirmation, receipt);
         const receiptPersistenceWarning = confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt(
             confirmation,
             receipt,
@@ -133,7 +134,6 @@ export async function settleVerifiedBatchReplay(
         const reason = receipt.warnings[0] ?? receipt.modelSummary;
         const persistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
         await pendingActionResourceSettlement.retainCommitted(confirmation.id);
-        restoreVerifiedExecutions(confirmation, receipt);
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
@@ -148,6 +148,7 @@ export async function settleVerifiedBatchReplay(
     }
     const replay = getVerifiedBatchReplayDisposition(receipt);
     if (replay.status === 'committed' || replay.status === 'executed') {
+        restoreVerifiedExecutions(confirmation, receipt);
         const receiptPersistenceWarning = confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt(
             confirmation,
             receipt,
@@ -158,7 +159,6 @@ export async function settleVerifiedBatchReplay(
         );
         const runPersistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
         await pendingActionResourceSettlement.retainCommitted(confirmation.id);
-        restoreVerifiedExecutions(confirmation, receipt);
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'executed',
