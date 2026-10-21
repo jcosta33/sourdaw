@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts
+  s_59e31a5c6f3e31::t_154ae6f320e460 1-376
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  s_59e31a5c6f3e31::t_38c6f1bd9aa7d4 3-4,25,29-30,41,45-49,85-90,99,101-103,196-197,206-207,210-211,224,229,239,243,247,251-279
+src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts
+  s_59e31a5c6f3e31::t_51ccd87beb9a5c 1-9,23,33-35,37-39,60-75,93,104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "523c28163187256464b15e11f3a28f5ae83fb7fc",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
