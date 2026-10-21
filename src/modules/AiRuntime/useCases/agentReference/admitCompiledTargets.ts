@@ -93,8 +93,14 @@ function readReferences(
     dependencyId?: string,
     excludedIds: readonly string[] = []
 ) {
-    return resolveAgentReference({ prompt: text, assertedId: undefined, capability, context, dependencyId, excludedIds })
-        .candidates;
+    return resolveAgentReference({
+        prompt: text,
+        assertedId: undefined,
+        capability,
+        context,
+        dependencyId,
+        excludedIds,
+    }).candidates;
 }
 
 /** Objects of the capability the text names by literal id, whole name or selection. */
@@ -173,8 +179,7 @@ function maskWholeNames(text: string, names: readonly string[]): string {
     return names
         .filter((name) => name.trim().length > 0)
         .reduce(
-            (masked, name) =>
-                masked.replaceAll(wholeWordsPattern(name, 'giu'), (match) => ' '.repeat(match.length)),
+            (masked, name) => masked.replaceAll(wholeWordsPattern(name, 'giu'), (match) => ' '.repeat(match.length)),
             text
         );
 }
@@ -268,7 +273,8 @@ function getNamePredicates(input: CompiledTargetAuthorityInput): NamePredicates 
     if (terms.where?.trackId !== undefined) {
         ids.push(terms.where.trackId);
     }
-    for (const predicate of [...(terms.match?.all ?? []), ...(terms.match?.any ?? [])]) {
+    const predicates = [terms.match?.all, terms.match?.any].flatMap((list) => list ?? []);
+    for (const predicate of predicates) {
         if ('nameIncludes' in predicate) {
             names.push(predicate.nameIncludes);
         }
@@ -298,7 +304,9 @@ function getObjectNames(objectId: string, context: ProjectContext): string[] {
 
 /** Whether the clause states the id literally, states the object's name, or selects it. */
 function statesObject(text: string, objectId: string, input: CompiledTargetAuthorityInput): boolean {
-    if ([objectId, ...getObjectNames(objectId, input.context)].some((name) => wholeWordsPattern(name, 'iu').test(text))) {
+    if (
+        [objectId, ...getObjectNames(objectId, input.context)].some((name) => wholeWordsPattern(name, 'iu').test(text))
+    ) {
         return true;
     }
     const capability: Capability = input.context.tracks.some((track) => track.id === objectId)

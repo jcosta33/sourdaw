@@ -1895,9 +1895,7 @@ describe('a bulk request confirmed one batch at a time', () => {
                 quantity: { unit: 'targets', exactly: LAYER_COUNT },
             },
         });
-        // A where-only selector on kind stands only on a request that states that kind.
-        flushAutomergeStorageWrites();
-        await sendChatMessage('Mute all audio tracks');
+        await requestMuteLayers();
         const first = requireOnlyProposedConfirmation();
         await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
         const second = requireOnlyProposedConfirmation();

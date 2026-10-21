@@ -31,7 +31,6 @@ type CompiledItem = {
 
 const REVISION = 'revision-compiled-target-authority';
 
-
 function createTrack({
     id,
     name,
@@ -1174,13 +1173,13 @@ describe('selections that pick no object by name ground as the compiler resolves
 
     it('grounds a named track beside the tracks a role selects', () => {
         const namedVocals = roleTrack('track-guitar-pair-vocals', 'Vocals', 'lead vocal');
-        const guitarPairContext: ProjectContext = { ...projectContext, tracks: [namedVocals, gtrLeft, gtrRight, master] };
+        const guitarPairContext: ProjectContext = {
+            ...projectContext,
+            tracks: [namedVocals, gtrLeft, gtrRight, master],
+        };
         const result = compileAndBridge(
             'turn Vocals down 3 dB and turn the guitars down 3 dB',
-            [
-                trackItem('setTrackGain', namedVocals, { deltaDb: -3 }),
-                turnDown({ roleFamily: 'guitar' }, 2),
-            ],
+            [trackItem('setTrackGain', namedVocals, { deltaDb: -3 }), turnDown({ roleFamily: 'guitar' }, 2)],
             [],
             guitarPairContext
         );
