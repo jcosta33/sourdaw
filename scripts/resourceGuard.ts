@@ -1473,8 +1473,21 @@ export function linuxStorageFileCensus(
         return 'unknown';
     };
     const now = ports.now ?? Date.now;
+    const files = ports.files ?? linuxFilePorts();
+    const waitForExit = files.wait ?? waitSynchronously;
+    // Processes inspected before a paced exit resample are stale by its end, so an
+    // observation that waited can only lead to a fresh complete one, never to proof.
+    const resamples = { count: 0 };
+    const observedFiles: LinuxFilePorts = {
+        ...files,
+        wait: (milliseconds) => {
+            resamples.count += 1;
+            waitForExit(milliseconds);
+        },
+    };
     for (let observation = 0; observation < LINUX_CENSUS_OBSERVATIONS; observation++) {
-        const state = linuxStorageFileState(pids, uid, tempDirectories, deadline, report, ports.files);
+        resamples.count = 0;
+        const state = linuxStorageFileState(pids, uid, tempDirectories, deadline, report, observedFiles);
         if (state !== 'dead') {
             return state;
         }
@@ -1486,11 +1499,15 @@ export function linuxStorageFileCensus(
         if (now() >= deadline) {
             return unknown('proc-time-bound');
         }
-        if (uninspectedPid === undefined) {
+        if (uninspectedPid === undefined && resamples.count === 0) {
             return 'dead';
         }
         if (observation === LINUX_CENSUS_OBSERVATIONS - 1) {
-            return unknown(`proc-live-pid-uninspected:pid=${uninspectedPid}`);
+            return unknown(
+                uninspectedPid === undefined
+                    ? 'proc-exit-resample-unsettled'
+                    : `proc-live-pid-uninspected:pid=${uninspectedPid}`
+            );
         }
         // Discard the stale inspection; each replacement covers the whole fresh list.
         pids = currentPids;

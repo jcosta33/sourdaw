@@ -1714,6 +1714,84 @@ describe('storage ownership recovery', () => {
     );
 
     it.each([
+        { scenario: 'a process inspected before the wait then holds storage', recurring: false, borrower: true },
+        { scenario: 'a clean fresh observation follows the wait', recurring: false, borrower: false },
+        { scenario: 'every observation waits on an exit', recurring: true, borrower: false },
+    ] as const)(
+        'never proves Linux release from an observation that waited on an exit: $scenario',
+        ({ recurring, borrower }) => {
+            const temp = '/owned/run/tmp';
+            const reports: string[] = [];
+            const inspected: number[] = [];
+            const denied = Object.assign(new Error('private path must not be emitted'), { code: 'EACCES' });
+            const running = terminalStatus.replace('Z (zombie)', 'R (running)');
+            let clock = 0;
+            let waits = 0;
+            let samples = 0;
+            let reaped = false;
+            // Pid 123 is exiting with its FD list denied: it reads running for three paced
+            // samples and is then reaped, or with recurring exits reads running once and then
+            // a single-thread zombie in every observation.
+            const readStatus = () => {
+                samples += 1;
+                if (recurring) {
+                    return samples % 2 === 1 ? running : terminalStatus;
+                }
+                if (samples <= 3) {
+                    return running;
+                }
+                reaped = true;
+                throw Object.assign(new Error('private path must not be emitted'), { code: 'ENOENT' });
+            };
+            const isGone = (pid: number) => pid === 123 && reaped;
+            const observed = linuxStorageFileCensus([100, 123], 501, [temp], 5_000, (reason) => reports.push(reason), {
+                readProcessUsers: () => (reaped ? [100] : [100, 123]),
+                isGone,
+                now: () => clock,
+                files: {
+                    inspectUid: (pid) => {
+                        inspected.push(pid);
+                        return 501;
+                    },
+                    readCwd: (pid) => {
+                        const laterInspection = inspected.filter((entry) => entry === 100).length > 1;
+                        if (pid === 100 && borrower && laterInspection) {
+                            return temp;
+                        }
+                        return '/elsewhere';
+                    },
+                    listDescriptors: (pid) => {
+                        if (pid === 123) {
+                            throw denied;
+                        }
+                        return [];
+                    },
+                    readDescriptor: () => undefined,
+                    readStatus,
+                    isGone,
+                    now: () => clock,
+                    wait: () => {
+                        waits += 1;
+                        clock += 25;
+                    },
+                },
+            });
+            if (recurring) {
+                expect(observed).toBe('unknown');
+                expect(reports).toEqual(['proc-exit-resample-unsettled']);
+                expect(waits).toBe(LINUX_CENSUS_OBSERVATIONS);
+                expect(inspected).toEqual(Array.from({ length: LINUX_CENSUS_OBSERVATIONS }, () => [100, 123]).flat());
+                return;
+            }
+            expect(waits).toBe(3);
+            // The fresh observation re-inspects every listed process after the waited one.
+            expect(inspected).toEqual([100, 123, 100]);
+            expect(observed).toBe(borrower ? 'alive' : 'dead');
+            expect(reports).toEqual([]);
+        }
+    );
+
+    it.each([
         { scenario: 'denied cwd predating the supervisor', code: 'EACCES', predates: true, consumer: false },
         { scenario: 'denied cwd predating the supervisor (EPERM)', code: 'EPERM', predates: true, consumer: false },
         { scenario: 'denied cwd started after the supervisor', code: 'EACCES', predates: false, consumer: false },

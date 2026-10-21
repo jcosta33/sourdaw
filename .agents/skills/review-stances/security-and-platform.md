@@ -37,6 +37,8 @@ Probe: inject a second live arrival and require reclamation after a complete thi
 endless arrivals that end retained at the observation bound. Deny an FD list while status reads
 running or a multithreaded zombie, then report the PID gone or a single-thread zombie on a later
 paced sample, and require release; a status still live at the deadline or a denied cwd retains.
+Let a process inspected before that wait hold storage afterwards, and require the waited
+observation to lead to a fresh complete one that sees it rather than to proof.
 Make the first release proof unavailable and a later one succeed, and require byte-identical child
 output; persistent unavailability must keep only this run's diagnostic beside the retention notice,
 even after startup recovery reported on an earlier run.

@@ -745,7 +745,9 @@ a zombie whose PID and thread-group ID match the inspected PID, whose four UIDs 
 and whose thread count is exactly one. A zombie leader with other threads remains uncertain.
 The exiting task still reads live, or zombie with other threads, while it tears down a large
 address space and closes its files, so a denied descriptor list is resampled at a short bounded
-pace until the PID is gone or a single-thread zombie.
+pace until the PID is gone or a single-thread zombie. Processes inspected before that wait are
+stale by its end, so an observation that waited never proves release: it leads only to a fresh
+complete observation within the same bound and deadline, and recurring waits retain storage.
 This evidence must arrive within the existing proof deadline and never releases PID ownership
 or signaling fences. A denied working directory, a denied descriptor list from a process still
 live at the deadline, and unavailable or malformed status still retain storage,
