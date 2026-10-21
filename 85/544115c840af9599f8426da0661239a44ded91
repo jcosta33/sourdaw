@@ -1,0 +1,87 @@
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_59e31a5c6f3e31::t_786b4c2079b833 1771-1773,1776-1778,1785-1791
+  s_59e31a5c6f3e31::t_12b1dc83f2c68c 1765-1770,1774-1775,1779-1784,1792-1795
+  s_ba8dd89de9aac7::t_399291de9c5bdc 1764
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToBrowser.spec.ts
+  s_59e31a5c6f3e31::t_6f3974ce7becd6 58-59
+  s_59e31a5c6f3e31::t_a486b6fbfa949d 43-44,47-48,53-57,60-67
+  s_59e31a5c6f3e31::t_eada951a41501e 39-42,45-46,49-52,68,70
+  s_59e31a5c6f3e31::t_d824f329797ea7 69,71
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToNative.spec.ts
+  s_59e31a5c6f3e31::t_1e6e936d0a37b8 22-32,40
+  s_59e31a5c6f3e31::t_db7f104538f6c6 6-10,13-17,33-39,41-44,50-52,55-56,58-62,64-65,74-75
+src/modules/AudioRendering/services/createWavLoudnessReportAnalyzer.ts
+  s_59e31a5c6f3e31::t_17abdff174f4be 1-11,16-17,22-47,50-54,58-59,65-72,81,87-107,109,112-124,132-134,136-142,146-148,162-163,168-171
+  s_59e31a5c6f3e31::t_a5992a5dcda68e 75-80
+  s_59e31a5c6f3e31::t_b8be5f9baf6d8f 12-15,18-21,48-49,55-57,60-64,73-74,82-86,110,125-131,135,143-145,149-161,164-167
+  s_59e31a5c6f3e31::t_02f53a1e659f7c 108,111
+src/modules/AudioRendering/models/ExportLoudnessReport.ts
+  s_59e31a5c6f3e31::t_9c818cd4d1f5a2 1-25
+src/utils/audioMetering/measureMaxWindowedLoudness.ts
+  s_59e31a5c6f3e31::t_9aa80215c8f6e5 18-79
+src/modules/AudioRendering/repositories/audioExport/streamExportToBrowser.ts
+  s_59e31a5c6f3e31::t_1215e928f6d791 23,58-59,139,143-154,162,167
+  s_59e31a5c6f3e31::t_a770ae50f1bb30 160-161,163-166,168-169
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_59e31a5c6f3e31::t_5adf1d537c4fc1 9,19-36,39-40,42-51,54-57,60-69,75-78,81-104,108-134,140-158,160-186
+  s_59e31a5c6f3e31::t_f09f6d9b05a210 1,17-18,41,52-53,58-59,70-74,79-80,105-107,135-136
+  s_59e31a5c6f3e31::t_8957b1121e0073 10,37-38
+  s_59e31a5c6f3e31::t_e4fdf906e9f2da 137-139,159,187-190
+src/modules/AudioRendering/services/__tests__/createWavLoudnessReportAnalyzer.spec.ts
+  s_59e31a5c6f3e31::t_98752ad658d8d7 9,11-12,92-99,104-108,114
+  s_59e31a5c6f3e31::t_70cb723d52c617 109-113
+  s_59e31a5c6f3e31::t_06690c7d7f768f 5,10,30-31,37,40,62-63,68,82,84,100,102
+  s_59e31a5c6f3e31::t_64eec0e399a520 15-18,34,74-81,83,85,101,103
+  s_59e31a5c6f3e31::t_9bb4bb7742ec26 23-29,32-33,35-36,38-39,41-56
+  s_59e31a5c6f3e31::t_bc54168cdb2b7e 1-4,6-8,13-14,19-22,57-61,64-67,69-73,86-91,115-116
+  s_59e31a5c6f3e31::t_96ba90d4415e6a 117-138
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_3576ca173aaa0a 384-391,393-395,721-729,935
+  s_59e31a5c6f3e31::t_f0616972539192 413,741,743,754
+  s_59e31a5c6f3e31::t_d42de354bd3031 720
+  s_59e31a5c6f3e31::t_debe74f184dfe6 1172-1175
+  s_59e31a5c6f3e31::t_b7ebf3ec472c6a 162,396-397,468-469,554-555,566,654
+  s_59e31a5c6f3e31::t_ce26ea6b17d2bf 392
+  s_59e31a5c6f3e31::t_874a2198663536 936-938,968-971,1176-1182
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_59e31a5c6f3e31::t_a3fa611090b3d7 90-91,183,222
+  s_59e31a5c6f3e31::t_02b03eaca2c6f9 2,9,32-33,36-37,42,54,60-62,74,96,134,137-140,142-143,147-148,151-159,163-182,184-186,226
+  s_59e31a5c6f3e31::t_893ce846245404 4,38-41,43-53,55-59,78-82,84-88,141,144-146,150,160-162,223
+  s_59e31a5c6f3e31::t_d4014fceaf3a4f 149,187-189
+  s_59e31a5c6f3e31::t_b529586c014c11 190,192,194,203,208,216,224-225
+src/modules/AudioRendering/repositories/audioExport/streamExportToNative.ts
+  s_59e31a5c6f3e31::t_9cff23f79b0ff8 14,19-21,43,57,61-72,78-79,83,87
+  s_59e31a5c6f3e31::t_2bfa397d742e42 80-82,84-86,88-89,91
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_59e31a5c6f3e31::t_a355b7ea9dee42 581-582,589,613,615-617,629,631-637
+  s_59e31a5c6f3e31::t_57191c33811866 578,583-588,593-597,618,653
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_59e31a5c6f3e31::t_2181156a43b601 717-731
+src/utils/audioMetering/__tests__/measureMaxWindowedLoudness.spec.ts
+  s_59e31a5c6f3e31::t_31610473693b2b 3,41-51
+  s_59e31a5c6f3e31::t_b3d8b17c57f13e 52-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85544115c840af9599f8426da0661239a44ded91",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
