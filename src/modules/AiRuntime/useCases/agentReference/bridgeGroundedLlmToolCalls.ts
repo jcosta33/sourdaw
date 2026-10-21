@@ -45,6 +45,7 @@ import {
 } from '../validateArbitraryCommandListEvidence';
 
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
+import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
     BATCH_LOCAL_BINDING_PATTERN,
@@ -4010,6 +4011,62 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
+/** The existing objects of one capability the request text names by literal id, whole name, or selection. */
+function getNamedExistingTargetIds(input: {
+    capability: GroundingRules['targetRules'][number]['capability'];
+    context: ProjectContext;
+    dependencyId?: string;
+    prompt: string;
+}): string[] {
+    return resolveAgentReference({ ...input, assertedId: undefined })
+        .candidates.filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
+        .map((candidate) => candidate.id);
+}
+
+function getOwningTrackId(objectId: string, context: ProjectContext): string | undefined {
+    const owner = context.tracks.find(
+        (track) =>
+            track.devices.some((device) => device.id === objectId) || track.clips.some((clip) => clip.id === objectId)
+    );
+    return owner?.id ?? context.automationLanes?.find((lane) => lane.id === objectId)?.trackId;
+}
+
+/**
+ * Whether a compiled selector's targets stand on the compiler's resolution alone.
+ *
+ * Compiler evidence proves which objects a selector resolves to, never that the request asked for
+ * them. A clause that names objects of the target's capability authorizes only what its own words
+ * resolve to, so its compiled targets go through the same reference resolution a direct call gets.
+ * A clause that names none is a bounded selection ("all audio tracks") the compiler resolves; when
+ * it still names the tracks owning such objects, every compiled object must belong to one of them.
+ */
+function compiledTargetsNeedNoReferenceResolution(input: {
+    capability: GroundingRules['targetRules'][number]['capability'];
+    context: ProjectContext;
+    dependencyId?: string;
+    prompt: string;
+    targetIds: readonly string[];
+}): boolean {
+    if (getNamedExistingTargetIds(input).length > 0) {
+        return false;
+    }
+    if (getAgentReferenceCapabilityKind(input.capability) === 'track') {
+        return true;
+    }
+    const namedTrackIds = getNamedExistingTargetIds({
+        capability: 'track',
+        context: input.context,
+        prompt: input.prompt,
+    });
+    if (namedTrackIds.length === 0) {
+        return true;
+    }
+    return input.targetIds.every((targetId) => {
+        const ownerId = getOwningTrackId(targetId, input.context);
+        return ownerId !== undefined && namedTrackIds.includes(ownerId);
+    });
+}
+
 function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
     if (actionName === 'renameClip') {
         return false;
@@ -4603,8 +4660,17 @@ function groundToolCall({
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
             }
-            groundedArguments[targetRule.argument] = [...compilerTargetOverride.stableIds];
-            continue;
+            if (
+                compiledTargetsNeedNoReferenceResolution({
+                    capability: targetRule.capability,
+                    context,
+                    prompt: targetPrompt,
+                    targetIds: compilerTargetOverride.stableIds,
+                })
+            ) {
+                groundedArguments[targetRule.argument] = [...compilerTargetOverride.stableIds];
+                continue;
+            }
         }
         if (targetRule.cardinality === 'many') {
             const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
@@ -4735,8 +4801,18 @@ function groundToolCall({
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
             }
-            groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
-            continue;
+            if (
+                compiledTargetsNeedNoReferenceResolution({
+                    capability: targetRule.capability,
+                    context,
+                    dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
+                    prompt: targetPrompt,
+                    targetIds: compilerTargetOverride.stableIds,
+                })
+            ) {
+                groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
+                continue;
+            }
         }
         const groundsSiblingReferences =
             compilerExpandedTargets ||
@@ -4755,6 +4831,12 @@ function groundToolCall({
         // member with the others set aside.
         const coordinatedSiblingIds =
             actionScope.coordinatedTargets?.memberIds.filter((memberId) => memberId !== assertedValue) ?? [];
+        // A compiled selector resolved an object that already exists, so an object this batch creates
+        // is never the one it names, however the request words it.
+        const batchCreatedIds =
+            compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride
+                ? [...batchLocalCreationBindings.values()].map((binding) => binding.createdId)
+                : [];
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
@@ -4765,6 +4847,7 @@ function groundToolCall({
                 ...(typeof distinctValue === 'string' ? [distinctValue] : []),
                 ...bulkSiblingTargetIds,
                 ...coordinatedSiblingIds,
+                ...batchCreatedIds,
             ],
             risk: getAppActionExecutionPolicy(call.name).risk,
         });

@@ -1,0 +1,425 @@
+import { describe, expect, it } from 'vitest';
+
+import { type ProjectContext } from '../../models/ProjectContext';
+import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+
+/**
+ * A compiled command list proves which objects its selectors resolve to, never that the user asked
+ * for them. When a clause names its targets, every target the compiler resolved for that clause
+ * must be one the clause's own words resolve to, through the same reference resolution a direct
+ * call gets; a selector that names another object is refused. A clause that names no object (a
+ * bounded selection such as "all audio tracks") keeps the compiler's resolution, and when it names
+ * the tracks owning the objects it selects, every selected object must sit on one of them.
+ */
+
+type ProjectTrack = ProjectContext['tracks'][number];
+type CompiledItem = {
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+    selector?: {
+        targetArgument: string;
+        entity: 'track' | 'device';
+        where: Record<string, string>;
+        quantity: { unit: 'targets'; exactly: number };
+    };
+    dependsOn?: string[];
+};
+
+const REVISION = 'revision-compiled-target-authority';
+
+function createTrack({
+    id,
+    name,
+    kind = 'audio',
+    devices = [],
+}: {
+    id: string;
+    name: string;
+    kind?: ProjectTrack['kind'];
+    devices?: ProjectTrack['devices'];
+}): ProjectTrack {
+    return {
+        id,
+        name,
+        kind,
+        muted: false,
+        soloed: false,
+        soloSafe: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        automationMode: 'read',
+        outputId: kind === 'master' ? 'hw_out' : 'master',
+        clipCount: 0,
+        deviceCount: devices.length,
+        clips: [],
+        devices,
+        sends: [],
+    };
+}
+
+const vocals = createTrack({
+    id: 'track-vocals',
+    name: 'Vocals',
+    devices: [{ id: 'device-vocals-eq', type: 'builtin-eq', bypassed: false }],
+});
+const keys = createTrack({
+    id: 'track-keys',
+    name: 'Keys',
+    kind: 'midi',
+    devices: [{ id: 'device-keys-eq', type: 'builtin-eq', bypassed: false }],
+});
+const drums = createTrack({ id: 'track-drums', name: 'Drums' });
+const bass = createTrack({ id: 'track-bass', name: 'Bass' });
+const master = createTrack({ id: 'master', name: 'Master', kind: 'master' });
+const vocalsEq = vocals.devices[0]!;
+const keysEq = keys.devices[0]!;
+
+const projectContext: ProjectContext = {
+    tempo: 120,
+    timeSignature: [4, 4],
+    isPlaying: false,
+    isRecording: false,
+    isLooping: false,
+    loopStart: 0,
+    loopEnd: 16,
+    punchInEnabled: false,
+    punchInBeat: 0,
+    punchOutBeat: 16,
+    metronomeEnabled: false,
+    metronomeVolume: 0.5,
+    masterGain: 0.8,
+    tracks: [vocals, keys, drums, bass, master],
+    selectedTrackId: null,
+    selectedClipId: null,
+    selectedClipIds: [],
+    activeView: 'mix',
+    playheadPosition: 0,
+    availableDeviceTypes: [{ id: 'builtin-eq', name: 'EQ' }],
+};
+
+function trackItem(name: string, track: ProjectTrack, arguments_: Record<string, unknown>): CompiledItem {
+    return {
+        id: `${name}-${track.id}`,
+        name,
+        arguments: arguments_,
+        selector: {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: track.name },
+            quantity: { unit: 'targets', exactly: 1 },
+        },
+    };
+}
+
+function bypassItem(device: ProjectTrack['devices'][number], ownerId: string): CompiledItem {
+    return {
+        id: `bypass-${device.id}`,
+        name: 'bypassDevice',
+        arguments: { bypassed: true },
+        selector: {
+            targetArgument: 'deviceId',
+            entity: 'device',
+            where: { trackId: ownerId, type: device.type },
+            quantity: { unit: 'targets', exactly: 1 },
+        },
+    };
+}
+
+const createDrumBusItem: CompiledItem = {
+    id: 'create-drum-bus',
+    name: 'createBus',
+    arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+};
+
+function compileAndBridge(prompt: string, items: CompiledItem[], targetIds: string[]) {
+    const compiled = compileArbitraryCommandList({
+        context: projectContext,
+        revision: REVISION,
+        calls: [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: {
+                        semantic: { classification: 'simple', uncertainty: [] },
+                        objective: prompt,
+                        constraints: [],
+                        scope: { targetIds, targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                        capabilityIds: [],
+                        assetIds: [],
+                        alternatives: [],
+                        validationStrategy: [],
+                        stoppingConditions: [],
+                    },
+                    list: { schemaVersion: 1, items },
+                },
+            },
+        ],
+    });
+    if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+        throw new Error(`Expected the list to compile: ${JSON.stringify(compiled)}`);
+    }
+    return bridgeGroundedLlmToolCalls({
+        calls: compiled.compilerEvidence.commands,
+        compilerEvidence: compiled.compilerEvidence,
+        context: projectContext,
+        projectRevision: REVISION,
+        prompt,
+    });
+}
+
+function targetsOf(result: ReturnType<typeof compileAndBridge>, argument = 'trackId') {
+    return result.actions.map((action) => (action.payload as Record<string, unknown>)[argument]);
+}
+
+function expectRefused(result: ReturnType<typeof compileAndBridge>, targetId: string, argument = 'trackId') {
+    expect(targetsOf(result, argument)).not.toContain(targetId);
+    expect(result.rejections).not.toEqual([]);
+}
+
+describe('a compiled selector cannot replace a target the request names', () => {
+    it('refuses a gain selector for a track the request does not name', () => {
+        const result = compileAndBridge(
+            'set Vocals volume to 75%',
+            [trackItem('setTrackGain', keys, { gain: 0.75 })],
+            [keys.id]
+        );
+
+        expectRefused(result, keys.id);
+        expect(result.actions).toEqual([]);
+    });
+
+    it('refuses a gain selector for an unnamed track in the coordinated request', () => {
+        const result = compileAndBridge(
+            'set Vocals volume to 75% and set Drums and Bass volume to 50%',
+            [
+                trackItem('setTrackGain', keys, { gain: 0.75 }),
+                trackItem('setTrackGain', drums, { gain: 0.5 }),
+                trackItem('setTrackGain', bass, { gain: 0.5 }),
+            ],
+            [keys.id, drums.id, bass.id]
+        );
+
+        expectRefused(result, keys.id);
+    });
+
+    it('refuses an extra gain selector beside a compiled coordinated list', () => {
+        const result = compileAndBridge(
+            'turn Vocals up 1 dB and turn the Drums and the Bass down 3 dB',
+            [
+                trackItem('setTrackGain', vocals, { deltaDb: 1 }),
+                trackItem('setTrackGain', keys, { deltaDb: 1 }),
+                trackItem('setTrackGain', drums, { deltaDb: -3 }),
+                trackItem('setTrackGain', bass, { deltaDb: -3 }),
+            ],
+            [vocals.id, keys.id, drums.id, bass.id]
+        );
+
+        expectRefused(result, keys.id);
+    });
+
+    it('refuses a gain selector replacing the single named track beside a compiled coordinated list', () => {
+        const result = compileAndBridge(
+            'turn Vocals up 1 dB and turn the Drums and the Bass down 3 dB',
+            [
+                trackItem('setTrackGain', keys, { deltaDb: 1 }),
+                trackItem('setTrackGain', drums, { deltaDb: -3 }),
+                trackItem('setTrackGain', bass, { deltaDb: -3 }),
+            ],
+            [keys.id, drums.id, bass.id]
+        );
+
+        expectRefused(result, keys.id);
+    });
+
+    it('refuses a pan selector for a track the request does not name', () => {
+        const result = compileAndBridge(
+            'pan Vocals 20% left',
+            [trackItem('setTrackPan', keys, { pan: -20 })],
+            [keys.id]
+        );
+
+        expectRefused(result, keys.id);
+        expect(result.actions).toEqual([]);
+    });
+
+    it('refuses a selector for a track the request names only to protect it', () => {
+        const result = compileAndBridge(
+            'set Vocals volume to 75% but leave Keys alone',
+            [trackItem('setTrackGain', keys, { gain: 0.75 })],
+            [keys.id]
+        );
+
+        expectRefused(result, keys.id);
+        expect(result.actions).toEqual([]);
+    });
+
+    it('refuses a device selector for a device on a track the request does not name', () => {
+        const result = compileAndBridge('bypass the EQ on Vocals', [bypassItem(keysEq, keys.id)], [keysEq.id]);
+
+        expectRefused(result, keysEq.id, 'deviceId');
+        expect(result.actions).toEqual([]);
+    });
+
+    it('refuses a device selector off the track that owns the devices the request selects', () => {
+        const result = compileAndBridge('bypass every device on Vocals', [bypassItem(keysEq, keys.id)], [keysEq.id]);
+
+        expectRefused(result, keysEq.id, 'deviceId');
+        expect(result.actions).toEqual([]);
+    });
+});
+
+function audioTrackGroupItem(): CompiledItem {
+    return {
+        id: 'group-audio-tracks',
+        name: 'createVcaGroup',
+        arguments: { name: 'Rhythm' },
+        selector: {
+            targetArgument: 'trackIds',
+            entity: 'track',
+            where: { kind: 'audio' },
+            quantity: { unit: 'targets', exactly: 3 },
+        },
+    };
+}
+
+describe('a compiled set selector cannot widen the tracks the request names', () => {
+    it('refuses a set selector reaching a track the request does not name', () => {
+        const result = compileAndBridge(
+            'create VCA group for Vocals and Drums named Rhythm',
+            [audioTrackGroupItem()],
+            [vocals.id, drums.id, bass.id]
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it('grounds a set selector resolving exactly the tracks the request names', () => {
+        const result = compileAndBridge(
+            'create VCA group for Vocals, Drums and Bass named Rhythm',
+            [audioTrackGroupItem()],
+            [vocals.id, drums.id, bass.id]
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([
+            { type: 'createVcaGroup', payload: { name: 'Rhythm', trackIds: [vocals.id, drums.id, bass.id] } },
+        ]);
+    });
+});
+
+describe('a compiled selector cannot stand in for an object the same batch creates', () => {
+    it('refuses an existing track selected where the request names only a track the batch creates', () => {
+        const result = compileAndBridge(
+            'Create a Drum Bus and set the Drum Bus volume to 50%',
+            [createDrumBusItem, trackItem('setTrackGain', keys, { gain: 0.5 })],
+            [keys.id]
+        );
+
+        expectRefused(result, keys.id);
+    });
+
+    it('grounds an existing track the request names beside a track the batch creates', () => {
+        const result = compileAndBridge(
+            'Create a Drum Bus, set its gain, then remove the Keys track.',
+            [
+                createDrumBusItem,
+                {
+                    id: 'gain-drum-bus',
+                    name: 'setTrackGain',
+                    arguments: { trackId: '$drum-bus', gain: 0.8 },
+                    dependsOn: [createDrumBusItem.id],
+                },
+                trackItem('removeTrack', keys, {}),
+            ],
+            [keys.id]
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.type)).toEqual(['createBus', 'setTrackGain', 'removeTrack']);
+        expect(result.actions[2]?.payload).toEqual({ trackId: keys.id });
+    });
+});
+
+describe('a compiled selector the request authorizes still grounds', () => {
+    it('grounds a gain selector for the named track', () => {
+        const result = compileAndBridge(
+            'set Vocals volume to 75%',
+            [trackItem('setTrackGain', vocals, { gain: 0.75 })],
+            [vocals.id]
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([vocals.id]);
+    });
+
+    it('grounds a pan selector for the named track', () => {
+        const result = compileAndBridge(
+            'pan Vocals 20% left',
+            [trackItem('setTrackPan', vocals, { pan: -20 })],
+            [vocals.id]
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([vocals.id]);
+    });
+
+    it('grounds a device selector for the named device on the named track', () => {
+        const result = compileAndBridge('bypass the EQ on Vocals', [bypassItem(vocalsEq, vocals.id)], [vocalsEq.id]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual([vocalsEq.id]);
+    });
+
+    it('grounds a device selector on the track that owns the devices the request selects', () => {
+        const result = compileAndBridge(
+            'bypass every device on Vocals',
+            [bypassItem(vocalsEq, vocals.id)],
+            [vocalsEq.id]
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual([vocalsEq.id]);
+    });
+
+    it('grounds a compiled coordinated list beside a single named track', () => {
+        const result = compileAndBridge(
+            'turn Vocals up 1 dB and turn the Drums and the Bass down 3 dB',
+            [
+                trackItem('setTrackGain', vocals, { deltaDb: 1 }),
+                trackItem('setTrackGain', drums, { deltaDb: -3 }),
+                trackItem('setTrackGain', bass, { deltaDb: -3 }),
+            ],
+            [vocals.id, drums.id, bass.id]
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([vocals.id, drums.id, bass.id]);
+    });
+
+    it('grounds a bounded selector over every audio track', () => {
+        const result = compileAndBridge(
+            'mute all audio tracks',
+            [
+                {
+                    id: 'all-audio-tracks',
+                    name: 'muteTrack',
+                    arguments: { muted: true },
+                    selector: {
+                        targetArgument: 'trackId',
+                        entity: 'track',
+                        where: { kind: 'audio' },
+                        quantity: { unit: 'targets', exactly: 3 },
+                    },
+                },
+            ],
+            [vocals.id, drums.id, bass.id]
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([vocals.id, drums.id, bass.id]);
+    });
+});
