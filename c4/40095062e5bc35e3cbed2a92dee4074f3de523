@@ -1,0 +1,28 @@
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_ba8dd89de9aac7::t_6ed79ee92e5847 507
+  s_ba8dd89de9aac7::t_6169c136d153bc 486-502,505-506,508-512,514,519,523-541
+src/modules/Arrangement/handlers/clip/__tests__/handleInsertTime.integration.spec.ts
+  s_ba8dd89de9aac7::t_96bf9edf5626ee 169-233
+src/modules/Transport/AGENTS.md
+  s_ba8dd89de9aac7::t_f561372f4167a6 24,28
+src/modules/Transport/useCases/tempoMap/__tests__/insertTimeLaw.property.spec.ts
+  s_ba8dd89de9aac7::t_3c6076f6385ac1 60-70,620-692,784,824-826
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_ba8dd89de9aac7::t_577ccd6156d399 1253,1255-1256,1260,1263,1265,1269-1361,1379,1385,1393,1401,1404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c440095062e5bc35e3cbed2a92dee4074f3de523",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
