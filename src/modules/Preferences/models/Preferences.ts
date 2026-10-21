@@ -65,7 +65,11 @@ export function isAutoSaveIntervalMs(value: unknown): value is AutoSaveIntervalM
     return AUTO_SAVE_INTERVAL_OPTIONS.some((option) => option.value === value);
 }
 
-export const PREFERENCES_SCHEMA_VERSION = 2;
+// 3: `recordCountIn` became live for new projects and its shipped default
+// moved 1 → 0 (Off). preferencesStore rewrites a stored 1 under schema 1–2 —
+// it could only be the never-consumed old default — while an explicit 2 or 4
+// and any current-schema choice survive (see its schema migrations).
+export const PREFERENCES_SCHEMA_VERSION = 3;
 
 export const UI_SCALE_MIN = 0.5;
 export const UI_SCALE_MAX = 2;
