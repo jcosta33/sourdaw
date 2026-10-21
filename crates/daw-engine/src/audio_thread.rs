@@ -2176,6 +2176,49 @@ mod capture_seam_tests {
         assert!(refused.snapshot().closed);
         assert_eq!(refused.snapshot().failure, Some(failure));
 
+        fn assert_durable_refusal<B: InputBackend>(expected: StreamErrorKind) {
+            let mut pending = Some(pending_capture().pending);
+            let period = pending.as_ref().unwrap().observation.clone();
+            let mut capture = None;
+            open_requested_capture::<B>(&mut capture, &mut pending);
+            assert!(capture.is_none());
+            assert_eq!(
+                period.snapshot(),
+                super::CapturePeriodSnapshot {
+                    opened: false,
+                    first_served: None,
+                    failure: Some(expected),
+                    closed: false,
+                },
+                "a refused start or panicked backend cannot acknowledge opened or closed"
+            );
+            pending
+                .as_ref()
+                .unwrap()
+                .capture_refusal_slot
+                .store(0, Ordering::Relaxed);
+            assert_eq!(period.snapshot().failure, Some(expected));
+            super::answer_capture_command::<B>(
+                &mut capture,
+                &mut pending,
+                super::OwnerCommand::CloseCapture,
+            );
+            assert!(period.snapshot().closed);
+            assert_eq!(period.snapshot().failure, Some(expected));
+        }
+        struct PanickingInput;
+        impl InputBackend for PanickingInput {
+            type Open = OpenTestInput;
+
+            fn open_default_input(
+                _request: InputOpenRequest,
+            ) -> Result<Self::Open, InputOpenRefusal> {
+                panic!("controlled capture backend open panic");
+            }
+        }
+        assert_durable_refusal::<BusyStartInput>(StreamErrorKind::DeviceBusy);
+        assert_durable_refusal::<PanickingInput>(StreamErrorKind::BackendSpecific);
+
         #[cfg(feature = "command-capture-fixture")]
         {
             let (mut engine, mut driver) = crate::capture_lifecycle_fixture(4, false).unwrap();
