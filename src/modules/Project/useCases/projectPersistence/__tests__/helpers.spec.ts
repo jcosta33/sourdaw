@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { type TrackStoreState } from '#/modules/Arrangement/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
@@ -84,6 +86,10 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 describe('resetModuleStoresToDefault', () => {
     beforeEach(() => {
         Container.clear();
+        // The reset seeds the incoming transport from the Recording
+        // preferences; pin them to their defaults so the seeded transport
+        // expectation below is deterministic.
+        preferencesStore.set(defaultPreferences);
         vi.clearAllMocks();
     });
 
@@ -91,7 +97,16 @@ describe('resetModuleStoresToDefault', () => {
         resetModuleStoresToDefault();
 
         expect(mocks.resetArrangementStoresForProject).toHaveBeenCalledTimes(1);
-        expect(mocks.transportStoreSet).toHaveBeenCalledWith(defaultTransportState);
+        // With the Recording preferences at their shipped defaults (count-in
+        // off, pre-roll off, 2 bars), the incoming transport carries those
+        // seeds; they coincide with the model default for every field.
+        expect(mocks.transportStoreSet).toHaveBeenCalledWith({
+            ...defaultTransportState,
+            countInEnabled: false,
+            countInBars: 1,
+            preRollEnabled: false,
+            preRollBars: 2,
+        });
         expect(mocks.automationStoreSet).toHaveBeenCalledWith({ lanes: [] });
         expect(mocks.resetMidiStoreForProject).toHaveBeenCalledWith({ generateProbabilitySeed: false });
         expect(mocks.tempoMapStoreSet).toHaveBeenCalledWith({ changes: [] });
