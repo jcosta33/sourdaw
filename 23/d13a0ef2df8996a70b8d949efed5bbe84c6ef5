@@ -1,0 +1,94 @@
+src/modules/AudioRendering/repositories/audioEncoders/wavEncoder.ts
+  s_59e31a5c6f3e31::t_fd1f21fbfa0d6e 7
+  s_59e31a5c6f3e31::t_fe1762c1224be6 6,8-18,21-25,36-48,52-56,61-70,72-73,85-89,91-93,99-101,108-111
+crates/sourdaw-native/src/addon/mod.rs
+  s_59e31a5c6f3e31::t_8711f530ea48f6 267-270,459-465,471-482,487-493,499-505,511-517,965-967
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createPcmBlockReader.spec.ts
+  s_59e31a5c6f3e31::t_fd1f21fbfa0d6e 46-48
+  s_59e31a5c6f3e31::t_db2637a50f0b27 15-22,27-29,34-43
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/mp3Encoder.spec.ts
+  s_59e31a5c6f3e31::t_fd1f21fbfa0d6e 29,49
+src/modules/AudioRendering/repositories/audioEncoders/convertFloatChannelsToPcm.ts
+  s_59e31a5c6f3e31::t_fd1f21fbfa0d6e 1-2,5
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 58
+  s_59e31a5c6f3e31::t_133bd5bacccc75 6,46-53,59-60,66-68
+src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 33-35
+  s_59e31a5c6f3e31::t_fd1f21fbfa0d6e 9
+  s_59e31a5c6f3e31::t_29473f48ef95ed 8,10-20,23-27,36-37,44-46,48-50,54-56,62-65
+src/utils/desktopBridge.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 257
+  s_59e31a5c6f3e31::t_206d446969e6e5 258-259,264-269
+src/modules/AudioRendering/repositories/audioEncoders/createIncrementalMd5.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 57
+  s_59e31a5c6f3e31::t_203e0862a39dfe 18-21,24-27,30-42,44-46,50-53,58-59,64-69,73-75,79-82,87-90
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_59e31a5c6f3e31::t_33d3e4c512ebed 81-89,94-96,107,119,144-146,157,167,282,286-288,294,354-355,359,363-365,370-373,397-398,403-407,411-416,419-438,443-447,756-758,768-783,785-794,796-801,803-804
+  s_59e31a5c6f3e31::t_5ae375c7e691f8 11
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 358,375-377,380-382,387-393,396
+  s_59e31a5c6f3e31::t_16c021f84c92a4 356-357,360,374,805-806,808-813,815-820,822,839,864-869,917,1356-1358,1379,1994,2234-2237
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_59e31a5c6f3e31::t_8711f530ea48f6 655-659,664-666,674-678,681-689,691-694,699-701,710-711,713-714,716-717,721-729,733-737,741-743,748-750,757-763,766-770,772-780,784-786,790-793,803-812,814-816,825-835,838-842,845-853,855-875,879-890,894-902,904-912,917-925,933-935,938-940,943-946,952-956,958-959,970-975,978-984,989-993,1004-1006,1732-1734,1736-1747,1750-1753,1771-1773,1778-1780,1795-1806,1810-1819,1830-1832,1848-1858,1861-1864,1871-1873,1880-1894,1897-1899,1901-1903,1920-1929,1934-1938,1949-1954,1956-1959
+src/modules/AudioRendering/models/PcmDitherOptions.ts
+  s_59e31a5c6f3e31::t_fd1f21fbfa0d6e 1-9
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 41-48
+  s_59e31a5c6f3e31::t_5ac9c433d8d5e9 23-28
+  s_59e31a5c6f3e31::t_9d5b524610c3de 12-14,29,49-50,56-70
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createIncrementalMd5.spec.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 12
+  s_59e31a5c6f3e31::t_1710023f645b47 13-14,22-25
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_5ac9c433d8d5e9 439-440
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 419-421,430-431
+  s_59e31a5c6f3e31::t_42f82549378bea 432,434-438,448-463,465-474,478-481,484-486,558-560,562-564,566-568,574-579,645-651,656-659,711-716,739-741
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 238
+  s_59e31a5c6f3e31::t_db46231c566e72 239-240,475-489,492-495,508-513
+src/modules/AudioRendering/repositories/audioExport/streamExportToNative.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 23,57
+  s_59e31a5c6f3e31::t_5ac9c433d8d5e9 25,27-30
+  s_59e31a5c6f3e31::t_76b28eb8f9e99c 1-8,24,31-35,37-39,41-48,50-52,58-59,65-67
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToBrowser.spec.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 119
+  s_59e31a5c6f3e31::t_5aa9343251c68f 11-15,23-26,29-35,44-46,50-51,77-78,83-88,92-94,96-100,106-116,118,120-128,131-132
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_59e31a5c6f3e31::t_5ac9c433d8d5e9 3,6,16,278-283,286-287,652,661
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 277
+  s_59e31a5c6f3e31::t_2f6df24bcf5d97 288-289,578-580,619-623,631-633,651,653,660,662,688,693
+src/modules/AudioRendering/repositories/audioEncoders/flacEncoder.ts
+  s_59e31a5c6f3e31::t_fd1f21fbfa0d6e 325-336,339-343,349-358,372-374,378-380,383-387,394-398,403-408
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 416-422,424-429
+  s_59e31a5c6f3e31::t_11c9cd3d313f92 324,432-439,443-445,448-449,454-456,458-459,463-466
+src/modules/AudioRendering/useCases/audioBufferToMp3.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 25-26,28-30
+  s_59e31a5c6f3e31::t_fd1f21fbfa0d6e 13
+  s_59e31a5c6f3e31::t_e27d753da5722c 12,14-24,31-33,38-40,45-47,49-50
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/exportFormatParity.spec.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 29
+  s_59e31a5c6f3e31::t_94dce232668dd7 27-28,30-41,199-201,214-217,220-223,242-245,254-256,258-259,263-264,268-271,276-278
+src/modules/AudioRendering/repositories/audioEncoders/createPcmBlockReader.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 16-24,38-41
+  s_59e31a5c6f3e31::t_fd1f21fbfa0d6e 3
+  s_59e31a5c6f3e31::t_147b3c91ea0bb4 42-43,47-49,54-56,63-65,68-70,73-75,84-86
+src/modules/AudioRendering/repositories/audioExport/streamExportToBrowser.ts
+  s_59e31a5c6f3e31::t_4fc1cdf01ea408 57-66,70-72,79-81,86-88,90-92,94-98,100-103,109-110
+  s_59e31a5c6f3e31::t_5ac9c433d8d5e9 27
+  s_59e31a5c6f3e31::t_3107c3cfedc2f6 10-13,28-29,33-39,41-46,111,113-135,141-147,154-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23d13a0ef2df8996a70b8d949efed5bbe84c6ef5",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
