@@ -1,6 +1,6 @@
 import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { audioEngine, getCompensationDelay } from '#/modules/AudioEngine/useCases';
-import { getMidiLearnState } from '#/modules/ControlSurface/useCases';
+import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { readBeatAtSamples, readSecondsAtBeat, transportStore } from '#/modules/Transport/stores';
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
@@ -230,7 +230,7 @@ export const admitMidiRecordingEvent: MidiRecordingSessionApi['admitMidiRecordin
                 held.data.pitchBendRangeSemitones = nextRange;
             }
         }
-        const learn = getMidiLearnState();
+        const learn = midiLearnStore.value;
         if (
             learn?.isLearning ||
             (!decoded.consumed &&

@@ -13,6 +13,8 @@ import { setMpeEnabledInternal } from '../../../repositories/webMidi/setMpeEnabl
 import { setTargetTrackId } from '../../../repositories/webMidi/setTargetTrackId';
 import { activeNotes } from '../../../repositories/webMidi/state';
 
+vi.mock('../../midiRecordingSession', () => ({ admitMidiRecordingEvent: vi.fn() }));
+
 const handle_note_on = vi.hoisted(() => vi.fn());
 const handle_note_off = vi.hoisted(() => vi.fn());
 const handle_cc = vi.hoisted(() => vi.fn());
@@ -66,13 +68,17 @@ describe('handleWebMidiMessage', () => {
         handleWebMidiMessage(midi_event([0xb3, 7, 101]));
 
         // The timestamp is resolved on admission, before a queued handler waits.
-        expect(handle_cc).toHaveBeenCalledWith(3, 7, 101, { audioTime: 2 });
+        expect(handle_cc).toHaveBeenCalledWith(3, 7, 101, { audioTime: 2, recordingBeat: 0, recordingAdmitted: true });
     });
 
     it('should normalize raw note-off release velocity before dispatch', () => {
         handleWebMidiMessage(midi_event([0x81, 72, 96]));
 
-        expect(handle_note_off).toHaveBeenCalledWith(1, 72, 96 / 127, { audioTime: 2 });
+        expect(handle_note_off).toHaveBeenCalledWith(1, 72, 96 / 127, {
+            audioTime: 2,
+            recordingBeat: 0,
+            recordingAdmitted: true,
+        });
     });
 
     it('should ignore short or empty browser MIDI events', () => {
@@ -101,7 +107,13 @@ describe('handleWebMidiMessage', () => {
 
         resolveNoteOn();
         await noteOnPending;
-        await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(0, 60, 0, { audioTime: 2 }));
+        await vi.waitFor(() =>
+            expect(handle_note_off).toHaveBeenCalledWith(0, 60, 0, {
+                audioTime: 2,
+                recordingBeat: 0,
+                recordingAdmitted: true,
+            })
+        );
     });
 
     it('should hold a pitch bend behind a pending note-on so the opening bend is not dropped', async () => {
@@ -290,7 +302,13 @@ describe('handleWebMidiMessage', () => {
         handleWebMidiMessage(midi_event([0x81, 60, 0]));
         setTargetTrackId('new-target');
         finishNoteOn();
-        await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(1, 60, 0, { audioTime: 2 }));
+        await vi.waitFor(() =>
+            expect(handle_note_off).toHaveBeenCalledWith(1, 60, 0, {
+                audioTime: 2,
+                recordingBeat: 0,
+                recordingAdmitted: true,
+            })
+        );
     });
 
     it('should not delay expression past its arrival frame behind an unrelated note-on', async () => {
@@ -362,8 +380,16 @@ describe('handleWebMidiMessage', () => {
             nativeBeat = 1.25;
             finishFirst();
             await queued;
-            expect(handle_note_on).toHaveBeenNthCalledWith(1, 1, 60, 100, { audioTime: 2, recordingBeat: 0.12 });
-            expect(handle_note_on).toHaveBeenNthCalledWith(2, 1, 62, 100, { audioTime: 2, recordingBeat: 0.15 });
+            expect(handle_note_on).toHaveBeenNthCalledWith(1, 1, 60, 100, {
+                audioTime: 2,
+                recordingBeat: 0.12,
+                recordingAdmitted: true,
+            });
+            expect(handle_note_on).toHaveBeenNthCalledWith(2, 1, 62, 100, {
+                audioTime: 2,
+                recordingBeat: 0.15,
+                recordingAdmitted: true,
+            });
         } finally {
             transportStore.set(previous);
             setGestureClockSource({
@@ -385,8 +411,16 @@ describe('handleWebMidiMessage', () => {
             handleWebMidiMessage(midi_event([0xb3, 64, 127]));
             handleWebMidiMessage(midi_event([0xe2, 0, 96]));
 
-            expect(handle_cc).toHaveBeenCalledWith(3, 64, 127, { audioTime: 2, recordingBeat: 3.5 });
-            expect(handle_pitch_bend).toHaveBeenCalledWith(2, 0, 96, { audioTime: 2, recordingBeat: 3.5 });
+            expect(handle_cc).toHaveBeenCalledWith(3, 64, 127, {
+                audioTime: 2,
+                recordingBeat: 3.5,
+                recordingAdmitted: true,
+            });
+            expect(handle_pitch_bend).toHaveBeenCalledWith(2, 0, 96, {
+                audioTime: 2,
+                recordingBeat: 3.5,
+                recordingAdmitted: true,
+            });
         } finally {
             transportStore.set(previous);
             setGestureClockSource({

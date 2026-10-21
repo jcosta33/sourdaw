@@ -21,7 +21,14 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { playheadWrapCountRef, setGestureClockSource, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import {
+    readBeatAtSamples,
+    readSecondsAtBeat,
+    playheadWrapCountRef,
+    setGestureClockSource,
+    tempoMapStore,
+    transportStore,
+} from '#/modules/Transport/stores';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
@@ -178,6 +185,7 @@ describe('recording gesture commit (issue #4439)', () => {
             }
             return [];
         };
+        lapProbeClock.baseLatency = 0;
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('recording gesture commit integration');
         removeCrdtDoc('root');
@@ -478,6 +486,83 @@ describe('recording gesture commit (issue #4439)', () => {
         expect(midiStore.value!.notesByClipId[carrier.id]).toEqual(notes);
         expect(midiStore.value!.ccByClipId[carrier.id]).toEqual(cc);
     });
+
+    it.each([
+        { start: 2, loopStart: 4, loopEnd: 8, seam: 3, tempoMap: false, expected: [1, 7] },
+        { start: 2, loopStart: 0, loopEnd: 4, seam: 2, tempoMap: true, expected: [0.5, 3] },
+    ])(
+        'recording source geometry keeps run-up or mid-loop timing with latency and tempo map ($start/$tempoMap)',
+        async ({ start, loopStart, loopEnd, seam, tempoMap, expected }) => {
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', armed: true, devices: [], clips: [] })],
+                selectedTrackId: TRACK_ID,
+            });
+            transportStore.set({
+                ...transportStore.value!,
+                tempo: 120,
+                isPlaying: true,
+                isRecording: true,
+                isLooping: true,
+                loopStart,
+                loopEnd,
+                overdubEnabled: false,
+                playheadPosition: start,
+            });
+            tempoMapStore.set({
+                changes: tempoMap
+                    ? [
+                          { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                          { id: 'tempo-2', beat: 2, tempo: 60, curve: 'instant' },
+                      ]
+                    : [],
+            });
+            midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+            lapProbeClock.currentTime = 0;
+            lapProbeClock.baseLatency = 0.1;
+            playheadWrapCountRef.current = 0;
+            const origin = readSecondsAtBeat({ beat: start });
+            setGestureClockSource({
+                getAudioTimeSeconds: () => lapProbeClock.currentTime,
+                readNativeCursorBeats: () =>
+                    readBeatAtSamples({
+                        samples:
+                            lapProbeClock.currentTime < seam
+                                ? origin + lapProbeClock.currentTime
+                                : readSecondsAtBeat({ beat: loopStart }) + lapProbeClock.currentTime - seam,
+                        sampleRate: 1,
+                    }),
+            });
+            const [carrier] = startRecording(start);
+            if (!carrier) throw new Error('expected geometry carrier');
+            setTargetTrackId(TRACK_ID);
+            for (const [index, onset] of [0.6, seam + 0.6].entries()) {
+                if (index === 1) {
+                    advanceMidiRecordingPass({ audioTime: seam, fromBeat: loopEnd, toBeat: loopStart });
+                    playheadWrapCountRef.current = 1;
+                }
+                lapProbeClock.currentTime = onset;
+                await handleWebMidiMessage({
+                    data: new Uint8Array([0x90, index === 0 ? 60 : 72, 100]),
+                    timeStamp: undefined,
+                });
+                lapProbeClock.currentTime = onset + 0.2;
+                await handleWebMidiMessage({
+                    data: new Uint8Array([0x80, index === 0 ? 60 : 72, 0]),
+                    timeStamp: undefined,
+                });
+            }
+            lapProbeClock.currentTime = seam + 0.9;
+            await stopActiveRecording();
+            const notes = midiStore.value!.notesByClipId[carrier.id]!;
+            expected.forEach((beat, index) => expect(notes[index]?.startBeat).toBeCloseTo(beat, 10));
+            expect(notes[0]?.recordingPassId).not.toBe(notes[1]?.recordingPassId);
+            const takes = takeLaneStore.value!.lanes.find((lane) => lane.trackId === TRACK_ID)!.takes;
+            expect(takes.map((take) => take.recordingPassId)).toEqual(notes.map((note) => note.recordingPassId));
+            expect(takes[0]?.startBeat).toBe(start);
+            expect(takes[1]?.startBeat).toBe(loopStart);
+            expect(takes[1]?.endBeat).toBeCloseTo(loopStart + 1.8, 10);
+        }
+    );
 
     it('commits a successful capture as exactly one action entry', async () => {
         const [provisional] = startRecording(4);

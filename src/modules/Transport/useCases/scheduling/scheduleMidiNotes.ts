@@ -1,6 +1,6 @@
 import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases';
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { getSynthParamsForTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
@@ -58,6 +58,7 @@ import { restoreStoredControllers } from './restoreStoredControllers';
 import { createSameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
+import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
 import { selectMidiNotesForLoopWindow } from './selectMidiNotesForLoopWindow';
 
 // Worklet synth device types that share a common noteOn/noteOff controls interface.
@@ -996,16 +997,33 @@ export async function scheduleMidiNotes(
         }
 
         const resumesAfterMute = takeResumeAfterMute(track);
-        const resolvedClips = resolveClipsWithComping(track.id, track.clips);
-        const windowMidiClips = resolvedClips.filter(
-            (clip) => !clip.muted && clip.type === 'midi' && clip.startBeat < toBeat && clip.endBeat > fromBeat
-        );
+        const windowMidiClips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
+        const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === track.id);
+        const additionalSourceIds = new Set<string>();
+        for (const take of lane?.takes ?? []) {
+            if (take.recordingPassId === undefined || take.startBeat >= toBeat || take.endBeat <= fromBeat) continue;
+            const selectedHere =
+                lane!.activeCompRegions.length === 0
+                    ? take.selected
+                    : lane!.activeCompRegions.some(
+                          (region) =>
+                              region.takeId === take.id && region.startBeat < toBeat && region.endBeat > fromBeat
+                      );
+            if (selectedHere) additionalSourceIds.add(take.clipId);
+        }
+        // A later pass can start before the carrier's original record point.
+        // Include that selected source without bypassing the ordinary clip index.
+        if (additionalSourceIds.size > 0) {
+            const admitted = new Set(windowMidiClips.map((clip) => clip.id));
+            for (const clip of track.clips) {
+                if (additionalSourceIds.has(clip.id) && !admitted.has(clip.id)) windowMidiClips.push(clip);
+            }
+        }
         if (windowMidiClips.length === 0) {
             restoreStoredControllersAtGap(track, resumesAfterMute);
             continue;
         }
-
-        const activeMidiClips = windowMidiClips.filter(
+        const activeMidiClips = resolveClipsWithComping(track.id, windowMidiClips).filter(
             (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
         );
         if (activeMidiClips.length === 0) {
