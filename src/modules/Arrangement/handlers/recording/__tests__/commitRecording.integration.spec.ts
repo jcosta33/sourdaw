@@ -131,6 +131,61 @@ async function advanceSchedulerTo(target: number): Promise<void> {
 
 const TRACK_ID = 'track-audio';
 
+function prepareAutomaticMidiPunch({ punchOut = 3, tempoMap = false, latency = 0, yeast = false } = {}): void {
+    trackStore.set({
+        tracks: [
+            TrackDummy.create({
+                id: TRACK_ID,
+                kind: 'midi',
+                armed: true,
+                clips: [],
+                devices: yeast
+                    ? [{ id: 'yeast', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }]
+                    : [],
+            }),
+        ],
+        selectedTrackId: TRACK_ID,
+    });
+    transportStore.set({
+        ...transportStore.value!,
+        tempo: 120,
+        isPlaying: true,
+        isRecording: false,
+        isLooping: true,
+        loopStart: 0,
+        loopEnd: 4,
+        overdubEnabled: false,
+        punchInEnabled: true,
+        punchInBeat: 1,
+        punchOutBeat: punchOut,
+        playheadPosition: 0,
+    });
+    tempoMapStore.set({
+        changes: tempoMap
+            ? [
+                  { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                  { id: 'tempo-2', beat: 2, tempo: 60, curve: 'instant' },
+              ]
+            : [],
+    });
+    midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+    lapProbeClock.currentTime = 0;
+    lapProbeClock.baseLatency = latency;
+    vi.stubGlobal(
+        'Worker',
+        class {
+            onmessage: ((event: MessageEvent) => void) | null = null;
+            postMessage = vi.fn();
+            terminate = vi.fn();
+            addEventListener = vi.fn();
+            removeEventListener = vi.fn();
+        }
+    );
+    setTargetTrackId(TRACK_ID);
+    setGestureClockSource({ getAudioTimeSeconds: () => lapProbeClock.currentTime, readNativeCursorBeats: () => null });
+    startPlayheadScheduler();
+}
+
 const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
@@ -342,6 +397,222 @@ describe('recording gesture commit (issue #4439)', () => {
         expect(findClip(carrier.id)).toEqual(committed.clips);
         expect(midiStore.value?.notesByClipId[carrier.id]).toEqual(committed.notes);
         expect(takeLaneStore.value!.lanes.find((row) => row.trackId === TRACK_ID)?.takes).toEqual(committed.takes);
+    });
+
+    it.each([3, 4])(
+        'automatic punch uses real scheduler detection and clips held MIDI at exclusive punch-out $0',
+        async (punchOut) => {
+            prepareAutomaticMidiPunch({ punchOut });
+            await advanceSchedulerTo(0.4);
+            await handleWebMidiMessage({ data: new Uint8Array([0x90, 48, 100]), timeStamp: undefined });
+            await handleWebMidiMessage({ data: new Uint8Array([0x80, 48, 0]), timeStamp: undefined });
+            await advanceSchedulerTo(0.75);
+            expect(transportStore.value?.isRecording).toBe(true);
+            const [carrier] = trackStore.value!.tracks[0]!.clips;
+            expect(carrier).toBeDefined();
+            // A browser-delayed pre-in message is still outside the recording,
+            // even though its callback arrives after the scheduler opened it.
+            const inputClock = vi.spyOn(performance, 'now').mockReturnValue(lapProbeClock.currentTime * 1000);
+            try {
+                await handleWebMidiMessage({ data: new Uint8Array([0x90, 36, 100]), timeStamp: 400 });
+                expect(activeNotes.get(createWebMidiNoteKey(0, 36))?.recordingWitness).toBeUndefined();
+                await handleWebMidiMessage({ data: new Uint8Array([0x80, 36, 0]), timeStamp: 450 });
+            } finally {
+                inputClock.mockRestore();
+            }
+            await handleWebMidiMessage({ data: new Uint8Array([0x90, 60, 100]), timeStamp: undefined });
+            const onset = activeNotes.get(createWebMidiNoteKey(0, 60))?.recordingWitness;
+            expect(onset?.clipId).toBe(carrier!.id);
+            expect(onset?.sourceBeat).toBeCloseTo(0.5, 10);
+            const boundaryTime = punchOut / 2;
+            await advanceSchedulerTo(boundaryTime - 0.05);
+            expect(transportStore.value?.isRecording).toBe(true);
+            lapProbeClock.currentTime = boundaryTime - 0.01;
+            await handleWebMidiMessage({ data: new Uint8Array([0x90, 72, 100]), timeStamp: undefined });
+            // The exact exclusive boundary and the later callback both precede
+            // the scheduler's observation, so neither may enter the journal.
+            lapProbeClock.currentTime = boundaryTime;
+            await handleWebMidiMessage({ data: new Uint8Array([0x90, 80, 100]), timeStamp: undefined });
+            expect(activeNotes.get(createWebMidiNoteKey(0, 80))?.recordingWitness).toBeUndefined();
+            lapProbeClock.currentTime = boundaryTime + 0.04;
+            await handleWebMidiMessage({ data: new Uint8Array([0x90, 84, 100]), timeStamp: undefined });
+            await advanceSchedulerTo(boundaryTime + 0.05);
+            await stopActiveRecording();
+            const notes = structuredClone(midiStore.value?.notesByClipId[carrier!.id] ?? []);
+            expect(notes.map((note) => note.pitch)).toEqual([60, 72]);
+            expect(notes[1]?.startBeat).toBeCloseTo(punchOut - 1.02, 10);
+            expect(notes[1]?.duration).toBeCloseTo(0.02, 10);
+            expect(notes[0]?.startBeat).toBeCloseTo(0.5, 10);
+            expect(notes[0]?.duration).toBeCloseTo(punchOut - 1.5, 10);
+            expect(findClip(carrier!.id)).toMatchObject({ startBeat: 1, endBeat: punchOut });
+            const takes = structuredClone(takeLaneStore.value!.lanes[0]!.takes);
+            expect(takes).toHaveLength(1);
+            expect(takes[0]).toMatchObject({
+                startBeat: 1,
+                endBeat: punchOut,
+                recordingPassId: notes[0]!.recordingPassId,
+            });
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            await undo();
+            expect(findClip(carrier!.id)).toBeUndefined();
+            await handleWebMidiMessage({ data: new Uint8Array([0x80, 60, 0]), timeStamp: undefined });
+            await handleWebMidiMessage({ data: new Uint8Array([0x80, 84, 0]), timeStamp: undefined });
+            await handleWebMidiMessage({ data: new Uint8Array([0x80, 80, 0]), timeStamp: undefined });
+            await handleWebMidiMessage({ data: new Uint8Array([0x80, 72, 0]), timeStamp: undefined });
+            expect(midiStore.value?.notesByClipId[carrier!.id]).toBeUndefined();
+            await redo();
+            expect(midiStore.value?.notesByClipId[carrier!.id]).toEqual(notes);
+            expect(takeLaneStore.value!.lanes[0]!.takes).toEqual(takes);
+        }
+    );
+
+    it('automatic punch retains last-lookahead input and the initialized latency lead-in through a tempo change', async () => {
+        prepareAutomaticMidiPunch({ tempoMap: true, latency: 0.1 });
+        await advanceSchedulerTo(0.75);
+        const [carrier] = trackStore.value!.tracks[0]!.clips;
+        expect(carrier?.midiOffsetBeats).toBeCloseTo(0.2, 10);
+        await handleWebMidiMessage({ data: new Uint8Array([0x90, 60, 100]), timeStamp: undefined });
+        // Beat3 is at2s in this tempo map, not1.5s from a flat120bpm conversion.
+        await advanceSchedulerTo(1.95);
+        expect(transportStore.value?.isRecording).toBe(true);
+        await handleWebMidiMessage({ data: new Uint8Array([0xb0, 64, 127]), timeStamp: undefined });
+        await handleWebMidiMessage({ data: new Uint8Array([0xb0, 64, 0]), timeStamp: undefined });
+        await handleWebMidiMessage({ data: new Uint8Array([0x90, 72, 100]), timeStamp: undefined });
+        await advanceSchedulerTo(2.05);
+        expect(transportStore.value?.isRecording).toBe(false);
+        await stopActiveRecording();
+        const notes = structuredClone(midiStore.value!.notesByClipId[carrier!.id]!);
+        expect(notes.map((note) => note.pitch)).toEqual([60, 72]);
+        expect(notes[0]?.startBeat).toBeCloseTo(0.5, 10);
+        expect(notes[0]?.duration).toBeCloseTo(1.7, 10);
+        expect(notes[1]?.startBeat).toBeCloseTo(2.05, 10);
+        expect(notes[1]?.duration).toBeCloseTo(0.15, 10);
+        const cc = structuredClone(midiStore.value!.ccByClipId[carrier!.id]);
+        expect(cc?.map((row) => row.value)).toEqual([127, 0]);
+        expect(findClip(carrier!.id)).toMatchObject({ startBeat: 1, endBeat: 3, midiOffsetBeats: 0.2 });
+        expect(takeLaneStore.value!.lanes[0]!.takes[0]).toMatchObject({
+            startBeat: 1,
+            endBeat: 3,
+            recordingPassId: notes[0]!.recordingPassId,
+        });
+        expect(notes[1]?.recordingPassId).toBe(notes[0]?.recordingPassId);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        await undo();
+        await redo();
+        expect(midiStore.value!.notesByClipId[carrier!.id]).toEqual(notes);
+        expect(midiStore.value!.ccByClipId[carrier!.id]).toEqual(cc);
+    });
+
+    it.each([1.1, 1.95])(
+        'automatic punch allows partial Stop at $0 and Undo before held worker release without a later terminal',
+        async (stopTime) => {
+            const punchOut = stopTime < 1.5 ? 3 : 4;
+            prepareAutomaticMidiPunch({ yeast: true, punchOut });
+            await advanceSchedulerTo(0.75);
+            const [carrier] = trackStore.value!.tracks[0]!.clips;
+            await handleWebMidiMessage({ data: new Uint8Array([0x90, 60, 100]), timeStamp: undefined });
+            await advanceSchedulerTo(stopTime);
+            let release!: () => void;
+            workerGate.entered = false;
+            workerGate.pending = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            const pending = handleWebMidiMessage({ data: new Uint8Array([0x80, 60, 0]), timeStamp: undefined });
+            await vi.waitFor(() => expect(workerGate.entered).toBe(true));
+            try {
+                await stopActiveRecording();
+                const clip = structuredClone(findClip(carrier!.id));
+                const notes = structuredClone(midiStore.value!.notesByClipId[carrier!.id]!);
+                const takes = structuredClone(takeLaneStore.value!.lanes[0]!.takes);
+                expect(clip?.endBeat).toBeCloseTo(stopTime * 2, 10);
+                expect(takes[0]?.endBeat).toBeCloseTo(stopTime * 2, 10);
+                expect(takes[0]?.recordingPassId).toBe(notes[0]?.recordingPassId);
+                expect(notes[0]?.duration).toBeCloseTo(stopTime * 2 - 1.5, 10);
+                expect(undoHistoryStore.value?.past).toHaveLength(1);
+                await undo();
+                // Continue through the former punch-out while the worker stays held.
+                await advanceSchedulerTo(punchOut / 2 + 0.1);
+                expect(findClip(carrier!.id)).toBeUndefined();
+                expect(undoHistoryStore.value?.past).toHaveLength(0);
+                release();
+                await pending;
+                expect(midiStore.value?.notesByClipId[carrier!.id]).toBeUndefined();
+                await redo();
+                expect(findClip(carrier!.id)).toEqual(clip);
+                expect(midiStore.value!.notesByClipId[carrier!.id]).toEqual(notes);
+                expect(takeLaneStore.value!.lanes[0]!.takes).toEqual(takes);
+            } finally {
+                release();
+                workerGate.pending = null;
+                await pending;
+            }
+        }
+    );
+
+    it('automatic punch stays open across actual scheduler wraps when its out point is outside the loop and Stop seals three passes', async () => {
+        prepareAutomaticMidiPunch({ punchOut: 6 });
+        for (const [index, time] of [0.75, 2.75, 4.75].entries()) {
+            await advanceSchedulerTo(time);
+            await handleWebMidiMessage({ data: new Uint8Array([0x90, 60 + index * 12, 100]), timeStamp: undefined });
+            await advanceSchedulerTo(time + 0.1);
+            await handleWebMidiMessage({ data: new Uint8Array([0x80, 60 + index * 12, 0]), timeStamp: undefined });
+        }
+        expect(playheadWrapCountRef.current).toBe(2);
+        expect(transportStore.value?.isRecording).toBe(true);
+        const [carrier] = trackStore.value!.tracks[0]!.clips;
+        await stopActiveRecording();
+        const notes = structuredClone(midiStore.value!.notesByClipId[carrier!.id]!);
+        expect(notes.map((note) => note.pitch)).toEqual([60, 72, 84]);
+        [0.5, 4.5, 8.5].forEach((beat, index) => expect(notes[index]?.startBeat).toBeCloseTo(beat, 10));
+        const takes = structuredClone(takeLaneStore.value!.lanes[0]!.takes);
+        expect(takes.map((take) => take.recordingPassId)).toEqual(notes.map((note) => note.recordingPassId));
+        expect(takes).toHaveLength(3);
+        const lane = takeLaneStore.value!.lanes[0]!;
+        for (const [index, take] of takes.entries()) {
+            await executeAppAction(
+                {
+                    type: 'selectTake',
+                    payload: {
+                        trackId: TRACK_ID,
+                        takeId: take.id,
+                        expectedLaneId: lane.id,
+                        expectedSelectedTakeId:
+                            takeLaneStore.value!.lanes[0]!.takes.find((row) => row.selected)?.id ?? null,
+                    },
+                },
+                { skipUndo: true }
+            );
+            await executeAppAction(
+                {
+                    type: 'setCompRegion',
+                    payload: {
+                        trackId: TRACK_ID,
+                        takeId: take.id,
+                        startBeat: take.startBeat,
+                        endBeat: take.endBeat,
+                    },
+                },
+                { skipUndo: true }
+            );
+            const fragment = resolveClipsWithComping(TRACK_ID, trackStore.value!.tracks[0]!.clips).find(
+                (row) => row.recordingPassId === take.recordingPassId
+            )!;
+            const offset = fragment.midiOffsetBeats ?? 0;
+            expect(
+                selectMidiRecordingPassNotes(notes, {
+                    recordingPassId: fragment.recordingPassId,
+                    sourceStartBeat: offset,
+                    sourceEndBeat: offset + fragment.endBeat - fragment.startBeat,
+                }).map((note) => note.pitch)
+            ).toEqual([60 + index * 12]);
+        }
+        expect(takes[2]?.endBeat).toBeCloseTo(1.7, 10);
+        expect(findClip(carrier!.id)?.endBeat).toBe(4);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        await undo();
+        await redo();
+        expect(midiStore.value!.notesByClipId[carrier!.id]).toEqual(notes);
+        expect(takeLaneStore.value!.lanes[0]!.takes).toEqual(takes);
     });
 
     it('seals a held-worker release so Stop and Undo settle before worker completion and late release writes nothing', async () => {

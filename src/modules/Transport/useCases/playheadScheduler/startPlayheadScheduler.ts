@@ -911,9 +911,9 @@ export function startPlayheadScheduler(): void {
         // On a scheduled-seam tick the audible transport is still finishing the
         // dying pass, so the punch checks scan its position — the same window a
         // non-seam tick would scan — rather than the incoming pass's
-        // negative-phase position. And because no later tick ever revisits the
-        // dying pass's last look-ahead band, a punch-out the dying pass reaches
-        // before the seam instant is due at the seam instant itself.
+        // negative-phase position. Its pending seam keeps the dying pass's
+        // audio anchor until the crossing, so finalization can wait for the
+        // actual punch-out instead of closing on the early look-ahead tick.
         const punchScanBeat = seam ? seam.passPosition : newPosition;
         const punchScanWindowStart = seam ? dyingTickStartPosition : tickStartPosition;
         // The punch checks below may open a recording this tick, so read the
@@ -962,7 +962,13 @@ export function startPlayheadScheduler(): void {
             // playhead) is wrong on both paths — nothing writes it during
             // playback.
             const punchAnchorBeat = Math.max(current.punchInBeat, punchScanWindowStart);
-            const clips = startRecording(punchAnchorBeat);
+            const clips = startRecording(punchAnchorBeat, undefined, {
+                outBeat: current.punchOutBeat,
+                leadInBeats: (trackId) =>
+                    (((ctx.baseLatency || 0) + (ctx.outputLatency || 0) + getCompensationDelay(trackId)) *
+                        currentTempo) /
+                    60,
+            });
             updateTransportState({ isRecording: true });
 
             const captureClocks = createRecordingCaptureClocks(ctx, (beat) =>
@@ -974,36 +980,8 @@ export function startPlayheadScheduler(): void {
                 )
             );
             captureClocks.register();
-            advanceMidiRecordingPass({
-                audioTime: passEndContextSeconds,
-                fromBeat: boundary.endBeat ?? current.loopEnd,
-                toBeat: boundary.nextPassStartBeat ?? current.loopStart,
-            });
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
-                if (track.kind === 'midi') {
-                    const recClip = clips.find((context) => context.trackId === track.id);
-                    if (recClip) {
-                        // Input-latency compensation shifts a recorded note
-                        // earlier by the round-trip time. With the clip origin
-                        // sitting exactly on the anchor, a note played on the
-                        // punch downbeat has nowhere to go: the clip-relative
-                        // beat clamps at 0 and the note is stored uncompensated,
-                        // late by the round trip, unrecoverably. A media lead-in
-                        // of the same size moves the clip's media origin earlier
-                        // (`origin = startBeat - midiOffsetBeats`) while leaving
-                        // `startBeat` on the punch point, so the compensation is
-                        // representable and the clip still begins where the user
-                        // asked. Derived exactly as the manual record path does
-                        // (handleWebMidiNoteOff), so both agree on the origin.
-                        const totalLatencySec =
-                            (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + getCompensationDelay(track.id);
-                        const leadInBeats = (totalLatencySec * currentTempo) / 60;
-                        if (leadInBeats > 0) {
-                            updateClip(recClip.id, (clip) => ({ ...clip, midiOffsetBeats: leadInBeats }));
-                        }
-                    }
-                }
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
                     const captureClock = captureClocks.create(track.id);
@@ -1102,15 +1080,24 @@ export function startPlayheadScheduler(): void {
             }
         }
 
-        // `punchOutDueAtSeam`: the punch-out point sits inside the dying pass's
-        // last look-ahead band — above where it stands at the seam tick but at
-        // or below where the seam instant lands it. The crossing will happen
-        // before the seam and no later tick scans that band, so the punch-out
-        // is due at the seam instant and fires here.
+        // A planned seam hands scheduling over before the tail has sounded.
+        // Keep recording until the dying pass actually reaches punch-out; the
+        // existing seam anchor also dates a late observation after the wrap.
+        // There is no timer or deferred callback to survive Stop or disposal.
+        const punchOutSeam = seam?.seamAudioTime ?? lateWrapSeamAudioTime ?? soundedSeam?.seamAudioTime;
+        const punchOutAtSeam =
+            punchOutSeam !== undefined && punchOutSeam !== null && current.punchOutBeat <= current.loopEnd;
+        const punchOutAudioTime = punchOutAtSeam
+            ? punchOutSeam + secondsBetweenBeats(changes, current.loopEnd, current.punchOutBeat, current.tempo)
+            : now + secondsBetweenBeats(changes, punchScanBeat, current.punchOutBeat, current.tempo);
         if (
             schedulerSession.punchRecordingActive &&
             current.punchInEnabled &&
-            (punchScanBeat >= current.punchOutBeat || punchOutDueAtSeam || punchOutDueAtWrap)
+            (punchScanBeat >= current.punchOutBeat ||
+                punchOutDueAtSeam ||
+                punchOutDueAtWrap ||
+                (punchOutAtSeam && now + 1e-9 >= punchOutAudioTime)) &&
+            now + 1e-9 >= punchOutAudioTime
         ) {
             // Finalize BEFORE the flush. The flush runs the capture terminal that
             // commits the take, and the commit captures the live clip and takes;
@@ -1120,7 +1107,7 @@ export function startPlayheadScheduler(): void {
             // this neither blocks the scheduler nor reorders the audio flush.
             // Same anchoring as punch-in: the region's own end beat, not the
             // overshooting tick position and not the stale store playhead.
-            finalizeAutomaticRecording(current.punchOutBeat);
+            finalizeAutomaticRecording(current.punchOutBeat, punchOutAudioTime);
             await Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
                 logger.error(new Error('Punch-out audio recording failed to stop', { cause: error }));
             });

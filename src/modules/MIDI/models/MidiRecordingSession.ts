@@ -16,17 +16,27 @@ export type MidiRecordingWitness = Readonly<{
 export type MidiRecordingEvent =
     | { type: 'noteOn'; channel: number; note: number; velocity: number }
     | { type: 'noteOff'; channel: number; note: number }
-    | { type: 'expression'; channel: number; dimension: MidiExpressionDimension; value: number; bendRangeSemitones?: number }
+    | {
+          type: 'expression';
+          channel: number;
+          dimension: MidiExpressionDimension;
+          value: number;
+          bendRangeSemitones?: number;
+      }
     | { type: 'cc'; channel: number; controller: number; value: number }
     | { type: 'pitchBend'; channel: number; value: number };
 
-export type FrozenMidiRecording = NonNullable<Extract<AppAction, { type: 'commitRecording' }>['payload']['midiRecording']>;
+export type FrozenMidiRecording = NonNullable<
+    Extract<AppAction, { type: 'commitRecording' }>['payload']['midiRecording']
+>;
 
 export type MidiRecordingSessionApi = {
     beginMidiRecordingSession: (input: {
         carriers: readonly { trackId: string; clipId: string; clipStartBeat: number; midiOffsetBeats?: number }[];
         audioTime: number;
         recordPointBeat: number;
+        /** Exclusive punch limit; ordinary recording has no fixed ending. */
+        punchOutBeat?: number;
     }) => void;
     advanceMidiRecordingPass: (input: { audioTime: number; fromBeat: number; toBeat: number }) => void;
     admitMidiRecordingEvent: (input: {

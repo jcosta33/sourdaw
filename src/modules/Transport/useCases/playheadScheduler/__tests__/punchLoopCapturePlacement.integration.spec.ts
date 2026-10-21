@@ -1063,9 +1063,17 @@ describe('punch audio capture loop placement', () => {
                 await tick();
                 expect(playheadWrapCountRef.current).toBeGreaterThan(2);
             }
-            await advanceUntil(() => hardware.buffer !== null);
             if (boundary === 'seam') {
-                expect(schedulerSession.pendingSeam).not.toBeNull();
+                await advanceUntil(() => schedulerSession.pendingSeam !== null);
+                const outTime =
+                    schedulerSession.pendingSeam!.seamAudioTime -
+                    secondsBetweenBeats(tempoMapStore.value!.changes, punchOut, 12, 120);
+                expect(hardware.now).toBeLessThan(outTime);
+                expect(hardware.buffer).toBeNull();
+                await advanceUntil(() => hardware.buffer !== null);
+                expect(hardware.now).toBeGreaterThanOrEqual(outTime);
+            } else {
+                await advanceUntil(() => hardware.buffer !== null);
             }
             await recordingLifecycle.waitForCommits();
         } else {

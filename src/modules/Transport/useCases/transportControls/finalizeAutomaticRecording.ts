@@ -15,12 +15,14 @@ import { recordingLifecycle } from './recordingLifecycle';
  * flight (#4439). `trackCommit` only registers the promise: the scheduler call
  * sites never await it, so the tick path stays unblocked.
  */
-export function finalizeAutomaticRecording(atBeat: number): void {
-    const ending = captureRecordingEnd();
+export function finalizeAutomaticRecording(atBeat: number, atAudioTime?: number): void {
+    const ending = captureRecordingEnd(
+        atAudioTime === undefined ? undefined : { contextSeconds: atAudioTime, beat: atBeat }
+    );
     const frozenMidi = ending
         ? sealMidiRecordingSession({
               audioTime: ending.contextSeconds,
-              timelineBeat: ending.beatAtContextSeconds(ending.contextSeconds),
+              timelineBeat: atBeat,
           })
         : undefined;
     recordingLifecycle.endRecording();

@@ -145,6 +145,13 @@ const evaluateFollowActionsMock = vi.fn<
     (tracks: unknown[], from: number, to: number) => { jumpToPosition: number | null; shouldStop: boolean }
 >(() => ({ jumpToPosition: null, shouldStop: false }));
 
+// Scheduler unit cases observe its detection/call contract. Real MIDI journal,
+// CRDT commit and Undo/Redo run in commitRecording.integration.spec.ts.
+vi.mock('#/modules/MIDI/useCases', () => ({
+    advanceMidiRecordingPass: vi.fn(),
+    sealMidiRecordingSession: () => [],
+}));
+
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     observeRecordingPassEntry: vi.fn(),
@@ -1286,7 +1293,11 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(schedulerSession.accumulatedPosition).toBeGreaterThan(16);
-        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(16);
+        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(
+            16,
+            undefined,
+            expect.objectContaining({ outBeat: 24, leadInBeats: expect.any(Function) })
+        );
     });
 
     // Rolling in from inside the region is the other half of that anchor. Here
@@ -1311,7 +1322,11 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(arrangementMocks.startRecording).toHaveBeenCalledTimes(1);
-        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(20);
+        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(
+            20,
+            undefined,
+            expect.objectContaining({ outBeat: 24, leadInBeats: expect.any(Function) })
+        );
         expect(arrangementMocks.startRecording).not.toHaveBeenCalledWith(16);
     });
 
@@ -1364,20 +1379,24 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(16);
-        expect(arrangementMocks.updateClip).toHaveBeenCalledWith('clip-rec-1', expect.any(Function));
-        const [, updater] = arrangementMocks.updateClip.mock.calls.at(-1) as unknown as [
-            string,
-            (clip: Record<string, unknown>) => Record<string, unknown>,
-        ];
-        const updated = updater({ id: 'clip-rec-1', startBeat: 16, endBeat: 24 });
-        expect(updated.midiOffsetBeats).toBeCloseTo(0.06, 6);
-        // The clip still begins on the punch point; only its media origin moved.
-        expect(updated.startBeat).toBe(16);
-        // Media origin = startBeat - midiOffsetBeats, so a note struck inside the
-        // compensation window resolves to a positive clip-relative beat instead
-        // of clamping to 0 the way an origin exactly on the anchor forces.
-        const mediaOrigin = 16 - (updated.midiOffsetBeats as number);
+        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(
+            16,
+            undefined,
+            expect.objectContaining({ outBeat: 24, leadInBeats: expect.any(Function) })
+        );
+        // The offset now belongs to clip creation, before session admission
+        // clones it. The production integration spec checks the stored clip.
+        const options = (
+            arrangementMocks.startRecording.mock.calls.at(-1) as unknown as [
+                number,
+                undefined,
+                { leadInBeats: (trackId: string) => number },
+            ]
+        )[2];
+        const offset = options.leadInBeats('rec-1');
+        expect(offset).toBeCloseTo(0.06, 6);
+        expect(arrangementMocks.updateClip).not.toHaveBeenCalled();
+        const mediaOrigin = 16 - offset;
         expect(Math.max(0, 16.03 - 0.06 - mediaOrigin)).toBeCloseTo(0.03, 6);
     });
 
@@ -1762,10 +1781,14 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.accumulatedPosition).toBeGreaterThan(8);
         expect(arrangementMocks.stopRecording).toHaveBeenCalledWith(
             8,
-            expect.objectContaining({ contextSeconds: 0.2, beatAtContextSeconds: expect.any(Function) })
+            expect.objectContaining({ contextSeconds: expect.any(Number), beatAtContextSeconds: expect.any(Function) }),
+            []
         );
         const ending = arrangementMocks.stopRecording.mock.calls[0]?.[1];
-        expect(ending?.contextSeconds).toBe(0.2);
+        // End at the crossing in the scheduler's admitted clock window, rather
+        // than the later observation. The map remains anchored on beat8.
+        expect(ending?.contextSeconds).toBeCloseTo(0.15, 10);
+        expect(ending?.beatAtContextSeconds(ending.contextSeconds)).toBeCloseTo(8, 10);
         expect(ending?.beatAtContextSeconds(0.3)).toBeCloseTo(8.3, 10);
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });

@@ -24,6 +24,7 @@ type CapturedNote = { witness: MidiRecordingWitness; data: ActiveNoteData; laten
 type Carrier = { trackId: string; clipId: string; clipStartBeat: number; midiOffsetBeats?: number };
 type Session = {
     id: string;
+    punchOutBeat?: number;
     carriers: readonly Carrier[];
     passes: Pass[];
     held: Map<string, CapturedNote>;
@@ -46,6 +47,7 @@ export const beginMidiRecordingSession: MidiRecordingSessionApi['beginMidiRecord
     }
     session = {
         id: `midi-recording-${crypto.randomUUID()}`,
+        ...(input.punchOutBeat === undefined ? {} : { punchOutBeat: input.punchOutBeat }),
         carriers: structuredClone(input.carriers),
         passes: [
             {
@@ -117,6 +119,23 @@ export const admitMidiRecordingEvent: MidiRecordingSessionApi['admitMidiRecordin
     const current = session;
     if (!current || transportStore.value?.isRecording !== true) {
         return undefined;
+    }
+    // Input is admitted at its own time, before any worker or scheduler tick.
+    // A delayed tick cannot extend the punched interval, and a pre-window
+    // timestamp cannot be clamped into the take as a spurious downbeat.
+    if (current.punchOutBeat !== undefined) {
+        const terminalPass = current.passes.find(
+            (pass) =>
+                pass.timelineBeat <= current.punchOutBeat! &&
+                (pass.endBeat === undefined || pass.endBeat >= current.punchOutBeat!)
+        );
+        const outTime =
+            terminalPass === undefined
+                ? Infinity
+                : terminalPass.audioTime +
+                  readSecondsAtBeat({ beat: current.punchOutBeat }) -
+                  readSecondsAtBeat({ beat: terminalPass.timelineBeat });
+        if (time.audioTime + 1e-9 < current.passes[0]!.audioTime || time.audioTime + 1e-9 >= outTime) return undefined;
     }
     const release = event.type === 'noteOff' || (event.type === 'noteOn' && event.velocity === 0);
     if (release && (event.type === 'noteOff' || event.type === 'noteOn')) {
@@ -265,23 +284,36 @@ export const sealMidiRecordingSession: MidiRecordingSessionApi['sealMidiRecordin
     const current = session;
     session = undefined;
     if (!current) return [];
-    for (const key of current.held.keys()) closeHeld(current, key, ending.audioTime);
+    for (const key of current.held.keys()) {
+        const held = current.held.get(key)!;
+        closeHeld(current, key, ending.audioTime + (current.punchOutBeat === undefined ? 0 : held.latency));
+    }
     return current.carriers.map((carrier) => {
         const capturedNotes = current.notes.filter((note) => note.witness.clipId === carrier.clipId);
         const notes: MidiNote[] = [
             ...structuredClone(midiStore.value?.notesByClipId[carrier.clipId] ?? []),
             ...capturedNotes.map((captured) => {
                 const start = captured.witness.sourceBeat;
-                const endTime = Math.min(captured.endTime ?? ending.audioTime, ending.audioTime);
+                const endTime = Math.min(
+                    captured.endTime ?? ending.audioTime,
+                    ending.audioTime + (current.punchOutBeat === undefined ? 0 : captured.latency)
+                );
                 const durationAt = (seconds: number) =>
                     sourceAt(current, captured.witness.audioTime + seconds - captured.latency) -
                     sourceAt(current, captured.witness.audioTime - captured.latency);
+                const duration = Math.max(0.0625, durationAt(endTime - captured.witness.audioTime));
+                // The ordinary minimum note length cannot extend a punched
+                // tail past its exclusive source boundary.
+                const sourceEnd = sourceAt(current, ending.audioTime) + (carrier.midiOffsetBeats ?? 0);
                 const note: MidiNote = {
                     id: captured.witness.noteId!,
                     recordingPassId: captured.witness.recordingPassId,
                     pitch: captured.data.note,
                     startBeat: start,
-                    duration: Math.max(0.0625, durationAt(endTime - captured.witness.audioTime)),
+                    duration:
+                        current.punchOutBeat === undefined
+                            ? duration
+                            : Math.max(0, Math.min(duration, sourceEnd - start)),
                     velocity: captured.data.velocity ?? 100,
                 };
                 return withRecordedNoteExpression(note, captured.data, durationAt);

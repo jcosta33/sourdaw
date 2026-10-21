@@ -31,7 +31,11 @@ const recordClipId = 1;
  * playback *started* at, not the live position. Omitting it keeps the
  * stationary behaviour — anchor at the store playhead.
  */
-export function startRecording(atBeat?: number, firstPassClock?: () => number | null): Clip[] {
+export function startRecording(
+    atBeat?: number,
+    firstPassClock?: () => number | null,
+    midiPunch?: { outBeat: number; leadInBeats: (trackId: string) => number }
+): Clip[] {
     const trackState = getTrackState();
     const transportState = transportStore.value;
     if (!trackState || !transportState) {
@@ -82,6 +86,12 @@ export function startRecording(atBeat?: number, firstPassClock?: () => number | 
             locked: false,
             muted: false,
         };
+        // Punch latency belongs to the carrier before the journal clones it.
+        // Both the visible media origin and captured source use this lead-in.
+        if (clip.type === 'midi' && midiPunch) {
+            const leadIn = midiPunch.leadInBeats(track.id);
+            if (leadIn > 0) clip.midiOffsetBeats = leadIn;
+        }
         newClips.push(clip);
         if (clip.type === 'audio') {
             recordingPassTiming.begin(clipId, recordBeat, firstPassClock);
@@ -130,6 +140,7 @@ export function startRecording(atBeat?: number, firstPassClock?: () => number | 
                     ? readSecondsAtBeat({ beat: recordBeat }) - readSecondsAtBeat({ beat: captureGestureBeat() })
                     : 0),
             recordPointBeat: recordBeat,
+            ...(midiPunch ? { punchOutBeat: midiPunch.outBeat } : {}),
         });
     }
     return newClips;
