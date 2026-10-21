@@ -1,0 +1,151 @@
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_59e31a5c6f3e31::t_2aad05a059f1ff 1,10,24,39-124,166-180,202-205,216-481
+src/modules/Arrangement/presentations/views/TakeLanesView.tsx
+  s_1c08b47ac3792f::t_5e89adf5644dfc 307-330
+src/modules/Arrangement/stores/__tests__/takeLaneStore.spec.ts
+  s_59e31a5c6f3e31::t_7ff50afe80e78e 52-81
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  s_1c08b47ac3792f::t_5b5ce0cdc70caa 73-93
+src/modules/Arrangement/stores/resolveTakeMedia.ts
+  s_1c08b47ac3792f::t_98984e60fc5f89 35-44,52-53,63-70,142-151
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_1c08b47ac3792f::t_4c64f63e8f7744 2,30,97,146-148
+src/modules/Arrangement/stores/takeLaneWriteJournal.ts
+  s_1c08b47ac3792f::t_49817cc000dcb4 20-22,48-55,153-159,173-184,465-475
+src/modules/Arrangement/useCases/comping/selectTake.ts
+  s_1c08b47ac3792f::t_fbb03ae8ae110e 1-2,4-36
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_1c08b47ac3792f::t_30b4346869d41e 1-2,126-130,132-135
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_1c08b47ac3792f::t_7fe7c352ae831d 1-2,75-76,92-102,135-146,187-191
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_1c08b47ac3792f::t_f9d5d032b6c7e2 12-13,32-51,66,91,99
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  s_1c08b47ac3792f::t_0852df420f5ffa 19-20,214-262
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_1c08b47ac3792f::t_0b00476c3e4b0c 21,23,618-693
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_1c08b47ac3792f::t_a3433bbf394193 1,287-293
+src/modules/AudioEngine/useCases/livePlayback/watchNativeLiveMidiEdits.ts
+  s_1c08b47ac3792f::t_3cbb6f16e7b2cb 20,40
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_1c08b47ac3792f::t_0afd3f9496d937 602-702
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_1c08b47ac3792f::t_cc3566c4b3f591 10-11,38-57,72,111,115
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_1c08b47ac3792f::t_6c270152fb2e6e 1,698-704,812-818
+src/modules/Collaboration/useCases/__tests__/midiUndoPeerSync.integration.spec.ts
+  s_59e31a5c6f3e31::t_aa26531358f290 30,145-172
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_1c08b47ac3792f::t_81678d7ac19763 829,1704,6073-6082,6472,6474
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  s_1c08b47ac3792f::t_e1fdaacc557d0f 332-360
+src/modules/MIDI/stores/midiStore.ts
+  s_1c08b47ac3792f::t_d014ebadf9b467 5,103,165-168
+src/modules/MIDI/useCases/index.ts
+  s_1c08b47ac3792f::t_abe78235dc6618 190-199
+src/modules/MIDI/useCases/midiClipData/__tests__/duplicateMidiClipData.spec.ts
+  s_1c08b47ac3792f::t_1ab5cda08a5ab0 87-99
+src/modules/MIDI/useCases/midiClipData/__tests__/projectMidiClipWindow.spec.ts
+  s_1c08b47ac3792f::t_9850442bd0760c 67-109
+src/modules/MIDI/useCases/midiClipData/duplicateMidiClipData.ts
+  s_1c08b47ac3792f::t_bd53dde86db28d 25-31
+src/modules/MIDI/useCases/midiClipData/projectMidiClipWindow.ts
+  s_1c08b47ac3792f::t_7e30e1a2e8c74c 7-8,10,158-162
+src/modules/MIDI/useCases/midiClipData/selectMidiRecordingPassNotes.ts
+  s_1c08b47ac3792f::t_c93d945641102c 1-36
+src/modules/MIDI/useCases/midiRecordingSession.ts
+  s_1c08b47ac3792f::t_834354225db082 1-348
+src/modules/MIDI/useCases/resetMidiStoreForProject.ts
+  s_59e31a5c6f3e31::t_66cccabaad15c1 1,18
+src/modules/MIDI/useCases/triggerLiveNoteOff.ts
+  s_1c08b47ac3792f::t_bd549310c5ce52 1-4,18-29
+src/modules/MIDI/useCases/triggerLiveNoteOn.ts
+  s_1c08b47ac3792f::t_bb44b8095a5133 1-4,17-31
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_1c08b47ac3792f::t_ad55fb1f69d0bf 9-10,163-190
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_1c08b47ac3792f::t_3487fdb612ecc7 381-389
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_59e31a5c6f3e31::t_5a5ae8a36c3be2 106,108
+src/modules/MIDI/useCases/webMidiInput/recordChannelEvent.ts
+  s_1c08b47ac3792f::t_9ce616c210fd0a 41-45
+src/modules/Project/models/ProjectData.ts
+  s_1c08b47ac3792f::t_386b15a9cfa5b9 339,801,812
+src/modules/Project/stores/__tests__/arrangementStore.spec.ts
+  s_1c08b47ac3792f::t_fc9f8798e26f4e 85-133
+src/modules/Project/stores/arrangementStore.ts
+  s_1c08b47ac3792f::t_184dae8e468fb6 4-8,231,242,310,698,804-805,813
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_1c08b47ac3792f::t_6707c2692e0e51 3,349,357,820-878
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_1c08b47ac3792f::t_209de297744a24 3,224,237,298-359
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/hydrateProjectMidi.spec.ts
+  s_59e31a5c6f3e31::t_045a1aa5f4b0fe 23-30
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeProjectMidi.spec.ts
+  s_1c08b47ac3792f::t_9f480109ba05fb 11-38
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateProjectMidi.ts
+  s_1c08b47ac3792f::t_49c0f4bbc7ea25 2,28-30
+src/modules/Project/useCases/projectPersistence/fileIO/serializeProjectMidiNote.ts
+  s_1c08b47ac3792f::t_1c085b834bc647 2,50-53
+src/modules/Project/useCases/projectPersistence/helpers/hydrateArrangementStoreFromProjectData.ts
+  s_1c08b47ac3792f::t_a39fcd648d6cf0 2,35-37
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_1c08b47ac3792f::t_a62cc0e7728c17 2,261,678,681-685
+src/modules/TimelineEditor/models/MidiNoteViewTypes.ts
+  s_59e31a5c6f3e31::t_d928cddd33dcb2 7
+src/modules/TimelineEditor/presentations/helpers/pianoRollRecordingPass.ts
+  s_1c08b47ac3792f::t_b71a5a5f0f4e03 1-50
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.noteIdentityUndo.spec.tsx
+  s_1c08b47ac3792f::t_e8ea33fd837ab5 6,14,128-132,206,521-619
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_59e31a5c6f3e31::t_2c4bbb24f70c3f 57
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollRenderer.spec.ts
+  s_59e31a5c6f3e31::t_674d8ac2227cee 19-20,30
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_1c08b47ac3792f::t_e55ca124fec345 24-25,28,32,35,53-54,135-143,421-507,1363
+src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts
+  s_1c08b47ac3792f::t_8769ca5a34ed99 60,224,677-678
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_1c08b47ac3792f::t_34dfc17347ddaf 28,55,208-209,213,215,225-232
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollOpenedClipNotes.spec.tsx
+  s_1c08b47ac3792f::t_a4cbaa06d34752 11-13,24,27,76,78,232-283
+src/modules/TimelineEditor/presentations/views/Inspector/TakesSection.tsx
+  s_1c08b47ac3792f::t_6d0a490bf29dbd 26-27,50-52,55-72
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TakesSection.spec.tsx
+  s_1c08b47ac3792f::t_8879c21aab1a6b 75,191-192,223-246
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_1c08b47ac3792f::t_561ec711a44e4b 1,199-203,213,977-981
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_1c08b47ac3792f::t_a562e2d38978f8 133-135,155-159,379-460
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_1c08b47ac3792f::t_b8f54f5dfc6d1d 1,999-1002,1008,1028-1034,1187-1193
+src/modules/Transport/useCases/transportControls/finalizeAutomaticRecording.ts
+  s_1c08b47ac3792f::t_fb802378bbd19c 1,20-25,27
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_1c08b47ac3792f::t_690561db8db9da 1,28-33,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55e1518e8374936e821457b3be07e020710bee13",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
