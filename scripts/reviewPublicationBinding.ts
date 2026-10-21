@@ -349,10 +349,7 @@ export function prepareReviewDossierPublication(input: {
     // Exact published replay is exempt; recovered binding retains historical caller-side rules.
     if (publishedReviewId(publication.dossier) === undefined) {
         if (input.recovered !== true) {
-            assertFreshReviewStructuralAdmission(plan, completedStances(publication.dossier), stancesRead, stancesPath, {
-                recommendation: publication.dossier.recommendation,
-                acceptedFindingCount: acceptedFindings(publication.dossier).length,
-            });
+            assertFreshReviewStructuralAdmission(plan, completedStances(publication.dossier), stancesRead, stancesPath);
         }
         assertSemanticAssessmentAcknowledged(
             publication.dossier,

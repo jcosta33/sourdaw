@@ -18,11 +18,7 @@ export function assertReviewEvidenceClaimsSafe(document: ReviewDocument): void {
     }
 }
 
-type ProbeResult = 'mutation-detected' | 'baseline-failed' | 'still-green' | 'not-run';
-type ReviewPublicationAdmission = {
-    recommendation: 'approve' | 'request-changes';
-    acceptedFindingCount: number;
-};
+type ProbeResult = 'mutation-detected' | 'still-green' | 'not-run';
 type AdmissionProbe = {
     reviewerModel: string;
     baselineProbe: { spec: string; mutation: string; observed: string; result: ProbeResult };
@@ -62,13 +58,8 @@ function readProbe(value: unknown, label: string): AdmissionProbe['baselineProbe
     const spec = safeString(`${label}.spec`, value.spec);
     const mutation = safeString(`${label}.mutation`, value.mutation);
     const observed = safeString(`${label}.observed`, value.observed);
-    if (
-        value.result !== 'mutation-detected' &&
-        value.result !== 'baseline-failed' &&
-        value.result !== 'still-green' &&
-        value.result !== 'not-run'
-    ) {
-        fail(`${label}.result must be mutation-detected, baseline-failed, still-green or not-run`);
+    if (value.result !== 'mutation-detected' && value.result !== 'still-green' && value.result !== 'not-run') {
+        fail(`${label}.result must be mutation-detected, still-green or not-run`);
     }
     return { spec, mutation, observed, result: value.result };
 }
@@ -82,8 +73,7 @@ export function assertFreshReviewStructuralAdmission(
     plan: ReviewRiskPlan,
     completedDraws: readonly CompletedReviewStance[],
     record: { present: true; value: unknown } | { present: false },
-    path: string,
-    publication?: ReviewPublicationAdmission
+    path: string
 ): void {
     if (!record.present) {
         fail(`missing review stances admission at ${path}; fresh reviewer publication requires stances.json`);
@@ -161,12 +151,7 @@ export function assertFreshReviewStructuralAdmission(
             probe.exhaustion,
             draw.exhaustion
         );
-        const baselineFailureAdmitted =
-            probe.baselineProbe.result === 'baseline-failed' &&
-            publication?.recommendation === 'request-changes' &&
-            publication.acceptedFindingCount > 0 &&
-            draw.outcome === 'blocker-found';
-        if (probe.baselineProbe.result !== 'mutation-detected' && !baselineFailureAdmitted) {
+        if (probe.baselineProbe.result !== 'mutation-detected') {
             fail(
                 `review stances admission baseline probe for stance ${describe(draw.stance)} on ${describe(draw.reviewerModel)} reported ${probe.baselineProbe.result}`
             );

@@ -91,11 +91,8 @@ substance before publication. For a fresh plan-carrying reviewer POST, `stances.
 `stances` array has at least three unique names; each `{ stance, admittedBy, draws }` row holds
 one draw per completed `(stance, reviewerModel)` pair. Each draw records `reviewerModel`, optional
 `exhaustion` matching the dossier draw, and a `baselineProbe` with bounded, single-line,
-evidence-safe `spec`, `mutation`, `observed`, and `result`. `mutation-detected` admits a fresh
-publication. `baseline-failed` admits only a `REQUEST_CHANGES` publication with an accepted inline
-blocker and a `blocker-found` outcome for that draw: record the unmodified baseline failure in
-`observed`, state in `mutation` that it was not applied, and retain the raw failure log. It does not
-authorize approval or delivery. `still-green` and `not-run` do not discharge the probe.
+evidence-safe `spec`, `mutation`, `observed`, and `result`. Only `result: "mutation-detected"`
+admits publication; `still-green` and `not-run` record failures but do not discharge the probe.
 Specialist plans (`native-security`, `realtime-audio`, `undo`) also require one completed
 `strongest` dossier draw, on any recorded stance. This checks caller evidence structurally;
 the orchestrator still verifies that the probe ran and the stances address independent risks.
