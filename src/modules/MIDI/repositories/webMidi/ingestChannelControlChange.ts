@@ -242,7 +242,14 @@ export function ingestChannelControlChange({
     cc,
     value,
 }: IngestChannelControlChangeInput): IngestChannelControlChangeOutput {
-    const state = resolveChannelState(channel);
+    return ingestChannelControlChangeInState(resolveChannelState(channel), { cc, value });
+}
+
+/** Decode against an owner-supplied state, also used by pre-queue recording admission. */
+export function ingestChannelControlChangeInState(
+    state: MidiChannelControllerState,
+    { cc, value }: Pick<IngestChannelControlChangeInput, 'cc' | 'value'>
+): IngestChannelControlChangeOutput {
     const byte = clampSevenBit(value);
 
     if (isParameterSelectCc(cc)) {

@@ -1,4 +1,7 @@
-import { transportStore } from '#/modules/Transport/stores';
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { beginMidiRecordingSession } from '#/modules/MIDI/useCases';
+
+import { captureGestureBeat, readSecondsAtBeat, transportStore } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
@@ -18,8 +21,8 @@ const recordClipId = 1;
  * Every take a recording opens is provisional: the clip, its take lane, and its
  * takes are staged without history, and `commitRecording` turns the whole result
  * into one entry — from the capture terminal for an audio track, and from
- * `stopRecording` for a MIDI track, whose notes are committed by their own
- * actions. Pushing the ordinary take-lane entries here would leave the lane and
+ * `stopRecording` for a MIDI track. MIDI ingress buffers its owned notes
+ * until that single command materializes the sealed gesture. Pushing the ordinary take-lane entries here would leave the lane and
  * the take as separate history above a clip no entry covers.
  *
  * `atBeat` anchors the new clips. Callers that record from a moving transport
@@ -112,5 +115,22 @@ export function startRecording(atBeat?: number, firstPassClock?: () => number | 
         activeRecordingRef.current = newClips.map((context) => context.id);
     }
 
+    const midiClips = newClips.filter((clip) => clip.type === 'midi');
+    if (midiClips.length > 0) {
+        beginMidiRecordingSession({
+            carriers: midiClips.map((clip) => ({
+                trackId: clip.trackId,
+                clipId: clip.id,
+                clipStartBeat: clip.startBeat,
+                midiOffsetBeats: clip.midiOffsetBeats,
+            })),
+            audioTime:
+                getAudioContext().currentTime +
+                (transportState.isPlaying
+                    ? readSecondsAtBeat({ beat: recordBeat }) - readSecondsAtBeat({ beat: captureGestureBeat() })
+                    : 0),
+            recordPointBeat: recordBeat,
+        });
+    }
     return newClips;
 }

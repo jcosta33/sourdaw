@@ -6,6 +6,8 @@ import { memberExpressionGeneration } from '../../repositories/webMidi/memberExp
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 import { activeNotes } from '../../repositories/webMidi/state';
 
+import { admitMidiRecordingEvent } from '../midiRecordingSession';
+
 import { captureEventBeatAt } from './captureEventBeat';
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
@@ -158,7 +160,34 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
         return undefined;
     }
 
-    const timeStamp = { audioTime: resolveInputEventTime({ timeStamp: message.timeStamp }) };
+    const rawTime = { audioTime: resolveInputEventTime({ timeStamp: message.timeStamp }) };
+    const eventTime = { ...rawTime, recordingBeat: captureEventBeatAt(rawTime) };
+    const recordingEvent =
+        message.type === 'cc'
+            ? { type: 'cc' as const, channel: message.channel, controller: message.cc, value: message.value }
+            : message.type === 'channelPressure'
+              ? {
+                    type: 'expression' as const,
+                    channel: message.channel,
+                    dimension: 'pressure' as const,
+                    value: message.pressure,
+                }
+              : message.type === 'pitchBend'
+                ? {
+                      type: 'pitchBend' as const,
+                      channel: message.channel,
+                      value: ((message.msb << 7) | message.lsb) - 8192,
+                  }
+                : message;
+    const recordingWitness = admitMidiRecordingEvent({ event: recordingEvent, time: eventTime });
+    const timeStamp: CapturedInputEventTime = {
+        ...eventTime,
+        ...(recordingWitness === undefined ? {} : { recordingWitness }),
+        ...(recordingWitness !== undefined ||
+        !(transportStore.value?.isRecording && transportStore.value.overdubEnabled)
+            ? { recordingAdmitted: true }
+            : {}),
+    };
 
     const channel = message.channel;
 

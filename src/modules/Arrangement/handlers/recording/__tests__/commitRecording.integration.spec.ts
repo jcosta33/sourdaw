@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
@@ -7,6 +7,7 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -20,7 +21,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { transportStore } from '#/modules/Transport/stores';
+import { playheadWrapCountRef, setGestureClockSource, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
@@ -34,6 +35,92 @@ import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTa
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
 import { updateTrack } from '../../../useCases/updateTrack';
+
+import { handleWebMidiMessage } from '#/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage';
+import { startPlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler';
+import { schedulerSession } from '#/modules/Transport/useCases/playheadScheduler/schedulerSession';
+import { disposePlayheadScheduler } from '#/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler';
+import { stopActiveRecording } from '#/modules/Transport/useCases/transportControls/stopActiveRecording';
+import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases/midiClipData/selectMidiRecordingPassNotes';
+import { audioEngine as ownedAudioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
+import { realtimeMidiProcessorState } from '#/modules/MIDI/repositories/webMidi/realtimeMidiProcessorState';
+import { advanceMidiRecordingPass } from '#/modules/MIDI/useCases/midiRecordingSession';
+import { webMidiRuntime } from '#/modules/MIDI/repositories/webMidi/state';
+import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
+import { setTargetTrackId } from '#/modules/MIDI/repositories/webMidi/setTargetTrackId';
+import { createWebMidiNoteKey } from '#/modules/MIDI/models/WebMidiTypes';
+import { projectMidiClipWindow } from '#/modules/MIDI/useCases/midiClipData/projectMidiClipWindow';
+import { resolveClipsWithComping } from '../../../useCases/resolveComping';
+
+const lapProbeClock = vi.hoisted(() => ({ currentTime: 1, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    audioEngine: {
+        context: lapProbeClock,
+        setTransportInfo: vi.fn(),
+        getTrackStrip: () => undefined,
+        ensureTrackStrip: () => ({ gainNode: {}, deviceNodes: [] }),
+    },
+    getCompensationDelay: () => 0,
+    getAudioContext: () => lapProbeClock,
+    stopAudioRecording: () => Promise.resolve(),
+    readNativeEnginePlayheadSeconds: () => null,
+    refreshSidechainAlignment: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    scheduleAdjustmentLayers: vi.fn(),
+    stopAllScheduled: vi.fn(),
+}));
+vi.mock('#/modules/Synth/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    scheduleNote: () => null,
+}));
+
+const workerGate = vi.hoisted(() => ({ pending: null as Promise<void> | null, entered: false }));
+vi.mock('#/modules/MIDI/repositories/webMidi/processRealtimeMidiInput', () => ({
+    processRealtimeMidiInput: async (input: { isNoteOn: boolean }) => {
+        if (!input.isNoteOn && workerGate.pending) {
+            workerGate.entered = true;
+            await workerGate.pending;
+        }
+        return [];
+    },
+}));
+vi.mock('#/modules/Transport/useCases/scheduling/scheduleMidiNotes', () => ({
+    scheduleMidiNotes: () => Promise.resolve(),
+}));
+vi.mock('#/modules/Transport/useCases/scheduling/scheduleAudioClips', () => ({ scheduleAudioClips: vi.fn() }));
+vi.mock('#/modules/Transport/useCases/scheduling/scheduleMetronome', () => ({ scheduleMetronome: vi.fn() }));
+vi.mock('#/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation', () => ({
+    applyAutomation: () => new Set(),
+}));
+vi.mock('#/modules/Transport/useCases/scheduling/applyAutomation/applyVcaGains', () => ({ applyVcaGains: vi.fn() }));
+vi.mock('#/modules/Transport/useCases/transportControls/panicYeastRuntime', () => ({
+    panicYeastRuntime: () => Promise.resolve(),
+}));
+vi.mock('#/modules/Transport/useCases/evaluateFollowActions', () => ({
+    evaluateFollowActions: () => ({ jumpToPosition: null, shouldStop: false }),
+}));
+
+async function advanceSchedulerTo(target: number): Promise<void> {
+    while (lapProbeClock.currentTime < target - 1e-9) {
+        lapProbeClock.currentTime = Math.min(target, lapProbeClock.currentTime + 0.05);
+        const received = performance.timeOrigin + performance.now();
+        const worker = schedulerSession.worker;
+        if (!worker?.onmessage) throw new Error('Expected the real scheduler worker');
+        worker.onmessage(
+            new MessageEvent('message', {
+                data: {
+                    type: 'tick',
+                    generation: schedulerSession.generation,
+                    sequence: Math.round(lapProbeClock.currentTime * 1000),
+                    scheduledAtMs: received - 2,
+                    sentAtMs: received - 1,
+                },
+            })
+        );
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
+    }
+}
 
 const TRACK_ID = 'track-audio';
 
@@ -76,6 +163,21 @@ function findClip(clipId: string): Clip | undefined {
  */
 describe('recording gesture commit (issue #4439)', () => {
     beforeEach(() => {
+        // The recording barrel has a cyclic importer: bind the singleton as well
+        // as the public adapter so both paths observe this controlled clock.
+        Object.assign(ownedAudioEngine, {
+            context: lapProbeClock,
+            getTrackStrip: () => undefined,
+            ensureTrackStrip: () => ({ gainNode: {}, deviceNodes: [] }),
+            setTransportInfo: vi.fn(),
+        });
+        realtimeMidiProcessorState.processor = async (input) => {
+            if (!input.isNoteOn && workerGate.pending) {
+                workerGate.entered = true;
+                await workerGate.pending;
+            }
+            return [];
+        };
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('recording gesture commit integration');
         removeCrdtDoc('root');
@@ -97,6 +199,10 @@ describe('recording gesture commit (issue #4439)', () => {
     });
 
     afterEach(() => {
+        disposePlayheadScheduler();
+        activeNotes.clear();
+        webMidiRuntime.mpeEnabled = false;
+        vi.unstubAllGlobals();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -105,6 +211,272 @@ describe('recording gesture commit (issue #4439)', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('records three dispatcher attacks through actual scheduler passes and guarded selection with one exact Undo/Redo', async () => {
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', armed: true, devices: [], clips: [] })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        transportStore.set({
+            ...transportStore.value!,
+            tempo: 120,
+            isPlaying: true,
+            isRecording: true,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+            overdubEnabled: false,
+            punchInEnabled: false,
+            playheadPosition: 0,
+        });
+        tempoMapStore.set({ changes: [] });
+        midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        lapProbeClock.currentTime = 0;
+        disposePlayheadScheduler();
+        vi.stubGlobal(
+            'Worker',
+            class {
+                onmessage: ((event: MessageEvent) => void) | null = null;
+                postMessage = vi.fn();
+                terminate = vi.fn();
+                addEventListener = vi.fn();
+                removeEventListener = vi.fn();
+            }
+        );
+        const [carrier] = startRecording(0);
+        if (!carrier) throw new Error('expected real recording carrier');
+        setTargetTrackId(TRACK_ID);
+        setGestureClockSource({
+            getAudioTimeSeconds: () => lapProbeClock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        startPlayheadScheduler();
+        const performanceNow = vi.spyOn(performance, 'now');
+        try {
+            for (const [pitch, startTime] of [
+                [60, 0.5],
+                [72, 2.5],
+                [84, 4.5],
+            ]) {
+                await advanceSchedulerTo(startTime + 0.05);
+                performanceNow.mockReturnValue(lapProbeClock.currentTime * 1000);
+                const pending = handleWebMidiMessage({
+                    data: new Uint8Array([0x90, pitch, 100]),
+                    timeStamp: startTime * 1000,
+                });
+                const admitted = activeNotes.get(createWebMidiNoteKey(0, pitch));
+                expect(admitted?.startBeat).toBeCloseTo(1, 10);
+                expect(admitted?.recordingWitness?.sourceBeat).toBeCloseTo(startTime * 2, 10);
+                await pending;
+                await advanceSchedulerTo(startTime + 0.3);
+                performanceNow.mockReturnValue(lapProbeClock.currentTime * 1000);
+                await handleWebMidiMessage({
+                    data: new Uint8Array([0x80, pitch, 0]),
+                    timeStamp: (startTime + 0.25) * 1000,
+                });
+            }
+            expect(playheadWrapCountRef.current).toBe(2);
+            await stopActiveRecording();
+        } finally {
+            performanceNow.mockRestore();
+            setGestureClockSource({
+                getAudioTimeSeconds: () => lapProbeClock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
+        }
+        flushAutomergeStorageWrites();
+        const stored = structuredClone(midiStore.value?.notesByClipId[carrier.id] ?? []);
+        expect(stored.map((note) => note.pitch)).toEqual([60, 72, 84]);
+        [1, 5, 9].forEach((beat, index) => expect(stored[index]?.startBeat).toBeCloseTo(beat, 10));
+        expect(new Set(stored.map((note) => note.recordingPassId)).size).toBe(3);
+        const lane = takeLaneStore.value!.lanes.find((row) => row.trackId === TRACK_ID)!;
+        expect(lane.takes).toHaveLength(3);
+        const committed = structuredClone({ clips: findClip(carrier.id), takes: lane.takes, notes: stored });
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        for (const [index, take] of lane.takes.entries()) {
+            const currentLane = takeLaneStore.value!.lanes.find((row) => row.id === lane.id)!;
+            await executeAppAction(
+                {
+                    type: 'selectTake',
+                    payload: {
+                        trackId: TRACK_ID,
+                        takeId: take.id,
+                        expectedLaneId: lane.id,
+                        expectedSelectedTakeId: currentLane.takes.find((row) => row.selected)?.id ?? null,
+                    },
+                },
+                { skipUndo: true }
+            );
+            await executeAppAction(
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: TRACK_ID, takeId: take.id, startBeat: take.startBeat, endBeat: take.endBeat },
+                },
+                { skipUndo: true }
+            );
+            const fragment = resolveClipsWithComping(TRACK_ID, trackStore.value!.tracks[0]!.clips).find(
+                (row) => row.recordingPassId === take.recordingPassId
+            )!;
+            const start = fragment.midiOffsetBeats ?? 0;
+            const selected = selectMidiRecordingPassNotes(stored, {
+                recordingPassId: fragment.recordingPassId,
+                sourceStartBeat: start,
+                sourceEndBeat: start + fragment.endBeat - fragment.startBeat,
+            });
+            expect(selected.map((note) => note.pitch)).toEqual([60, 72, 84].slice(index, index + 1));
+        }
+        await undo();
+        expect(findClip(carrier.id)).toBeUndefined();
+        expect(midiStore.value?.notesByClipId[carrier.id]).toBeUndefined();
+        await redo();
+        expect(findClip(carrier.id)).toEqual(committed.clips);
+        expect(midiStore.value?.notesByClipId[carrier.id]).toEqual(committed.notes);
+        expect(takeLaneStore.value!.lanes.find((row) => row.trackId === TRACK_ID)?.takes).toEqual(committed.takes);
+    });
+
+    it('seals a held-worker release so Stop and Undo settle before worker completion and late release writes nothing', async () => {
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: TRACK_ID,
+                    kind: 'midi',
+                    armed: true,
+                    devices: [{ id: 'yeast', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }],
+                    clips: [],
+                }),
+            ],
+            selectedTrackId: TRACK_ID,
+        });
+        transportStore.set({
+            ...transportStore.value!,
+            tempo: 120,
+            isPlaying: true,
+            isRecording: true,
+            isLooping: false,
+            overdubEnabled: false,
+            playheadPosition: 0,
+        });
+        tempoMapStore.set({ changes: [] });
+        midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        lapProbeClock.currentTime = 0;
+        const [carrier] = startRecording(0);
+        if (!carrier) throw new Error('expected recording carrier');
+        setTargetTrackId(TRACK_ID);
+        setGestureClockSource({
+            getAudioTimeSeconds: () => lapProbeClock.currentTime,
+            readNativeCursorBeats: () => lapProbeClock.currentTime * 2,
+        });
+        lapProbeClock.currentTime = 0.5;
+        await handleWebMidiMessage({ data: new Uint8Array([0x90, 60, 100]), timeStamp: undefined });
+        let release!: () => void;
+        workerGate.entered = false;
+        workerGate.pending = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        lapProbeClock.currentTime = 1;
+        const pendingRelease = handleWebMidiMessage({ data: new Uint8Array([0x80, 60, 0]), timeStamp: undefined });
+        await vi.waitFor(() => expect(workerGate.entered).toBe(true));
+        try {
+            await stopActiveRecording();
+            const recorded = structuredClone(midiStore.value?.notesByClipId[carrier.id]);
+            expect(recorded).toHaveLength(1);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            await undo();
+            expect(findClip(carrier.id)).toBeUndefined();
+            release();
+            await pendingRelease;
+            expect(midiStore.value?.notesByClipId[carrier.id]).toBeUndefined();
+            expect(findClip(carrier.id)).toBeUndefined();
+            await redo();
+            expect(midiStore.value?.notesByClipId[carrier.id]).toEqual(recorded);
+        } finally {
+            release();
+            workerGate.pending = null;
+            await pendingRelease;
+        }
+    });
+
+    it('keeps a held seam tail and expression on the onset pass and redoes same-beat controller order', async () => {
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', armed: true, devices: [], clips: [] })],
+            selectedTrackId: TRACK_ID,
+        });
+        transportStore.set({
+            ...transportStore.value!,
+            tempo: 120,
+            isPlaying: true,
+            isRecording: true,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+            overdubEnabled: false,
+            playheadPosition: 0,
+        });
+        tempoMapStore.set({ changes: [] });
+        midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        lapProbeClock.currentTime = 0;
+        playheadWrapCountRef.current = 0;
+        setGestureClockSource({
+            getAudioTimeSeconds: () => lapProbeClock.currentTime,
+            readNativeCursorBeats: () => (lapProbeClock.currentTime % 2) * 2,
+        });
+        const [carrier] = startRecording(0);
+        if (!carrier) throw new Error('expected carrier');
+        setTargetTrackId(TRACK_ID);
+        webMidiRuntime.mpeEnabled = true;
+        lapProbeClock.currentTime = 0.5;
+        await handleWebMidiMessage({ data: new Uint8Array([0x91, 60, 100]), timeStamp: undefined });
+        lapProbeClock.currentTime = 0.75;
+        await handleWebMidiMessage({ data: new Uint8Array([0xd1, 30]), timeStamp: undefined });
+        lapProbeClock.currentTime = 0.9;
+        await handleWebMidiMessage({ data: new Uint8Array([0xb0, 64, 127]), timeStamp: undefined });
+        await handleWebMidiMessage({ data: new Uint8Array([0xb0, 64, 0]), timeStamp: undefined });
+        setTargetTrackId('different-track');
+        updateTrack(TRACK_ID, (track) => ({ ...track, armed: false }));
+        advanceMidiRecordingPass({ audioTime: 2, fromBeat: 4, toBeat: 0 });
+        playheadWrapCountRef.current = 1;
+        lapProbeClock.currentTime = 2.25;
+        await handleWebMidiMessage({ data: new Uint8Array([0xd1, 70]), timeStamp: undefined });
+        lapProbeClock.currentTime = 2.3;
+        await handleWebMidiMessage({ data: new Uint8Array([0xb1, 74, 75]), timeStamp: undefined });
+        lapProbeClock.currentTime = 2.35;
+        await handleWebMidiMessage({ data: new Uint8Array([0xe1, 0, 96]), timeStamp: undefined });
+        setTargetTrackId(TRACK_ID);
+        updateTrack(TRACK_ID, (track) => ({ ...track, armed: true }));
+        lapProbeClock.currentTime = 2.5;
+        await handleWebMidiMessage({ data: new Uint8Array([0x91, 72, 100]), timeStamp: undefined });
+        lapProbeClock.currentTime = 2.75;
+        await handleWebMidiMessage({ data: new Uint8Array([0x81, 72, 0]), timeStamp: undefined });
+        await stopActiveRecording();
+        const notes = structuredClone(midiStore.value!.notesByClipId[carrier.id]!);
+        expect(notes.map((note) => note.pitch)).toEqual([60, 72]);
+        expect(notes[0]?.recordingPassId).not.toBe(notes[1]?.recordingPassId);
+        expect(notes[0]?.expression?.pressure?.at(-1)?.value).toBe(70);
+        expect(notes[0]?.expression?.slide?.at(-1)?.value).toBe(75);
+        expect(notes[0]?.expression?.pitchBend?.at(-1)?.value).toBe(4096);
+        const first = selectMidiRecordingPassNotes(notes, {
+            recordingPassId: notes[0]!.recordingPassId,
+            sourceStartBeat: 0,
+            sourceEndBeat: 4,
+        });
+        expect(first.map((note) => note.pitch)).toEqual([60]);
+        expect(first[0]?.duration).toBeCloseTo(3, 10);
+        expect(first[0]?.expression?.pressure).toEqual([{ offsetBeats: 0.5, value: 30 }]);
+        expect(
+            selectMidiRecordingPassNotes(notes, {
+                recordingPassId: notes[1]!.recordingPassId,
+                sourceStartBeat: 4,
+                sourceEndBeat: 5.5,
+            }).map((note) => note.pitch)
+        ).toEqual([72]);
+        const cc = structuredClone(midiStore.value!.ccByClipId[carrier.id]);
+        expect(cc?.map((row) => row.value)).toEqual([127, 0]);
+        await undo();
+        await redo();
+        expect(midiStore.value!.notesByClipId[carrier.id]).toEqual(notes);
+        expect(midiStore.value!.ccByClipId[carrier.id]).toEqual(cc);
     });
 
     it('commits a successful capture as exactly one action entry', async () => {

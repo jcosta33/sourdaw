@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
@@ -346,6 +346,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         vi.mocked(resetModuleStoresToDefault).mockClear();
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        takeLaneStore.set({ lanes: [] });
     });
 
     afterEach(() => {
@@ -353,6 +354,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         // cannot leak state into an unrelated suite.
         transportStore.set({ ...defaultTransportState });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
     });
@@ -813,6 +815,65 @@ describe('applyImportedProjectData round-trip hydration', () => {
         const state = arrangementStore.value!;
         const active = state.arrangements.find((a) => a.id === state.activeArrangementId);
         expect(active?.tracks.tracks[0]?.clips.map((c) => c.id)).toEqual(['clip-a', 'clip-b']);
+    });
+
+    it('reopens matching MIDI note and take pass identities at advancing source positions', async () => {
+        const project = makeProject();
+        project.midi.notesByClipId['clip-midi'] = [
+            { id: 'lap-1', pitch: 60, startBeat: 1, duration: 1, velocity: 100, recordingPassId: 'pass-1' },
+            { id: 'lap-2', pitch: 72, startBeat: 5, duration: 1, velocity: 100, recordingPassId: 'pass-2' },
+        ];
+        project.takeLanes = {
+            lanes: [
+                {
+                    id: 'lane-midi',
+                    trackId: 'track-midi',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-midi',
+                            name: 'Lap 1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                            recordingPassId: 'pass-1',
+                        },
+                        {
+                            id: 'take-2',
+                            clipId: 'clip-midi',
+                            name: 'Lap 2',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            sourceOffsetBeats: 4,
+                            recordingPassId: 'pass-2',
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-2' }],
+                },
+            ],
+        };
+
+        expect(await applyImportedProjectData({ data: project })).toBe(true);
+        expect(
+            midiStore.value?.notesByClipId['clip-midi']?.map(({ startBeat, recordingPassId }) => [
+                startBeat,
+                recordingPassId,
+            ])
+        ).toEqual([
+            [1, 'pass-1'],
+            [5, 'pass-2'],
+        ]);
+        expect(
+            takeLaneStore.value?.lanes[0]?.takes.map(({ sourceOffsetBeats, recordingPassId }) => [
+                sourceOffsetBeats,
+                recordingPassId,
+            ])
+        ).toEqual([
+            [0, 'pass-1'],
+            [4, 'pass-2'],
+        ]);
     });
 
     it('rejects malformed hydration data without resetting the live project', async () => {

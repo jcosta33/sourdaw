@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    takeLaneStore: { value: null },
     trackStore: {
         get value() {
             return mocks.trackState;

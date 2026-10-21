@@ -38,7 +38,11 @@ export function recordChannelEvent(
     deps: RecordChannelEventDependencies,
     { trackId, channel, event, timeStamp }: RecordChannelEventInput
 ): void {
-    if (trackId === null || !isRecordingOnArmedTrack(deps, trackId)) {
+    if (
+        (typeof timeStamp === 'object' && timeStamp?.recordingAdmitted === true) ||
+        trackId === null ||
+        !isRecordingOnArmedTrack(deps, trackId)
+    ) {
         return;
     }
     const eventTime = resolveInputEventTime({ timeStamp });

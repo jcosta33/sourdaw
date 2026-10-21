@@ -1,3 +1,5 @@
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { sealMidiRecordingSession } from '#/modules/MIDI/useCases';
 import { logger } from '#/infra/logger/appLogger';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -70,7 +72,8 @@ function closeTakeAt(take: Take, endBeat: number): Take {
  */
 export async function stopRecording(
     atBeat?: number,
-    ending?: { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number }
+    ending?: { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number },
+    frozenMidi?: ReturnType<typeof sealMidiRecordingSession>
 ): Promise<void> {
     const clipIds = activeRecordingRef.current;
     activeRecordingRef.current = [];
@@ -86,6 +89,17 @@ export async function stopRecording(
     }
 
     const endBeat = atBeat ?? transportState.playheadPosition;
+    const hasMidi = trackState.tracks.some((track) =>
+        track.clips.some((clip) => clipIds.includes(clip.id) && clip.type === 'midi')
+    );
+    const midiRecordings =
+        frozenMidi ??
+        (hasMidi
+            ? sealMidiRecordingSession({
+                  audioTime: ending?.contextSeconds ?? getAudioContext().currentTime,
+                  timelineBeat: endBeat,
+              })
+            : []);
     const clipIdSet = new Set(clipIds);
     const lanes = takeLaneStore.value?.lanes ?? [];
     const finalizedMidiClips: Clip[] = [];
@@ -118,7 +132,18 @@ export async function stopRecording(
                 const minEnd = context.startBeat + 1;
                 const finalized = {
                     ...context,
-                    endBeat: Math.max(minEnd, endBeat, completedLoopPassEndBeat(lanes, context.id)),
+                    endBeat: Math.max(
+                        minEnd,
+                        endBeat,
+                        completedLoopPassEndBeat(lanes, context.id),
+                        ...midiRecordings
+                            .filter((recording) => recording.clipId === context.id)
+                            .flatMap((recording) =>
+                                recording.midiRecording.takeLanes.flatMap(({ lane }) =>
+                                    lane.takes.filter((take) => take.clipId === context.id).map((take) => take.endBeat)
+                                )
+                            )
+                    ),
                 };
                 if (finalized.type === 'midi') {
                     finalizedMidiClips.push(finalized);
@@ -159,7 +184,11 @@ export async function stopRecording(
 
     await Promise.all(
         finalizedMidiClips.map((clip) =>
-            commitRecording(clip).catch((error: unknown) => {
+            commitRecording(
+                clip,
+                undefined,
+                midiRecordings.find((recording) => recording.clipId === clip.id)?.midiRecording
+            ).catch((error: unknown) => {
                 logger.error(new Error('MIDI recording commit failed', { cause: error }));
                 // A commit that never landed must not leave a visible recording
                 // that no entry owns (#4439): retire the same provisional result

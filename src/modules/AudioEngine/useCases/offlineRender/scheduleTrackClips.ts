@@ -1,3 +1,4 @@
+import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases';
 import { getGainEnvelopeSeries, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { buildOfflineModulatorPlans, getAutomationLaneCeiling } from '#/modules/Automation/useCases';
@@ -694,7 +695,13 @@ export async function scheduleTrackClips({
             if (clip.type !== 'midi' || clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
-            const sourceNotes = midi.notesByClipId[clip.id];
+            const sourceNotes =
+                midi.notesByClipId[clip.id] &&
+                selectMidiRecordingPassNotes(midi.notesByClipId[clip.id]!, {
+                    recordingPassId: clip.recordingPassId,
+                    sourceStartBeat: clip.midiOffsetBeats ?? 0,
+                    sourceEndBeat: (clip.midiOffsetBeats ?? 0) + clip.endBeat - clip.startBeat,
+                });
             const clipVisualLength = clip.endBeat - clip.startBeat;
             if (!sourceNotes || clipVisualLength <= 0) {
                 continue;
@@ -802,7 +809,13 @@ export async function scheduleTrackClips({
         });
 
         if (clip.type === 'midi') {
-            const sourceNotes = midi.notesByClipId[clip.id];
+            const sourceNotes =
+                midi.notesByClipId[clip.id] &&
+                selectMidiRecordingPassNotes(midi.notesByClipId[clip.id]!, {
+                    recordingPassId: clip.recordingPassId,
+                    sourceStartBeat: clip.midiOffsetBeats ?? 0,
+                    sourceEndBeat: (clip.midiOffsetBeats ?? 0) + clip.endBeat - clip.startBeat,
+                });
             if (!sourceNotes) {
                 continue;
             }

@@ -826,6 +826,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            recordingPassId: 0,
             id: 0,
             clipId: 0,
             name: 0,
@@ -1700,6 +1701,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            recordingPassId: 0,
             id: 0,
             pitch: 1,
             startBeat: 1,
@@ -6068,6 +6070,16 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            data: 224,
+            takeLanes: 126,
+        },
+        required: ['data', 'takeLanes'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            midiRecording: 742,
             clip: 210,
         },
         required: ['clip'],
@@ -6457,9 +6469,9 @@ const schemaIdByActionType = {
     addYeastProcessor: 739,
     removeYeastProcessor: 740,
     reorderYeastProcessor: 741,
-    commitRecording: 742,
+    commitRecording: 743,
     discardRecording: 202,
-    restoreRecording: 743,
+    restoreRecording: 744,
 } as const satisfies Readonly<Record<AppActionType, number>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

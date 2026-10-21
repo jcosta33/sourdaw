@@ -1,4 +1,5 @@
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { isRecordingPassId } from '#/utils/recordingPassId';
 
 import {
     type ProjectMidi,
@@ -23,6 +24,9 @@ function hydrateProjectMidiNote(note: ProjectMidiNote): RuntimeNote {
     };
     if (note.expression) {
         hydrated.expression = structuredClone(note.expression);
+    }
+    if (!isRecordingPassId(note.recordingPassId)) {
+        delete hydrated.recordingPassId;
     }
     return hydrated;
 }

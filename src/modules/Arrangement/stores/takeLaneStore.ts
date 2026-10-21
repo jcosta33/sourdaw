@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+import { isRecordingPassId } from '#/utils/recordingPassId';
 import {
     AutomergeStorageWriteConflictError,
     createAutomergeStorage,
@@ -26,6 +27,7 @@ const TAKE_LANE_REQUIRED_KEYS = ['id', 'trackId', 'takes', 'activeCompRegions'] 
 const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId'] as const;
 const TAKE_KEYS = ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'] as const;
 const TAKE_OPTIONAL_KEYS = [
+    'recordingPassId',
     'sourceOffsetBeats',
     'sourceOffsetSeconds',
     'passAnchorSeconds',
@@ -92,6 +94,7 @@ function is_valid_take(value: unknown): value is Take {
         value.endBeat >= value.startBeat &&
         'selected' in value &&
         typeof value.selected === 'boolean' &&
+        (!('recordingPassId' in value) || isRecordingPassId(value.recordingPassId)) &&
         // A take without the field reads at its clip's origin; a take with a
         // malformed one is dropped whole, like any other malformed take field.
         (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
@@ -140,6 +143,9 @@ function normalize_take(take: Take): Take {
         endBeat: take.endBeat,
         selected: take.selected,
     };
+    if (isRecordingPassId(take.recordingPassId)) {
+        sanitized.recordingPassId = take.recordingPassId;
+    }
     if (take.sourceOffsetBeats !== undefined) {
         sanitized.sourceOffsetBeats = take.sourceOffsetBeats;
     }

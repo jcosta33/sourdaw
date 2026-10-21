@@ -1,4 +1,5 @@
 import { isChordTrackState, isGrooveTemplateState, isValidMidiNoteExpression } from '#/modules/MIDI/stores';
+import { isRecordingPassId } from '#/utils/recordingPassId';
 
 import { isProductionBrief } from '../../../models/ProductionBrief';
 import {
@@ -257,6 +258,7 @@ function isTransport(value: unknown): value is ProjectTransport {
 function isMidiNote(value: unknown): boolean {
     return (
         isRecord(value) &&
+        (!Object.hasOwn(value, 'recordingPassId') || isRecordingPassId(value.recordingPassId)) &&
         typeof value.id === 'string' &&
         hasType({
             record: value,
@@ -673,8 +675,14 @@ function isTake(value: unknown): boolean {
         hasType({ record: value, keys: ['id', 'clipId', 'name'], type: 'string' }) &&
         hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
         typeof value.selected === 'boolean' &&
+        (!Object.hasOwn(value, 'recordingPassId') || isRecordingPassId(value.recordingPassId)) &&
         (!Object.hasOwn(value, 'sourceOffsetBeats') || finiteNonNegative(value.sourceOffsetBeats)) &&
         (!Object.hasOwn(value, 'sourceOffsetSeconds') || finiteNonNegative(value.sourceOffsetSeconds)) &&
+        (!Object.hasOwn(value, 'passSourceEndSeconds') ||
+            (finiteNonNegative(value.passSourceEndSeconds) &&
+                hasDepth &&
+                typeof value.passDepthSeconds === 'number' &&
+                value.passSourceEndSeconds > value.passDepthSeconds)) &&
         ((!hasAnchor && !hasDepth) ||
             (hasAnchor &&
                 hasDepth &&

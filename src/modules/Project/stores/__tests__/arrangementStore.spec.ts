@@ -82,6 +82,55 @@ function createValidSnapshot(id: string): ArrangementSnapshot {
 }
 
 describe('sanitize_arrangement_store_state', () => {
+    it('keeps matching pass identities in a peer arrangement snapshot and strips malformed identities', () => {
+        const snapshot = createValidSnapshot('peer');
+        snapshot.midi.notesByClipId.clip = [
+            { id: 'lap-1', pitch: 60, startBeat: 1, duration: 1, velocity: 100, recordingPassId: 'pass-1' },
+            { id: 'lap-2', pitch: 72, startBeat: 5, duration: 1, velocity: 100, recordingPassId: 'pass-2' },
+        ];
+        snapshot.takeLanes = {
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: 'track',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip',
+                            name: 'Lap 1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                            recordingPassId: 'pass-1',
+                        },
+                        {
+                            id: 'take-2',
+                            clipId: 'clip',
+                            name: 'Lap 2',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            sourceOffsetBeats: 4,
+                            recordingPassId: 'pass-2',
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-2' }],
+                },
+            ],
+        };
+        const exact = { arrangements: [snapshot], activeArrangementId: 'peer' };
+        expect(sanitize_arrangement_store_state(exact)).toBe(exact);
+
+        const malformed = structuredClone(exact);
+        malformed.arrangements[0]!.midi.notesByClipId.clip![0]!.recordingPassId = ' pass-1 ';
+        malformed.arrangements[0]!.takeLanes!.lanes[0]!.takes[0]!.recordingPassId = ' pass-1 ';
+        const sanitized = sanitize_arrangement_store_state(malformed).arrangements[0]!;
+        expect(sanitized.midi.notesByClipId.clip?.[0]).not.toHaveProperty('recordingPassId');
+        expect(sanitized.midi.notesByClipId.clip?.[1]?.recordingPassId).toBe('pass-2');
+        expect(sanitized.takeLanes?.lanes[0]?.takes.map(({ recordingPassId }) => recordingPassId)).toEqual(['pass-2']);
+    });
+
     it('keeps valid saved MIDI identity but excludes malformed expression from inactive snapshots', () => {
         const valid = createValidSnapshot('valid');
         const goodNote = {

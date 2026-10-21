@@ -3,7 +3,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -11,6 +11,7 @@ import { getNotesForClip } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 
+import { projectPianoRollRecordingPassNotes } from '../../helpers/pianoRollRecordingPass';
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
 /**
@@ -124,7 +125,11 @@ const Harness = ({ args }: { args: HarnessArgs }): ReactElement => {
             }),
         [args.clipId]
     );
-    const handlers = usePianoRollInteractions({ ...args, canvasRef, notes });
+    const handlers = usePianoRollInteractions({
+        ...args,
+        canvasRef,
+        notes: projectPianoRollRecordingPassNotes(args.clipId, notes),
+    });
     return (
         <canvas
             ref={canvasRef}
@@ -198,6 +203,7 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
 
     afterEach(() => {
         trackStore.set({ tracks: [], selectedTrackId: null });
+        takeLaneStore.set({ lanes: [] });
     });
 
     it('undoes a join without reverting a peer expression edit', async () => {
@@ -510,5 +516,104 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
             }
             expect(getNotesForClip('clip-1')).toHaveLength(1);
         });
+    });
+});
+
+describe('selected recorded pass editor source mapping', () => {
+    const lap1 = { id: 'lap1', pitch: 60, startBeat: 1, duration: 1, velocity: 100, recordingPassId: 'pass-1' };
+    const lap2 = { ...expressiveNote, id: 'lap2', startBeat: 5, duration: 1, recordingPassId: 'pass-2' };
+    beforeEach(() => {
+        clearUndoHistory();
+        preferencesStore.set({ ...defaultPreferences, defaultVelocity: PREFERRED_DEFAULT_VELOCITY });
+        const track = createTrack({ id: 'track-1', name: 'Cycle', kind: 'midi' });
+        track.clips.push({
+            id: 'clip-1',
+            trackId: 'track-1',
+            name: 'Cycle',
+            type: 'midi',
+            startBeat: 0,
+            endBeat: 4,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#fff',
+            locked: false,
+            muted: false,
+        });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: track.id,
+                    activeCompRegions: [],
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-1',
+                            name: 'Lap 1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                            recordingPassId: 'pass-1',
+                        },
+                        {
+                            id: 'take-2',
+                            clipId: 'clip-1',
+                            name: 'Lap 2',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            sourceOffsetBeats: 4,
+                            recordingPassId: 'pass-2',
+                        },
+                    ],
+                },
+            ],
+        });
+        seedStore({ 'clip-1': [lap1, lap2] });
+    });
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null });
+        takeLaneStore.set({ lanes: [] });
+    });
+
+    it('moves the selected ID from wrapped beat 1 to source beat 6 and Undo restores its exact row', async () => {
+        expect(
+            projectPianoRollRecordingPassNotes('clip-1', getNotesForClip('clip-1')).map((note) => [
+                note.id,
+                note.startBeat,
+            ])
+        ).toEqual([['lap2', 1]]);
+        const { canvas } = renderRoll({ selectedNoteIds: new Set(['lap2']) });
+        fireEvent.mouseDown(canvas, { clientX: BEAT_W + 20, clientY: yForPitch(60) });
+        fireEvent.mouseMove(canvas, { clientX: 2 * BEAT_W + 20, clientY: yForPitch(60) });
+        fireEvent.mouseUp(canvas, { clientX: 2 * BEAT_W + 20, clientY: yForPitch(60) });
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'lap2')).toEqual({ ...lap2, startBeat: 6 });
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'lap1')).toEqual(lap1);
+        await undoSync();
+        expect(getNotesForClip('clip-1')).toEqual([lap1, lap2]);
+        await redoSync();
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'lap2')?.startBeat).toBe(6);
+    });
+
+    it('draws in the selected source window and resizes only its note, with identity-preserving Undo', async () => {
+        const { canvas } = renderRoll({ selectedNoteIds: new Set(['lap2']) });
+        fireEvent.mouseDown(canvas, { clientX: 2 * BEAT_W - 4, clientY: yForPitch(60) });
+        fireEvent.mouseMove(canvas, { clientX: 3 * BEAT_W - 4, clientY: yForPitch(60) });
+        fireEvent.mouseUp(canvas, { clientX: 3 * BEAT_W - 4, clientY: yForPitch(60) });
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'lap2')?.duration).toBe(2);
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'lap1')).toEqual(lap1);
+        await undoSync();
+        expect(getNotesForClip('clip-1')).toEqual([lap1, lap2]);
+        fireEvent.mouseDown(canvas, { clientX: 3 * BEAT_W + 4, clientY: yForPitch(72) });
+        fireEvent.mouseUp(canvas, { clientX: 3 * BEAT_W + 4, clientY: yForPitch(72) });
+        const created = getNotesForClip('clip-1').find((note) => note.id !== 'lap1' && note.id !== 'lap2');
+        expect(created).toMatchObject({ startBeat: 7, pitch: 72, recordingPassId: 'pass-2' });
+        await undoSync();
+        expect(getNotesForClip('clip-1')).toEqual([lap1, lap2]);
+        await redoSync();
+        expect(getNotesForClip('clip-1').find((note) => note.id === created?.id)).toEqual(created);
     });
 });

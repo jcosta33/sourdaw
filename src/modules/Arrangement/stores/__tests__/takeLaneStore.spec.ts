@@ -49,6 +49,36 @@ async function flush_pending_frame(): Promise<void> {
 }
 
 describe('sanitize_take_lane_store_state', () => {
+    it('keeps valid pass identities, leaves legacy takes absent, and rejects malformed take identities', () => {
+        const take = {
+            id: 'take-1',
+            clipId: 'clip-1',
+            name: 'First lap',
+            startBeat: 0,
+            endBeat: 4,
+            selected: true,
+            sourceOffsetBeats: 0,
+        };
+        const lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [
+                { ...take, recordingPassId: 'pass-1' },
+                { ...take, id: 'take-2', name: 'Legacy', selected: false },
+                { ...take, id: 'take-3', recordingPassId: ' pass-3 ' },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+        };
+
+        const sanitized = sanitize_take_lane_store_state({ lanes: [lane] });
+        expect(sanitized.lanes[0]?.takes.map(({ id, recordingPassId }) => [id, recordingPassId])).toEqual([
+            ['take-1', 'pass-1'],
+            ['take-2', undefined],
+        ]);
+        expect(sanitized.lanes[0]?.takes[1]).not.toHaveProperty('recordingPassId');
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+    });
+
     it('should reset malformed persisted take-lane state', () => {
         expect(sanitize_take_lane_store_state('corrupt')).toEqual(defaultTakeLaneStoreState);
     });

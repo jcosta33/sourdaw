@@ -1,3 +1,4 @@
+import { selectMidiRecordingPassNotes } from '#/modules/MIDI/useCases';
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getSynthParamsForTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
@@ -57,7 +58,6 @@ import { restoreStoredControllers } from './restoreStoredControllers';
 import { createSameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
-import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
 import { selectMidiNotesForLoopWindow } from './selectMidiNotesForLoopWindow';
 
 // Worklet synth device types that share a common noteOn/noteOff controls interface.
@@ -996,14 +996,16 @@ export async function scheduleMidiNotes(
         }
 
         const resumesAfterMute = takeResumeAfterMute(track);
-        const windowMidiClips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
+        const resolvedClips = resolveClipsWithComping(track.id, track.clips);
+        const windowMidiClips = resolvedClips.filter(
+            (clip) => !clip.muted && clip.type === 'midi' && clip.startBeat < toBeat && clip.endBeat > fromBeat
+        );
         if (windowMidiClips.length === 0) {
             restoreStoredControllersAtGap(track, resumesAfterMute);
             continue;
         }
 
-        const resolvedClips = resolveClipsWithComping(track.id, windowMidiClips);
-        const activeMidiClips = resolvedClips.filter(
+        const activeMidiClips = windowMidiClips.filter(
             (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
         );
         if (activeMidiClips.length === 0) {
@@ -1023,7 +1025,13 @@ export async function scheduleMidiNotes(
 
         if (yeastDevice) {
             for (const clip of activeMidiClips) {
-                const sourceNotes = midiState.notesByClipId[clip.id];
+                const sourceNotes =
+                    midiState.notesByClipId[clip.id] &&
+                    selectMidiRecordingPassNotes(midiState.notesByClipId[clip.id]!, {
+                        recordingPassId: clip.recordingPassId,
+                        sourceStartBeat: clip.midiOffsetBeats ?? 0,
+                        sourceEndBeat: (clip.midiOffsetBeats ?? 0) + clip.endBeat - clip.startBeat,
+                    });
                 if (!sourceNotes) {
                     continue;
                 }
@@ -1176,7 +1184,13 @@ export async function scheduleMidiNotes(
         const posts = createSameFramePostQueue();
         const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
         for (const clip of activeMidiClips) {
-            const notes = midiState.notesByClipId[clip.id];
+            const notes =
+                midiState.notesByClipId[clip.id] &&
+                selectMidiRecordingPassNotes(midiState.notesByClipId[clip.id]!, {
+                    recordingPassId: clip.recordingPassId,
+                    sourceStartBeat: clip.midiOffsetBeats ?? 0,
+                    sourceEndBeat: (clip.midiOffsetBeats ?? 0) + clip.endBeat - clip.startBeat,
+                });
             if (!notes) {
                 continue;
             }

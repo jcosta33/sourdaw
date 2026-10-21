@@ -28,7 +28,7 @@ type StageRecordingTakeInput = {
  * above a clip no entry covers — the split this gesture exists to close — and an
  * incomplete capture would leave a replayable take behind. `addTake` and
  * `addTakeLane` stay the history-bearing routes for every non-recording gesture,
- * and for armed MIDI tracks, whose notes are committed by their own actions.
+ * while MIDI cycle-pass identities are minted by their admission session.
  */
 export function stageRecordingTake(input: StageRecordingTakeInput): void {
     const state = takeLaneStore.value;

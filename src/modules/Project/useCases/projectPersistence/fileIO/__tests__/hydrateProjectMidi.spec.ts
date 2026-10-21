@@ -20,6 +20,14 @@ const midi: MidiStoreState = {
 };
 
 describe('hydrateProjectMidi', () => {
+    it('discards a malformed optional pass identity during direct hydration', () => {
+        const source = serializeProjectMidi(midi);
+        source.notesByClipId['clip-1']![0]!.recordingPassId = ' pass-1 ';
+
+        const hydrated = hydrateProjectMidi(source);
+        expect(hydrated.notesByClipId['clip-1']?.[0]).not.toHaveProperty('recordingPassId');
+    });
+
     it('preserves absent slide and explicit minimum as distinct saved note states', () => {
         const saved = serializeProjectMidi({
             notesByClipId: {

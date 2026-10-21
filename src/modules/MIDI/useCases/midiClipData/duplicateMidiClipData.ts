@@ -22,10 +22,13 @@ export function duplicateMidiClipData({ copies }: DuplicateMidiClipDataInput): (
     for (const { sourceClipId, targetClipId } of copies) {
         const sourceNotes = state.notesByClipId[sourceClipId];
         if (sourceNotes !== undefined && sourceNotes.length > 0) {
-            notesByClipId[targetClipId] = sourceNotes.map((note) => ({
-                ...note,
-                id: `note-dup-${crypto.randomUUID()}`,
-            }));
+            notesByClipId[targetClipId] = sourceNotes.map((note) => {
+                // Track duplication does not duplicate the source take lane.
+                // A copied note therefore has no matching recorded pass take.
+                const copy = { ...note, id: `note-dup-${crypto.randomUUID()}` };
+                delete copy.recordingPassId;
+                return copy;
+            });
             hasDuplicatedData = true;
         }
 

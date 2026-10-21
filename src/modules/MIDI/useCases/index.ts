@@ -187,3 +187,13 @@ export { getWebMidiInputHandlers } from './getWebMidiInputHandlers';
 
 // ── MIDI Effect Plugins ───────────────────────────────────────────────────────
 export { MIDI_EFFECT_FACTORIES } from './midiEffectPlugins/registry';
+
+export {
+    beginMidiRecordingSession,
+    advanceMidiRecordingPass,
+    admitMidiRecordingEvent,
+    sealMidiRecordingSession,
+    cancelMidiRecordingSession,
+} from './midiRecordingSession';
+
+export { selectMidiRecordingPassNotes } from './midiClipData/selectMidiRecordingPassNotes';

@@ -7,6 +7,8 @@ export type ResolvedClip = Track['clips'][number] & {
     regionStartBeat: number;
     regionEndBeat: number;
     sourceStartBeat: number;
+    /** Projection only: the onset pass this fragment may sound. */
+    recordingPassId?: string;
 };
 
 export function resolveTrackClipsWithComping(
@@ -33,7 +35,26 @@ export function resolveTrackClipsWithComping(
     }
 
     const lane = laneState.lanes.find((takeLane) => takeLane.trackId === trackId);
-    if (!lane || lane.activeCompRegions.length === 0) {
+    const selectedPass = lane?.takes.find((take) => take.selected && take.recordingPassId !== undefined);
+    // Recorded-pass promotion is derived from the guarded selection. Undo and
+    // peer changes therefore publish the audible selection atomically too.
+    const regions =
+        selectedPass && lane?.activeCompRegions.length === 0
+            ? [
+                  {
+                      takeId: selectedPass.id,
+                      startBeat: Math.min(
+                          selectedPass.startBeat,
+                          clips.find((clip) => clip.id === selectedPass.clipId)?.startBeat ?? selectedPass.startBeat
+                      ),
+                      endBeat: Math.max(
+                          selectedPass.endBeat,
+                          clips.find((clip) => clip.id === selectedPass.clipId)?.endBeat ?? selectedPass.endBeat
+                      ),
+                  },
+              ]
+            : (lane?.activeCompRegions ?? []);
+    if (!lane || regions.length === 0) {
         return clips.map((clip) => ({
             ...clip,
             regionStartBeat: clip.startBeat,
@@ -48,7 +69,7 @@ export function resolveTrackClipsWithComping(
 
     const resolvedClips: ResolvedClip[] = [];
 
-    for (const region of lane.activeCompRegions) {
+    for (const region of regions) {
         const take = lane.takes.find((candidateTake) => candidateTake.id === region.takeId);
         if (!take) {
             continue;
@@ -87,10 +108,11 @@ export function resolveTrackClipsWithComping(
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
             sourceStartBeat: media.sourceStartBeat,
+            ...(take.recordingPassId === undefined ? {} : { recordingPassId: take.recordingPassId }),
         });
     }
 
-    const sortedRegions = lane.activeCompRegions;
+    const sortedRegions = regions;
 
     for (const clip of clips) {
         const gaps: { start: number; end: number }[] = [];

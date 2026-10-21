@@ -1,3 +1,4 @@
+import { sealMidiRecordingSession } from '#/modules/MIDI/useCases';
 import { stopRecording } from '#/modules/Arrangement/useCases';
 
 import { captureRecordingEnd } from './captureRecordingEnd';
@@ -16,6 +17,12 @@ import { recordingLifecycle } from './recordingLifecycle';
  */
 export function finalizeAutomaticRecording(atBeat: number): void {
     const ending = captureRecordingEnd();
+    const frozenMidi = ending
+        ? sealMidiRecordingSession({
+              audioTime: ending.contextSeconds,
+              timelineBeat: ending.beatAtContextSeconds(ending.contextSeconds),
+          })
+        : undefined;
     recordingLifecycle.endRecording();
-    recordingLifecycle.trackCommit(stopRecording(atBeat, ending));
+    recordingLifecycle.trackCommit(stopRecording(atBeat, ending, frozenMidi));
 }

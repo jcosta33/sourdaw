@@ -1,3 +1,4 @@
+import { advanceMidiRecordingPass } from '#/modules/MIDI/useCases';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
 import {
@@ -195,6 +196,11 @@ function stageLoopWrapTakes(
     if (recordingClipIds.size === 0) {
         return;
     }
+    advanceMidiRecordingPass({
+        audioTime: passEndContextSeconds,
+        fromBeat: boundary.endBeat ?? current.loopEnd,
+        toBeat: boundary.nextPassStartBeat ?? current.loopStart,
+    });
     const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
     for (const track of armedTracks) {
         // The take must reference the clip that is actually recording
@@ -204,7 +210,7 @@ function stageLoopWrapTakes(
         // the comp at all. One clip records across every pass until
         // stopRecording; each wrap take names that clip.
         const recordingClip = track.clips.find((clip) => recordingClipIds.has(clip.id));
-        if (!recordingClip) {
+        if (!recordingClip || recordingClip.type === 'midi') {
             continue;
         }
         const lane = takeLaneStore.value?.lanes.find((length) => length.trackId === track.id);
@@ -968,6 +974,11 @@ export function startPlayheadScheduler(): void {
                 )
             );
             captureClocks.register();
+            advanceMidiRecordingPass({
+                audioTime: passEndContextSeconds,
+                fromBeat: boundary.endBeat ?? current.loopEnd,
+                toBeat: boundary.nextPassStartBeat ?? current.loopStart,
+            });
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
                 if (track.kind === 'midi') {

@@ -17,7 +17,9 @@ type OptionalStringValue = { readonly present: false } | { readonly present: tru
 
 type OptionalNumberValue = { readonly present: false } | { readonly present: true; readonly value: number };
 
-type OptionalTakeNumberField = 'sourceOffsetBeats' | 'sourceOffsetSeconds' | 'passAnchorSeconds' | 'passDepthSeconds' | 'passSourceEndSeconds';
+type OptionalTakeStringField = 'recordingPassId';
+type OptionalTakeNumberField =
+    'sourceOffsetBeats' | 'sourceOffsetSeconds' | 'passAnchorSeconds' | 'passDepthSeconds' | 'passSourceEndSeconds';
 
 type TakeFieldOperation =
     | {
@@ -42,6 +44,14 @@ type TakeFieldOperation =
           readonly takeId: string;
           readonly expected: boolean;
           readonly replacement: boolean;
+      }
+    | {
+          readonly kind: 'take-optional-string-field';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly field: OptionalTakeStringField;
+          readonly expected: OptionalStringValue;
+          readonly replacement: OptionalStringValue;
       }
     | {
           readonly kind: 'take-optional-number-field';
@@ -140,6 +150,13 @@ function optionalString(source: TakeLane, field: 'automationLaneId'): OptionalSt
     return { present: false };
 }
 
+function optionalTakeString(source: Take, field: OptionalTakeStringField): OptionalStringValue {
+    if (Object.hasOwn(source, field) && source[field] !== undefined) {
+        return { present: true, value: source[field] };
+    }
+    return { present: false };
+}
+
 function optionalNumber(source: Take, field: OptionalTakeNumberField): OptionalNumberValue {
     if (Object.hasOwn(source, field) && source[field] !== undefined) {
         return { present: true, value: source[field] };
@@ -153,6 +170,18 @@ function previousIdentity<Item extends { readonly id: string }>(items: readonly 
 
 function captureTakeFieldOperations(laneId: string, before: Take, next: Take): TakeFieldOperation[] {
     const operations: TakeFieldOperation[] = [];
+    const beforeRecordingPassId = optionalTakeString(before, 'recordingPassId');
+    const nextRecordingPassId = optionalTakeString(next, 'recordingPassId');
+    if (!valuesEqual(beforeRecordingPassId, nextRecordingPassId)) {
+        operations.push({
+            kind: 'take-optional-string-field',
+            laneId,
+            takeId: before.id,
+            field: 'recordingPassId',
+            expected: beforeRecordingPassId,
+            replacement: nextRecordingPassId,
+        });
+    }
     for (const field of ['clipId', 'name'] as const) {
         if (before[field] !== next[field]) {
             operations.push({
@@ -433,7 +462,17 @@ function applyTakeFieldOperation(
         return undefined;
     }
     let replacementTake: Take;
-    if (operation.kind === 'take-optional-number-field') {
+    if (operation.kind === 'take-optional-string-field') {
+        if (!valuesEqual(optionalTakeString(take, operation.field), operation.expected)) {
+            return undefined;
+        }
+        replacementTake = cloneValue(take);
+        if (operation.replacement.present) {
+            replacementTake[operation.field] = operation.replacement.value;
+        } else {
+            delete replacementTake[operation.field];
+        }
+    } else if (operation.kind === 'take-optional-number-field') {
         if (!valuesEqual(optionalNumber(take, operation.field), operation.expected)) {
             return undefined;
         }

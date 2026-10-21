@@ -103,7 +103,9 @@ export const handleWebMidiNoteOn = inject({
             const noteInstanceId = `${targetTrackId}:${channel}:${note}:${Math.round(eventTime * engine.context.sampleRate)}:${++nextNoteInstanceSerial}`;
             const pitchBendRangeSemitones = initialBendRangeSemitones;
 
+            const recordingWitness = typeof timeStamp === 'object' ? timeStamp.recordingWitness : undefined;
             const noteData: ActiveNoteData = {
+                ...(recordingWitness === undefined ? {} : { recordingWitness }),
                 startTime: eventTime,
                 startBeat: transport ? admittedBeat : 0,
                 channel,

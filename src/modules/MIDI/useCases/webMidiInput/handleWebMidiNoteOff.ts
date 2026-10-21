@@ -378,6 +378,15 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
+        // The session journal already captured this release before instrument work.
+        // A sealed witness remains a fence even if another recording has started.
+        if (
+            noteData.recordingWitness !== undefined ||
+            (typeof timeStamp === 'object' && timeStamp.recordingAdmitted === true)
+        ) {
+            return;
+        }
+
         // The note belongs to the clip holding its admitted onset and is stored
         // at the beat its heard instant maps to, exactly as controller events
         // of the same take are.

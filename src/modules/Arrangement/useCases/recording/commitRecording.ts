@@ -1,3 +1,5 @@
+import { type AppAction } from '#/utils/handlerContract';
+
 import { executeAppAction } from '#/modules/Command/useCases';
 import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 
@@ -121,9 +123,16 @@ function coverRecordedPasses(clip: Clip, capture: RecordedCapture): Clip {
  * would leave the staged clip, take, and notes behind with no entry and call it
  * a success (#4439). The wrapper keeps that behaviour for every other action.
  */
-export async function commitRecording(clip: Clip, capture?: RecordedCapture): Promise<void> {
+export async function commitRecording(
+    clip: Clip,
+    capture?: RecordedCapture,
+    midiRecording?: Extract<AppAction, { type: 'commitRecording' }>['payload']['midiRecording']
+): Promise<void> {
     if (capture === undefined) {
-        await executeAppAction({ type: 'commitRecording', payload: { clip } });
+        await executeAppAction({
+            type: 'commitRecording',
+            payload: { clip, ...(midiRecording === undefined ? {} : { midiRecording }) },
+        });
         recordingPassTiming.retire(clip.id);
         return;
     }

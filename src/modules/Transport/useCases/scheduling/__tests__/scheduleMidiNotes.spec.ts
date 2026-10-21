@@ -130,6 +130,9 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    selectMidiRecordingPassNotes: (
+        ...args: Parameters<(typeof import('#/modules/MIDI/useCases'))['selectMidiRecordingPassNotes']>
+    ) => realMidiUseCases.selectMidiRecordingPassNotes(...args),
     getChordAtBeat: vi.fn(),
     projectClipControllerEvents: vi.fn(),
     projectClipControllerRestore: vi.fn(),
@@ -149,6 +152,11 @@ vi.mock('../scheduleFrozenTrack', () => ({
  * collection, so the cost of evaluating the real barrel never lands inside a case's
  * own time limit.
  */
+const realArrangementUseCases = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+    '#/modules/Arrangement/useCases'
+);
+const realArrangementStores =
+    await vi.importActual<typeof import('#/modules/Arrangement/stores')>('#/modules/Arrangement/stores');
 const realMidiUseCases = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
 
 function midiTrack(overrides: Record<string, unknown> = {}) {
@@ -366,6 +374,88 @@ describe('scheduleMidiNotes', () => {
         }
 
         expect(vi.mocked(scheduleFrozenTrack).mock.calls[0]?.[4]).toBe(4.05);
+    });
+
+    it('sounds only the selected partial cycle pass after actual comp and loop projection', async () => {
+        const track = midiTrack({ clips: [midiClip({ loopEnabled: true, loopLength: 4 })] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        realArrangementStores.takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 't1',
+                            clipId: 'clip-1',
+                            name: 'Lap 1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                            recordingPassId: 'pass-1',
+                        },
+                        {
+                            id: 't2',
+                            clipId: 'clip-1',
+                            name: 'Lap 2',
+                            startBeat: 0,
+                            endBeat: 2,
+                            selected: true,
+                            sourceOffsetBeats: 4,
+                            recordingPassId: 'pass-2',
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 't2' }],
+                },
+            ],
+        });
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 7,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'lap1-held', pitch: 60, startBeat: 3, duration: 8, velocity: 100, recordingPassId: 'pass-1' },
+                    { id: 'lap1-late', pitch: 64, startBeat: 3, duration: 1, velocity: 100, recordingPassId: 'pass-1' },
+                    {
+                        id: 'lap2',
+                        pitch: 72,
+                        startBeat: 5,
+                        duration: 4,
+                        velocity: 100,
+                        recordingPassId: 'pass-2',
+                        pressure: 30,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 0.5, value: 60 },
+                                { offsetBeats: 2, value: 90 },
+                            ],
+                        },
+                    },
+                ],
+            },
+        };
+        vi.mocked(resolveClipsWithComping).mockImplementation(realArrangementUseCases.resolveClipsWithComping);
+        vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
+        try {
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+            expect(vi.mocked(scheduleNote).mock.calls.map((call) => call[2])).toEqual([72]);
+            expect(vi.mocked(scheduleNote).mock.calls[0]?.[3]).toBe(0.5);
+            expect(vi.mocked(scheduleNote).mock.calls[0]?.[4]).toBe(0.5);
+            expect(shouldPlayProbability.mock.calls.map(([input]) => input.eventId)).toEqual(['lap2']);
+            expect(projectClipMidiEvents).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    events: [
+                        expect.objectContaining({
+                            id: 'lap2',
+                            duration: 1,
+                            expression: { pressure: [{ offsetBeats: 0.5, value: 60 }] },
+                        }),
+                    ],
+                })
+            );
+        } finally {
+            realArrangementStores.takeLaneStore.set({ lanes: [] });
+        }
     });
 
     // audit MD-6 — the built-in synth voice is a bare oscillator written into

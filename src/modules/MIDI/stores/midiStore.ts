@@ -2,6 +2,7 @@ import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { type Store } from '#/infra/store/types';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
+import { isRecordingPassId } from '#/utils/recordingPassId';
 
 import {
     isValidMidiArticulation,
@@ -99,6 +100,7 @@ function isValidMidiNote(value: unknown): value is MidiNote {
 
 function hasValidMidiNoteOptionals(value: MidiNote): boolean {
     return (
+        (!('recordingPassId' in value) || isRecordingPassId(value.recordingPassId)) &&
         (!('probability' in value) || value.probability === undefined || isFiniteNumber(value.probability)) &&
         (!('pressure' in value) || value.pressure === undefined || isFiniteNumber(value.pressure)) &&
         (!('slide' in value) || value.slide === undefined || isFiniteNumber(value.slide)) &&
@@ -159,6 +161,10 @@ function normalizeMidiNote(note: MidiNote): MidiNote {
         duration: note.duration,
         velocity: note.velocity,
     };
+
+    if (isRecordingPassId(note.recordingPassId)) {
+        normalizedNote.recordingPassId = note.recordingPassId;
+    }
 
     if (isFiniteNumber(note.probability)) {
         normalizedNote.probability = note.probability;
