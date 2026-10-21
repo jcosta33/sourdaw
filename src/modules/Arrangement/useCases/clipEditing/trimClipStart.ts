@@ -1,4 +1,4 @@
-import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
+import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 import { loopOriginEntry } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
@@ -32,27 +32,26 @@ function loopedMidiOffsetBeats(clip: Clip, offset: number): number {
  * midiOffsetBeats` against the loop length (selectMidiNotesForLoopWindow,
  * getGrooveProjection, and scheduleMidiNotes' admission test), so wrapping the
  * offset down by `k * loopLength` moves that boundary and silently drops notes
- * the raw advance keeps. Shifting each stored note by exactly the distance the
+ * the raw advance keeps. Shifting each stored row by exactly the distance the
  * wrap moved the offset keeps `note.startBeat - midiOffsetBeats` at the raw
  * advance's figure — phase, audible window position, and drop set unchanged.
- * Kept notes hold that relative inside `[0, loopLength)`, so the shift cannot
- * move a sounding note's media below zero.
+ * Every content-coordinate row lane moves together: the controller projector
+ * reads its CC rows against the same `midiOffsetBeats`-relative region as the
+ * note readers, so a row left behind while its clip crosses a whole loop fires
+ * a loop away or never (a whole-loop trim must still fire the press at every
+ * pass its note sounds). `shiftClipMidiNotes` carries notes, CC, and pitch
+ * bends by the one delta and no-ops when the clip stores no rows; rows keep
+ * their raw relative exactly, which under the anchored window may store a
+ * wrapped head below zero (a clip trimmed a whole loop past its anchor keeps
+ * its head row at `−advance`). A zero shift moves nothing: the unlooped and
+ * sub-loop trims the wrap never re-bases keep their rows byte-identical.
  */
-function shiftNotesWithOffsetWrap(clip: Clip, rawOffsetBeats: number, wrappedOffsetBeats: number): void {
+function shiftMidiRowsWithOffsetWrap(clip: Clip, rawOffsetBeats: number, wrappedOffsetBeats: number): void {
     const shiftBeats = wrappedOffsetBeats - rawOffsetBeats;
     if (shiftBeats === 0) {
         return;
     }
-    const notes = getNotesForClip(clip.id);
-    if (notes.length === 0) {
-        return;
-    }
-    setNotesForClip(
-        clip.id,
-        notes.map((note) => {
-            return { ...note, startBeat: note.startBeat + shiftBeats };
-        })
-    );
+    shiftClipMidiNotes(clip.id, shiftBeats);
 }
 
 /**
@@ -120,7 +119,7 @@ export function trimClipStart(clipId: string, newStartBeat: number, anchorBeat?:
             if (context.type === 'midi') {
                 const rawOffsetBeats = (context.midiOffsetBeats ?? 0) + delta;
                 const midiOffsetBeats = loopedMidiOffsetBeats(updated, rawOffsetBeats);
-                shiftNotesWithOffsetWrap(updated, rawOffsetBeats, midiOffsetBeats);
+                shiftMidiRowsWithOffsetWrap(updated, rawOffsetBeats, midiOffsetBeats);
                 return { ...updated, midiOffsetBeats };
             }
             return updated;
