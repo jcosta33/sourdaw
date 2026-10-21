@@ -13,6 +13,7 @@ type BrowserFileHandle = {
     createWritable: () => Promise<{
         write: (data: Uint8Array) => Promise<void>;
         close: () => Promise<void>;
+        abort: () => Promise<void>;
     }>;
 };
 
@@ -135,6 +136,7 @@ describe('handleExportDawProject', () => {
         const writable = {
             close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
             write: vi.fn<(data: Uint8Array) => Promise<void>>().mockResolvedValue(undefined),
+            abort: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const handle = {
             createWritable: vi.fn<() => Promise<typeof writable>>().mockResolvedValue(writable),
@@ -171,6 +173,7 @@ describe('handleExportDawProject', () => {
                 closeStarted();
                 return closeFinished;
             }),
+            abort: vi.fn().mockResolvedValue(undefined),
         };
         vi.stubGlobal(
             'showSaveFilePicker',
@@ -196,6 +199,71 @@ describe('handleExportDawProject', () => {
         expect(logger.error).not.toHaveBeenCalled();
         expect(logger.warn).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['createWritable', new DOMException('Could not open stream', 'AbortError')],
+        ['write', new DOMException('Write aborted', 'AbortError')],
+        ['write', new Error('disk full')],
+        ['close', new DOMException('Close aborted', 'AbortError')],
+        ['close', new Error('disk full')],
+    ] as const)('should report %s failure after selecting a browser file', async (stage, failure) => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        vi.mocked(exportDawProject).mockResolvedValue({
+            bytes,
+            fileName: 'session.dawproject',
+            missingAudioCount: 2,
+        });
+        const writable = {
+            write: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        const createWritable = vi.fn().mockResolvedValue(writable);
+        if (stage === 'createWritable') {
+            createWritable.mockRejectedValue(failure);
+        } else {
+            writable[stage].mockRejectedValue(failure);
+        }
+        vi.stubGlobal('showSaveFilePicker', vi.fn().mockResolvedValue({ createWritable }));
+        const createObjectURL = vi.fn();
+        vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() });
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+        await handleExportDawProject.execute({ type: 'exportDawProject' });
+
+        expect(createWritable).toHaveBeenCalledTimes(1);
+        expect(writable.abort).toHaveBeenCalledTimes(stage === 'createWritable' ? 0 : 1);
+        expect(createObjectURL).not.toHaveBeenCalled();
+        expect(click).not.toHaveBeenCalled();
+        expect(logger.warn).not.toHaveBeenCalled();
+        expect(logger.error).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(logger.error).mock.calls[0]?.[0]).toMatchObject({ cause: failure });
+        expect(notifyUser).toHaveBeenCalledExactlyOnceWith('Failed to export DAWproject', 'error');
+    });
+
+    it('should preserve the write failure when abort also fails', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject', missingAudioCount: 2 });
+        const failure = new Error('write failed');
+        const writable = {
+            write: vi.fn().mockRejectedValue(failure),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn().mockRejectedValue(new Error('abort failed')),
+        };
+        vi.stubGlobal(
+            'showSaveFilePicker',
+            vi.fn().mockResolvedValue({ createWritable: () => Promise.resolve(writable) })
+        );
+        const createObjectURL = vi.fn();
+        vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() });
+
+        await handleExportDawProject.execute({ type: 'exportDawProject' });
+
+        expect(writable.abort).toHaveBeenCalledTimes(1);
+        expect(createObjectURL).not.toHaveBeenCalled();
+        expect(vi.mocked(logger.error).mock.calls[0]?.[0]).toMatchObject({ cause: failure });
+        expect(notifyUser).toHaveBeenCalledExactlyOnceWith('Failed to export DAWproject', 'error');
     });
 
     it.each(['unavailable', 'picker error'])(

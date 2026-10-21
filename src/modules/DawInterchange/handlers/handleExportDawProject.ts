@@ -11,6 +11,7 @@ type ShowSaveFilePicker = (opts: { suggestedName: string; types?: unknown[] }) =
     createWritable: () => Promise<{
         write: (data: Uint8Array) => Promise<void>;
         close: () => Promise<void>;
+        abort: () => Promise<void>;
     }>;
 }>;
 
@@ -32,20 +33,33 @@ async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<'sav
     const saveFilePicker = getShowSaveFilePicker();
 
     if (saveFilePicker) {
+        let handle: Awaited<ReturnType<ShowSaveFilePicker>> | undefined;
         try {
-            const handle = await saveFilePicker.call(window, {
+            handle = await saveFilePicker.call(window, {
                 suggestedName,
                 types: [{ accept: { 'application/zip': [DAWPROJECT_FILE_EXTENSION] } }],
             });
-            const writable = await handle.createWritable();
-            await writable.write(bytes);
-            await writable.close();
-            return 'saved';
         } catch (error) {
             if ((error instanceof Error || error instanceof DOMException) && error.name === 'AbortError') {
                 return 'cancelled';
             }
             logger.warn('[handleExportDawProject] showSaveFilePicker failed — falling back to blob download', error);
+        }
+
+        if (handle) {
+            const writable = await handle.createWritable();
+            try {
+                await writable.write(bytes);
+                await writable.close();
+            } catch (error) {
+                try {
+                    await writable.abort();
+                } catch {
+                    // Preserve the write or close failure that prevented the save.
+                }
+                throw error;
+            }
+            return 'saved';
         }
     }
 
