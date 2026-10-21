@@ -1,4 +1,8 @@
+import { type PcmDitherOptions } from '../../models/PcmDitherOptions';
+
 import { createPcmBlockReader } from './createPcmBlockReader';
+
+export type { PcmDitherOptions } from '../../models/PcmDitherOptions';
 
 /**
  * The single float→PCM stage every export encoder consumes (OE-1).
@@ -12,16 +16,6 @@ import { createPcmBlockReader } from './createPcmBlockReader';
  * quantize — and dither is applied exactly once, only when the float source is
  * actually reduced to a fixed bit depth. 32-bit float output is never dithered.
  */
-
-/**
- * Dither control. `seed` makes the TPDF noise reproducible, so an export can be
- * compared byte-for-byte across formats and across runs; omit it for the
- * ordinary non-reproducible export path.
- */
-export type PcmDitherOptions = {
-    mode: 'tpdf' | 'none';
-    seed?: number;
-};
 
 export type ConvertFloatChannelsToPcmInput = {
     channels: Float32Array[];
@@ -49,20 +43,29 @@ export type ConvertFloatChannelsToPcmOutput =
 /** Legacy collected conversion shares the streaming quantizer and its seeded channel order. */
 export function convertFloatChannelsToPcm(input: ConvertFloatChannelsToPcmInput): ConvertFloatChannelsToPcmOutput {
     const reader = createPcmBlockReader({
-        source: { length: input.length, numberOfChannels: input.channels.length, sampleRate: 44100,
-            getChannelData: (channel) => input.channels[channel]! },
-        bitDepth: input.bitDepth, dither: input.dither,
+        source: {
+            length: input.length,
+            numberOfChannels: input.channels.length,
+            sampleRate: 44100,
+            getChannelData: (channel) => input.channels[channel]!,
+        },
+        bitDepth: input.bitDepth,
+        dither: input.dither,
     });
     const block = reader.read(Math.max(1, input.length));
     if (input.bitDepth === 32) {
         const channels = block.channels.map((channel) => {
-            if (!(channel instanceof Float32Array)) throw new Error('Expected float PCM.');
+            if (!(channel instanceof Float32Array)) {
+                throw new Error('Expected float PCM.');
+            }
             return channel;
         });
         return { encoding: 'float32', bitDepth: 32, channels, gain: reader.gain, peak: reader.peak };
     }
     const channels = block.channels.map((channel) => {
-        if (!(channel instanceof Int32Array)) throw new Error('Expected integer PCM.');
+        if (!(channel instanceof Int32Array)) {
+            throw new Error('Expected integer PCM.');
+        }
         return channel;
     });
     return { encoding: 'int', bitDepth: input.bitDepth, channels, gain: reader.gain, peak: reader.peak };

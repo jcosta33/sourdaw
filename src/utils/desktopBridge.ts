@@ -254,12 +254,19 @@ export async function writeFileBytes({ bytes, path }: WriteFileBytesInput): Writ
 export async function beginExportFile(path: string): Promise<string> {
     ensureNativeFilePath(path);
     const token = await desktopInvoke('begin_export_file', { path });
-    if (typeof token !== 'string' || token.length === 0) throw new Error('Native export did not return a transaction token.');
+    if (typeof token !== 'string' || token.length === 0) {
+        throw new Error('Native export did not return a transaction token.');
+    }
     return token;
 }
 
 export async function appendExportFile(token: string, bytes: Uint8Array): Promise<void> {
-    await invokeWithBinaryBody({ command: 'append_export_file', positionalMeta: [token], bytes, maxBytes: 1024 * 1024 });
+    await invokeWithBinaryBody({
+        command: 'append_export_file',
+        positionalMeta: [token],
+        bytes,
+        maxBytes: 1024 * 1024,
+    });
 }
 
 export async function sealExportFile(token: string): Promise<void> {

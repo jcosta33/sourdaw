@@ -43,7 +43,9 @@ describe('bounded PCM reader', () => {
                 });
                 for (let frame = 0; frame < length; frame += size) {
                     const block = reader.read(size);
-                    block.channels.forEach((channel, index) => actual[index]!.set(channel, block.start));
+                    for (const [index, channel] of block.channels.entries()) {
+                        actual[index]!.set(channel, block.start);
+                    }
                 }
                 expect(actual).toEqual(expected);
             }

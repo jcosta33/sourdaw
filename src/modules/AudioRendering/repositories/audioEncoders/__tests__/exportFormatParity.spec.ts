@@ -27,7 +27,9 @@ vi.mock('@breezystack/lamejs', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@breezystack/lamejs')>();
     return {
         Mp3Encoder: vi.fn().mockImplementation(function (channels: number, rate: number, bitrate: number) {
-            if (codecMode.real) return new actual.Mp3Encoder(channels, rate, bitrate);
+            if (codecMode.real) {
+                return new actual.Mp3Encoder(channels, rate, bitrate);
+            }
             return {
                 encodeBuffer: (left: Int16Array) => {
                     capturedMp3Blocks.push(Int16Array.from(left));

@@ -8,8 +8,11 @@ import { streamExportToBrowser } from '../streamExportToBrowser';
 function createDestination() {
     const chunks: Uint8Array[] = [];
     const writable = {
-        write: vi.fn(async (bytes: Uint8Array) => { chunks.push(bytes.slice()); }),
-        close: vi.fn(async () => {}), abort: vi.fn(async () => {}),
+        write: vi.fn(async (bytes: Uint8Array) => {
+            chunks.push(bytes.slice());
+        }),
+        close: vi.fn(async () => {}),
+        abort: vi.fn(async () => {}),
     };
     vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => writable }));
     return { chunks, writable };
@@ -17,10 +20,19 @@ function createDestination() {
 function collect(chunks: Uint8Array[]) {
     const bytes = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
     let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.length;
+    }
     return bytes;
 }
-const options = { suggestedName: 'stems.zip', extension: '.zip', mime: 'application/zip', archive: true, checkCancelled: () => {} };
+const options = {
+    suggestedName: 'stems.zip',
+    extension: '.zip',
+    mime: 'application/zip',
+    archive: true,
+    checkCancelled: () => {},
+};
 
 afterEach(() => vi.unstubAllGlobals());
 describe('browser export transaction', () => {
@@ -29,11 +41,14 @@ describe('browser export transaction', () => {
         const batch = await streamExportToBrowser(options);
         const files = { 'one.wav': new Uint8Array([1, 2, 3]), 'two.flac': new Uint8Array([4, 5, 6, 7]) };
         for (const [name, bytes] of Object.entries(files)) {
-            const entry = await batch.beginFile(name); await entry.writer.write(bytes); await entry.finish();
+            const entry = await batch.beginFile(name);
+            await entry.writer.write(bytes);
+            await entry.finish();
         }
         const commit = vi.fn();
         await batch.commit(commit);
-        expect(commit).toHaveBeenCalledTimes(1); expect(writable.close).toHaveBeenCalledTimes(1);
+        expect(commit).toHaveBeenCalledTimes(1);
+        expect(writable.close).toHaveBeenCalledTimes(1);
         const bytes = collect(chunks);
         expect(unzipSync(bytes)).toEqual(files);
         const view = new DataView(bytes.buffer);
@@ -59,34 +74,62 @@ describe('browser export transaction', () => {
             expect(names.at(-1)).toBe(name);
         }
         expect(names).toEqual(Object.keys(files));
-        await batch.abort(); expect(writable.abort).not.toHaveBeenCalled();
+        await batch.abort();
+        expect(writable.abort).not.toHaveBeenCalled();
     });
     it('awaits each sink write before a producer can push another block', async () => {
         const { writable } = createDestination();
         let drain: () => void = () => {};
-        writable.write.mockImplementationOnce(() => new Promise<void>((resolve) => { drain = resolve; }));
+        writable.write.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    drain = resolve;
+                })
+        );
         const batch = await streamExportToBrowser({ ...options, archive: false });
         const entry = await batch.beginFile('one.wav');
         let finished = false;
-        const writing = entry.writer.write(new Uint8Array(1024)).then(() => { finished = true; });
+        const writing = entry.writer.write(new Uint8Array(1024)).then(() => {
+            finished = true;
+        });
         expect(finished).toBe(false);
-        drain(); await writing; expect(finished).toBe(true);
-        await batch.abort(); expect(writable.close).not.toHaveBeenCalled();
+        drain();
+        await writing;
+        expect(finished).toBe(true);
+        await batch.abort();
+        expect(writable.close).not.toHaveBeenCalled();
     });
     it('aborts on cancellation and leaves the previously committed destination intact', async () => {
         let cancelled = false;
         let bytes = new Uint8Array([9, 9]);
         let staged = new Uint8Array();
-        const writable = { write: async (chunk: Uint8Array) => { staged = chunk.slice(); },
-            close: async () => { bytes = staged; }, abort: vi.fn(async () => { staged = new Uint8Array(); }) };
+        const writable = {
+            write: async (chunk: Uint8Array) => {
+                staged = chunk.slice();
+            },
+            close: async () => {
+                bytes = staged;
+            },
+            abort: vi.fn(async () => {
+                staged = new Uint8Array();
+            }),
+        };
         vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => writable }));
-        const batch = await streamExportToBrowser({ ...options, archive: false, checkCancelled: () => {
-            if (cancelled) throw new Error('Export cancelled');
-        } });
-        const entry = await batch.beginFile('one.wav'); await entry.writer.write(new Uint8Array([1, 2]));
+        const batch = await streamExportToBrowser({
+            ...options,
+            archive: false,
+            checkCancelled: () => {
+                if (cancelled) {
+                    throw new Error('Export cancelled');
+                }
+            },
+        });
+        const entry = await batch.beginFile('one.wav');
+        await entry.writer.write(new Uint8Array([1, 2]));
         cancelled = true;
         await expect(entry.finish()).rejects.toThrow('cancelled');
-        await batch.abort(); expect(bytes).toEqual(new Uint8Array([9, 9]));
+        await batch.abort();
+        expect(bytes).toEqual(new Uint8Array([9, 9]));
         expect(writable.abort).toHaveBeenCalledTimes(1);
     });
     it('refuses missing picker capability before any render', async () => {

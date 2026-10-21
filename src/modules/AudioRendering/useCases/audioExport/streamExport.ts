@@ -39,10 +39,13 @@ export async function streamExport(input: StreamExportInput) {
                   metadata: target.metadata ? { ...target.metadata } : undefined,
               }))
             : undefined;
-    const destination =
-        input.destination.kind === 'native'
-            ? await streamExportToNative({ ...input.destination, checkCancelled: input.checkCancelled })
-            : await streamExportToBrowser({ ...input.destination, checkCancelled: input.checkCancelled });
+    let destination:
+        Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
+    if (input.destination.kind === 'native') {
+        destination = await streamExportToNative({ ...input.destination, checkCancelled: input.checkCancelled });
+    } else {
+        destination = await streamExportToBrowser({ ...input.destination, checkCancelled: input.checkCancelled });
+    }
     return {
         async writeAudio(options: {
             source: ExportAudioSource;
@@ -78,15 +81,17 @@ export async function streamExport(input: StreamExportInput) {
                     target,
                     checkCancelled: input.checkCancelled,
                 });
-                if (prepared.normalization?.limitedByCeiling) options.onLimited(target);
+                if (prepared.normalization?.limitedByCeiling) {
+                    options.onLimited(target);
+                }
                 const name = plan.length > 1 ? `${options.name}__${target.id}` : options.name;
                 for (const format of target.formats) {
                     input.checkCancelled();
                     const entry = await destination.beginFile(`${name}.${format}`);
                     const progress = (fraction: number) => options.onProgress(format, fraction, target.id);
-                    if (format === 'wav')
+                    if (format === 'wav') {
                         await audioBufferToWav(prepared.source, target.bitDepth, progress, target.dither, entry.writer);
-                    else if (format === 'mp3')
+                    } else if (format === 'mp3') {
                         await audioBufferToMp3(
                             prepared.source,
                             target.mp3BitRate,
@@ -95,8 +100,10 @@ export async function streamExport(input: StreamExportInput) {
                             target.metadata,
                             entry.writer
                         );
-                    else {
-                        if (target.bitDepth === 32) throw new Error('FLAC export supports 16-bit or 24-bit only.');
+                    } else {
+                        if (target.bitDepth === 32) {
+                            throw new Error('FLAC export supports 16-bit or 24-bit only.');
+                        }
                         await audioBufferToFlac(
                             prepared.source,
                             target.bitDepth,

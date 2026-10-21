@@ -1,26 +1,19 @@
 import { type ReactNode } from 'react';
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { asBaseAudioContext, createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import { type Track } from '#/modules/Arrangement/stores';
 import {
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
 } from '#/modules/AudioEngine/useCases';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
-import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
-import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
-
-import { audioBufferToFlac } from '../../../useCases/audioBufferToFlac';
-import { audioBufferToMp3 } from '../../../useCases/audioBufferToMp3';
-import * as normalizationUseCase from '../../../useCases/normalizeExportBuffer';
-import { renderToClip } from '../../../useCases/renderToClip';
 import { unzipSync } from 'fflate';
 
 import { ExportDialog } from '../ExportDialog';
-import { loadExportSettings, saveExportSettings } from '../exportSettings';
+import { loadExportSettings } from '../exportSettings';
 
 type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trackStore']['subscribe'];
 
@@ -281,17 +274,19 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         discardDecodedAudioFile: vi.fn(),
         cancelExport: vi.fn(),
         exportStems: async (options: Parameters<typeof actual.exportStems>[0]) => {
-            if (typeof options === 'number') throw new Error('Expected options');
-            const consume = Reflect.get(options, 'onStem');
+            if (typeof options === 'number') {
+                throw new Error('Expected options');
+            }
+            const consume = options.onStem;
+            if (!consume) {
+                return actual.exportStems(options);
+            }
             return actual.exportStems({
                 ...options,
-                onStem:
-                    typeof consume === 'function'
-                        ? async (...args: unknown[]) => {
-                              await consume(...args);
-                              ownership.consumed++;
-                          }
-                        : undefined,
+                onStem: async (...args: Parameters<typeof consume>) => {
+                    await consume(...args);
+                    ownership.consumed++;
+                },
             });
         },
         getAudioContext: mocks.getAudioContext,
@@ -633,7 +628,9 @@ describe('connected stem export output ownership', () => {
     }, 20000);
     it('observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems', async () => {
         const gc: unknown = Reflect.get(globalThis, 'gc');
-        if (typeof gc !== 'function') throw new Error('Run this ownership probe with node --expose-gc.');
+        if (typeof gc !== 'function') {
+            throw new Error('Run this ownership probe with node --expose-gc.');
+        }
         stemRender.frames = 44100 * 3;
         const b = stemRender.frames * 2 * Float32Array.BYTES_PER_ELEMENT;
         vi.mocked(loadExportSettings).mockReturnValueOnce({
@@ -672,8 +669,11 @@ describe('connected stem export output ownership', () => {
                     construct(target, args) {
                         const value = Reflect.construct(target, args);
                         if (collecting) {
-                            if (ArrayBuffer.isView(value)) track(value.buffer);
-                            else if (value instanceof ArrayBuffer) track(value);
+                            if (ArrayBuffer.isView(value)) {
+                                track(value.buffer);
+                            } else if (value instanceof ArrayBuffer) {
+                                track(value);
+                            }
                         }
                         return value;
                     },
@@ -681,7 +681,9 @@ describe('connected stem export output ownership', () => {
             );
         }
         zipAllocation.observe = (bytes) => {
-            if (collecting) track(bytes.buffer);
+            if (collecting) {
+                track(bytes.buffer);
+            }
         };
         let closed = false;
         let writes = 0;
@@ -699,14 +701,18 @@ describe('connected stem export output ownership', () => {
                     writes++;
                     // Sample at fixed ownership checkpoints. Full collections for every small MPEG
                     // packet dominated the test itself; each checkpoint still includes every observed buffer.
-                    if (writes % 32 !== 1) return;
+                    if (writes % 32 !== 1) {
+                        return;
+                    }
                     samples++;
                     // WeakRef targets are kept alive for the job that observed them. Advance a real
                     // turn before GC; no fixed microtask count stands in for collection completion.
                     await new Promise<void>((resolve) => setTimeout(resolve, 0));
                     gc();
                     let live = 0;
-                    for (const reference of allocations) live += reference.deref()?.byteLength ?? 0;
+                    for (const reference of allocations) {
+                        live += reference.deref()?.byteLength ?? 0;
+                    }
                     peak = Math.max(peak, live);
                     expect(live).toBeLessThanOrEqual(2 * b);
                 },
@@ -732,12 +738,12 @@ describe('connected stem export output ownership', () => {
             expect(writes).toBeGreaterThan(64 * 3);
             expect(samples).toBeGreaterThan(64);
             process.stdout.write(
-                JSON.stringify({
+                `${JSON.stringify({
                     pcmBytesB: b,
                     sampledLiveExportBytesPeak: peak,
                     sinkWrites: writes,
                     ownershipCheckpoints: samples,
-                }) + '\n'
+                })}\n`
             );
             expect(peak).toBeGreaterThan(b);
             expect(peak).toBeLessThanOrEqual(2 * b);

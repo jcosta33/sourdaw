@@ -1,6 +1,7 @@
 import { type ExportAudioSource } from '../../models/ExportAudioSource';
 
-import { type PcmDitherOptions } from './convertFloatChannelsToPcm';
+import { type PcmDitherOptions } from '../../models/PcmDitherOptions';
+
 import { readExportPcmBlock } from './readExportPcmBlock';
 
 const STEP = 0x6d2b79f5;
@@ -14,9 +15,15 @@ function uniform(state: { value: number }): number {
 }
 
 function sanitize(value: number): number {
-    if (Number.isFinite(value)) return value;
-    if (value === Number.POSITIVE_INFINITY) return 1;
-    if (value === Number.NEGATIVE_INFINITY) return -1;
+    if (Number.isFinite(value)) {
+        return value;
+    }
+    if (value === Number.POSITIVE_INFINITY) {
+        return 1;
+    }
+    if (value === Number.NEGATIVE_INFINITY) {
+        return -1;
+    }
     return 0;
 }
 
@@ -38,19 +45,26 @@ export function createPcmBlockReader(input: {
         throw new Error('Invalid export PCM window.');
     }
     const sourceGain = source.gain ?? 1;
-    if (!Number.isFinite(sourceGain) || sourceGain < 0) throw new Error('Invalid export PCM gain.');
+    if (!Number.isFinite(sourceGain) || sourceGain < 0) {
+        throw new Error('Invalid export PCM gain.');
+    }
     let peak = 0;
     if (source.samplePeak !== undefined) {
-        if (!Number.isFinite(source.samplePeak) || source.samplePeak < 0) throw new Error('Invalid export PCM peak.');
+        if (!Number.isFinite(source.samplePeak) || source.samplePeak < 0) {
+            throw new Error('Invalid export PCM peak.');
+        }
         peak = source.samplePeak * sourceGain;
     } else {
         for (let start = 0; start < source.length; start += 4096) {
             const channels = readExportPcmBlock({ source, start, length: Math.min(4096, source.length - start) });
-            for (const channel of channels.slice(0, channelCount))
+            for (const channel of channels.slice(0, channelCount)) {
                 for (const sample of channel) {
                     const value = Math.abs(sample * sourceGain);
-                    if (Number.isFinite(value)) peak = Math.max(peak, value);
+                    if (Number.isFinite(value)) {
+                        peak = Math.max(peak, value);
+                    }
                 }
+            }
         }
     }
     const gain = peak > 1 ? 1 / peak : 1;
@@ -67,7 +81,9 @@ export function createPcmBlockReader(input: {
         seed,
         read(frameCount: number) {
             const length = Math.min(frameCount, source.length - nextFrame);
-            if (!Number.isSafeInteger(frameCount) || frameCount < 1) throw new Error('Invalid PCM block size.');
+            if (!Number.isSafeInteger(frameCount) || frameCount < 1) {
+                throw new Error('Invalid PCM block size.');
+            }
             const start = nextFrame;
             nextFrame += length;
             const channels = readExportPcmBlock({ source, start, length }).slice(0, channelCount);
@@ -77,8 +93,9 @@ export function createPcmBlockReader(input: {
                 const positiveScale = negativeScale - 1;
                 for (let frame = 0; frame < length; frame++) {
                     const sample = sanitize(channel[frame]! * sourceGain * gain);
-                    if (bitDepth === 32) values[frame] = sample;
-                    else {
+                    if (bitDepth === 32) {
+                        values[frame] = sample;
+                    } else {
                         const noise = dither.mode === 'none' ? 0 : uniform(states[index]!) - uniform(states[index]!);
                         const scaled = sample < 0 ? sample * negativeScale : sample * positiveScale;
                         values[frame] = Math.max(-negativeScale, Math.min(positiveScale, Math.round(scaled + noise)));

@@ -396,7 +396,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
         let output: Awaited<ReturnType<typeof streamExport>> | undefined;
         const checkCancelled = () => {
-            if (cancelledRef.current) throw new Error('Export cancelled');
+            if (cancelledRef.current) {
+                throw new Error('Export cancelled');
+            }
         };
         // Acquire writable storage before restoring sources or rendering any PCM.
         if (mode !== 'render-to-clip') {
@@ -408,13 +410,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         targetPlan.reduce((count, target) => count + target.formats.length, 0) > 1
                     ) {
                         nativeDirPath = await selectNativeAudioExportDirectory();
-                        if (!nativeDirPath) return;
+                        if (!nativeDirPath) {
+                            return;
+                        }
                     } else {
                         nativeFilePath = await selectNativeAudioExportFile({
                             formats: targetPlan[0]!.formats,
                             suggestedName: `${baseName}.${targetPlan[0]!.formats[0] ?? 'wav'}`,
                         });
-                        if (!nativeFilePath) return;
+                        if (!nativeFilePath) {
+                            return;
+                        }
                     }
                 }
                 const archive =
@@ -423,20 +429,24 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 const extension = archive ? '.zip' : `.${primaryExt}`;
                 setExporting(true);
                 setStatusText('Opening export storage...');
+                let destination: Parameters<typeof streamExport>[0]['destination'];
+                if (native) {
+                    destination = {
+                        kind: 'native',
+                        directoryPath: nativeDirPath ?? undefined,
+                        selectedFilePath: nativeFilePath ?? undefined,
+                    };
+                } else {
+                    destination = {
+                        kind: 'browser',
+                        archive,
+                        suggestedName: `${baseName}${extension}`,
+                        extension,
+                        mime: resolveExportMime(archive, primaryExt),
+                    };
+                }
                 output = await streamExport({
-                    destination: native
-                        ? {
-                              kind: 'native',
-                              directoryPath: nativeDirPath ?? undefined,
-                              selectedFilePath: nativeFilePath ?? undefined,
-                          }
-                        : {
-                              kind: 'browser',
-                              archive,
-                              suggestedName: `${baseName}${extension}`,
-                              extension,
-                              mime: resolveExportMime(archive, primaryExt),
-                          },
+                    destination,
                     targets: targetPlan,
                     checkCancelled,
                 });
@@ -525,7 +535,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 index: number,
                 total: number
             ) => {
-                if (!output) throw new Error('Export storage is unavailable.');
+                if (!output) {
+                    throw new Error('Export storage is unavailable.');
+                }
                 const passes = targetPlan.flatMap((target) =>
                     target.formats.map((format) => ({ id: target.id, format }))
                 );
@@ -677,11 +689,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 return;
             }
 
-            if (output)
+            if (output) {
                 await output.commit(() => {
                     committed = true;
                     commitStartedRef.current = true;
                 });
+            }
 
             setProgress(100);
             setStatusText('Ding! Baking Complete! 🍞');
