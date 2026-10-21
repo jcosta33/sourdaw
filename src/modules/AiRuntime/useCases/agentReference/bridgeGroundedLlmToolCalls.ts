@@ -4067,6 +4067,14 @@ function getCompiledSelectorTermsByCallIndex(
     return termsByCallIndex;
 }
 
+/** The text values a call writes: its string arguments that are not target references. */
+function getWrittenValueTexts(arguments_: Readonly<Record<string, unknown>>, groundingRules: GroundingRules): string[] {
+    const targetArguments = new Set(groundingRules.targetRules.map((rule) => rule.argument));
+    return Object.entries(arguments_).flatMap(([argument, value]) =>
+        typeof value === 'string' && !targetArguments.has(argument) ? [value] : []
+    );
+}
+
 function getAssertedIds(value: unknown): string[] {
     if (typeof value === 'string') {
         return [value];
@@ -4698,6 +4706,7 @@ function groundToolCall({
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
                     sendBusIds: [],
+                    valueTexts: getWrittenValueTexts(call.arguments, groundingRules),
                     targetPrompt,
                     targetIds: compilerTargetOverride.stableIds,
                     ...getSameActionTargetIds(sameActionAssertedArguments, groundingRules, targetRule.argument),
@@ -4841,6 +4850,7 @@ function groundToolCall({
                       selectorTerms: compiledSelectorTerms,
                       targetPrompt,
                       targetIds: compilerTargetOverride.stableIds,
+                      valueTexts: getWrittenValueTexts(call.arguments, groundingRules),
                       ...getSameActionTargetIds(sameActionAssertedArguments, groundingRules, targetRule.argument),
                   }
                 : null;

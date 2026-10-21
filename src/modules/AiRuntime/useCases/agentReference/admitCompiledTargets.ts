@@ -1,4 +1,5 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
+import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 
 import { PRESET_ACTIONS } from '../../models/PresetActions/Registry';
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -61,6 +62,8 @@ export type CompiledTargetAuthorityInput = {
     selectorTerms?: CompiledSelectorTerms;
     /** Buses a send parameter of the call names and its asserted track already sends to. */
     sendBusIds: readonly string[];
+    /** The text values the call writes ("Bass Drum" for a rename), which name what is written, not a target. */
+    valueTexts: readonly string[];
     /** The original text of the clause the targets belong to. */
     targetPrompt: string;
     targetIds: readonly string[];
@@ -175,6 +178,26 @@ function maskWholeNames(text: string, names: readonly string[]): string {
         );
 }
 
+/**
+ * The clause with the last whole occurrence of each value the call writes blanked out: the value
+ * ("rename Kick to Bass Drum") follows the target it is written to, and "rename Kick to Kick In"
+ * keeps the earlier mention of the target.
+ */
+function maskWrittenValues(text: string, values: readonly string[]): string {
+    return values
+        .filter((value) => value.trim().length > 0)
+        .reduce((masked, value) => {
+            const occurrences = [
+                ...masked.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`, 'giu')),
+            ];
+            const last = occurrences.at(-1);
+            if (last === undefined) {
+                return masked;
+            }
+            return `${masked.slice(0, last.index)}${' '.repeat(last[0].length)}${masked.slice(last.index + last[0].length)}`;
+        }, text);
+}
+
 /** Everything the request protects or excludes, with every object on a protected track. */
 function getProtectedIds(input: CompiledTargetAuthorityInput, request: MaskedRequest): Set<string> {
     const protectedIds = new Set(input.compilerExcludedIds);
@@ -207,15 +230,33 @@ function getProtectedIds(input: CompiledTargetAuthorityInput, request: MaskedReq
     return protectedIds;
 }
 
-/** Whether the text states the phrase as whole words, its last word in the singular or the plural. */
+/**
+ * Whether the text states the phrase as whole words, its last word in the singular or the plural
+ * whichever form the phrase itself is in: "drums" is stated by "the drum tracks" as by "the drums".
+ */
 function statesPhrase(normalizedText: string, phrase: string): boolean {
     const normalizedPhrase = normalizePromptText(phrase);
-    return (
-        normalizedPhrase.length > 0 &&
-        new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(normalizedPhrase)}(?:e?s)?(?![\\p{L}\\p{N}])`, 'u').test(
-            normalizedText
-        )
+    if (normalizedPhrase.length === 0) {
+        return false;
+    }
+    const forms = [normalizedPhrase, normalizedPhrase.replace(/(?<=\p{L}{2})s$/u, '')];
+    return forms.some((form) =>
+        new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(form)}(?:e?s)?(?![\\p{L}\\p{N}])`, 'u').test(normalizedText)
     );
+}
+
+/**
+ * Every canonical role the text names in a word or a word pair, read through Project's own reading
+ * of track names, so the vocabulary it knows for a part ("vox", "keyboards", "synths") states it.
+ */
+function getStatedCanonicalRoles(normalizedText: string): Set<string> {
+    const words = normalizedText.split(' ').filter((word) => word.length > 0);
+    const windows = [...words, ...words.slice(1).map((word, index) => `${words[index]!} ${word}`)];
+    const roles = windows.map(
+        (window) =>
+            getCanonicalTrackRole({ track: { id: window, name: window, kind: 'audio', clips: [], devices: [] } }).role
+    );
+    return new Set(roles.filter((role) => role !== 'unknown'));
 }
 
 /** The word for a track kind and every one-word keyword of the preset that creates that kind. */
@@ -271,8 +312,24 @@ function getPredicatePhrases(predicate: SemanticCommandListPredicate, context: P
     return getSectionWords(predicate.inSection, context);
 }
 
-/** One list of alternative phrases per term the selector rests on. */
-function getSelectorTermPhrases(terms: CompiledSelectorTerms, context: ProjectContext): string[][] {
+/** The canonical roles whose mention states a role or role-family predicate. */
+function getPredicateRoles(predicate: SemanticCommandListPredicate): string[] {
+    if ('role' in predicate) {
+        return [predicate.role];
+    }
+    if ('roleFamily' in predicate) {
+        return Object.entries(CANONICAL_ROLE_TO_RECIPE_ROLE)
+            .filter(([, family]) => family === predicate.roleFamily)
+            .map(([role]) => role);
+    }
+    return [];
+}
+
+/** One selector term: the phrases any one of which states it, and the canonical roles that do. */
+type SelectorTerm = { phrases: string[]; roles: string[] };
+
+/** Every term the selector rests on. */
+function getSelectorTerms(terms: CompiledSelectorTerms, context: ProjectContext): SelectorTerm[] {
     const where = terms.where ?? {};
     const phrases: string[][] = [];
     if (where.name !== undefined) {
@@ -298,8 +355,13 @@ function getSelectorTermPhrases(terms: CompiledSelectorTerms, context: ProjectCo
     if (match.any !== undefined) {
         predicates.push(...match.any);
     }
-    phrases.push(...predicates.map((predicate) => getPredicatePhrases(predicate, context)));
-    return phrases;
+    return [
+        ...phrases.map((alternatives) => ({ phrases: alternatives, roles: [] })),
+        ...predicates.map((predicate) => ({
+            phrases: getPredicatePhrases(predicate, context),
+            roles: getPredicateRoles(predicate),
+        })),
+    ];
 }
 
 function matchesWhere(candidate: SemanticCommandListCandidate | undefined, terms: CompiledSelectorTerms): boolean {
@@ -321,12 +383,18 @@ function statesSelectorTerms(input: CompiledTargetAuthorityInput, text: string):
     if (terms === undefined) {
         return false;
     }
-    const phrases = getSelectorTermPhrases(terms, input.context);
-    if (phrases.length === 0) {
+    const selectorTerms = getSelectorTerms(terms, input.context);
+    if (selectorTerms.length === 0) {
         return false;
     }
     const normalizedText = normalizePromptText(scanPromptQuotedText(text).maskedText);
-    if (!phrases.every((alternatives) => alternatives.some((phrase) => statesPhrase(normalizedText, phrase)))) {
+    const statedRoles = getStatedCanonicalRoles(normalizedText);
+    const statesEveryTerm = selectorTerms.every(
+        (term) =>
+            term.phrases.some((phrase) => statesPhrase(normalizedText, phrase)) ||
+            term.roles.some((role) => statedRoles.has(role))
+    );
+    if (!statesEveryTerm) {
         return false;
     }
     const candidates = collectSemanticCommandListCandidates({
@@ -404,10 +472,11 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): Comp
     if (input.referenceResolved) {
         return ADMITTED;
     }
-    let text = input.targetPrompt;
+    let clauseText = input.targetPrompt;
     if (input.clauseStart !== undefined) {
-        text = getInstructionText(request, input.clauseStart, input.catalog);
+        clauseText = getInstructionText(request, input.clauseStart, input.catalog);
     }
+    const text = maskWrittenValues(clauseText, input.valueTexts);
     const setAside = [
         ...new Set([...input.createdIds, ...protectedIds, ...input.sendBusIds, ...input.otherArgumentIds]),
     ];

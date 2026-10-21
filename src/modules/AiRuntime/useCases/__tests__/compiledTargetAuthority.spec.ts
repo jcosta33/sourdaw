@@ -31,6 +31,8 @@ type CompiledItem = {
 
 const REVISION = 'revision-compiled-target-authority';
 
+type CompilerEvidence = NonNullable<Parameters<typeof bridgeGroundedLlmToolCalls>[0]['compilerEvidence']>;
+
 function createTrack({
     id,
     name,
@@ -162,7 +164,8 @@ function compileAndBridge(
     prompt: string,
     items: CompiledItem[],
     targetIds: string[],
-    context: ProjectContext = projectContext
+    context: ProjectContext = projectContext,
+    reviseEvidence: (evidence: CompilerEvidence) => CompilerEvidence = (evidence) => evidence
 ) {
     const compiled = compileArbitraryCommandList({
         context,
@@ -190,9 +193,10 @@ function compileAndBridge(
     if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
         throw new Error(`Expected the list to compile: ${JSON.stringify(compiled)}`);
     }
+    const compilerEvidence = reviseEvidence(compiled.compilerEvidence);
     return bridgeGroundedLlmToolCalls({
-        calls: compiled.compilerEvidence.commands,
-        compilerEvidence: compiled.compilerEvidence,
+        calls: compilerEvidence.commands,
+        compilerEvidence,
         context,
         projectRevision: REVISION,
         prompt,
@@ -878,6 +882,10 @@ const auxVerb = roleTrack(
     'bus'
 );
 const auxDelay = roleTrack('track-role-aux-delay', 'Aux Delay', 'bus', [], 'bus');
+const moogLead = roleTrack('track-role-moog-lead', 'Moog Lead', 'synth');
+const rhodes = roleTrack('track-role-rhodes', 'Rhodes', 'keys');
+const warmPads = roleTrack('track-role-warm-pads', 'Warm Pads', 'unknown');
+const darkPads = roleTrack('track-role-dark-pads', 'Dark Pads', 'unknown');
 
 const roleContext: ProjectContext = {
     ...projectContext,
@@ -892,6 +900,10 @@ const roleContext: ProjectContext = {
         gtrRight,
         auxVerb,
         auxDelay,
+        moogLead,
+        rhodes,
+        warmPads,
+        darkPads,
         master,
     ],
     availableDeviceTypes: [
@@ -1048,5 +1060,82 @@ describe('a compiled selector cannot outlast a negation the direct route reads',
         expect(direct.actions).toEqual([]);
         expect(result.actions).toEqual([]);
         expect(result.rejections).not.toEqual([]);
+    });
+});
+
+const renameKick = createTrack({ id: 'track-rename-kick', name: 'Kick' });
+const renameSnare = createTrack({ id: 'track-rename-snare', name: 'Snare' });
+const renameMoog = createTrack({ id: 'track-rename-moog', name: 'Moog', kind: 'midi' });
+const renameBass = createTrack({ id: 'track-rename-bass', name: 'Bass' });
+const trackRenameContext: ProjectContext = {
+    ...projectContext,
+    tracks: [renameKick, renameSnare, renameMoog, renameBass, master],
+};
+
+describe('a compiled rename reads its target apart from the name it writes', () => {
+    it.each([
+        ['Rename Kick to Bass Drum', renameKick, 'Bass Drum'],
+        ['Rename Snare to Kick Snare', renameSnare, 'Kick Snare'],
+        ['Rename Moog to Bass Synth', renameMoog, 'Bass Synth'],
+        ['Rename Kick to Kick In', renameKick, 'Kick In'],
+    ])('grounds "%s"', (prompt, track, name) => {
+        const result = compileAndBridge(prompt, [trackItem('renameTrack', track, { name })], [], trackRenameContext);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([{ type: 'renameTrack', payload: { trackId: track.id, name } }]);
+    });
+});
+
+describe('a role or role family stated in the singular or through the project vocabulary still grounds', () => {
+    it.each([
+        ['turn down the drum tracks by 3 dB', { roleFamily: 'drums' }, [kickIn.id, snareTop.id]],
+        ['turn down the drum kit by 3 dB', { roleFamily: 'drums' }, [kickIn.id, snareTop.id]],
+        ['turn down the pad tracks by 3 dB', { nameIncludes: 'Pads' }, [warmPads.id, darkPads.id]],
+    ])('grounds "%s"', (prompt, match, expected) => {
+        const result = compileAndBridge(prompt, [turnDown(match, expected.length)], [], roleContext);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(expected);
+    });
+
+    it.each([
+        ['turn down the vox by 3 dB', { roleFamily: 'vocal' }, [leadVox.id, backingVoxOne.id, backingVoxTwo.id]],
+        ['turn down the synths by 3 dB', { roleFamily: 'keys' }, [moogLead.id, rhodes.id]],
+        ['turn down the keyboards by 3 dB', { roleFamily: 'keys' }, [moogLead.id, rhodes.id]],
+    ])('grounds "%s" through the project vocabulary for the role', (prompt, match, expected) => {
+        const result = compileAndBridge(prompt, [turnDown(match, expected.length)], [], roleContext);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(expected);
+    });
+});
+
+describe('a compiled target must be one the recorded selector selects', () => {
+    it('refuses targets the recorded where does not select, though the request states its terms', () => {
+        const result = compileAndBridge(
+            'mute all midi tracks',
+            [
+                {
+                    id: 'mute-audio-tracks',
+                    name: 'muteTrack',
+                    arguments: { muted: true },
+                    selector: {
+                        targetArgument: 'trackId',
+                        entity: 'track',
+                        where: { kind: 'audio' },
+                        quantity: { unit: 'targets', exactly: 3 },
+                    },
+                },
+            ],
+            [],
+            projectContext,
+            (evidence) => ({
+                ...evidence,
+                selectors: evidence.selectors.map((selector) => ({ ...selector, where: { kind: 'midi' } })),
+            })
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'muteTrack', reason: UNAUTHORIZED_TRACK });
     });
 });
