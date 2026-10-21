@@ -3,15 +3,18 @@ import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/u
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type SemanticCommandListMatch, type SemanticCommandListSelector } from '../../models/SemanticCommandList';
 
-import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
+import {
+    findAgentReferenceNameSpans,
+    type AgentReferenceNameForms,
+    type AgentReferenceTextRange,
+} from './findAgentReferenceNameSpans';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
-import { escapeRegExp } from './groundingStrategies/escapeRegExp';
+import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
-import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 
 /*
@@ -19,15 +22,24 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  *
  * A compiled command list proves which objects its selectors resolve to, never that the user asked
  * for them. This check closes one hole: a selector that picks an object by a name or id the request
- * never states. Every target the request protects or excludes is refused. A selector's whole-name
- * pick, a name fragment and an owner-track pick's track name or id must each appear as whole words
- * of the request, read in an ordinary form: case, diacritics and separators aside, and the final
- * word in the singular or the plural ("the vocal" states Vocals, "hi hat" states Hi-Hat). The text
- * read is the whole request less its restrictions and the values any call of the batch writes, so
- * an instruction may pick by a name an earlier one states ("turn Vocals down and pan it left").
- * A selection reference ("this track", "the selected track", "it" or "its" for the selected track)
- * that resolves to the picked objects states those picks only when the request names no object of
- * that kind by name, so "set Vocals volume so it sits better" never stands for the selected Keys.
+ * never states. Every target the request protects or excludes is refused. What the request states is
+ * the shared reference resolver's own reading of it, never a matcher of this file's: the resolver's
+ * `naming` mode, which reads an object by its literal id or its whole name, case, diacritics and
+ * punctuation folded, against every candidate whatever selection the request refers to, and takes the
+ * final word of a name in either grammatical number ("the vocal" states Vocals), a form the direct
+ * route leaves to its approximate reading. Each stated range names only the objects whose names read
+ * it best, so "Vocal" states Vocal and not Vocals, "Café" states Café and not Cafe, and "Drum Bus"
+ * states the bus and not Drum.
+ *
+ * A selector's whole-name pick and an owner-track pick are stated when that reading names their
+ * target or owner track. A name fragment is stated for a target it picks when it occurs as a whole
+ * word, in either number, outside every range that states another object's whole name, so "the Drum
+ * Bus" states a "Bus" fragment for the Drum Bus and never for the FX Bus. The text read is the whole
+ * request less its restrictions and the values any call of the batch writes, so an instruction may
+ * pick by a name an earlier one states ("turn Vocals down and pan it left"). A selection reference
+ * ("this track", "the selected track", "it" or "its" for the selected track) that resolves to the
+ * picked objects states those picks only when the request names no object of that kind, so "set
+ * Vocals volume so it sits better" never stands for the selected Keys.
  *
  * Literal targets, owner-track picks in a request that names and selects no track, and selections
  * by role, role family, kind, device type, tag, condition or no filter at all, are taken as the
@@ -77,36 +89,87 @@ const TRACK_DEPENDENT_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability
     'sidechain-capable-device',
 ]);
 
+/** A request states a name in its ordinary forms: "the vocal" states Vocals. */
+const NAME_FORMS: AgentReferenceNameForms = 'with-number-forms';
+
 const ADMITTED: CompiledTargetAuthority = { status: 'admitted' };
 const UNAUTHORIZED: CompiledTargetAuthority = { status: 'refused' };
 
-function readReferences(text: string, capability: Capability, context: ProjectContext, dependencyId?: string) {
-    return resolveAgentReference({ prompt: text, assertedId: undefined, capability, context, dependencyId }).candidates;
+/**
+ * The shared resolver's reading of what the text names by literal id or whole name, and the ranges
+ * of the text that state each whole name, as the resolver's own best-reading rule keeps them.
+ */
+function readNaming(
+    text: string,
+    capability: Capability,
+    context: ProjectContext,
+    dependencyId?: string
+): { ids: string[]; nameRanges: AgentReferenceNamedRange[] } {
+    const named = resolveAgentReference({
+        prompt: text,
+        assertedId: undefined,
+        capability,
+        context,
+        dependencyId,
+        naming: NAME_FORMS,
+    }).candidates.filter((candidate) =>
+        candidate.evidence.some((evidence) => evidence === 'literal-id' || evidence === 'exact-name')
+    );
+    const namedByName = named.filter((candidate) => candidate.evidence.includes('exact-name'));
+    return {
+        ids: named.map((candidate) => candidate.id),
+        nameRanges: getBestAgentReferenceNameRanges(text, namedByName, NAME_FORMS),
+    };
 }
 
-/** Objects of the capability the text names by literal id, whole name or selection. */
-function getTieredReferenceIds(
+function readStatedIds(text: string, capability: Capability, context: ProjectContext, dependencyId?: string) {
+    return readNaming(text, capability, context, dependencyId).ids;
+}
+
+/** Objects of the capability the text names by literal id or whole name, or refers to as the selection. */
+function readReferencedIds(
     text: string,
     capability: Capability,
     context: ProjectContext,
     dependencyId?: string
 ): string[] {
-    return readReferences(text, capability, context, dependencyId)
-        .filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
+    const selectedIds = resolveAgentReference({
+        prompt: text,
+        assertedId: undefined,
+        capability,
+        context,
+        dependencyId,
+    })
+        .candidates.filter((candidate) => candidate.evidence.includes('selection'))
         .map((candidate) => candidate.id);
+    return [...new Set([...readStatedIds(text, capability, context, dependencyId), ...selectedIds])];
 }
 
+type ReferenceReader = (
+    text: string,
+    capability: Capability,
+    context: ProjectContext,
+    dependencyId?: string
+) => string[];
+
 /**
- * The objects the text names, reading an owned object against every track the text names as well,
- * so "the EQ on Vocals and the EQ on Keys" names both EQs although no single owner holds them.
+ * The objects the reader finds in the text, reading an owned object against every track the text
+ * names as well, so "the EQ on Vocals and the EQ on Keys" names both EQs although no single owner
+ * holds them.
  */
-function getNamedObjectIds(text: string, capability: Capability, context: ProjectContext, dependencyId?: string) {
-    const named = getTieredReferenceIds(text, capability, context, dependencyId);
+function readWithNamedOwners(
+    read: ReferenceReader,
+    text: string,
+    capability: Capability,
+    context: ProjectContext,
+    dependencyId?: string
+): string[] {
+    const named = read(text, capability, context, dependencyId);
     if (dependencyId !== undefined || !TRACK_DEPENDENT_CAPABILITIES.has(capability)) {
         return named;
     }
-    const ownedByNamedTracks = getTieredReferenceIds(text, 'track', context).flatMap((trackId) =>
-        getTieredReferenceIds(text, capability, context, trackId)
+    const ownedByNamedTracks = read(text, 'track', context).flatMap((trackId) =>
+        read(text, capability, context, trackId)
     );
     return [...new Set([...named, ...ownedByNamedTracks])];
 }
@@ -144,146 +207,34 @@ function getInstructionEnd(request: MaskedRequest, start: number, catalog: Groun
 }
 
 /** Every restriction of the whole request, from its restriction phrase to the end of its instruction. */
-function getRestrictionRanges(request: MaskedRequest, catalog: GroundingCatalog): { start: number; end: number }[] {
+function getRestrictionRanges(request: MaskedRequest, catalog: GroundingCatalog): AgentReferenceTextRange[] {
     return findTrackControlRestrictionStarts(request.maskedPrompt).map((start) => ({
         start,
         end: getInstructionEnd(request, start, catalog),
     }));
 }
 
-type TextRange = { start: number; end: number };
-
-function blankRange(text: string, { start, end }: TextRange): string {
+function blankRange(text: string, { start, end }: AgentReferenceTextRange): string {
     return `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`;
 }
 
-/** What separates the words of a name: "Hi-Hat", "hi_hat" and "hi hat" are one name. */
-const NAME_SEPARATOR = '[\\s_-]+';
-
 /**
- * The text without case or diacritics ("Café" reads "cafe"), with the offset in the original text of
- * each folded code unit and of the end, so a range found in the folded text maps back onto it.
- */
-function foldNameText(text: string): { folded: string; offsets: number[] } {
-    let folded = '';
-    const offsets: number[] = [];
-    let offset = 0;
-    for (const character of text) {
-        const foldedCharacter = character.normalize('NFD').replaceAll(/\p{M}/gu, '').toLowerCase();
-        folded += foldedCharacter;
-        offsets.push(...Array.from({ length: foldedCharacter.length }, () => offset));
-        offset += character.length;
-    }
-    offsets.push(offset);
-    return { folded, offsets };
-}
-
-/** The word and its singular or plural by "s", "es", or "ies" for "y", longest first. */
-function getNumberForms(word: string): string[] {
-    const forms = [word, `${word}s`, `${word}es`];
-    if (word.endsWith('ies')) {
-        forms.push(`${word.slice(0, -3)}y`);
-    }
-    if (word.endsWith('es')) {
-        forms.push(word.slice(0, -2));
-    }
-    if (word.endsWith('s') && !word.endsWith('ss')) {
-        forms.push(word.slice(0, -1));
-    }
-    if (word.endsWith('y')) {
-        forms.push(`${word.slice(0, -1)}ies`);
-    }
-    return Array.from(new Set(forms))
-        .filter((form) => form.length > 0)
-        .sort((left, right) => right.length - left.length);
-}
-
-/** The whole words of the folded name in order, the last in any of its number forms; null for a blank name. */
-function getNamePattern(name: string): RegExp | null {
-    const words = foldNameText(name)
-        .folded.split(new RegExp(NAME_SEPARATOR, 'u'))
-        .filter((word) => word.length > 0);
-    const finalWord = words.at(-1);
-    if (finalWord === undefined) {
-        return null;
-    }
-    const leadingWords = words.slice(0, -1).map((word) => `${escapeRegExp(word)}${NAME_SEPARATOR}`);
-    const finalForms = getNumberForms(finalWord).map(escapeRegExp).join('|');
-    return new RegExp(`(?<![\\p{L}\\p{N}])${leadingWords.join('')}(?:${finalForms})(?![\\p{L}\\p{N}])`, 'gu');
-}
-
-/**
- * Every range of the text that states the name in an ordinary form: its whole words in order,
- * folding case and diacritics, reading any run of hyphens, underscores and spaces as one separator,
- * and taking the final word in the singular or the plural on either side ("the vocal" states
- * Vocals, "the melodies" states a melody fragment).
- */
-function findNameRanges(text: string, name: string): TextRange[] {
-    const pattern = getNamePattern(name);
-    if (pattern === null) {
-        return [];
-    }
-    const { folded, offsets } = foldNameText(text);
-    return Array.from(folded.matchAll(pattern), (match) => ({
-        start: offsets[match.index] ?? text.length,
-        end: offsets[match.index + match[0].length] ?? text.length,
-    }));
-}
-
-function isVerbatim(text: string, range: TextRange, name: string): boolean {
-    return text.slice(range.start, range.end).toLowerCase() === name.toLowerCase();
-}
-
-function isWithinLongerRange(range: TextRange, other: TextRange): boolean {
-    return other.start <= range.start && range.end <= other.end && other.end - other.start > range.end - range.start;
-}
-
-/**
- * Whether the text states the name, the one reading whole names, name fragments, owner tracks and
- * protections share: verbatim, or in an ordinary form that is not part of a longer track name the
- * text states, so "drum" in "the Drum Bus" states the bus and never Drums.
- */
-function statesName(text: string, name: string, context: ProjectContext): boolean {
-    const trackNameRanges = context.tracks.flatMap((track) => findNameRanges(text, track.name));
-    return findNameRanges(text, name).some(
-        (range) => isVerbatim(text, range, name) || !trackNameRanges.some((other) => isWithinLongerRange(range, other))
-    );
-}
-
-/** The text with every occurrence of the names, in any ordinary form, blanked to equal-length spaces. */
-function maskWholeNames(text: string, names: readonly string[]): string {
-    return names.reduce(
-        (masked, name) => findNameRanges(masked, name).reduce((blanked, range) => blankRange(blanked, range), masked),
-        text
-    );
-}
-
-function wholeWordsPattern(phrase: string, flags: string): RegExp {
-    return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(phrase)}(?![\\p{L}\\p{N}])`, flags);
-}
-
-/**
- * The clause with the last whole occurrence of each written value blanked out: the value ("rename
- * Kick to Bass Drum") follows the target it is written to, and "rename Kick to Kick In" keeps the
- * earlier mention of the target.
+ * The text with the last occurrence of each written value blanked out: the value ("rename Kick to
+ * Bass Drum") follows the target it is written to, and "rename Kick to Kick In" keeps the earlier
+ * mention of the target.
  */
 function maskWrittenValues(text: string, values: readonly string[]): string {
-    return values
-        .filter((value) => value.trim().length > 0)
-        .reduce((masked, value) => {
-            const last = [...masked.matchAll(wholeWordsPattern(value, 'giu'))].at(-1);
-            if (last === undefined) {
-                return masked;
-            }
-            return blankRange(masked, { start: last.index, end: last.index + last[0].length });
-        }, text);
+    return values.reduce((masked, value) => {
+        const last = findAgentReferenceNameSpans(masked, value, NAME_FORMS).at(-1);
+        return last === undefined ? masked : blankRange(masked, last);
+    }, text);
 }
 
 /** Everything the request protects or excludes, with every object on a protected track. */
 function getProtectedIds(
     input: CompiledTargetAuthorityInput,
     request: MaskedRequest,
-    restrictionRanges: readonly { start: number; end: number }[]
+    restrictionRanges: readonly AgentReferenceTextRange[]
 ): Set<string> {
     const protectedIds = new Set(input.compilerExcludedIds);
     for (const object of getApplicationProtectedObjects({
@@ -295,23 +246,18 @@ function getProtectedIds(
     }
     for (const range of restrictionRanges) {
         const restriction = request.prompt.slice(range.start, range.end);
-        for (const id of getNamedObjectIds(restriction, input.capability, input.context, input.dependencyId)) {
+        const { capability, context, dependencyId } = input;
+        for (const id of readWithNamedOwners(readReferencedIds, restriction, capability, context, dependencyId)) {
             protectedIds.add(id);
         }
         // "leave Bass Verse unchanged" protects the clip, not every object on a track named Bass.
-        const namedObjectNames = readReferences(restriction, input.capability, input.context, input.dependencyId)
-            .filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
-            .map((candidate) => candidate.name);
-        const trackRestriction = maskWholeNames(restriction, namedObjectNames);
-        const restrictedTrackIds = new Set([
-            ...getTieredReferenceIds(trackRestriction, 'track', input.context),
-            ...input.context.tracks
-                .filter((track) => statesName(trackRestriction, track.name, input.context))
-                .map((track) => track.id),
-        ]);
-        for (const trackId of restrictedTrackIds) {
+        const trackRestriction = readNaming(restriction, capability, context, dependencyId).nameRanges.reduce(
+            blankRange,
+            restriction
+        );
+        for (const trackId of readReferencedIds(trackRestriction, 'track', context)) {
             protectedIds.add(trackId);
-            for (const ownedId of getTrackOwnedObjectIds(trackId, input.context)) {
+            for (const ownedId of getTrackOwnedObjectIds(trackId, context)) {
                 protectedIds.add(ownedId);
             }
         }
@@ -328,9 +274,9 @@ function getProtectedIds(
 function getEvidenceText(
     input: CompiledTargetAuthorityInput,
     request: MaskedRequest,
-    restrictionRanges: readonly { start: number; end: number }[]
+    restrictionRanges: readonly AgentReferenceTextRange[]
 ): string {
-    const unrestricted = restrictionRanges.reduce((text, range) => blankRange(text, range), request.prompt);
+    const unrestricted = restrictionRanges.reduce(blankRange, request.prompt);
     return maskWrittenValues(unrestricted, input.valueTexts);
 }
 
@@ -359,6 +305,64 @@ function getNamePicks(input: CompiledTargetAuthorityInput): NamePicks {
     return picks;
 }
 
+/** The name a `nameIncludes` predicate reads for the object, as the compiler's candidates carry it. */
+function getObjectName(id: string, context: ProjectContext): string | undefined {
+    for (const track of context.tracks) {
+        if (track.id === id) {
+            return track.name;
+        }
+        const owned = [...track.clips, ...track.devices].find((object) => object.id === id);
+        if (owned !== undefined) {
+            return owned.name;
+        }
+    }
+    const lane = context.automationLanes?.find((candidate) => candidate.id === id);
+    if (lane !== undefined) {
+        return lane.name;
+    }
+    return context.adjustmentLayers?.find((candidate) => candidate.id === id)?.name;
+}
+
+function covers(range: AgentReferenceTextRange, inner: AgentReferenceTextRange): boolean {
+    return range.start <= inner.start && inner.end <= range.end;
+}
+
+/**
+ * Whether the text states the fragment for every target it picks: as a whole word, in either number,
+ * somewhere no range states another object's whole name, so "Bus" inside "the Drum Bus" states the
+ * Drum Bus and never the FX Bus.
+ */
+function statesFragment(
+    text: string,
+    fragment: string,
+    input: CompiledTargetAuthorityInput,
+    nameRanges: readonly AgentReferenceNamedRange[]
+): boolean {
+    const occurrences = findAgentReferenceNameSpans(text, fragment, NAME_FORMS);
+    const pickedIds = input.targetIds.filter((targetId) => {
+        const name = getObjectName(targetId, input.context);
+        return name === undefined || name.toLowerCase().includes(fragment.toLowerCase());
+    });
+    return pickedIds.every((targetId) =>
+        occurrences.some((occurrence) =>
+            nameRanges.every((nameRange) => nameRange.id === targetId || !covers(nameRange, occurrence))
+        )
+    );
+}
+
+/** Whether the text states every whole name and fragment the selector picks its targets by. */
+function statesNamePicks(text: string, picks: NamePicks, input: CompiledTargetAuthorityInput): boolean {
+    const { capability, context, dependencyId } = input;
+    if (picks.names.length > 0) {
+        const statedIds = readWithNamedOwners(readStatedIds, text, capability, context, dependencyId);
+        if (!input.targetIds.every((targetId) => statedIds.includes(targetId))) {
+            return false;
+        }
+    }
+    const { nameRanges } = readNaming(text, capability, context, dependencyId);
+    return picks.fragments.every((fragment) => statesFragment(text, fragment, input, nameRanges));
+}
+
 /**
  * Whether the request's selection reference is the object: "this track" or "the selected track"
  * through the direct route's selection reading, or "it" or "its" for the selected track.
@@ -371,26 +375,9 @@ function selectsObject(text: string, objectId: string, capability: Capability, c
     return result.status === 'resolved' && result.evidence === 'selection';
 }
 
-function statesWholeReference(text: string, references: readonly string[], context: ProjectContext): boolean {
-    return references.some((reference) => statesName(text, reference, context));
-}
-
-/**
- * Whether the text names an object of the capability by its whole name or id rather than through a
- * selection. Tracks are read against every candidate track, because the selection reading narrows
- * its candidates to the selected track once the text says "this track".
- */
+/** Whether the text names an object of the capability by its literal id or whole name rather than through a selection. */
 function namesObjectByName(text: string, capability: Capability, context: ProjectContext): boolean {
-    if (getAgentReferenceCapabilityKind(capability) === 'track') {
-        return context.tracks.some(
-            (track) =>
-                isAgentReferenceCapabilityCandidate({ capability, context, id: track.id }) &&
-                statesWholeReference(text, [track.id, track.name], context)
-        );
-    }
-    return readReferences(text, capability, context).some((candidate) =>
-        candidate.evidence.some((evidence) => evidence !== 'selection' && evidence !== 'fuzzy-name')
-    );
+    return readNaming(text, capability, context).ids.length > 0;
 }
 
 /**
@@ -415,8 +402,7 @@ function refersToAnyTrack(text: string, context: ProjectContext): boolean {
 
 /** Whether the request states the owner track by its whole name or id, or selects it without naming a track. */
 function statesTrack(text: string, trackId: string, context: ProjectContext): boolean {
-    const name = context.tracks.find((track) => track.id === trackId)?.name;
-    if (statesWholeReference(text, name === undefined ? [trackId] : [trackId, name], context)) {
+    if (readStatedIds(text, 'track', context).includes(trackId)) {
         return true;
     }
     return !namesObjectByName(text, 'track', context) && selectsObject(text, trackId, 'track', context);
@@ -438,11 +424,9 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): Comp
         return ADMITTED;
     }
     const text = getEvidenceText(input, request, restrictionRanges);
-    const statesNamePicks =
-        [...picks.names, ...picks.fragments].every((name) => statesName(text, name, input.context)) ||
-        selectsEveryTarget(text, input);
+    const statesSelectorNames = statesNamePicks(text, picks, input) || selectsEveryTarget(text, input);
     const statesTrackPicks =
         picks.trackIds.every((trackId) => statesTrack(text, trackId, input.context)) ||
         !refersToAnyTrack(text, input.context);
-    return statesNamePicks && statesTrackPicks ? ADMITTED : UNAUTHORIZED;
+    return statesSelectorNames && statesTrackPicks ? ADMITTED : UNAUTHORIZED;
 }

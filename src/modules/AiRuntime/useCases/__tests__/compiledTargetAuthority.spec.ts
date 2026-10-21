@@ -1735,3 +1735,93 @@ describe('"its" refers to the selected track as "it" does', () => {
         expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
     });
 });
+
+function namedTracksContext(names: readonly string[]): {
+    context: ProjectContext;
+    track: (name: string) => ProjectTrack;
+} {
+    const tracks = names.map((name) => createTrack({ id: `track-named-${names.indexOf(name)}`, name }));
+    return {
+        context: { ...projectContext, tracks: [...tracks, master] },
+        track: (name) => tracks.find((candidate) => candidate.name === name)!,
+    };
+}
+
+describe('a stated name picks only the track whose name reads it best', () => {
+    it.each([
+        ['set Vocal volume to 75%', ['Vocal', 'Vocals'], 'Vocals'],
+        ['set Vocals volume to 75%', ['Vocal', 'Vocals'], 'Vocal'],
+        ['set Café volume to 75%', ['Café', 'Cafe'], 'Cafe'],
+        ['set Cafe volume to 75%', ['Café', 'Cafe'], 'Café'],
+        ['set Hi-Hat volume to 75%', ['Hi-Hat', 'Hi Hat'], 'Hi Hat'],
+        ['set Hi Hat volume to 75%', ['Hi-Hat', 'Hi Hat'], 'Hi-Hat'],
+        ['set Drum Bus volume to 75%', ['Drum', 'Drum Bus'], 'Drum'],
+        ['set Bass Drum volume to 75%', ['Bass', 'Bass Drum'], 'Bass'],
+        ['set Hi-Hat volume to 75%', ['Hat', 'Hi-Hat'], 'Hat'],
+    ])('refuses "%s" for the sibling of %j it does not state, %s', (prompt, names, picked) => {
+        const { context, track } = namedTracksContext(names);
+        const result = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', track(picked), { gain: 0.75 })],
+            [],
+            context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+
+    it.each([
+        ['set Vocal volume to 75%', ['Vocal', 'Vocals'], 'Vocal'],
+        ['set Vocals volume to 75%', ['Vocal', 'Vocals'], 'Vocals'],
+        ['set Café volume to 75%', ['Café', 'Cafe'], 'Café'],
+        ['set Hi Hat volume to 75%', ['Hi-Hat', 'Hi Hat'], 'Hi Hat'],
+        ['set Drum Bus volume to 75%', ['Drum', 'Drum Bus'], 'Drum Bus'],
+    ])('grounds "%s" for the track of %j it states, %s', (prompt, names, picked) => {
+        const { context, track } = namedTracksContext(names);
+        const result = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', track(picked), { gain: 0.75 })],
+            [],
+            context
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([track(picked).id]);
+    });
+
+    it.each([
+        ['turn down the Drum Bus by 3 dB', ['Drum Bus', 'FX Bus'], 'Bus', 'FX Bus'],
+        ['turn down the Drum Bus by 3 dB', ['Drums', 'Drum Bus'], 'Drum', 'Drums'],
+    ])(
+        'refuses "%s" among %j for the "%s" fragment it states only inside another name, %s',
+        (prompt, names, fragment, sibling) => {
+            const { context, track } = namedTracksContext(names);
+            const result = compileAndBridge(prompt, [nameFragmentItem(fragment, 2)], [], context);
+
+            expect(targetsOf(result)).toEqual([track('Drum Bus').id]);
+            expect(result.rejections).toContainEqual({
+                index: names.indexOf(sibling),
+                name: 'setTrackGain',
+                reason: UNAUTHORIZED_TRACK,
+            });
+        }
+    );
+});
+
+describe('a name stated with its punctuation folded picks its track as the shared resolver reads it', () => {
+    it.each([
+        ['set Kick In volume to 75%', 'Kick (In)'],
+        ['set Synth 1 volume to 75%', 'Synth #1'],
+        ['set Keys volume to 75%', '🎹 Keys'],
+        ['set Guitar L R volume to 75%', 'Guitar L/R'],
+        ["set Jose's Guitar volume to 75%", 'Jose’s Guitar'],
+        ['set Jose’s Guitar volume to 75%', "Jose's Guitar"],
+    ])('grounds "%s" for %s', (prompt, name) => {
+        const { context, track } = namedTracksContext([name, 'Snare']);
+        const result = compileAndBridge(prompt, [trackItem('setTrackGain', track(name), { gain: 0.75 })], [], context);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([track(name).id]);
+    });
+});
