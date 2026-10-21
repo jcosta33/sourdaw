@@ -1,6 +1,8 @@
 import { type TempoTimeline } from './TempoTimeline';
 
 export type Take = {
+    /** Identity shared only with notes admitted on this recorded pass. */
+    recordingPassId?: string;
     id: string;
     clipId: string;
     name: string;

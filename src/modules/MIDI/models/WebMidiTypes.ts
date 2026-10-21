@@ -1,3 +1,5 @@
+import { type MidiRecordingWitness } from './MidiRecordingSession';
+
 export type MidiInputInfo = {
     id: string;
     name: string;
@@ -81,6 +83,7 @@ export type HeldNoteExpressionTrails = {
 };
 
 export type ActiveNoteData = {
+    recordingWitness?: MidiRecordingWitness;
     startTime: number;
     startBeat: number;
     channel: number;
