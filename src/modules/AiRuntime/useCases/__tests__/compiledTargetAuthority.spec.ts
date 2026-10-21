@@ -6,10 +6,11 @@ import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 
 /**
  * A compiled command list proves which objects its selectors resolve to, never that the user asked
- * for them (#5295). A target the request protects or excludes is refused. A target picked by a
- * name, name fragment, owner track or literal id must be picked by something the clause states,
- * and a single such target must be the one the direct route grounds in the clause. Selections by
- * role, kind, device type, condition or no filter ground as the compiler resolves them.
+ * for them (#5295). A target the request protects or excludes is refused. A selector that picks
+ * its targets by a whole name, a name fragment or an owner track must pick them by something the
+ * clause states outside its restrictions and written values, or by the clause's selection
+ * reference. Literal targets and selections by role, kind, device type, condition or no filter
+ * ground as the compiler resolves them.
  */
 
 type ProjectTrack = ProjectContext['tracks'][number];
