@@ -1,0 +1,21 @@
+docs/06-testing.md
+  s_d257b09300b1ad::t_2a9b88540049f2 12
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  s_d257b09300b1ad::t_80494b61367390 395-417
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa73092cf5f6c02c8ae0a08ec41f703178345184",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
