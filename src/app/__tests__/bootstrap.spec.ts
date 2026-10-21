@@ -116,6 +116,9 @@ const {
     actionHistoryStoreMock,
     trackStoreMock,
     setTimeOperationDependenciesMock,
+    prepareAudioSourcesForTempoChangeMock,
+    isTempoAudioSourceTransitionMock,
+    tempoSourceDependenciesSetMock,
     setVcaRuntimeProjectionDependenciesMock,
     reconcileVcaRuntimeGainMock,
     prepareAutomationTimeOperationMock,
@@ -213,6 +216,9 @@ const {
         actionHistoryStoreMock: { value: { entries: [] as unknown[] }, subscribe: vi.fn() },
         trackStoreMock: { subscribe: vi.fn() },
         setTimeOperationDependenciesMock: vi.fn(),
+        prepareAudioSourcesForTempoChangeMock: vi.fn(),
+        isTempoAudioSourceTransitionMock: vi.fn(),
+        tempoSourceDependenciesSetMock: vi.fn(),
         setVcaRuntimeProjectionDependenciesMock: vi.fn(),
         reconcileVcaRuntimeGainMock: vi.fn(),
         prepareAutomationTimeOperationMock: vi.fn(),
@@ -371,6 +377,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setArrangementEventBus: setArrangementEventBusMock,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
+    prepareAudioSourcesForTempoChange: prepareAudioSourcesForTempoChangeMock,
+    isTempoAudioSourceTransition: isTempoAudioSourceTransitionMock,
     setVcaRuntimeProjectionDependencies: setVcaRuntimeProjectionDependenciesMock,
     getSongStructureHandlers: sentinelHandlers('SongStructure'),
     runtimeGraphTopology: runtimeGraphTopologyMock,
@@ -676,6 +684,7 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    tempoSourceDependencies: { set: tempoSourceDependenciesSetMock },
     getTransportHandlers: sentinelHandlers('Transport'),
     getTransportState: noop,
     createMusicalPositionProjector: noop,
@@ -992,6 +1001,13 @@ describe('bootstrap', () => {
             prepareMidiTimeStateRestore: prepareMidiTimeStateRestoreMock,
             prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
             prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
+        });
+    });
+
+    it('wires tempo source preparation through the owning module', () => {
+        expect(tempoSourceDependenciesSetMock).toHaveBeenCalledExactlyOnceWith({
+            prepare: prepareAudioSourcesForTempoChangeMock,
+            isTransition: isTempoAudioSourceTransitionMock,
         });
     });
 

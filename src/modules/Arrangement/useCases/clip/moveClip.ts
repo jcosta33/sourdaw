@@ -1,9 +1,16 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { type AudioSourceStateSnapshot, type TakeSourceDepthSnapshot } from '#/utils/handlerContract';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { resolveAudioLoopStartSeconds } from '#/utils/audioSourceTime';
 
-import { type Clip } from '../../models/Track';
+import { type Clip, type Track } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { getTrackEligibility } from '../../stores/trackEligibility';
+import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
+import { isAudioSourceStateSnapshot } from '../clipEditing/isAudioSourceStateSnapshot';
+import { prepareTakeSourceDepthMove } from '../comping/prepareTakeSourceDepthMove';
 
 import { isClipDropCompatible } from './isClipDropCompatible';
 
@@ -19,6 +26,8 @@ type MoveClipOptions = {
     historicalPlacement?: boolean;
     /** Exact captured end when restoring a historical placement. */
     historicalEndBeat?: number;
+    historicalAudioSource?: AudioSourceStateSnapshot;
+    historicalTakeSources?: readonly TakeSourceDepthSnapshot[];
 };
 
 function hasValidMoveCoordinates(startBeat: number, options?: MoveClipOptions): boolean {
@@ -26,6 +35,9 @@ function hasValidMoveCoordinates(startBeat: number, options?: MoveClipOptions): 
         return false;
     }
     const endBeat = options?.historicalEndBeat;
+    if (options?.historicalAudioSource && !isAudioSourceStateSnapshot(options.historicalAudioSource)) {
+        return false;
+    }
     if (endBeat === undefined) {
         return true;
     }
@@ -47,6 +59,93 @@ function isUnchangedPlacement(
     );
 }
 
+function resolveMovedAudioClip(
+    sourceClip: Clip,
+    movedClip: Clip,
+    startBeat: number,
+    options?: MoveClipOptions
+): Clip | null {
+    if (sourceClip.type !== 'audio') {
+        return movedClip;
+    }
+    const source = options?.historicalAudioSource;
+    if (source) {
+        const restored: Clip = {
+            ...movedClip,
+            audioOffsetSeconds: source.audioOffsetSeconds ?? undefined,
+            audioOffsetBeats: source.audioOffsetBeats ?? undefined,
+        };
+        if (source.audioLoopStartSeconds !== undefined) {
+            delete restored.audioLoopStartSeconds;
+            if (source.audioLoopStartSeconds !== null) {
+                restored.audioLoopStartSeconds = source.audioLoopStartSeconds;
+            }
+        }
+        if (source.audioOffsetSeconds === null) {
+            delete restored.audioOffsetSeconds;
+        }
+        if (source.audioOffsetBeats === null) {
+            delete restored.audioOffsetBeats;
+        }
+        return restored;
+    }
+    const sourceSeconds = audioSourceAtBeat(sourceClip, sourceClip.startBeat).audioOffsetSeconds;
+    const targetTempo = readTempoAtBeat({ beat: startBeat });
+    const targetBeats = (sourceSeconds * targetTempo) / 60;
+    if (!Number.isFinite(sourceSeconds) || !Number.isFinite(targetBeats)) {
+        return null;
+    }
+    return {
+        ...movedClip,
+        audioOffsetSeconds: sourceSeconds,
+        audioOffsetBeats: targetBeats,
+        ...(sourceClip.loopEnabled
+            ? {
+                  audioLoopStartSeconds: resolveAudioLoopStartSeconds(
+                      sourceClip,
+                      readTempoAtBeat({ beat: sourceClip.startBeat })
+                  ),
+                  loopOriginBeat:
+                      (sourceClip.loopOriginBeat ?? sourceClip.startBeat) + startBeat - sourceClip.startBeat,
+              }
+            : {}),
+    };
+}
+
+function prepareClipMovement(
+    tracks: readonly Track[],
+    clipId: string,
+    targetTrackId: string,
+    startBeat: number,
+    options?: MoveClipOptions
+): { sourceClip: Clip; movedClip: Clip; sourceTrackId: string; tracksWithoutClip: Track[] } | null {
+    let sourceClip: Clip | undefined;
+    let movedClip: Clip | undefined;
+    let sourceTrackId: string | undefined;
+    const tracksWithoutClip = tracks.map((track) => {
+        const clip = track.clips.find((candidate) => candidate.id === clipId);
+        if (clip) {
+            if (clip.locked) {
+                return track;
+            }
+            sourceClip = clip;
+            sourceTrackId = track.id;
+            movedClip = {
+                ...clip,
+                trackId: targetTrackId,
+                ...shiftLoopOriginEntry(clip, startBeat - clip.startBeat),
+                startBeat,
+                endBeat: options?.historicalEndBeat ?? startBeat + (clip.endBeat - clip.startBeat),
+            };
+        }
+        return { ...track, clips: track.clips.filter((candidate) => candidate.id !== clipId) };
+    });
+    if (!sourceClip || !movedClip || !sourceTrackId) {
+        return null;
+    }
+    return { sourceClip, movedClip, sourceTrackId, tracksWithoutClip };
+}
+
 export function moveClip(
     clipId: string,
     targetTrackId: string,
@@ -65,32 +164,12 @@ export function moveClip(
         return false;
     }
 
-    let movedClip: Clip | undefined;
-    let oldStartBeat: number | undefined;
-    let oldEndBeat: number | undefined;
-    let sourceTrackId: string | undefined;
-    const tracksWithoutClip = state.tracks.map((time) => {
-        const clip = time.clips.find((context) => context.id === clipId);
-        if (clip) {
-            if (clip.locked) {
-                return time;
-            }
-            oldStartBeat = clip.startBeat;
-            oldEndBeat = clip.endBeat;
-            sourceTrackId = time.id;
-            movedClip = {
-                ...clip,
-                trackId: targetTrackId,
-                startBeat,
-                endBeat: options?.historicalEndBeat ?? startBeat + (clip.endBeat - clip.startBeat),
-            };
-        }
-        return { ...time, clips: time.clips.filter((context) => context.id !== clipId) };
-    });
-
-    if (!movedClip || oldStartBeat === undefined || oldEndBeat === undefined || sourceTrackId === undefined) {
+    const candidate = prepareClipMovement(state.tracks, clipId, targetTrackId, startBeat, options);
+    if (!candidate) {
         return false;
     }
+    const { sourceClip, sourceTrackId, tracksWithoutClip } = candidate;
+    let movedClip = candidate.movedClip;
     // `acceptsClipUpdate` is true for bus/master/folder, but none of them
     // renders clip content: a clip moved there is never scheduled. The same
     // rule the timeline drop enforces, applied to every route through here —
@@ -108,8 +187,28 @@ export function moveClip(
     if (!sameHost && options?.historicalPlacement !== true && !isClipDropCompatible(movedClip.type, targetTrack.kind)) {
         return false;
     }
-    if (isUnchangedPlacement(sourceTrackId, targetTrackId, oldStartBeat, oldEndBeat, startBeat, options)) {
+    if (
+        isUnchangedPlacement(sourceTrackId, targetTrackId, sourceClip.startBeat, sourceClip.endBeat, startBeat, options)
+    ) {
         return false;
+    }
+
+    const adjustedClip = resolveMovedAudioClip(sourceClip, movedClip, startBeat, options);
+    if (!adjustedClip) {
+        return false;
+    }
+    movedClip = adjustedClip;
+    let takeSourcePlan: ReturnType<typeof prepareTakeSourceDepthMove> = null;
+    if (sourceClip.type === 'audio') {
+        takeSourcePlan = prepareTakeSourceDepthMove({
+            clipId,
+            oldTempo: readTempoAtBeat({ beat: sourceClip.startBeat }),
+            newTempo: readTempoAtBeat({ beat: startBeat }),
+            restore: options?.historicalTakeSources,
+        });
+        if (!takeSourcePlan) {
+            return false;
+        }
     }
 
     setTrackState({
@@ -119,16 +218,17 @@ export function moveClip(
         tracks: sameHost
             ? state.tracks.map((time) =>
                   time.id === targetTrackId
-                      ? { ...time, clips: time.clips.map((clip) => (clip.id === clipId ? movedClip! : clip)) }
+                      ? { ...time, clips: time.clips.map((clip) => (clip.id === clipId ? movedClip : clip)) }
                       : time
               )
             : tracksWithoutClip.map((time) =>
-                  time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip!] } : time
+                  time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip] } : time
               ),
     });
+    takeSourcePlan?.apply();
 
     // Automation: shift from the original drag start (preview doesn't shift automation)
-    const automationDelta = startBeat - (originalStartBeat ?? oldStartBeat);
+    const automationDelta = startBeat - (originalStartBeat ?? sourceClip.startBeat);
     if (moveAutomation) {
         shiftClipAutomation(clipId, automationDelta, targetTrackId);
     }

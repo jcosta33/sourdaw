@@ -1,6 +1,7 @@
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
+import { materializeTakeSourceDepth } from './materializeTakeSourceDepth';
 import { type TakeReKeyClipWindow, type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 type CaptureTakeReKeyTransitionsInput = {
@@ -10,6 +11,7 @@ type CaptureTakeReKeyTransitionsInput = {
     removedClipIds: ReadonlySet<string>;
     deleteStartBeat: number;
     deleteEndBeat: number;
+    sourceTempoByClipId: ReadonlyMap<string, number>;
     /**
      * What the windows represent, and with it how regions on takes the windows
      * do not fragment behave. `delete-time` (default): the timeline compressed
@@ -129,7 +131,8 @@ function buildTakeFragments(
     take: Take,
     pieces: readonly MappedPiece[],
     deleteStartBeat: number,
-    deleteEndBeat: number
+    deleteEndBeat: number,
+    originalClipTempo: number | undefined
 ): { fragmentTakes: Take[]; fragments: TakeFragmentMap[] } {
     const fragmentTakes: Take[] = [];
     const fragments: TakeFragmentMap[] = [];
@@ -143,7 +146,7 @@ function buildTakeFragments(
             fragmentTakeId = `${take.id}:time-delete-right:${deleteStartBeat}:${deleteEndBeat}`;
         }
         fragmentTakes.push({
-            ...take,
+            ...materializeTakeSourceDepth(take, originalClipTempo),
             id: fragmentTakeId,
             clipId: piece.targetClipId,
             startBeat: piece.startBeat,
@@ -193,7 +196,8 @@ function mapLaneTakes(
             take,
             pieces,
             input.deleteStartBeat,
-            input.deleteEndBeat
+            input.deleteEndBeat,
+            input.sourceTempoByClipId.get(take.clipId)
         );
         mapping.takesAfter.push(...fragmentTakes);
         mapping.fragmentsBySourceTakeId.set(take.id, fragments);

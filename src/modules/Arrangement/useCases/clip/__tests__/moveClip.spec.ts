@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+
 import { moveClip } from '../moveClip';
 
 const mocks = vi.hoisted(() => {
@@ -10,6 +12,8 @@ const mocks = vi.hoisted(() => {
         endBeat: number;
         type: 'audio' | 'midi';
         locked?: boolean;
+        audioOffsetBeats?: number;
+        audioOffsetSeconds?: number;
     };
     type MockTrack = { id: string; kind: 'audio' | 'bus' | 'vca'; clips: MockClip[] };
     type MockTrackState = { tracks: MockTrack[] };
@@ -40,6 +44,31 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 describe('moveClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
+    });
+
+    it('keeps a legacy source entry when an audio clip moves across a tempo boundary', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    clips: [{ id: 'c1', trackId: 't1', type: 'audio', startBeat: 3, endBeat: 6, audioOffsetBeats: 2 }],
+                },
+            ],
+        });
+
+        expect(moveClip('c1', 't1', 5)).toBe(true);
+
+        const moved = mocks.setTrackState.mock.calls[0]?.[0].tracks[0]?.clips[0];
+        expect(moved).toMatchObject({ startBeat: 5, audioOffsetSeconds: 1, audioOffsetBeats: 1 });
     });
 
     it('moves a clip between tracks and updates its position', () => {

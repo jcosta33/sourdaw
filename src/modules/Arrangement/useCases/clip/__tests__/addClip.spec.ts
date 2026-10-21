@@ -166,6 +166,7 @@ describe('addClip', () => {
             locked: true,
             muted: true,
             audioOffsetBeats: 2,
+            audioOffsetSeconds: 0,
             stretchMode: 'timestretch',
             stretchRatio: 1.5,
             loopEnabled: true,
@@ -180,10 +181,43 @@ describe('addClip', () => {
             locked: true,
             muted: true,
             audioOffsetBeats: 2,
+            audioOffsetSeconds: 0,
             stretchMode: 'timestretch',
             stretchRatio: 1.5,
             loopEnabled: true,
             loopLength: 8,
         });
+    });
+
+    it('preserves a signed canonical source offset without replacing it with the beat alias', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [], alternatives: [] }] });
+
+        const result = addClip({
+            trackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Pre-roll',
+            audioOffsetSeconds: -0.5,
+            audioOffsetBeats: 9,
+        });
+
+        expect(result?.audioOffsetSeconds).toBe(-0.5);
+        expect(result?.audioOffsetBeats).toBe(9);
+    });
+
+    it('rejects an invalid canonical source offset before creating a clip', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [], alternatives: [] }] });
+
+        expect(
+            addClip({
+                trackId: 't1',
+                startBeat: 0,
+                endBeat: 4,
+                name: 'Invalid',
+                audioOffsetSeconds: Number.NaN,
+            })
+        ).toBeNull();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 });

@@ -53,9 +53,9 @@ vi.mock('../../../useCases/comping/planTakeRetirement', () => ({
     planTakeRetirement: vi.fn(),
 }));
 
-vi.mock('../../../useCases/comping/restoreTakeReKeyTransitions', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../../../useCases/comping/restoreTakeReKeyTransitions')>();
-    return { ...actual, restoreTakeReKeyTransitions: vi.fn(actual.restoreTakeReKeyTransitions) };
+vi.mock('../../../useCases/comping/writeTakeReKeyTransitions', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../useCases/comping/writeTakeReKeyTransitions')>();
+    return { ...actual, writeTakeReKeyTransitions: vi.fn(actual.writeTakeReKeyTransitions) };
 });
 
 vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
@@ -70,7 +70,7 @@ import { clipSplitStateRestorable } from '../../../useCases/clipEditing/clipSpli
 import { replaceClipSplitTrackState } from '../../../useCases/clipEditing/replaceClipSplitTrackState';
 import { removeTakesForClips } from '../../../useCases/comping/removeTakesForClips';
 import { planTakeRetirement } from '../../../useCases/comping/planTakeRetirement';
-import { restoreTakeReKeyTransitions } from '../../../useCases/comping/restoreTakeReKeyTransitions';
+import { writeTakeReKeyTransitions } from '../../../useCases/comping/writeTakeReKeyTransitions';
 import { restoreTakesForClip } from '../../../useCases/comping/restoreTakesForClip';
 import { handleRestoreClipSplitState } from '../handleRestoreClipSplitState';
 
@@ -84,7 +84,7 @@ const mockedLaneTransitionMatches = vi.mocked(clipAutomationLaneTransitionMatche
 const mockedApplyLaneTransition = vi.mocked(applyClipAutomationLaneTransition);
 const mockedRemoveTakes = vi.mocked(removeTakesForClips);
 const mockedPlanRetirement = vi.mocked(planTakeRetirement);
-const mockedRestoreReKey = vi.mocked(restoreTakeReKeyTransitions);
+const mockedWriteReKey = vi.mocked(writeTakeReKeyTransitions);
 const mockedRestoreTakes = vi.mocked(restoreTakesForClip);
 
 function makeClipSnapshot(id: string): ClipStateSnapshot {
@@ -403,9 +403,9 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
         expect(mockedRemoveTakes).toHaveBeenCalledWith(['c2']);
         expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set());
         expect(mockedPlanRetirement.mock.invocationCallOrder[0]).toBeLessThan(
-            mockedRestoreReKey.mock.invocationCallOrder[0]!
+            mockedWriteReKey.mock.invocationCallOrder[0]!
         );
-        expect(mockedRestoreReKey.mock.invocationCallOrder[0]).toBeLessThan(
+        expect(mockedWriteReKey.mock.invocationCallOrder[0]).toBeLessThan(
             mockedRemoveTakes.mock.invocationCallOrder[0]!
         );
         expect(retiredTakeLanes).toEqual([]);

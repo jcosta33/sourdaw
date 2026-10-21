@@ -173,7 +173,7 @@ type ReconcileChildInput = {
  * a mismatch is a type error at the call site instead of a silent write to the
  * wrong shape.
  */
-function writeChild(container: MutableContainer | unknown[], field: string | number, value: unknown): void {
+function assignChild(container: MutableContainer | unknown[], field: string | number, value: unknown): void {
     if (Array.isArray(container) && typeof field === 'number') {
         container[field] = value;
         return;
@@ -193,6 +193,38 @@ function readChild(container: MutableContainer | unknown[], field: string | numb
         return container[field];
     }
     throw new Error('CRDT slot reconciliation addressed a container with the wrong key kind');
+}
+
+/**
+ * Bulk object/list imports can classify a fractional number as an integer.
+ * Attach each empty container before writing its children so Automerge's
+ * scalar setters preserve the exact number. This only materializes subtrees
+ * the reconciler has already decided this writer owns.
+ */
+function writeChild(container: MutableContainer | unknown[], field: string | number, value: unknown): void {
+    if (Array.isArray(value)) {
+        assignChild(container, field, []);
+        const target = readChild(container, field);
+        if (!Array.isArray(target)) {
+            throw new TypeError('CRDT slot reconciliation failed to attach a list');
+        }
+        for (const [index, child] of value.entries()) {
+            writeChild(target, index, child);
+        }
+        return;
+    }
+    if (isUnknownRecord(value)) {
+        assignChild(container, field, {});
+        const target = readChild(container, field);
+        if (!isUnknownRecord(target)) {
+            throw new TypeError('CRDT slot reconciliation failed to attach a map');
+        }
+        for (const [key, child] of Object.entries(value)) {
+            writeChild(target, key, child);
+        }
+        return;
+    }
+    assignChild(container, field, value);
 }
 
 function reconcileChild(input: ReconcileChildInput): void {
@@ -662,7 +694,8 @@ function placeRows(input: PlaceRowsInput): void {
             continue;
         }
         const insertAt = Math.min(previousIndex + 1, current.length);
-        current.splice(insertAt, 0, desired[desiredIndex]);
+        current.splice(insertAt, 0, null);
+        writeChild(current, insertAt, desired[desiredIndex]);
         previousIndex = insertAt;
     }
 }

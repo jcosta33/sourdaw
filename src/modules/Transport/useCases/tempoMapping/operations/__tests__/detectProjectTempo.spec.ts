@@ -36,7 +36,7 @@ describe('detectProjectTempo', () => {
         expect(updateTransportState).not.toHaveBeenCalled();
     });
 
-    it('should update tempo when MIDI clips yield a confident tempo map', () => {
+    it('only reports tempo when MIDI clips yield a confident result', () => {
         trackCell.value = {
             tracks: [
                 {
@@ -51,6 +51,6 @@ describe('detectProjectTempo', () => {
 
         expect(result.averageBpm).toBe(120);
         expect(result.confidence).toBeGreaterThan(0.5);
-        expect(updateTransportState).toHaveBeenCalledWith({ tempo: 120 });
+        expect(updateTransportState).not.toHaveBeenCalled();
     });
 });

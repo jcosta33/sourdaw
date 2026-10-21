@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { midiStore } from '#/modules/MIDI/stores';
 import { prepareMidiGlobalTimeTransaction } from '#/modules/MIDI/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -154,6 +155,8 @@ describe('executeSelectedTimeRangeDeletion', () => {
         });
         midiStore.set(EMPTY_MIDI_STATE);
         takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         installRealMidiPreparation();
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('12345678-1234-4123-8123-123456789abc');
     });
@@ -161,7 +164,38 @@ describe('executeSelectedTimeRangeDeletion', () => {
     afterEach(() => {
         setTimeOperationDependencies(null);
         takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         vi.restoreAllMocks();
+    });
+
+    it('keeps a spanning audio fragment on its canonical source after deleting time across a tempo change', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const clip = {
+            ...createClip({ id: 'span', trackId: 'target', startBeat: 0, endBeat: 10 }),
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 9,
+        };
+        const original = setArrangement([createTrack('target', [clip])]);
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({
+                startBeat: 3,
+                endBeat: 7,
+                trackIds: ['target'],
+            })
+        );
+
+        const fragments = trackStore.value?.tracks[0]?.clips ?? [];
+        expect(fragments.find((candidate) => candidate.id === 'span')?.audioOffsetSeconds).toBe(0);
+        expect(fragments.find((candidate) => candidate.id !== 'span')?.audioOffsetSeconds).toBe(5);
+        expect(result.undo()).toBe(true);
+        expect(trackStore.value).toBe(original);
     });
 
     it('rejects a mixed eligible and dormant target set without applying an eligible subset', () => {
@@ -637,13 +671,14 @@ describe('executeSelectedTimeRangeDeletion', () => {
             expect(trackStore.value?.tracks[0]).toEqual({
                 ...target,
                 clips: [
-                    { ...span, endBeat: 3, name: 'Test Clip (L)' },
+                    { ...span, endBeat: 3, name: 'Test Clip (L)', audioOffsetSeconds: 0, audioOffsetBeats: 0 },
                     {
                         ...span,
                         id: 'clip-dtr-12345678',
                         startBeat: 7,
                         name: 'Test Clip (R)',
                         audioOffsetBeats: 7,
+                        audioOffsetSeconds: 3.5,
                         midiOffsetBeats: 0,
                     },
                     untouched,

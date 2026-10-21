@@ -1,3 +1,5 @@
+import { readTempoAtBeat } from '#/modules/Transport/stores';
+
 import { captureTakeReKeyTransitions } from './captureTakeReKeyTransitions';
 import { collectTakeReKeyWindows } from './collectTakeReKeyWindows';
 import { type TakeReKeyClipGeometry, type TakeReKeyLaneTransition } from './takeReKeyTransition';
@@ -56,5 +58,12 @@ export function captureTrackTakeReKeyTransitions(input: {
         removedClipIds: input.removedClipIds,
         deleteStartBeat: input.deleteStartBeat,
         deleteEndBeat: input.deleteEndBeat,
+        sourceTempoByClipId: new Map(
+            input.owners.flatMap((owner) =>
+                owner.clips.flatMap(({ source }) =>
+                    source.type === 'audio' ? [[source.id, readTempoAtBeat({ beat: source.startBeat })] as const] : []
+                )
+            )
+        ),
     });
 }

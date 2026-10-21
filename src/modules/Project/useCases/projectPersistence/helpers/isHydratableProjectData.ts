@@ -399,6 +399,8 @@ function isClip(value: unknown): value is ProjectClip {
             keys: [
                 'sampleStartBeat',
                 'audioOffsetBeats',
+                'audioOffsetSeconds',
+                'audioLoopStartSeconds',
                 'midiOffsetBeats',
                 'stretchRatio',
                 'loopLength',
@@ -660,11 +662,26 @@ function isSection(value: unknown): boolean {
 }
 
 function isTake(value: unknown): boolean {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const hasAnchor = Object.hasOwn(value, 'passAnchorSeconds');
+    const hasDepth = Object.hasOwn(value, 'passDepthSeconds');
+    const finiteNonNegative = (field: unknown): boolean =>
+        typeof field === 'number' && Number.isFinite(field) && field >= 0;
     return (
-        isRecord(value) &&
         hasType({ record: value, keys: ['id', 'clipId', 'name'], type: 'string' }) &&
         hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
-        typeof value.selected === 'boolean'
+        typeof value.selected === 'boolean' &&
+        (!Object.hasOwn(value, 'sourceOffsetBeats') || finiteNonNegative(value.sourceOffsetBeats)) &&
+        (!Object.hasOwn(value, 'sourceOffsetSeconds') || finiteNonNegative(value.sourceOffsetSeconds)) &&
+        ((!hasAnchor && !hasDepth) ||
+            (hasAnchor &&
+                hasDepth &&
+                Object.hasOwn(value, 'sourceOffsetBeats') &&
+                typeof value.passAnchorSeconds === 'number' &&
+                Number.isFinite(value.passAnchorSeconds) &&
+                finiteNonNegative(value.passDepthSeconds)))
     );
 }
 

@@ -1,8 +1,23 @@
+import { loopOriginEntry } from '#/utils/clipLoopOrigin';
+
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip, type FollowAction, type StretchMode } from '../../stores/trackStore';
+
+function hasValidPlacement(
+    input: Pick<Clip, 'startBeat' | 'endBeat' | 'audioOffsetSeconds' | 'audioLoopStartSeconds'>
+): boolean {
+    return (
+        Number.isFinite(input.startBeat) &&
+        Number.isFinite(input.endBeat) &&
+        input.startBeat >= 0 &&
+        input.endBeat > input.startBeat &&
+        (input.audioOffsetSeconds === undefined || Number.isFinite(input.audioOffsetSeconds)) &&
+        (input.audioLoopStartSeconds === undefined || Number.isFinite(input.audioLoopStartSeconds))
+    );
+}
 
 export function addClip(input: {
     id?: string;
@@ -16,6 +31,8 @@ export function addClip(input: {
     isGhost?: boolean;
     /** Optional source-clip properties to preserve (e.g. when duplicating). */
     audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
+    audioLoopStartSeconds?: number;
     midiOffsetBeats?: number;
     fadeInBeats?: number;
     fadeOutBeats?: number;
@@ -27,6 +44,8 @@ export function addClip(input: {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    /** Optional source-clip loop anchor to preserve when duplicating or pasting (#4988). */
+    loopOriginBeat?: number;
     followAction?: FollowAction;
 }): Clip | null {
     const state = getTrackState();
@@ -34,14 +53,8 @@ export function addClip(input: {
         return null;
     }
 
-    // Validate the requested span before touching the store. A clip with a
-    // non-positive duration or a negative start position is never valid and
-    // would otherwise produce a degenerate clip that downstream renderers and
-    // the engine cannot reason about.
-    if (!Number.isFinite(input.startBeat) || !Number.isFinite(input.endBeat)) {
-        return null;
-    }
-    if (input.startBeat < 0 || input.endBeat <= input.startBeat) {
+    // Reject invalid geometry and source time before creating a clip.
+    if (!hasValidPlacement(input)) {
         return null;
     }
 
@@ -78,6 +91,8 @@ export function addClip(input: {
         audioBufferId: input.audioBufferId,
         assetHash: input.assetHash,
         audioOffsetBeats: input.audioOffsetBeats,
+        audioOffsetSeconds: input.audioOffsetSeconds,
+        audioLoopStartSeconds: input.audioLoopStartSeconds,
         midiOffsetBeats: input.midiOffsetBeats,
         fadeInBeats: input.fadeInBeats ?? 0,
         fadeOutBeats: input.fadeOutBeats ?? 0,
@@ -89,6 +104,11 @@ export function addClip(input: {
         stretchRatio: input.stretchRatio,
         loopEnabled: input.loopEnabled,
         loopLength: input.loopLength,
+        // The anchor rides only when it exists: an explicit `loopOriginBeat:
+        // undefined` key is a shape the CRDT normalizer never rebuilds and the
+        // time-operation codec's plan encode rejects, so any later global time
+        // operation would silently refuse (#4988).
+        ...loopOriginEntry(input.loopOriginBeat),
         followAction: input.followAction,
         isGhost: input.isGhost,
     };

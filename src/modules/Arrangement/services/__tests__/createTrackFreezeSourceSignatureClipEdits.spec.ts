@@ -24,4 +24,28 @@ describe('freeze source signature and audible clip edits', () => {
     ] as const)('changes when an edit is %s', (_edit, change) => {
         expect(signatureOf({ ...base, ...change })).not.toBe(signatureOf(base));
     });
+
+    it('preserves the exact signature for legacy clips without a canonical seconds offset', () => {
+        expect(signatureOf(base)).toBe('clip-b:4:4::1:audio:buffer-b:0:0:0:0:false:::false:0||');
+    });
+
+    it('changes when the canonical seconds offset changes while the beat alias stays fixed', () => {
+        const clip = { ...base, audioOffsetBeats: 2, audioOffsetSeconds: 1 };
+        expect(signatureOf({ ...clip, audioOffsetSeconds: 2 })).not.toBe(signatureOf(clip));
+    });
+
+    it('distinguishes canonical zero from an absent offset despite a nonzero beat alias', () => {
+        const legacy = { ...base, audioOffsetBeats: 2 };
+        expect(signatureOf({ ...legacy, audioOffsetSeconds: 0 })).not.toBe(signatureOf(legacy));
+    });
+
+    it('changes when the canonical seconds offset is negative', () => {
+        const clip = { ...base, audioOffsetSeconds: 0 };
+        expect(signatureOf({ ...clip, audioOffsetSeconds: -1 })).not.toBe(signatureOf(clip));
+    });
+
+    it('keeps an unchanged canonical seconds offset stable', () => {
+        const clip = { ...base, audioOffsetSeconds: -1 };
+        expect(signatureOf({ ...base, audioOffsetSeconds: -1 })).toBe(signatureOf(clip));
+    });
 });

@@ -13,6 +13,10 @@ export type ClipPreviewPosition = {
     startBeat: number;
     endBeat: number;
     audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
+    loopOriginBeat?: number;
+    /** Fixed source loop boundary; relocation and tempo edits never rederive it. */
+    audioLoopStartSeconds?: number;
     midiOffsetBeats?: number;
 };
 

@@ -83,6 +83,7 @@ describe('takeLaneWriteJournal', () => {
                                 ...take,
                                 name: 'A local',
                                 sourceOffsetBeats: 2,
+                                sourceOffsetSeconds: 1,
                                 passAnchorSeconds: -1.5,
                                 passDepthSeconds: 1,
                             };
@@ -122,6 +123,7 @@ describe('takeLaneWriteJournal', () => {
         expect(replay.value?.lanes[0]?.takes[0]).toMatchObject({
             name: 'A local',
             sourceOffsetBeats: 2,
+            sourceOffsetSeconds: 1,
             passAnchorSeconds: -1.5,
             passDepthSeconds: 1,
         });

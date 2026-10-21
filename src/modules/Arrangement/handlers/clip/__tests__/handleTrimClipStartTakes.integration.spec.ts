@@ -159,10 +159,13 @@ describe('clip edits on a comped loop recording', () => {
 
             expect(resolvedComp()).toEqual([{ startBeat: 8, endBeat: 20, mediaBeat: 0 }]);
             expect(readTakes()).toEqual(takes);
+            expect(readTakes().find((take) => take.id === 'manual')).not.toHaveProperty('sourceOffsetSeconds');
+            expect(readTakes().find((take) => take.id === 'manual')).not.toHaveProperty('sourceOffsetBeats');
 
             await undo();
             flushAutomergeStorageWrites();
             expect(resolvedComp()).toEqual(asRecorded);
+            expect(readTakes()).toEqual(takes);
         }
     );
 
@@ -222,11 +225,27 @@ describe('clip edits on a comped loop recording', () => {
         expect(mirroredPast().map((entry) => [entry.action, entry.inverseAction])).toEqual([
             [
                 { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
-                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 0 } },
+                {
+                    type: 'trimClipStart',
+                    payload: {
+                        clipId: 'clip-1',
+                        newStartBeat: 0,
+                        expectedAudioSource: { audioOffsetSeconds: 1, audioOffsetBeats: 2 },
+                        restoreAudioSource: { audioOffsetSeconds: null, audioOffsetBeats: null },
+                    },
+                },
             ],
             [
                 { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } },
-                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
+                {
+                    type: 'trimClipStart',
+                    payload: {
+                        clipId: 'clip-1',
+                        newStartBeat: 2,
+                        expectedAudioSource: { audioOffsetSeconds: 0.5, audioOffsetBeats: 1 },
+                        restoreAudioSource: { audioOffsetSeconds: 1, audioOffsetBeats: 2 },
+                    },
+                },
             ],
         ]);
 
@@ -238,5 +257,19 @@ describe('clip edits on a comped loop recording', () => {
         await undo();
         flushAutomergeStorageWrites();
         expect(resolvedComp()).toEqual(asRecorded);
+        expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('audioOffsetSeconds');
+        expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('audioOffsetBeats');
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(resolvedComp()).toEqual([
+            { startBeat: 2, endBeat: 4, mediaBeat: 6 },
+            { startBeat: 4, endBeat: 12, mediaBeat: 4 },
+        ]);
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(resolvedComp()).toEqual([
+            { startBeat: 1, endBeat: 4, mediaBeat: 5 },
+            { startBeat: 4, endBeat: 12, mediaBeat: 4 },
+        ]);
     });
 });

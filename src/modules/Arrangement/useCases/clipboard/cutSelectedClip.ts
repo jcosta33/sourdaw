@@ -5,6 +5,7 @@ import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { removeClip } from '../clip/removeClip';
+import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 import { captureMidiClipRows } from './captureMidiClipRows';
@@ -50,8 +51,12 @@ export function cutSelectedClip(): boolean {
         if (!found) {
             return false;
         }
+        const clip = { ...found.clip };
+        if (clip.type === 'audio' && (clip.audioOffsetSeconds !== undefined || clip.audioOffsetBeats !== undefined)) {
+            clip.audioOffsetSeconds = audioSourceAtBeat(found.clip, found.clip.startBeat).audioOffsetSeconds;
+        }
         entries.push({
-            clip: { ...found.clip },
+            clip,
             ...captureMidiClipRows(found.clip),
             // Same self-contained payload `copySelectedClip` builds: cut is a
             // copy whose paste must carry the notes, controller streams,

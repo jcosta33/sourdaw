@@ -1,4 +1,6 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
@@ -23,6 +25,8 @@ import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipS
 import { timeOperationDependencies, type TimeOperationDependencies } from '../timeOperations/timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperations/timeOperationStateCodec';
 
+import { audioSourceAtBeat } from './audioSourceAtBeat';
+import { clipWithAudioSourceAtBeat } from './clipWithAudioSourceAtBeat';
 import { consumedStretchFactor } from './consumedStretchFactor';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
 
@@ -339,6 +343,9 @@ function validateClip(clip: unknown): boolean {
     if (clip.audioOffsetBeats !== undefined && !isFiniteNumber(clip.audioOffsetBeats)) {
         return false;
     }
+    if (clip.audioOffsetSeconds !== undefined && !isFiniteNumber(clip.audioOffsetSeconds)) {
+        return false;
+    }
     if (clip.midiOffsetBeats !== undefined && !isFiniteNumber(clip.midiOffsetBeats)) {
         return false;
     }
@@ -400,9 +407,14 @@ function validateComputedValues(owners: readonly NormalizedOwner[], operation: S
             const spansRange = clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat;
             const overlapsRightEdge = clip.startBeat < operation.endBeat && clip.endBeat > operation.endBeat;
             if (spansRange || overlapsRightEdge) {
+                const nextAudioSource = clip.type === 'audio' ? audioSourceAtBeat(clip, operation.endBeat) : null;
                 const nextAudioOffset =
+                    nextAudioSource?.audioOffsetBeats ??
                     (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat);
-                if (!isValidComputedOffset(nextAudioOffset)) {
+                if (
+                    !isValidComputedOffset(nextAudioOffset) ||
+                    (nextAudioSource && !isValidComputedOffset(nextAudioSource.audioOffsetSeconds))
+                ) {
                     return false;
                 }
             }
@@ -641,22 +653,34 @@ function planTrack(
                 return null;
             }
             identityIndex++;
+            const rightAudioSource = clip.type === 'audio' ? audioSourceAtBeat(clip, operation.endBeat) : null;
+            const rightAudioOffsetBeats =
+                rightAudioSource?.audioOffsetBeats ??
+                (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat);
             const leftClip: Clip = {
-                ...clip,
+                ...clipWithAudioSourceAtBeat(clip, clip.startBeat),
                 endBeat: operation.startBeat,
                 name: `${clip.name} (L)`,
             };
+            // Audio keeps its source boundary in seconds and its timeline loop phase.
+            // MIDI rebases its notes, so its fragment opens a fresh coordinate basis.
+            const rightLoopOriginEntry =
+                clip.type === 'midi'
+                    ? restampLoopOriginEntry(clip, operation.endBeat)
+                    : clip.loopEnabled
+                      ? { loopOriginBeat: clip.loopOriginBeat ?? clip.startBeat }
+                      : shiftLoopOriginEntry(clip, 0);
             const rightClip: Clip = {
-                ...clip,
+                ...clipWithAudioSourceAtBeat(clip, operation.endBeat),
                 id: identity.targetClipId,
                 startBeat: operation.endBeat,
                 name: `${clip.name} (R)`,
                 // The fragment plays on where the cut left off: the consumed
                 // span is timeline beats times the ratio, the same conversion
                 // the ordinary split and the warp cut below use.
-                audioOffsetBeats:
-                    (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
+                audioOffsetBeats: rightAudioOffsetBeats,
                 midiOffsetBeats: 0,
+                ...rightLoopOriginEntry,
             };
             finalClips.push(leftClip, rightClip);
             if (clip.type === 'midi') {
@@ -671,32 +695,46 @@ function planTrack(
                 sourceClipId: clip.id,
                 fragmentClipId: identity.targetClipId,
                 clipRelativeSplitBeats: operation.endBeat - clip.startBeat,
-                // Content beats are timeline beats times the consumed stretch
-                // law (reversedClipAudioOffsetBeats) — the same conversion the
-                // ordinary split's warp axis performs. Without it the cut
-                // lands short by the ratio and the fragment inherits markers
-                // for audio the deleted span carried.
-                contentSplitBeats:
-                    (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
+                // The warp content axis converts integrated source seconds to
+                // a legacy buffer-beat alias at the original clip-start tempo,
+                // as ordinary split does. Without it the cut lands short by
+                // the stretch ratio and the fragment inherits markers for
+                // audio the deleted span carried.
+                contentSplitBeats: rightAudioSource
+                    ? (rightAudioSource.audioOffsetSeconds * readTempoAtBeat({ beat: clip.startBeat })) / 60
+                    : rightAudioOffsetBeats,
                 absoluteSplitBeats: operation.endBeat,
             });
             changed = true;
             continue;
         }
         if (clip.startBeat < operation.startBeat && clip.endBeat > operation.startBeat) {
-            finalClips.push({ ...clip, endBeat: operation.startBeat });
+            finalClips.push({
+                ...clipWithAudioSourceAtBeat(clip, clip.startBeat),
+                endBeat: operation.startBeat,
+            });
             changed = true;
             continue;
         }
         if (clip.startBeat < operation.endBeat && clip.endBeat > operation.endBeat) {
+            const rightAudioSource = clip.type === 'audio' ? audioSourceAtBeat(clip, operation.endBeat) : null;
+            const timelineDelta = operation.endBeat - clip.startBeat;
+            const trimLoopOriginEntry =
+                clip.type === 'midi'
+                    ? shiftLoopOriginEntry(clip, timelineDelta)
+                    : clip.loopEnabled
+                      ? { loopOriginBeat: clip.loopOriginBeat ?? clip.startBeat }
+                      : shiftLoopOriginEntry(clip, 0);
             finalClips.push({
-                ...clip,
+                ...clipWithAudioSourceAtBeat(clip, operation.endBeat),
                 startBeat: operation.endBeat,
                 // Same ratio conversion as the spanning fragment above: the
                 // head inside the deleted range is content the clip no longer
                 // plays.
                 audioOffsetBeats:
+                    rightAudioSource?.audioOffsetBeats ??
                     (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
+                ...trimLoopOriginEntry,
             });
             changed = true;
             continue;

@@ -46,6 +46,8 @@ type PrepareAutomationTimeOperationInput = {
      * exactly as it does for every lane this preparation retires or re-keys.
      */
     clipLaneCopies?: readonly AutomationLane[];
+    /** Audio left fragments retain their original point curves through an inserted seam. */
+    preservedClipIds?: readonly string[];
 };
 
 type IndexedAutomationOwner = {
@@ -238,6 +240,7 @@ function validateInput(input: unknown): {
     ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>;
     removedClipIds: ReadonlySet<string>;
     clipIdMigrations: ReadonlyMap<string, string>;
+    preservedClipIds: ReadonlySet<string>;
 } | null {
     if (!isPlainObject(input)) {
         return null;
@@ -263,11 +266,31 @@ function validateInput(input: unknown): {
         return null;
     }
 
+    const preservedClipIds = new Set<string>();
+    if (input.preservedClipIds !== undefined) {
+        if (operation.type !== 'insert' || !Array.isArray(input.preservedClipIds)) {
+            return null;
+        }
+        for (const clipId of input.preservedClipIds) {
+            if (typeof clipId !== 'string' || clipId.trim().length === 0 || preservedClipIds.has(clipId)) {
+                return null;
+            }
+            const owner = [...ownersByTrackId.values()].find(
+                (candidate) => candidate.eligible && candidate.clipIds.has(clipId)
+            );
+            if (!owner || removedClipIds.has(clipId) || clipIdMigrations.has(clipId)) {
+                return null;
+            }
+            preservedClipIds.add(clipId);
+        }
+    }
+
     return {
         operation,
         ownersByTrackId,
         removedClipIds,
         clipIdMigrations,
+        preservedClipIds,
     };
 }
 
@@ -390,7 +413,8 @@ function prepareNextState(
     ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>,
     removedClipIds: ReadonlySet<string>,
     clipIdMigrations: ReadonlyMap<string, string>,
-    clipLaneCopies: readonly AutomationLane[]
+    clipLaneCopies: readonly AutomationLane[],
+    preservedClipIds: ReadonlySet<string>
 ): PreparedAutomationState {
     if (!preparedState) {
         return {
@@ -435,6 +459,11 @@ function prepareNextState(
                     nextState: preparedState,
                 };
             }
+            lanes.push(lane);
+            continue;
+        }
+
+        if (lane.clipId !== undefined && preservedClipIds.has(lane.clipId)) {
             lanes.push(lane);
             continue;
         }
@@ -530,7 +559,8 @@ export function prepareAutomationTimeOperation(input: PrepareAutomationTimeOpera
                       validatedInput.ownersByTrackId,
                       validatedInput.removedClipIds,
                       validatedInput.clipIdMigrations,
-                      clipLaneCopies
+                      clipLaneCopies,
+                      validatedInput.preservedClipIds
                   );
     }
     let inversePlan: AutomationTimeStateRestorePlan | null = null;

@@ -4,6 +4,8 @@ import { type TimeOperationRestorePlanSnapshot } from '#/utils/handlerContract';
 import { insertTime } from '../../useCases/timeOperations/insertTime';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
+import { isInsertTimeSessionEntry } from './validateClipEditSessionEntries';
+
 type RestoreTimeOperationStateAction = {
     type: 'restoreTimeOperationState';
     payload: { plan: TimeOperationRestorePlanSnapshot };
@@ -40,6 +42,7 @@ function toRestorePlanSnapshot(plan: unknown): TimeOperationRestorePlanSnapshot 
 }
 
 export const handleInsertTime = createHandler<'insertTime'>({
+    validateSessionEntry: isInsertTimeSessionEntry,
     execute: (action) => {
         const result = insertTime(action.payload.atBeat, action.payload.durationBeats);
         const pending = pendingDescriptions.get(action);

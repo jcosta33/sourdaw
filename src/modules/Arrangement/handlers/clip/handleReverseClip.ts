@@ -1,10 +1,11 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { captureClipPitchAnalysis } from '#/modules/Knead/useCases';
-import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { reverseClip } from '../../useCases/clipEditing/reverseClip';
-import { reversedClipAudioOffsetBeats } from '../../useCases/clipEditing/reversedClipAudioOffsetBeats';
+import { reversedClipAudioSource } from '../../useCases/clipEditing/reversedClipAudioSource';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
@@ -18,14 +19,15 @@ function findAudioClip(clipId: string) {
     return undefined;
 }
 
-function resolveRemappedAudioOffsetBeats(clip: {
+function resolveRemappedAudioSource(clip: {
+    audioOffsetSeconds?: number;
     audioOffsetBeats?: number;
     startBeat: number;
     endBeat: number;
     audioBufferId?: string;
     stretchMode?: string;
     stretchRatio?: number;
-}): number | undefined {
+}): { audioOffsetSeconds: number; audioOffsetBeats: number } | undefined {
     if (!clip.audioBufferId) {
         return undefined;
     }
@@ -34,9 +36,10 @@ function resolveRemappedAudioOffsetBeats(clip: {
         return undefined;
     }
     const clipTempo = readTempoAtBeat({ beat: clip.startBeat });
-    return reversedClipAudioOffsetBeats({
-        audioOffsetBeats: clip.audioOffsetBeats ?? 0,
-        clipLengthBeats: clip.endBeat - clip.startBeat,
+    return reversedClipAudioSource({
+        audioOffsetSeconds: clip.audioOffsetSeconds,
+        audioOffsetBeats: clip.audioOffsetBeats,
+        elapsedTimelineSeconds: readSecondsAtBeat({ beat: clip.endBeat }) - readSecondsAtBeat({ beat: clip.startBeat }),
         bufferLength: buffer.length,
         sampleRate: buffer.sampleRate,
         tempo: clipTempo,
@@ -57,11 +60,25 @@ export const handleReverseClip = createHandler<'reverseClip'>({
         // user's Knead edits destroyed. Capture all three and put them back together.
         const clip = findAudioClip(alpha.payload.clipId);
         const reversedBufferId = alpha.payload.reversedBufferId;
-        if (!clip || clip.type !== 'audio' || !clip.audioBufferId || !reversedBufferId) {
+        if (!clip || clip.type !== 'audio' || !clip.audioBufferId || !reversedBufferId || clip.loopEnabled) {
             return { label: 'Reverse clip', inverseAction: null };
         }
         const analysis = captureClipPitchAnalysis(alpha.payload.clipId);
-        const remappedAudioOffsetBeats = resolveRemappedAudioOffsetBeats(clip);
+        const remappedAudioSource = resolveRemappedAudioSource(clip);
+        const redoPayload: Extract<AppAction, { type: 'restoreReversedClip' }>['payload'] = {
+            clipId: clip.id,
+            expectedAudioBufferId: clip.audioBufferId,
+            audioBufferId: reversedBufferId,
+            name: `${clip.name} (reversed)`,
+            // The forward path mirrors the fades along with the audio.
+            fadeInBeats: clip.fadeOutBeats,
+            fadeOutBeats: clip.fadeInBeats,
+            ...(clip.loopOriginBeat !== undefined ? { loopOriginBeat: clip.startBeat } : {}),
+        };
+        if (remappedAudioSource) {
+            redoPayload.audioOffsetBeats = remappedAudioSource.audioOffsetBeats;
+            redoPayload.audioSource = remappedAudioSource;
+        }
         return {
             label: 'Reverse clip',
             inverseAction: {
@@ -74,22 +91,23 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     fadeInBeats: clip.fadeInBeats,
                     fadeOutBeats: clip.fadeOutBeats,
                     audioOffsetBeats: clip.audioOffsetBeats ?? 0,
+                    audioSource: {
+                        audioOffsetSeconds: clip.audioOffsetSeconds ?? null,
+                        audioOffsetBeats: clip.audioOffsetBeats ?? null,
+                    },
+                    // The forward run restamps the anchor at the clip's own start (the
+                    // mirrored buffer is a fresh media basis), so undo must put the
+                    // pre-reverse anchor back. Absent when the source was unanchored:
+                    // the restamp keeps the key absent then, so leaving it out of the
+                    // payload matches the restore's untouched default.
+                    ...(clip.loopOriginBeat !== undefined ? { loopOriginBeat: clip.loopOriginBeat } : {}),
                     ...analysis,
                 },
             },
             redoAction: {
                 type: 'restoreReversedClip',
-                payload: {
-                    clipId: clip.id,
-                    expectedAudioBufferId: clip.audioBufferId,
-                    audioBufferId: reversedBufferId,
-                    name: `${clip.name} (reversed)`,
-                    // The forward path mirrors the fades along with the audio.
-                    fadeInBeats: clip.fadeOutBeats,
-                    fadeOutBeats: clip.fadeInBeats,
-                    ...(remappedAudioOffsetBeats === undefined ? {} : { audioOffsetBeats: remappedAudioOffsetBeats }),
-                    // The forward path clears pitch analysis, so redo restores none.
-                },
+                // The forward path clears pitch analysis, so redo restores none.
+                payload: redoPayload,
             },
         };
     },

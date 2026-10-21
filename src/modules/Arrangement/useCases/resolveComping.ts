@@ -1,10 +1,9 @@
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
+import { resolveTakeMedia } from '../stores/resolveTakeMedia';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
 
-import { clipMediaOffsetAt } from './clipMediaOffsetAt';
 import { liveTempoTimeline } from './liveTempoTimeline';
-import { resolveTakeMedia } from './resolveTakeMedia';
-import { withMediaOffsetBeats } from './withMediaOffsetBeats';
 
 export type ResolvedClip = Clip & {
     regionStartBeat: number;
@@ -19,7 +18,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
-            sourceStartBeat: context.startBeat,
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: context.startBeat,
+                loopOriginBeat: context.loopOriginBeat,
+                loopEnabled: context.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -29,7 +32,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
-            sourceStartBeat: context.startBeat,
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: context.startBeat,
+                loopOriginBeat: context.loopOriginBeat,
+                loopEnabled: context.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -54,7 +61,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
         }
 
         resolved.push({
-            ...withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart)),
+            ...media.clipAt(overlapStart),
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
@@ -89,12 +96,16 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
 
         for (const gap of gaps) {
             resolved.push({
-                ...withMediaOffsetBeats(clip, clipMediaOffsetAt(clip, gap.start, liveTempoTimeline)),
+                ...resolveTakeMedia({}, clip, liveTempoTimeline).clipAt(gap.start),
                 startBeat: gap.start,
                 endBeat: gap.end,
                 regionStartBeat: gap.start,
                 regionEndBeat: gap.end,
-                sourceStartBeat: clip.startBeat,
+                sourceStartBeat: resolveLoopAnchoredStartBeat({
+                    startBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }),
             });
         }
     }

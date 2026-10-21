@@ -3,6 +3,10 @@ import { describe, it, expect } from 'vitest';
 import { getTransportHandlers } from '../getTransportHandlers';
 
 const EXPECTED_KEYS = [
+    'addTempoMapChange',
+    'removeTempoMapChange',
+    'restoreTempoMapChange',
+    'updateTempoMapChange',
     'setTempo',
     'setPlayback',
     'togglePlayback',

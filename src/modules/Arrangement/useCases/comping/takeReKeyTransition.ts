@@ -9,6 +9,7 @@ export type TakeReKeyClipGeometry = {
     id: string;
     startBeat: number;
     endBeat: number;
+    type?: 'audio' | 'midi';
 };
 
 /**

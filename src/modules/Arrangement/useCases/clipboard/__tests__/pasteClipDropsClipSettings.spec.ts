@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { defaultTransportState, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, playheadPositionRef, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { type Clip, createTrack } from '../../../models/Track';
 import { clipboardStore } from '../../../stores/clipboardStore';
+import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
 import { defaultTrackState, trackStore } from '../../../stores/trackStore';
+import { audioSourceAtBeat } from '../../clipEditing/audioSourceAtBeat';
+import { copySelectedClip } from '../copySelectedClip';
+import { cutSelectedClip } from '../cutSelectedClip';
 import { pasteClip } from '../pasteClip';
 
 /**
@@ -56,7 +60,9 @@ describe('pasteClip reproduces the copied clip', () => {
         const vocal = createTrack({ id: 't-vocal', name: 'Vocal', kind: 'audio' });
         const source = trimmedVocal();
         trackStore.set({ ...defaultTrackState, tracks: [{ ...vocal, clips: [source] }], selectedTrackId: 't-vocal' });
+        clipSelectionStore.set(defaultClipSelectionState);
         transportStore.set(defaultTransportState);
+        tempoMapStore.set({ changes: [] });
         clipboardStore.set({
             clipClipboard: [{ clip: trimmedVocal(), automationLanes: [], sourceTrackId: 't-vocal' }],
             noteClipboard: null,
@@ -69,6 +75,8 @@ describe('pasteClip reproduces the copied clip', () => {
         playheadPositionRef.current = previousPlayhead;
         clipboardStore.set({ clipClipboard: [], noteClipboard: null });
         trackStore.set(structuredClone(defaultTrackState));
+        clipSelectionStore.set(defaultClipSelectionState);
+        tempoMapStore.set({ changes: [] });
     });
 
     it('control: pastes the copied span at the playhead over the same audio buffer', () => {
@@ -95,5 +103,66 @@ describe('pasteClip reproduces the copied clip', () => {
         expect.soft(pasted.fadeOutBeats).toBe(1.5);
         expect.soft(pasted.stretchMode).toBe('timestretch');
         expect.soft(pasted.stretchRatio).toBe(1.5);
+    });
+
+    it.each([
+        { name: 'canonical zero over a stale beat alias', seconds: 0, beats: 9, expectedSeconds: 0 },
+        { name: 'signed pre-roll', seconds: -0.5, beats: 9, expectedSeconds: -0.5 },
+        { name: 'positive canonical depth', seconds: 1.25, beats: 9, expectedSeconds: 1.25 },
+        { name: 'legacy beat depth', seconds: undefined, beats: 2, expectedSeconds: 1 },
+    ])('pastes $name at the same file position across a tempo marker', ({ seconds, beats, expectedSeconds }) => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'original-tempo', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'destination-tempo', beat: 8, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const source: Clip = { ...trimmedVocal(), audioOffsetBeats: beats };
+        if (seconds !== undefined) {
+            source.audioOffsetSeconds = seconds;
+        }
+        const original = structuredClone(source);
+        const vocal = createTrack({ id: 't-vocal', name: 'Vocal', kind: 'audio' });
+        trackStore.set({ ...defaultTrackState, tracks: [{ ...vocal, clips: [source] }], selectedTrackId: 't-vocal' });
+        clipboardStore.set({
+            clipClipboard: [{ clip: structuredClone(source), automationLanes: [], sourceTrackId: 't-vocal' }],
+            noteClipboard: null,
+        });
+
+        expect(pasteClip()).toBe(true);
+
+        const pasted = pastedClip();
+        expect(pasted.audioOffsetSeconds).toBe(expectedSeconds);
+        expect(pasted.audioOffsetBeats).toBe(expectedSeconds);
+        expect(audioSourceAtBeat(pasted, pasted.startBeat).audioOffsetSeconds).toBe(expectedSeconds);
+        expect(trackStore.value?.tracks[0]?.clips[0]).toEqual(original);
+    });
+
+    it.each([
+        { name: 'copy', capture: copySelectedClip, keepsSource: true },
+        { name: 'cut', capture: cutSelectedClip, keepsSource: false },
+    ])('$name captures the file position before a later tempo edit and paste', ({ capture, keepsSource }) => {
+        clipSelectionStore.set({
+            ...defaultClipSelectionState,
+            selectedClipId: 'c-vocal',
+            selectedClipIds: ['c-vocal'],
+        });
+        const source = trackStore.value?.tracks[0]?.clips[0];
+        expect(source).toBeDefined();
+
+        expect(capture()).toBe(true);
+
+        expect(clipboardStore.value?.clipClipboard[0]?.clip.audioOffsetSeconds).toBe(1);
+        expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === 'c-vocal')).toBe(keepsSource);
+        tempoMapStore.set({ changes: [{ id: 'slower', beat: 0, tempo: 60, curve: 'instant' }] });
+        expect(pasteClip()).toBe(true);
+
+        const pasted = pastedClip();
+        expect(pasted.audioOffsetSeconds).toBe(1);
+        expect(pasted.audioOffsetBeats).toBe(1);
+        expect(audioSourceAtBeat(pasted, pasted.startBeat).audioOffsetSeconds).toBe(1);
+        if (keepsSource) {
+            expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'c-vocal')).toEqual(source);
+        }
     });
 });

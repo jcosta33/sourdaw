@@ -24,7 +24,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, transportStore, tempoMapStore } from '#/modules/Transport/stores';
 import { type AppAction } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
@@ -183,6 +183,52 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         removeCrdtDoc('root');
     });
 
+    it('strips only the canonical split source windows and retains their reset timeline placement', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        try {
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                trackId: 'track-1',
+                audioBufferId: 'buf-1',
+                startBeat: 4,
+                endBeat: 8,
+                audioOffsetSeconds: 7,
+                audioOffsetBeats: 7,
+                audioLoopStartSeconds: 5.5,
+                loopOriginBeat: 2,
+                loopEnabled: true,
+                loopLength: 4,
+                stretchMode: 'repitch',
+                stretchRatio: 1.5,
+            });
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: 'track-1', clips: [clip] })],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+            const pcm = new Float32Array(1200);
+            pcm.fill(0.8, 625, 640);
+            pcm.fill(0.8, 900, 915);
+            pcm.fill(0.8, 1075, 1090);
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(pcm));
+            const plan = prepareStripSilence({ clipId: 'clip-1', minDuration: 0.01 });
+            expect(plan).not.toBeNull();
+            const clips = plan!.next.clips;
+            expect(clips).toHaveLength(2);
+            expect(clips.map((entry) => entry.audioOffsetSeconds)).toEqual([9, 6.25]);
+            expect(clips[1]!.startBeat).toBeCloseTo(6.5, 10);
+            expect(clips.every((entry) => !entry.loopEnabled)).toBe(true);
+        } finally {
+            tempoMapStore.set({ changes: [] });
+        }
+    });
+
     it('places every segment on the audio it already played (regression #2108)', () => {
         expect(stripSilence('clip-1')).toBe(true);
 
@@ -193,7 +239,7 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         // beat 10. Each segment must sit at that timeline position AND read
         // from that same buffer beat.
         expect(clips[0]).toMatchObject({ startBeat: 17, endBeat: 19, audioOffsetBeats: 4 });
-        expect(clips[1]).toMatchObject({ startBeat: 23, endBeat: 26, audioOffsetBeats: 10 });
+        expect(clips[1]).toMatchObject({ startBeat: expect.closeTo(23, 10), endBeat: 26, audioOffsetBeats: 10 });
         expect(clips.map((clip) => clip.id)).not.toContain('clip-1');
     });
 
@@ -290,8 +336,8 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
             clipId: second!.id,
             enabled: true,
             points: [
-                { id: 'p-early', beatOffset: -6, gainDb: -6 },
-                { id: 'p-late', beatOffset: 1, gainDb: -3 },
+                { id: 'p-early', beatOffset: expect.closeTo(-6, 10), gainDb: -6 },
+                { id: 'p-late', beatOffset: expect.closeTo(1, 10), gainDb: -3 },
             ],
         });
     });
@@ -538,7 +584,7 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         expect(clips.map((clip) => clip.id)).not.toEqual(recordedSegmentIds);
         expect(clips).toMatchObject([
             { startBeat: 17, endBeat: 19, gain: 0.5 },
-            { startBeat: 23, endBeat: 26, gain: 0.5 },
+            { startBeat: expect.closeTo(23, 10), endBeat: 26, gain: 0.5 },
         ]);
     });
 

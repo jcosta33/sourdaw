@@ -170,11 +170,11 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
         ]);
         // Every pass take follows its clip: the left half keeps the take id
         // (the split convention), the right half mints the deterministic one.
-        const mintedTakeId = `${compTake.id}:time-delete-right:14:14`;
+        const mintedTakeId = `${compTake.id}:split-right:${rightClip.id}`;
         expect(lane().takes.map((take) => [take.id, take.clipId, take.startBeat, take.endBeat])).toEqual(
             originalLane.takes.flatMap((take) => [
                 [take.id, 'source', 8, 14],
-                [`${take.id}:time-delete-right:14:14`, rightClip.id, 14, 16],
+                [`${take.id}:split-right:${rightClip.id}`, rightClip.id, 14, 16],
             ])
         );
         expect(lane().activeCompRegions).toEqual([
@@ -192,9 +192,12 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
 
     it('split undo restores the whole comp exactly and redo re-fragments with stable take ids', async () => {
         const { lane: originalLane, compTake } = arrangeLoopComp();
-        const mintedTakeId = `${compTake.id}:time-delete-right:14:14`;
-
         await executeAppAction({ type: 'splitClip', payload: { clipId: 'source', beat: 14 } });
+        const firstRightClip = clips().find((clip) => clip.id !== 'source');
+        if (!firstRightClip) {
+            throw new Error('Expected the first right fragment');
+        }
+        const mintedTakeId = `${compTake.id}:split-right:${firstRightClip.id}`;
         await undo();
 
         expect(clips().map((clip) => [clip.id, clip.startBeat, clip.endBeat])).toEqual([['source', 8, 16]]);
@@ -211,6 +214,7 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
             ['source', 8, 14],
             [rightClip.id, 14, 16],
         ]);
+        expect(rightClip.id).toBe(firstRightClip.id);
         expect(lane().takes.map((take) => take.id)).toContain(mintedTakeId);
         expect(lane().activeCompRegions).toEqual([
             { startBeat: 8, endBeat: 14, takeId: compTake.id },
@@ -252,7 +256,7 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
         // The left take never crosses the split: same id, same span, still
         // naming the (left) fragment clip id it always named.
         expect(lane().takes.find((take) => take.id === leftTake.id)).toEqual(leftTake);
-        const mintedTakeId = `${compTake.id}:time-delete-right:14:14`;
+        const mintedTakeId = `${compTake.id}:split-right:${rightClip.id}`;
         expect(lane().activeCompRegions).toEqual([
             { startBeat: 8, endBeat: 12, takeId: leftTake.id },
             { startBeat: 12, endBeat: 14, takeId: compTake.id },

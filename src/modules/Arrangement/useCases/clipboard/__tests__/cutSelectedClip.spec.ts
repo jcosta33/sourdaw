@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../../models/MidiNoteViewTypes';
-import { type Clip } from '../../../models/Track';
+import { type Clip, type Track } from '../../../models/Track';
 import { clipboardStore } from '../../../stores/clipboardStore';
+import { audioSourceAtBeat } from '../../clipEditing/audioSourceAtBeat';
 import { cutSelectedClip } from '../cutSelectedClip';
 
 const mocks = vi.hoisted(() => ({
@@ -105,6 +108,8 @@ function createClip(overrides: Partial<Clip> & Pick<Clip, 'id' | 'trackId' | 'ty
 describe('cutSelectedClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(defaultTransportState);
         mocks.clipSelectionStore.value = null;
         mocks.midiStore.value = null;
         mocks.getTrackStoreState.mockReturnValue(null);
@@ -114,6 +119,38 @@ describe('cutSelectedClip', () => {
             trackId: input.clipId === 'clip-midi' ? 'track-midi' : 'track-audio',
         }));
         clipboardStore.set({ clipClipboard: [], noteClipboard: null });
+    });
+
+    afterEach(() => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(defaultTransportState);
+    });
+
+    it('keeps a legacy source offset after cut deletes its source and the tempo changes', () => {
+        const source = createClip({
+            id: 'clip-audio',
+            trackId: 'track-audio',
+            type: 'audio',
+            startBeat: 4,
+            endBeat: 8,
+            audioOffsetBeats: 2,
+        });
+        const original = structuredClone(source);
+        const state = { tracks: [TrackDummy.create({ id: 'track-audio', clips: [source] })] };
+        mocks.clipSelectionStore.value = { selectedClipId: source.id, selectedClipIds: [source.id] };
+        mocks.getTrackStoreState.mockReturnValue(state);
+        mocks.mapAllTracks.mockImplementation((update: (track: Track) => Track) => {
+            state.tracks = state.tracks.map(update);
+        });
+
+        expect(cutSelectedClip()).toBe(true);
+
+        const captured = clipboardStore.value?.clipClipboard[0]?.clip;
+        expect(state.tracks[0]?.clips).toEqual([]);
+        expect(captured?.audioOffsetSeconds).toBe(1);
+        tempoMapStore.set({ changes: [{ id: 'slower', beat: 0, tempo: 60, curve: 'instant' }] });
+        expect(captured && audioSourceAtBeat(captured, captured.startBeat).audioOffsetSeconds).toBe(1);
+        expect(source).toEqual(original);
     });
 
     it('returns early when workspace is unavailable without calling removeClip', () => {

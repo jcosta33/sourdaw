@@ -13,6 +13,7 @@ export type { ScratchPadStoreState } from './scratchPadStore';
 
 export { takeLaneStore } from './takeLaneStore';
 export type { TakeLaneStoreState } from './takeLaneStore';
+export { resolveTakeMedia } from './resolveTakeMedia';
 
 export {
     timelineViewStore,

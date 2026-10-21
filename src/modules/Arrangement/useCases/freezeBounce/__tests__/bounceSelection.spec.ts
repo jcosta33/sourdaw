@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+
 import { normalizeTrack, type Clip, type Track } from '../../../models/Track';
 import { bounceSelection } from '../bounceSelection';
 
@@ -39,6 +41,8 @@ const mocks = vi.hoisted(() => {
             status: 'eligible',
             trackId: 'track-1',
         })),
+        readSecondsAtBeat: vi.fn<({ beat }: { beat: number }) => number>(),
+        readTempoAtBeat: vi.fn<({ beat }: { beat: number }) => number>(),
         trackStore,
     };
 });
@@ -66,6 +70,11 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
+}));
+
+vi.mock('#/modules/Transport/stores', () => ({
+    readSecondsAtBeat: ({ beat }: { beat: number }) => mocks.readSecondsAtBeat({ beat }),
+    readTempoAtBeat: ({ beat }: { beat: number }) => mocks.readTempoAtBeat({ beat }),
 }));
 
 const midiMocks = vi.hoisted(() => {
@@ -375,6 +384,8 @@ describe('bounceSelection', () => {
         mocks.trackStore.set.mockImplementation((state) => {
             mocks.trackStore.value = state;
         });
+        mocks.readSecondsAtBeat.mockImplementation(({ beat }) => beat);
+        mocks.readTempoAtBeat.mockReturnValue(60);
         mocks.cacheAudioBuffer.mockImplementation((input) => input.bufferId ?? 'generated-buffer-id');
         midiMocks.state.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
     });
@@ -573,6 +584,166 @@ describe('bounceSelection', () => {
         expect(clips.some((c) => c.type === 'audio' && c.startBeat === 2 && c.endBeat === 8)).toBe(true);
     });
 
+    it('keeps the spanning audio clip right part at its canonical source position across a tempo change', async () => {
+        const spanningClip = createAudioClip({
+            id: 'clip-span',
+            startBeat: 0,
+            endBeat: 10,
+            audioOffsetSeconds: 1,
+            audioOffsetBeats: 9,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+            fadeInBeats: 0.5,
+            fadeOutBeats: 0.75,
+        });
+        const sourceTrack = createAudioTrack({ clips: [spanningClip] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+        // Original [0,6) spans four seconds at 60 BPM and one at 120 BPM.
+        mocks.readSecondsAtBeat.mockImplementation(({ beat }) => (beat <= 4 ? beat : 4 + (beat - 4) / 2));
+        mocks.readTempoAtBeat.mockImplementation(({ beat }) => (beat < 4 ? 60 : 120));
+
+        expect(await bounceSelection('track-1', 2, 6)).toBe(true);
+
+        const written = mocks.trackStore.value?.tracks[0]?.clips ?? [];
+        const left = written.find((clip) => clip.id === 'clip-span');
+        const right = written.find((clip) => clip.id.startsWith('clip-bsel-'));
+        expect(left).toMatchObject({ startBeat: 0, endBeat: 2, audioOffsetSeconds: 1 });
+        expect(right).toMatchObject({
+            startBeat: 6,
+            endBeat: 10,
+            audioOffsetSeconds: 11, // 1 + (4 + 1) timeline seconds × 2x source rate
+            audioOffsetBeats: 22, // alias at the new 120 BPM clip start
+            fadeInBeats: 0.5,
+            fadeOutBeats: 0.75,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        expect(written.find((clip) => clip.startBeat === 2 && clip.endBeat === 6)?.type).toBe('audio');
+
+        const [, undo, redo] = getFirstUndoEntry();
+        undo();
+        expect(mocks.trackStore.value?.tracks).toEqual([sourceTrack]);
+        redo();
+        expect(mocks.trackStore.value?.tracks[0]?.clips).toEqual(written);
+    });
+
+    it('uses canonical zero to seek a right-crossing audio clip without applying its dormant stretch ratio', async () => {
+        const crossing = createAudioClip({
+            id: 'clip-cross',
+            startBeat: 3,
+            endBeat: 10,
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 9,
+            stretchMode: 'off',
+            stretchRatio: 2,
+        });
+        setTrackStoreState({ tracks: [createAudioTrack({ clips: [crossing] })], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+        // The kept part starts at beat 6: beat 3→4 takes 1s and 4→6 takes 1s.
+        mocks.readSecondsAtBeat.mockImplementation(({ beat }) => (beat <= 4 ? beat : 4 + (beat - 4) / 2));
+        mocks.readTempoAtBeat.mockImplementation(({ beat }) => (beat < 4 ? 60 : 120));
+
+        expect(await bounceSelection('track-1', 2, 6)).toBe(true);
+
+        const right = mocks.trackStore.value?.tracks[0]?.clips.find((clip) => clip.id.startsWith('clip-bsel-'));
+        expect(right).toMatchObject({
+            startBeat: 6,
+            endBeat: 10,
+            audioOffsetSeconds: 2,
+            audioOffsetBeats: 4,
+            stretchMode: 'off',
+            stretchRatio: 2,
+        });
+    });
+
+    it('refuses a partially selected loop that would need a kept-right source phase', async () => {
+        const loop = createAudioClip({
+            id: 'loop',
+            startBeat: 0,
+            endBeat: 10,
+            loopEnabled: true,
+            loopLength: 4,
+            audioOffsetSeconds: 1,
+        });
+        const sourceTrack = createAudioTrack({ clips: [loop] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        expect(await bounceSelection('track-1', 2, 6)).toBe(false);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringMatching(/loop/i), 'error');
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.trackStore.set).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.trackStore.value?.tracks).toEqual([sourceTrack]);
+    });
+
+    it('rechecks kept-right loop refusal after the asynchronous render', async () => {
+        const ordinary = createAudioClip({ id: 'clip-span', startBeat: 0, endBeat: 10 });
+        const sourceTrack = createAudioTrack({ clips: [ordinary] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        let finishRender = (_buffer: AudioBuffer | null): void => {
+            throw new Error('expected a pending render');
+        };
+        mocks.renderTrackOffline.mockReturnValue(
+            new Promise<AudioBuffer | null>((resolve) => {
+                finishRender = resolve;
+            })
+        );
+
+        const pending = bounceSelection('track-1', 2, 6);
+        const currentTrack = createAudioTrack({
+            clips: [{ ...ordinary, loopEnabled: true, loopLength: 4 }],
+        });
+        setTrackStoreState({ tracks: [currentTrack], selectedTrackId: 'track-1' });
+        finishRender(createTestAudioBuffer());
+
+        expect(await pending).toBe(false);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringMatching(/loop/i), 'error');
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.trackStore.set).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.trackStore.value?.tracks).toEqual([currentTrack]);
+    });
+
+    it('can bounce a fully selected loop without retaining a right fragment', async () => {
+        const loop = createAudioClip({
+            id: 'loop',
+            startBeat: 2,
+            endBeat: 6,
+            loopEnabled: true,
+            loopLength: 2,
+        });
+        setTrackStoreState({ tracks: [createAudioTrack({ clips: [loop] })], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        expect(await bounceSelection('track-1', 2, 6)).toBe(true);
+        expect(mocks.trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === 'loop')).toBe(false);
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the original source entry when only a looped left part survives', async () => {
+        const loop = createAudioClip({
+            id: 'loop',
+            startBeat: 0,
+            endBeat: 4,
+            loopEnabled: true,
+            loopLength: 2,
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 5,
+        });
+        setTrackStoreState({ tracks: [createAudioTrack({ clips: [loop] })], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        expect(await bounceSelection('track-1', 2, 6)).toBe(true);
+        expect(mocks.trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'loop')).toMatchObject({
+            startBeat: 0,
+            endBeat: 2,
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 5,
+        });
+    });
+
     it('partitions MIDI notes when a midi clip spans the entire selection', async () => {
         // A midi clip [0,10) over selection [2,8): the spanning branch must
         // register a split op so the in-selection notes move to the right part.
@@ -603,6 +774,162 @@ describe('bounceSelection', () => {
         const splitCall = midiMocks.splitMidiNotesAtBeat.mock.calls[0]?.[0];
         expect(splitCall?.sourceClipId).toBe('clip-span-midi');
         expect(splitCall?.newClipId.startsWith('clip-bsel-')).toBe(true);
+    });
+
+    function keptFragment(): Clip {
+        const written = mocks.trackStore.set.mock.calls.at(-1)?.[0];
+        if (!written) {
+            throw new Error('expected trackStore.set');
+        }
+        const fragment = written.tracks[0]!.clips.find(
+            (clip: Clip) => clip.id.startsWith('clip-bsel-') && !clip.id.startsWith('clip-bsel-discard')
+        );
+        if (!fragment) {
+            throw new Error('expected the kept right fragment');
+        }
+        return fragment;
+    }
+
+    /**
+     * The geometry every audio loop reader recovers per pass
+     * (`scheduleAudioClips`, `projectOfflineAudioClipPlaybacks`): the region
+     * the clip was looped with, `audioOffsetBeats - (startBeat -
+     * loopOriginBeat)`, and the phase the pass enters it at,
+     * `advance % loopLength`.
+     */
+    function regionOf(clip: Clip): { region: number; entry: number } {
+        const advance = resolveClipLoopOriginAdvance({
+            startBeat: clip.startBeat,
+            loopOriginBeat: clip.loopOriginBeat,
+            loopEnabled: clip.loopEnabled ?? false,
+        });
+        return {
+            region: (clip.audioOffsetBeats ?? 0) - advance,
+            entry: ((advance % 4) + 4) % 4,
+        };
+    }
+
+    it('a spanning looped fragment re-stamps the anchor to its head and keeps sounding its surviving notes', async () => {
+        // Looped [0,10), L=4, anchored at 0: window [0,4). n-left sounds and
+        // stays in the left half; n-in (m 3) is in-selection and discarded;
+        // n-right/n-tail (m 9, 13) move to the fragment re-based by −8,
+        // landing at 1 and 5.
+        midiMocks.state.value = {
+            notesByClipId: {
+                'clip-span-midi': [
+                    { id: 'n-left', pitch: 60, startBeat: 1, duration: 0.5, velocity: 100 },
+                    { id: 'n-in', pitch: 62, startBeat: 3, duration: 0.5, velocity: 100 },
+                    { id: 'n-right', pitch: 64, startBeat: 9, duration: 0.5, velocity: 100 },
+                    { id: 'n-tail', pitch: 65, startBeat: 13, duration: 0.5, velocity: 100 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        const spanningMidi = createAudioClip({
+            id: 'clip-span-midi',
+            startBeat: 0,
+            endBeat: 10,
+            type: 'midi',
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        });
+        const track = normalizeTrack({
+            id: 'track-1',
+            name: 'Midi',
+            kind: 'midi',
+            clips: [spanningMidi],
+        } as unknown as Track);
+        setTrackStoreState({ tracks: [track], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 2, 8);
+        expect(result).toBe(true);
+
+        const fragment = keptFragment();
+        expect(fragment.startBeat).toBe(8);
+        expect(fragment.midiOffsetBeats).toBe(0);
+        // Re-stamped to the fragment's own head. The stale carry would derive
+        // advance 8, whose window [−8,−4) silences every survivor; the re-stamp
+        // makes the advance 0 — exactly the anchor-absent figure — so the
+        // window law here reduces to the unanchored read the dedicated specs
+        // pin end-to-end for the same restamp derivation
+        // (selectedTimeRangeDeletionLoopOrigin.spec.ts).
+        expect(fragment.loopOriginBeat).toBe(8);
+    });
+
+    it('a right-edge looped fragment re-stamps the anchor to its head and keeps sounding its surviving notes', async () => {
+        // Looped [4,10), L=4, anchored at 4: window [0,4) covering timeline
+        // [4,8). Selection [4,6) excises the head m∈[0,2): n-a/n-b (m 2.5, 3.5)
+        // sound before and survive onto the fragment at 0.5/1.5; n-c (m 6.5)
+        // lands past the re-stamped window.
+        midiMocks.state.value = {
+            notesByClipId: {
+                'clip-edge': [
+                    { id: 'n-a', pitch: 60, startBeat: 2.5, duration: 0.5, velocity: 100 },
+                    { id: 'n-b', pitch: 62, startBeat: 3.5, duration: 0.5, velocity: 100 },
+                    { id: 'n-c', pitch: 64, startBeat: 6.5, duration: 0.5, velocity: 100 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        const edgeMidi = createAudioClip({
+            id: 'clip-edge',
+            startBeat: 4,
+            endBeat: 10,
+            type: 'midi',
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 4,
+        });
+        const track = normalizeTrack({
+            id: 'track-1',
+            name: 'Midi',
+            kind: 'midi',
+            clips: [edgeMidi],
+        } as unknown as Track);
+        setTrackStoreState({ tracks: [track], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 4, 6);
+        expect(result).toBe(true);
+
+        const fragment = keptFragment();
+        expect(fragment.startBeat).toBe(6);
+        expect(fragment.midiOffsetBeats).toBe(0);
+        expect(fragment.loopOriginBeat).toBe(6);
+    });
+
+    it('a spanning looped audio fragment carries its anchor and keeps the source region', async () => {
+        // Audio clip [0,10) anchored at 0, region [0,4). Bounce selection
+        // [2,8) advances the right fragment's offset to 8 — the content the
+        // source played at the selection end — with its head at 8, the same
+        // preserved media basis the split's audio fragment keeps: the anchor
+        // carries, the advance grows by the consumed span, and region
+        // 8 − 8 = 0 at entry phase 0 is the source's own. The type-blind
+        // restamp would have read offset 8 outright.
+        const spanningAudio = createAudioClip({
+            id: 'clip-span-audio',
+            startBeat: 0,
+            endBeat: 10,
+            audioOffsetBeats: 0,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        });
+        setTrackStoreState({ tracks: [createAudioTrack({ clips: [spanningAudio] })], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 2, 8);
+        expect(result).toBe(true);
+
+        const fragment = keptFragment();
+        expect(fragment.startBeat).toBe(8);
+        expect(fragment.audioOffsetBeats).toBe(8);
+        expect(fragment.loopOriginBeat).toBe(0);
+        expect(regionOf(fragment)).toEqual({ region: 0, entry: 0 });
     });
 
     it('reports no-write when the track store is torn down after a successful render', async () => {

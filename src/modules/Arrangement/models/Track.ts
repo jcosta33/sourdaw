@@ -113,6 +113,10 @@ export type Clip = {
      *  Set on import; used to request the file from peers in a collab session. */
     assetHash?: string;
     audioOffsetBeats?: number;
+    /** Signed source position at the clip head. Authoritative when present, including zero. */
+    audioOffsetSeconds?: number;
+    /** Fixed source loop boundary; relocation and tempo edits never rederive it. */
+    audioLoopStartSeconds?: number;
     midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
@@ -124,6 +128,17 @@ export type Clip = {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    /**
+     * The timeline beat where this clip's loop anchor was established: the
+     * placement start the loop region and the per-pass occurrence count are
+     * measured from. Set when the loop is enabled and, for clips born looped,
+     * by their first start trim; a start trim otherwise preserves it, so the
+     * loop stays anchored to the source instead of sliding with the content
+     * offset (#4988). Absent on clips never looped or trimmed since looping —
+     * readers must treat that as an anchor at the clip's current `startBeat`,
+     * which reproduces the pre-anchor behavior exactly.
+     */
+    loopOriginBeat?: number;
     followAction?: FollowAction;
     generating?: boolean;
     isGhost?: boolean;

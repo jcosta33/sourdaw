@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { handleSlipClipContent } from '../handleSlipClipContent';
 
 const mocks = vi.hoisted(() => ({
@@ -8,7 +10,14 @@ const mocks = vi.hoisted(() => ({
         () => {
             tracks: {
                 id: string;
-                clips: { id: string; type: 'audio' | 'midi'; audioOffsetBeats?: number; midiOffsetBeats?: number }[];
+                clips: {
+                    id: string;
+                    type: 'audio' | 'midi';
+                    startBeat?: number;
+                    audioOffsetBeats?: number;
+                    audioOffsetSeconds?: number;
+                    midiOffsetBeats?: number;
+                }[];
             }[];
         } | null
     >(),
@@ -34,7 +43,7 @@ describe('handleSlipClipContent', () => {
             payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
         });
 
-        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5);
+        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5, undefined, undefined);
     });
 
     it('provides a description with no inverse when the clip is gone', () => {
@@ -48,7 +57,7 @@ describe('handleSlipClipContent', () => {
 
     it('describes an inverse back to the pre-slip audio offset', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioOffsetBeats: -2 }] }],
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', startBeat: 0, audioOffsetBeats: -2 }] }],
         });
 
         const desc = handleSlipClipContent.describe({
@@ -58,8 +67,44 @@ describe('handleSlipClipContent', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'slipClipContent',
-            payload: { clipId: 'c1', clipType: 'audio', offset: -2 },
+            payload: {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: -2,
+                restoreAudioSource: { audioOffsetSeconds: null, audioOffsetBeats: -2 },
+                expectedAudioSource: { audioOffsetSeconds: 0.75, audioOffsetBeats: 1.5 },
+            },
         });
+        expect(desc.redoAction).toEqual({
+            type: 'slipClipContent',
+            payload: {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: 1.5,
+                expectedAudioSource: { audioOffsetSeconds: null, audioOffsetBeats: -2 },
+                restoreAudioSource: { audioOffsetSeconds: 0.75, audioOffsetBeats: 1.5 },
+            },
+        });
+    });
+
+    it('refuses an inverse after a peer changed canonical zero while leaving the beat alias intact', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioOffsetSeconds: 0, audioOffsetBeats: 2 }] }],
+        });
+
+        expect(
+            handleSlipClipContent.execute({
+                type: 'slipClipContent',
+                payload: {
+                    clipId: 'c1',
+                    clipType: 'audio',
+                    offset: 9,
+                    expectedAudioSource: { audioOffsetSeconds: 1, audioOffsetBeats: 2 },
+                    restoreAudioSource: { audioOffsetSeconds: null, audioOffsetBeats: 9 },
+                },
+            })
+        ).toEqual({ status: 'conflict' });
+        expect(mocks.slipClipContent).not.toHaveBeenCalled();
     });
 
     it('falls back to offset 0 for the inverse when the clip never carried a midi offset', () => {
@@ -76,6 +121,49 @@ describe('handleSlipClipContent', () => {
             type: 'slipClipContent',
             payload: { clipId: 'cm', clipType: 'midi', offset: 0 },
         });
+    });
+
+    it('validates the canonical source written by earlier inverse members without writing it', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioOffsetSeconds: 0, audioOffsetBeats: 0 }] }],
+        });
+        const prior: AppAction = {
+            type: 'slipClipContent',
+            payload: { clipId: 'c1', clipType: 'audio', offset: 4, offsetSeconds: 0 },
+        };
+        const inverse: Extract<AppAction, { type: 'slipClipContent' }> = {
+            type: 'slipClipContent',
+            payload: {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: 2,
+                expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 4 },
+                restoreAudioSource: { audioOffsetSeconds: null, audioOffsetBeats: 2 },
+            },
+        };
+        expect(handleSlipClipContent.validate?.(inverse, { actions: [prior, inverse], actionIndex: 1 })).toBe(true);
+        expect(handleSlipClipContent.execute(inverse)).toEqual({ status: 'conflict' });
+        expect(mocks.slipClipContent).not.toHaveBeenCalled();
+    });
+
+    it('refuses an invalid prior replay prefix without writing', () => {
+        const inverse: Extract<AppAction, { type: 'slipClipContent' }> = {
+            type: 'slipClipContent',
+            payload: {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: 2,
+                expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 4 },
+                restoreAudioSource: { audioOffsetSeconds: null, audioOffsetBeats: 2 },
+            },
+        };
+        expect(
+            handleSlipClipContent.validate?.(inverse, {
+                actions: [{ type: 'removeClip', payload: { clipId: 'missing' } }, inverse],
+                actionIndex: 1,
+            })
+        ).toBe(false);
+        expect(mocks.slipClipContent).not.toHaveBeenCalled();
     });
 
     it('is undoable', () => {

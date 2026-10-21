@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type Clip, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
+import { tempoMapStore, transportStore, defaultTransportState } from '#/modules/Transport/stores';
+import { getNotesForClip, projectClipControllerEvents } from '#/modules/MIDI/useCases';
 
 import { createTrack } from '../../../models/Track';
 import { trimClipStart } from '../trimClipStart';
@@ -54,6 +56,8 @@ function audioMediaOrigin(target: Clip): number {
 
 describe('trimClipStart keeps the surviving material where it was', () => {
     beforeEach(() => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         const keys = createTrack({ id: 't-keys', name: 'Keys', kind: 'midi', withoutDefaultDevice: true });
         const vocal = createTrack({ id: 't-vocal', name: 'Vocal', kind: 'audio' });
         trackStore.set({
@@ -66,6 +70,8 @@ describe('trimClipStart keeps the surviving material where it was', () => {
     });
 
     afterEach(() => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         trackStore.set(structuredClone(defaultTrackState));
     });
 
@@ -75,6 +81,44 @@ describe('trimClipStart keeps the surviving material where it was', () => {
         const trimmed = readClip('c-vocal');
         expect(trimmed.startBeat).toBe(2);
         expect(audioMediaOrigin(trimmed)).toBe(0);
+    });
+
+    it('keeps signed pre-roll when trimming through a tempo change', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 2, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id === 't-vocal') {
+                    return { ...track, clips: [{ ...track.clips[0]!, audioOffsetSeconds: -2, audioOffsetBeats: 8 }] };
+                }
+                return track;
+            }),
+        });
+
+        expect(trimClipStart('c-vocal', 3)).toBe(true);
+        expect(readClip('c-vocal').audioOffsetSeconds).toBe(0);
+    });
+
+    it('treats canonical zero as the source entry despite a stale beat alias', () => {
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id === 't-vocal') {
+                    return { ...track, clips: [{ ...track.clips[0]!, audioOffsetSeconds: 0, audioOffsetBeats: 8 }] };
+                }
+                return track;
+            }),
+        });
+
+        expect(trimClipStart('c-vocal', 2)).toBe(true);
+        expect(readClip('c-vocal').audioOffsetSeconds).toBe(1);
     });
 
     it('a MIDI clip trimmed by two beats keeps its notes at the same timeline position', () => {
@@ -162,5 +206,77 @@ describe('trimClipStart keeps a looped MIDI clip inside its loop', () => {
         // every scheduler drop gate would discard.
         expect(readClip('c-keys').midiOffsetBeats).toBe(2);
         expect(getNotesForClip('c-keys').map((note) => note.startBeat)).toEqual([4]);
+    });
+
+    describe('with a note and a controller press on the same content beat', () => {
+        function pressRow(): { id: string; controller: number; value: number; beat: number; channel: number } {
+            return { id: 'cc-64', controller: 64, value: 127, beat: 0, channel: 0 };
+        }
+
+        function seedAnchoredFourBeatLoop(): void {
+            seed([
+                {
+                    ...clip('c-keys', 't-keys', 'midi'),
+                    startBeat: 4,
+                    endBeat: 16,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    loopOriginBeat: 4,
+                },
+            ]);
+            midiStore.set({
+                ...defaultMidiStoreState,
+                notesByClipId: { 'c-keys': [{ id: 'n-head', pitch: 60, startBeat: 0, duration: 0.25, velocity: 100 }] },
+                ccByClipId: { 'c-keys': [pressRow()] },
+            });
+        }
+
+        function storedPressBeats(): number[] {
+            return (midiStore.value?.ccByClipId['c-keys'] ?? []).map((row) => row.beat);
+        }
+
+        function projectedPresses(fromBeat: number, toBeat: number): number[] {
+            const rows = midiStore.value?.ccByClipId['c-keys'] ?? [];
+            return projectClipControllerEvents({
+                controlChanges: rows,
+                clip: readClip('c-keys'),
+                fromBeat,
+                toBeat,
+            }).map((event) => event.beat);
+        }
+
+        it('a trim across one loop length fires the press at every pass the note sounds', () => {
+            // Advance exactly one 4-beat loop (start 4 -> 8): the wrap re-bases the
+            // offset down to 0, so the stored rows must ride the same -4 the notes
+            // get. A press left at beat 0 sits outside the anchored region the
+            // projector reads ([-4, 0)) and the clip plays in total silence while
+            // the note sounds at both pass heads.
+            seedAnchoredFourBeatLoop();
+
+            expect(trimClipStart('c-keys', 8)).toBe(true);
+
+            expect(readClip('c-keys').midiOffsetBeats).toBe(0);
+            expect(getNotesForClip('c-keys').map((note) => note.startBeat)).toEqual([-4]);
+            expect(storedPressBeats()).toEqual([-4]);
+            expect(projectedPresses(8, 16)).toEqual([8, 12]);
+        });
+
+        it('a sub-loop trim moves the press with the notes — which is not at all', () => {
+            // Delta 2 is non-zero but below the loop, so the wrap never re-bases:
+            // the shift is zero and both rows stay put. The press (content 0) now
+            // sits at the region's wrapped head, so the projector replays it at
+            // 8 and 12 — the passes the note sounds — and its value-in-force rule
+            // carries the held pedal to the pass heads 6, 10, 14. The carries are
+            // the projector's hold semantics, not relocations: the stored row
+            // itself never left beat 0.
+            seedAnchoredFourBeatLoop();
+
+            expect(trimClipStart('c-keys', 6)).toBe(true);
+
+            expect(readClip('c-keys').midiOffsetBeats).toBe(2);
+            expect(getNotesForClip('c-keys').map((note) => note.startBeat)).toEqual([0]);
+            expect(storedPressBeats()).toEqual([0]);
+            expect(projectedPresses(6, 16)).toEqual([6, 8, 10, 12, 14]);
+        });
     });
 });

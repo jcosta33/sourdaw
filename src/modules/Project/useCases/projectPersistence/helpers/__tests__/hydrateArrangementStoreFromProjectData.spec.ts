@@ -103,6 +103,45 @@ function projectData(): ProjectData {
 }
 
 describe('hydrateArrangementStoreFromProjectData', () => {
+    it('retains a selected placed pass and its comp region through saved arrangement hydration', () => {
+        const data = projectData();
+        const take = {
+            id: 'selected-pass',
+            clipId: 'track-a-clip',
+            name: 'Pass',
+            startBeat: 0,
+            endBeat: 4,
+            selected: true,
+            sourceOffsetBeats: 4,
+            sourceOffsetSeconds: 2,
+            passAnchorSeconds: -1,
+            passDepthSeconds: 2,
+        };
+        const takeLanes = {
+            lanes: [
+                {
+                    id: 'lane-a',
+                    trackId: 'track-a',
+                    takes: [take],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: take.id }],
+                },
+            ],
+        };
+        data.arrangements = [
+            {
+                id: 'saved',
+                name: 'Saved',
+                tracks: { tracks: [projectTrack('track-a', 'buffer-a')], selectedTrackId: 'track-a' },
+                takeLanes,
+            },
+        ];
+        data.activeArrangementId = 'saved';
+
+        hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
+
+        expect(takeLaneStore.value?.lanes).toEqual(takeLanes.lanes);
+        expect(arrangementStore.value?.arrangements[0]?.takeLanes).toEqual(takeLanes);
+    });
     it('owns inline fallback and saved arrangement expression independently of the imported source', () => {
         const inlineData = projectData();
         const track = projectTrack('midi-track', 'unused');

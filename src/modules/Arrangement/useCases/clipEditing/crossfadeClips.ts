@@ -1,3 +1,5 @@
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
@@ -67,6 +69,18 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
         clipB.audioOffsetBeats !== undefined ? Math.max(0, clipB.audioOffsetBeats + contentDelta) : undefined;
     const newMidiOffsetBeats =
         clipB.midiOffsetBeats !== undefined ? Math.max(0, clipB.midiOffsetBeats + clipBDelta) : undefined;
+    // The loop anchor follows the offset its clip type moves (#4988). The
+    // audio offset retreats by the stretched `contentDelta` while the start
+    // retreats by the raw `clipBDelta`, so the carried anchor shifts by
+    // `clipBDelta - contentDelta` — zero at stretch 1 — and the region
+    // `audioOffsetBeats - (startBeat - loopOriginBeat)` survives at any
+    // ratio. Carried unshifted, a stretched crossfade drives the advance
+    // negative and slides the region by `clipBDelta * (stretch - 1)` source
+    // beats. The MIDI offset retreats by the raw delta, so its carried
+    // anchor already holds and stays untouched. The pre-roll bound keeps
+    // `contentDelta` within the offset, so the `Math.max(0, …)` clamp above
+    // never bites an audio clip and the shift is exact.
+    const clipBLoopOriginEntry = clipB.type === 'audio' ? shiftLoopOriginEntry(clipB, clipBDelta - contentDelta) : {};
 
     if (
         !Number.isFinite(halfLen) ||
@@ -101,6 +115,7 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
                     ...context,
                     startBeat: newClipBStart,
                     fadeInBeats: actualOverlap,
+                    ...clipBLoopOriginEntry,
                 };
                 if (newAudioOffsetBeats !== undefined) {
                     updated.audioOffsetBeats = newAudioOffsetBeats;

@@ -20,6 +20,8 @@ export type Take = {
      * fields instead.
      */
     sourceOffsetBeats?: number;
+    /** Authoritative legacy source depth in seconds; placed passes use their anchor/depth pair instead. */
+    sourceOffsetSeconds?: number;
     /**
      * Where a placed audio pass starts sounding, as a second of its clip's own
      * media: the beat it starts on is the beat the clip's media reaches this
@@ -42,6 +44,33 @@ export type Take = {
      */
     passDepthSeconds?: number;
 };
+
+type TakeSourceDepthFields = Pick<Take, 'passAnchorSeconds' | 'passDepthSeconds'> & {
+    sourceOffsetSeconds: number | null;
+    sourceOffsetBeats: number | null;
+};
+
+function isOptionalSourceDepth(value: unknown): boolean {
+    return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+}
+
+function hasValidPassPlacement(source: TakeSourceDepthFields): boolean {
+    const anchor = source.passAnchorSeconds;
+    const depth = source.passDepthSeconds;
+    if (anchor === undefined || depth === undefined) {
+        return anchor === undefined && depth === undefined;
+    }
+    return source.sourceOffsetBeats !== null && Number.isFinite(anchor) && Number.isFinite(depth) && depth >= 0;
+}
+
+/** The source fields a captured move may restore, with null retaining legacy absence. */
+export function isValidTakeSourceDepthFields(source: TakeSourceDepthFields): boolean {
+    return (
+        isOptionalSourceDepth(source.sourceOffsetSeconds) &&
+        isOptionalSourceDepth(source.sourceOffsetBeats) &&
+        hasValidPassPlacement(source)
+    );
+}
 
 export type TakeLane = {
     id: string;

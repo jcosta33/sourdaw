@@ -322,6 +322,7 @@ function projectClipNotes({
             loopLengthBeats,
             midiOffsetBeats: clip.midiOffsetBeats ?? 0,
             loopEnabled,
+            loopOriginBeat: clip.loopOriginBeat,
             phase: 'complete',
         });
         for (const event of events) {

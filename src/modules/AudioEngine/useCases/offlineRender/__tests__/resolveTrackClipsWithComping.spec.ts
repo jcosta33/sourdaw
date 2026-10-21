@@ -2,13 +2,16 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { type Clip } from '#/modules/Arrangement/stores';
 
+import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
+import { renderTempoTimeline } from '../renderTempoTimeline';
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
 const mocks = vi.hoisted(() => ({
     takeLaneStoreValue: { value: null as { lanes: unknown[] } | null },
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     takeLaneStore: {
         get value() {
             return mocks.takeLaneStoreValue.value;
@@ -34,6 +37,40 @@ function testClip(overrides: Partial<Clip> & Pick<Clip, 'id'>): Clip {
 }
 
 describe('resolveTrackClipsWithComping', () => {
+    it('seeks the uncovered tail through the tempo map from canonical source time', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-1', clipId: 'src', name: 'Take 1', startBeat: 0, endBeat: 12, selected: true }],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-1' }],
+                },
+            ],
+        };
+        const source = { ...testClip({ id: 'src', endBeat: 12, audioOffsetBeats: 0 }), audioOffsetSeconds: 0 };
+        const beatToSeconds = (beat: number): number => (beat <= 4 ? beat / 2 : 2 + beat - 4);
+        const resolveTempoAtBeat = (beat: number): number => (beat < 4 ? 120 : 60);
+        const tail = resolveTrackClipsWithComping(
+            't1',
+            [source],
+            undefined,
+            renderTempoTimeline(beatToSeconds, resolveTempoAtBeat)
+        ).find((clip) => clip.startBeat === 8);
+        expect(tail).toBeDefined();
+        const playbacks = projectOfflineAudioClipPlaybacks({
+            clip: tail!,
+            bufferDurationSeconds: 20,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 20,
+            compensationDelay: 0,
+            projectBeatToSeconds: beatToSeconds,
+            resolveTempoAtBeat,
+        });
+        expect(playbacks[0]?.bufferOffsetSec).toBe(6);
+    });
+
     it('returns clip bounds as region and source bounds when the lane store is empty', () => {
         mocks.takeLaneStoreValue.value = null;
 

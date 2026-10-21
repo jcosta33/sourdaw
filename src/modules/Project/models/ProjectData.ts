@@ -238,6 +238,9 @@ export type ProjectClip = {
     // Audio specific
     bufferId?: string;
     sampleStartBeat?: number;
+    audioOffsetSeconds?: number;
+    /** Fixed source loop boundary; relocation and tempo edits never rederive it. */
+    audioLoopStartSeconds?: number;
     fileId?: string;
     // Runtime aliases retained only for loading snapshots written before the
     // arrangement collection gained an explicit serialized shape.
@@ -249,6 +252,7 @@ export type ProjectClip = {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    loopOriginBeat?: number;
     followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
     generating?: boolean;
     isGhost?: boolean;
@@ -799,6 +803,10 @@ export type ProjectTake = {
     startBeat: number;
     endBeat: number;
     selected: boolean;
+    sourceOffsetBeats?: number;
+    sourceOffsetSeconds?: number;
+    passAnchorSeconds?: number;
+    passDepthSeconds?: number;
 };
 
 export type ProjectTakeLane = {

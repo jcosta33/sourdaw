@@ -1,21 +1,9 @@
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type ClipSnapshot } from '#/utils/handlerContract';
 
-import { type Clip } from '../../stores/trackStore';
+import { type Clip } from '../../models/Track';
+import { deriveRippleDelete } from '../../services/deriveRippleDelete';
 import { getTrackStoreState } from '../getTrackStoreState';
-
-type RippleDeleteShift = {
-    clipId: string;
-    origStartBeat: number;
-    origEndBeat: number;
-    automationDelta: number;
-};
-
-type RippleDeletePlan<ClipShape extends ClipSnapshot = Clip> = {
-    removedClips: ClipShape[];
-    shiftedClips: RippleDeleteShift[];
-    nextClips: ClipShape[];
-};
 
 type PlanRippleDeleteInput = {
     trackId: string;
@@ -23,73 +11,24 @@ type PlanRippleDeleteInput = {
     ripple?: boolean;
 };
 
-export type PlanRippleDeleteOutput = RippleDeletePlan | null;
-
-type RippleDeleteOwnerState<ClipShape extends ClipSnapshot> = {
-    tracks: readonly { id: string; clips: readonly ClipShape[] }[];
-};
+export type PlanRippleDeleteOutput = ReturnType<typeof deriveRippleDelete<Clip>>;
 
 export function planRippleDelete(input: PlanRippleDeleteInput): PlanRippleDeleteOutput;
-export function planRippleDelete<ClipShape extends ClipSnapshot>(
+export function planRippleDelete<TClip extends ClipSnapshot>(
     input: PlanRippleDeleteInput,
-    state: RippleDeleteOwnerState<ClipShape>
-): RippleDeletePlan<ClipShape> | null;
+    state: { tracks: readonly { id: string; clips: readonly TClip[] }[] }
+): ReturnType<typeof deriveRippleDelete<TClip>>;
 export function planRippleDelete(
     { trackId, clipIds, ripple }: PlanRippleDeleteInput,
-    state: RippleDeleteOwnerState<ClipSnapshot> | null = getTrackStoreState()
-): RippleDeletePlan<ClipSnapshot> | null {
-    if (!state) {
-        return null;
-    }
-
-    const track = state.tracks.find((candidateTrack) => candidateTrack.id === trackId);
+    state: { tracks: readonly { id: string; clips: readonly ClipSnapshot[] }[] } | null = getTrackStoreState()
+): ReturnType<typeof deriveRippleDelete<ClipSnapshot>> {
+    const track = state?.tracks.find((candidateTrack) => candidateTrack.id === trackId);
     if (!track) {
         return null;
     }
-
-    const clipIdSet = new Set(clipIds);
-    const removedClips = track.clips.filter((clip) => clipIdSet.has(clip.id));
-    if (removedClips.length === 0) {
-        return null;
-    }
-
-    let deleteStart = Infinity;
-    let deleteEnd = -Infinity;
-    for (const clip of removedClips) {
-        if (clip.startBeat < deleteStart) {
-            deleteStart = clip.startBeat;
-        }
-        if (clip.endBeat > deleteEnd) {
-            deleteEnd = clip.endBeat;
-        }
-    }
-    const gap = deleteEnd - deleteStart;
-    const rippleEnabled = ripple ?? workspaceStore.value?.rippleEditing ?? false;
-    const shiftedClips: RippleDeleteShift[] = [];
-
-    const nextClips = track.clips.reduce<ClipSnapshot[]>((accumulator, clip) => {
-        if (clipIdSet.has(clip.id)) {
-            return accumulator;
-        }
-
-        if (rippleEnabled && clip.startBeat >= deleteEnd) {
-            shiftedClips.push({
-                clipId: clip.id,
-                origStartBeat: clip.startBeat,
-                origEndBeat: clip.endBeat,
-                automationDelta: -gap,
-            });
-            accumulator.push({
-                ...clip,
-                startBeat: clip.startBeat - gap,
-                endBeat: clip.endBeat - gap,
-            });
-            return accumulator;
-        }
-
-        accumulator.push(clip);
-        return accumulator;
-    }, []);
-
-    return { removedClips, shiftedClips, nextClips };
+    return deriveRippleDelete({
+        clips: track.clips,
+        clipIds,
+        rippleEnabled: ripple ?? workspaceStore.value?.rippleEditing ?? false,
+    });
 }
