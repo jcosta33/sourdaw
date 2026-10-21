@@ -114,9 +114,17 @@ export function moveClip(
 
     setTrackState({
         ...state,
-        tracks: tracksWithoutClip.map((time) =>
-            time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip!] } : time
-        ),
+        // Array order controls overlap drawing and edge hit testing. A retime
+        // keeps its slot so the forward move and historical restore preserve it.
+        tracks: sameHost
+            ? state.tracks.map((time) =>
+                  time.id === targetTrackId
+                      ? { ...time, clips: time.clips.map((clip) => (clip.id === clipId ? movedClip! : clip)) }
+                      : time
+              )
+            : tracksWithoutClip.map((time) =>
+                  time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip!] } : time
+              ),
     });
 
     // Automation: shift from the original drag start (preview doesn't shift automation)

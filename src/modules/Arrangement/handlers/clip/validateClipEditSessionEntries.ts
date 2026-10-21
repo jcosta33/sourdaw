@@ -250,6 +250,8 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
     return (
         value.clipId.length > 0 &&
         value.trackId.length > 0 &&
+        (value.clipIndex === undefined ||
+            (typeof value.clipIndex === 'number' && Number.isSafeInteger(value.clipIndex) && value.clipIndex >= 0)) &&
         isClipSnapshot(value.clipSnapshot, value.clipId, value.trackId) &&
         (value.ripplePlan === null ||
             isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId, value.trackId)) &&

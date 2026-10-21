@@ -1141,6 +1141,8 @@ export type AppAction =
               clipId: string;
               trackId: string;
               clipSnapshot: ClipSnapshot;
+              /** Original clip slot. Older entries without it append. */
+              clipIndex?: number;
               ripplePlan: RipplePlanSnapshot | null;
               midiNotesSnapshot: MidiNotesSnapshot | null;
               midiCcSnapshot: MidiCcSnapshot | null;

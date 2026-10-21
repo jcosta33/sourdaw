@@ -711,6 +711,69 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         Container.clear();
     });
 
+    it.each([false, true])(
+        'restores a saved middle clip in its exact slot and retains peer material=%s',
+        async (withPeer) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            const left = createClipFixture('clip-a', 0, 4);
+            const middle = { ...createClipFixture('clip-b', 4, 8), gain: 0.75, fadeInBeats: 0.25 };
+            const right = createClipFixture('clip-c', 8, 12);
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', clips: [left, middle, right] })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: {
+                    'clip-b': [{ id: 'middle-note', pitch: 60, startBeat: 0, duration: 4, velocity: 90 }],
+                },
+                ccByClipId: { 'clip-b': [{ id: 'middle-cc', controller: 1, value: 64, beat: 1, channel: 0 }] },
+                pitchBendByClipId: { 'clip-b': [{ id: 'middle-bend', value: 256, beat: 2, channel: 0 }] },
+            });
+            flushAutomergeStorageWrites();
+            projectCrdtToStores();
+            const before = ownerProjections();
+            await executeAppAction({ type: 'removeClip', payload: { clipId: middle.id } }, { source: 'manual' });
+            await vi.waitFor(() => expect(persistedInverse().payload.clipIndex).toBe(1));
+            reloadSavedProject();
+            const expected = structuredClone(before);
+            if (withPeer) {
+                const peer = { ...createClipFixture('peer-clip', 20, 24), gain: 0.3 };
+                syncPeerProject((project) => project.tracks.tracks[0]!.clips.splice(1, 0, peer));
+                expected.tracks!.tracks[0]!.clips.splice(2, 0, peer);
+            }
+            const removed = ownerProjections();
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                expect((await undo()).headConsumed).toBe(true);
+                expect(ownerProjections()).toEqual(expected);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+                );
+                reloadSavedProject();
+                expect(ownerProjections()).toEqual(expected);
+                await redo();
+                expect(ownerProjections()).toEqual(removed);
+                await vi.waitFor(() => expect(persistedInverse().payload.clipIndex).toBe(1));
+                reloadSavedProject();
+                expect(ownerProjections()).toEqual(removed);
+            }
+        }
+    );
+
+    it('keeps legacy persisted removal entries without a clip slot replayable', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() => expect(persistedInverse().payload.clipIndex).toBe(0));
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const entries = saved.past as { inverseAction: { payload: Record<string, unknown> } }[];
+        delete entries[0]!.inverseAction.payload.clipIndex;
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        hydrateProductionContracts();
+        expect((await undo()).headConsumed).toBe(true);
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-b', 'clip-a']);
+    });
+
     it('replays a saved grouped ripple removal then split repeatedly', async () => {
         workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
         const removedLane = automationLane('remove-split-a', 'clip-a');

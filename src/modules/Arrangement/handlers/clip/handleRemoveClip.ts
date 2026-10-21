@@ -145,17 +145,20 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         const state = getTrackStoreState();
         let clipSnapshot: MinimalClipShape | null = null;
         let trackId: string | null = null;
+        let clipIndex: number | null = null;
         if (state) {
             for (const track of state.tracks) {
-                const clip = track.clips.find((context) => context.id === alpha.payload.clipId);
+                const index = track.clips.findIndex((context) => context.id === alpha.payload.clipId);
+                const clip = track.clips[index];
                 if (clip) {
                     clipSnapshot = structuredClone(clip);
                     trackId = track.id;
+                    clipIndex = index;
                     break;
                 }
             }
         }
-        if (!clipSnapshot || !trackId) {
+        if (!clipSnapshot || !trackId || clipIndex === null) {
             return { label: 'Remove clip' };
         }
 
@@ -196,6 +199,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
                 clipId: alpha.payload.clipId,
                 trackId,
                 clipSnapshot,
+                clipIndex,
                 ripplePlan,
                 midiNotesSnapshot: notes ? structuredClone(notes) : null,
                 midiCcSnapshot: cc ? structuredClone(cc) : null,
