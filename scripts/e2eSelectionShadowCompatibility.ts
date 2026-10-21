@@ -6,6 +6,12 @@ import ts from 'typescript';
 import { parseDocument } from 'yaml';
 
 import {
+    comparePlans,
+    integrationDeltaDiff,
+    ShadowSkipError,
+    unionChangedPaths,
+} from './e2eSelectionShadowAgreement.ts';
+import {
     git,
     hashInventoryFile,
     listIntegrationInventory,
@@ -13,7 +19,7 @@ import {
     treeEntry,
 } from './e2eSelectionShadowIntegration.ts';
 import { parseSpecDurations } from './e2eShardPartition.ts';
-import { parseChangedPaths, selectValidationPlan, SMOKE_SPEC } from './prValidationScope.ts';
+import { selectValidationPlan, SMOKE_SPEC } from './prValidationScope.ts';
 
 export function sha256(value: string | Buffer): string {
     return createHash('sha256').update(value).digest('hex');
@@ -65,6 +71,7 @@ const SHADOW_CAPABILITY_PATHS = [
 ] as const;
 const CONTROL_SOURCE_PATHS = [
     'scripts/e2eSelectionShadow.ts',
+    'scripts/e2eSelectionShadowAgreement.ts',
     'scripts/e2eSelectionShadowCompatibility.ts',
     'scripts/e2eSelectionShadowIntegration.ts',
     'scripts/e2eSelectionShadowCertificate.json',
@@ -149,7 +156,10 @@ export function unsupportedShadowReport(input: {
 }) {
     const { root, integrationRoot, scopePath, base, head, integrationSha } = input;
     const rawDiff = git(['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--'], root);
-    const changedPaths = parseChangedPaths(rawDiff.toString('utf8'));
+    const changedPaths = unionChangedPaths(
+        rawDiff.toString('utf8'),
+        integrationDeltaDiff(integrationRoot, base, integrationSha)
+    );
     const inventory = listIntegrationInventory(integrationRoot, integrationSha);
     const full = inventory.filter((row) => row.path !== SMOKE_SPEC).map((row) => row.path);
     if (full.length === 0) {
@@ -171,7 +181,10 @@ export function unsupportedShadowReport(input: {
             !git(['show', `${integrationSha}:${path}`], integrationRoot).equals(controlBytes) ||
             hashInventoryFile(resolve(root, path)) !== sha256(controlBytes)
         ) {
-            throw new Error(`Integration selector or planner differs from control: ${path}`);
+            throw new ShadowSkipError(
+                'integration-selector-differs-from-control',
+                `Integration selector or planner differs from control: ${path}`
+            );
         }
     }
     const durationText = git(['show', `${integrationSha}:scripts/e2eSpecDurations.json`], integrationRoot).toString(
@@ -184,10 +197,13 @@ export function unsupportedShadowReport(input: {
     );
     const scopeBytes = readFileSync(scopePath);
     const livePlan: unknown = JSON.parse(scopeBytes.toString('utf8'));
-    if (canonical(expectedPlan) !== canonical(livePlan)) {
-        throw new Error('Authoritative scope artifact disagrees with the control selector or inventory');
+    const agreement = comparePlans(expectedPlan, livePlan);
+    if (!agreement.agrees) {
+        throw new Error(
+            `Authoritative scope artifact disagrees with the control selector or inventory: ${agreement.detail}`
+        );
     }
-    const liveSelectedSpecs = expectedPlan.matrix.include.flatMap((group) => group.specs).sort();
+    const liveSelectedSpecs = agreement.liveSpecs;
     return {
         schemaVersion: 1 as const,
         shadowOnly: true as const,

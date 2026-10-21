@@ -129,7 +129,9 @@ function withShadowCliCheckouts(
         | 'deleted'
         | 'merge-deleted'
         | 'integration-matcher'
-        | 'invalid-scope',
+        | 'invalid-scope'
+        | 'stale-base'
+        | 'policy-drift',
     run: (
         result: ReturnType<typeof spawnSync>,
         report: Record<string, unknown>,
@@ -160,6 +162,7 @@ function withShadowCliCheckouts(
         'pnpm-lock.yaml',
         'playwright.config.ts',
         'scripts/e2eSelectionShadow.ts',
+        'scripts/e2eSelectionShadowAgreement.ts',
         'scripts/e2eSelectionShadowCompatibility.ts',
         'scripts/e2eSelectionShadowCertificate.json',
         'scripts/e2eSelectionShadowIntegration.ts',
@@ -186,7 +189,7 @@ function withShadowCliCheckouts(
         if (!['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
             copyControl();
         }
-        commit('base');
+        const originalBase = commit('base');
         git('checkout', '-q', '-b', 'candidate');
         mkdirSync(join(repository, 'src'));
         writeFileSync(join(repository, 'src/feature.ts'), 'export const feature = true;\n');
@@ -235,6 +238,10 @@ function withShadowCliCheckouts(
             copyControl();
         }
         writeFileSync(join(repository, 'integration.txt'), 'integration\n');
+        if (capability === 'policy-drift') {
+            const config = join(repository, 'playwright.config.ts');
+            writeFileSync(config, `${readFileSync(config, 'utf8')}\n// Main moved the collection policy.\n`);
+        }
         const control = commit('control');
         if (capability === 'integration-matcher') {
             const config = join(repository, 'playwright.config.ts');
@@ -261,16 +268,21 @@ function withShadowCliCheckouts(
         const integration = git('rev-parse', 'HEAD');
         git('worktree', 'add', '-q', '--detach', candidateRoot, head);
         git('worktree', 'add', '-q', '--detach', integrationRoot, integration);
-        git('worktree', 'add', '-q', '--detach', controlRoot, control);
+        // The pull_request event keeps the PR's original base while the merge ref follows main.
+        const shadowBase = capability === 'stale-base' ? originalBase : control;
+        git('worktree', 'add', '-q', '--detach', controlRoot, shadowBase);
         if (advertiseCleanControl) {
-            git('worktree', 'add', '-q', '--detach', cleanControlRoot, control);
+            git('worktree', 'add', '-q', '--detach', cleanControlRoot, shadowBase);
         }
         if (dirtyControlPath) {
             const file = join(controlRoot, dirtyControlPath);
             writeFileSync(file, `${readFileSync(file, 'utf8')}\n// Dirty executing control source.\n`);
         }
-        const changed = git('diff', '--name-only', `${control}...${head}`).split('\n');
-        const plan = selectValidationPlan(changed, [SMOKE_SPEC, 'tests/e2e/example.spec.ts']);
+        const changed = git('diff', '--name-only', `${shadowBase}...${head}`).split('\n');
+        if (capability === 'stale-base') {
+            changed.push(...git('diff', '--name-only', shadowBase, integration).split('\n'));
+        }
+        const plan = selectValidationPlan([...new Set(changed)].sort(), [SMOKE_SPEC, 'tests/e2e/example.spec.ts']);
         mkdirSync(join(candidateRoot, 'shadow-scope'));
         const scopeText = JSON.stringify(capability === 'invalid-scope' ? { ...plan, browser: false } : plan);
         writeFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), scopeText);
@@ -281,7 +293,7 @@ function withShadowCliCheckouts(
             encoding: 'utf8',
             env: {
                 ...process.env,
-                BASE_SHA: control,
+                BASE_SHA: shadowBase,
                 HEAD_SHA: head,
                 INTEGRATION_SHA: integration,
                 INTEGRATION_ROOT: integrationRoot,
@@ -309,7 +321,7 @@ function withShadowCliCheckouts(
                         argv: [process.execPath, ...cliArgs],
                         executingControlRoot: controlRoot,
                         advertisedControlRoot: advertiseCleanControl ? cleanControlRoot : controlRoot,
-                        base: control,
+                        base: shadowBase,
                         head,
                         integration,
                         exitCode: result.status,
@@ -324,7 +336,7 @@ function withShadowCliCheckouts(
                 )}\n`
             );
         }
-        run(result, report, control, head, integration);
+        run(result, report, shadowBase, head, integration);
         expect(readFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), 'utf8')).toBe(scopeText);
         expect(readFileSync(join(candidateRoot, 'github-output.txt'), 'utf8')).toBe('preserved\n');
     } finally {
@@ -335,6 +347,15 @@ function withShadowCliCheckouts(
         }
         rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
+}
+
+function thrownBy(run: () => unknown): unknown {
+    try {
+        run();
+    } catch (error) {
+        return error;
+    }
+    throw new Error('Expected the call to throw');
 }
 
 function fixture(
@@ -510,11 +531,35 @@ describe('E2E selection shadow', () => {
         });
     }, 30_000);
 
-    it('fails when integration changes Playwright collection policy for an older head', () => {
+    it('reports integration changing Playwright collection policy for an older head as an explained skip', () => {
         withShadowCliCheckouts('integration-matcher', (result, report) => {
-            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
-            expect(report.measurementStatus).toBe('failed');
-            expect(report.failureReason).toMatch(/playwright\.config\.ts/);
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report.measurementStatus).toBe('skipped');
+            expect(report.skipReason).toBe('integration-selector-differs-from-control');
+            expect(report.skipDetail).toMatch(/playwright\.config\.ts/);
+        });
+    }, 30_000);
+
+    it('measures a supported head when the event base lags the integration first parent', () => {
+        withShadowCliCheckouts('stale-base', (result, report, base, head, integration) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report).toMatchObject({ measurementStatus: 'complete', base, head, integrationSha: integration });
+        });
+    }, 30_000);
+
+    it('reports changed integration execution policy as an explained skip, not a failure', () => {
+        withShadowCliCheckouts('policy-drift', (result, report, base, head, integration) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+            expect(report).toMatchObject({
+                measurementStatus: 'skipped',
+                skipReason: 'integration-execution-policy-differs',
+                base,
+                head,
+                integrationSha: integration,
+                controlSha: base,
+            });
+            expect(report.skipDetail).toMatch(/playwright\.config\.ts/);
+            expect(report).not.toHaveProperty('failureReason');
         });
     }, 30_000);
 
@@ -604,12 +649,16 @@ describe('E2E selection shadow', () => {
             expect(() =>
                 measureShadow({ ...input, sourceHashes: { ...input.sourceHashes, [path]: 'missing-or-nonregular' } })
             ).toThrow(`Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`);
-            expect(() =>
+            const error = thrownBy(() =>
                 measureShadow({
                     ...input,
                     integrationSourceHashes: { ...input.integrationSourceHashes, [path]: '0'.repeat(64) },
                 })
-            ).toThrow(`Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`);
+            );
+            expect(error).toMatchObject({
+                code: 'integration-duration-planner-differs',
+                message: `Integration duration planner is missing, nonregular, or differs from candidate head: ${path}`,
+            });
         }
     );
     it('binds the two-parent integration commit and reads exact regular Git bytes', () => {
@@ -1160,21 +1209,25 @@ describe('E2E selection shadow', () => {
         ).toThrow('Authoritative scope artifact disagrees');
     });
 
-    it('refuses a changed integration selector or collector before authenticating the plan', () => {
+    it('skips with a reason when the integration selector or collector differs, before authenticating the plan', () => {
         for (const path of ['scripts/prValidationScope.ts', 'scripts/vitestCollectionPatterns.ts']) {
             const integrationSourceHashes = { ...fixture().integrationSourceHashes, [path]: '0'.repeat(64) };
-            expect(() => measureShadow(fixture({ integrationSourceHashes }))).toThrow(
-                `Integration selector or collector differs from candidate head: ${path}`
-            );
+            const error = thrownBy(() => measureShadow(fixture({ integrationSourceHashes })));
+            expect(error).toMatchObject({
+                code: 'integration-selector-differs',
+                message: `Integration selector or collector differs from candidate head: ${path}`,
+            });
         }
     });
 
-    it('refuses a changed integration Playwright or required execution policy', () => {
+    it('skips with a reason when the integration Playwright or required execution policy differs', () => {
         for (const path of ['playwright.config.ts', '.github/workflows/heavy-gates.yml']) {
             const integrationSourceHashes = { ...fixture().integrationSourceHashes, [path]: '0'.repeat(64) };
-            expect(() => measureShadow(fixture({ integrationSourceHashes }))).toThrow(
-                `Integration execution policy differs from candidate head: ${path}`
-            );
+            const error = thrownBy(() => measureShadow(fixture({ integrationSourceHashes })));
+            expect(error).toMatchObject({
+                code: 'integration-execution-policy-differs',
+                message: `Integration execution policy differs from candidate head: ${path}`,
+            });
         }
     });
 
@@ -1207,5 +1260,79 @@ describe('E2E selection shadow', () => {
                 })
             )
         ).toThrow('Authoritative scope artifact disagrees');
+    });
+});
+
+describe('E2E selection shadow agreement with the authoritative scope', () => {
+    const inventoryPaths = inventory.map((row) => row.path);
+    const mainOnlySpec = 'tests/e2e/tuner.spec.ts';
+    const mainOnlyDiff = `M\0docs/06-testing.md\0M\0${mainOnlySpec}\0`;
+    const diagnostic = { path: 'affected graph', reason: 'unknown or shared changed source' };
+    const disagrees = 'Authoritative scope artifact disagrees with the current selector or inventory';
+
+    it('measures the union of the candidate diff and the integration delta when the event base lags main', () => {
+        const livePlan = selectValidationPlan([candidate, 'docs/06-testing.md', mainOnlySpec].sort(), inventoryPaths);
+        const report = measureShadow(fixture({ livePlan, integrationDiff: mainOnlyDiff }));
+        expect(report.measurementStatus).toBe('complete');
+        expect(report.counts).toEqual({ inventory: 313, candidate: 313, liveSelected: 313 });
+    });
+
+    it('still refuses a plan that carries a path neither diff contains', () => {
+        const livePlan = selectValidationPlan([candidate, 'docs/06-testing.md', mainOnlySpec].sort(), inventoryPaths);
+        expect(() => measureShadow(fixture({ livePlan }))).toThrow(disagrees);
+        expect(() => measureShadow(fixture({ livePlan, integrationDiff: 'M\0docs/06-testing.md\0' }))).toThrow(
+            disagrees
+        );
+    });
+
+    it('admits the authoritative full-fallback affected-graph diagnostic and nothing else', () => {
+        const plan = selectValidationPlan([candidate], inventoryPaths);
+        const withDiagnostic = { ...plan, reasons: [...plan.reasons, diagnostic] };
+        expect(measureShadow(fixture({ livePlan: withDiagnostic })).measurementStatus).toBe('complete');
+        const [firstGroup, ...otherGroups] = plan.matrix.include;
+        const shortMatrix = {
+            include: [{ ...firstGroup, specs: firstGroup?.specs.slice(1) ?? [] }, ...otherGroups],
+        };
+        for (const livePlan of [
+            { ...withDiagnostic, matrix: shortMatrix },
+            { ...withDiagnostic, codeql: !plan.codeql },
+            { ...withDiagnostic, profile: 'tooling' },
+            { ...withDiagnostic, reasons: [diagnostic, ...plan.reasons] },
+            { ...withDiagnostic, reasons: [...plan.reasons, diagnostic, diagnostic] },
+            { ...plan, reasons: [{ ...plan.reasons[0], reason: 'documentation; no browser execution' }, diagnostic] },
+        ]) {
+            expect(() => measureShadow(fixture({ livePlan }))).toThrow(disagrees);
+        }
+    });
+
+    const narrow = {
+        kind: 'narrow' as const,
+        specs: [mainOnlySpec],
+        browserAi: false,
+        owners: ['Tuner'],
+    };
+
+    it('admits an authoritative narrowed selection that is a subset of the full inventory', () => {
+        const livePlan = selectValidationPlan([candidate], inventoryPaths, undefined, false, narrow);
+        expect(livePlan.matrix.include.flatMap((group) => group.specs)).toEqual([mainOnlySpec]);
+        const report = measureShadow(fixture({ livePlan }));
+        expect(report.measurementStatus).toBe('complete');
+        expect(report.liveSelectedSpecs).toEqual([mainOnlySpec]);
+        expect(report.counts).toEqual({ inventory: 313, candidate: 313, liveSelected: 1 });
+    });
+
+    it('refuses a narrowed selection naming a spec outside the integration inventory or changing the profile', () => {
+        const unknown = selectValidationPlan([candidate], inventoryPaths, undefined, false, {
+            ...narrow,
+            specs: ['tests/e2e/notInIntegration.spec.ts'],
+        });
+        const plan = selectValidationPlan([candidate], inventoryPaths, undefined, false, narrow);
+        for (const livePlan of [
+            unknown,
+            { ...plan, codeql: !plan.codeql },
+            { ...plan, reasons: plan.reasons.map((row) => ({ ...row, path: `${row.path}.other` })) },
+        ]) {
+            expect(() => measureShadow(fixture({ livePlan }))).toThrow(disagrees);
+        }
     });
 });
