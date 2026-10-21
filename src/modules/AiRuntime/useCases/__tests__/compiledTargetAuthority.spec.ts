@@ -435,8 +435,12 @@ describe('a compiled selector cannot stand in for an object the same batch creat
             [vocals.id, drums.id, bass.id]
         );
 
-        console.log('PLATEDEBUG', JSON.stringify(result.rejections));
-        expect(true).toBe(true);
+        expect(result.rejections).toEqual([]);
+        expect(
+            result.actions
+                .filter((action) => action.type === 'addSend')
+                .map((action) => (action.payload as Record<string, unknown>).trackId)
+        ).toEqual([vocals.id, drums.id, bass.id]);
     });
 
     it('grounds an existing track the request names beside a track the batch creates', () => {
