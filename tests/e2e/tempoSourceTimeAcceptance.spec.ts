@@ -872,11 +872,19 @@ test.describe('Tempo source-time musician acceptance #5039 #5042', () => {
             };
         });
         const notes = converted.notes;
+        const detectorSampleRate = await page.evaluate(async (bufferId) => {
+            const { getCachedAudioBuffer } = await import('/src/modules/AudioEngine/useCases/index.ts');
+            const buffer = getCachedAudioBuffer({ bufferId });
+            if (!buffer) throw new Error('Actual decoded source is unavailable for detector-frame units');
+            return buffer.sampleRate;
+        }, fixture.bufferId);
+        // The frame count is fixed; decoded source rate, rather than WAV input rate, sets its duration.
+        const detectorBeatTolerance = (DETECTOR_BEAT_TOLERANCE * RATE) / detectorSampleRate;
         expect(notes).toHaveLength(2);
-        expect(Math.abs(notes[0].relativeBeat - 0.25)).toBeLessThan(DETECTOR_BEAT_TOLERANCE);
-        expect(Math.abs(notes[1].relativeBeat - 3.25)).toBeLessThan(DETECTOR_BEAT_TOLERANCE);
+        expect(Math.abs(notes[0].relativeBeat - 0.25)).toBeLessThan(detectorBeatTolerance);
+        expect(Math.abs(notes[1].relativeBeat - 3.25)).toBeLessThan(detectorBeatTolerance);
         expect(notes.map((note) => note.absoluteBeat).every((beat) => beat >= 4 && beat < 8)).toBe(true);
-        await page.getByRole('button', { name: 'Undo', exact: true }).click();
+        await page.getByTestId('transport-undo').click();
         await expect
             .poll(async () =>
                 page.evaluate(async (id) => {
@@ -901,7 +909,7 @@ test.describe('Tempo source-time musician acceptance #5039 #5042', () => {
             )
             .toEqual(converted.rawNotes);
         await info.attach('actual-silence-fragments-and-midi', {
-            body: JSON.stringify({ fragments, notes, detectorBeatTolerance: DETECTOR_BEAT_TOLERANCE }),
+            body: JSON.stringify({ fragments, notes, detectorSampleRate, detectorBeatTolerance }),
             contentType: 'application/json',
         });
     });
