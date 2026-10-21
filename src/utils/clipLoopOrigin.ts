@@ -185,8 +185,12 @@ export const CLIP_LOOP_WINDOW_BEAT_TOLERANCE = 1e-9;
 
 type ClipLoopWindowMembershipInput = Readonly<{
     /**
-     * The candidate's position in the coordinate the loop window reads — for a
-     * MIDI note, `note.startBeat - midiOffsetBeats`.
+     * The candidate's position in the coordinate the loop window reads. Every
+     * gate paired with a projection reads the figure that projection windows
+     * on: the synth chain grooves first (`getGrooveProjection`'s order law),
+     * so its gates pass the committed-grooved content start minus
+     * `midiOffsetBeats`; the rack chains admit stored rows before their own
+     * groove phase and pass `note.startBeat - midiOffsetBeats`.
      */
     relativeBeat: number;
     startBeat: number;

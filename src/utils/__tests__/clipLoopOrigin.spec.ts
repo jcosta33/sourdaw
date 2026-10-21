@@ -95,6 +95,22 @@ describe('isBeatInClipLoopWindow', () => {
         expect(isBeatInClipLoopWindow({ ...clip, relativeBeat: -0.5 })).toBe(false); // source 4.5
     });
 
+    it('keeps the lift band above the loop length admitted when the advance is negative', () => {
+        // A trim ACROSS the anchor — start 2 under anchor 4 — carries a
+        // negative advance (−2) whose window [2, 6) lifts the ceiling above
+        // the loop length. A mutation clamping the advance at zero (or
+        // grafting the one-sided `relative < loopLength` ceiling onto the
+        // anchored branch) keeps every positive-advance fixture green while
+        // dropping exactly this band — the head-level catch lived only in
+        // the scheduler specs — so the band is named here: the lifted
+        // relative 5 admitted, 6 refused, the floor inclusive, below it out.
+        const extended = { startBeat: 2, loopOriginBeat: 4, loopLengthBeats: 4, loopEnabled: true } as const;
+        expect(isBeatInClipLoopWindow({ ...extended, relativeBeat: 5 })).toBe(true);
+        expect(isBeatInClipLoopWindow({ ...extended, relativeBeat: 6 })).toBe(false);
+        expect(isBeatInClipLoopWindow({ ...extended, relativeBeat: 2 })).toBe(true);
+        expect(isBeatInClipLoopWindow({ ...extended, relativeBeat: 1.5 })).toBe(false);
+    });
+
     it('admits the region head inclusively and refuses the region end exclusively', () => {
         expect(isBeatInClipLoopWindow({ ...ANCHORED_CLIP, relativeBeat: -1 })).toBe(true);
         expect(isBeatInClipLoopWindow({ ...ANCHORED_CLIP, relativeBeat: 3 })).toBe(false);

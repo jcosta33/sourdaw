@@ -76,6 +76,18 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
             ? events
             : projectCommittedGroove({ events, consumerType: 'clip', consumerId: clipId });
 
+        // Order law (#5198 review): the committed clip groove displaces a
+        // stored start FIRST and the loop window below reads the GROOVED
+        // content figure — `groovedStart - midiOffsetBeats`. Every admission
+        // gate paired with this projection evaluates that same figure: the
+        // live generator's admission (`selectMidiNotesForLoopWindow`, passed
+        // the clip id) and scheduleMidiNotes' per-note test both groove the
+        // candidate before the window test. A groove carrying a note across a
+        // window bound therefore flips its admission on the live and offline
+        // twins together — a note either chain sounds, the other sounds. The
+        // rack chains invert the order (they admit the stored row before
+        // their own groove phase) and are internally consistent on the
+        // stored figure.
         return clipProjected.flatMap((event) => {
             const relativeStartBeat = event.startBeat - midiOffsetBeats;
             if (

@@ -137,8 +137,20 @@ export function projectOfflineYeastTrackNotes({
     for (const note of yeastNotes) {
         const iteration = iterationsByRoute.get(note.routeId);
         if (iteration) {
+            // The membership gate downstream reads the row's STORED figure,
+            // recovered through the rack's instance identity — the routed
+            // `startPpq` carries the clip groove and rack re-timing and must
+            // never decide membership (#5198 review). A note the rack did not
+            // tie back to a source row carries no figure and admits.
+            const sourceNote = sourceNotesByEventId.get(note.id);
             const projectedNotes = projectOfflineYeastClipNotes({
-                notes: [note],
+                notes: [
+                    {
+                        ...note,
+                        sourceRelativeBeat:
+                            sourceNote === undefined ? undefined : sourceNote.startBeat - iteration.midiOffsetBeats,
+                    },
+                ],
                 clipId: iteration.clipId,
                 clipStartBeat: iteration.clipStartBeat,
                 clipEndBeat: iteration.clipEndBeat,

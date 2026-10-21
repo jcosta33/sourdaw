@@ -1394,6 +1394,9 @@ export async function scheduleMidiNotes(
                         clipStartBeat: clip.startBeat,
                         loopOriginBeat: clip.loopOriginBeat,
                         loopEnabled: true,
+                        // The admission reads the clip's committed groove, the
+                        // same figure the projection windows on (#5198 review).
+                        clipId: clip.id,
                     });
                 } else {
                     iterNotes = selectMidiNotesForSchedulerWindow({
@@ -1411,17 +1414,32 @@ export async function scheduleMidiNotes(
                         return;
                     }
                     const isTrackScopedYeastNote = trackScopedYeastNoteIds.has(note.id);
-                    if (
-                        !notesAreAbsolute &&
-                        !isBeatInClipLoopWindow({
-                            relativeBeat: note.startBeat - clipMidiOffset,
-                            startBeat: clip.startBeat,
-                            loopOriginBeat: clip.loopOriginBeat,
-                            loopLengthBeats: loopLen,
-                            loopEnabled: clip.loopEnabled ?? false,
-                        })
-                    ) {
-                        continue;
+                    // #5198 — the per-note admission reads the same grooved
+                    // figure the projection below windows on: the committed
+                    // clip groove displaces the stored start BEFORE the loop
+                    // window is tested (`getGrooveProjection`'s order), so a
+                    // groove carrying a note across a bound flips it on the
+                    // live and offline twins together. The row handed on
+                    // stays the stored note — the projection applies the
+                    // groove itself; this test never displaces it.
+                    if (!notesAreAbsolute) {
+                        const [groovedNote] = projectCommittedGroove({
+                            events: [note],
+                            consumerType: 'clip',
+                            consumerId: clip.id,
+                        });
+                        if (
+                            !groovedNote ||
+                            !isBeatInClipLoopWindow({
+                                relativeBeat: groovedNote.startBeat - clipMidiOffset,
+                                startBeat: clip.startBeat,
+                                loopOriginBeat: clip.loopOriginBeat,
+                                loopLengthBeats: loopLen,
+                                loopEnabled: clip.loopEnabled ?? false,
+                            })
+                        ) {
+                            continue;
+                        }
                     }
                     // #4910 — a live Yeast source note is owned once, by
                     // processLiveYeastTrackBlock's block windows, at its audible

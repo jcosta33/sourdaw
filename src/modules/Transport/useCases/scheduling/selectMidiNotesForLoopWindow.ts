@@ -1,4 +1,5 @@
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
 
 type ScheduledMidiNote = MidiStoreState['notesByClipId'][string][number];
@@ -33,6 +34,16 @@ type SelectMidiNotesForLoopWindowInput = {
     clipStartBeat: number;
     loopOriginBeat: number | undefined;
     loopEnabled: boolean;
+    /**
+     * The owning clip's id — the key the committed clip groove is assigned
+     * under. Carried, the admission this selector returns notes under reads
+     * the GROOVED figure, the same figure the shared projection
+     * (`getGrooveProjection`) windows on, so a groove displacing a note
+     * across a window bound flips its admission on the live and offline
+     * twins together (#5198 review). Absent, the stored figure is tested —
+     * the pre-groove reading.
+     */
+    clipId?: string;
 };
 
 const scheduledMidiLoopIndexes = new WeakMap<readonly ScheduledMidiNote[], ScheduledMidiLoopIndex>();
@@ -69,23 +80,11 @@ function getScheduledMidiLoopIndex({
         const note = notes[index]!;
         orderByNote.set(note, index);
         const relativeStartBeat = note.startBeat - midiOffsetBeats;
-        // The anchored two-sided window is the admission law here too: a
-        // leftward trim lifts the ceiling above the loop length, and the old
-        // one-sided bound dropped exactly that in-window material before the
-        // caller's own per-note test could see it. This index may still
-        // over-admit (the final admission stays with the caller); it must
-        // never under-admit.
-        if (
-            !isBeatInClipLoopWindow({
-                relativeBeat: relativeStartBeat,
-                startBeat: clipStartBeat,
-                loopOriginBeat,
-                loopLengthBeats,
-                loopEnabled,
-            })
-        ) {
-            continue;
-        }
+        // The index carries every row and never window-filters: membership
+        // reads the grooved figure (below), a figure a groove edit can move
+        // across a bound independently of this cache's geometry key, so the
+        // test must stay out of the cached build. Over-admission here is the
+        // contract — the final admission stays with the caller.
         const phaseBeat = positiveModulo(relativeStartBeat, loopLengthBeats);
         sortedEntries.push({
             endPhaseBeat: phaseBeat + Math.min(note.duration, loopLengthBeats),
@@ -150,6 +149,7 @@ export function selectMidiNotesForLoopWindow({
     clipStartBeat,
     loopOriginBeat,
     loopEnabled,
+    clipId,
 }: SelectMidiNotesForLoopWindowInput): readonly ScheduledMidiNote[] {
     const { orderByNote, sortedEnds, sortedEntries } = getScheduledMidiLoopIndex({
         notes,
@@ -195,5 +195,34 @@ export function selectMidiNotesForLoopWindow({
             }
         }
     }
-    return [...candidates].sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
+    // #5198 — the admission this selector owns reads the grooved figure, the
+    // same figure the shared projection windows on: the committed clip groove
+    // displaces the stored start BEFORE the loop window is tested
+    // (`getGrooveProjection`'s order), so a groove carrying a note across a
+    // bound flips it on the live and offline twins together. The phase
+    // windows above preselect with groove slack, so every displaced start is
+    // among the candidates; this per-call test is the real membership. A
+    // window bound read here and one read inside the projection can disagree
+    // by an ulp only through the same rounding chains, never by ordering.
+    const windowAdmits = (startBeat: number): boolean =>
+        isBeatInClipLoopWindow({
+            relativeBeat: startBeat - midiOffsetBeats,
+            startBeat: clipStartBeat,
+            loopOriginBeat,
+            loopLengthBeats,
+            loopEnabled,
+        });
+    return Array.from(candidates)
+        .filter((note) => {
+            if (clipId === undefined) {
+                return windowAdmits(note.startBeat);
+            }
+            const [groovedNote] = projectCommittedGroove({
+                events: [note],
+                consumerType: 'clip',
+                consumerId: clipId,
+            });
+            return groovedNote !== undefined && windowAdmits(groovedNote.startBeat);
+        })
+        .sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
 }

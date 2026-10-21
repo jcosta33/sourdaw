@@ -365,4 +365,68 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
             [72, 12.5],
         ]);
     });
+
+    /**
+     * The review probe (#5198): a boundary row the clip groove displaces
+     * across the ceiling. Clip start 2, anchor 0, loop 4, offset 2 — window
+     * [−2, 2); the row stored at 3.9 reads source relative 1.9, admitted by
+     * every gate, and the committed clip groove (applied pre-rack by the
+     * `clip-groove` phase) routes it to absolute 6.15 — a routed figure of
+     * 2.15, past the ceiling. Membership on the routed figure dropped it
+     * here while the live twin voiced it; membership on the source figure
+     * keeps one clip rendering as one clip.
+     */
+    function projectGrooveDisplacedBoundaryRow(loopOriginBeat: number | undefined) {
+        function projectMidiEvents<Event extends ProjectableEvent>(
+            input: Parameters<OfflineMidiEventProjector>[0]
+        ): readonly Event[] {
+            const events = input.events as readonly Event[];
+            // The committed clip groove, as the real projector applies it in
+            // the `clip-groove` phase: every start a quarter beat late.
+            return input.phase === 'clip-groove'
+                ? events.map((event) => ({ ...event, startBeat: event.startBeat + 0.25 }))
+                : events;
+        }
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>((input) =>
+            input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? event.timeSamples / 100 }))
+        );
+        return projectOfflineYeastTrackNotes({
+            trackId: 'track-1',
+            iterations: [
+                {
+                    sourceNotes: [{ id: 'boundary', pitch: 61, startBeat: 3.9, duration: 0.25, velocity: 100 }],
+                    clipId: 'clip-1',
+                    clipStartBeat: 2,
+                    clipEndBeat: 10,
+                    iterationStartBeat: 2,
+                    loopLengthBeats: 4,
+                    midiOffsetBeats: 2,
+                    loopEnabled: true,
+                    loopOriginBeat,
+                },
+            ],
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 400_000,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents,
+            projectPpqEndpoints,
+            processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
+        });
+    }
+
+    it('voices a groove-displaced boundary row whose routed figure sits past the ceiling', () => {
+        const notes = projectGrooveDisplacedBoundaryRow(0);
+
+        // Rendered at its displaced placement, 2 + 3.9 + 0.25 − 2 = 4.15.
+        expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([[61, 4.15]]);
+    });
+
+    it('control: voices the same displaced row when the clip carries no anchor', () => {
+        const notes = projectGrooveDisplacedBoundaryRow(undefined);
+
+        expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([[61, 4.15]]);
+    });
 });

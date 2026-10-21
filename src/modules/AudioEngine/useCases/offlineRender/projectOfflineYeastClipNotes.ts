@@ -9,6 +9,16 @@ type ProcessedOfflineYeastNote = {
     velocity: number;
     startPpq: number;
     endPpq: number;
+    /**
+     * The note's source row figure (`storedStartBeat - midiOffsetBeats`) — the
+     * coordinate every loop-window admission gate reads. The routed `startPpq`
+     * carries the clip groove and any rack re-timing, so membership must never
+     * read it (#5198 review: a groove-displaced boundary note went silent
+     * offline while the live twin voiced it). Absent — a rack note whose
+     * source identity the rack did not preserve — admits: the pre-rack gates
+     * already owned membership on this same figure.
+     */
+    sourceRelativeBeat?: number;
 };
 
 type ProjectOfflineYeastClipNotesInput = {
@@ -51,21 +61,23 @@ export function projectOfflineYeastClipNotes({
 }: ProjectOfflineYeastClipNotesInput) {
     // #5198 — this post-rack projection runs with `eventsAreAbsolute: true`,
     // so the clip projection inside `projectMidiEvents` never applies the loop
-    // window; the anchored membership is applied here instead, on the routed
-    // note's region-relative figure (`startPpq - iterationStart -
-    // midiOffsetBeats`, the content-relative beat the synth path's admission
-    // reads). A row the window drops can no longer reach the rack, and a
-    // generator note re-anchored past the region end does not voice either.
-    // Unanchored clips admit without the window, byte-identically to the
-    // pre-anchor projector.
-    const admittedNotes = notes.filter((note) =>
-        isBeatAdmittedByAnchoredClipLoopWindow({
-            relativeBeat: note.startPpq - iterationStartBeat - midiOffsetBeats,
-            startBeat: clipStartBeat,
-            loopOriginBeat,
-            loopLengthBeats,
-            loopEnabled,
-        })
+    // window; the anchored membership is applied here instead, on the note's
+    // SOURCE row figure — the same stored `startBeat - midiOffsetBeats` the
+    // live ownership test and the pre-rack offline filters read. The routed
+    // `startPpq` is a displaced figure: the clip-groove phase moved it pre-rack
+    // and the rack may have re-timed it, and testing it dropped boundary notes
+    // the live twin sounded (#5198 review). A note without the threaded source
+    // figure admits — membership was already decided on it upstream.
+    const admittedNotes = notes.filter(
+        (note) =>
+            note.sourceRelativeBeat === undefined ||
+            isBeatAdmittedByAnchoredClipLoopWindow({
+                relativeBeat: note.sourceRelativeBeat,
+                startBeat: clipStartBeat,
+                loopOriginBeat,
+                loopLengthBeats,
+                loopEnabled,
+            })
     );
     const projectedNotes = projectMidiEvents({
         events: admittedNotes.map((note) => ({

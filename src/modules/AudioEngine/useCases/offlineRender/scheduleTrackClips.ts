@@ -749,6 +749,11 @@ export async function scheduleTrackClips({
                     loopLengthBeats: loopLength,
                     midiOffsetBeats,
                     loopEnabled,
+                    // The same anchor pair the filter above read: the Yeast
+                    // chain's own gates re-assert membership on the stored
+                    // figure downstream, and they cannot evaluate the anchored
+                    // window without it (#5198 review).
+                    loopOriginBeat: clip.loopOriginBeat,
                     toasterPadIndex: padIndex,
                     clipGain: clip.gain,
                 });
