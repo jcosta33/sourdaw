@@ -150,6 +150,10 @@ pub struct EngineHandle {
     /// callback still holds, so the next registration is admitted here and
     /// then refused where nobody can hear it.
     capture_consumers: Vec<usize>,
+    /// One attempt per nonempty input-holder period, including a refused open.
+    capture_period_requested: bool,
+    capture_period_used: bool,
+    retired_capture_events: Vec<(Consumer<EngineEvent>, Arc<AtomicU8>)>,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
@@ -270,9 +274,8 @@ impl EngineHandle {
             // stores the refused kind into a slot this handle also carries
             // (`capture_refusal`), and `Self::drain_engine_events` is what
             // turns that stored kind into the one reported `EngineEvent`. One
-            // attempt is all any engine makes: a refused open is never
-            // retried by a later registration, exactly as a refusal at start
-            // was never retried in-session.
+            // attempt is made per active holder period: another consumer
+            // cannot retry a refusal, but a later period gets fresh ends.
             //
             // The open no longer shares the output's startup timeout, because
             // it no longer happens while the engine starts: it runs on the
@@ -305,6 +308,9 @@ impl EngineHandle {
             // start from a zeroed snapshot.
             reconciled_effect_refusals: 0,
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
+            capture_period_requested: false,
+            capture_period_used: false,
+            retired_capture_events: Vec::new(),
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
@@ -363,10 +369,49 @@ impl EngineHandle {
     /// this open, pre-record audio never reaches
     /// [`crate::retrospective::RetrospectiveWriter::write_block`].
     pub fn arm_retrospective_capture(&mut self, track_id: usize, channels: usize) {
+        if crate::retrospective::RETROSPECTIVE_CHANNEL_RANGE.contains(&channels) {
+            self.prepare_capture_period();
+        }
         self.retrospective.arm(track_id, self.sample_rate, channels);
         if self.retrospective.target_track_id().is_some() {
-            self.audio_thread.request_capture_open();
+            self.request_capture_open();
         }
+    }
+
+    fn prepare_capture_period(&mut self) {
+        if self.capture_period_requested {
+            return;
+        }
+        if self.capture_period_used {
+            let (events_tx, events_rx) = engine_event_channel();
+            let (control, writer) = crate::retrospective::retrospective_capture();
+            let latency = audio_thread::new_input_latency_slot();
+            let refusal = audio_thread::new_capture_refusal_slot();
+            self.retired_capture_events.push((
+                std::mem::replace(&mut self.capture_events, events_rx),
+                std::mem::replace(&mut self.capture_refusal, Arc::clone(&refusal)),
+            ));
+            self.input_latency_frames = Arc::clone(&latency);
+            self.retrospective = control;
+            self.audio_thread
+                .prepare_capture(audio_thread::CapturePeriod {
+                    events: events_tx,
+                    latency,
+                    refusal,
+                    retrospective: writer,
+                });
+        }
+        self.capture_period_used = false;
+    }
+
+    fn request_capture_open(&mut self) {
+        if self.capture_period_requested {
+            return;
+        }
+        self.prepare_capture_period();
+        self.capture_period_used = true;
+        self.capture_period_requested = true;
+        self.audio_thread.request_capture_open();
     }
 
     /// Stop retrospective retention. Capture-callback writes keep nothing
@@ -722,6 +767,19 @@ impl EngineHandle {
             });
         }
 
+        self.retired_capture_events.retain_mut(|(ring, refusal)| {
+            // Observe completion before draining: the owner may still be
+            // publishing a refusal after the backend dropped its event sink.
+            let complete = ring.is_abandoned() && Arc::strong_count(refusal) == 1;
+            events.extend(engine_events::drain_engine_events(ring));
+            if let Some(kind) = StreamErrorKind::from_slot(refusal.swap(0, Ordering::Relaxed)) {
+                events.push(EngineEvent::StreamError {
+                    side: StreamSide::Input,
+                    kind,
+                });
+            }
+            !complete
+        });
         events
     }
 
@@ -893,6 +951,12 @@ impl EngineHandle {
             .position(|held| *held == plugin_id)
         {
             self.capture_consumers.swap_remove(slot);
+            if self.capture_consumers.is_empty() && self.retrospective.target_track_id().is_none() {
+                self.capture_period_requested = false;
+                // An in-flight old reader may still publish; detach its slot.
+                self.input_latency_frames = audio_thread::new_input_latency_slot();
+                self.audio_thread.request_capture_close();
+            }
         }
     }
 
@@ -1341,10 +1405,9 @@ impl EngineHandle {
                 // Every route onto the ring passes here, so this is the one
                 // place a consumer's arrival is known, and a registration
                 // that was refused above never reaches it. The owner thread
-                // opens at most one input per engine however many requests
-                // it is sent, so asking on every registration costs nothing
-                // and needs no record on this side.
-                self.audio_thread.request_capture_open();
+                // opens once per active holder period; additional consumers
+                // share the existing capture and its refusal, if any.
+                self.request_capture_open();
             }
             Some(CaptureLedgerEffect::Release(id)) => self.prune_capture_consumer(id),
             None => {}
@@ -1472,6 +1535,9 @@ fn engine_handle_fixture(
         effect_registrations: 0,
         reconciled_effect_refusals: 0,
         capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
+        capture_period_requested: false,
+        capture_period_used: false,
+        retired_capture_events: Vec::new(),
         midi_rt_diagnostics,
         timeline_rt_diagnostics,
         graph_progress,
@@ -1887,9 +1953,8 @@ mod tests {
     /// refuses must not: the callback will never feed that consumer, and an
     /// engine that opened a microphone for it would raise the macOS
     /// permission prompt — and renegotiate a Bluetooth headset's profile —
-    /// on behalf of a consumer that does not exist. Leaving the bus asks for
-    /// nothing either: closing the input when the last consumer goes is a
-    /// later change.
+    /// on behalf of a consumer that does not exist. The final accepted release
+    /// closes that period; a later registration prepares a fresh period.
     #[test]
     fn registering_a_capture_consumer_requests_the_capture_open() {
         let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
@@ -1910,14 +1975,18 @@ mod tests {
             .unregister_capture_consumer(7)
             .expect("the consumer comes off the bus");
 
-        assert!(
-            owner_rx.try_recv().is_err(),
-            "leaving the bus asks the owner thread for nothing"
-        );
+        assert!(matches!(
+            owner_rx.try_recv(),
+            Ok(OwnerCommand::CloseCapture)
+        ));
 
         engine
             .register_capture_consumer(7)
             .expect("the release freed the id");
+        assert!(matches!(
+            owner_rx.try_recv(),
+            Ok(OwnerCommand::PrepareCapture(_))
+        ));
         assert!(matches!(owner_rx.try_recv(), Ok(OwnerCommand::OpenCapture)));
 
         engine
@@ -1927,6 +1996,49 @@ mod tests {
         assert!(
             owner_rx.try_recv().is_err(),
             "a refused registration asks for no input device"
+        );
+    }
+
+    #[test]
+    fn only_the_last_accepted_capture_release_closes_input() {
+        let (mut engine, mut commands, _retired) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+        engine.register_capture_consumer(7).unwrap();
+        engine.register_capture_consumer(8).unwrap();
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        assert!(
+            owner.try_recv().is_err(),
+            "second consumer shares the input"
+        );
+        engine.unregister_capture_consumer(7).unwrap();
+        engine.unregister_capture_consumer(7).unwrap();
+        assert!(
+            owner.try_recv().is_err(),
+            "partial and duplicate release do not close"
+        );
+        while engine
+            .push(GraphCommand::AddTrack(TimelineTrack::new(99)))
+            .is_ok()
+        {}
+        engine
+            .unregister_capture_consumer(8)
+            .expect_err("full graph ring refuses release");
+        assert!(
+            owner.try_recv().is_err(),
+            "refused release keeps input alive"
+        );
+        while commands.pop().is_ok() {}
+        engine.push(GraphCommand::RemovePlugin(8)).unwrap();
+        assert!(
+            matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)),
+            "Crumbs destroy uses RemovePlugin"
+        );
+        assert!(owner.try_recv().is_err());
+        engine.push(GraphCommand::RemovePlugin(8)).unwrap();
+        assert!(
+            owner.try_recv().is_err(),
+            "duplicate removal cannot close twice"
         );
     }
 

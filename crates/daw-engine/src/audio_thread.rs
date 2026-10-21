@@ -142,13 +142,24 @@ pub(crate) const RENDER_LIVENESS_POLICY: RenderLivenessPolicy = RenderLivenessPo
 
 /// What the control side asks of the owner thread.
 ///
-/// One channel carries both, so a request sent before the handle is dropped
+/// One channel carries all commands, so a request sent before the handle is dropped
 /// is always handled before the shutdown that follows it.
 pub(crate) enum OwnerCommand {
     Shutdown,
+    #[cfg(test)]
+    Barrier(Sender<()>),
     /// Open the capture stream now. See [`open_pending_capture`] for why the
     /// input device is opened from here rather than while the engine starts.
     OpenCapture,
+    CloseCapture,
+    PrepareCapture(CapturePeriod),
+}
+
+pub(crate) struct CapturePeriod {
+    pub events: Producer<EngineEvent>,
+    pub latency: Arc<AtomicUsize>,
+    pub refusal: Arc<AtomicU8>,
+    pub retrospective: RetrospectiveWriter,
 }
 
 pub struct AudioThreadHandle {
@@ -162,6 +173,14 @@ pub struct AudioThreadHandle {
 }
 
 impl AudioThreadHandle {
+    pub(crate) fn prepare_capture(&self, period: CapturePeriod) {
+        let _ = self.owner_tx.send(OwnerCommand::PrepareCapture(period));
+    }
+
+    pub(crate) fn request_capture_close(&self) {
+        let _ = self.owner_tx.send(OwnerCommand::CloseCapture);
+    }
+
     /// Ask the owner thread to open the default input device.
     ///
     /// A disconnected send is dropped rather than reported: an owner thread
@@ -252,7 +271,7 @@ fn spawn_owned_audio_stream<Stream, Factory, OnCapture>(
 where
     Stream: 'static,
     Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
-    OnCapture: FnMut(&mut Stream) + Send + 'static,
+    OnCapture: FnMut(&mut Stream, OwnerCommand) + Send + 'static,
 {
     spawn_owned_audio_stream_with_timeout(
         factory,
@@ -277,7 +296,7 @@ fn spawn_owned_audio_stream_with_timeout<Stream, Factory, OnCapture>(
 where
     Stream: 'static,
     Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
-    OnCapture: FnMut(&mut Stream) + Send + 'static,
+    OnCapture: FnMut(&mut Stream, OwnerCommand) + Send + 'static,
 {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let (owner_tx, owner_rx) = mpsc::channel();
@@ -340,11 +359,15 @@ fn answer_owner_commands<Stream, OnCapture>(
     on_capture: &mut OnCapture,
     stream: &mut Stream,
 ) where
-    OnCapture: FnMut(&mut Stream),
+    OnCapture: FnMut(&mut Stream, OwnerCommand),
 {
     while let Ok(command) = owner_rx.recv() {
         match command {
             OwnerCommand::Shutdown => return,
+            #[cfg(test)]
+            OwnerCommand::Barrier(done) => {
+                let _ = done.send(());
+            }
             // The capture open is the first foreign device code this thread
             // has ever run. `open_requested_capture` already catches a panic
             // from the open itself, so this catch is the backstop for
@@ -353,9 +376,11 @@ fn answer_owner_commands<Stream, OnCapture>(
             // ever be answered, leaving every `AudioThreadHandle::drop` to
             // wait out its timeout — the same hazard `reclaim_retired`
             // guards against on the reclaimer thread.
-            OwnerCommand::OpenCapture => {
-                if catch_unwind(AssertUnwindSafe(|| on_capture(stream))).is_err() {
-                    eprintln!("[Engine] Audio capture open panicked");
+            command @ (OwnerCommand::OpenCapture
+            | OwnerCommand::CloseCapture
+            | OwnerCommand::PrepareCapture(_)) => {
+                if catch_unwind(AssertUnwindSafe(|| on_capture(stream, command))).is_err() {
+                    eprintln!("[Engine] Audio capture command panicked");
                 }
             }
         }
@@ -591,11 +616,12 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
                 Err(error)
             }
         },
-        |owned: &mut StreamWithReclaimerShutdown<OwnedDeviceStreams>| {
+        |owned: &mut StreamWithReclaimerShutdown<OwnedDeviceStreams>, command| {
             if let Some(streams) = owned.0.as_mut() {
-                open_requested_capture::<PlatformInputBackend>(
+                answer_capture_command::<PlatformInputBackend>(
                     &mut streams.capture,
                     &mut streams.pending_capture,
+                    command,
                 );
             }
         },
@@ -798,7 +824,7 @@ pub(crate) fn new_output_stream_fault_slot() -> Arc<AtomicU8> {
 ///
 /// It exists as one value because it travels as one: the reader has to reach
 /// a renderer the output stream already owns, and a lock is not open to the
-/// callback, so the whole feed crosses a one-slot SPSC ring instead. Every
+/// callback, so the whole feed crosses ownership slots in a triple buffer. Every
 /// buffer here is allocated where the feed is built — on the thread that opens
 /// the stream — because the callback that uses them may allocate nothing.
 pub(crate) struct CaptureFeed {
@@ -809,6 +835,19 @@ pub(crate) struct CaptureFeed {
     right: Box<[f32; MAX_CALLBACK_FRAMES]>,
     /// The input device's channel count, which is not the output device's.
     channels: usize,
+    active: Option<Arc<AtomicBool>>,
+    #[cfg(test)]
+    drop_notice: Option<CaptureFeedDropNotice>,
+}
+
+#[cfg(test)]
+struct CaptureFeedDropNotice(Sender<thread::ThreadId>);
+
+#[cfg(test)]
+impl Drop for CaptureFeedDropNotice {
+    fn drop(&mut self) {
+        let _ = self.0.send(thread::current().id());
+    }
 }
 
 impl CaptureFeed {
@@ -822,6 +861,9 @@ impl CaptureFeed {
             left: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
             right: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
             channels,
+            active: None,
+            #[cfg(test)]
+            drop_notice: None,
         }
     }
 
@@ -872,11 +914,12 @@ pub(crate) struct DeviceRenderer {
     scheduler: AudioScheduler,
     left_scratch: Box<[f32; MAX_CALLBACK_FRAMES]>,
     right_scratch: Box<[f32; MAX_CALLBACK_FRAMES]>,
-    /// The one-slot handoff the capture side pushes its feed through. The
+    /// The ownership handoff the capture side publishes its latest feed through. The
     /// renderer is already inside the output stream by then, so this is the
     /// only route to it that takes no lock.
-    capture_rx: Consumer<CaptureFeed>,
+    capture_rx: CaptureFeedReceiver,
     capture_feed: Option<CaptureFeed>,
+    retired_capture_tx: Option<Producer<CaptureFeed>>,
     /// Capture frames this renderer has delivered, counted whether or not the
     /// ring served them. It is the monotonic timeline a consumer places a
     /// block on, and it belongs to the renderer because nothing else sees
@@ -904,7 +947,7 @@ pub(crate) struct DeviceRenderer {
 impl DeviceRenderer {
     pub(crate) fn new(
         scheduler: AudioScheduler,
-        capture_rx: Consumer<CaptureFeed>,
+        capture_rx: CaptureFeedReceiver,
         callbacks_rendered: Arc<AtomicU64>,
         output_buffer_frames: Arc<AtomicUsize>,
         output_path_frames: Arc<AtomicUsize>,
@@ -915,6 +958,7 @@ impl DeviceRenderer {
             right_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
             capture_rx,
             capture_feed: None,
+            retired_capture_tx: None,
             capture_position_frames: 0,
             callbacks_rendered,
             output_buffer_frames,
@@ -923,18 +967,28 @@ impl DeviceRenderer {
         }
     }
 
-    /// Take the capture feed if one is waiting.
-    ///
-    /// One non-blocking pop per callback while the slot is empty: the capture
-    /// side pushes exactly once, after its input stream started, so this stops
-    /// costing anything the callback after that.
+    /// Replace a feed only after reserving room to retire its boxed buffers.
+    /// If the reclaimer is behind, leave both feeds in their existing owners.
     #[inline]
     fn adopt_capture_feed(&mut self) {
-        if self.capture_feed.is_some() {
+        if !self.capture_rx.updated() {
             return;
         }
-
-        if let Ok(feed) = self.capture_rx.pop() {
+        if self.capture_feed.is_some() {
+            let Some(retired) = self.retired_capture_tx.as_mut() else {
+                return;
+            };
+            if retired.slots() == 0 {
+                return;
+            }
+            if let Some(old) = self.capture_feed.take() {
+                if let Err(rtrb::PushError::Full(old)) = retired.push(old) {
+                    self.capture_feed = Some(old);
+                    return;
+                }
+            }
+        }
+        if let Some(feed) = take_capture_feed(&mut self.capture_rx) {
             self.capture_feed = Some(feed);
         }
     }
@@ -950,6 +1004,13 @@ impl DeviceRenderer {
             return;
         };
 
+        if feed
+            .active
+            .as_ref()
+            .is_some_and(|active| !active.load(Ordering::Acquire))
+        {
+            return;
+        }
         let served = feed.serve(frames);
         let position_frames = self.capture_position_frames;
         self.capture_position_frames = position_frames.wrapping_add(frames as u64);
@@ -1109,6 +1170,18 @@ fn block_peak(written: &[f32]) -> f32 {
         .fold(0.0f32, |peak, sample| peak.max(sample.abs()))
 }
 
+type CaptureFeedSender = triple_buffer::Input<Option<CaptureFeed>>;
+type CaptureFeedReceiver = triple_buffer::Output<Option<CaptureFeed>>;
+
+fn capture_feed_channel() -> (CaptureFeedSender, CaptureFeedReceiver) {
+    triple_buffer::TripleBuffer::<Option<CaptureFeed>>::default().split()
+}
+
+fn take_capture_feed(receiver: &mut CaptureFeedReceiver) -> Option<CaptureFeed> {
+    receiver.update();
+    receiver.output_buffer_mut().take()
+}
+
 /// Open the capture side and build the ring it feeds.
 ///
 /// Generic over the backend for the reason the output seam is: the decisions
@@ -1185,17 +1258,11 @@ fn attach_capture<B: InputBackend>(
 /// audio is flowing, so the reader publishes the figure itself once it
 /// settles.
 ///
-/// Handing the feed to the renderer is part of accepting the open, and it is
-/// the last thing that can fail. A feed that cannot reach the renderer is a
-/// ring nobody drains, which is exactly the state an unopened input leaves —
-/// so it takes the same route out, and the stream goes with it rather than
-/// writing into a ring whose consumer is about to be dropped. It is stored
-/// under `BackendSpecific`: this crate has never observed it fire, so it
-/// carries no kind of its own, and `BackendSpecific` is the vocabulary's
-/// catch-all for exactly that case.
+/// The feed handoff coalesces completed periods on owner-private storage;
+/// it cannot refuse a device open because the renderer has not run yet.
 fn capture_side<Stream>(
     attempt: Result<(Stream, CaptureFeed), InputOpenRefusal>,
-    feed_tx: &mut Producer<CaptureFeed>,
+    feed_tx: &mut CaptureFeedSender,
     input_latency_slot: &AtomicUsize,
     capture_refusal_slot: &AtomicU8,
 ) -> Option<Stream> {
@@ -1211,20 +1278,10 @@ fn capture_side<Stream>(
         }
     };
 
-    if feed_tx.push(feed).is_err() {
-        // Unreachable: the slot is built empty and one attach fills it once.
-        // Reported rather than asserted because the failure is otherwise
-        // silent — a running input stream feeding a renderer that never
-        // reads it. It is a refusal like any other, so it is stored the same
-        // way; see this function's doc for why `BackendSpecific`.
-        eprintln!("[Engine] Audio capture unavailable: the render feed slot was already taken");
-        input_latency_slot.store(0, Ordering::Relaxed);
-        capture_refusal_slot.store(
-            StreamErrorKind::BackendSpecific.to_slot(),
-            Ordering::Relaxed,
-        );
-        return None;
-    }
+    // Publishing replaces only an owner-private slot. Multiple completed
+    // periods before a render coalesce to the latest feed; superseded boxed
+    // buffers are freed by this owner, never by the render callback.
+    feed_tx.write(Some(feed));
 
     Some(stream)
 }
@@ -1237,13 +1294,14 @@ fn capture_side<Stream>(
 /// half of an SPSC ring the two backends cannot share. The open itself waits
 /// for a consumer to ask for it.
 struct PendingCapture {
-    capture_event_tx: Producer<EngineEvent>,
+    capture_event_tx: Option<Producer<EngineEvent>>,
     sample_rate: f32,
-    feed_tx: Producer<CaptureFeed>,
+    feed_tx: CaptureFeedSender,
     input_latency_slot: Arc<AtomicUsize>,
     capture_refusal_slot: Arc<AtomicU8>,
     output_stream_fault_slot: Arc<AtomicU8>,
-    retrospective: RetrospectiveWriter,
+    retrospective: Option<RetrospectiveWriter>,
+    active: Arc<AtomicBool>,
 }
 
 /// Open the capture side of an engine whose output stream is already running.
@@ -1260,73 +1318,81 @@ struct PendingCapture {
 /// over an event ring of its own — a caller that handed none leaves no
 /// [`PendingCapture`] to open.
 fn open_pending_capture<B: InputBackend>(
-    pending: PendingCapture,
+    pending: &mut PendingCapture,
 ) -> Option<<B::Open as OpenInput>::Stream> {
-    let PendingCapture {
-        capture_event_tx,
-        sample_rate,
-        mut feed_tx,
-        input_latency_slot,
-        capture_refusal_slot,
-        output_stream_fault_slot,
-        retrospective,
-    } = pending;
-
-    capture_side(
-        attach_capture::<B>(
-            sample_rate,
-            stream_error_sink(
-                StreamSide::Input,
-                capture_event_tx,
-                output_stream_fault_slot,
-            ),
-            Arc::clone(&input_latency_slot),
-            retrospective,
+    let events = pending.capture_event_tx.take()?;
+    let retrospective = pending.retrospective.take()?;
+    let attempt = attach_capture::<B>(
+        pending.sample_rate,
+        stream_error_sink(
+            StreamSide::Input,
+            events,
+            Arc::clone(&pending.output_stream_fault_slot),
         ),
-        &mut feed_tx,
-        &input_latency_slot,
-        &capture_refusal_slot,
+        Arc::clone(&pending.input_latency_slot),
+        retrospective,
+    )
+    .map(|(stream, mut feed)| {
+        feed.active = Some(Arc::clone(&pending.active));
+        (stream, feed)
+    });
+    capture_side(
+        attempt,
+        &mut pending.feed_tx,
+        &pending.input_latency_slot,
+        &pending.capture_refusal_slot,
     )
 }
 
-/// Answer one capture-open request, at most once per engine.
-///
-/// One attempt is the whole contract: the pending ends are taken out of their
-/// slot before the open runs, so a refused open leaves nothing to try again
-/// with and a later request opens nothing. That matches what an engine could
-/// do before this became a request — the open happened once, while the engine
-/// started — and closing the input again when the last consumer leaves is a
-/// separate change.
-///
-/// A panic inside `open_pending_capture` — a backend panicking in
-/// `open_default_input` or `open.start` — is caught here rather than left to
-/// unwind: unwinding past this call would skip `capture_side` entirely, so
-/// the refusal slot a normal refusal fills would stay at its zero sentinel
-/// and the registered consumer would sit reading silence with no
-/// `EngineEvent::StreamError` ever explaining why. A panicking open is
-/// therefore reported as `StreamErrorKind::BackendSpecific` through that same
-/// slot, so the consumer's `StreamError` event still fires. The loop-level
-/// `catch_unwind` in `answer_owner_commands` stays as the backstop that keeps
-/// the owner thread itself alive either way.
+/// Consume the period's attempt before entering foreign device code. Refusal
+/// and panic do not retry until a later accepted period supplies fresh ends.
 fn open_requested_capture<B: InputBackend>(
     capture: &mut Option<<B::Open as OpenInput>::Stream>,
     pending: &mut Option<PendingCapture>,
 ) {
-    let Some(request) = pending.take() else {
+    let Some(request) = pending.as_mut() else {
         return;
     };
-
-    let capture_refusal_slot = Arc::clone(&request.capture_refusal_slot);
-
+    if request.capture_event_tx.is_none() {
+        return;
+    }
+    request.active.store(true, Ordering::Release);
     match catch_unwind(AssertUnwindSafe(|| open_pending_capture::<B>(request))) {
         Ok(stream) => *capture = stream,
         Err(_) => {
-            capture_refusal_slot.store(
+            request.capture_refusal_slot.store(
                 StreamErrorKind::BackendSpecific.to_slot(),
                 Ordering::Relaxed,
             );
             *capture = None;
         }
+    }
+}
+
+fn answer_capture_command<B: InputBackend>(
+    capture: &mut Option<<B::Open as OpenInput>::Stream>,
+    pending: &mut Option<PendingCapture>,
+    command: OwnerCommand,
+) {
+    match command {
+        OwnerCommand::OpenCapture => open_requested_capture::<B>(capture, pending),
+        OwnerCommand::CloseCapture => {
+            drop(capture.take());
+            if let Some(request) = pending.as_mut() {
+                request.active.store(false, Ordering::Release);
+                request.input_latency_slot.store(0, Ordering::Relaxed);
+            }
+        }
+        OwnerCommand::PrepareCapture(period) => {
+            if let Some(request) = pending.as_mut() {
+                request.capture_event_tx = Some(period.events);
+                request.input_latency_slot = period.latency;
+                request.capture_refusal_slot = period.refusal;
+                request.retrospective = Some(period.retrospective);
+                request.active = Arc::new(AtomicBool::new(false));
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1387,7 +1453,7 @@ struct OwnedDeviceStreams {
     pending_capture: Option<PendingCapture>,
     /// Held for its drop alone — stopping the output stream is dropping it —
     /// and declared last so the capture side above stops first.
-    _output: PlatformStream,
+    _output: StreamWithReclaimerShutdown<PlatformStream>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1440,7 +1506,10 @@ fn build_audio_stream(
 
     // Built before the renderer, because the renderer takes the consumer with
     // it into the output stream and nothing can reach it afterwards.
-    let (capture_feed_tx, capture_feed_rx) = RingBuffer::<CaptureFeed>::new(1);
+    let (capture_feed_tx, capture_feed_rx) = capture_feed_channel();
+    let (retired_capture_tx, retired_capture_rx) = RingBuffer::new(1);
+    let (capture_reclaimer_shutdown, _capture_adoption) =
+        spawn_retirement_reclaimer(retired_capture_rx)?;
     let mut renderer = DeviceRenderer::new(
         scheduler,
         capture_feed_rx,
@@ -1448,6 +1517,7 @@ fn build_audio_stream(
         Arc::clone(output_buffer_frames_slot),
         Arc::clone(output_path_frames_slot),
     );
+    renderer.retired_capture_tx = Some(retired_capture_tx);
     let render: RenderFn = Box::new(
         move |data: &mut [f32], channels: usize, output_path_frames: usize| {
             renderer.render(data, channels, output_path_frames);
@@ -1467,20 +1537,21 @@ fn build_audio_stream(
         capture: None,
         pending_capture: match capture_event_tx {
             Some(tx) => Some(PendingCapture {
-                capture_event_tx: tx,
+                capture_event_tx: Some(tx),
                 sample_rate,
                 feed_tx: capture_feed_tx,
                 input_latency_slot: Arc::clone(input_latency_slot),
                 capture_refusal_slot: Arc::clone(capture_refusal_slot),
                 output_stream_fault_slot: Arc::clone(output_stream_fault_slot),
-                retrospective,
+                retrospective: Some(retrospective),
+                active: Arc::new(AtomicBool::new(false)),
             }),
             None => {
                 drop(retrospective);
                 None
             }
         },
-        _output: output,
+        _output: StreamWithReclaimerShutdown(Some(output), capture_reclaimer_shutdown),
     })
 }
 
@@ -1489,7 +1560,8 @@ mod capture_seam_tests {
     use super::{
         attach_capture, capture_side, new_capture_refusal_slot, new_input_latency_slot,
         new_output_stream_fault_slot, new_render_liveness, open_requested_capture,
-        spawn_owned_audio_stream, AudioThreadHandle, CaptureFeed, PendingCapture,
+        spawn_owned_audio_stream, take_capture_feed, AudioThreadHandle, CaptureFeedReceiver,
+        PendingCapture,
     };
     use crate::capture::target_depth_frames;
     use crate::device::{
@@ -1497,8 +1569,8 @@ mod capture_seam_tests {
         StreamErrorFn,
     };
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
-    use rtrb::{Consumer, Producer, RingBuffer};
-    use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+    use rtrb::{Consumer, RingBuffer};
+    use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
     use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
     use std::time::Duration;
 
@@ -1632,10 +1704,10 @@ mod capture_seam_tests {
         super::stream_error_sink(StreamSide::Input, tx, new_output_stream_fault_slot())
     }
 
-    /// The one-slot handoff `build_audio_stream` builds, in the shape a test
+    /// The ownership handoff `build_audio_stream` builds, in the shape a test
     /// can hold both ends of.
-    fn feed_channel() -> (Producer<CaptureFeed>, Consumer<CaptureFeed>) {
-        RingBuffer::new(1)
+    fn feed_channel() -> (super::CaptureFeedSender, super::CaptureFeedReceiver) {
+        super::capture_feed_channel()
     }
 
     /// A refusal costs the capture side and nothing else: it has no failure
@@ -1661,7 +1733,7 @@ mod capture_seam_tests {
 
         assert!(capture.is_none(), "no input device means no capture side");
         assert!(
-            feed_rx.pop().is_err(),
+            take_capture_feed(&mut feed_rx).is_none(),
             "a renderer must not be handed a feed no device is writing"
         );
         assert_eq!(
@@ -1692,21 +1764,20 @@ mod capture_seam_tests {
         );
 
         assert!(stream.is_some(), "a present input device opens");
-        let mut feed = feed_rx.pop().expect("the renderer's slot holds the feed");
+        let mut feed = take_capture_feed(&mut feed_rx).expect("the renderer's slot holds the feed");
         assert!(
             feed.serve(RENDER_READ),
             "the blocks the device delivered carry the ring past its target"
         );
     }
 
-    /// A feed the renderer cannot be handed leaves no capture side at all. The
-    /// alternative is a running input stream filling a ring nobody drains,
-    /// which reports as a healthy capture and records nothing.
+    /// Rapid reopen may supersede a feed before the renderer ever adopts it.
+    /// That is an ownership handoff, never a device refusal.
     #[test]
-    fn a_feed_that_cannot_reach_the_renderer_yields_no_capture_side() {
+    fn a_new_feed_supersedes_a_queued_feed_without_refusing_capture() {
         let slot = new_input_latency_slot();
         let refusal_slot = new_capture_refusal_slot();
-        let (mut feed_tx, _feed_rx) = feed_channel();
+        let (mut feed_tx, mut feed_rx) = feed_channel();
         let (_taken, feed) = attach_capture::<PresentInput>(
             ENGINE_RATE,
             error_sink(),
@@ -1714,7 +1785,7 @@ mod capture_seam_tests {
             crate::retrospective::RetrospectiveWriter::inert(),
         )
         .expect("a present input device opens");
-        feed_tx.push(feed).expect("the slot starts empty");
+        feed_tx.write(Some(feed));
 
         let stream = capture_side(
             attach_capture::<PresentInput>(
@@ -1728,8 +1799,12 @@ mod capture_seam_tests {
             &refusal_slot,
         );
 
-        assert!(stream.is_none(), "a feed with no reader is not a capture");
-        assert_eq!(slot.load(Ordering::Relaxed), 0);
+        assert!(
+            stream.is_some(),
+            "queued older feed cannot refuse a fresh period"
+        );
+        assert_eq!(refusal_slot.load(Ordering::Relaxed), 0);
+        assert!(take_capture_feed(&mut feed_rx).is_some());
     }
 
     /// The figure the control side reads describes the cadence the stream
@@ -1754,7 +1829,7 @@ mod capture_seam_tests {
             &refusal_slot,
         )
         .expect("a present input device opens");
-        let mut feed = feed_rx.pop().expect("the renderer's slot holds the feed");
+        let mut feed = take_capture_feed(&mut feed_rx).expect("the renderer's slot holds the feed");
 
         assert_eq!(
             slot.load(Ordering::Relaxed),
@@ -1783,7 +1858,7 @@ mod capture_seam_tests {
     struct PendingUnderTest {
         pending: PendingCapture,
         refusal_slot: Arc<AtomicU8>,
-        feed_rx: Consumer<CaptureFeed>,
+        feed_rx: CaptureFeedReceiver,
     }
 
     fn pending_capture() -> PendingUnderTest {
@@ -1793,13 +1868,14 @@ mod capture_seam_tests {
 
         PendingUnderTest {
             pending: PendingCapture {
-                capture_event_tx,
+                capture_event_tx: Some(capture_event_tx),
                 sample_rate: ENGINE_RATE,
                 feed_tx,
                 input_latency_slot: new_input_latency_slot(),
                 capture_refusal_slot: Arc::clone(&refusal_slot),
                 output_stream_fault_slot: new_output_stream_fault_slot(),
-                retrospective: crate::retrospective::RetrospectiveWriter::inert(),
+                retrospective: Some(crate::retrospective::RetrospectiveWriter::inert()),
+                active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             },
             refusal_slot,
             feed_rx,
@@ -1843,8 +1919,12 @@ mod capture_seam_tests {
                     dropped_tx,
                 })
             },
-            |streams: &mut TestStreams| {
-                open_requested_capture::<B>(&mut streams.capture, &mut streams.pending);
+            |streams: &mut TestStreams, command| {
+                super::answer_capture_command::<B>(
+                    &mut streams.capture,
+                    &mut streams.pending,
+                    command,
+                );
             },
             new_render_liveness(),
         )
@@ -1859,6 +1939,276 @@ mod capture_seam_tests {
         dropped_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("the owner thread should drop its stream once its queue drains");
+    }
+
+    static INPUT_DROPS: AtomicUsize = AtomicUsize::new(0);
+    static OUTPUT_DROPS: AtomicUsize = AtomicUsize::new(0);
+    static WRONG_DROP_THREAD: AtomicBool = AtomicBool::new(false);
+    static REFUSE_SECOND: AtomicUsize = AtomicUsize::new(0);
+
+    struct LifecycleInput;
+    struct LifecycleOpen(NegotiatedInput);
+    struct LifecycleStream {
+        _capture: CaptureFn,
+        _errors: StreamErrorFn,
+    }
+    impl Drop for LifecycleStream {
+        fn drop(&mut self) {
+            INPUT_DROPS.fetch_add(1, Ordering::SeqCst);
+            if std::thread::current().name() != Some("sourdaw-audio-owner") {
+                WRONG_DROP_THREAD.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+    impl InputBackend for LifecycleInput {
+        type Open = LifecycleOpen;
+        fn open_default_input(request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
+            let attempt = OPENS_ATTEMPTED.fetch_add(1, Ordering::SeqCst);
+            if attempt == 1 && REFUSE_SECOND.load(Ordering::SeqCst) == 1 {
+                return Err(InputOpenRefusal::NoDefaultInputDevice);
+            }
+            Ok(LifecycleOpen(PresentInput::open_default_input(request)?.0))
+        }
+    }
+    impl OpenInput for LifecycleOpen {
+        type Stream = LifecycleStream;
+        fn negotiated(&self) -> NegotiatedInput {
+            self.0
+        }
+        fn start(
+            self,
+            mut capture: CaptureFn,
+            errors: StreamErrorFn,
+        ) -> Result<Self::Stream, InputOpenRefusal> {
+            let value = OPENS_ATTEMPTED.load(Ordering::SeqCst) as f32;
+            let block = vec![value; DELIVERED_BLOCK * DEVICE_CHANNELS];
+            assert_no_alloc::assert_no_alloc(|| {
+                for _ in 0..BLOCKS_AT_START {
+                    capture(&block, DEVICE_CHANNELS);
+                }
+            });
+            Ok(LifecycleStream {
+                _capture: capture,
+                _errors: errors,
+            })
+        }
+    }
+    struct LifecycleStreams {
+        capture: Option<LifecycleStream>,
+        pending: Option<PendingCapture>,
+    }
+    impl Drop for LifecycleStreams {
+        fn drop(&mut self) {
+            OUTPUT_DROPS.fetch_add(1, Ordering::SeqCst);
+            if std::thread::current().name() != Some("sourdaw-audio-owner") {
+                WRONG_DROP_THREAD.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+    fn lifecycle_engine(
+        refuse_second: bool,
+    ) -> (
+        crate::EngineHandle,
+        CaptureFeedReceiver,
+        Consumer<crate::GraphCommand>,
+    ) {
+        INPUT_DROPS.store(0, Ordering::SeqCst);
+        WRONG_DROP_THREAD.store(false, Ordering::SeqCst);
+        OUTPUT_DROPS.store(0, Ordering::SeqCst);
+        REFUSE_SECOND.store(usize::from(refuse_second), Ordering::SeqCst);
+        let (mut engine, commands, _retired) = crate::engine_handle_for_command_capture(64);
+        let mut ready = pending_capture();
+        let (events_tx, events_rx) = engine_event_channel();
+        let (control, writer) = crate::retrospective::retrospective_capture();
+        ready.pending.capture_event_tx = Some(events_tx);
+        ready.pending.retrospective = Some(writer);
+        engine.capture_events = events_rx;
+        engine.capture_refusal = Arc::clone(&ready.refusal_slot);
+        engine.input_latency_frames = Arc::clone(&ready.pending.input_latency_slot);
+        engine.retrospective = control;
+        engine.audio_thread = spawn_owned_audio_stream(
+            move || {
+                Ok(LifecycleStreams {
+                    capture: None,
+                    pending: Some(ready.pending),
+                })
+            },
+            |streams: &mut LifecycleStreams, command| {
+                super::answer_capture_command::<LifecycleInput>(
+                    &mut streams.capture,
+                    &mut streams.pending,
+                    command,
+                );
+                if let Some(input) = streams.capture.as_mut() {
+                    let block = [0.75; DELIVERED_BLOCK * DEVICE_CHANNELS];
+                    assert_no_alloc::assert_no_alloc(|| (input._capture)(&block, DEVICE_CHANNELS));
+                }
+            },
+            new_render_liveness(),
+        )
+        .unwrap();
+        (engine, ready.feed_rx, commands)
+    }
+    fn owner_settled(engine: &crate::EngineHandle) {
+        let (tx, rx) = mpsc::channel();
+        engine
+            .audio_thread
+            .owner_tx
+            .send(super::OwnerCommand::Barrier(tx))
+            .unwrap();
+        rx.recv_timeout(Duration::from_secs(2))
+            .expect("owner commands completed");
+    }
+    #[test]
+    fn last_capture_consumer_closes_and_reopens_input() {
+        let _opens = counted_opens();
+        let (mut engine, mut feeds, _commands) = lifecycle_engine(false);
+        engine.register_capture_consumer(7).unwrap();
+        owner_settled(&engine);
+        let mut first = take_capture_feed(&mut feeds).expect("first period feed");
+        assert!(first.serve(RENDER_READ));
+        assert_eq!(first.left[0], 1.0);
+        assert!(engine.input_latency_frames() > 0);
+        engine.unregister_capture_consumer(7).unwrap();
+        owner_settled(&engine);
+        assert_eq!(
+            INPUT_DROPS.load(Ordering::SeqCst),
+            1,
+            "last release drops input"
+        );
+        assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 0, "output stays alive");
+        assert_eq!(engine.input_latency_frames(), 0);
+        engine.register_capture_consumer(8).unwrap();
+        owner_settled(&engine);
+        assert_eq!(OPENS_ATTEMPTED.load(Ordering::SeqCst), 2);
+        let mut second = take_capture_feed(&mut feeds).expect("fresh second period feed");
+        assert!(second.serve(RENDER_READ));
+        assert_eq!(second.left[0], 2.0);
+        assert!(engine.input_latency_frames() > 0);
+        assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 0);
+    }
+    #[test]
+    fn second_capture_open_refusal_drains_once() {
+        let _opens = counted_opens();
+        let (mut engine, mut feeds, _commands) = lifecycle_engine(true);
+        engine.register_capture_consumer(7).unwrap();
+        owner_settled(&engine);
+        drop(take_capture_feed(&mut feeds).unwrap());
+        engine.unregister_capture_consumer(7).unwrap();
+        owner_settled(&engine);
+        engine.register_capture_consumer(8).unwrap();
+        owner_settled(&engine);
+        assert_eq!(
+            OPENS_ATTEMPTED.load(Ordering::SeqCst),
+            2,
+            "second period attempts input"
+        );
+        engine.register_capture_consumer(9).unwrap();
+        owner_settled(&engine);
+        assert_eq!(
+            OPENS_ATTEMPTED.load(Ordering::SeqCst),
+            2,
+            "same period never retries refusal"
+        );
+        let events = engine.drain_engine_events();
+        assert_eq!(events.len(), 1, "one input refusal event");
+        assert!(matches!(
+            events[0],
+            EngineEvent::StreamError {
+                side: StreamSide::Input,
+                ..
+            }
+        ));
+        assert!(engine.drain_engine_events().is_empty());
+        assert_eq!(engine.input_latency_frames(), 0);
+        assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 0);
+        engine.unregister_capture_consumer(8).unwrap();
+        engine.unregister_capture_consumer(9).unwrap();
+        engine.register_capture_consumer(10).unwrap();
+        owner_settled(&engine);
+        assert_eq!(
+            OPENS_ATTEMPTED.load(Ordering::SeqCst),
+            3,
+            "later period gets a new attempt"
+        );
+        assert!(take_capture_feed(&mut feeds).is_some());
+        assert!(engine.drain_engine_events().is_empty());
+    }
+
+    #[test]
+    fn rapid_capture_periods_publish_the_latest_feed_before_any_render_callback() {
+        let _opens = counted_opens();
+        let (mut engine, feeds, commands) = lifecycle_engine(false);
+        for id in 0..4 {
+            engine.register_capture_consumer(id).unwrap();
+            owner_settled(&engine);
+            if id < 3 {
+                engine.unregister_capture_consumer(id).unwrap();
+                owner_settled(&engine);
+            }
+        }
+        assert_eq!(OPENS_ATTEMPTED.load(Ordering::SeqCst), 4);
+        assert!(
+            engine.drain_engine_events().is_empty(),
+            "handoff pressure is not a device refusal"
+        );
+        let (retired, _retired_rx) = RingBuffer::new(65);
+        let scheduler = crate::scheduler::AudioScheduler::new(commands, retired, ENGINE_RATE);
+        let mut renderer = super::DeviceRenderer::new(
+            scheduler,
+            feeds,
+            Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            super::new_output_buffer_frames_slot(),
+            super::new_output_path_frames_slot(),
+        );
+        let mut data = [0.0; RENDER_READ * DEVICE_CHANNELS];
+        assert_no_alloc::assert_no_alloc(|| renderer.render(&mut data, DEVICE_CHANNELS, 0));
+        let latest = renderer
+            .capture_feed
+            .as_ref()
+            .expect("first callback adopts latest period");
+        assert_eq!(latest.left[0], 4.0, "first render must serve latest period");
+        assert!(engine.input_latency_frames() > 0);
+        assert_eq!(INPUT_DROPS.load(Ordering::SeqCst), 3);
+        assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 0);
+        drop(engine);
+        assert_eq!(INPUT_DROPS.load(Ordering::SeqCst), 4);
+        assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 1);
+        assert!(
+            !WRONG_DROP_THREAD.load(Ordering::SeqCst),
+            "streams stop on owner thread"
+        );
+    }
+
+    #[test]
+    fn reopened_capture_keeps_the_matching_retrospective_control() {
+        let _opens = counted_opens();
+        let (mut engine, mut feeds, _commands) = lifecycle_engine(false);
+        engine.register_capture_consumer(7).unwrap();
+        owner_settled(&engine);
+        drop(take_capture_feed(&mut feeds).unwrap());
+        engine.unregister_capture_consumer(7).unwrap();
+        owner_settled(&engine);
+        engine.arm_retrospective_capture(9, 2);
+        engine.audio_thread.request_capture_open();
+        owner_settled(&engine);
+        assert_eq!(OPENS_ATTEMPTED.load(Ordering::SeqCst), 2);
+        assert!(engine.retrospective.retained_samples() > 0);
+        engine.register_capture_consumer(8).unwrap();
+        engine.unregister_capture_consumer(8).unwrap();
+        owner_settled(&engine);
+        assert_eq!(
+            INPUT_DROPS.load(Ordering::SeqCst),
+            1,
+            "armed retrospective holds reopened input"
+        );
+        drop(engine);
+        assert_eq!(
+            INPUT_DROPS.load(Ordering::SeqCst),
+            2,
+            "engine retirement drops remaining input"
+        );
+        assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 1);
     }
 
     /// Starting the engine is not what opens the microphone. On macOS the
@@ -1900,7 +2250,7 @@ mod capture_seam_tests {
 
         assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), 1);
         assert!(
-            ready.feed_rx.pop().is_ok(),
+            take_capture_feed(&mut ready.feed_rx).is_some(),
             "a started capture hands over a feed"
         );
     }
@@ -1975,7 +2325,7 @@ mod capture_seam_tests {
             "a panicking open must not leave a stream behind"
         );
         assert!(
-            pending.is_none(),
+            pending.as_ref().unwrap().capture_event_tx.is_none(),
             "one attempt is spent even when the open panics"
         );
         assert_eq!(
@@ -2250,7 +2600,7 @@ mod tests {
     /// The handler for the owner loop's capture request, for the tests that
     /// are about the loop rather than about capture. What a request does when
     /// it is answered is `capture_seam_tests`' subject.
-    fn no_capture_open<Stream>(_stream: &mut Stream) {}
+    fn no_capture_open<Stream>(_stream: &mut Stream, _command: super::OwnerCommand) {}
 
     struct ThreadBoundResource {
         created_on: thread::ThreadId,
@@ -2748,7 +3098,7 @@ mod tests {
 
         let handle = spawn_owned_audio_stream_with_timeout(
             move || Ok::<_, String>(DropNotifier(dropped_tx)),
-            move |_stream: &mut DropNotifier| {
+            move |_stream: &mut DropNotifier, _command| {
                 blocked_tx
                     .send(())
                     .expect("the test should still be listening for the open");
@@ -2803,7 +3153,7 @@ mod tests {
 
         let handle = spawn_owned_audio_stream(
             move || Ok::<_, String>(DropNotifier(dropped_tx)),
-            move |_stream: &mut DropNotifier| {
+            move |_stream: &mut DropNotifier, _command| {
                 panicked_tx
                     .send(())
                     .expect("the test should still be listening for the open");
@@ -2859,7 +3209,9 @@ mod tests {
 /// their own and a feed handed over exactly as the capture side hands one over.
 #[cfg(test)]
 mod capture_render_tests {
-    use super::{CaptureFeed, DeviceRenderer, MAX_CALLBACK_FRAMES};
+    use super::{
+        capture_feed_channel, CaptureFeed, CaptureFeedSender, DeviceRenderer, MAX_CALLBACK_FRAMES,
+    };
     use crate::capture::{capture_ring, target_depth_frames, CaptureRingWriter, CaptureShape};
     use crate::midi::diagnostics::{
         active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
@@ -2938,7 +3290,7 @@ mod capture_render_tests {
     struct RenderHarness {
         command_tx: Producer<GraphCommand>,
         retired_rx: Consumer<RetiredGraphObjects>,
-        feed_tx: Producer<CaptureFeed>,
+        feed_tx: CaptureFeedSender,
         renderer: DeviceRenderer,
         diagnostics: ActiveMidiRtDiagnosticsReader,
         callbacks_rendered: Arc<AtomicU64>,
@@ -2963,7 +3315,7 @@ mod capture_render_tests {
                 transport_position_tx,
                 meter_tx,
             );
-            let (feed_tx, feed_rx) = RingBuffer::new(1);
+            let (feed_tx, feed_rx) = capture_feed_channel();
             let callbacks_rendered = Arc::new(AtomicU64::new(0));
             Self {
                 command_tx,
@@ -3109,7 +3461,7 @@ mod capture_render_tests {
 
         let (mut writer, feed) = capture_feed(OUTPUT_CHANNELS);
         write_blocks(&mut writer, OUTPUT_CHANNELS, BLOCKS_AT_START);
-        harness.feed_tx.push(feed).expect("the slot starts empty");
+        harness.feed_tx.write(Some(feed));
 
         harness.render(CALLBACK_FRAMES);
 
@@ -3138,7 +3490,7 @@ mod capture_render_tests {
         }));
         let (mut writer, feed) = capture_feed(2);
         write_blocks(&mut writer, 2, BLOCKS_AT_START);
-        harness.feed_tx.push(feed).expect("the slot starts empty");
+        harness.feed_tx.write(Some(feed));
 
         harness.render(CALLBACK_FRAMES);
 
@@ -3163,7 +3515,7 @@ mod capture_render_tests {
         }));
         let (mut writer, feed) = capture_feed(1);
         write_blocks(&mut writer, 1, BLOCKS_AT_START);
-        harness.feed_tx.push(feed).expect("the slot starts empty");
+        harness.feed_tx.write(Some(feed));
 
         harness.render(CALLBACK_FRAMES);
 
@@ -3193,7 +3545,7 @@ mod capture_render_tests {
         // then starves while the callbacks keep coming.
         let (mut writer, feed) = capture_feed(OUTPUT_CHANNELS);
         write_blocks(&mut writer, OUTPUT_CHANNELS, BLOCKS_AT_START);
-        harness.feed_tx.push(feed).expect("the slot starts empty");
+        harness.feed_tx.write(Some(feed));
 
         for _ in 0..CALLBACKS {
             harness.render(CALLBACK_FRAMES);
@@ -3272,6 +3624,75 @@ mod capture_render_tests {
         }
 
         #[test]
+        fn capture_replacement_waits_for_retirement_room_without_allocating_or_freeing() {
+            let mut harness = RenderHarness::new();
+            let (mut retired_tx, mut retired_rx) = RingBuffer::new(1);
+            let (_writer, sentinel) = capture_feed(1);
+            retired_tx.push(sentinel).unwrap();
+            harness.renderer.retired_capture_tx = Some(retired_tx);
+            let (_first_writer, mut first) = capture_feed(1);
+            let alive = Arc::new(std::sync::atomic::AtomicBool::new(true));
+            let retired_lifetime = Arc::downgrade(&alive);
+            first.active = Some(alive);
+            let (drop_tx, drop_rx) = std::sync::mpsc::channel();
+            first.drop_notice = Some(super::super::CaptureFeedDropNotice(drop_tx));
+            let first_address = first.left.as_ptr();
+            harness.renderer.capture_feed = Some(first);
+            let (mut second_writer, second) = capture_feed(2);
+            write_blocks(&mut second_writer, 2, BLOCKS_AT_START);
+            let second_address = second.left.as_ptr();
+            harness.feed_tx.write(Some(second));
+            let mut data = [0.0; CALLBACK_FRAMES * OUTPUT_CHANNELS];
+            assert_no_alloc(|| harness.renderer.render(&mut data, OUTPUT_CHANNELS, 0));
+            assert_eq!(
+                harness
+                    .renderer
+                    .capture_feed
+                    .as_ref()
+                    .unwrap()
+                    .left
+                    .as_ptr(),
+                first_address
+            );
+            assert_eq!(
+                usize::from(harness.renderer.capture_rx.updated()),
+                1,
+                "new feed stays queued under pressure"
+            );
+            drop(retired_rx.pop().unwrap());
+            assert_no_alloc(|| harness.renderer.render(&mut data, OUTPUT_CHANNELS, 0));
+            assert_eq!(
+                harness
+                    .renderer
+                    .capture_feed
+                    .as_ref()
+                    .unwrap()
+                    .left
+                    .as_ptr(),
+                second_address
+            );
+            assert!(
+                harness.renderer.capture_feed.as_ref().unwrap().left[0] > 0.0,
+                "replacement serves its own capture"
+            );
+            assert!(
+                retired_lifetime.upgrade().is_some(),
+                "old buffers are still owned by retirement ring"
+            );
+            let (shutdown, _adoption) =
+                super::super::spawn_retirement_reclaimer(retired_rx).unwrap();
+            let dropped_on = drop_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("production reclaimer frees old feed");
+            assert_ne!(dropped_on, std::thread::current().id());
+            drop(shutdown);
+            assert!(
+                retired_lifetime.upgrade().is_none(),
+                "old feed is freed off callback"
+            );
+        }
+
+        #[test]
         fn the_render_callback_with_a_feed_allocates_nothing() {
             const CALLBACKS: usize = 8;
 
@@ -3284,7 +3705,7 @@ mod capture_render_tests {
             }));
             let (mut writer, feed) = capture_feed(OUTPUT_CHANNELS);
             write_blocks(&mut writer, OUTPUT_CHANNELS, BLOCKS_AT_START);
-            harness.feed_tx.push(feed).expect("the slot starts empty");
+            harness.feed_tx.write(Some(feed));
             // Sized outside, the way a device buffer is: the callback is what
             // is under test, not the buffer it is handed.
             let mut data = vec![0.0f32; CALLBACK_FRAMES * OUTPUT_CHANNELS];
@@ -3385,7 +3806,7 @@ mod device_output_tests {
             );
             // No capture side: this module drives the monitor gate, and the
             // renderer with no feed delivers no input at all.
-            let (_capture_feed_tx, capture_feed_rx) = RingBuffer::new(1);
+            let (_capture_feed_tx, capture_feed_rx) = super::capture_feed_channel();
             let output_buffer_frames = Arc::new(AtomicUsize::new(0));
             let output_path_frames = Arc::new(AtomicUsize::new(0));
             Self {
@@ -3959,7 +4380,7 @@ mod compensation_render_alloc_guards {
                 transport_position_tx,
                 meter_tx,
             );
-            let (_capture_feed_tx, capture_feed_rx) = RingBuffer::new(1);
+            let (_capture_feed_tx, capture_feed_rx) = super::capture_feed_channel();
             Self {
                 command_tx,
                 retired_rx,
