@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readNextPhysicalBarBoundary } from '../readNextPhysicalBarBoundary';
 import { timeSignatureMapStore } from '../timeSignatureMapStore';
@@ -51,5 +51,19 @@ describe('readNextPhysicalBarBoundary', () => {
 
     it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])('refuses an invalid beat %s', (beat) => {
         expect(boundary(beat, false)).toBeNull();
+    });
+
+    it('refuses an invalid base meter rather than inventing a bar length', () => {
+        expect(boundary(0, false)).toBe(4);
+        const transportRead = vi.spyOn(transportStore, 'value', 'get').mockReturnValue({
+            ...defaultTransportState,
+            timeSignatureNumerator: 0,
+        });
+        try {
+            expect(boundary(0, false)).toBeNull();
+        } finally {
+            transportRead.mockRestore();
+        }
+        expect(boundary(0, false)).toBe(4);
     });
 });

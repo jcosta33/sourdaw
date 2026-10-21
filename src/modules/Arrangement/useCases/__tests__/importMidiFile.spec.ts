@@ -618,6 +618,39 @@ describe('importMidiFile', () => {
         );
     });
 
+    it('refuses a corrupt project meter before importing MIDI or changing existing content', async () => {
+        shouldInjectConcurrentTrack = false;
+        const existingTrack = TrackDummy.create({
+            id: 'keeper',
+            clips: [ClipDummy.create({ id: 'existing-clip', trackId: 'keeper', type: 'midi' })],
+        });
+        trackStore.set({ tracks: [existingTrack], selectedTrackId: 'keeper' });
+        const trackBefore = trackStore.value;
+        const midiBefore = getMidiStoreState();
+        const transportBefore = transportStore.value;
+        const meterBefore = timeSignatureMapStore.value;
+        const meterRead = vi.spyOn(timeSignatureMapStore, 'value', 'get').mockReturnValue({
+            changes: [{ id: 'corrupt-meter', beat: 2, numerator: 0, denominator: 4 }],
+        });
+        try {
+            await importMidiFile(new File([], 'corrupt-meter.mid'), { shouldContinue: () => true });
+        } finally {
+            meterRead.mockRestore();
+        }
+
+        expect(trackStore.value).toBe(trackBefore);
+        expect(getMidiStoreState()).toBe(midiBefore);
+        expect(getMidiStoreState()?.notesByClipId['existing-clip']).toEqual([existingNote]);
+        expect(transportStore.value).toBe(transportBefore);
+        expect(timeSignatureMapStore.value).toBe(meterBefore);
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Failed to import "corrupt-meter.mid" - project meter or MIDI position is invalid',
+            'error'
+        );
+    });
+
     it('extends the clip end across multiple bars when notes exceed one bar', async () => {
         shouldInjectConcurrentTrack = false;
         const longNote = { id: 'note-long', pitch: 60, startBeat: 5, duration: 2, velocity: 100 };
