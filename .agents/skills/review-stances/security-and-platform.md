@@ -34,10 +34,12 @@ A release attempt that a later proof superseded still wrote its diagnostic into 
 output. Both prior fixes were verified only beside a quiet account, never under concurrent churn.
 
 Probe: inject a second live arrival and require reclamation after a complete third inspection, and
-endless arrivals that end retained at the observation bound. Deny an FD list, then report the PID
-gone or a single-thread zombie, and require release; a running status or a denied cwd still retains.
+endless arrivals that end retained at the observation bound. Deny an FD list while status reads
+running or a multithreaded zombie, then report the PID gone or a single-thread zombie on a later
+paced sample, and require release; a status still live at the deadline or a denied cwd retains.
 Make the first release proof unavailable and a later one succeed, and require byte-identical child
-output; persistent unavailability must keep the diagnostic beside the retention notice.
+output; persistent unavailability must keep only this run's diagnostic beside the retention notice,
+even after startup recovery reported on an earlier run.
 
 ### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
 

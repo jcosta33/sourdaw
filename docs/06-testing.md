@@ -743,9 +743,12 @@ root, so a same-UID exit denies the descriptor list until the PID is reaped. Aft
 inspection failure, or a denied descriptor list, fresh complete status may prove file release only for
 a zombie whose PID and thread-group ID match the inspected PID, whose four UIDs match the guard,
 and whose thread count is exactly one. A zombie leader with other threads remains uncertain.
+The exiting task still reads live, or zombie with other threads, while it tears down a large
+address space and closes its files, so a denied descriptor list is resampled at a short bounded
+pace until the PID is gone or a single-thread zombie.
 This evidence must arrive within the existing proof deadline and never releases PID ownership
 or signaling fences. A denied working directory, a denied descriptor list from a process still
-running, and unavailable or malformed status still retain storage,
+live at the deadline, and unavailable or malformed status still retain storage,
 with one exception: a denied process whose `/proc` start time strictly precedes the supervisor
 that created the storage is excused. A live supervisor's start is read from `/proc`; recovery of
 an exited or crashed run, including a moved claim, compares against the `/proc` start ticks that

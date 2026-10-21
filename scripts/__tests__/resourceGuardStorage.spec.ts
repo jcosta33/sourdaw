@@ -1183,12 +1183,21 @@ ready();
 
     const retainedNotice = 'guard storage retained: process-tree exit or storage ownership could not be proved';
     it.each([
-        { scenario: 'a later release proof supersedes an unavailable one', unavailable: 'first release' },
-        { scenario: 'every release proof stays unavailable', unavailable: 'every release' },
-        { scenario: 'startup recovery retains an earlier run', unavailable: 'earlier run' },
+        {
+            scenario: 'a later release proof supersedes an unavailable one',
+            earlier: 'retained',
+            own: 'first unavailable',
+        },
+        { scenario: 'every release proof stays unavailable', earlier: 'retained', own: 'unavailable' },
+        { scenario: 'startup recovery retains an earlier run', earlier: 'unavailable', own: 'released' },
+        {
+            scenario: 'startup recovery evidence precedes this runs retained storage',
+            earlier: 'unavailable',
+            own: 'unavailable',
+        },
     ] as const)(
         'keeps storage proof evidence out of the child output unless it explains retention: $scenario',
-        async ({ unavailable }) => {
+        async ({ earlier: earlierProof, own }) => {
             const root = fixture();
             // The guard returns its output tail trimmed.
             const childOutput = JSON.stringify({ child: 'output' });
@@ -1201,18 +1210,21 @@ ready();
             const earlierToken = basename(dirname(earlier.tempDirectory));
             const states: string[] = [];
             let releases = 0;
-            // Shared storage is outside the automatic proof, so the guard's own census reports why.
+            // The guard's own census reports why each proof is unavailable: shared earlier
+            // storage is outside the automatic proof, and an unsearchable run directory hides
+            // this run's storage metadata, so the two reasons stay distinguishable.
             const unavailableProof = (
+                lock: { path: string; mode: number },
                 sessionState: StorageRecoveryPorts['sessionState'],
                 ...args: Parameters<StorageRecoveryPorts['sessionState']>
             ) => {
-                chmodSync(args[1], 0o755);
+                chmodSync(lock.path, lock.mode);
                 try {
                     const state = sessionState(...args);
                     states.push(state);
                     return state;
                 } finally {
-                    chmodSync(args[1], 0o700);
+                    chmodSync(lock.path, 0o700);
                 }
             };
             const result = await guarded(root, {
@@ -1226,20 +1238,30 @@ ready();
                                 if (owner.token !== earlierToken) {
                                     return input.ports.sessionState(owner, original, current);
                                 }
-                                if (unavailable !== 'earlier run') {
+                                if (earlierProof === 'retained') {
                                     return 'alive';
                                 }
-                                return unavailableProof(input.ports.sessionState, owner, original, current);
+                                return unavailableProof(
+                                    { path: original, mode: 0o755 },
+                                    input.ports.sessionState,
+                                    owner,
+                                    original,
+                                    current
+                                );
                             },
                             localReleaseAllowed: (owner, original, current) => {
                                 releases += 1;
-                                if (
-                                    unavailable === 'earlier run' ||
-                                    (unavailable === 'first release' && releases > 1)
-                                ) {
+                                if (own === 'released' || (own === 'first unavailable' && releases > 1)) {
                                     return true;
                                 }
-                                return unavailableProof(input.ports.sessionState, owner, original, current) === 'dead';
+                                let lock = { path: original, mode: 0o755 };
+                                if (earlierProof === 'unavailable') {
+                                    lock = { path: dirname(original), mode: 0o600 };
+                                }
+                                return (
+                                    unavailableProof(lock, input.ports.sessionState, owner, original, current) ===
+                                    'dead'
+                                );
                             },
                         },
                     }),
@@ -1247,14 +1269,16 @@ ready();
             expect(states.length).toBeGreaterThan(0);
             expect(states.every((state) => state === 'unknown')).toBe(true);
             expect(existsSync(earlier.tempDirectory)).toBe(true);
-            if (unavailable === 'every release') {
+            if (own === 'unavailable') {
+                const evidence =
+                    earlierProof === 'unavailable' ? 'storage-metadata-unavailable' : 'storage-not-private-same-uid';
                 expect(result.reason).toBe('leak');
                 expect(result.output).toBe(
-                    `${childOutput}\n\nguard storage file-use proof unavailable: storage-not-private-same-uid\n\n${retainedNotice}`
+                    `${childOutput}\n\nguard storage file-use proof unavailable: ${evidence}\n\n${retainedNotice}`
                 );
                 return;
             }
-            expect(releases).toBeGreaterThan(unavailable === 'first release' ? 1 : 0);
+            expect(releases).toBeGreaterThan(own === 'first unavailable' ? 1 : 0);
             expect(result.reason, proofDiagnostic(result)).toBeUndefined();
             expect(result.output).toBe(childOutput);
             expect(JSON.parse(result.output)).toEqual({ child: 'output' });
@@ -1596,18 +1620,50 @@ describe('storage ownership recovery', () => {
         }
     );
 
+    // Each injected wait advances the clock by this step, so the proof deadline ends resampling.
+    const resampleStep = 25;
     it.each([
-        { scenario: 'reaped after an FD-list denial', phase: 'fd-list', status: 'reaped', state: 'dead' },
-        { scenario: 'zombie after an FD-list denial', phase: 'fd-list', status: 'zombie', state: 'dead' },
-        { scenario: 'running after an FD-list denial', phase: 'fd-list', status: 'running', state: 'unknown' },
-        { scenario: 'zombie after a cwd denial', phase: 'cwd', status: 'zombie', state: 'unknown' },
+        { scenario: 'reaped after an FD-list denial', phase: 'fd-list', samples: ['reaped'], state: 'dead', waits: 0 },
+        { scenario: 'zombie after an FD-list denial', phase: 'fd-list', samples: ['zombie'], state: 'dead', waits: 0 },
+        {
+            scenario: 'reaped after an FD-list denial that first reads live',
+            phase: 'fd-list',
+            samples: ['running', 'sleeping', 'reaped'],
+            state: 'dead',
+            waits: 2,
+        },
+        {
+            scenario: 'single-thread zombie after an FD-list denial that first reads a multithreaded zombie',
+            phase: 'fd-list',
+            samples: ['running', 'multithreaded zombie', 'zombie'],
+            state: 'dead',
+            waits: 2,
+        },
+        // A denied FD list that still reads live is resampled until the proof deadline, then retained.
+        {
+            scenario: 'running after an FD-list denial',
+            phase: 'fd-list',
+            samples: ['running'],
+            state: 'unknown',
+            waits: 5_000 / resampleStep,
+        },
+        { scenario: 'zombie after a cwd denial', phase: 'cwd', samples: ['zombie'], state: 'unknown', waits: 0 },
     ] as const)(
         'counts a denied same-UID process as released only once it is gone or a zombie: $scenario',
-        ({ phase, status, state }) => {
+        ({ phase, samples, state, waits }) => {
             const reports: string[] = [];
             // An exiting task's dropped mm makes the kernel own /proc/<pid>/fd as root.
             const denied = Object.assign(new Error('private path must not be emitted'), { code: 'EACCES' });
+            const statuses = {
+                running: terminalStatus.replace('Z (zombie)', 'R (running)'),
+                sleeping: terminalStatus.replace('Z (zombie)', 'S (sleeping)'),
+                'multithreaded zombie': terminalStatus.replace('Threads:\t1', 'Threads:\t3'),
+                zombie: terminalStatus,
+            };
             let reaped = false;
+            let sampled = 0;
+            let clock = 0;
+            let waited = 0;
             const observed = linuxStorageFileState(
                 [123],
                 501,
@@ -1627,23 +1683,28 @@ describe('storage ownership recovery', () => {
                     },
                     readDescriptor: () => undefined,
                     readStatus: () => {
-                        if (status === 'reaped') {
+                        const sample = samples[Math.min(sampled, samples.length - 1)] ?? 'reaped';
+                        sampled += 1;
+                        if (sample === 'reaped') {
                             reaped = true;
                             throw Object.assign(new Error('private path must not be emitted'), { code: 'ENOENT' });
                         }
-                        if (status === 'zombie') {
-                            return terminalStatus;
-                        }
-                        return terminalStatus.replace('Z (zombie)', 'R (running)');
+                        return statuses[sample];
                     },
                     isGone: () => reaped,
-                    now: () => 0,
+                    now: () => clock,
+                    wait: (milliseconds) => {
+                        expect(milliseconds).toBeGreaterThan(0);
+                        waited += 1;
+                        clock += resampleStep;
+                    },
                 }
             );
             expect(observed).toBe(state);
+            expect(waited).toBe(waits);
             const expectedReports: string[] = [];
             if (state === 'unknown') {
-                const snapshot = status === 'zombie' ? 'Z' : 'R';
+                const snapshot = samples.at(-1) === 'zombie' ? 'Z' : 'R';
                 expectedReports.push(
                     `proc-inspection-unavailable:pid=123:phase=${phase}:error=EACCES:pid/tgid/uids/state/threads=123/123/501,501,501,501/${snapshot}/1`
                 );

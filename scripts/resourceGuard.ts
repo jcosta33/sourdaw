@@ -1254,7 +1254,17 @@ type LinuxFilePorts = {
     isGone: (pid: number) => boolean;
     startedBeforeSupervisor?: (pid: number) => boolean;
     now?: () => number;
+    wait?: (milliseconds: number) => void;
 };
+
+function waitSynchronously(milliseconds: number): void {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+// A denied FD list is resampled at this pace inside the proof deadline. The cap equals
+// the deadline at this pace, so termination never depends on the clock port alone.
+const LINUX_EXIT_RESAMPLE_MS = 10;
+const LINUX_EXIT_RESAMPLES = 500;
 
 export function parseLinuxStartTicks(stat: string): number | undefined {
     // The command name may contain spaces and parentheses; fields resume after its last ')'.
@@ -1354,6 +1364,20 @@ export function linuxStorageFileState(
         return 'unknown';
     };
     const now = ports.now ?? Date.now;
+    const wait = ports.wait ?? waitSynchronously;
+    const sampleStatus = (pid: number): LinuxFileSnapshot | undefined => {
+        if (now() > deadline) {
+            return undefined;
+        }
+        try {
+            return parseLinuxFileSnapshot(ports.readStatus(pid));
+        } catch {
+            // Diagnostics cannot turn an unavailable inspection into proof.
+            return undefined;
+        }
+    };
+    const filesReleased = (pid: number, zombieProves: boolean, snapshot: LinuxFileSnapshot | undefined) =>
+        ports.isGone(pid) || (zombieProves && now() <= deadline && linuxTerminalFilesReleased(snapshot, pid, uid));
     let descriptors = 0;
     for (const pid of pids) {
         if (now() > deadline) {
@@ -1398,25 +1422,23 @@ export function linuxStorageFileState(
                 // changes privilege, outside what this census can prove.
                 continue;
             }
-            let snapshot: LinuxFileSnapshot | undefined;
-            if (now() <= deadline) {
-                try {
-                    snapshot = parseLinuxFileSnapshot(ports.readStatus(pid));
-                } catch {
-                    // Diagnostics cannot turn an unavailable inspection into proof.
+            // An exiting task drops its mm before tearing down its address space, closing its
+            // files and turning zombie; from the first step the kernel owns /proc/<pid>/fd as
+            // root. A same-UID exit therefore denies the FD list while its status still reads
+            // live, or zombie with other threads, until it settles. Only a later gone or
+            // single-thread zombie sample proves that the denial was the exit.
+            const exitDenial = code === 'EACCES' && phase === 'fd-list';
+            let snapshot = sampleStatus(pid);
+            let released = filesReleased(pid, code === 'ENOENT' || exitDenial, snapshot);
+            for (let resample = 0; !released && exitDenial && resample < LINUX_EXIT_RESAMPLES; resample++) {
+                if (now() >= deadline) {
+                    break;
                 }
+                wait(LINUX_EXIT_RESAMPLE_MS);
+                snapshot = sampleStatus(pid);
+                released = filesReleased(pid, true, snapshot);
             }
-            // An exiting task drops its mm before its files, and from then on the kernel owns
-            // /proc/<pid>/fd as root: a same-UID exit denies the FD list until reaping removes
-            // the PID. Only a later gone or zombie sample proves that this denial was the exit.
-            if (ports.isGone(pid)) {
-                continue;
-            }
-            if (
-                (code === 'ENOENT' || (code === 'EACCES' && phase === 'fd-list')) &&
-                now() <= deadline &&
-                linuxTerminalFilesReleased(snapshot, pid, uid)
-            ) {
+            if (released) {
                 continue;
             }
             return unknown(linuxInspectionFailure(pid, phase, error, snapshot));
