@@ -1,0 +1,32 @@
+.agents/skills/review-stances/correctness.md
+  s_29d8df116c5b92::t_355eac1f970640 71-83
+scripts/resourceGuard.ts
+  s_29d8df116c5b92::t_2771e2ca18f362 1845-1863,1867-1868,1870-1871,1873-1884,1886-1887,1890-1891,1894,1896-1906
+  s_29d8df116c5b92::t_7bd4caf0626b8e 1869,1872
+  s_29d8df116c5b92::t_b214713c2b3081 1907-1911
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_355eac1f970640 314-326
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_29d8df116c5b92::t_0aa4e69bb6a98c 443,450,454,457-458,467,470,475-476,483-491,493-496,530-532,570,572-575
+  s_29d8df116c5b92::t_d8dc9f1148dc50 460-466,492
+  s_29d8df116c5b92::t_355eac1f970640 481
+.agents/skills/review-stances/README.md
+  s_29d8df116c5b92::t_f51c4fbb0e25a6 36,50
+  s_29d8df116c5b92::t_355eac1f970640 30,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a7abc2b8f6d5f64f5dad6706a76faa26ef904d3f",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
