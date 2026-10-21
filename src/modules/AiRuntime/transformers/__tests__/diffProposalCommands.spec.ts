@@ -292,6 +292,53 @@ describe('diffProposalCommands', () => {
             ]);
         });
 
+        it('pairs two automated ranges on one track by the parameter each automates', () => {
+            const range = (parameterId: string, value: Record<string, number>) =>
+                ({
+                    type: 'automateParameterRange',
+                    payload: { trackId: 't1', parameterId, range: { section: 'Chorus' }, ...value },
+                }) satisfies AppAction;
+
+            expect(
+                diff(
+                    {
+                        actions: [range('gain', { valueDb: -6 }), range('pan', { value: 0.2 })],
+                        actionLabels: ['Gain', 'Pan'],
+                    },
+                    {
+                        actions: [range('gain', { valueDb: -9 }), range('pan', { value: 0.3 })],
+                        actionLabels: ['Gain', 'Pan'],
+                    }
+                )
+            ).toEqual({
+                changes: [
+                    {
+                        kind: 'changed',
+                        actionType: 'automateParameterRange',
+                        label: 'Gain',
+                        fields: [{ field: 'valueDb', previous: '-6 dB', next: '-9 dB' }],
+                    },
+                    {
+                        kind: 'changed',
+                        actionType: 'automateParameterRange',
+                        label: 'Pan',
+                        fields: [{ field: 'value', previous: '0.2', next: '0.3' }],
+                    },
+                ],
+                unchangedCount: 0,
+            });
+        });
+
+        it('keeps a lane created for another parameter apart from the one it replaces', () => {
+            expect(
+                changedOnly(
+                    'addAutomationLane',
+                    { trackId: 't1', parameterId: 'gain' },
+                    { trackId: 't1', parameterId: 'pan' }
+                ).changes.map(({ kind }) => kind)
+            ).toEqual(['added', 'removed']);
+        });
+
         it('pairs two sends from one track by their bus', () => {
             const send = (busId: string, levelDb: number) =>
                 ({ type: 'setSend', payload: { trackId: 'track-1', busId, levelDb } }) satisfies AppAction;

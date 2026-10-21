@@ -40,8 +40,8 @@ type StatedFigure = {
     unit: 'dB' | '%' | 'other' | null;
     connector: 'absolute' | 'relative' | null;
     direction: -1 | 1 | null | 'conflicting';
-    /** The first word beside the figure not known to state no direction: it may state one this reading cannot tell. */
-    unreadWord: string | null;
+    /** The words beside the figure, read from the clause with every object name masked. */
+    words: string;
 };
 
 type ValueResolution =
@@ -51,9 +51,19 @@ type ValueResolution =
 
 type MoveDirection = { status: 'direction'; sign: -1 | 1; kept: boolean } | { status: 'clarify'; question: string };
 
-const PAN_SIDE_WORDS = /\b(?:left|right)\b/u;
-/** A sign spoken or typeset before the figure: "minus 1.5 dB", "−1.5 dB" (U+2212). */
-const SIGN_MARK = /(?:\b(minus|plus)\s+|(−)\s*)$/iu;
+const PAN_SIDE_WORDS: ReadonlySet<string> = new Set(['left', 'right']);
+/** Words a pan clause reads itself: the operation and the side it lands on. */
+const PAN_WORDS: ReadonlySet<string> = new Set(['pan', 'panning', ...PAN_SIDE_WORDS]);
+/**
+ * A sign spoken or typeset before the figure, touching it or a space away: "minus 1.5 dB", and any
+ * dash or minus character — "-", "–" (U+2013), "‑" (U+2011), "−" (U+2212) — as in "by – 1.5 dB".
+ */
+const SIGN_MARK = /(?:\b(minus|plus)\s+|([\p{Pd}−])\s*)$/iu;
+/**
+ * Words that state a change relative to the value as it stands, which a plain value cannot move by:
+ * "10% more", "decrease it 10%". A plain value only lands where it says, so such a clause is asked.
+ */
+const RELATIVE_WORDS: ReadonlySet<string> = new Set(['bigger', 'decrease', 'increase', 'less', 'more', 'smaller']);
 /**
  * Words that state no direction, so a clause made only of them, its figure, unit and connector keeps
  * the pending change's direction. Any other word may be a direction this reading cannot tell ("bump",
@@ -145,11 +155,20 @@ function readDirection(words: string): StatedFigure['direction'] {
     return raises ? 1 : null;
 }
 
-function findUnreadWord(words: string): string | null {
+/** The first word beside the figure not known to state no direction: it may state one this reading cannot tell. */
+function findUnreadWord(words: string, alsoRead: ReadonlySet<string> = new Set()): string | null {
     return (
-        words.split(' ').find((word) => word.length > 0 && !/^\p{N}+$/u.test(word) && !DIRECTIONLESS_WORDS.has(word)) ??
-        null
+        words
+            .split(' ')
+            .find(
+                (word) =>
+                    word.length > 0 && !/^\p{N}+$/u.test(word) && !DIRECTIONLESS_WORDS.has(word) && !alsoRead.has(word)
+            ) ?? null
     );
+}
+
+function statesWord(words: string, vocabulary: ReadonlySet<string>): boolean {
+    return words.split(' ').some((word) => vocabulary.has(word));
 }
 
 /** The one figure a clause states, with its unit, connector and direction, read from the masked clause. */
@@ -185,7 +204,7 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
         unit: readUnit(number.raw, after),
         connector: readConnector(before),
         direction: readDirection(words),
-        unreadWord: findUnreadWord(words),
+        words,
     };
 }
 
@@ -217,8 +236,9 @@ function readMoveDirection(figure: StatedFigure, pendingSign: -1 | 1 | null): Mo
     if (pendingSign === null) {
         return { status: 'clarify', question };
     }
-    if (figure.unreadWord !== null) {
-        return { status: 'clarify', question: `${question} "${figure.unreadWord}" does not say.` };
+    const unreadWord = findUnreadWord(figure.words);
+    if (unreadWord !== null) {
+        return { status: 'clarify', question: `${question} "${unreadWord}" does not say.` };
     }
     return { status: 'direction', sign: pendingSign, kept: true };
 }
@@ -324,22 +344,29 @@ function isSignedDomain(command: ProposalGroundingCommand, context: ProjectConte
 
 /**
  * Any other figure lands where it says, read by the clause's own wording; a relative change, a
- * signed figure with no connector, or an unsigned one in a signed range is asked instead.
+ * signed figure with no connector, an unsigned one in a signed range, or a figure with no connector
+ * beside a word this reading cannot tell is asked instead. Side and direction words are read only
+ * outside object names, so a track named "Left Guitar" states no side.
  */
 function resolvePlainValue(
     command: ProposalGroundingCommand,
     value: NonNullable<ProposalGroundingCommand['value']>,
     figure: StatedFigure,
-    clause: RefinementClause,
     context: ProjectContext
 ): ValueResolution {
     if (figure.sign !== null && figure.connector === null) {
         return clarify(`Is ${figure.raw} where the value should land? Say "to ${figure.raw}".`);
     }
-    if (figure.connector === 'relative' || figure.direction !== null) {
-        return clarify(`Say where the value should land instead of how far it should move from ${figure.raw}.`);
+    const moveQuestion = `Say where the value should land instead of how far it should move from ${figure.raw}.`;
+    if (figure.connector === 'relative' || figure.direction !== null || statesWord(figure.words, RELATIVE_WORDS)) {
+        return clarify(moveQuestion);
     }
-    const statesSide = command.type === 'setTrackPan' && PAN_SIDE_WORDS.test(normalizePromptText(clause.text));
+    const isPan = command.type === 'setTrackPan';
+    const unreadWord = findUnreadWord(figure.words, isPan ? PAN_WORDS : new Set());
+    if (figure.connector === null && unreadWord !== null) {
+        return clarify(`Where should the value land? "${unreadWord}" beside ${figure.raw} does not say.`);
+    }
+    const statesSide = isPan && statesWord(figure.words, PAN_SIDE_WORDS);
     if (figure.connector === null && figure.sign === null && isSignedDomain(command, context) && !statesSide) {
         return clarify(`Should ${figure.raw} be positive or negative?`);
     }
@@ -370,7 +397,7 @@ function resolveFigure(
     if (value.unit === 'dB') {
         resolution = resolveLevelValue(view.command, value, figure);
     } else {
-        resolution = resolvePlainValue(view.command, value, figure, clause, context);
+        resolution = resolvePlainValue(view.command, value, figure, context);
     }
     if (resolution.status === 'clarify') {
         return { kind: 'clarify', question: resolution.question };

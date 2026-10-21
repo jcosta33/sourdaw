@@ -11,24 +11,33 @@ function getTargetArguments(actionType: string): string[] {
 type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
 type TargetRule = GroundingRules['targetRules'][number];
 
-/** Every argument the mutation identity rules name, of the rules that are, or are not, references only. */
-function getMutationIdentityArguments(
-    rules: GroundingRules['mutationIdentityRules'],
-    referenceOnly: boolean
-): Set<string> {
-    const names = new Set<string>();
-    for (const rule of rules) {
+/** One argument a command's identity reads, how many ids it holds, and whether it gathers members into one object. */
+type IdentityArgument = { argument: string; many: boolean; gathersMembers: boolean };
+
+/**
+ * Every provider-supplied argument the mutation identity rules name, of the rules that are, or are
+ * not, references only, target or not: an automation lane's parameter is no target, yet names which
+ * lane a creation makes. An app-derived argument is never in the payload and is left out.
+ */
+function getMutationIdentityArguments(rules: GroundingRules, referenceOnly: boolean): IdentityArgument[] {
+    const byName = new Map<string, IdentityArgument>();
+    for (const rule of rules.mutationIdentityRules) {
         if ((rule.resourceReferenceOnly === true) !== referenceOnly) {
             continue;
         }
-        for (const argument of rule.arguments) {
-            names.add(argument.argument);
-        }
-        for (const argument of rule.fallbackArguments ?? []) {
-            names.add(argument.argument);
+        for (const argument of rule.arguments.concat(rule.fallbackArguments ?? [])) {
+            if (argument.source === 'app-derived' || byName.has(argument.argument)) {
+                continue;
+            }
+            const target = rules.targetRules.find((candidate) => candidate.argument === argument.argument);
+            byName.set(argument.argument, {
+                argument: argument.argument,
+                many: argument.cardinality === 'many' || target?.cardinality === 'many',
+                gathersMembers: target?.promptRole === 'members',
+            });
         }
     }
-    return names;
+    return Array.from(byName.values());
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -36,28 +45,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * The target arguments naming the object a command mutates, as the registry's mutation identity
- * declares it: a send's track and bus, a parameter's device and id, a move's clip but not the track it
- * moves to, an insert's track but not the device it goes after. A command whose mutation identity is
- * only a reference falls back to that reference (an added clip's track), and one that declares none
- * to every target that is no destination.
+ * The arguments naming the object a command mutates, as the registry's mutation identity declares
+ * it: a send's track and bus, a parameter's device and id, a created lane's track and parameter, a
+ * move's clip but not the track it moves to, an insert's track but not the device it goes after. A
+ * command whose mutation identity is only a reference falls back to that reference (an added clip's
+ * track), and one that declares none to every target that is no destination.
  */
-function getIdentityRules(actionType: string): TargetRule[] {
+function getIdentityArguments(actionType: string): IdentityArgument[] {
     const rules = getExecutableAppActionGroundingRules(actionType);
     if (rules === null) {
         return [];
     }
-    const mutated = getMutationIdentityArguments(rules.mutationIdentityRules, false);
-    const byMutation = rules.targetRules.filter((rule) => mutated.has(rule.argument));
-    if (byMutation.length > 0) {
-        return byMutation;
+    const mutated = getMutationIdentityArguments(rules, false);
+    if (mutated.length > 0) {
+        return mutated;
     }
-    const referenced = getMutationIdentityArguments(rules.mutationIdentityRules, true);
-    const byReference = rules.targetRules.filter((rule) => referenced.has(rule.argument));
-    if (byReference.length > 0) {
-        return byReference;
+    const referenced = getMutationIdentityArguments(rules, true);
+    if (referenced.length > 0) {
+        return referenced;
     }
-    return rules.targetRules.filter((rule) => rule.promptRole !== 'destination');
+    return rules.targetRules
+        .filter((rule) => rule.promptRole !== 'destination')
+        .map((rule) => ({
+            argument: rule.argument,
+            many: rule.cardinality === 'many',
+            gathersMembers: rule.promptRole === 'members',
+        }));
 }
 
 /** The id one member of a many-target names: the member itself, or the clip a placement places. */
@@ -75,18 +88,37 @@ function readMemberId(member: unknown): string | null {
  * reads as the same command changed.
  */
 function getIdentity(actionType: string, argumentsRecord: Readonly<Record<string, unknown>>): string {
-    const parts = getIdentityRules(actionType).flatMap((rule) => {
-        const value = argumentsRecord[rule.argument];
-        if (value === undefined || rule.promptRole === 'members') {
+    const parts = getIdentityArguments(actionType).flatMap((identity) => {
+        const value = argumentsRecord[identity.argument];
+        if (value === undefined || identity.gathersMembers) {
             return [];
         }
-        if (rule.cardinality === 'many' && Array.isArray(value)) {
+        if (identity.many && Array.isArray(value)) {
             const members = value.map((member: unknown) => readMemberId(member) ?? canonicalJson(member));
-            return [[rule.argument, members.toSorted()]];
+            return [[identity.argument, members.toSorted()]];
         }
-        return [[rule.argument, value]];
+        return [[identity.argument, value]];
     });
     return canonicalJson([actionType, parts]);
+}
+
+/** Each id a command's targets name, with the capability of the target that names it. */
+function getTargetObjects(
+    actionType: string,
+    argumentsRecord: Readonly<Record<string, unknown>>
+): Array<{ id: string; capability: TargetRule['capability'] }> {
+    return (getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []).flatMap((rule) => {
+        const value = argumentsRecord[rule.argument];
+        const members = Array.isArray(value) ? value : [value];
+        return members
+            .flatMap((member) => {
+                if (typeof member === 'string') {
+                    return [member];
+                }
+                return isRecord(member) ? Object.values(member).filter((id) => typeof id === 'string') : [];
+            })
+            .map((id) => ({ id, capability: rule.capability }));
+    });
 }
 
 /**
@@ -95,16 +127,7 @@ function getIdentity(actionType: string, argumentsRecord: Readonly<Record<string
  * `deviceId:paramId`, the id its protection carries.
  */
 function getObjectIds(actionType: string, argumentsRecord: Readonly<Record<string, unknown>>): string[] {
-    const ids = getTargetArguments(actionType).flatMap((argument) => {
-        const value = argumentsRecord[argument];
-        const members = Array.isArray(value) ? value : [value];
-        return members.flatMap((member) => {
-            if (typeof member === 'string') {
-                return [member];
-            }
-            return isRecord(member) ? Object.values(member).filter((id) => typeof id === 'string') : [];
-        });
-    });
+    const ids = getTargetObjects(actionType, argumentsRecord).map((target) => target.id);
     const { deviceId, paramId } = argumentsRecord;
     if (typeof deviceId === 'string' && typeof paramId === 'string') {
         ids.push(`${deviceId}:${paramId}`);
@@ -155,6 +178,7 @@ function getValue(
 export const proposalCommandShape = {
     identity: getIdentity,
     objectIds: getObjectIds,
+    targetObjects: getTargetObjects,
     targets: getTargets,
     targetKey: getTargetKey,
     value: getValue,

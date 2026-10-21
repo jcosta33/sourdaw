@@ -37,6 +37,7 @@ import {
     PROJECT_OBJECT_CREATING_COMMANDS,
     resolveBatchLocalBindingProducer,
 } from './agentReference/batchLocalBindingProducers';
+import { findTargetOwnerTrackIds } from './agentReference/findTargetOwnerTrackIds';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './agentReference/isBatchLocalDeviceParameterTarget';
 import { CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
@@ -453,25 +454,10 @@ function resolveParentTrackId(
     if (targetId.startsWith('$')) {
         return resolveBatchLocalParentTrackId(capability, targetId.slice(1), producersByBinding);
     }
-    switch (capability) {
-        case 'track':
-        case 'routable-source':
-        case 'bus':
-            return targetId;
-        case 'device':
-        case 'sidechain-capable-device':
-            return context.tracks.find((track) => track.devices.some((device) => device.id === targetId))?.id ?? null;
-        case 'automation-lane':
-            return (context.automationLanes ?? []).find((lane) => lane.id === targetId)?.trackId ?? null;
-        case 'clip':
-        case 'editable-clip':
-        case 'editable-audio-clip':
-        case 'editable-midi-clip':
-        case 'writable-midi-clip':
-            return context.tracks.find((track) => track.clips.some((clip) => clip.id === targetId))?.id ?? null;
+    if (capability === 'track' || capability === 'routable-source' || capability === 'bus') {
+        return targetId;
     }
-    const exhaustiveCapability: never = capability;
-    return exhaustiveCapability;
+    return findTargetOwnerTrackIds(capability, targetId, context)[0] ?? null;
 }
 
 function isParentTrackTargetCapability(

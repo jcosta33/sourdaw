@@ -73,6 +73,7 @@ import {
     SPENT_CREATION_BUDGET_INFIX,
     SPENT_CREATION_BUDGET_PREFIX,
 } from './creativeAuthorityReasons';
+import { findTargetOwnerTrackIds } from './findTargetOwnerTrackIds';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
@@ -5595,19 +5596,18 @@ function describePendingCommand(command: ProposalGroundingCommand, context: Proj
 
 /**
  * Every object an action changes — each target, each member of an array target, a device parameter
- * by `deviceId:paramId` — with the track that owns a device or clip it names.
+ * by `deviceId:paramId` — with the tracks every owned object it names belongs to: a device's, clip's
+ * or automation lane's track, the tracks an adjustment layer processes and a VCA group's members.
  */
 function getActionTouchedIds(
     actionType: string,
     payload: Readonly<Record<string, unknown>>,
     context: ProjectContext
 ): string[] {
-    return proposalCommandShape.objectIds(actionType, payload).flatMap((id) => {
-        const owner = context.tracks.find(
-            (track) => track.devices.some((device) => device.id === id) || track.clips.some((clip) => clip.id === id)
-        );
-        return owner === undefined ? [id] : [id, owner.id];
-    });
+    const owners = proposalCommandShape
+        .targetObjects(actionType, payload)
+        .flatMap((target) => findTargetOwnerTrackIds(target.capability, target.id, context));
+    return [...new Set([...proposalCommandShape.objectIds(actionType, payload), ...owners])];
 }
 
 function getRefinementProtectedObjects(input: {

@@ -4,7 +4,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { defaultVcaGroupState, trackStore, vcaGroupStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -16,6 +16,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { canonicalJson } from '#/utils/canonicalDigest';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -28,6 +29,7 @@ import {
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { proposalCommandShape } from '../agentReference/proposalCommandShape';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
@@ -498,6 +500,44 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(workflowBatch.status).toBe('rejected');
         });
 
+        it('a call matching two pending commands of one type and target tuple continues neither', () => {
+            const marker = (name: string, beat: number): ProviderCall => ({
+                name: 'addMarker',
+                arguments: { name, beat },
+            });
+            const card = {
+                prompt: 'add a marker at beat 0 named Verse and add a marker at beat 16 named Chorus',
+                calls: [marker('Verse', 0), marker('Chorus', 16)],
+            };
+            const basis = cardBasis(card.prompt, card.calls);
+            const markerKey = canonicalJson(['addMarker', []]);
+            expect(
+                basis.commands.map((command) => proposalCommandShape.targetKey(command.type, command.payload))
+            ).toEqual([markerKey, markerKey]);
+
+            // Neither call says which marker it continues, so the batch inherits nothing and is
+            // refused exactly as the same request with no pending card.
+            const refinement = 'keep the markers as they are';
+            const unrelated = ground(refinement, card.calls);
+            const result = ground(refinement, card.calls, basis);
+
+            expect(unrelated.status).toBe('rejected');
+            expect(result).toMatchObject({
+                status: 'rejected',
+                rejectionReason: unrelated.status === 'rejected' ? unrelated.rejectionReason : '',
+            });
+        });
+
+        it('row 18: the chain keeps its root request even once no command reads it', () => {
+            const restated = 'turn Vocals down 1.5 dB and turn Snare down 2 dB';
+            const result = refine(P1_CARD, restated, [vocalsBy(-1.5), snareBy(-2)]);
+            const basis = result.status === 'grounded' ? result.groundingBasis : undefined;
+
+            expect(basis?.commands.map((command) => basis.sources[command.source]?.text)).toEqual([restated, restated]);
+            expect(basis?.sources.map((source) => source.text)).toEqual([P1, restated]);
+            expect(basis?.rootText).toBe(P1);
+        });
+
         it('row 21: a refinement restating the whole request admits', () => {
             expect(commandsOf(refine(P1_CARD, P1, [vocalsBy(-3), snareBy(-2)]))).toEqual([
                 { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 },
@@ -520,6 +560,26 @@ describe('binding a terse refinement to the pending card it refines', () => {
 
         it('"make it minus 1.5 dB" and "make it −1.5 dB" ask, as a signed figure with no connector does', () => {
             for (const refinement of ['make it minus 1.5 dB', 'make it −1.5 dB', 'make it -1.5 dB']) {
+                for (const calls of [[vocalsBy(1.5)], [vocalsBy(-1.5)]]) {
+                    const result = refine(UP_CARD, refinement, calls);
+
+                    expect(result.status).toBe('clarify');
+                    expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain('-1.5 dB');
+                }
+            }
+        });
+
+        it('reads an en dash, a non-breaking hyphen or a spaced hyphen after "by" as the minus sign', () => {
+            for (const refinement of ['by –1.5 dB', 'by ‑1.5 dB', 'by - 1.5 dB', 'make it by – 1.5 dB']) {
+                expect(commandsOf(refine(UP_CARD, refinement, [vocalsBy(-1.5)]))).toEqual([
+                    { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 },
+                ]);
+                expect(refine(UP_CARD, refinement, [vocalsBy(1.5)]).status).toBe('rejected');
+            }
+        });
+
+        it('asks about a dash-signed figure with no connector, as it asks about "-1.5 dB"', () => {
+            for (const refinement of ['make it –1.5 dB', 'make it ‑1.5 dB', 'make it - 1.5 dB']) {
                 for (const calls of [[vocalsBy(1.5)], [vocalsBy(-1.5)]]) {
                     const result = refine(UP_CARD, refinement, calls);
 
@@ -555,6 +615,62 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 ]);
                 expect(refine(UP_CARD, refinement, [vocalsBy(-1.5)]).status).toBe('rejected');
             }
+        });
+    });
+
+    describe('reading side and direction words outside the object names a refinement states', () => {
+        const NAMED_CONTEXT = projectContext([
+            ...BASE_TRACKS,
+            projectTrack('track-left-guitar', 'Left Guitar'),
+            projectTrack('track-up-lead', 'Up Lead'),
+            projectTrack('track-down-bass', 'Down Bass'),
+        ]);
+        const guitarPan = (pan: number): ProviderCall => ({
+            name: 'setTrackPan',
+            arguments: { trackId: 'track-left-guitar', pan },
+        });
+        const gainBy = (trackId: string, deltaDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId, deltaDb },
+        });
+        const GUITAR_CARD = { prompt: 'pan Left Guitar 30 left', calls: [guitarPan(-30)] };
+
+        it('"make Left Guitar 20" states no side, so it asks rather than admitting +20', () => {
+            for (const calls of [[guitarPan(20)], [guitarPan(-20)]]) {
+                const result = refine(GUITAR_CARD, 'make Left Guitar 20', calls, NAMED_CONTEXT);
+
+                expect(result.status).toBe('clarify');
+                expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain(
+                    'positive or negative'
+                );
+            }
+        });
+
+        it('"make Left Guitar 20 left" reads the side after the name and admits -20', () => {
+            expect(
+                commandsOf(refine(GUITAR_CARD, 'make Left Guitar 20 left', [guitarPan(-20)], NAMED_CONTEXT))
+            ).toEqual([{ type: 'setTrackPan', trackId: 'track-left-guitar', pan: -20 }]);
+            expect(refine(GUITAR_CARD, 'make Left Guitar 20 left', [guitarPan(20)], NAMED_CONTEXT).status).toBe(
+                'rejected'
+            );
+        });
+
+        it('a track named "Up Lead" or "Down Bass" supplies no direction to the figure beside it', () => {
+            const leadCard = { prompt: 'turn Up Lead down 3 dB', calls: [gainBy('track-up-lead', -3)] };
+            const bassCard = { prompt: 'turn Down Bass up 3 dB', calls: [gainBy('track-down-bass', 3)] };
+
+            expect(
+                commandsOf(refine(leadCard, 'make Up Lead 1.5 dB', [gainBy('track-up-lead', -1.5)], NAMED_CONTEXT))
+            ).toEqual([{ type: 'setTrackGain', trackId: 'track-up-lead', deltaDb: -1.5 }]);
+            expect(refine(leadCard, 'make Up Lead 1.5 dB', [gainBy('track-up-lead', 1.5)], NAMED_CONTEXT).status).toBe(
+                'rejected'
+            );
+            expect(
+                commandsOf(refine(bassCard, 'make Down Bass 1.5 dB', [gainBy('track-down-bass', 1.5)], NAMED_CONTEXT))
+            ).toEqual([{ type: 'setTrackGain', trackId: 'track-down-bass', deltaDb: 1.5 }]);
+            expect(
+                refine(bassCard, 'make Down Bass 1.5 dB', [gainBy('track-down-bass', -1.5)], NAMED_CONTEXT).status
+            ).toBe('rejected');
         });
     });
 
@@ -630,6 +746,79 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(result).toMatchObject({
                 status: 'rejected',
                 rejectionReason: expect.stringContaining('"Drum Bus", which the request chain leaves unchanged'),
+            });
+        });
+
+        describe('objects a protected track owns', () => {
+            const PROTECTING_CARD = {
+                prompt: 'turn Vocals down 3 dB, leaving the Drum Bus unchanged',
+                calls: [vocalsBy(-3)],
+            };
+            const drumGainLane: NonNullable<ProjectContext['automationLanes']>[number] = {
+                id: 'lane-drum-gain',
+                trackId: 'track-drum-bus',
+                parameterId: 'gain',
+                name: 'Drum Bus Volume',
+                enabled: true,
+                minValue: 0,
+                maxValue: 2,
+                points: [],
+            };
+            const drumsVca = { id: 'vca-drums', name: 'Drums', gain: 1, muted: false, trackIds: ['track-drum-bus'] };
+            const OWNED_CONTEXT: ProjectContext = {
+                ...projectContext([projectTrack('track-vocals', 'Vocals'), projectTrack('track-drum-bus', 'Drum Bus')]),
+                automationLanes: [drumGainLane],
+                vcaGroups: [drumsVca],
+            };
+            const PROTECTED_REASON = '"Drum Bus", which the request chain leaves unchanged';
+
+            it('refuses a change to an automation lane on the protected track', () => {
+                const laneOff = {
+                    name: 'setAutomationLaneEnabled',
+                    arguments: { laneId: 'lane-drum-gain', enabled: false },
+                };
+                const unprotected = ground(
+                    'disable automation lane Drum Bus Volume',
+                    [laneOff],
+                    undefined,
+                    OWNED_CONTEXT
+                );
+                expect(unprotected.status).toBe('grounded');
+
+                const result = refine(
+                    PROTECTING_CARD,
+                    'disable automation lane Drum Bus Volume',
+                    [vocalsBy(-3), laneOff],
+                    OWNED_CONTEXT
+                );
+
+                expect(result).toMatchObject({
+                    status: 'rejected',
+                    rejectionReason: expect.stringContaining(PROTECTED_REASON),
+                });
+            });
+
+            it('refuses a change to a VCA group whose members include the protected track', () => {
+                const vcaGain = { name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.8 } };
+                vcaGroupStore.set({ groups: [drumsVca] });
+                try {
+                    const unprotected = ground('set vca gain Drums to 80%', [vcaGain], undefined, OWNED_CONTEXT);
+                    expect(unprotected.status).toBe('grounded');
+
+                    const result = refine(
+                        PROTECTING_CARD,
+                        'set vca gain Drums to 80%',
+                        [vocalsBy(-3), vcaGain],
+                        OWNED_CONTEXT
+                    );
+
+                    expect(result).toMatchObject({
+                        status: 'rejected',
+                        rejectionReason: expect.stringContaining(PROTECTED_REASON),
+                    });
+                } finally {
+                    vcaGroupStore.set(defaultVcaGroupState);
+                }
             });
         });
     });
@@ -739,6 +928,31 @@ describe('binding a terse refinement to the pending card it refines', () => {
 
         it('row 14: "3 dB" is not the unit the Mix parameter takes and is refused', () => {
             expect(refine(PD_CARD, '3 dB', [reverbMix(3)]).status).toBe('rejected');
+        });
+
+        it('a figure beside a relative word never lands as an absolute value', () => {
+            const refinements: Array<[string, number]> = [
+                ['make it 10% more', 10],
+                ['make it 10 percent more', 10],
+                ['make it 20% less', 20],
+                ['decrease it 10%', 10],
+                ['make it 10% bigger', 10],
+                ['make it 10% smaller', 10],
+                ['increase it 10%', 10],
+                ['set it to 10% more', 10],
+            ];
+            for (const [refinement, figure] of refinements) {
+                const result = refine(PD_CARD, refinement, [reverbMix(figure)]);
+
+                expect({ refinement, status: result.status }).toEqual({ refinement, status: 'clarify' });
+            }
+        });
+
+        it('a figure with no connector beside a word this reading cannot tell is asked', () => {
+            const result = refine(PD_CARD, 'bump it 50%', [reverbMix(50)]);
+
+            expect(result.status).toBe('clarify');
+            expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain('"bump"');
         });
     });
 
@@ -1061,6 +1275,32 @@ describe('refining a held card through the chat', () => {
             changes: [{ kind: 'removed', actionType: 'setTrackGain' }],
             unchangedCount: 1,
         });
+    });
+
+    it('row 7: a removal still protects the Snare when the replacement creates a device and carries no basis', async () => {
+        let pendingId = '';
+        // A bound creation gives the replacement no basis, so only the refinement's own reading carries the removal.
+        const vocalCompressor = {
+            name: 'addDevice',
+            arguments: { trackId: 'track-vocals', deviceType: 'Compressor', binding: 'vocal-compressor' },
+        };
+        scriptProvider([
+            { calls: P1_PLAN, protectedTargetIds: ['track-drum-bus'] },
+            { calls: [vocalsBy(-3), vocalCompressor], refines: () => pendingId },
+        ]);
+        await sendChatMessage(P1);
+        pendingId = onlyProposedId();
+
+        await sendChatMessage('turn Vocals down 3 dB and add a Compressor to Vocals, not the snare');
+
+        const replacementId = onlyProposedId();
+        expect(replacementId).not.toBe(pendingId);
+        const replacement = getPendingActionConfirmation(replacementId);
+        expect(replacement?.actions.map((action) => action.type)).toEqual(['setTrackGain', 'addDevice']);
+        expect(replacement?.approvalSnapshot.groundingBasis).toBeUndefined();
+        expect(replacement?.protectedUnchanged.map((object) => object.id)).toEqual(
+            expect.arrayContaining(['track-snare', 'track-drum-bus'])
+        );
     });
 
     it('row 12: refuses a refinement that changes the Drum Bus the request left unchanged', async () => {
