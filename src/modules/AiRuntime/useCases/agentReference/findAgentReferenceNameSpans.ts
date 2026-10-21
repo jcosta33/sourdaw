@@ -32,7 +32,7 @@ const TRAILING_PUNCTUATION = /[^\p{L}\p{M}\p{N}]+$/u;
 /**
  * What joins any two words of a name wherever the text has it, folded: a run of space on one line, the
  * underscore that stands for a space in identifiers and file names ("hi_hat"), or a dash of any kind
- * ("hi-hat" and "Lead–Vox" state Hi Hat and Lead Vox, "hi hat" states Hi-Hat).
+ * ("hi-hat" and "Lead–Vocal" state Hi Hat and Lead Vocal, "hi hat" states Hi-Hat).
  */
 const NAME_WORD_SPACE = /^[\p{Zs}\t_-]$/u;
 

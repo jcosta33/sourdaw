@@ -27,8 +27,8 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * never states. Every target the request protects or excludes is refused. What the request states is
  * the shared reference resolver's own reading of it, never a matcher of this file's: the resolver's
  * `naming` mode, which reads an object by its literal id or its whole name, case, diacritics and
- * punctuation folded, its words joined across space and any dash ("hi hat" states Hi-Hat, "Lead-Vox"
- * Lead Vox), and across other punctuation where the name has it there or unless the words before it
+ * punctuation folded, its words joined across space and any dash ("hi hat" states Hi-Hat, "Lead-Vocal"
+ * Lead Vocal), and across other punctuation where the name has it there or unless the words before it
  * name another object by themselves and another object's name starts past it ("drums/bus" states
  * Drums Bus beside Drums, "bass/guitar" Bass Guitar beside Guitar, while "Bass & Drums" states no Bass
  * Drums beside Bass and Drums, nor "Bass & Drum Bus" a Bass Drum beside Bass and a Drum Bus), never
