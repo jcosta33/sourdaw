@@ -235,7 +235,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
 
         const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
         const onStem = typeof optsOrBeats === 'object' ? optsOrBeats.onStem : undefined;
-        if (typeof optsOrBeats === 'object') optsOrBeats.onStemPlan?.(eligible.map((track) => track.id));
+        if (typeof optsOrBeats === 'object') {
+            optsOrBeats.onStemPlan?.(eligible.map((track) => track.id));
+        }
         const failures: { trackId: string; reason: string }[] = [];
         let successful = 0;
         let consumerFailed = false;
@@ -470,11 +472,27 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 checkCancel(cancellationSignal);
                 if (onStem) {
                     try {
-                        await onStem(track.id, cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds, borrowed: true }), index, eligible.length);
-                    } catch (error) { consumerFailed = true; throw error; }
+                        await onStem(
+                            track.id,
+                            cropHistoryFromRenderedBuffer({
+                                buffer,
+                                historySeconds,
+                                outputDurationSeconds,
+                                borrowed: true,
+                            }),
+                            index,
+                            eligible.length
+                        );
+                    } catch (error) {
+                        consumerFailed = true;
+                        throw error;
+                    }
                     checkCancel(cancellationSignal);
                 } else {
-                    stems.set(track.id, cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds }));
+                    stems.set(
+                        track.id,
+                        cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds })
+                    );
                 }
                 successful++;
                 done++;
@@ -487,9 +505,12 @@ export const exportStems: ExportStemsFn = async function exportStems(
         // A stem's consumer drains every selected format before the next context owns PCM.
         for (const [index, track] of eligible.entries()) {
             checkCancel(cancellationSignal);
-            try { await renderStem(track, index); }
-            catch (error) {
-                if (consumerFailed || isStemExportCancelled() || isFaustDeviceExportError(error)) throw error;
+            try {
+                await renderStem(track, index);
+            } catch (error) {
+                if (consumerFailed || isStemExportCancelled() || isFaustDeviceExportError(error)) {
+                    throw error;
+                }
                 const reason = error instanceof Error ? error.message : String(error);
                 failures.push({ trackId: track.id, reason });
                 done++;

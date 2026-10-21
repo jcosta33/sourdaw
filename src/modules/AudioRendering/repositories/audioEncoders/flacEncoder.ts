@@ -321,19 +321,41 @@ function encodeSubframe(
     }
 }
 
-export function audioBufferToFlac(buffer: ExportAudioSource, bitDepth?: FlacBitDepth, onProgress?: (frac: number) => void, dither?: PcmDitherOptions): Promise<Uint8Array>;
-export function audioBufferToFlac(buffer: ExportAudioSource, bitDepth: FlacBitDepth, onProgress: ((frac: number) => void) | undefined, dither: PcmDitherOptions | undefined, writer: ExportByteWriter): Promise<void>;
+export function audioBufferToFlac(
+    buffer: ExportAudioSource,
+    bitDepth: FlacBitDepth,
+    onProgress: ((frac: number) => void) | undefined,
+    dither: PcmDitherOptions | undefined,
+    writer: ExportByteWriter
+): Promise<void>;
+export function audioBufferToFlac(
+    buffer: ExportAudioSource,
+    bitDepth?: FlacBitDepth,
+    onProgress?: (frac: number) => void,
+    dither?: PcmDitherOptions
+): Promise<Uint8Array>;
 /** MD5 is complete before STREAMINFO is emitted, then the exact seeded PCM is replayed by frame. */
 export async function audioBufferToFlac(
-    buffer: ExportAudioSource, bitsPerSample: FlacBitDepth = 16, onProgress?: (frac: number) => void,
-    dither?: PcmDitherOptions, writer?: ExportByteWriter
+    buffer: ExportAudioSource,
+    bitsPerSample: FlacBitDepth = 16,
+    onProgress?: (frac: number) => void,
+    dither?: PcmDitherOptions,
+    writer?: ExportByteWriter
 ): Promise<Uint8Array | void> {
     const numChannels = Math.min(buffer.numberOfChannels, 2);
     const sampleRate = buffer.sampleRate;
     const totalSamples = buffer.length;
     const bytesPerSample = bitsPerSample / 8;
-    if (![16, 24].includes(bitsPerSample) || !Number.isInteger(sampleRate) || sampleRate < 1 || sampleRate > 655350 ||
-        !Number.isSafeInteger(totalSamples) || totalSamples < 1 || totalSamples > 0xfffffffff || numChannels < 1) {
+    if (
+        ![16, 24].includes(bitsPerSample) ||
+        !Number.isInteger(sampleRate) ||
+        sampleRate < 1 ||
+        sampleRate > 655350 ||
+        !Number.isSafeInteger(totalSamples) ||
+        totalSamples < 1 ||
+        totalSamples > 0xfffffffff ||
+        numChannels < 1
+    ) {
         throw new Error('FLAC export settings exceed the stream format limits.');
     }
     const first = createPcmBlockReader({ source: buffer, bitDepth: bitsPerSample, dither, channelLimit: 2 });
@@ -347,27 +369,43 @@ export async function audioBufferToFlac(
         for (let frame = 0; frame < block.length; frame++) {
             for (const channel of block.channels) {
                 const sample = channel[frame]!;
-                for (let byte = 0; byte < bytesPerSample; byte++) bytes[offset++] = (sample >> (byte * 8)) & 0xff;
+                for (let byte = 0; byte < bytesPerSample; byte++) {
+                    bytes[offset++] = (sample >> (byte * 8)) & 0xff;
+                }
             }
         }
         md5.update(bytes);
-        if ((start + block.length) % (FLAC_BLOCK_SIZE * 16) === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if ((start + block.length) % (FLAC_BLOCK_SIZE * 16) === 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
     }
     const chunks: Uint8Array[] = [];
-    const destination = writer ?? { write: async (bytes: Uint8Array) => { chunks.push(bytes); } };
+    const destination = writer ?? {
+        write: async (bytes: Uint8Array) => {
+            chunks.push(bytes);
+        },
+    };
     const header = new Uint8Array(42);
     header.set([0x66, 0x4c, 0x61, 0x43, 0x80, 0, 0, 34]);
     const headerView = new DataView(header.buffer);
     // Fixed-block streams declare their nominal size; the final short frame is excluded.
     headerView.setUint16(8, FLAC_BLOCK_SIZE);
     headerView.setUint16(10, FLAC_BLOCK_SIZE);
-    const streamShape = (BigInt(sampleRate) << 44n) | (BigInt(numChannels - 1) << 41n) |
-        (BigInt(bitsPerSample - 1) << 36n) | BigInt(totalSamples);
+    const streamShape =
+        (BigInt(sampleRate) << 44n) |
+        (BigInt(numChannels - 1) << 41n) |
+        (BigInt(bitsPerSample - 1) << 36n) |
+        BigInt(totalSamples);
     headerView.setBigUint64(18, streamShape);
     header.set(md5.digest(), 26);
     destination.checkCancelled?.();
     await destination.write(header);
-    const pcm = createPcmBlockReader({ source: buffer, bitDepth: bitsPerSample, dither: replayDither, channelLimit: 2 });
+    const pcm = createPcmBlockReader({
+        source: buffer,
+        bitDepth: bitsPerSample,
+        dither: replayDither,
+        channelLimit: 2,
+    });
     const maxFrameBytes = 20 + numChannels * (FLAC_BLOCK_SIZE * bytesPerSample + 4) + 2;
     let frameNumber = 0;
     for (let start = 0; start < totalSamples; start += FLAC_BLOCK_SIZE) {
@@ -375,33 +413,57 @@ export async function audioBufferToFlac(
         const block = pcm.read(FLAC_BLOCK_SIZE);
         const out = new Uint8Array(maxFrameBytes);
         let pos = 0;
-        const wb = (value: number) => { out[pos++] = value & 0xff; };
-        const wbe16 = (value: number) => { wb(value >> 8); wb(value); };
+        const wb = (value: number) => {
+            out[pos++] = value & 0xff;
+        };
+        const wbe16 = (value: number) => {
+            wb(value >> 8);
+            wb(value);
+        };
         wbe16(0xfff8);
-        const blockSizeCode = block.length === FLAC_BLOCK_SIZE ? 0xc : block.length <= 256 ? 6 : 7;
+        let blockSizeCode = 7;
+        if (block.length === FLAC_BLOCK_SIZE) {
+            blockSizeCode = 0xc;
+        } else if (block.length <= 256) {
+            blockSizeCode = 6;
+        }
         wb(blockSizeCode << 4);
         wb(((numChannels - 1) << 4) | (SAMPLE_SIZE_CODES[bitsPerSample] << 1));
-        for (const byte of encodeUtf8Number(frameNumber)) wb(byte);
-        if (blockSizeCode === 6) wb(block.length - 1);
-        else if (blockSizeCode === 7) wbe16(block.length - 1);
+        for (const byte of encodeUtf8Number(frameNumber)) {
+            wb(byte);
+        }
+        if (blockSizeCode === 6) {
+            wb(block.length - 1);
+        } else if (blockSizeCode === 7) {
+            wbe16(block.length - 1);
+        }
         wb(crc8(out, 0, pos));
         const bw = new BitWriter(out, pos);
         for (const channel of block.channels) {
-            if (!(channel instanceof Int32Array)) throw new Error('FLAC requires integer PCM.');
+            if (!(channel instanceof Int32Array)) {
+                throw new Error('FLAC requires integer PCM.');
+            }
             encodeSubframe(bw, channel, 0, block.length, bitsPerSample);
         }
-        bw.flush(); pos = bw.pos;
+        bw.flush();
+        pos = bw.pos;
         wbe16(crc16(out, 0, pos));
         await destination.write(out.subarray(0, pos));
         frameNumber++;
         onProgress?.((start + block.length) / totalSamples);
-        if (frameNumber % 16 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (frameNumber % 16 === 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
     }
-    destination.checkCancelled?.(); onProgress?.(1);
+    destination.checkCancelled?.();
+    onProgress?.(1);
     if (!writer) {
         const result = new Uint8Array(chunks.reduce((sum, bytes) => sum + bytes.length, 0));
         let offset = 0;
-        for (const bytes of chunks) { result.set(bytes, offset); offset += bytes.length; }
+        for (const bytes of chunks) {
+            result.set(bytes, offset);
+            offset += bytes.length;
+        }
         return result;
     }
 }

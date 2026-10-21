@@ -1,6 +1,6 @@
 import { type ExportAudioSource } from '../../models/ExportAudioSource';
 
-import { type PcmDitherOptions } from './convertFloatChannelsToPcm';
+import { type PcmDitherOptions } from '../../models/PcmDitherOptions';
 
 const STEP = 0x6d2b79f5;
 
@@ -13,9 +13,15 @@ function uniform(state: { value: number }): number {
 }
 
 function sanitize(value: number): number {
-    if (Number.isFinite(value)) return value;
-    if (value === Number.POSITIVE_INFINITY) return 1;
-    if (value === Number.NEGATIVE_INFINITY) return -1;
+    if (Number.isFinite(value)) {
+        return value;
+    }
+    if (value === Number.POSITIVE_INFINITY) {
+        return 1;
+    }
+    if (value === Number.NEGATIVE_INFINITY) {
+        return -1;
+    }
     return 0;
 }
 
@@ -29,30 +35,44 @@ export function createPcmBlockReader(input: {
     const { source, bitDepth, channelLimit = source.numberOfChannels } = input;
     const channelCount = Math.min(channelLimit, source.numberOfChannels);
     const channels = Array.from({ length: channelCount }, (_, channel) => source.getChannelData(channel));
-    if (!Number.isSafeInteger(source.length) || source.length < 0 || channelCount < 1 ||
-        channels.some((channel) => channel.length < source.length)) {
+    if (
+        !Number.isSafeInteger(source.length) ||
+        source.length < 0 ||
+        channelCount < 1 ||
+        channels.some((channel) => channel.length < source.length)
+    ) {
         throw new Error('Invalid export PCM window.');
     }
     const sourceGain = source.gain ?? 1;
-    if (!Number.isFinite(sourceGain) || sourceGain < 0) throw new Error('Invalid export PCM gain.');
+    if (!Number.isFinite(sourceGain) || sourceGain < 0) {
+        throw new Error('Invalid export PCM gain.');
+    }
     let peak = 0;
     for (const channel of channels) {
         for (let frame = 0; frame < source.length; frame++) {
             const value = Math.abs(channel[frame]! * sourceGain);
-            if (Number.isFinite(value)) peak = Math.max(peak, value);
+            if (Number.isFinite(value)) {
+                peak = Math.max(peak, value);
+            }
         }
     }
     const gain = peak > 1 ? 1 / peak : 1;
     const dither = input.dither ?? { mode: 'tpdf' };
     const seed = dither.seed ?? Math.floor(Math.random() * 0x100000000);
     // Multiplication is modulo 2^32; imul avoids losing low bits on long windows.
-    const states = channels.map((_, channel) => ({ value: (seed + Math.imul(Math.imul(2, source.length), Math.imul(channel, STEP))) >>> 0 }));
+    const states = channels.map((_, channel) => ({
+        value: (seed + Math.imul(Math.imul(2, source.length), Math.imul(channel, STEP))) >>> 0,
+    }));
     let nextFrame = 0;
     return {
-        gain, peak, seed,
+        gain,
+        peak,
+        seed,
         read(frameCount: number) {
             const length = Math.min(frameCount, source.length - nextFrame);
-            if (!Number.isSafeInteger(frameCount) || frameCount < 1) throw new Error('Invalid PCM block size.');
+            if (!Number.isSafeInteger(frameCount) || frameCount < 1) {
+                throw new Error('Invalid PCM block size.');
+            }
             const start = nextFrame;
             nextFrame += length;
             const output = channels.map((channel, index) => {
@@ -61,8 +81,9 @@ export function createPcmBlockReader(input: {
                 const positiveScale = negativeScale - 1;
                 for (let frame = 0; frame < length; frame++) {
                     const sample = sanitize(channel[start + frame]! * sourceGain * gain);
-                    if (bitDepth === 32) values[frame] = sample;
-                    else {
+                    if (bitDepth === 32) {
+                        values[frame] = sample;
+                    } else {
                         const noise = dither.mode === 'none' ? 0 : uniform(states[index]!) - uniform(states[index]!);
                         const scaled = sample < 0 ? sample * negativeScale : sample * positiveScale;
                         values[frame] = Math.max(-negativeScale, Math.min(positiveScale, Math.round(scaled + noise)));

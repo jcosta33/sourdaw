@@ -416,7 +416,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
         let output: Awaited<ReturnType<typeof streamExport>> | undefined;
         const checkCancelled = () => {
-            if (cancelledRef.current) throw new Error('Export cancelled');
+            if (cancelledRef.current) {
+                throw new Error('Export cancelled');
+            }
         };
         // Acquire writable storage before restoring sources or rendering any PCM.
         if (mode !== 'render-to-clip') {
@@ -425,11 +427,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 if (native) {
                     if (mode === 'stems') {
                         nativeDirPath = await selectNativeAudioExportDirectory();
-                        if (!nativeDirPath) return;
+                        if (!nativeDirPath) {
+                            return;
+                        }
                     } else {
-                        nativeFilePath = await selectNativeAudioExportFile({ formats: Array.from(formats),
-                            suggestedName: `${baseName}.${Array.from(formats)[0] ?? 'wav'}` });
-                        if (!nativeFilePath) return;
+                        nativeFilePath = await selectNativeAudioExportFile({
+                            formats: Array.from(formats),
+                            suggestedName: `${baseName}.${Array.from(formats)[0] ?? 'wav'}`,
+                        });
+                        if (!nativeFilePath) {
+                            return;
+                        }
                     }
                 }
                 const archive = mode === 'stems' || formats.size > 1;
@@ -437,19 +445,45 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 const extension = archive ? '.zip' : `.${primaryExt}`;
                 setExporting(true);
                 setStatusText('Opening export storage...');
+                let destination: Parameters<typeof streamExport>[0]['destination'];
+                if (native) {
+                    destination = {
+                        kind: 'native',
+                        directoryPath: nativeDirPath ?? undefined,
+                        selectedFilePath: nativeFilePath ?? undefined,
+                    };
+                } else {
+                    destination = {
+                        kind: 'browser',
+                        archive,
+                        suggestedName: `${baseName}${extension}`,
+                        extension,
+                        mime: resolveExportMime(archive, primaryExt),
+                    };
+                }
                 output = await streamExport({
-                    destination: native ? { kind: 'native', directoryPath: nativeDirPath ?? undefined, selectedFilePath: nativeFilePath ?? undefined }
-                        : { kind: 'browser', archive, suggestedName: `${baseName}${extension}`, extension, mime: resolveExportMime(archive, primaryExt) },
-                    formats: Array.from(formats), bitDepth: resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth,
-                    mp3BitRate, dither: resolveExportDither(dither), metadata: metadataSnapshot,
-                    normalization: normalization === 'r128' ? { targetLufs: targetLufsSnapshot, ceilingDbTp: R128_CEILING_DB_TP } : undefined,
+                    destination,
+                    formats: Array.from(formats),
+                    bitDepth: resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth,
+                    mp3BitRate,
+                    dither: resolveExportDither(dither),
+                    metadata: metadataSnapshot,
+                    normalization:
+                        normalization === 'r128'
+                            ? { targetLufs: targetLufsSnapshot, ceilingDbTp: R128_CEILING_DB_TP }
+                            : undefined,
                     checkCancelled,
                 });
             } catch (error) {
-                if (error instanceof Error && error.name === 'AbortError') { setExporting(false); return; }
+                if (error instanceof Error && error.name === 'AbortError') {
+                    setExporting(false);
+                    return;
+                }
                 const message = error instanceof Error ? error.message : 'Export storage is unavailable.';
                 setExporting(false);
-                setErrorText(message); setStatusText('The bread burned...'); setProgress(0);
+                setErrorText(message);
+                setStatusText('The bread burned...');
+                setProgress(0);
                 notifyUser(message, 'error');
                 return;
             }
@@ -521,18 +555,28 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             const tail = effectiveTailSeconds(mode !== 'stems', tailSnapshot);
             const serializeAudio = async (
                 buffer: Parameters<NonNullable<Parameters<typeof renderOffline>[0]['onRendered']>>[0],
-                name: string, index: number, total: number
+                name: string,
+                index: number,
+                total: number
             ) => {
-                if (!output) throw new Error('Export storage is unavailable.');
+                if (!output) {
+                    throw new Error('Export storage is unavailable.');
+                }
                 const formatList = Array.from(formats);
-                await output.writeAudio({ source: buffer, name,
+                await output.writeAudio({
+                    source: buffer,
+                    name,
                     onProgress: whileNotCancelled((format, fraction) => {
                         const pass = formatList.indexOf(format);
                         setStatusText(`Kneading ${name} (${format.toUpperCase()})...`);
                         setProgress(((index + (pass + fraction) / formatList.length) / total) * 100);
                     }),
-                    onLimited: () => notifyUser(`${name} needed more gain than the ${R128_CEILING_DB_TP} dBTP ceiling allows, ` +
-                        `so it was normalized to the ceiling rather than to ${targetLufsSnapshot} LUFS.`, 'warning'),
+                    onLimited: () =>
+                        notifyUser(
+                            `${name} needed more gain than the ${R128_CEILING_DB_TP} dBTP ceiling allows, ` +
+                                `so it was normalized to the ceiling rather than to ${targetLufsSnapshot} LUFS.`,
+                            'warning'
+                        ),
                 });
             };
 
@@ -598,13 +642,21 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 const stemWarnings = new Set<string>();
                 let stemBaseNames = new Map<string, string>();
                 await exportStems({
-                    durationBeats, startBeat, tailSeconds: tail, sampleRate,
-                    onStemPlan: (ids) => { stemBaseNames = deriveStemFileBaseNames({ stemTrackIds: ids, orderedTracks: tracks }); },
+                    durationBeats,
+                    startBeat,
+                    tailSeconds: tail,
+                    sampleRate,
+                    onStemPlan: (ids) => {
+                        stemBaseNames = deriveStemFileBaseNames({ stemTrackIds: ids, orderedTracks: tracks });
+                    },
                     onStem: async (trackId, buffer, index, total) => {
                         await serializeAudio(buffer, stemBaseNames.get(trackId) ?? trackId, index, total);
                     },
                     onProgress: whileNotCancelled((fraction: number) => setProgress(fraction * 100)),
-                    onWarning: whileNotCancelled((message: string) => { logger.warn(message); stemWarnings.add(message); }),
+                    onWarning: whileNotCancelled((message: string) => {
+                        logger.warn(message);
+                        stemWarnings.add(message);
+                    }),
                 });
                 if (stemWarnings.size > 0) {
                     notifyUser(
@@ -617,7 +669,6 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 if (cancelledRef.current) {
                     return;
                 }
-
             } else {
                 setStatusText('Proofing Whole Loaf (offline mixdown)...');
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
@@ -651,14 +702,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 if (cancelledRef.current) {
                     return;
                 }
-
             }
 
             if (endedCancelled()) {
                 return;
             }
 
-            if (output) await output.commit(() => { committed = true; commitStartedRef.current = true; });
+            if (output) {
+                await output.commit(() => {
+                    committed = true;
+                    commitStartedRef.current = true;
+                });
+            }
 
             setProgress(100);
             setStatusText('Ding! Baking Complete! 🍞');
@@ -681,8 +736,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setProgress(0);
             }
         } finally {
-            try { await output?.abort(); }
-            catch (cleanupError) {
+            try {
+                await output?.abort();
+            } catch (cleanupError) {
                 const message = cleanupError instanceof Error ? cleanupError.message : 'Export cleanup failed.';
                 logger.error(new Error('Export cleanup failed', { cause: cleanupError }));
                 setErrorText(message);
