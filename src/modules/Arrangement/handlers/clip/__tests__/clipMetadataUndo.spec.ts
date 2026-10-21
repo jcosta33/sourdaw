@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { type ActionUndoEntry } from '#/modules/Command/models/UndoEntry';
-import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import {
+    clearHandlerRegistry,
+    registerHandlerMap,
+    type UndoHistoryStoreState,
+    undoHistoryStore,
+} from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     resetActionReplayAuthority,
@@ -405,6 +409,9 @@ describe('clip loop enable undo removes the minted anchor (#5198)', () => {
 });
 
 describe('legacy loop entries replay anchorless through the undo seam (#5198)', () => {
+    /** The persisted action-entry shape, derived from Command's exported store contract. */
+    type PersistedActionUndoEntry = Extract<UndoHistoryStoreState['past'][number], { kind: 'action' }>;
+
     function registerReplayHandlers(): void {
         clearHandlerRegistry();
         registerHandlerMap({
@@ -414,7 +421,7 @@ describe('legacy loop entries replay anchorless through the undo seam (#5198)', 
     }
 
     /** The legacy disable-undo entry: recorded before the restore carried anchors. */
-    function legacyDisableUndoEntry(): ActionUndoEntry {
+    function legacyDisableUndoEntry(): PersistedActionUndoEntry {
         return {
             kind: 'action',
             id: 'legacy-loop-undo',

@@ -4,8 +4,9 @@ import { type Clip, defaultTrackState, trackStore } from '#/modules/Arrangement/
 import { slipClipContent } from '#/modules/Arrangement/useCases/clipEditing/slipClipContent';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
-import { selectMidiNotesForLoopWindow } from '#/modules/Transport/useCases/scheduling/selectMidiNotesForLoopWindow';
+import { selectMidiNotesForLoopWindow } from '#/modules/Transport/useCases';
 
+import { handleSlipClipContent } from '../../../handlers/clip/handleSlipClipContent';
 import { createTrack } from '../../../models/Track';
 
 /**
@@ -162,5 +163,80 @@ describe('slipClipContent keeps a looped MIDI clip inside its loop', () => {
 
         expect(readClip('c-plain').midiOffsetBeats).toBe(7);
         expect(storedNoteBeats('c-plain')).toEqual([0, 1, 2, 3]);
+    });
+});
+
+describe('a slip undo restores the rows its raising wrap lifted (#5198)', () => {
+    afterEach(() => {
+        trackStore.set(structuredClone(defaultTrackState));
+        midiStore.set(structuredClone(defaultMidiStoreState));
+    });
+
+    /** Slips through the real handler and replays the inverse it recorded. */
+    function slipAndUndo(offset: number): void {
+        const action = { type: 'slipClipContent', payload: { clipId: 'c-loop', clipType: 'midi', offset } } as const;
+        const description = handleSlipClipContent.describe(action);
+        expect(handleSlipClipContent.execute(action)).toEqual({ status: 'written' });
+        if (description.inverseAction?.type !== 'slipClipContent') {
+            throw new Error('Expected slip inverse action');
+        }
+        // The recorded inverse carries the un-lift of the lift the forward
+        // slip just applied — the rows it must restore to their pre-slip
+        // figures.
+        expect(description.inverseAction.payload.offset).toBe(0);
+        expect(description.inverseAction.payload.rowLiftBeats).toBeLessThan(0);
+        expect(handleSlipClipContent.execute(description.inverseAction)).toEqual({ status: 'written' });
+    }
+
+    function expectPreSlipStateRestored(): void {
+        const restored = readClip('c-loop');
+        expect(restored.midiOffsetBeats).toBe(0);
+        expect(storedNoteBeats('c-loop')).toEqual([0, 1, 2, 3]);
+        expect(storedPressBeats('c-loop')).toEqual([0]);
+        expect(audibleStoredNotes(restored)).toBe(4);
+    }
+
+    it('restores rows and audibility byte-exact after a whole-loop negative slip', () => {
+        // The -4 slip raises to its phase 0 and lifts the rows a whole loop to
+        // [4,5,6,7]; an offset-only inverse leaves them parked above the
+        // unmoved window — every row dropped, the undo playing silence where
+        // the pre-slip clip played four notes.
+        seed([loopedClip('c-loop')]);
+
+        slipAndUndo(-4);
+
+        expectPreSlipStateRestored();
+    });
+
+    it('restores rows and audibility byte-exact after a sub-loop negative slip', () => {
+        // The -1 slip raises to its phase 3 and lifts the rows to [4,5,6,7];
+        // the forward keeps 3 of them audible, and the undo must put all four
+        // back, not leave the lifted figures against the restored offset 0.
+        seed([loopedClip('c-loop')]);
+
+        slipAndUndo(-1);
+
+        expectPreSlipStateRestored();
+    });
+
+    it('control: a keyless legacy slip inverse moves no rows, as the pre-anchor replay never did', () => {
+        // Entries recorded before the lift field existed decode without it. A
+        // pre-anchor slip never shifted rows, so its inverse must not either:
+        // the keyless replay restores the offset and leaves the stored figures
+        // exactly where the forward left them — no lift restoration is
+        // invented for a payload that never carried one.
+        seed([loopedClip('c-loop')]);
+        expect(slipClipContent('c-loop', 'midi', -1)).toBe(true);
+        expect(storedNoteBeats('c-loop')).toEqual([4, 5, 6, 7]);
+
+        const keylessLegacyInverse = {
+            type: 'slipClipContent',
+            payload: { clipId: 'c-loop', clipType: 'midi', offset: 0 },
+        } as const;
+        expect(handleSlipClipContent.execute(keylessLegacyInverse)).toEqual({ status: 'written' });
+
+        expect(readClip('c-loop').midiOffsetBeats).toBe(0);
+        expect(storedNoteBeats('c-loop')).toEqual([4, 5, 6, 7]);
+        expect(storedPressBeats('c-loop')).toEqual([4]);
     });
 });

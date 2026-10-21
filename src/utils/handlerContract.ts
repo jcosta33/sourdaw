@@ -1424,7 +1424,23 @@ export type AppAction =
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
-    | { type: 'slipClipContent'; payload: { clipId: string; clipType: 'audio' | 'midi'; offset: number } }
+    | {
+          type: 'slipClipContent';
+          payload: {
+              clipId: string;
+              clipType: 'audio' | 'midi';
+              offset: number;
+              /**
+               * The row shift a recorded inverse must apply to restore the rows
+               * the forward slip's raising wrap lifted (#5198): the lift carried
+               * negative. Only recorded inverses set it — a fresh dispatch is
+               * keyless and keeps the forward wrap law, and entries recorded
+               * before the field existed decode without it and replay exactly
+               * the offset-only inverse they always were.
+               */
+              rowLiftBeats?: number;
+          };
+      }
     | {
           /** Draw-tool clip creation; `ripple` shifts later clips on the track by the
            *  drawn length, exactly as the gesture's ripple insert did. */

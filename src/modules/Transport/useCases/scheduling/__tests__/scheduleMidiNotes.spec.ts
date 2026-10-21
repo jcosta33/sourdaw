@@ -4051,3 +4051,98 @@ describe('scheduleMidiNotes', () => {
         });
     });
 });
+
+/**
+ * The loop anchor's pass-through into the live scheduler (#5198). The selector,
+ * the per-note admission, and the projection each read `clip.loopOriginBeat`,
+ * and all three must read the SAME anchor: the anchored window is what keeps a
+ * trimmed clip's in-region rows audible and what keeps the rows past the
+ * trimmed region silent, so detaching the pass-through at any one of the three
+ * sites flips the audible material — the case below runs the real projection,
+ * the plain placement stand-in above never reads the anchor.
+ */
+describe('scheduleMidiNotes carries the loop anchor through selection, admission, and projection', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        forgetStoredControllerEngagements();
+        (trackStore as { value: unknown }).value = { tracks: [] };
+        (midiStore as { value: unknown }).value = null;
+        (automationStore as { value: unknown }).value = null;
+        (tempoMapStore as { value: unknown }).value = { changes: [] };
+        (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
+        vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
+            clips.map((clip) => ({
+                ...clip,
+                regionStartBeat: clip.startBeat,
+                regionEndBeat: clip.endBeat,
+                sourceStartBeat: clip.startBeat,
+            }))
+        );
+        // The real projection, as production dispatches it through the barrel.
+        vi.mocked(projectClipMidiEvents).mockImplementation((input) => realMidiUseCases.projectClipMidiEvents(input));
+        vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
+        engineStub.sampleRate = 48_000;
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            (trackId) =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes: engineStub.nodesFor(trackId),
+                }) as never
+        );
+        shouldPlayProbability.mockImplementation(() => true);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+    });
+
+    /**
+     * The state a born-looped clip (start 0, anchor 0, loop 4) carries after a
+     * start trim to 4: the head advanced to 4, the anchor kept at 0 (advance
+     * 4), the offset wrapped to its phase 0, and the stored rows ridden by the
+     * wrap's −4 so every relative keeps the raw advance's figure — the loop
+     * head at −4, one row of source material a beat past the region end at
+     * 0.5.
+     */
+    function anchoredTrimmedClip(): Clip {
+        return {
+            id: 'clip-1',
+            type: 'midi',
+            muted: false,
+            startBeat: 4,
+            endBeat: 12,
+            gain: 1,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            midiOffsetBeats: 0,
+        } as Clip;
+    }
+
+    const anchoredTrimmedNotes = () => [
+        { id: 'n-loop-head', pitch: 60, startBeat: -4, duration: 1, velocity: 100 },
+        { id: 'n-past-region', pitch: 72, startBeat: 0.5, duration: 0.25, velocity: 100 },
+    ];
+
+    it('sounds the trimmed-in loop head at its pass placement and stays silent past the region', async () => {
+        // The anchored window [−4, 0) admits the head and the projection wraps
+        // it onto the pass opening at beat 4 — the accumulated position, so the
+        // note-on lands on the clock's now (0 s) and sounds a half-second beat.
+        // The row at 0.5 reads outside that window — it is the source material
+        // past the trimmed region. The unanchored [0, 4) reading admits the
+        // past-region row and drops the head, so losing the pass-through at the
+        // selector, the admission, or the projection each lands here as
+        // silence.
+        const track = midiTrack({ clips: [anchoredTrimmedClip()] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': anchoredTrimmedNotes() } };
+
+        await scheduleMidiNotes(4, 8, 4, new Set<string>(), [], defaultTransportState, 120);
+        expect(vi.mocked(scheduleNote)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[2]).toBe(60);
+        // The pass opening sits on the accumulated position, so the wrapped
+        // head sounds immediately; a whole loop of silence here is the
+        // pass-through lost.
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[3]).toBe(0);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[4]).toBe(0.5);
+    });
+});

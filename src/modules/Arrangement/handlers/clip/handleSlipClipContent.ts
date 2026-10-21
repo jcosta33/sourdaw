@@ -1,13 +1,19 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
+import { slipWrapRowLiftBeats } from '../../useCases/clipEditing/slipWrapRowLiftBeats';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleSlipClipContent = createHandler<'slipClipContent'>({
     execute: (action) => {
         return toHandlerExecutionResult(
-            slipClipContent(action.payload.clipId, action.payload.clipType, action.payload.offset)
+            slipClipContent(
+                action.payload.clipId,
+                action.payload.clipType,
+                action.payload.offset,
+                action.payload.rowLiftBeats
+            )
         );
     },
     describe: (action) => {
@@ -25,11 +31,36 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
             // clip never carried one, matching the gesture's own baseline.
             const previousOffset =
                 action.payload.clipType === 'audio' ? (clip.audioOffsetBeats ?? 0) : (clip.midiOffsetBeats ?? 0);
+            const inversePayload: {
+                clipId: string;
+                clipType: 'audio' | 'midi';
+                offset: number;
+                rowLiftBeats?: number;
+            } = { clipId: clip.id, clipType: action.payload.clipType, offset: previousOffset };
+            if (action.payload.clipType === 'midi') {
+                // The forward slip's raising wrap lifts the stored rows; the
+                // undo must un-lift them or the restored clip keeps its rows a
+                // loop above the unmoved window and plays total silence
+                // (#5198). Capture the lift the forward pass is about to
+                // apply — computed from the same pre-action clip the offset
+                // reads — carried negative. A keyless payload decodes as the
+                // offset-only inverse entries recorded before the field
+                // existed, whose replay moves no rows.
+                const lift = slipWrapRowLiftBeats({
+                    loopEnabled: clip.loopEnabled ?? false,
+                    clipDurationBeats: clip.endBeat - clip.startBeat,
+                    configuredLoopLengthBeats: clip.loopLength,
+                    offsetBeats: action.payload.offset,
+                });
+                if (lift !== 0) {
+                    inversePayload.rowLiftBeats = -lift;
+                }
+            }
             return {
                 label,
                 inverseAction: {
                     type: 'slipClipContent',
-                    payload: { clipId: clip.id, clipType: action.payload.clipType, offset: previousOffset },
+                    payload: inversePayload,
                 },
             };
         } catch {

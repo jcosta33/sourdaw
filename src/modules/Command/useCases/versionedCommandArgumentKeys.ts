@@ -1643,6 +1643,7 @@ const schemaDefinitions = [
             clipId: 0,
             clipType: 162,
             offset: 1,
+            rowLiftBeats: 1,
         },
         required: ['clipId', 'clipType', 'offset'],
         additionalProperties: false,

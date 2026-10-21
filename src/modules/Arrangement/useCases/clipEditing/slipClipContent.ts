@@ -3,6 +3,8 @@ import { resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
 
 import { updateClip } from '../updateClip';
 
+import { slipWrapRowLiftBeats } from './slipWrapRowLiftBeats';
+
 /**
  * Slip clip content — slides internal content (audio or MIDI) within fixed boundaries.
  * Non-destructive: adjusts audioOffsetBeats (audio) or midiOffsetBeats (MIDI).
@@ -24,23 +26,45 @@ import { updateClip } from '../updateClip';
  * carries the phase, and the rows keep the relative figures that read inside
  * the window.
  */
-export function slipClipContent(clipId: string, type: 'audio' | 'midi', newOffset: number): boolean {
+export function slipClipContent(
+    clipId: string,
+    type: 'audio' | 'midi',
+    newOffset: number,
+    inverseRowShiftBeats?: number
+): boolean {
     return updateClip(clipId, (context) => {
         if (type === 'audio') {
             return { ...context, audioOffsetBeats: newOffset };
         }
         const loopEnabled = context.loopEnabled ?? false;
+        const clipDurationBeats = context.endBeat - context.startBeat;
         const midiOffsetBeats = resolveLoopedOffsetBeats({
             offsetBeats: newOffset,
             loopEnabled,
-            clipDurationBeats: context.endBeat - context.startBeat,
+            clipDurationBeats,
             configuredLoopLengthBeats: context.loopLength,
         });
-        if (loopEnabled && midiOffsetBeats > newOffset) {
+        const rowLiftBeats = slipWrapRowLiftBeats({
+            loopEnabled,
+            clipDurationBeats,
+            configuredLoopLengthBeats: context.loopLength,
+            offsetBeats: newOffset,
+        });
+        if (inverseRowShiftBeats !== undefined) {
+            // A recorded inverse carries its own row restoration — the un-lift
+            // of the raising wrap the forward slip applied (#5198). Its offset
+            // replay is the captured pre-action figure, whose wrapped phase is
+            // itself, so the forward lift below would never fire; the recorded
+            // shift is the only row motion the replay makes. Entries recorded
+            // before the field existed decode without it and take the forward
+            // law, which for their offset-only inverses moves no rows — the
+            // pre-anchor behavior exactly.
+            shiftClipMidiNotes(clipId, inverseRowShiftBeats);
+        } else if (rowLiftBeats !== 0) {
             // The wrap lifted a negative figure to its positive phase; the
             // stored rows ride the same lift. A non-zero lift is the only
             // window-safe row shift a slip can carry.
-            shiftClipMidiNotes(clipId, midiOffsetBeats - newOffset);
+            shiftClipMidiNotes(clipId, rowLiftBeats);
         }
         return { ...context, midiOffsetBeats };
     });
