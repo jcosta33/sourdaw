@@ -40,7 +40,7 @@ function combineSignals(...signals: readonly (AbortSignal | undefined)[]): Abort
  */
 export async function executeOfflineRender(
     capture: () => ReturnType<typeof captureOfflineRenderInput>,
-    options: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal' | 'lockHolder'> = {}
+    options: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal' | 'lockHolder' | 'onRendered'> = {}
 ): Promise<AudioBuffer> {
     const holder = options.lockHolder ?? 'musician-export';
     // An agent render stops on this signal beside its caller's own stop, so a musician's export
@@ -100,6 +100,10 @@ export async function executeOfflineRender(
             buffer = await scheduleOfflineMix({ input, plan, graph, offlineCtx, masterGain, scheduleFrame, callbacks });
         }
         callbacks.onProgress?.(1);
+        if (options.onRendered) {
+            await options.onRendered(cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds, borrowed: true }));
+            return buffer;
+        }
         return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
     } catch (error) {
         // A render a musician's export stopped reports why, unless its caller stopped it first.

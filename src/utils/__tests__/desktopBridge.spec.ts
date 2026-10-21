@@ -2,6 +2,11 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import {
     createChannel,
+    beginExportFile,
+    appendExportFile,
+    sealExportFile,
+    commitExportFiles,
+    abortExportFiles,
     desktopOpenDialog,
     desktopPathJoin,
     desktopPlatform,
@@ -69,6 +74,35 @@ describe('desktopBridge', () => {
     afterEach(() => {
         delete (window as unknown as MutableWindow).sourdaw;
         vi.clearAllMocks();
+    });
+
+    describe('streaming export transactions', () => {
+        it('carries the granted path once and then only opaque tokens, with bounded binary chunks', async () => {
+            const bridge = installBridge();
+            bridge.invoke.mockResolvedValueOnce('native-issued-token');
+            const token = await beginExportFile('/picked/mix.wav');
+            const backing = new Uint8Array([9, 1, 2, 3, 9]);
+            await appendExportFile(token, backing.subarray(1, 4));
+            await sealExportFile(token);
+            await commitExportFiles([token]);
+            await abortExportFiles([token]);
+            expect(bridge.invoke.mock.calls).toEqual([
+                ['begin_export_file', ['/picked/mix.wav']], ['seal_export_file', [token]],
+                ['commit_export_files', [[token]]], ['abort_export_files', [[token]]],
+            ]);
+            const [command, metadata, bytes] = bridge.invokeBinary.mock.calls[0]!;
+            expect(command).toBe('append_export_file'); expect(metadata).toEqual([token]);
+            expect(bytes).toEqual(new Uint8Array([1, 2, 3])); expect(bytes.buffer.byteLength).toBe(3);
+        });
+        it('refuses an oversized append before native IPC', async () => {
+            const bridge = installBridge();
+            await expect(appendExportFile('token', new Uint8Array(1024 * 1024 + 1))).rejects.toThrow('1048576-byte IPC limit');
+            expect(bridge.invokeBinary).not.toHaveBeenCalled();
+        });
+        it('refuses a malformed native transaction response', async () => {
+            const bridge = installBridge(); bridge.invoke.mockResolvedValueOnce(null);
+            await expect(beginExportFile('/picked/mix.wav')).rejects.toThrow('transaction token');
+        });
     });
 
     describe('runtime detection', () => {

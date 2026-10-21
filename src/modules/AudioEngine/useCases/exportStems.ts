@@ -7,7 +7,7 @@ import {
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
-import { isFaustDeviceExportError, type FaustDeviceExportError } from '../errors/FaustDeviceExportError';
+import { isFaustDeviceExportError } from '../errors/FaustDeviceExportError';
 import { clampRenderFrameCount } from '../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
@@ -38,8 +38,8 @@ import { yieldToMain } from './offlineRender/yieldToMain';
 import { resolveToasterPadBinding } from './resolveToasterPadBinding';
 
 type ExportStemsFn = {
-    (opts: OfflineRenderOptions): Promise<Map<string, AudioBuffer>>;
     (durationBeats: number, sampleRate?: number): Promise<Map<string, AudioBuffer>>;
+    (opts: OfflineRenderOptions): Promise<Map<string, AudioBuffer>>;
 };
 
 /**
@@ -234,14 +234,11 @@ export const exportStems: ExportStemsFn = async function exportStems(
         }
 
         const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
-        // Dynamically scale CPU threads based on hardware, clamped to 8 max to prevent OOM.
-        const MAX_CONCURRENT_RENDERS =
-            typeof navigator !== 'undefined' ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8)) : 4;
-
-        // Ordinary per-track failures retain the existing partial-set warning.
-        // A failed audible Faust device invalidates the whole musician export.
+        const onStem = typeof optsOrBeats === 'object' ? optsOrBeats.onStem : undefined;
+        if (typeof optsOrBeats === 'object') optsOrBeats.onStemPlan?.(eligible.map((track) => track.id));
         const failures: { trackId: string; reason: string }[] = [];
-        let faustFailure: FaustDeviceExportError | undefined;
+        let successful = 0;
+        let consumerFailed = false;
 
         // Every read of "was this export cancelled" goes through this stem set's own scope signal
         // beside the shared flag. The export's finally lowers the flag, and a stem task still in
@@ -250,7 +247,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
         const stemCancelSource = createRenderCancelSource(cancellationSignal);
         const isStemExportCancelled = (): boolean => isCancelRequested() || cancellationSignal.aborted;
 
-        const tasks = eligible.map((track) => async () => {
+        const renderStem = async (track: (typeof eligible)[number], index: number) => {
             checkCancel(cancellationSignal);
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
@@ -470,83 +467,41 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         : undefined,
                 });
 
-                stems.set(track.id, cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds }));
+                checkCancel(cancellationSignal);
+                if (onStem) {
+                    try {
+                        await onStem(track.id, cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds, borrowed: true }), index, eligible.length);
+                    } catch (error) { consumerFailed = true; throw error; }
+                    checkCancel(cancellationSignal);
+                } else {
+                    stems.set(track.id, cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds }));
+                }
+                successful++;
                 done++;
                 onProgress?.(done / eligible.length);
             } finally {
                 destroyOfflineDeviceStrategies(deviceEntriesByTrack);
             }
-        });
+        };
 
-        // Run exports concurrently up to the thread limit.
-        let activeTasks = 0;
-        let taskIndex = 0;
-
-        await new Promise<void>((resolve, reject) => {
-            function next(): void {
-                if (isStemExportCancelled()) {
-                    reject(new Error('Export cancelled'));
-                    return;
-                }
-                while (activeTasks < MAX_CONCURRENT_RENDERS && taskIndex < tasks.length) {
-                    const task = tasks[taskIndex];
-                    const stemTrackId = eligible[taskIndex]!.id;
-                    taskIndex++;
-                    activeTasks++;
-                    function settle(): void {
-                        activeTasks--;
-                        if (taskIndex >= tasks.length && activeTasks === 0) {
-                            resolve();
-                            return;
-                        }
-                        // eslint-disable-next-line promise/no-callback-in-promise -- `next` is an internal concurrent-pool scheduler, not a Node-style callback; it re-enters the loop to start the next pending task
-                        next();
-                    }
-                    task!()
-                        .then(() => {
-                            settle();
-                            return null;
-                        })
-                        .catch((error: unknown) => {
-                            let failure = new Error(String(error));
-                            if (error instanceof Error) {
-                                failure = error;
-                            }
-                            // A cancel is the whole export stopping, not this
-                            // stem failing, so it still rejects the pool.
-                            if (isStemExportCancelled()) {
-                                reject(failure);
-                                return;
-                            }
-                            if (isFaustDeviceExportError(error)) {
-                                faustFailure ??= error;
-                            }
-                            failures.push({ trackId: stemTrackId, reason: failure.message });
-                            // This stem's slot is spent either way; without this
-                            // the progress bar stalls short of 1 on a failure.
-                            done++;
-                            onProgress?.(done / eligible.length);
-                            settle();
-                        });
-                }
-                if (taskIndex >= tasks.length && activeTasks === 0) {
-                    resolve();
-                }
+        // A stem's consumer drains every selected format before the next context owns PCM.
+        for (const [index, track] of eligible.entries()) {
+            checkCancel(cancellationSignal);
+            try { await renderStem(track, index); }
+            catch (error) {
+                if (consumerFailed || isStemExportCancelled() || isFaustDeviceExportError(error)) throw error;
+                const reason = error instanceof Error ? error.message : String(error);
+                failures.push({ trackId: track.id, reason });
+                done++;
+                onProgress?.(done / eligible.length);
             }
-            next();
-        });
-
-        // Settle every task and its teardown before releasing the export lock.
-        // A Faust refusal invalidates the whole requested set, including already-rendered stems.
-        if (faustFailure !== undefined) {
-            throw faustFailure;
         }
 
         if (failures.length > 0) {
             const detail = failures.map((failure) => `${failure.trackId} (${failure.reason})`).join('; ');
             // Nothing rendered: returning an empty set would let the dialog
             // report success over an export that contains none of the session.
-            if (stems.size === 0) {
+            if (successful === 0) {
                 throw createExportError(`No stem could be rendered. Failed tracks: ${detail}`);
             }
             onWarning?.(

@@ -1,3 +1,5 @@
+import { type ExportAudioSource } from '../../models/ExportAudioSource';
+
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
 
@@ -5,7 +7,8 @@ import { resolveNormalizationGain } from './resolveNormalizationGain';
 
 export type ApplyExportNormalizationInput = {
     /** Freshly rendered export buffer. Its channel data is scaled in place. */
-    buffer: AudioBuffer;
+    buffer: ExportAudioSource;
+    apply?: boolean;
     targetLufs: number;
     ceilingDbTp: number;
 };
@@ -37,6 +40,7 @@ export function applyExportNormalization({
     buffer,
     targetLufs,
     ceilingDbTp,
+    apply = true,
 }: ApplyExportNormalizationInput): ApplyExportNormalizationOutput {
     const channels: Float32Array[] = [];
     for (let index = 0; index < buffer.numberOfChannels; index++) {
@@ -57,7 +61,7 @@ export function applyExportNormalization({
         ceilingDbTp,
     });
 
-    if (gain !== 1) {
+    if (apply && gain !== 1) {
         for (const channel of channels) {
             for (let index = 0; index < channel.length; index++) {
                 channel[index] = channel[index]! * gain;

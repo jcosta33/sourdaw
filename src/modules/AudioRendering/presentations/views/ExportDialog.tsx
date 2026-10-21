@@ -1,6 +1,5 @@
 import { type ReactElement, useEffect, useState, useRef } from 'react';
 
-import { zipSync } from 'fflate';
 import { Flame, X, CheckCircle2 } from 'lucide-react';
 
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
@@ -40,14 +39,10 @@ import { transportStore, defaultTransportState } from '#/modules/Transport/store
 import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { audioBufferToFlac as encodeFlac } from '../../useCases/audioBufferToFlac';
-import { audioBufferToMp3 as encodeMp3 } from '../../useCases/audioBufferToMp3';
-import { audioBufferToWav as encodeWav } from '../../useCases/audioBufferToWav';
+import { type audioBufferToMp3 as encodeMp3 } from '../../useCases/audioBufferToMp3';
 import { selectNativeAudioExportDirectory } from '../../useCases/audioExport/selectNativeAudioExportDirectory';
 import { selectNativeAudioExportFile } from '../../useCases/audioExport/selectNativeAudioExportFile';
-import { writeNativeAudioMixdownFile } from '../../useCases/audioExport/writeNativeAudioMixdownFile';
-import { writeNativeAudioStemFile } from '../../useCases/audioExport/writeNativeAudioStemFile';
-import { normalizeExportBuffer } from '../../useCases/normalizeExportBuffer';
+import { streamExport } from '../../useCases/audioExport/streamExport';
 import { renderToClip } from '../../useCases/renderToClip';
 import { validatePodcastMetadata } from '../../useCases/validatePodcastMetadata';
 
@@ -83,29 +78,6 @@ const DEFAULT_EXPORT_TAIL_SECONDS = 2;
 type ExportDialogProps = {
     open: boolean;
     onClose: () => void;
-};
-
-type WebFileHandle = {
-    createWritable: () => Promise<{
-        write: (data: Uint8Array) => Promise<void>;
-        close: () => Promise<void>;
-        abort: () => Promise<void>;
-    }>;
-};
-
-type ShowSaveFilePicker = (opts: {
-    suggestedName?: string;
-    types?: { accept: Record<string, string[]> }[];
-}) => Promise<WebFileHandle>;
-
-/**
- * The File System Access API (`window.showSaveFilePicker`) is not in the
- * standard `Window` lib types. Narrow the value at the call boundary instead
- * of asserting through `unknown`.
- */
-const getShowSaveFilePicker = (): ShowSaveFilePicker | null => {
-    const candidate = (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker;
-    return typeof candidate === 'function' ? (candidate as ShowSaveFilePicker) : null;
 };
 
 const resolveExportMime = (isZip: boolean, primaryExt: string): string => {
@@ -212,6 +184,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const openRef = useRef(open);
     openRef.current = open;
     const cancelledRef = useRef(false);
+    const commitStartedRef = useRef(false);
 
     // AppShell keeps this dialog mounted and toggles only `open`, so the last
     // export's progress, status and error would otherwise survive a close — a
@@ -408,7 +381,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const handleCancel = () => {
         // The Turn off Oven button stays visible through the cancelled window: a repeat click must
         // not replace "Oven turned off." with "Cooling down...".
-        if (cancelledRef.current) {
+        if (cancelledRef.current || commitStartedRef.current) {
             return;
         }
         cancelledRef.current = true;
@@ -416,32 +389,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setStatusText('Cooling down...');
     };
 
-    // Helper: Trigger browser fallback download if Native API fails or is missing
-    const triggerFallbackBlobDownload = (data: Uint8Array | ArrayBuffer, ext: string, blobName: string) => {
-        const mimeMap: Record<string, string> = {
-            '.wav': 'audio/wav',
-            '.mp3': 'audio/mpeg',
-            '.flac': 'audio/flac',
-            '.zip': 'application/zip',
-        };
-        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- Uint8Array<ArrayBufferLike> requires cast to BlobPart; structurally safe at runtime
-        const blob = new Blob([data as unknown as BlobPart], { type: mimeMap[ext] || 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const alpha = document.createElement('a');
-        alpha.href = url;
-        alpha.download = `${blobName}${ext}`;
-        alpha.style.display = 'none';
-        document.body.appendChild(alpha);
-        alpha.click();
-        setTimeout(() => {
-            document.body.removeChild(alpha);
-            URL.revokeObjectURL(url);
-        }, 1500); // 1.5s to ensure click dispatches
-    };
-
     const handleExport = async () => {
         setErrorText('');
         cancelledRef.current = false;
+        commitStartedRef.current = false;
         let metadataSnapshot: Parameters<typeof encodeMp3>[4];
         if (mode === 'mixdown' && deliveryPreset === PODCAST_RSS_MP3_PRESET.id && formats.has('mp3')) {
             metadataSnapshot = podcastMetadata;
@@ -463,57 +414,44 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         let nativeDirPath: string | null = null;
         let nativeFilePath: string | null = null;
 
-        // This Handle uses the new FileSystem Access API
-        let webFileHandle: WebFileHandle | null = null;
-
-        // ── 1. SECURE THE DESTINATION EARLY ──
+        let output: Awaited<ReturnType<typeof streamExport>> | undefined;
+        const checkCancelled = () => {
+            if (cancelledRef.current) throw new Error('Export cancelled');
+        };
+        // Acquire writable storage before restoring sources or rendering any PCM.
         if (mode !== 'render-to-clip') {
             try {
-                if (isNativeProjectRuntimeAvailable()) {
+                const native = isNativeProjectRuntimeAvailable();
+                if (native) {
                     if (mode === 'stems') {
                         nativeDirPath = await selectNativeAudioExportDirectory();
-                        if (!nativeDirPath) {
-                            return;
-                        } // User cancelled
+                        if (!nativeDirPath) return;
                     } else {
-                        const primaryExt = Array.from(formats)[0] || 'wav';
-                        nativeFilePath = await selectNativeAudioExportFile({
-                            formats: Array.from(formats),
-                            suggestedName: `${baseName}.${primaryExt}`,
-                        });
-                        if (!nativeFilePath) {
-                            return;
-                        } // User cancelled
-                    }
-                } else {
-                    // Web Environment
-                    const showSaveFilePicker = getShowSaveFilePicker();
-                    if (showSaveFilePicker) {
-                        const isZip = mode === 'stems' || formats.size > 1; // Zipping required for >1 file
-                        const primaryExt = Array.from(formats)[0] || 'wav';
-                        const fileExt = isZip ? '.zip' : `.${primaryExt}`;
-                        const mime = resolveExportMime(isZip, primaryExt);
-
-                        webFileHandle = await showSaveFilePicker({
-                            suggestedName: `${baseName}${fileExt}`,
-                            types: [{ accept: { [mime]: [fileExt] } }],
-                        });
+                        nativeFilePath = await selectNativeAudioExportFile({ formats: Array.from(formats),
+                            suggestedName: `${baseName}.${Array.from(formats)[0] ?? 'wav'}` });
+                        if (!nativeFilePath) return;
                     }
                 }
+                const archive = mode === 'stems' || formats.size > 1;
+                const primaryExt = Array.from(formats)[0] ?? 'wav';
+                const extension = archive ? '.zip' : `.${primaryExt}`;
+                setExporting(true);
+                setStatusText('Opening export storage...');
+                output = await streamExport({
+                    destination: native ? { kind: 'native', directoryPath: nativeDirPath ?? undefined, selectedFilePath: nativeFilePath ?? undefined }
+                        : { kind: 'browser', archive, suggestedName: `${baseName}${extension}`, extension, mime: resolveExportMime(archive, primaryExt) },
+                    formats: Array.from(formats), bitDepth: resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth,
+                    mp3BitRate, dither: resolveExportDither(dither), metadata: metadataSnapshot,
+                    normalization: normalization === 'r128' ? { targetLufs: targetLufsSnapshot, ceilingDbTp: R128_CEILING_DB_TP } : undefined,
+                    checkCancelled,
+                });
             } catch (error) {
-                if (error instanceof Error && error.name === 'AbortError') {
-                    return;
-                }
-                if (isNativeProjectRuntimeAvailable()) {
-                    const message = error instanceof Error ? error.message : 'Unknown oven malfunction';
-                    logger.error(new Error('Export failed', { cause: error }));
-                    setErrorText(message);
-                    setStatusText('The bread burned...');
-                    setProgress(0);
-                    notifyUser(message, 'error');
-                    return;
-                }
-                // A browser save-picker failure still falls through to the download link.
+                if (error instanceof Error && error.name === 'AbortError') { setExporting(false); return; }
+                const message = error instanceof Error ? error.message : 'Export storage is unavailable.';
+                setExporting(false);
+                setErrorText(message); setStatusText('The bread burned...'); setProgress(0);
+                notifyUser(message, 'error');
+                return;
             }
         }
 
@@ -539,6 +477,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             };
 
         try {
+            checkCancelled();
             // Restore audio buffers from IndexedDB before rendering.
             // The primary CRDT load path (loadProject → projectCrdtToStores) does not
             // call restoreFromIdb, so on a cold page reload the in-memory cache is empty.
@@ -580,111 +519,21 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             // Stems keep muted tracks, so they may need a longer tail than the
             // mixdown of the same project.
             const tail = effectiveTailSeconds(mode !== 'stems', tailSnapshot);
-            const bd = resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth;
-            // Every encoder gets the same dither decision, so a seeded
-            // or undithered export is reproducible in all selected formats.
-            const ditherOptions = resolveExportDither(dither);
-            const formatList = Array.from(formats);
-
-            // We use fflate purely to zip multiple web stems / formats
-            const zipDirectory: Record<string, Uint8Array> = {};
-
             const serializeAudio = async (
-                buffer: AudioBuffer,
-                name: string,
-                fractionOffset: number,
-                fractionRange: number,
-                isFinalBuffer: boolean
+                buffer: Parameters<NonNullable<Parameters<typeof renderOffline>[0]['onRendered']>>[0],
+                name: string, index: number, total: number
             ) => {
-                // Normalize once, before the format loop, so every
-                // requested format is encoded from identical audio.
-                if (normalization === 'r128') {
-                    setStatusText(`Measuring ${name}...`);
-                    const result = normalizeExportBuffer({
-                        buffer,
-                        targetLufs: targetLufsSnapshot,
-                        ceilingDbTp: R128_CEILING_DB_TP,
-                    });
-                    if (result.limitedByCeiling) {
-                        notifyUser(
-                            `${name} needed more gain than the ${R128_CEILING_DB_TP} dBTP ceiling allows, ` +
-                                `so it was normalized to the ceiling rather than to ${targetLufsSnapshot} LUFS.`,
-                            'warning'
-                        );
-                    }
-                }
-
-                let currentPass = 0;
-                for (const freq of formatList) {
-                    if (cancelledRef.current) {
-                        return;
-                    }
-
-                    const passProgress = whileNotCancelled((frac: number) => {
-                        const subFraction = (currentPass + frac) / formatList.length;
-                        setProgress(fractionOffset + subFraction * fractionRange);
-                    });
-
-                    setStatusText(`Kneading ${name} (${freq.toUpperCase()})...`);
-                    let fileData: Uint8Array | ArrayBuffer;
-
-                    if (freq === 'mp3') {
-                        if (metadataSnapshot) {
-                            fileData = await encodeMp3(
-                                buffer,
-                                mp3BitRate,
-                                passProgress,
-                                ditherOptions,
-                                metadataSnapshot
-                            );
-                        } else {
-                            fileData = await encodeMp3(buffer, mp3BitRate, passProgress, ditherOptions);
-                        }
-                    } else if (freq === 'flac') {
-                        if (bd === 32) {
-                            throw new Error('FLAC export supports 16-bit or 24-bit only.');
-                        }
-                        fileData = await encodeFlac(buffer, bd, passProgress, ditherOptions);
-                    } else {
-                        fileData = await encodeWav(buffer, bd, passProgress, ditherOptions);
-                    }
-
-                    // A Cancel pressed while this format was encoding stops here: the encoder
-                    // finished, but nothing of it may reach disk.
-                    if (cancelledRef.current) {
-                        return;
-                    }
-
-                    const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
-                    const finalFileName = `${name}.${freq}`;
-
-                    // The export's last file: once its write is dispatched nothing is left to stop, and a
-                    // native write cannot be recalled, so the export has succeeded whatever Cancel does next.
-                    const isFinalFile = isFinalBuffer && currentPass === formatList.length - 1;
-
-                    if (isNativeProjectRuntimeAvailable()) {
-                        if (mode === 'stems' && nativeDirPath) {
-                            committed = committed || isFinalFile;
-                            await writeNativeAudioStemFile({
-                                bytes: uint8Data,
-                                directoryPath: nativeDirPath,
-                                fileName: finalFileName,
-                            });
-                        } else if (nativeFilePath) {
-                            committed = committed || isFinalFile;
-                            await writeNativeAudioMixdownFile({
-                                bytes: uint8Data,
-                                format: freq,
-                                selectedFilePath: nativeFilePath,
-                            });
-                        }
-                    } else {
-                        // Web: Pack into the zip directory for later synchronous fflate compression
-                        zipDirectory[finalFileName] = uint8Data;
-                    }
-
-                    currentPass++;
-                }
+                if (!output) throw new Error('Export storage is unavailable.');
+                const formatList = Array.from(formats);
+                await output.writeAudio({ source: buffer, name,
+                    onProgress: whileNotCancelled((format, fraction) => {
+                        const pass = formatList.indexOf(format);
+                        setStatusText(`Kneading ${name} (${format.toUpperCase()})...`);
+                        setProgress(((index + (pass + fraction) / formatList.length) / total) * 100);
+                    }),
+                    onLimited: () => notifyUser(`${name} needed more gain than the ${R128_CEILING_DB_TP} dBTP ceiling allows, ` +
+                        `so it was normalized to the ceiling rather than to ${targetLufsSnapshot} LUFS.`, 'warning'),
+                });
             };
 
             // ── ACTUAL PROCESS ORCHESTRATION ──
@@ -747,22 +596,15 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setStatusText('Proofing Slices (rendering stems)...');
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
                 const stemWarnings = new Set<string>();
-                const stems = await exportStems({
-                    durationBeats,
-                    startBeat,
-                    tailSeconds: tail,
-                    sampleRate,
-                    onProgress: whileNotCancelled((frac: number) => {
-                        const barPct = frac * 50;
-                        setProgress(barPct);
-                        if (Math.round(barPct) % 5 === 0) {
-                            setStatusText('Proofing slices...');
-                        }
-                    }),
-                    onWarning: whileNotCancelled((msg: string) => {
-                        logger.warn(msg);
-                        stemWarnings.add(msg);
-                    }),
+                let stemBaseNames = new Map<string, string>();
+                await exportStems({
+                    durationBeats, startBeat, tailSeconds: tail, sampleRate,
+                    onStemPlan: (ids) => { stemBaseNames = deriveStemFileBaseNames({ stemTrackIds: ids, orderedTracks: tracks }); },
+                    onStem: async (trackId, buffer, index, total) => {
+                        await serializeAudio(buffer, stemBaseNames.get(trackId) ?? trackId, index, total);
+                    },
+                    onProgress: whileNotCancelled((fraction: number) => setProgress(fraction * 100)),
+                    onWarning: whileNotCancelled((message: string) => { logger.warn(message); stemWarnings.add(message); }),
                 });
                 if (stemWarnings.size > 0) {
                     notifyUser(
@@ -776,37 +618,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     return;
                 }
 
-                let doneStems = 0;
-                const totalStems = stems.size;
-
-                // Collision-free per-stem filenames (OE-2): key disambiguation off the
-                // already-unique track id so a second track sharing a name cannot overwrite
-                // the first stem on disk (native dir) or in the web zip map. Derive from the
-                // stable store track order — not the pool's render-completion order — so the
-                // track→filename mapping is reproducible across identical exports.
-                const stemBaseNames = deriveStemFileBaseNames({
-                    stemTrackIds: stems.keys(),
-                    orderedTracks: tracks,
-                });
-
-                for (const [trackId, buffer] of stems) {
-                    if (cancelledRef.current) {
-                        return;
-                    }
-                    const safeTName = stemBaseNames.get(trackId) ?? trackId;
-
-                    // We map the remaining 50% of the progress bar to encoding the slices
-                    const stemOffset = 50 + (doneStems / totalStems) * 50;
-                    const stemRange = 50 / totalStems;
-
-                    await serializeAudio(buffer, safeTName, stemOffset, stemRange, doneStems === totalStems - 1);
-                    doneStems++;
-                }
             } else {
                 setStatusText('Proofing Whole Loaf (offline mixdown)...');
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
                 const mixWarnings = new Set<string>();
-                const buffer = await renderOffline({
+                await renderOffline({
+                    onRendered: async (source) => serializeAudio(source, baseName, 0, 1),
                     durationBeats,
                     startBeat,
                     tailSeconds: tail,
@@ -835,56 +652,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     return;
                 }
 
-                // We map the remaining 40% of the progress bar to encoding the mixdown
-                await serializeAudio(buffer, baseName, 60, 40, true);
             }
 
             if (endedCancelled()) {
                 return;
             }
 
-            // ── 3. FINALIZE WEB SAVES ──
-            if (!isNativeProjectRuntimeAvailable() && Object.keys(zipDirectory).length > 0) {
-                setStatusText('Serving hot audio...');
-                const isSingleFile = Object.keys(zipDirectory).length === 1 && mode !== 'stems';
-
-                let finalBytes: Uint8Array;
-                let finalExt: string;
-                let finalName: string;
-
-                if (isSingleFile) {
-                    const singleKey = Object.keys(zipDirectory)[0]!;
-                    finalBytes = zipDirectory[singleKey]!;
-                    finalExt = `.${singleKey.split('.').pop()!}`;
-                    finalName = baseName;
-                } else {
-                    // Zip the results synchronously
-                    finalBytes = zipSync(zipDirectory, { level: 0 }); // level 0 for speed, audio doesn't compress well anyway
-                    finalExt = '.zip';
-                    finalName = mode === 'stems' ? `Sourdaw_Slices_${ts}` : `Sourdaw_Bakery_${ts}`;
-                }
-
-                if (webFileHandle) {
-                    // File System Access Method
-                    const writable = await webFileHandle.createWritable();
-                    // A Cancel pressed while the file was being opened or written must not commit it:
-                    // closing a writable is what makes the file appear, so a cancelled one is aborted.
-                    if (cancelledRef.current) {
-                        await writable.abort();
-                        return;
-                    }
-                    await writable.write(finalBytes);
-                    if (cancelledRef.current) {
-                        await writable.abort();
-                        return;
-                    }
-                    committed = true;
-                    await writable.close();
-                } else {
-                    // Fallback
-                    triggerFallbackBlobDownload(finalBytes, finalExt, finalName);
-                }
-            }
+            if (output) await output.commit(() => { committed = true; commitStartedRef.current = true; });
 
             setProgress(100);
             setStatusText('Ding! Baking Complete! 🍞');
@@ -907,12 +681,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setProgress(0);
             }
         } finally {
+            try { await output?.abort(); }
+            catch (cleanupError) {
+                const message = cleanupError instanceof Error ? cleanupError.message : 'Export cleanup failed.';
+                logger.error(new Error('Export cleanup failed', { cause: cleanupError }));
+                setErrorText(message);
+            }
             // Always unlock the UI. On cancel, delay briefly so the status text is readable.
             if (endedCancelled()) {
                 // Every Cancel exit before the commit ends here, whether it threw or returned: the
                 // export is reported as cancelled, so the bar must not keep the encoder's last
-                // figure, and 100 would show the finished state. Native files written before the
-                // Cancel stay on disk; the Cancel only stops the formats or stems after them.
+                // figure, and 100 would show the finished state. All uncommitted files were aborted.
                 setProgress(0);
                 setStatusText('Oven turned off.');
                 setTimeout(() => setExporting(false), 1500);

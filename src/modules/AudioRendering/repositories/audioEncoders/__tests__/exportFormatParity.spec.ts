@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -15,10 +18,15 @@ import { audioBufferToWav } from '../wavEncoder';
  * noise sequence for a given seed, so WAV and FLAC must agree bit-for-bit.
  */
 
+const codecMode = vi.hoisted(() => ({ real: false }));
+
 const capturedMp3Blocks: Int16Array[] = [];
 
-vi.mock('@breezystack/lamejs', () => ({
-    Mp3Encoder: vi.fn().mockImplementation(function () {
+vi.mock('@breezystack/lamejs', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@breezystack/lamejs')>();
+    return ({
+    Mp3Encoder: vi.fn().mockImplementation(function (channels: number, rate: number, bitrate: number) {
+        if (codecMode.real) return new actual.Mp3Encoder(channels, rate, bitrate);
         return {
             encodeBuffer: (left: Int16Array) => {
                 capturedMp3Blocks.push(Int16Array.from(left));
@@ -27,7 +35,7 @@ vi.mock('@breezystack/lamejs', () => ({
             flush: () => new Uint8Array([2]),
         };
     }),
-}));
+}); });
 
 /** A deliberately hot mix: peaks at 1.8 (well over full scale) so per-format
  *  clip-vs-normalize divergence shows up as different sample values. */
@@ -93,6 +101,7 @@ function rmsOf(samples: Int16Array): number {
 describe('export format parity (OE-1)', () => {
     beforeEach(() => {
         capturedMp3Blocks.length = 0;
+        codecMode.real = false;
     });
 
     it('should quantize a hot mix to byte-identical 16-bit PCM for WAV and FLAC', async () => {
@@ -178,5 +187,73 @@ describe('FLAC bit depth (OE-8)', () => {
 
         // Same audio, different resolution => different PCM signature.
         expect(readFlacPcmMd5(twentyFour)).not.toBe(readFlacPcmMd5(sixteen));
+    });
+});
+
+
+type DecoderModule = {
+    initSync: (input: { module: Uint8Array }) => unknown;
+    decode_audio_bytes: (bytes: Uint8Array) => {
+        readonly channels: number; readonly sample_rate: number; readonly total_frames: number;
+        readonly decode_warning_count: number;
+        take_samples: () => Float32Array;
+    };
+};
+async function shippedDecoder(): Promise<DecoderModule> {
+    const url = pathToFileURL(resolve(process.cwd(), 'public/wasm/daw-wasm-decoder/daw_wasm_decoder.js'));
+    const module: DecoderModule = await import(/* @vite-ignore */ url.href);
+    module.initSync({ module: await readFile(new URL('daw_wasm_decoder_bg.wasm', url)) });
+    return module;
+}
+async function captureStream(encode: (write: (bytes: Uint8Array) => Promise<void>) => Promise<void>) {
+    const chunks: Uint8Array[] = [];
+    await encode(async (bytes) => { expect(bytes.length).toBeLessThanOrEqual(65536); chunks.push(bytes.slice()); });
+    const result = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+    let offset = 0;
+    for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
+    return result;
+}
+
+describe('real streaming codec bytes', () => {
+    it('replays seeded 16/24-bit WAV PCM in decoded FLAC, with exact STREAMINFO MD5', async () => {
+        const decoder = await shippedDecoder();
+        const buffer = createHotBuffer(2, 4096 * 3 + 127);
+        for (const depth of [16, 24] as const) {
+            const dither = { mode: 'tpdf', seed: 9182 } as const;
+            const legacy = await audioBufferToWav(buffer, depth, undefined, dither);
+            const wav = await captureStream((write) => audioBufferToWav(buffer, depth, undefined, dither, { write }));
+            expect(wav).toEqual(new Uint8Array(legacy));
+            const flac = await captureStream((write) => audioBufferToFlac(buffer, depth, undefined, dither, { write }));
+            const shape = new DataView(flac.buffer).getBigUint64(18);
+            expect(Number(shape & 0xfffffffffn)).toBe(buffer.length);
+            expect(readFlacPcmMd5(flac)).toBe(md5Hex(wav.subarray(44)));
+            const decodedWav = decoder.decode_audio_bytes(wav);
+            const decodedFlac = decoder.decode_audio_bytes(flac);
+            expect(decodedFlac.channels).toBe(2); expect(decodedFlac.sample_rate).toBe(44100);
+            expect(decodedFlac.total_frames).toBe(buffer.length); expect(decodedFlac.decode_warning_count).toBe(0);
+            expect(decodedFlac.take_samples()).toEqual(decodedWav.take_samples());
+        }
+    });
+    it('decodes real LAME packets at the selected bitrate, channel count, sample rate and audible level', async () => {
+        codecMode.real = true;
+        try {
+            const decoder = await shippedDecoder();
+            const buffer = createHotBuffer(2, 44100);
+            const bytes = await captureStream((write) => audioBufferToMp3(buffer, 192, undefined, { mode: 'none' }, { write }));
+            const decoded = decoder.decode_audio_bytes(bytes);
+            expect(decoded.channels).toBe(2); expect(decoded.sample_rate).toBe(44100);
+            expect(Math.abs(decoded.total_frames - buffer.length)).toBeLessThan(2305);
+            const samples = decoded.take_samples();
+            const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+            expect(rms).toBeGreaterThan(0.6); expect(rms).toBeLessThan(0.75);
+            // MPEG-1 Layer III bitrate index 11 denotes 192 kbps (not a mocked encoder setting).
+            let frame = -1;
+            for (let offset = 0; offset < bytes.length - 4; offset++) {
+                if (bytes[offset] === 0xff && (bytes[offset + 1]! & 0xfe) === 0xfa) { frame = offset; break; }
+            }
+            expect(frame).toBeGreaterThanOrEqual(0);
+            expect(bytes[frame + 2]! >>> 4).toBe(11);
+            expect((bytes[frame + 2]! >>> 2) & 3).toBe(0);
+        } finally { codecMode.real = false; }
     });
 });

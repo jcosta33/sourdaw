@@ -145,6 +145,12 @@ export type OfflineBusStrip = {
 };
 
 export type OfflineRenderOptions = {
+    /** Consumed under the render lock; no cropped AudioBuffer is allocated on this route. */
+    onRendered?: (source: Pick<AudioBuffer, 'length' | 'numberOfChannels' | 'sampleRate' | 'getChannelData'>) => Promise<void>;
+    /** Stable eligible order, before any stem render or output begins. */
+    onStemPlan?: (trackIds: readonly string[]) => void;
+    /** Awaited before the next stem render. The borrowed PCM must not escape this call. */
+    onStem?: (trackId: string, source: Pick<AudioBuffer, 'length' | 'numberOfChannels' | 'sampleRate' | 'getChannelData'>, index: number, total: number) => Promise<void>;
     durationBeats: number;
     sampleRate?: number;
     /** Beat at which the render starts (project beat 0 by default). */

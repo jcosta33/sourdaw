@@ -17,7 +17,7 @@
 
 mod windows;
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
@@ -110,6 +110,7 @@ impl<Event: Serialize> EventStream<Event> for TsfnEventStream {
 #[napi]
 pub struct SourdawNative {
     singletons: Arc<NativeSingletons>,
+    export_files: std::result::Result<Mutex<commands::filesystem::ExportFileRegistry>, String>,
     /// Behind a lock because the shell registers its real window host after
     /// construction, while other methods may already be in flight; every user
     /// clones the `Arc` out and never holds the lock across an await.
@@ -132,6 +133,10 @@ impl SourdawNative {
         // profile guards — and a missing directory is a name the filesystem
         // has nothing to correct the caller's spelling against.
         commands::filesystem::ensure_private_state_directory();
+        let export_files = commands::filesystem::private_state_directory()
+            .ok_or_else(|| "Private export state is unavailable".to_string())
+            .and_then(|directory| commands::filesystem::ExportFileRegistry::open(&directory))
+            .map(Mutex::new);
 
         let events: Arc<dyn EventSink> = Arc::new(TsfnEventSink { emit: on_event });
         let singletons = Arc::new(NativeSingletons::new(Arc::clone(&events)));
@@ -153,6 +158,7 @@ impl SourdawNative {
 
         Self {
             singletons,
+            export_files,
             // Until the shell registers its window host this refuses rather
             // than pretends.
             windows: RwLock::new(Arc::new(NoWindowHost)),
@@ -257,7 +263,13 @@ impl SourdawNative {
     #[napi]
     pub fn shutdown(&self) -> Result<Value> {
         let windows = self.window_host();
-        json(self.singletons.shutdown(Some(windows.as_ref())))
+        let cleanup = match &self.export_files {
+            Ok(registry) => registry.lock().map_err(|_| "Export registry lock poisoned".to_string()).and_then(|mut registry| registry.abort_all()),
+            Err(_) => Ok(()), // No transaction feature owns files; ordinary shutdown still runs.
+        };
+        let report = self.singletons.shutdown(Some(windows.as_ref()));
+        reason(cleanup)?;
+        json(report)
     }
 
     // ── Privileged model-provider gateway ──────────────────────────────
@@ -437,6 +449,41 @@ impl SourdawNative {
         Ok(Buffer::from(reason(
             commands::filesystem::read_file_bytes(path).await,
         )?))
+    }
+
+    #[napi]
+    pub fn begin_export_file(&self, path: String) -> Result<String> {
+        let registry = self.export_files.as_ref().map_err(|error| Error::from_reason(error.clone()))?;
+        let mut registry = registry.lock().map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
+        reason(registry.begin(path, self.singletons.app_state.session_generation()))
+    }
+
+    #[napi]
+    pub fn append_export_file(&self, token: String, data: Buffer) -> Result<()> {
+        let registry = self.export_files.as_ref().map_err(|error| Error::from_reason(error.clone()))?;
+        let mut registry = registry.lock().map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
+        reason(registry.append(&token, &data, self.singletons.app_state.session_generation()))
+    }
+
+    #[napi]
+    pub fn seal_export_file(&self, token: String) -> Result<()> {
+        let registry = self.export_files.as_ref().map_err(|error| Error::from_reason(error.clone()))?;
+        let mut registry = registry.lock().map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
+        reason(registry.seal(&token, self.singletons.app_state.session_generation()))
+    }
+
+    #[napi]
+    pub fn commit_export_files(&self, tokens: Vec<String>) -> Result<()> {
+        let registry = self.export_files.as_ref().map_err(|error| Error::from_reason(error.clone()))?;
+        let mut registry = registry.lock().map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
+        reason(registry.commit(&tokens, self.singletons.app_state.session_generation()))
+    }
+
+    #[napi]
+    pub fn abort_export_files(&self, tokens: Vec<String>) -> Result<()> {
+        let registry = self.export_files.as_ref().map_err(|error| Error::from_reason(error.clone()))?;
+        let mut registry = registry.lock().map_err(|_| Error::from_reason("Export registry lock poisoned"))?;
+        reason(registry.abort(&tokens))
     }
 
     #[napi]
@@ -880,7 +927,13 @@ impl SourdawNative {
     /// startup disarm has run (#4752).
     #[napi]
     pub fn begin_renderer_session(&self) -> u64 {
-        self.singletons.app_state.begin_renderer_session()
+        let generation = self.singletons.app_state.begin_renderer_session();
+        if let Ok(registry) = &self.export_files {
+            if let Ok(mut registry) = registry.lock() {
+                if let Err(error) = registry.abort_all() { eprintln!("[Export] Renderer reload cleanup failed: {error}"); }
+            }
+        }
+        generation
     }
 
     /// Empty the engine slot when the output stream behind it is gone, so the

@@ -601,6 +601,249 @@ fn project_directory() -> Option<PathBuf> {
     Some(dirs::document_dir()?.join(PROJECT_DIR_NAME))
 }
 
+const MAX_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
+const MAX_EXPORT_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExportTempRecord {
+    token: String,
+    target: PathBuf,
+    temp: PathBuf,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExportManifest {
+    version: u32,
+    records: Vec<ExportTempRecord>,
+    authentication: String,
+}
+
+struct ExportFileTransaction {
+    record: ExportTempRecord,
+    generation: u64,
+    file: Option<std::fs::File>,
+    sealed: bool,
+}
+
+/// One host holds an OS lock for its entire lifetime. Recovery never races another live host.
+/// The authenticated manifest is private native state, never renderer-authored delete authority.
+pub(crate) struct ExportFileRegistry {
+    _lock: std::fs::File,
+    initializing: bool,
+    manifest_path: PathBuf,
+    key: [u8; 32],
+    transactions: std::collections::BTreeMap<String, ExportFileTransaction>,
+}
+
+fn export_manifest_mac(key: &[u8; 32], records: &[ExportTempRecord]) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = serde_json::to_vec(&(1_u32, records)).map_err(|e| e.to_string())?;
+    let mut inner_pad = [0x36_u8; 64];
+    let mut outer_pad = [0x5c_u8; 64];
+    for (index, byte) in key.iter().enumerate() {
+        inner_pad[index] ^= byte;
+        outer_pad[index] ^= byte;
+    }
+    let mut inner = Sha256::new();
+    inner.update(inner_pad);
+    inner.update(bytes);
+    let mut outer = Sha256::new();
+    outer.update(outer_pad);
+    outer.update(inner.finalize());
+    Ok(outer.finalize().iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn refuse_export_symlink(path: &Path) -> Result<(), String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err("Export state or temporary path is a symlink".into()),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Cannot inspect export state: {error}")),
+    }
+}
+
+fn validate_export_temp(record: &ExportTempRecord) -> Result<(), String> {
+    if uuid::Uuid::parse_str(&record.token).map_err(|_| "Invalid export recovery token")?.to_string() != record.token {
+        return Err("Invalid export recovery token".into());
+    }
+    let parent = record.target.parent().ok_or("Export target has no parent")?;
+    let name = record.target.file_name().and_then(|name| name.to_str()).ok_or("Invalid export target name")?;
+    let expected = parent.join(format!(".{name}.sourdaw-export-{}.tmp", record.token));
+    if !record.target.is_absolute() || record.temp != expected || parent.canonicalize().map_err(|e| e.to_string())? != parent {
+        return Err("Invalid export recovery record".into());
+    }
+    refuse_export_symlink(&record.temp)?;
+    if let Ok(metadata) = std::fs::symlink_metadata(&record.temp) {
+        if !metadata.is_file() { return Err("Export recovery record does not name a regular temporary file".into()); }
+    }
+    Ok(())
+}
+
+impl ExportFileRegistry {
+    pub(crate) fn open(directory: &Path) -> Result<Self, String> {
+        use std::io::Read;
+        refuse_export_symlink(directory)?;
+        create_private_state_directory(directory).map_err(|e| format!("Cannot create export state: {e}"))?;
+        let directory = directory.canonicalize().map_err(|e| e.to_string())?;
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+        }
+        let lock_path = directory.join("export-files.lock");
+        refuse_export_symlink(&lock_path)?;
+        let lock = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false)
+            .open(&lock_path).map_err(|e| format!("Cannot open export state lock: {e}"))?;
+        lock.try_lock().map_err(|_| "Streaming export is owned by another live native host".to_string())?;
+        let key_path = directory.join("export-files.key");
+        refuse_export_symlink(&key_path)?;
+        let mut key = [0_u8; 32];
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&key_path) {
+            Ok(mut file) => {
+                key[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+                key[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+                file.write_all(&key).and_then(|_| file.sync_all()).map_err(|e| e.to_string())?;
+                sync_parent_directory_best_effort(&key_path);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let mut file = std::fs::File::open(&key_path).map_err(|e| e.to_string())?;
+                if file.metadata().map_err(|e| e.to_string())?.len() != 32 { return Err("Invalid export authentication key".into()); }
+                file.read_exact(&mut key).map_err(|e| e.to_string())?;
+            }
+            Err(error) => return Err(format!("Cannot create export authentication key: {error}")),
+        }
+        let manifest_path = directory.join("export-files.json");
+        refuse_export_symlink(&manifest_path)?;
+        let mut registry = Self { _lock: lock, initializing: true, manifest_path, key, transactions: std::collections::BTreeMap::new() };
+        if registry.manifest_path.exists() {
+            let file = std::fs::File::open(&registry.manifest_path).map_err(|e| e.to_string())?;
+            if file.metadata().map_err(|e| e.to_string())?.len() > MAX_EXPORT_MANIFEST_BYTES { return Err("Export recovery manifest is too large".into()); }
+            let manifest: ExportManifest = serde_json::from_reader(file).map_err(|e| format!("Invalid export recovery manifest: {e}"))?;
+            let expected = export_manifest_mac(&registry.key, &manifest.records)?;
+            if manifest.version != 1 || manifest.authentication.len() != expected.len() ||
+                manifest.authentication.bytes().zip(expected.bytes()).fold(0_u8, |difference, (a, b)| difference | (a ^ b)) != 0 {
+                return Err("Unauthenticated export recovery manifest".into());
+            }
+            // Validate the entire document before deleting even one exact recorded file.
+            for record in &manifest.records { validate_export_temp(record)?; }
+            for record in &manifest.records {
+                match std::fs::remove_file(&record.temp) {
+                    Ok(()) => sync_parent_directory_best_effort(&record.temp),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+                    Err(error) => return Err(format!("Cannot recover export temporary file: {error}")),
+                }
+            }
+        }
+        registry.persist()?;
+        registry.initializing = false;
+        Ok(registry)
+    }
+
+    fn persist(&self) -> Result<(), String> {
+        let records: Vec<_> = self.transactions.values().map(|transaction| transaction.record.clone()).collect();
+        let manifest = ExportManifest { version: 1, authentication: export_manifest_mac(&self.key, &records)?, records };
+        let bytes = serde_json::to_vec(&manifest).map_err(|e| e.to_string())?;
+        if bytes.len() as u64 > MAX_EXPORT_MANIFEST_BYTES { return Err("Export recovery manifest is too large".into()); }
+        write_bytes_atomically(&self.manifest_path, &bytes)
+    }
+
+    pub(crate) fn begin(&mut self, path: String, generation: u64) -> Result<String, String> {
+        let target = resolve_writable_file_path(&path)?;
+        ensure_parent_directory(&target)?;
+        // Resolve again after directory creation; every stored parent is canonical and already exists.
+        let target = resolve_writable_file_path(&path)?;
+        if self.transactions.values().any(|entry| entry.record.target == target) { return Err("Export target is already staged".into()); }
+        let name = target.file_name().and_then(|name| name.to_str()).ok_or("Invalid export target name")?;
+        let token = uuid::Uuid::new_v4().to_string();
+        let temp = target.with_file_name(format!(".{name}.sourdaw-export-{token}.tmp"));
+        let record = ExportTempRecord { token: token.clone(), target, temp };
+        validate_export_temp(&record)?;
+        let key = token.to_string();
+        self.transactions.insert(key.clone(), ExportFileTransaction { record: record.clone(), generation, file: None, sealed: false });
+        // Crash before create_new is recoverable too; the durable plan precedes the first temp byte.
+        if let Err(error) = self.persist() { self.transactions.remove(&key); return Err(error); }
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&record.temp) {
+            Ok(file) => { self.transactions.get_mut(&key).expect("inserted export").file = Some(file); Ok(key) }
+            Err(error) => { self.transactions.remove(&key); self.persist()?; Err(format!("Cannot create export temporary file: {error}")) }
+        }
+    }
+
+    fn transaction(&mut self, token: &str, generation: u64) -> Result<&mut ExportFileTransaction, String> {
+        let transaction = self.transactions.get_mut(token).ok_or("Unknown export transaction")?;
+        if transaction.generation != generation { return Err("Stale export transaction".into()); }
+        Ok(transaction)
+    }
+
+    pub(crate) fn append(&mut self, token: &str, data: &[u8], generation: u64) -> Result<(), String> {
+        if data.len() > MAX_EXPORT_CHUNK_BYTES { return Err("Export chunk exceeds 1 MiB".into()); }
+        let transaction = self.transaction(token, generation)?;
+        if transaction.sealed { return Err("Export transaction is already sealed".into()); }
+        transaction.file.as_mut().ok_or("Export transaction has no writable file")?.write_all(data).map_err(|e| format!("Cannot append export file: {e}"))
+    }
+
+    pub(crate) fn seal(&mut self, token: &str, generation: u64) -> Result<(), String> {
+        let transaction = self.transaction(token, generation)?;
+        if transaction.sealed { return Err("Export transaction is already sealed".into()); }
+        let file = transaction.file.take().ok_or("Export transaction has no writable file")?;
+        file.sync_all().map_err(|e| format!("Cannot seal export file: {e}"))?;
+        drop(file);
+        transaction.sealed = true;
+        Ok(())
+    }
+
+    pub(crate) fn commit(&mut self, tokens: &[String], generation: u64) -> Result<(), String> {
+        let unique: std::collections::BTreeSet<_> = tokens.iter().collect();
+        if tokens.is_empty() || unique.len() != tokens.len() { return Err("Invalid export commit batch".into()); }
+        for token in tokens {
+            let transaction = self.transaction(token, generation)?;
+            if !transaction.sealed { return Err("Export transaction is not sealed".into()); }
+            validate_export_temp(&transaction.record)?;
+            let target = &transaction.record.target;
+            if resolve_writable_file_path(target.to_str().ok_or("Invalid export path")?)? != *target { return Err("Export target identity changed".into()); }
+        }
+        // Each rename is atomic. Several destinations cannot be one filesystem transaction.
+        for token in tokens {
+            let record = self.transaction(token, generation)?.record.clone();
+            // Recheck authority immediately before this particular irreversible rename.
+            if resolve_writable_file_path(record.target.to_str().ok_or("Invalid export path")?)? != record.target { return Err("Export target identity changed".into()); }
+            validate_export_temp(&record)?;
+            std::fs::rename(&record.temp, &record.target).map_err(|e| format!("Cannot commit export file: {e}"))?;
+            sync_parent_directory_best_effort(&record.target);
+            self.transactions.remove(token);
+            self.persist()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn abort(&mut self, tokens: &[String]) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for token in tokens {
+            if let Some(transaction) = self.transactions.get_mut(token) { drop(transaction.file.take()); }
+            let Some(transaction) = self.transactions.get(token) else { continue; };
+            validate_export_temp(&transaction.record)?;
+            match std::fs::remove_file(&transaction.record.temp) {
+                Ok(()) => { sync_parent_directory_best_effort(&transaction.record.temp); self.transactions.remove(token); }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => { self.transactions.remove(token); }
+                Err(error) => errors.push(format!("Cannot abort export temporary file: {error}")),
+            }
+        }
+        self.persist()?;
+        if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
+    }
+
+    pub(crate) fn abort_all(&mut self) -> Result<(), String> {
+        let tokens: Vec<_> = self.transactions.keys().cloned().collect();
+        self.abort(&tokens)
+    }
+}
+
+impl Drop for ExportFileRegistry {
+    fn drop(&mut self) {
+        if !self.initializing { let _ = self.abort_all(); }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1317,4 +1560,157 @@ mod tests {
             "the command must create a missing destination directory and file"
         );
     }
+    #[test]
+    fn export_transactions_stage_seal_commit_and_reject_stale_or_oversized_writes() {
+        let dir = TempExportDir::create("transactions");
+        let target = dir.path("mix.wav");
+        std::fs::write(&target, b"previous file").unwrap();
+        let mut registry = ExportFileRegistry::open(&dir.path("private")).unwrap();
+        let token = registry.begin(target.to_string_lossy().into_owned(), 7).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"previous file");
+        assert!(registry.append(&token, b"bad generation", 8).unwrap_err().contains("Stale"));
+        assert!(registry.append("unknown", b"bytes", 7).unwrap_err().contains("Unknown"));
+        assert!(registry.append(&token, &vec![0; MAX_EXPORT_CHUNK_BYTES + 1], 7).unwrap_err().contains("1 MiB"));
+        registry.append(&token, b"new ", 7).unwrap();
+        registry.append(&token, b"audio", 7).unwrap();
+        assert!(registry.commit(std::slice::from_ref(&token), 7).unwrap_err().contains("not sealed"));
+        registry.seal(&token, 7).unwrap();
+        assert!(registry.append(&token, b"late", 7).is_err());
+        assert!(registry.commit(std::slice::from_ref(&token), 8).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"previous file");
+        registry.commit(std::slice::from_ref(&token), 7).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"new audio");
+        registry.abort(std::slice::from_ref(&token)).unwrap();
+        assert!(temp_file_residue(&dir.root).is_empty());
+    }
+
+    #[test]
+    fn export_transactions_abort_and_drop_preserve_existing_files() {
+        let dir = TempExportDir::create("abort");
+        let target = dir.path("stem.flac");
+        std::fs::write(&target, b"old stem").unwrap();
+        {
+            let mut registry = ExportFileRegistry::open(&dir.path("private")).unwrap();
+            let token = registry.begin(target.to_string_lossy().into_owned(), 1).unwrap();
+            registry.append(&token, b"partial", 1).unwrap();
+            registry.abort_all().unwrap(); // Trusted renderer-replacement and shutdown use this route.
+            assert_eq!(std::fs::read(&target).unwrap(), b"old stem");
+            assert!(temp_file_residue(&dir.root).is_empty());
+            let token = registry.begin(target.to_string_lossy().into_owned(), 2).unwrap();
+            registry.append(&token, b"drop me", 2).unwrap();
+        }
+        assert_eq!(std::fs::read(&target).unwrap(), b"old stem");
+        assert!(temp_file_residue(&dir.root).is_empty());
+    }
+
+    #[test]
+    fn export_transactions_recheck_the_real_grant_before_commit() {
+        let dir = TempExportDir::create("grant-state");
+        let external = TempAuthorityDir::create_external_sibling();
+        let target = external.path("picked.wav");
+        std::fs::write(&target, b"old granted file").unwrap();
+        let canonical = target.canonicalize().unwrap();
+        let mut registry = ExportFileRegistry::open(&dir.path("private")).unwrap();
+        let token = grant_registry::with_grants_for_test(vec![FileGrant { canonical, mode: GrantMode::ReadWrite, recursive: false }], || {
+            registry.begin(target.to_string_lossy().into_owned(), 3).unwrap()
+        });
+        registry.append(&token, b"staged file", 3).unwrap();
+        registry.seal(&token, 3).unwrap();
+        grant_registry::with_grants_for_test(Vec::new(), || {
+            assert!(registry.commit(std::slice::from_ref(&token), 3).unwrap_err().contains("outside allowed"));
+            assert!(registry.begin(external.path("unpicked.wav").to_string_lossy().into_owned(), 3).is_err());
+        });
+        assert_eq!(std::fs::read(&target).unwrap(), b"old granted file");
+        registry.abort_all().unwrap();
+    }
+
+    #[test]
+    fn export_transactions_second_live_instance_cannot_recover_the_first() {
+        let dir = TempExportDir::create("instance-lock");
+        let private = dir.path("private");
+        let mut first = ExportFileRegistry::open(&private).unwrap();
+        let token = first.begin(dir.path("mix.mp3").to_string_lossy().into_owned(), 1).unwrap();
+        first.append(&token, b"live instance", 1).unwrap();
+        let temp = first.transactions[&token].record.temp.clone();
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert!(error.contains("another live native host"));
+        assert_eq!(std::fs::read(temp).unwrap(), b"live instance");
+        first.abort_all().unwrap();
+    }
+
+    #[test]
+    fn export_transactions_forged_manifest_is_refused_without_deleting_or_overwriting_it() {
+        let dir = TempExportDir::create("forged");
+        let private = dir.path("private");
+        drop(ExportFileRegistry::open(&private).unwrap());
+        let victim = dir.path("user.wav");
+        std::fs::write(&victim, b"user file").unwrap();
+        let record = ExportTempRecord { token: uuid::Uuid::new_v4().to_string(), target: victim.clone(), temp: victim.clone() };
+        let forged = serde_json::to_vec(&ExportManifest { version: 1, records: vec![record], authentication: "0".repeat(64) }).unwrap();
+        let manifest = private.join("export-files.json");
+        std::fs::write(&manifest, &forged).unwrap();
+        assert!(ExportFileRegistry::open(&private).err().unwrap().contains("Unauthenticated"));
+        assert_eq!(std::fs::read(&victim).unwrap(), b"user file");
+        assert_eq!(std::fs::read(&manifest).unwrap(), forged);
+    }
+
+    #[test]
+    fn export_transactions_crash_child() {
+        let Ok(root) = std::env::var("SOURDAW_EXPORT_TEST_ROOT") else { return; };
+        let root = PathBuf::from(root);
+        let stage = std::env::var("SOURDAW_EXPORT_TEST_STAGE").unwrap();
+        let mut registry = ExportFileRegistry::open(&root.join("private")).unwrap();
+        let target = root.join("destination.wav").canonicalize().unwrap();
+        if stage == "before-create" {
+            let token = uuid::Uuid::new_v4().to_string();
+            let temp = target.with_file_name(format!(".destination.wav.sourdaw-export-{token}.tmp"));
+            registry.transactions.insert(token.to_string(), ExportFileTransaction {
+                record: ExportTempRecord { token, target, temp }, generation: 1, file: None, sealed: false,
+            });
+            registry.persist().unwrap();
+        } else {
+            let token = registry.begin(target.to_string_lossy().into_owned(), 1).unwrap();
+            registry.append(&token, b"new completed audio", 1).unwrap();
+            if stage == "sealed" || stage == "renamed" { registry.seal(&token, 1).unwrap(); }
+            if stage == "renamed" {
+                // The crash boundary between rename and removal of the exact manifest entry.
+                let record = &registry.transactions[&token].record;
+                std::fs::rename(&record.temp, &record.target).unwrap();
+            }
+        }
+        std::process::exit(0); // Deliberately skips Drop, like a terminated native process.
+    }
+
+    #[test]
+    fn export_transactions_recover_exact_crash_leftovers_at_every_commit_boundary() {
+        for stage in ["before-create", "appending", "sealed", "renamed"] {
+            let dir = TempExportDir::create(stage);
+            let target = dir.path("destination.wav");
+            std::fs::write(&target, b"old completed audio").unwrap();
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "commands::filesystem::tests::export_transactions_crash_child", "--nocapture"])
+                .env("SOURDAW_EXPORT_TEST_ROOT", &dir.root).env("SOURDAW_EXPORT_TEST_STAGE", stage)
+                .stdout(std::process::Stdio::null()).status().unwrap();
+            assert!(status.success());
+            let registry = ExportFileRegistry::open(&dir.path("private")).unwrap();
+            assert!(registry.transactions.is_empty());
+            assert!(temp_file_residue(&dir.root).is_empty(), "{stage}");
+            let expected: &[u8] = if stage == "renamed" { b"new completed audio" } else { b"old completed audio" };
+            assert_eq!(std::fs::read(target).unwrap(), expected, "{stage}");
+        }
+    }
+
+    #[test]
+    fn export_transactions_bind_the_trusted_app_state_generation() {
+        let dir = TempExportDir::create("trusted-generation");
+        let state = crate::state::AppState::default();
+        state.begin_renderer_session();
+        let mut registry = ExportFileRegistry::open(&dir.path("private")).unwrap();
+        let token = registry.begin(dir.path("mix.wav").to_string_lossy().into_owned(), state.session_generation()).unwrap();
+        state.begin_renderer_session();
+        assert!(registry.append(&token, b"old renderer", state.session_generation()).unwrap_err().contains("Stale"));
+        registry.abort_all().unwrap();
+        assert!(registry.transactions.is_empty());
+    }
+
 }

@@ -3,8 +3,8 @@ import { executeOfflineRender } from './offlineRender/executeOfflineRender';
 import { type OfflineRenderOptions } from './offlineRender/types';
 
 type RenderOfflineFn = {
-    (opts: OfflineRenderOptions): Promise<AudioBuffer>;
     (durationBeats: number, sampleRate?: number): Promise<AudioBuffer>;
+    (opts: OfflineRenderOptions): Promise<AudioBuffer>;
 };
 
 /** Compatible live-project entry point; all project reads finish before the renderer can suspend. */

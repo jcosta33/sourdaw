@@ -1,93 +1,71 @@
-import { convertFloatChannelsToPcm, type PcmDitherOptions } from './convertFloatChannelsToPcm';
+import { type ExportAudioSource, type ExportByteWriter } from '../../models/ExportAudioSource';
 
+import { type PcmDitherOptions } from './convertFloatChannelsToPcm';
+import { createPcmBlockReader } from './createPcmBlockReader';
+
+export function audioBufferToWav(buffer: ExportAudioSource, bitDepth?: 16 | 24 | 32, onProgress?: (frac: number) => void, dither?: PcmDitherOptions): Promise<ArrayBuffer>;
+export function audioBufferToWav(buffer: ExportAudioSource, bitDepth: 16 | 24 | 32, onProgress: ((frac: number) => void) | undefined, dither: PcmDitherOptions | undefined, writer: ExportByteWriter): Promise<void>;
+/** The product writer awaits every bounded PCM block; legacy callers may still collect one file. */
 export async function audioBufferToWav(
-    buffer: AudioBuffer,
-    bitDepth: 16 | 24 | 32 = 16,
-    onProgress?: (frac: number) => void,
-    dither?: PcmDitherOptions
-): Promise<ArrayBuffer> {
+    buffer: ExportAudioSource, bitDepth: 16 | 24 | 32 = 16, onProgress?: (frac: number) => void,
+    dither?: PcmDitherOptions, writer?: ExportByteWriter
+): Promise<ArrayBuffer | void> {
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
     const isFloat = bitDepth === 32;
-    const bitsPerSample = bitDepth;
-    const bytesPerSample = bitsPerSample / 8;
+    const bytesPerSample = bitDepth / 8;
     const blockAlign = numChannels * bytesPerSample;
     const dataLength = buffer.length * blockAlign;
     const fmtSize = isFloat ? 18 : 16;
-    const headerLength = 20 + fmtSize + 8;
+    const headerLength = 28 + fmtSize;
     const totalLength = headerLength + dataLength;
-
-    const arrayBuffer = new ArrayBuffer(totalLength);
-    const view = new DataView(arrayBuffer);
-
-    function writeString(offset: number, str: string) {
-        for (let index = 0; index < str.length; index++) {
-            view.setUint8(offset + index, str.charCodeAt(index));
-        }
+    if (![16, 24, 32].includes(bitDepth) || !Number.isSafeInteger(buffer.length) || buffer.length < 0 ||
+        !Number.isInteger(numChannels) || numChannels < 1 || blockAlign > 0xffff ||
+        !Number.isInteger(sampleRate) || sampleRate <= 0 || sampleRate * blockAlign > 0xffffffff ||
+        !Number.isSafeInteger(totalLength) || totalLength - 8 > 0xffffffff) {
+        throw new Error('WAV export exceeds RIFF32 limits or has invalid PCM settings.');
     }
-
-    writeString(0, 'RIFF');
-    view.setUint32(4, totalLength - 8, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
-    view.setUint32(16, fmtSize, true);
-    view.setUint16(20, isFloat ? 3 : 1, true);
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * blockAlign, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitsPerSample, true);
-    if (isFloat) {
-        view.setUint16(36, 0, true);
-    }
-
-    const dataOffset = 12 + 8 + fmtSize;
-    writeString(dataOffset, 'data');
-    view.setUint32(dataOffset + 4, dataLength, true);
-
-    const channels: Float32Array[] = [];
-    for (let ch = 0; ch < numChannels; ch++) {
-        channels.push(buffer.getChannelData(ch));
-    }
-
-    // Gain/normalization, TPDF dither on bit-depth reduction, and quantization
-    // all live in the shared stage, so WAV, FLAC and MP3 deliver the same level
-    // and the same quantization treatment (OE-1).
-    const pcm = convertFloatChannelsToPcm({ channels, length: buffer.length, bitDepth, dither });
-    const pcmChannels: readonly (Int32Array | Float32Array)[] = pcm.channels;
-
-    const YIELD_INTERVAL = 32768;
-    const totalSamples = buffer.length * numChannels || 1;
-    let processed = 0;
-
-    // Channel-outer / sample-inner: each channel's array is read sequentially
-    // (cache-friendly) rather than striding across N separate channel arrays
-    // every frame. Writes stride by blockAlign back into the same interleaved
-    // layout, so the emitted bytes are identical.
-    for (let ch = 0; ch < numChannels; ch++) {
-        const data = pcmChannels[ch]!;
-        let offset = dataOffset + 8 + ch * bytesPerSample;
-        for (let index = 0; index < buffer.length; index++) {
-            const value = data[index]!;
-            if (bitDepth === 16) {
-                view.setInt16(offset, value, true);
-            } else if (bitDepth === 24) {
-                view.setUint8(offset, value & 0xff);
-                view.setUint8(offset + 1, (value >> 8) & 0xff);
-                view.setUint8(offset + 2, (value >> 16) & 0xff);
-            } else {
-                view.setFloat32(offset, value, true);
-            }
-            offset += blockAlign;
-
-            processed++;
-            if (processed % YIELD_INTERVAL === 0) {
-                onProgress?.(processed / totalSamples);
-                await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const chunks: Uint8Array[] = [];
+    const destination = writer ?? { write: async (bytes: Uint8Array) => { chunks.push(bytes); } };
+    destination.checkCancelled?.();
+    const header = new Uint8Array(headerLength);
+    const view = new DataView(header.buffer);
+    const text = (offset: number, value: string) => header.set(new TextEncoder().encode(value), offset);
+    text(0, 'RIFF'); view.setUint32(4, totalLength - 8, true); text(8, 'WAVE'); text(12, 'fmt ');
+    view.setUint32(16, fmtSize, true); view.setUint16(20, isFloat ? 3 : 1, true);
+    view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true); view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    text(20 + fmtSize, 'data'); view.setUint32(24 + fmtSize, dataLength, true);
+    const pcm = createPcmBlockReader({ source: buffer, bitDepth, dither });
+    await destination.write(header);
+    for (let start = 0; start < buffer.length; start += 4096) {
+        destination.checkCancelled?.();
+        const block = pcm.read(4096);
+        const bytes = new Uint8Array(block.length * blockAlign);
+        const blockView = new DataView(bytes.buffer);
+        let offset = 0;
+        for (let frame = 0; frame < block.length; frame++) {
+            for (const channel of block.channels) {
+                const value = channel[frame]!;
+                if (bitDepth === 16) blockView.setInt16(offset, value, true);
+                else if (bitDepth === 24) {
+                    bytes[offset] = value & 0xff; bytes[offset + 1] = (value >> 8) & 0xff;
+                    bytes[offset + 2] = (value >> 16) & 0xff;
+                } else blockView.setFloat32(offset, value, true);
+                offset += bytesPerSample;
             }
         }
+        await destination.write(bytes);
+        onProgress?.((start + block.length) / Math.max(1, buffer.length));
+        if ((start + block.length) % 32768 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
-
+    destination.checkCancelled?.();
     onProgress?.(1);
-    return arrayBuffer;
+    if (!writer) {
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const bytes of chunks) { result.set(bytes, offset); offset += bytes.length; }
+        return result.buffer;
+    }
 }

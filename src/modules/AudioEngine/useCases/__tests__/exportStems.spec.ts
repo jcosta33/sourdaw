@@ -325,7 +325,7 @@ describe('exportStems', () => {
                 failureKind: 'faust-device',
                 message: expect.stringMatching(/Delay Bus.*Tape Delay.*worklet module unavailable/),
             });
-            expect(offlineRenderMocks.renderWithTimeout).toHaveBeenCalledTimes(2);
+            expect(offlineRenderMocks.renderWithTimeout).toHaveBeenCalledTimes(1);
             expect(isExportActive()).toBe(false);
         } finally {
             offlineRenderMocks.isFaustModule.mockReturnValue(false);
@@ -1196,7 +1196,7 @@ describe('exportStems — option parsing, validation & control flow', () => {
             );
             try {
                 await expect(exportStems(4)).rejects.toBe(failure);
-                expect(destroy).toHaveBeenCalledTimes(2);
+                expect(destroy).toHaveBeenCalledTimes(1);
                 expect(isExportActive()).toBe(false);
             } finally {
                 vi.unstubAllGlobals();
@@ -1218,7 +1218,7 @@ describe('exportStems — option parsing, validation & control flow', () => {
 
     // The export's finally lowers the shared flag the moment the pool rejects. Stems still rendering
     // read their next checkpoint after that, so only the stem set's own scope signal can stop them.
-    it('stops every in-flight stem at its next checkpoint after the cancelled export lowered the flag', async () => {
+    it('stops the sole in-flight stem at its checkpoint and admits no waiting stem after cancellation', async () => {
         const stemTrack = (id: string) => ({ id, kind: 'midi', disabled: false, muted: false, devices: [] });
         offlineRenderMocks.resolveRenderContext.mockReturnValue({
             ...createRenderContext([stemTrack('bass'), stemTrack('keys'), stemTrack('lead')]),
@@ -1252,7 +1252,7 @@ describe('exportStems — option parsing, validation & control flow', () => {
                 (error: unknown) => error
             );
             await vi.waitFor(() => {
-                expect(contexts).toHaveLength(2);
+                expect(contexts).toHaveLength(1);
                 expect(contexts.every((context) => context.suspend.mock.calls.length > 0)).toBe(true);
             });
 
@@ -1263,17 +1263,10 @@ describe('exportStems — option parsing, validation & control flow', () => {
             expect(exportCancellationState.cancelFlag).toBe(false);
             const progressReportsAtCancel = onProgress.mock.calls.length;
 
-            contexts[1]!.reachCheckpoint();
-            await vi.waitFor(() => {
-                expect(contexts[1]!.close).toHaveBeenCalled();
-            });
-            // Let the cancelled stem's rejection reach the pool.
-            await new Promise((resolve) => setTimeout(resolve, 0));
-
+            expect(contexts[0]!.close).toHaveBeenCalledTimes(1);
             expect(contexts[0]!.resume).not.toHaveBeenCalled();
-            expect(contexts[1]!.resume).not.toHaveBeenCalled();
-            // The pool neither starts the waiting third stem nor reports stems settling after the cancel.
-            expect(contexts).toHaveLength(2);
+            // No waiting stem starts after the cancellation scope has settled.
+            expect(contexts).toHaveLength(1);
             expect(onProgress).toHaveBeenCalledTimes(progressReportsAtCancel);
         } finally {
             vi.unstubAllGlobals();
@@ -1314,25 +1307,21 @@ describe('exportStems — option parsing, validation & control flow', () => {
                 (error: unknown) => error
             );
             await vi.waitFor(() => {
-                expect(contexts).toHaveLength(2);
+                expect(contexts).toHaveLength(1);
                 expect(contexts.every((context) => context.suspend.mock.calls.length > 0)).toBe(true);
             });
 
             // Stem two clears its checkpoint while the export is still live, then Cancel arrives.
-            contexts[1]!.reachCheckpoint();
+            contexts[0]!.reachCheckpoint();
             await vi.waitFor(() => {
-                expect(contexts[1]!.resume).toHaveBeenCalledTimes(1);
+                expect(contexts[0]!.resume).toHaveBeenCalledTimes(1);
             });
             cancelExport();
-            contexts[0]!.reachCheckpoint();
+            contexts[0]!.finishRender();
             expect(await outcome).toMatchObject({ message: 'Export cancelled' });
             expect(exportCancellationState.cancelFlag).toBe(false);
 
-            contexts[1]!.finishRender();
-            // Let the finished stem settle in the pool.
-            await new Promise((resolve) => setTimeout(resolve, 0));
-
-            expect(contexts).toHaveLength(2);
+            expect(contexts).toHaveLength(1);
         } finally {
             vi.unstubAllGlobals();
         }

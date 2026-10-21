@@ -42,8 +42,9 @@ describe('flacEncoder', () => {
         // STREAMINFO block type should be 0 (with last-metadata-block flag = 0x80)
         expect(view.getUint8(4)).toBe(0x80);
 
-        // Min block size
+        // Fixed-block STREAMINFO excludes the final short frame from its nominal size.
         expect(view.getUint16(8, false)).toBe(4096);
+        expect(view.getUint16(10, false)).toBe(4096);
     });
 
     it('should encode a stereo AudioBuffer to FLAC', async () => {

@@ -250,6 +250,30 @@ export async function writeFileBytes({ bytes, path }: WriteFileBytesInput): Writ
     });
 }
 
+/** Export transactions accept no path after admission; their opaque token stays session scoped. */
+export async function beginExportFile(path: string): Promise<string> {
+    ensureNativeFilePath(path);
+    const token = await desktopInvoke('begin_export_file', { path });
+    if (typeof token !== 'string' || token.length === 0) throw new Error('Native export did not return a transaction token.');
+    return token;
+}
+
+export async function appendExportFile(token: string, bytes: Uint8Array): Promise<void> {
+    await invokeWithBinaryBody({ command: 'append_export_file', positionalMeta: [token], bytes, maxBytes: 1024 * 1024 });
+}
+
+export async function sealExportFile(token: string): Promise<void> {
+    await desktopInvoke('seal_export_file', { token });
+}
+
+export async function commitExportFiles(tokens: readonly string[]): Promise<void> {
+    await desktopInvoke('commit_export_files', { tokens });
+}
+
+export async function abortExportFiles(tokens: readonly string[]): Promise<void> {
+    await desktopInvoke('abort_export_files', { tokens });
+}
+
 type ReadFileBytesInput = {
     path: string;
 };
