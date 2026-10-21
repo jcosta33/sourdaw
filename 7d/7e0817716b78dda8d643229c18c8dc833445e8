@@ -1,0 +1,41 @@
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_ba8dd89de9aac7::t_ce0fc3be69cbd5 462-493,1370-1413
+scripts/e2eSelectionShadow.ts
+  s_ba8dd89de9aac7::t_884c4a96b9414e 279-281,283-286
+scripts/e2eSelectionShadowAgreement.ts
+  s_59e31a5c6f3e31::t_68492db9592c40 5,7,103-142,146-148,150,154,161-163,174
+scripts/e2eSelectionShadowCompatibility.ts
+  s_1c08b47ac3792f::t_cfcee3a9026b21 159-160,175-185,195-197,200-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d7e0817716b78dda8d643229c18c8dc833445e8",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
