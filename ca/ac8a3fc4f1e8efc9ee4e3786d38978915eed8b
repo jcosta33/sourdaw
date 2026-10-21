@@ -1,0 +1,33 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_ba8dd89de9aac7::t_82869e1053b589 369-412
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ba8dd89de9aac7::t_b082c0d6e39aa1 964-965,1026-1027,1073-1074
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLiveSeam.spec.ts
+  s_ba8dd89de9aac7::t_0adba8408b7c9a 127-129,137,150,175-232
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  s_ba8dd89de9aac7::t_9c20dac4e9dc8c 309-346
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_ba8dd89de9aac7::t_f75c7b98fc40ed 70-72,146-147,227,318-320
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_ba8dd89de9aac7::t_662069999290c2 39-41,79,93-95
+src/utils/__tests__/audioSourceTime.spec.ts
+  s_ba8dd89de9aac7::t_8a115f9de972ab 82-151
+src/utils/audioSourceTime.ts
+  s_ba8dd89de9aac7::t_2551e6f9deda40 104-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "caac8a3fc4f1e8efc9ee4e3786d38978915eed8b",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
