@@ -21,7 +21,7 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * pick must appear whole in the clause's original text, a name fragment anywhere in it, and an
  * owner-track pick as that track's whole name or id; the text read leaves out the request's
  * restrictions and the values the batch writes. A selection reference ("this track", "the selected
- * track") that resolves to the picked objects states any of those picks.
+ * track", "it" for the selected track) that resolves to the picked objects states any of those picks.
  *
  * Literal targets, and selections by role, role family, kind, device type, tag, condition or no
  * filter at all, are taken as the compiler resolved them, as before this check; so are names the
@@ -261,8 +261,14 @@ function getNamePicks(input: CompiledTargetAuthorityInput): NamePicks {
     return picks;
 }
 
-/** Whether the clause's own selection reference ("this track", "the selected track") is the object. */
+/**
+ * Whether the clause's own selection reference is the object: "this track" or "the selected track"
+ * through the direct route's selection reading, or "it" for the selected track.
+ */
 function selectsObject(text: string, objectId: string, capability: Capability, context: ProjectContext): boolean {
+    if (objectId === context.selectedTrackId && /\bit\b/iu.test(text)) {
+        return true;
+    }
     const result = resolveAgentReference({ prompt: text, assertedId: objectId, capability, context });
     return result.status === 'resolved' && result.evidence === 'selection';
 }

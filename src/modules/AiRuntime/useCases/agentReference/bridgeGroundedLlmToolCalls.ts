@@ -4024,7 +4024,6 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
-
 function compiledTargetRefusalReason(authority: CompiledTargetAuthority, argument: string): string | null {
     if (authority.status === 'admitted') {
         return null;

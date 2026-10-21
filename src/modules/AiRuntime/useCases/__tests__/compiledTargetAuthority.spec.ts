@@ -1142,6 +1142,18 @@ describe('a selection reference states the name a selector picks the selected tr
     );
 });
 
+describe('a selection reference states only the track that is selected', () => {
+    it('refuses a Keys name selector for "add a compressor to it" with Vocals selected', () => {
+        const result = compileAndBridge('add a compressor to it', [addDeviceItem(mixKeys, 'builtin-compressor')], [], {
+            ...mixContext,
+            selectedTrackId: mixVocals.id,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'addDevice', reason: UNAUTHORIZED_TRACK });
+    });
+});
+
 describe('literal targets are taken as the compiler resolved them', () => {
     it.each([
         ['route Vocals to the reverb', 'setTrackOutput', { outputId: mixReverbBus.id }],
