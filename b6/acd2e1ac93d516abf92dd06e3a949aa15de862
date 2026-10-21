@@ -1,0 +1,21 @@
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_59e31a5c6f3e31::t_81bc5fbaec4c4f 9-10,18-20,290-344,405,494,497-512,516-517,520-550,552-572,574-576,578-579,581-584,588-594,603
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  s_59e31a5c6f3e31::t_aeda54c3131cfd 20,24,29,43-44,55-73,75-90,92-116,126-150,154,164-193,195-196,199,201-238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b6acd2e1ac93d516abf92dd06e3a949aa15de862",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
