@@ -1842,65 +1842,73 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     const sampleTimer = setInterval(sampleTick, input.sampleIntervalMs ?? defaultSampleIntervalMs);
     const timeoutTimer = setTimeout(() => stop('timeout'), timeoutMs);
 
-    try {
-        const result = await childCompletion;
-        if (child.pid !== undefined && reason === undefined) {
-            const exitedCleanly = await waitForProcessTreeExit(child.pid, tracked, processToken, 500);
-            if (!exitedCleanly) {
-                terminateProcessTree(child.pid, 'SIGTERM', tracked, processToken);
-                const exitedAfterTerm = await waitForProcessTreeExit(child.pid, tracked, processToken, 1_000);
-                if (!exitedAfterTerm) {
-                    terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
-                    const exitedAfterKill = await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000);
-                    if (!exitedAfterKill) {
-                        output.append(
-                            Buffer.from(`\nprocesses survived forced cleanup:\n${sessionProcessSummary(processToken)}`)
-                        );
-                        reason = 'leak';
+    const completion = await (async () => {
+        try {
+            const result = await childCompletion;
+            if (child.pid !== undefined && reason === undefined) {
+                const exitedCleanly = await waitForProcessTreeExit(child.pid, tracked, processToken, 500);
+                if (!exitedCleanly) {
+                    terminateProcessTree(child.pid, 'SIGTERM', tracked, processToken);
+                    const exitedAfterTerm = await waitForProcessTreeExit(child.pid, tracked, processToken, 1_000);
+                    if (!exitedAfterTerm) {
+                        terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
+                        const exitedAfterKill = await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000);
+                        if (!exitedAfterKill) {
+                            output.append(
+                                Buffer.from(
+                                    `\nprocesses survived forced cleanup:\n${sessionProcessSummary(processToken)}`
+                                )
+                            );
+                            reason = 'leak';
+                        }
                     }
                 }
             }
+            if (child.pid !== undefined && reason !== undefined) {
+                await waitForProcessTreeExit(child.pid, tracked, processToken, 7_000);
+            }
+            await cleanupStorage();
+            return { succeeded: true as const, result };
+        } catch (error) {
+            await cleanupStorage();
+            return { succeeded: false as const, error };
+        } finally {
+            clearInterval(sampleTimer);
+            clearTimeout(timeoutTimer);
+            process.removeListener('SIGINT', onSigint);
+            process.removeListener('SIGTERM', onSigterm);
+            if (forceKillTimer !== undefined) {
+                clearTimeout(forceKillTimer);
+            }
+            // The existing final attempt can prove removal after the first attempt could not.
+            await cleanupStorage();
         }
-        if (child.pid !== undefined && reason !== undefined) {
-            await waitForProcessTreeExit(child.pid, tracked, processToken, 7_000);
-        }
-        const storageRemoved = await cleanupStorage();
+    })();
+    if (!completion.succeeded) {
         if (!storageRemoved) {
-            output.append(
-                Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
-            );
-            reason ??= 'leak';
-        }
-        const tail = output.result();
-        return {
-            ...result,
-            signal: interruptedSignal ?? result.signal,
-            reason,
-            ...tail,
-            peakRssBytes,
-            maxRssBytes,
-            durationMs: Date.now() - startedAt,
-        };
-    } catch (error) {
-        const cleaned = await cleanupStorage();
-        if (!cleaned) {
             throw new Error(
-                `${error instanceof Error ? error.message : String(error)}; guard storage retained: ownership or process-tree exit unproved`,
-                { cause: error }
+                `${completion.error instanceof Error ? completion.error.message : String(completion.error)}; guard storage retained: ownership or process-tree exit unproved`,
+                { cause: completion.error }
             );
         }
-        throw error;
-    } finally {
-        clearInterval(sampleTimer);
-        clearTimeout(timeoutTimer);
-        process.removeListener('SIGINT', onSigint);
-        process.removeListener('SIGTERM', onSigterm);
-        if (forceKillTimer !== undefined) {
-            clearTimeout(forceKillTimer);
-        }
-        // Spawn errors still need cleanup; a removed run is already absent on the normal route.
-        await cleanupStorage();
+        throw completion.error;
     }
+    if (!storageRemoved) {
+        output.append(
+            Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
+        );
+        reason ??= 'leak';
+    }
+    const tail = output.result();
+    return {
+        ...completion.result,
+        signal: interruptedSignal ?? completion.result.signal,
+        reason,
+        ...tail,
+        peakRssBytes,
+        maxRssBytes,
+        durationMs: Date.now() - startedAt,
+    };
 }
 
 export function emitGuardedResult(label: string, result: GuardedCommandResult, showSuccessOutput = false): number {

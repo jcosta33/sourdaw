@@ -440,39 +440,60 @@ describe('guard-owned temporary storage', () => {
             scenario: 'successful child and final proof',
             proof: 'complete',
             childExit: 0,
-            timeout: false,
+            diskPressure: false,
             reason: undefined,
         },
         {
             scenario: 'nonzero child and final proof',
             proof: 'complete',
             childExit: 7,
-            timeout: false,
+            diskPressure: false,
             reason: undefined,
         },
         {
-            scenario: 'earlier timeout and final proof',
+            scenario: 'earlier disk pressure and final proof',
             proof: 'complete',
             childExit: 0,
-            timeout: true,
-            reason: 'timeout',
+            diskPressure: true,
+            reason: 'pressure',
         },
-        { scenario: 'persistent incomplete proof', proof: 'incomplete', childExit: 0, timeout: false, reason: 'leak' },
-        { scenario: 'persistent thrown proof', proof: 'throws', childExit: 0, timeout: false, reason: 'leak' },
+        {
+            scenario: 'persistent incomplete proof',
+            proof: 'incomplete',
+            childExit: 0,
+            diskPressure: false,
+            reason: 'leak',
+        },
+        { scenario: 'persistent thrown proof', proof: 'throws', childExit: 0, diskPressure: false, reason: 'leak' },
     ] as const)(
         'reports final owned-storage disposition for $scenario',
-        async ({ proof, childExit, timeout, reason }) => {
+        async ({ proof, childExit, diskPressure, reason }) => {
             const root = fixture();
             const marker = join(root, 'child.json');
             const proofPaths: string[] = [];
             const releases: { treeStopped: boolean; removed?: boolean; threw?: boolean }[] = [];
+            const retainedLine = 'guard storage retained: process-tree exit or storage ownership could not be proved';
+            let tempExistedWhileAlive = false;
             let tempDirectory: string | undefined;
             const result = await guarded(root, {
                 args: [
                     '-e',
-                    `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));${timeout ? 'setInterval(() => {}, 1000)' : `process.exit(${childExit})`}`,
+                    `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));${diskPressure ? 'setInterval(() => {}, 1000)' : `${childExit === 7 ? `process.stdout.write(${JSON.stringify(`${retainedLine}\n`)});` : ''}process.exitCode=${childExit}`}`,
                 ],
-                ...(timeout ? { timeoutMs: 1_000 } : {}),
+                ...(diskPressure
+                    ? {
+                          hostSampleIntervalMs: 20,
+                          sampleIntervalMs: 20,
+                          diskSampler: () => {
+                              if (!existsSync(marker)) {
+                                  return 1000;
+                              }
+                              const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+                              tempExistedWhileAlive ||= isAlive(started.pid) && existsSync(started.tmp);
+                              return 0;
+                          },
+                      }
+                    : {}),
                 storageFactory: (input) => {
                     const storage = createGuardStorage({
                         ...input,
@@ -506,6 +527,9 @@ describe('guard-owned temporary storage', () => {
             expect(existsSync(marker)).toBe(true);
             const child: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             childPids.add(child.pid);
+            if (diskPressure) {
+                expect(tempExistedWhileAlive).toBe(true);
+            }
             expect(isAlive(child.pid)).toBe(false);
             expect(child.tmp).toBe(tempDirectory);
             expect(tempDirectory).toBeDefined();
@@ -543,9 +567,12 @@ describe('guard-owned temporary storage', () => {
                 expect(JSON.parse(readFileSync(ownerPath, 'utf8')).token).toBe(token);
             }
             expect(claimPayloads(join(root, 'storage'))).toEqual([]);
-            expect(result.code).toBe(timeout ? null : childExit);
+            expect(result.code).toBe(diskPressure ? null : childExit);
             expect(result.reason).toBe(reason);
-            expect(result.output.includes('guard storage retained:')).toBe(retained);
+            expect(result.output.split(retainedLine).length - 1).toBe(retained || childExit === 7 ? 1 : 0);
+            if (diskPressure) {
+                expect(result.output).toContain('disk space below');
+            }
         },
         10_000
     );
