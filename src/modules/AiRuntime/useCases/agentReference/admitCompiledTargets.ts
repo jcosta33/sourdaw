@@ -10,8 +10,8 @@ import { CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
-import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
+import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
