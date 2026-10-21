@@ -179,6 +179,20 @@ async function recordingSnapshot(page: Page, trackId: string): Promise<Recording
     }, trackId);
 }
 
+async function expectNoAuditionRecording(page: Page, trackId: string, takeIds: string[]): Promise<void> {
+    await expect(page.getByTestId('transport-record')).toHaveAttribute('aria-pressed', 'false');
+    const sessionStatus = await page.evaluate(async (id) => {
+        const { activeSessions } =
+            await import('/src/modules/AudioEngine/repositories/audioRecorder/recordingSession.ts');
+        return activeSessions.get(id)?.status ?? null;
+    }, trackId);
+    expect(sessionStatus, 'an audition must not open a native recording session').toBeNull();
+    expect(
+        (await recordingSnapshot(page, trackId))?.takes.map((take) => take.id),
+        'an audition must keep the original recorded take IDs'
+    ).toEqual(takeIds);
+}
+
 async function recordedEnvelope(page: Page, bufferId: string): Promise<number[]> {
     return page.evaluate(async (id) => {
         const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/audioBufferCache.ts');
@@ -689,9 +703,17 @@ test('records real microphone PCM through punch-loop passes, comps it, undoes, e
         }
         await expect(page.locator('[title^="Comp:"]')).toHaveCount(3);
 
+        // An armed track with Punch enabled auto-records on Play; disarm through the real track control before audition.
+        const originalTakeIds = captured.takes.map((take) => take.id);
+        const armButton = page.getByTestId(`track-arm-${trackId}`);
+        await armButton.click();
+        await expect(armButton).toHaveAttribute('aria-label', 'Arm Punch mic');
+        await expectNoAuditionRecording(page, trackId, originalTakeIds);
+
         await prepareRecordedBufferObserver(page, captured.bufferId);
         await seek(page, LOOP_START);
         await page.getByTestId('transport-play').click();
+        await expectNoAuditionRecording(page, trackId, originalTakeIds);
         const positions = await selectedSourcePositions(page, trackId);
         const expectedOffsets = positions
             .filter((position) => compPlan.some((region) => Math.abs(region.start - position.startBeat) < 0.1))
@@ -709,6 +731,7 @@ test('records real microphone PCM through punch-loop passes, comps it, undoes, e
             )
             .toBe(3);
         await page.getByTestId('transport-stop').click();
+        await expectNoAuditionRecording(page, trackId, originalTakeIds);
         const starts = await nativeStarts(page);
         expect(starts.some((entry) => entry.recordedBuffer && (entry.durationSeconds ?? 0) > 0)).toBe(true);
         for (const region of comped.regions) {
@@ -735,13 +758,17 @@ test('records real microphone PCM through punch-loop passes, comps it, undoes, e
         await prepareRecordedBufferObserver(page, captured.bufferId);
         await seek(page, LOOP_START);
         await page.getByTestId('transport-play').click();
+        await expectNoAuditionRecording(page, trackId, originalTakeIds);
         await expect
             .poll(async () => (await nativeStarts(page)).filter((entry) => entry.recordedBuffer).length, {
                 timeout: 8_000,
             })
             .toBeGreaterThanOrEqual(3);
         await page.getByTestId('transport-stop').click();
+        await expectNoAuditionRecording(page, trackId, originalTakeIds);
         const stretchExportScore = await compareExportWithSelectedPhrase(page, trackId, captured.bufferId, 1.1);
+
+        await expectNoAuditionRecording(page, trackId, originalTakeIds);
 
         const projectId = await page.evaluate(async () => {
             const { projectStore } = await import('/src/modules/Project/stores/projectStore.ts');
@@ -796,15 +823,18 @@ test('records real microphone PCM through punch-loop passes, comps it, undoes, e
         expect(persisted?.bufferId).toBe(captured.bufferId);
         expect(persisted?.takes.map((take) => take.id)).toEqual(captured.takes.map((take) => take.id));
         expect(persisted?.regions).toEqual(comped?.regions);
+        await expect(reopened.getByTestId(`track-arm-${trackId}`)).toHaveAttribute('aria-label', 'Arm Punch mic');
         await prepareRecordedBufferObserver(reopened, captured.bufferId);
         await seek(reopened, LOOP_START);
         await reopened.getByTestId('transport-play').click();
+        await expectNoAuditionRecording(reopened, trackId, originalTakeIds);
         await expect
             .poll(async () => (await nativeStarts(reopened)).filter((entry) => entry.recordedBuffer).length, {
                 timeout: 8_000,
             })
             .toBeGreaterThanOrEqual(3);
         await reopened.getByTestId('transport-stop').click();
+        await expectNoAuditionRecording(reopened, trackId, originalTakeIds);
         const reopenedExportScore = await compareExportWithSelectedPhrase(reopened, trackId, captured.bufferId, 1.1);
         await testInfo.attach('punch-loop-acceptance-evidence', {
             body: JSON.stringify(
