@@ -22,6 +22,49 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
+
+PR #5345 excused an uninspectable same-UID process only when it predated the run's live
+supervisor. Every runner-account row that reclaims an exited or crashed run through a later guard
+start, including a moved claim, still met the boot-time process denying `/proc/<pid>/cwd` and
+retained that storage indefinitely, so the "Review tooling unit suite" stayed red on main. The
+review accepted "recovery excuses nothing" as the safe side without running a recovery row beside
+an older denied process; a dead owner's start still bounds what could have inherited from it.
+
+Probe: recover a dead owner's storage, directly and from a moved claim, beside a denied process
+older than that owner, and require reclamation. Bound the excuse by the start ticks the creating
+supervisor recorded in its ownership record, never by the reclaimer's start; require retention for
+a denied process started at or after that owner and for a record that carries no start ticks.
+
+### 2026-10-21 — the storage census attributed foreign same-UID processes to every run (introduced by PR #5274)
+
+PR #5274 proved its Linux file census only in a fresh isolated account. In the runner account a
+long-lived same-UID process with EACCES on `/proc/<pid>/cwd` made every cleanup unknown, so nightly
+unit shards and the runner-account "Review tooling unit suite" reported `leak`. That suite was
+skipped on #5274 because its profile was broad, and the isolated unit shards have no foreign
+processes.
+
+Probe: run a guarded no-op in a populated Linux account beside an uninspectable process that
+predates the supervisor, and require reclamation. Keep the denial retained for a process started
+at or after the supervisor that created the storage, and for every denial whose owner start cannot
+be established; the next escape shows why recovery must still apply the dead owner's recorded start.
+
+### 2026-10-12 — transient Darwin descriptor omission exhausted complete-census admission
+
+PR #5274 (`40baa0716b`) added conservative whole-account file proof but allowed only two
+observations. Live account captures later showed complete/incomplete/complete catalogs;
+the incomplete records had `f,n` without `t`. A vnode can have that shape, so skipping
+nonabsolute unknown records cannot prove safe deletion. The historical review stance,
+prompt and tier are unestablished; the uncovered risk was bounded census availability.
+
+Probe: inject two successive missing-type catalogs, then a wholly usable third catalog
+with fresh before/after PID coverage. Require owned release only from the complete catalog.
+Persistent omissions, a third live borrower, expiry of the original five-second budget,
+and an uncovered live PID in the final catalog must retain storage. Descriptor omissions and
+exclusively new, same-UID live PID gaps may each discard a whole catalog only while another
+of the three observations remains. A previously missing PID still present in the next
+pre-sample is not new. Never merge partial catalogs or extend the deadline.
+
 ### 2026-10-10 — verification temporary storage lacked an owned deletion boundary
 
 The original resource guard (`0e20269791`, retained through PR #2449) contained processes without
@@ -47,7 +90,10 @@ Probe Linux terminal file proof with a real unreaped child and a zombie leader w
 Require matching PID/thread-group/four UIDs and one thread; denied, incomplete or expired status
 retains. File release never grants authority to treat a registered PID as gone.
 UID equality does not grant `/proc` readlink access: dumpability and access policy can deny a live
-same-UID cwd or file descriptor. Keep denial unknown and retain storage. For hosted test isolation,
+same-UID cwd or file descriptor. Keep denial unknown and retain storage, except for a process that
+started before the supervisor that created the storage (read live, or from its recorded start ticks
+during recovery) and so inherited no cwd or descriptor from it; that start time does not prove it
+never opens a storage path it is later handed. For hosted test isolation,
 prove the account's UID unused before install, all runtime identity fields unprivileged, groups and
 capabilities cleared, and private storage owned. Attack denied same-test-UID consumers before worker
 concurrency and require actual retention followed by reclamation after reaping. Account isolation

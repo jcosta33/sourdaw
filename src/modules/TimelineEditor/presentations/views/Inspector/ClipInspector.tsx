@@ -65,11 +65,16 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
     // as the gain slider and a timeline drag: the drag only moves local
     // thumb state — the store does not react mid-gesture — and the commit
     // dispatches the registered trim action once with the committed value.
+    // A commit landing on the clip's current bound (an unchanged numeric
+    // edit) dispatches nothing, so it consumes no undo step.
     const [trimStartDrag, setTrimStartDrag] = useState<number | null>(null);
     const [trimEndDrag, setTrimEndDrag] = useState<number | null>(null);
 
     const commitTrimStart = (beat: number): void => {
         setTrimStartDrag(null);
+        if (beat === clip.startBeat) {
+            return;
+        }
         void executeUserAppAction({
             type: 'trimClipStart',
             payload: { clipId: clip.id, newStartBeat: beat },
@@ -78,6 +83,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
 
     const commitTrimEnd = (beat: number): void => {
         setTrimEndDrag(null);
+        if (beat === clip.endBeat) {
+            return;
+        }
         void executeUserAppAction({
             type: 'trimClipEnd',
             payload: { clipId: clip.id, newEndBeat: beat },
