@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { CRUST_PARAM_IDS } from '../../models/CrustParamIds';
-import { asCrustOversampleFactor, type CrustPatch } from '../../models/CrustPatch';
+import { asCrustOversampleFactor, crustDisclosureLevelFromState, type CrustPatch } from '../../models/CrustPatch';
 import { getCrustState, loadCrustPatch } from '../../stores/crustStore';
 
 import {
@@ -162,6 +162,10 @@ export function hydrateCrustPatchFromProject(deviceId: string): void {
     patch = withEnumFields(patch, parameterValues);
     patch = withStoredOversampling(patch, parameterValues[CRUST_PARAM_IDS.oversampling]);
     patch = withStoredBitDepth(patch, parameterValues[CRUST_PARAM_IDS.outputBitDepth]);
+    const uiLevel = crustDisclosureLevelFromState(device.deviceState);
+    if (patch.uiLevel !== uiLevel) {
+        patch = { ...patch, uiLevel };
+    }
 
     if (patch !== currentPatch) {
         loadCrustPatch(deviceId, patch);

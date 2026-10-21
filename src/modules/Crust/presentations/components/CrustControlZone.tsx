@@ -19,6 +19,7 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/utils/Styles/cn';
+import { effectDisclosureTierFromLevel, isEffectDisclosureStageVisible } from '#/utils/UI/effectDisclosureTier';
 
 import { CRUST_PARAM_IDS } from '../../models/CrustParamIds';
 import { type CrustDither, type CrustPatch } from '../../models/CrustPatch';
@@ -243,6 +244,7 @@ const LevelTile = ({
         )}
         onClick={onClick}
         aria-pressed={active}
+        aria-label={`Style ${label}`}
     >
         <span className="text-compact font-semibold leading-tight">{label}</span>
         <span className="mt-1 whitespace-pre-line text-center text-micro leading-snug text-muted-foreground/45">
@@ -357,6 +359,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 size="xs"
                 role="switch"
                 aria-checked={patch.satEnabled}
+                aria-label="Saturation"
                 onClick={() => setParam(CRUST_PARAM_IDS.satEnabled, !patch.satEnabled)}
             />
         }
@@ -613,15 +616,7 @@ export const CrustControlZone = ({
     truepeakMax,
     grDb,
 }: Props): ReactElement => {
-    const level = patch.uiLevel;
-
-    if (level === 1) {
-        return (
-            <div className="h-full animate-in fade-in duration-150">
-                <Level1 patch={patch} setParam={setParam} />
-            </div>
-        );
-    }
+    const tier = effectDisclosureTierFromLevel(patch.uiLevel);
 
     return (
         <Stack
@@ -629,18 +624,19 @@ export const CrustControlZone = ({
             className="px-2 py-1.5 overflow-y-auto animate-in fade-in duration-150"
             style={{ maxHeight: '100%' }}
         >
-            <Level2Core patch={patch} setParam={setParam} />
+            <Level1 patch={patch} setParam={setParam} />
+            {isEffectDisclosureStageVisible(tier, 'shape') ? <Level2Core patch={patch} setParam={setParam} /> : null}
 
-            {level >= 3 ? (
+            {isEffectDisclosureStageVisible(tier, 'build') ? (
                 <>
                     <SatSection patch={patch} setParam={setParam} />
                     <Level3Extra patch={patch} setParam={setParam} />
                 </>
             ) : null}
 
-            {level >= 4 ? <Level4Extra patch={patch} setParam={setParam} /> : null}
+            {isEffectDisclosureStageVisible(tier, 'route') ? <Level4Extra patch={patch} setParam={setParam} /> : null}
 
-            {level >= 5 ? (
+            {isEffectDisclosureStageVisible(tier, 'lab') ? (
                 <Level5Stats
                     lufsIntegrated={lufsIntegrated}
                     lufsShortTerm={lufsShortTerm}

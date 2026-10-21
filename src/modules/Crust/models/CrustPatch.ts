@@ -16,6 +16,27 @@ export type CrustDither = 'off' | 'tpdf16' | 'tpdf24' | 'powr1' | 'powr2' | 'pow
 
 export type CrustScrollSpeed = 'slow' | 'normal' | 'fast';
 
+/** A newer or malformed project chunk is displayed at Play without reinterpretation. */
+export function crustDisclosureLevelFromState(
+    state: { version: number; data: { [key: string]: unknown } } | undefined
+): 1 | 2 | 3 | 4 | 5 {
+    if (state?.version !== 1) {
+        return 1;
+    }
+    switch (state.data.disclosureTier) {
+        case 'shape':
+            return 2;
+        case 'build':
+            return 3;
+        case 'route':
+            return 4;
+        case 'lab':
+            return 5;
+        default:
+            return 1;
+    }
+}
+
 /**
  * The oversampling factors the engine distinguishes, ascending.
  *
@@ -142,7 +163,7 @@ export const DEFAULT_CRUST_PATCH: CrustPatch = {
     stereoMode: 'stereo',
     dither: 'off',
     outputBitDepth: 24,
-    uiLevel: 2,
+    uiLevel: 1,
     scrollSpeed: 'normal',
     streamingPreset: 'spotify',
 };

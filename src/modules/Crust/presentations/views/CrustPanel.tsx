@@ -3,6 +3,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawEffectDisclosure } from '#/components/daw/DawEffectDisclosure';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
@@ -14,6 +15,11 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
+import {
+    effectDisclosureLevel,
+    effectDisclosureTierFromLevel,
+    isEffectDisclosureStageVisible,
+} from '#/utils/UI/effectDisclosureTier';
 
 import { CRUST_PARAM_IDS } from '../../models/CrustParamIds';
 import { CRUST_OVERSAMPLE_FACTORS, type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
@@ -114,6 +120,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const allInstances = useStore(crustStore, defaultCrustInstances);
     const trackState = useStore(trackStore, defaultTrackState);
     const { patch } = allInstances[deviceId] ?? getCrustState(deviceId);
+    const disclosureTier = effectDisclosureTierFromLevel(patch.uiLevel);
     const meters = useCrustMeters(deviceId);
     const [presetMenuOpen, setPresetMenuOpen] = useState(false);
     const [streamingMenuOpen, setStreamingMenuOpen] = useState(false);
@@ -128,13 +135,11 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const truepeakMax = meters.truepeakMax;
     const truepeakExceeded = meters.truepeakExceeded;
 
-    const projectParameterValues = trackState.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)?.parameterValues;
+    const projectDevice = trackState.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
 
     useEffect(() => {
         hydrateCrustPatchFromProject(deviceId);
-    }, [deviceId, projectParameterValues]);
+    }, [deviceId, projectDevice?.parameterValues, projectDevice?.deviceState]);
 
     const lufsTarget = getLufsTarget(patch.streamingPreset);
     const activeStreamingPreset = STREAMING_PRESETS.find((preset) => preset.id === patch.streamingPreset);
@@ -155,19 +160,11 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     <div className="text-[13px] font-semibold text-foreground">Crust</div>
                 </Stack>
 
-                <Row align="stretch" wrap gap={1.5}>
-                    {([1, 2, 3, 4, 5] as const).map((level) => (
-                        <DawPluginChip
-                            key={level}
-                            active={patch.uiLevel === level}
-                            tone="copper"
-                            size="sm"
-                            onClick={() => setCrustPanelUiLevel(deviceId, level)}
-                        >
-                            L{level}
-                        </DawPluginChip>
-                    ))}
-                </Row>
+                <DawEffectDisclosure
+                    tier={disclosureTier}
+                    tone="copper"
+                    onChange={(tier) => void setCrustPanelUiLevel(deviceId, effectDisclosureLevel(tier))}
+                />
 
                 <div className="relative shrink-0">
                     <Button
@@ -414,7 +411,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     True peak
                 </DawPluginChip>
 
-                {patch.uiLevel >= 2 ? (
+                {isEffectDisclosureStageVisible(disclosureTier, 'shape') ? (
                     <Row align="stretch" wrap gap={1.5}>
                         {CRUST_OVERSAMPLE_FACTORS.map((option) => (
                             <DawPluginChip
@@ -431,22 +428,26 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 ) : null}
 
                 <Row align="stretch" wrap gap={1.5} className="ml-auto">
-                    <DawPluginChip
-                        active={patch.unityGain}
-                        tone="copper"
-                        size="sm"
-                        onClick={() => handleSetParam(CRUST_PARAM_IDS.unityGain, !patch.unityGain)}
-                    >
-                        A=B
-                    </DawPluginChip>
-                    <DawPluginChip
-                        active={patch.deltaListen}
-                        tone="copper"
-                        size="sm"
-                        onClick={() => handleSetParam(CRUST_PARAM_IDS.deltaListen, !patch.deltaListen)}
-                    >
-                        Delta
-                    </DawPluginChip>
+                    {isEffectDisclosureStageVisible(disclosureTier, 'build') ? (
+                        <>
+                            <DawPluginChip
+                                active={patch.unityGain}
+                                tone="copper"
+                                size="sm"
+                                onClick={() => handleSetParam(CRUST_PARAM_IDS.unityGain, !patch.unityGain)}
+                            >
+                                A=B
+                            </DawPluginChip>
+                            <DawPluginChip
+                                active={patch.deltaListen}
+                                tone="copper"
+                                size="sm"
+                                onClick={() => handleSetParam(CRUST_PARAM_IDS.deltaListen, !patch.deltaListen)}
+                            >
+                                Delta
+                            </DawPluginChip>
+                        </>
+                    ) : null}
                     <DawPluginChip
                         type="button"
                         tone="copper"
