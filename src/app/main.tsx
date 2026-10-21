@@ -25,7 +25,8 @@ function paintAppShellMarker(container: HTMLElement): void {
 const hasDesktopBridge = 'sourdaw' in window;
 const composition = resolveAppComposition({
     hasDesktopBridge,
-    isDevelopment: import.meta.env.DEV,
+    // CI browser shards serve an e2e-mode production build, which must honour the direct test viewport too.
+    isDevelopment: import.meta.env.DEV || import.meta.env.MODE === 'e2e',
     isTopLevel: window.parent === window,
     protocol: window.location.protocol,
     userAgent: navigator.userAgent,
