@@ -69,15 +69,14 @@ export default async function warmFirstPaint(config: FullConfig): Promise<void> 
     }
 
     for (const baseURL of baseURLs) {
+        logWarmupPhase(`${baseURL} checkout identity: start`);
+        await assertServingCheckoutIdentity(baseURL, resolve(import.meta.dirname, '../..'));
+        logWarmupPhase('checkout identity: complete');
         await warmOrigin(baseURL);
     }
 }
 
 async function warmOrigin(baseURL: string): Promise<void> {
-    logWarmupPhase(`${baseURL} checkout identity: start`);
-    await assertServingCheckoutIdentity(baseURL, resolve(import.meta.dirname, '../..'));
-    logWarmupPhase('checkout identity: complete');
-
     logWarmupPhase('browser launch: start');
     const browser = await chromium.launch();
     logWarmupPhase('browser launch: complete');
