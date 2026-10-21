@@ -15,6 +15,11 @@ scripts/__tests__/e2eLaunchOverlayBound.spec.ts
   "git_ai_version": "1.7.5",
   "base_commit_sha": "cdf56ae23082998f2f3be0264309ca2c6025dee2",
   "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
   "sessions": {
     "s_ba8dd89de9aac7": {
       "agent_id": {
