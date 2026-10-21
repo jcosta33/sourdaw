@@ -49,12 +49,16 @@ import { writeNativeAudioMixdownFile } from '../../useCases/audioExport/writeNat
 import { writeNativeAudioStemFile } from '../../useCases/audioExport/writeNativeAudioStemFile';
 import { normalizeExportBuffer } from '../../useCases/normalizeExportBuffer';
 import { renderToClip } from '../../useCases/renderToClip';
+import { validatePodcastMetadata } from '../../useCases/validatePodcastMetadata';
 
+import { PODCAST_RSS_MP3_PRESET } from './deliveryPresets';
 import { deriveStemFileBaseNames } from './deriveStemFileBaseNames';
 import {
     EXPORT_SAMPLE_RATES,
     loadExportSettings,
     MAX_MANUAL_TAIL_SECONDS,
+    MIN_EXPORT_TARGET_LUFS,
+    MAX_EXPORT_TARGET_LUFS,
     R128_CEILING_DB_TP,
     R128_TARGET_LUFS,
     saveExportSettings,
@@ -191,6 +195,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [mp3BitRate, setMp3BitRate] = useState<Mp3BitRate>(defaults.mp3BitRate);
     const [dither, setDither] = useState<ExportDither>(defaults.dither);
     const [normalization, setNormalization] = useState<ExportNormalization>(defaults.normalization);
+    const [targetLufs, setTargetLufs] = useState(defaults.targetLufs ?? R128_TARGET_LUFS);
+    const [deliveryPreset, setDeliveryPreset] = useState('custom');
+    const [podcastMetadata, setPodcastMetadata] = useState({ title: '', artist: '', description: '' });
     const [exporting, setExporting] = useState(false);
     const [progress, setProgress] = useState(0);
     const [statusText, setStatusText] = useState('');
@@ -291,7 +298,15 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         // format change only constrains which depths are OFFERED and which one
         // the encode resolves to, so unchecking FLAC restores 32-bit.
         setFormats(next);
-        saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth, mp3BitRate, dither, normalization });
+        saveExportSettings({
+            formats: Array.from(next),
+            sampleRate,
+            bitDepth,
+            mp3BitRate,
+            dither,
+            normalization,
+            targetLufs,
+        });
     };
 
     const updateSampleRate = (sr: number) => {
@@ -303,6 +318,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             mp3BitRate,
             dither,
             normalization,
+            targetLufs,
         });
     };
 
@@ -315,6 +331,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             mp3BitRate,
             dither,
             normalization,
+            targetLufs,
         });
     };
 
@@ -327,6 +344,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             mp3BitRate: br,
             dither,
             normalization,
+            targetLufs,
         });
     };
 
@@ -339,6 +357,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             mp3BitRate,
             dither: next,
             normalization,
+            targetLufs,
         });
     };
 
@@ -351,7 +370,39 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             mp3BitRate,
             dither,
             normalization: next,
+            targetLufs,
         });
+    };
+
+    const updateTargetLufs = (next: number) => {
+        if (!Number.isFinite(next) || next < MIN_EXPORT_TARGET_LUFS || next > MAX_EXPORT_TARGET_LUFS) {
+            return;
+        }
+        setTargetLufs(next);
+        saveExportSettings({
+            formats: Array.from(formats),
+            sampleRate,
+            bitDepth,
+            mp3BitRate,
+            dither,
+            normalization,
+            targetLufs: next,
+        });
+    };
+
+    const selectDeliveryPreset = (id: string) => {
+        setDeliveryPreset(id);
+        if (id !== PODCAST_RSS_MP3_PRESET.id) {
+            return;
+        }
+        const settings = PODCAST_RSS_MP3_PRESET.settings;
+        setFormats(new Set(settings.formats));
+        setSampleRate(settings.sampleRate);
+        setBitDepth(settings.bitDepth);
+        setMp3BitRate(settings.mp3BitRate);
+        setNormalization(settings.normalization);
+        setTargetLufs(settings.targetLufs);
+        saveExportSettings({ ...settings, formats: [...settings.formats], dither });
     };
 
     const handleCancel = () => {
@@ -391,6 +442,20 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const handleExport = async () => {
         setErrorText('');
         cancelledRef.current = false;
+        let metadataSnapshot: Parameters<typeof encodeMp3>[4];
+        if (mode === 'mixdown' && deliveryPreset === PODCAST_RSS_MP3_PRESET.id && formats.has('mp3')) {
+            metadataSnapshot = podcastMetadata;
+        }
+        const targetLufsSnapshot = targetLufs;
+        try {
+            if (metadataSnapshot) {
+                validatePodcastMetadata(metadataSnapshot);
+            }
+        } catch (error) {
+            setErrorText(error instanceof Error ? error.message : 'Invalid podcast metadata.');
+            setProgress(0);
+            return;
+        }
         const session = openSessionRef.current;
         const ts = Date.now();
         const baseName = `Sourdaw_Bake_${ts}`;
@@ -537,13 +602,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     setStatusText(`Measuring ${name}...`);
                     const result = normalizeExportBuffer({
                         buffer,
-                        targetLufs: R128_TARGET_LUFS,
+                        targetLufs: targetLufsSnapshot,
                         ceilingDbTp: R128_CEILING_DB_TP,
                     });
                     if (result.limitedByCeiling) {
                         notifyUser(
                             `${name} needed more gain than the ${R128_CEILING_DB_TP} dBTP ceiling allows, ` +
-                                `so it was normalized to the ceiling rather than to ${R128_TARGET_LUFS} LUFS.`,
+                                `so it was normalized to the ceiling rather than to ${targetLufsSnapshot} LUFS.`,
                             'warning'
                         );
                     }
@@ -564,7 +629,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     let fileData: Uint8Array | ArrayBuffer;
 
                     if (freq === 'mp3') {
-                        fileData = await encodeMp3(buffer, mp3BitRate, passProgress, ditherOptions);
+                        if (metadataSnapshot) {
+                            fileData = await encodeMp3(
+                                buffer,
+                                mp3BitRate,
+                                passProgress,
+                                ditherOptions,
+                                metadataSnapshot
+                            );
+                        } else {
+                            fileData = await encodeMp3(buffer, mp3BitRate, passProgress, ditherOptions);
+                        }
                     } else if (freq === 'flac') {
                         if (bd === 32) {
                             throw new Error('FLAC export supports 16-bit or 24-bit only.');
@@ -1159,6 +1234,55 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         </DawDialogSection>
                     ) : null}
 
+                    {mode === 'mixdown' ? (
+                        <DawDialogSection tone="warm" title="Delivery preset">
+                            <DawCompactSelect
+                                aria-label="Delivery preset"
+                                value={deliveryPreset}
+                                disabled={exporting}
+                                onChange={(event) => selectDeliveryPreset(event.target.value)}
+                            >
+                                <option value="custom">Custom</option>
+                                <option value={PODCAST_RSS_MP3_PRESET.id}>{PODCAST_RSS_MP3_PRESET.name}</option>
+                            </DawCompactSelect>
+                            <p className="mt-2 text-dense text-muted-foreground">Stereo (2 channels)</p>
+                            {deliveryPreset === PODCAST_RSS_MP3_PRESET.id ? (
+                                <Stack gap={2}>
+                                    <p className="text-dense text-muted-foreground">
+                                        Loudness and peak targets apply before encoding. MP3 encoding can alter peaks.
+                                    </p>
+                                    <Input
+                                        aria-label="Episode title"
+                                        placeholder="Episode title"
+                                        disabled={exporting}
+                                        value={podcastMetadata.title}
+                                        onChange={(event) =>
+                                            setPodcastMetadata({ ...podcastMetadata, title: event.target.value })
+                                        }
+                                    />
+                                    <Input
+                                        aria-label="Artist"
+                                        placeholder="Artist"
+                                        disabled={exporting}
+                                        value={podcastMetadata.artist}
+                                        onChange={(event) =>
+                                            setPodcastMetadata({ ...podcastMetadata, artist: event.target.value })
+                                        }
+                                    />
+                                    <Input
+                                        aria-label="Description"
+                                        placeholder="Description"
+                                        disabled={exporting}
+                                        value={podcastMetadata.description}
+                                        onChange={(event) =>
+                                            setPodcastMetadata({ ...podcastMetadata, description: event.target.value })
+                                        }
+                                    />
+                                </Stack>
+                            ) : null}
+                        </DawDialogSection>
+                    ) : null}
+
                     {mode !== 'render-to-clip' ? (
                         <>
                             <DawDialogSection tone="warm" title="Ingredients">
@@ -1270,7 +1394,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         {(
                                             [
                                                 { value: 'off', label: 'As mixed' },
-                                                { value: 'r128', label: `${R128_TARGET_LUFS} LUFS` },
+                                                { value: 'r128', label: `${targetLufs} LUFS` },
                                             ] as const
                                         ).map((option) => (
                                             <Button
@@ -1289,6 +1413,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             </Button>
                                         ))}
                                     </Row>
+                                    {normalization === 'r128' ? (
+                                        <Input
+                                            aria-label="Target loudness"
+                                            type="number"
+                                            min={MIN_EXPORT_TARGET_LUFS}
+                                            max={MAX_EXPORT_TARGET_LUFS}
+                                            step={0.1}
+                                            value={targetLufs}
+                                            disabled={exporting}
+                                            onChange={(event) => updateTargetLufs(Number(event.target.value))}
+                                        />
+                                    ) : null}
                                     <p className="mt-1.5 text-dense text-muted-foreground/70">
                                         Measures programme loudness and inter-sample peaks, then applies one gain to
                                         reach the target without exceeding {R128_CEILING_DB_TP} dBTP.

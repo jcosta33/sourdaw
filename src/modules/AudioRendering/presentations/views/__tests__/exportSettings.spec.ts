@@ -31,6 +31,7 @@ describe('exportSettings', () => {
             mp3BitRate: 128,
             dither: 'random',
             normalization: 'off',
+            targetLufs: -14,
         });
     });
 
@@ -52,6 +53,7 @@ describe('exportSettings', () => {
             mp3BitRate: 320,
             dither: 'random',
             normalization: 'off',
+            targetLufs: -14,
         });
     });
 
@@ -73,6 +75,7 @@ describe('exportSettings', () => {
             mp3BitRate: 192,
             dither: 'random',
             normalization: 'off',
+            targetLufs: -14,
         });
     });
 
@@ -95,6 +98,7 @@ describe('exportSettings', () => {
             mp3BitRate: 320,
             dither: 'random',
             normalization: 'off',
+            targetLufs: -14,
         });
         expect(setItem).not.toHaveBeenCalled();
     });
@@ -120,6 +124,7 @@ describe('exportSettings', () => {
             mp3BitRate: 96,
             dither: 'random',
             normalization: 'off',
+            targetLufs: -14,
         });
     });
 
@@ -134,6 +139,7 @@ describe('exportSettings', () => {
                 mp3BitRate: 128,
                 dither: 'random',
                 normalization: 'off',
+                targetLufs: -14,
             });
         }
     });
@@ -157,6 +163,7 @@ describe('exportSettings', () => {
                 mp3BitRate: 128,
                 dither: 'random',
                 normalization: 'off',
+                targetLufs: -14,
             });
         }
     });
@@ -175,6 +182,28 @@ describe('exportSettings', () => {
             );
 
             expect(loadExportSettings().dither).toBe(expected);
+        }
+    });
+
+    it('keeps legacy loudness and bounds finite target preferences without changing neighboring fields', () => {
+        for (const [targetLufs, expected] of [
+            [undefined, -14],
+            [-16, -16],
+            [-70, -70],
+            [-1, -1],
+            [-71, -14],
+            [0, -14],
+            ['-16', -14],
+            [NaN, -14],
+            [Infinity, -14],
+        ] as const) {
+            window.localStorage.setItem(
+                EXPORT_SETTINGS_KEY,
+                JSON.stringify({ formats: ['mp3'], targetLufs, mp3BitRate: 192 })
+            );
+            expect(loadExportSettings()).toEqual(
+                expect.objectContaining({ formats: ['mp3'], mp3BitRate: 192, targetLufs: expected })
+            );
         }
     });
 
