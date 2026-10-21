@@ -99,20 +99,30 @@ vi.mock('#/components/daw/Fader', () => ({
     Fader: ({
         value,
         onChange,
+        step = 0.5,
         max,
+        'aria-label': ariaLabel,
     }: {
         value: number;
         onChange: (val: number, isTransient?: boolean) => void;
+        step?: number;
         max?: number;
+        'aria-label'?: string;
     }) => (
         <input
             type="range"
             data-testid="fader"
             data-max={max}
+            aria-label={ariaLabel}
             value={value}
             onChange={(event) => {
                 const isTransient = event.target.dataset.transient === 'true';
                 onChange(parseFloat(event.target.value), isTransient);
+            }}
+            onKeyDown={(event) => {
+                if (event.key === 'ArrowUp') {
+                    onChange(value + step, false);
+                }
             }}
         />
     ),
@@ -149,6 +159,57 @@ describe('MasterChannelStrip', () => {
     it('should show "Master" label', () => {
         render(<MasterChannelStrip widthClass="w-36" />);
         expect(screen.getByText('Master')).toBeInTheDocument();
+    });
+
+    it('opens the master gain context menu and commits Reset to Default through the typed action', async () => {
+        storeMocks.useStore.mockReturnValue({ masterGain: 60 });
+        storeMocks.transportStoreValue = { masterGain: 60 };
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }), {
+            clientX: 120,
+            clientY: 140,
+        });
+
+        expect(screen.getByRole('menu', { name: 'Master gain actions' })).toBeInTheDocument();
+        await act(async () => {
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to Default' }));
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 0.8, expectedPercent: 60 },
+        });
+    });
+
+    it.each([
+        { name: 'ContextMenu', key: 'ContextMenu', shiftKey: false },
+        { name: 'Shift+F10', key: 'F10', shiftKey: true },
+    ])('opens by $name and restores slider focus on Escape', async ({ key, shiftKey }) => {
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByRole('slider', { name: 'Master gain' });
+        fader.focus();
+
+        fireEvent.keyDown(fader, { key, shiftKey });
+
+        expect(screen.getByRole('menu', { name: 'Master gain actions' })).toHaveFocus();
+        act(() => {
+            fireEvent.keyDown(document, { key: 'Escape' });
+        });
+
+        expect(screen.queryByRole('menu', { name: 'Master gain actions' })).not.toBeInTheDocument();
+        expect(fader).toHaveFocus();
+
+        await act(async () => {
+            fireEvent.keyDown(fader, { key: 'ArrowUp' });
+            await Promise.resolve();
+        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 0.81, expectedPercent: 80 },
+        });
     });
 
     it('dispatches the settled change through the app action instead of writing the use case directly', async () => {
