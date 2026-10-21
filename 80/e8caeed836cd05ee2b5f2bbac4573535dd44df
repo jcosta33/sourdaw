@@ -1,0 +1,42 @@
+docs/06-testing.md
+  s_d257b09300b1ad::t_cb2153aa088d14 12
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_d257b09300b1ad::t_b8ce3874b7e67d 9
+  s_d257b09300b1ad::t_b71aa5d0d7e494 180-234
+  s_d257b09300b1ad::t_7a202caa1f4a8d 235-237
+playwright.config.ts
+  s_d257b09300b1ad::t_2ddb7b1439bbe4 116-117
+  s_d257b09300b1ad::t_a68adf8df7796d 1,4,7,15-36,41-45,47-51,90,95-98
+  s_d257b09300b1ad::t_09f3459b872926 52-89
+  s_d257b09300b1ad::t_87e89100ed47d6 37-40,46
+src/app/main.tsx
+  s_d257b09300b1ad::t_f079824f557c18 28-29
+scripts/__tests__/e2eDevServerOnlySpecs.spec.ts
+  s_d257b09300b1ad::t_533acd94519722 93
+  s_d257b09300b1ad::t_9901ecae091f64 40
+  s_d257b09300b1ad::t_d2e35a15debfba 1-39,41-48,53-92,94-110
+  s_d257b09300b1ad::t_4a1b9dd774f371 49-52
+tests/e2e/firstPaintWarmup.ts
+  s_d257b09300b1ad::t_36e104960f8c16 57-65,67-74,76-77
+src/app/__tests__/main.spec.tsx
+  s_d257b09300b1ad::t_203035c1e5d5c5 4
+  s_d257b09300b1ad::t_1e9f33e7c9821e 208-224,230
+tests/e2e/devServerOnlySpecs.ts
+  s_d257b09300b1ad::t_6d3ccb8eb61096 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "80e8caeed836cd05ee2b5f2bbac4573535dd44df",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
