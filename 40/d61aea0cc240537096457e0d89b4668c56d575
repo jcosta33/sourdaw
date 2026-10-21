@@ -1,0 +1,39 @@
+crates/daw-dsp/src/levain/engine.rs
+  s_29d8df116c5b92::t_baea5b6ba590dc 301,536,576,817-819,835,857,977-981,990-1007,1028-1032,1377,1381-1383,1388-1393,3716-3773
+crates/daw-dsp/src/levain/voice.rs
+  s_29d8df116c5b92::t_0d8c8b2a20d039 788,847,870,992-1016,1050,1053-1064,1090,1159,1307-1313,1418-1451,2016-2082
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_29d8df116c5b92::t_81449bdaab90c8 277-278
+src/modules/AiRuntime/transformers/llmActionStrategies/deviceStrategy.ts
+  s_29d8df116c5b92::t_c7320795533b09 134-139,150
+src/modules/AiRuntime/useCases/__tests__/getProjectContextLegacyDrumLevel.spec.ts
+  s_29d8df116c5b92::t_85221bc7d290fb 1-177
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_29d8df116c5b92::t_02a7781e9e9190 20,286-294
+src/modules/AudioEngine/services/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_29d8df116c5b92::t_93727504d02f2b 28,30,49,88-92,103-104,129-202,279-322
+src/modules/Synth/engine/drumSynthVoices.ts
+  s_29d8df116c5b92::t_3c4578fe27ea77 63-69,79-80,100-106,115-116,133-134,144-150,165-166,177-178,194,202-203,237,254-255,264-270,280-282,300-306,314-315,330-331,345,358-359,368-374,385-386,396-402,414-415,433-434,438,441,444,447,450,453,456,459,462,465,468,471,474,477,480
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/__tests__/scheduleDrumKitNote.spec.ts
+  s_29d8df116c5b92::t_031eafc6107d5e 54,64,75-76
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/__tests__/scheduleDrumKitNoteLevel.spec.ts
+  s_29d8df116c5b92::t_61b64cff9cc629 12-13,15,27,36,39,44,46-57
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/scheduleDrumKitNote.ts
+  s_29d8df116c5b92::t_452902a8e5370c 9-11,28-29,32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40d61aea0cc240537096457e0d89b4668c56d575",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
