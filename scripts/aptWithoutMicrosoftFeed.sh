@@ -19,7 +19,9 @@
 # the Ubuntu archive key remains, or apt does not read the copy.
 set -euo pipefail
 
-readonly MICROSOFT_FEED='^https://packages\.microsoft\.com/ubuntu/[0-9]+\.[0-9]+/prod/?$'
+# The feed is this prefix followed by an Ubuntu release and /prod.
+readonly MICROSOFT_FEED_PREFIX='https://packages.microsoft.com/ubuntu/'
+readonly MICROSOFT_FEED_RELEASE='^[0-9]+[.][0-9]+/prod/?$'
 readonly UBUNTU_ARCHIVE_KEY='ubuntu-archive-keyring'
 
 refuse() {
@@ -28,11 +30,16 @@ refuse() {
 }
 
 # Prints "<enabled entries> <feed entries> <mixed stanzas> <Ubuntu-signed entries>"
-# for one one-line-style (.list) or deb822 (.sources) file. The patterns pass
+# for one one-line-style (.list) or deb822 (.sources) file. The values pass
 # through the environment because awk -v would rewrite their backslashes.
 summarize_sources() {
-  FORMAT=$1 FEED=$MICROSOFT_FEED KEY=$UBUNTU_ARCHIVE_KEY awk '
-    BEGIN { format = ENVIRON["FORMAT"]; feed = ENVIRON["FEED"]; key = ENVIRON["KEY"] }
+  FORMAT=$1 PREFIX=$MICROSOFT_FEED_PREFIX RELEASE=$MICROSOFT_FEED_RELEASE KEY=$UBUNTU_ARCHIVE_KEY awk '
+    BEGIN {
+      format = ENVIRON["FORMAT"]; prefix = ENVIRON["PREFIX"]; release = ENVIRON["RELEASE"]; key = ENVIRON["KEY"]
+    }
+    function is_feed(uri) {
+      return index(uri, prefix) == 1 && substr(uri, length(prefix) + 1) ~ release
+    }
     function finish_stanza(    count, uris, i, named, feeds) {
       if (stanza_has_types && tolower(stanza_enabled) != "no") {
         count = split(stanza_uris, uris, /[ \t]+/)
@@ -41,7 +48,7 @@ summarize_sources() {
         for (i = 1; i <= count; i++) {
           if (uris[i] == "") continue
           named++
-          if (uris[i] ~ feed) feeds++
+          if (is_feed(uris[i])) feeds++
         }
         entries++
         if (feeds > 0 && feeds == named) feed_entries++
@@ -63,7 +70,7 @@ summarize_sources() {
       split(line, words, /[ \t]+/)
       uri = (words[1] == "") ? words[2] : words[1]
       entries++
-      if (uri ~ feed) feed_entries++
+      if (is_feed(uri)) feed_entries++
       else if (options ~ /signed-by=/ && index(options, key) > 0) signed++
       next
     }

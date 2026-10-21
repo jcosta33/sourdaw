@@ -2127,6 +2127,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/aptWithoutMicrosoftFeed.sh",
+            "value": "https://packages.microsoft.com/ubuntu/"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/assert-deployment-isolation.sh",
             "value": "https://$alias/"
         },
