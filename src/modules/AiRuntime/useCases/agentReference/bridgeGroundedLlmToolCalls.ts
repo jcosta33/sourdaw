@@ -5773,9 +5773,9 @@ function validateComparative(input: {
 }
 
 /**
- * Hold an inherited call to the value its refinement clause binds: the bound argument in the bound
- * form, every other argument as pending, and the figure checked by the same unit, level-law,
- * direction and range rules as any request, read from that clause.
+ * Hold an inherited call to the value its refinement clause binds: every argument no value rule
+ * reads stays as pending, and the values are checked by the same unit, level-law, form, direction
+ * and range rules as any request, read from that clause with the bound figure expected.
  */
 function validateBoundValue(
     call: ToolCallResult,
@@ -5784,23 +5784,17 @@ function validateBoundValue(
     context: ProjectContext
 ): string | null {
     const groundingRules = getExecutableAppActionGroundingRules(call.name);
-    if (groundingRules === null || call.arguments[bound.argument] === undefined) {
+    if (groundingRules === null) {
         return getValueMismatchReason(bound.argument);
     }
     const valueArguments = new Set(groundingRules.valueRules.map((rule) => rule.argument));
-    for (const argument of new Set([...Object.keys(call.arguments), ...Object.keys(command.payload)])) {
-        if (argument === bound.argument) {
-            continue;
-        }
-        if (valueArguments.has(argument)) {
-            if (call.arguments[argument] !== undefined) {
-                return getValueMismatchReason(argument);
-            }
-            continue;
-        }
-        if (canonicalJson(call.arguments[argument]) !== canonicalJson(command.payload[argument])) {
-            return getValueMismatchReason(argument);
-        }
+    const changedArgument = [...new Set([...Object.keys(call.arguments), ...Object.keys(command.payload)])].find(
+        (argument) =>
+            !valueArguments.has(argument) &&
+            canonicalJson(call.arguments[argument]) !== canonicalJson(command.payload[argument])
+    );
+    if (changedArgument !== undefined) {
+        return getValueMismatchReason(changedArgument);
     }
     const scope = buildWholePromptActionScope(bound.clause.text, context);
     const groundedArguments = { ...call.arguments };

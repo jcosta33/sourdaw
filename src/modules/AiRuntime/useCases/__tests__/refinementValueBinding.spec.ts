@@ -241,6 +241,10 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(commandsOf(refine(P0_CARD, 'less, turn Vocals down 1.5 dB', [vocalsBy(-1.5)]))).toEqual([
                 { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 },
             ]);
+            expect(refine(P0_CARD, 'less, turn Vocals down 1.5 dB, more', [vocalsBy(-1.5)])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('both less and more'),
+            });
         });
 
         it('row 3: a signed figure with no connector asks whether it is a level or a change', () => {
@@ -309,6 +313,18 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(refine(P1_CARD, 'make the vocals 1.5 dB', [vocalsBy(-1.5), snareBy(-1.5)]).status).toBe('rejected');
         });
 
+        it('row 6: an inherited call changes nothing but the value its clause binds', () => {
+            const vocalsWithExtra = {
+                name: 'setTrackGain',
+                arguments: { trackId: 'track-vocals', deltaDb: -1.5, automationRecordingPolicy: 'suppressed' },
+            };
+
+            expect(refine(P1_CARD, 'make the vocals 1.5 dB', [vocalsWithExtra, snareBy(-2)])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('automationRecordingPolicy'),
+            });
+        });
+
         it('row 7: "not the snare" removes the Snare and protects it', () => {
             const result = refine(P1_CARD, 'not the snare', [vocalsBy(-3)]);
 
@@ -323,6 +339,15 @@ describe('binding a terse refinement to the pending card it refines', () => {
 
         it('row 8: "not the snare" with the Snare kept is refused', () => {
             const result = refine(P1_CARD, 'not the snare', [vocalsBy(-3), snareBy(-2)]);
+
+            expect(result).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('removes') });
+        });
+
+        it('row 8: a removal holds even when the refinement text grounds the kept command by itself', () => {
+            const result = refine(P1_CARD, 'turn Vocals down 3 dB and turn Snare down 2 dB, but drop the snare gain', [
+                vocalsBy(-3),
+                snareBy(-2),
+            ]);
 
             expect(result).toMatchObject({ status: 'rejected', rejectionReason: expect.stringContaining('removes') });
         });
@@ -388,6 +413,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             ]);
         });
 
+        it('row 15: a value bound to a command the same refinement removes is refused', () => {
+            expect(refine(P1_CARD, 'make the snare 1 dB, not the snare', [vocalsBy(-3)])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('restates'),
+            });
+        });
+
         it('row 15b: an added pan grounds in the refinement text beside the inherited change', () => {
             const bassPan = { name: 'setTrackPan', arguments: { trackId: 'track-bass', pan: -30 } };
             const result = refine(P1_CARD, 'make the vocals 1.5 dB, not the snare, and pan Bass 30% left', [
@@ -420,6 +452,25 @@ describe('binding a terse refinement to the pending card it refines', () => {
                 status: 'rejected',
                 rejectionReason: expect.stringContaining('no longer grounds'),
             });
+        });
+
+        it('a batch a specialized workflow decides inherits nothing from the card', () => {
+            const workflowBatch = groundCompiledCommandBatch({
+                toolCalls: [vocalsBy(-1.5), snareBy(-2)],
+                context: CONTEXT,
+                prompt: 'make the vocals 1.5 dB',
+                projectRevision: undefined,
+                workflowCapabilityId: 'drum-routing',
+                compilerEvidence: undefined,
+                selectedCompilations: [],
+                transformCommands: [],
+                transformTargetIds: [],
+                creativeAuthority: undefined,
+                providerProposal: null,
+                refinementBasis: cardBasis(P1, P1_PLAN),
+            });
+
+            expect(workflowBatch.status).toBe('rejected');
         });
 
         it('row 21: a refinement restating the whole request admits', () => {
