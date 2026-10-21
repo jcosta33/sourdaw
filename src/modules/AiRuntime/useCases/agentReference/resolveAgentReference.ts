@@ -6,16 +6,17 @@ import { getSelectedClipReferenceIds } from '../../transformers/promptParser/sel
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { findAgentReferenceNameSpans, type AgentReferenceNameForms } from './findAgentReferenceNameSpans';
+import { getAgentReferenceCandidates, type AgentReferenceCandidate } from './getAgentReferenceCandidates';
 import { getBestAgentReferenceNameRanges } from './getBestAgentReferenceNameRanges';
 import { LEVEL_DIRECTION_WORDS } from './groundingStrategies/classifyPromptDecibelFigures';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
-import {
-    isAgentReferenceCapabilityCandidate,
-    type AgentReferenceCapability,
-} from './isAgentReferenceCapabilityCandidate';
+import { hasExplicitClipSelection } from './hasExplicitClipSelection';
+import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
+import { type AgentReferenceCapability } from './isAgentReferenceCapabilityCandidate';
 import { levenshteinDistance } from './levenshteinDistance';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
+import { resolveTrackOwnerReference } from './resolveTrackOwnerReference';
 
 type AppActionRisk = ReturnType<typeof getAppActionExecutionPolicy>['risk'];
 
@@ -33,13 +34,6 @@ export type ResolveAgentReferenceInput = {
      * Resolution reads the exact forms.
      */
     naming?: AgentReferenceNameForms;
-};
-
-/** One project object the prompt could be naming, drawn from the capability's collection. */
-type CapabilityCandidate = {
-    id: string;
-    name: string;
-    ownerQualified: boolean;
 };
 
 type AgentReferenceEvidence = 'literal-id' | 'exact-name' | 'selection' | 'owner-qualified' | 'fuzzy-name';
@@ -175,16 +169,6 @@ function containsQualifiedVcaGroupReference(prompt: string, reference: string): 
     ].some((qualifiedReference) => normalizedPrompt.includes(qualifiedReference));
 }
 
-function hasExplicitTrackSelection(prompt: string): boolean {
-    const normalized = normalizeAgentReferenceText(maskQuotedTextContents(prompt));
-    return /\b(?:selected|current|this) (?:audio |midi |bus |folder )?track\b/u.test(normalized);
-}
-
-function hasExplicitClipSelection(prompt: string): boolean {
-    const normalized = normalizeAgentReferenceText(maskQuotedTextContents(prompt));
-    return /\b(?:selected|current|this) (?:audio |midi )?clip\b/u.test(normalized);
-}
-
 function containsQualifiedClipReference(prompt: string, reference: string): boolean {
     const normalizedPrompt = ` ${normalizeAgentReferenceText(prompt)} `;
     const normalizedReference = normalizeAgentReferenceText(reference);
@@ -192,39 +176,6 @@ function containsQualifiedClipReference(prompt: string, reference: string): bool
         normalizedPrompt.includes(` ${normalizedReference} clip `) ||
         normalizedPrompt.includes(` clip ${normalizedReference} `)
     );
-}
-
-type TrackOwnerReference = { status: 'none' } | { status: 'unique'; id: string } | { status: 'ambiguous' };
-
-function containsQualifiedTrackOwnerReference(prompt: string, reference: string): boolean {
-    const normalizedPrompt = ` ${normalizeAgentReferenceText(prompt)} `;
-    const normalizedReference = normalizeAgentReferenceText(reference);
-    return [
-        ` on ${normalizedReference} `,
-        ` on the ${normalizedReference} `,
-        ` in ${normalizedReference} `,
-        ` in the ${normalizedReference} `,
-        ` from ${normalizedReference} `,
-        ` from the ${normalizedReference} `,
-    ].some((qualifiedReference) => normalizedPrompt.includes(qualifiedReference));
-}
-
-function namesTrackAsQualifiedOwner(prompt: string, track: { id: string; name: string }): boolean {
-    return (
-        containsQualifiedTrackOwnerReference(prompt, track.id) ||
-        containsQualifiedTrackOwnerReference(prompt, track.name)
-    );
-}
-
-function resolveTrackOwnerReference(prompt: string, context: ProjectContext): TrackOwnerReference {
-    const referencedTracks = context.tracks.filter((track) => namesTrackAsQualifiedOwner(prompt, track));
-    if (referencedTracks.length === 0) {
-        return { status: 'none' };
-    }
-    if (referencedTracks.length > 1) {
-        return { status: 'ambiguous' };
-    }
-    return { status: 'unique', id: referencedTracks[0]!.id };
 }
 
 function hasNonClipReferenceCollision(
@@ -244,146 +195,13 @@ function hasNonClipReferenceCollision(
     );
 }
 
-function getTrackCandidates(
-    capability: AgentReferenceCapability,
-    context: ProjectContext
-): CapabilityCandidate[] | null {
-    if (getAgentReferenceCapabilityKind(capability) === 'track') {
-        return context.tracks
-            .filter((track) => isAgentReferenceCapabilityCandidate({ capability, context, id: track.id }))
-            .map((track) => ({ id: track.id, name: track.name, ownerQualified: false }));
-    }
-    return null;
-}
-
-function getReferenceCandidates(input: ResolveAgentReferenceInput): CapabilityCandidate[] {
-    const trackCandidates = getTrackCandidates(input.capability, input.context);
-    if (trackCandidates) {
-        return trackCandidates;
-    }
-
-    if (getAgentReferenceCapabilityKind(input.capability) === 'clip') {
-        let tracks = input.context.tracks;
-        if (!hasExplicitClipSelection(input.prompt)) {
-            const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
-            if (ownerReference.status === 'ambiguous') {
-                return [];
-            }
-            if (ownerReference.status === 'unique') {
-                tracks = tracks.filter((track) => track.id === ownerReference.id);
-            }
-        }
-        return tracks.flatMap((track) => {
-            const ownerQualified = namesTrackAsQualifiedOwner(input.prompt, track);
-            return track.clips.map((clip) => ({ id: clip.id, name: clip.name, ownerQualified }));
-        });
-    }
-
-    if (input.capability === 'device' || input.capability === 'sidechain-capable-device') {
-        let tracks = input.context.tracks;
-        if (input.dependencyId) {
-            tracks = tracks.filter((track) => track.id === input.dependencyId);
-        } else if (hasExplicitTrackSelection(input.prompt)) {
-            if (input.context.selectedTrackId === null) {
-                return [];
-            }
-            tracks = tracks.filter((track) => track.id === input.context.selectedTrackId);
-        } else {
-            const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
-            if (ownerReference.status === 'ambiguous') {
-                return [];
-            }
-            if (ownerReference.status === 'unique') {
-                tracks = tracks.filter((track) => track.id === ownerReference.id);
-            }
-        }
-        const canonicalNamesByType = new Map(
-            (input.context.availableDeviceTypes ?? []).map((deviceType) => [deviceType.id, deviceType.name])
-        );
-        return tracks.flatMap((track) => {
-            const ownerQualified = namesTrackAsQualifiedOwner(input.prompt, track);
-            return track.devices.flatMap((device) =>
-                isAgentReferenceCapabilityCandidate({
-                    capability: input.capability,
-                    context: input.context,
-                    dependencyId: track.id,
-                    id: device.id,
-                })
-                    ? [
-                          {
-                              id: device.id,
-                              name: canonicalNamesByType.get(device.type) ?? device.type,
-                              ownerQualified,
-                          },
-                      ]
-                    : []
-            );
-        });
-    }
-
-    if (input.capability === 'device-parameter' && input.dependencyId) {
-        const device = input.context.tracks
-            .flatMap((track) => track.devices)
-            .find((candidate) => candidate.id === input.dependencyId);
-        return (device?.parameters ?? []).map((parameter) => ({
-            id: parameter.id,
-            name: parameter.name,
-            ownerQualified: false,
-        }));
-    }
-
-    if (input.capability === 'automation-lane') {
-        let lanes = input.context.automationLanes ?? [];
-        if (hasExplicitTrackSelection(input.prompt)) {
-            if (input.context.selectedTrackId === null) {
-                return [];
-            }
-            lanes = lanes.filter((lane) => lane.trackId === input.context.selectedTrackId);
-        } else {
-            const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
-            if (ownerReference.status === 'ambiguous') {
-                return [];
-            }
-            if (ownerReference.status === 'unique') {
-                lanes = lanes.filter((lane) => lane.trackId === ownerReference.id);
-            }
-        }
-        return lanes.map((lane) => {
-            const owner = input.context.tracks.find((track) => track.id === lane.trackId);
-            return {
-                id: lane.id,
-                name: lane.name,
-                ownerQualified: owner !== undefined && namesTrackAsQualifiedOwner(input.prompt, owner),
-            };
-        });
-    }
-
-    if (input.capability === 'adjustment-layer') {
-        return (input.context.adjustmentLayers ?? []).map((layer) => ({
-            id: layer.id,
-            name: layer.name,
-            ownerQualified: false,
-        }));
-    }
-
-    if (input.capability === 'vca-group') {
-        return (input.context.vcaGroups ?? []).map((group) => ({
-            id: group.id,
-            name: group.name,
-            ownerQualified: false,
-        }));
-    }
-
-    return [];
-}
-
 /**
  * A name stated only where another candidate's name reads that range better names nothing: "Drum"
  * inside "Drum Bus" states the bus, "Vocal" states Vocal and not Vocals.
  */
 function removeOutreadExactNameEvidence(
     prompt: string,
-    candidates: readonly CapabilityCandidate[],
+    candidates: readonly AgentReferenceCandidate[],
     evidenceById: Map<string, AgentReferenceEvidence>,
     forms: AgentReferenceNameForms
 ): void {
@@ -398,7 +216,7 @@ function removeOutreadExactNameEvidence(
 
 function removeExactNameEvidenceOverlappedByLiteralIds(
     prompt: string,
-    candidates: readonly CapabilityCandidate[],
+    candidates: readonly AgentReferenceCandidate[],
     evidenceById: Map<string, AgentReferenceEvidence>,
     forms: AgentReferenceNameForms
 ): void {
@@ -466,7 +284,7 @@ function nameMatchConsumesIdOccurrence(
  */
 function removeLiteralIdEvidenceNestedInExactNames(
     prompt: string,
-    candidates: readonly CapabilityCandidate[],
+    candidates: readonly AgentReferenceCandidate[],
     evidenceById: Map<string, AgentReferenceEvidence>,
     forms: AgentReferenceNameForms
 ): void {
@@ -522,7 +340,7 @@ function getReservedReferenceWords(capability: AgentReferenceCapability): Readon
  */
 function getFuzzyNameSimilarities(
     input: ResolveAgentReferenceInput,
-    candidates: readonly CapabilityCandidate[]
+    candidates: readonly AgentReferenceCandidate[]
 ): Map<string, number> {
     const promptTokens = normalizeAgentReferenceText(maskQuotedTextContents(input.prompt))
         .split(' ')
@@ -557,7 +375,7 @@ function isTieredEvidence(evidence: AgentReferenceEvidence | undefined): evidenc
 }
 
 function rankReferenceCandidate(
-    candidate: CapabilityCandidate,
+    candidate: AgentReferenceCandidate,
     tieredEvidence: AgentReferenceEvidence | undefined,
     isSelected: boolean,
     fuzzySimilarity: number | undefined
@@ -591,7 +409,7 @@ function rankReferenceCandidate(
 }
 
 function rankReferenceCandidates(
-    candidates: readonly CapabilityCandidate[],
+    candidates: readonly AgentReferenceCandidate[],
     evidenceById: ReadonlyMap<string, AgentReferenceEvidence>,
     selectedReferenceId: string | null | undefined,
     fuzzySimilarityById: ReadonlyMap<string, number>
@@ -624,7 +442,7 @@ function rankReferenceCandidates(
 function readNameEvidence(
     prompt: string,
     capability: AgentReferenceCapability,
-    candidates: readonly CapabilityCandidate[],
+    candidates: readonly AgentReferenceCandidate[],
     forms: AgentReferenceNameForms
 ): Map<string, AgentReferenceEvidence> {
     const evidenceById = new Map<string, AgentReferenceEvidence>();
@@ -669,8 +487,10 @@ function readNameEvidence(
 export function resolveAgentReference(input: ResolveAgentReferenceInput): ResolveAgentReferenceResult {
     const excludedIds = new Set(input.excludedIds ?? []);
     const readsSelection = input.naming === undefined;
-    const trackCandidates = getTrackCandidates(input.capability, input.context);
-    const hasTrackSelection = readsSelection && trackCandidates !== null && hasExplicitTrackSelection(input.prompt);
+    const hasTrackSelection =
+        readsSelection &&
+        getAgentReferenceCapabilityKind(input.capability) === 'track' &&
+        hasExplicitTrackSelection(input.prompt);
     const hasClipSelection =
         readsSelection &&
         getAgentReferenceCapabilityKind(input.capability) === 'clip' &&
@@ -683,7 +503,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         selectedReferenceId = selectedClipIds.length === 1 ? selectedClipIds[0]! : null;
     }
 
-    let candidates = getReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));
+    let candidates = getAgentReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));
     if (selectedReferenceId !== undefined) {
         if (selectedReferenceId === null) {
             candidates = [];

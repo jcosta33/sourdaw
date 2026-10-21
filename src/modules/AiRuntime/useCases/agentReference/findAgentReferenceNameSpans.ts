@@ -23,8 +23,15 @@ export type AgentReferenceNameSpan = AgentReferenceTextRange & { closeness: Agen
 const WORD_BOUNDARY_BEFORE = '(?<![\\p{L}\\p{N}])';
 const WORD_BOUNDARY_AFTER = '(?![\\p{L}\\p{N}])';
 
-/** A run of sentence punctuation closing a typed match, read as the sentence ending rather than the name: "mute Lead?". */
-const SENTENCE_END = /[.!?…]+$/u;
+/** The punctuation closing a typed match, which never lengthens what it reads: "Lead?" in "mute Lead?!". */
+const TRAILING_PUNCTUATION = /[^\p{L}\p{N}]+$/u;
+
+/**
+ * List punctuation and line breaks start another item ("Bass & Drums", "Bass; Drums", a bulleted
+ * list), so a name's words are read across them only where the name itself has that character. None
+ * of them needs escaping inside a character class.
+ */
+const LIST_SEPARATORS = ['&', '+', '/', ';', '.', ',', '!', '?', '\n', '\r'];
 
 /**
  * Lowercasing a whole word turns a closing sigma into ς while lowercasing it alone gives σ, so a name
@@ -34,8 +41,29 @@ function foldFinalSigma(folded: string): string {
     return folded.replaceAll('ς', 'σ');
 }
 
+/** Case and diacritics folded as normalizeAgentReferenceText folds them, final sigma aside, punctuation kept. */
+function foldCharacters(value: string): string {
+    return foldFinalSigma(value.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, ''));
+}
+
 function normalizeName(value: string): string {
     return foldFinalSigma(normalizeAgentReferenceText(value));
+}
+
+/** The folded punctuation and space between each pair of the name's words, in order. */
+function getNameSeparators(name: string): string[] {
+    return foldCharacters(name)
+        .split(/[\p{L}\p{N}]+/u)
+        .slice(1, -1);
+}
+
+/**
+ * What may join two of the name's words in the text: any run of punctuation or space, but list
+ * punctuation or a line break only where the name's own separator there has it.
+ */
+function getWordJoiner(nameSeparator: string): string {
+    const refused = LIST_SEPARATORS.filter((separator) => !nameSeparator.includes(separator)).join('');
+    return `[^\\p{L}\\p{N}${refused}]+`;
 }
 
 /** The text folded as normalizeName folds case and diacritics, with each folded code unit's offset in the text. */
@@ -44,9 +72,7 @@ function foldWithOffsets(text: string): { folded: string; offsets: number[] } {
     const offsets: number[] = [];
     let offset = 0;
     for (const character of text) {
-        const foldedCharacter = foldFinalSigma(
-            character.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, '')
-        );
+        const foldedCharacter = foldCharacters(character);
         folded += foldedCharacter;
         offsets.push(...Array.from({ length: foldedCharacter.length }, () => offset));
         offset += character.length;
@@ -92,20 +118,17 @@ function getNumberForms(word: string): string[] {
 }
 
 /**
- * The end of a typed match short of the sentence punctuation that closes it before a space or the end
- * of the text, so "Lead?" in "mute Lead?" reads no further than Lead does.
+ * The end of a typed match short of the punctuation that closes it, wherever the text goes on, so
+ * "Lead?" in "mute Lead?!" and "Pad..." in "mute Pad...please" read no further than Lead and Pad do.
  */
 function getTypedRangeEnd(text: string, start: number, end: number): number {
-    if (!/^(?:\s|$)/u.test(text.slice(end))) {
-        return end;
-    }
-    const sentenceEnd = SENTENCE_END.exec(text.slice(start, end));
-    return sentenceEnd === null ? end : start + sentenceEnd.index;
+    const trailing = TRAILING_PUNCTUATION.exec(text.slice(start, end));
+    return trailing === null ? end : start + trailing.index;
 }
 
 /**
  * Every range of the text where the name occurs as typed, case aside, at word edges wherever the name
- * has one, less any sentence punctuation that closes it.
+ * has one, less any punctuation that closes it.
  */
 function findTypedRanges(text: string, name: string): AgentReferenceTextRange[] {
     const typed = name.trim();
@@ -123,10 +146,12 @@ function findTypedRanges(text: string, name: string): AgentReferenceTextRange[] 
 
 /**
  * Every range of the text that states the name: its words folded as normalizeAgentReferenceText folds
- * them, final sigma aside, in order, any run of punctuation or space between them, the final word in
- * either grammatical number when the forms allow it. A range the name as typed covers reaches as far
- * as the typed name does, short of closing sentence punctuation, so "Kick (In)" states all of
- * "Kick (In)" and "Lead?" in "mute Lead?" no more than Lead does.
+ * them, final sigma aside, in order, any run of punctuation or space between them except list
+ * punctuation or a line break the name does not have there ("Bass & Drums" never states Bass Drums),
+ * the final word in either grammatical number when the forms allow it. A range the name as typed
+ * covers reads as typed and reaches as far as the typed name does, short of the punctuation closing
+ * it, wherever the text goes on: "Kick (In)" reads Kick (In) more closely than Kick In, and "Lead?" in
+ * "mute Lead?!" reads no further than Lead does.
  */
 export function findAgentReferenceNameSpans(
     text: string,
@@ -141,9 +166,11 @@ export function findAgentReferenceNameSpans(
         return [];
     }
     const finalForms = forms === 'exact' ? [finalToken] : getNumberForms(finalToken);
-    const needle = [...tokens.slice(0, -1).map(escapeRegExp), `(?:${finalForms.map(escapeRegExp).join('|')})`].join(
-        '[^\\p{L}\\p{N}]+'
-    );
+    const words = [...tokens.slice(0, -1).map(escapeRegExp), `(?:${finalForms.map(escapeRegExp).join('|')})`];
+    const separators = getNameSeparators(name);
+    const needle = words
+        .map((word, index) => (index === 0 ? word : `${getWordJoiner(separators[index - 1] ?? '')}${word}`))
+        .join('');
     const pattern = new RegExp(`${WORD_BOUNDARY_BEFORE}${needle}${WORD_BOUNDARY_AFTER}`, 'gu');
     const { folded, offsets } = foldWithOffsets(text);
     const typedRanges = findTypedRanges(text, name);

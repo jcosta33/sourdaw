@@ -5816,45 +5816,59 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
-    it('rejects a single removeTrack when a slash-collapsed nested name and a hyphenated literal id are both cited', () => {
-        const slashNestedNameContext = {
-            ...projectContext,
-            tracks: [
-                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
-                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
-                master,
-            ],
-        };
-        const named = bridge(
-            [{ name: 'removeTrack', arguments: { trackId: 'track-aux' } }],
-            'delete Lead/Guitar and track-lead-guitar',
-            slashNestedNameContext
-        );
+    // A slash the name lacks lists another item, so "Lead/Guitar" states no Lead Guitar and the cited
+    // literal id is the only target the request names.
+    const slashListContext = {
+        ...projectContext,
+        tracks: [
+            createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+            createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+            master,
+        ],
+    };
+    const SLASH_MISMATCH = 'Provider target trackId does not match the uniquely grounded project reference';
+
+    it('refuses both removeTrack targets for "delete Lead/Guitar and track-lead-guitar"', () => {
+        const prompt = 'delete Lead/Guitar and track-lead-guitar';
+        const named = bridge([{ name: 'removeTrack', arguments: { trackId: 'track-aux' } }], prompt, slashListContext);
         const literal = bridge(
             [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
-            'delete Lead/Guitar and track-lead-guitar',
-            slashNestedNameContext
+            prompt,
+            slashListContext
         );
 
-        expect(named.actions).toEqual([]);
-        expect(literal.actions).toEqual([]);
-        expect(named.rejections).toEqual([
-            {
-                index: 0,
-                name: 'removeTrack',
-                reason: 'Target trackId is ambiguous in the user request',
-            },
-        ]);
-        expect(literal.rejections).toEqual([
-            {
-                index: 0,
-                name: 'removeTrack',
-                reason: 'Target trackId is ambiguous in the user request',
-            },
-        ]);
+        expect(named).toEqual({ actions: [], rejections: [{ index: 0, name: 'removeTrack', reason: SLASH_MISMATCH }] });
+        expect(literal).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: 'removeTrack',
+                    reason: 'Provider track deletion is not explicit in the user request',
+                },
+            ],
+        });
     });
 
-    it('rejects muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+    it.each([
+        ['mute Lead/Guitar and track-lead-guitar', 'muteTrack', { muted: true }],
+        ['solo Lead/Guitar and track-lead-guitar', 'soloTrack', { soloed: true }],
+    ] as const)('grounds only the literal id "%s" cites across the slash', (prompt, name, values) => {
+        const named = bridge([{ name, arguments: { trackId: 'track-aux', ...values } }], prompt, slashListContext);
+        const literal = bridge(
+            [{ name, arguments: { trackId: 'track-lead-guitar', ...values } }],
+            prompt,
+            slashListContext
+        );
+
+        expect(named).toEqual({ actions: [], rejections: [{ index: 0, name, reason: SLASH_MISMATCH }] });
+        expect(literal).toEqual({
+            actions: [{ type: name, payload: { trackId: 'track-lead-guitar', ...values } }],
+            rejections: [],
+        });
+    });
+
+    it('rejects muteTrack and soloTrack when a spaced nested name and a hyphenated literal id are both cited', () => {
         const dualCitationContext = {
             ...projectContext,
             tracks: [
@@ -5863,11 +5877,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 master,
             ],
         };
-        const prompts = ['mute Lead/Guitar and track-lead-guitar', 'mute Lead Guitar and track-lead-guitar'] as const;
-        const soloPrompts = [
-            'solo Lead/Guitar and track-lead-guitar',
-            'solo Lead Guitar and track-lead-guitar',
-        ] as const;
+        const prompts = ['mute Lead Guitar and track-lead-guitar'] as const;
+        const soloPrompts = ['solo Lead Guitar and track-lead-guitar'] as const;
 
         for (const prompt of prompts) {
             const named = bridge(
@@ -5936,14 +5947,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 master,
             ],
         };
-        const mutePrompts = [
-            'mute Lead/Guitar and track-lead-guitar and set tempo to 120',
-            'mute Lead Guitar and track-lead-guitar and set tempo to 120',
-        ] as const;
-        const soloPrompts = [
-            'solo Lead/Guitar and track-lead-guitar and set tempo to 120',
-            'solo Lead Guitar and track-lead-guitar and set tempo to 120',
-        ] as const;
+        const mutePrompts = ['mute Lead Guitar and track-lead-guitar and set tempo to 120'] as const;
+        const soloPrompts = ['solo Lead Guitar and track-lead-guitar and set tempo to 120'] as const;
 
         for (const prompt of mutePrompts) {
             for (const trackId of ['track-aux', 'track-lead-guitar'] as const) {
@@ -5983,7 +5988,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
-    it('rejects compiler-expanded muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+    it('rejects compiler-expanded muteTrack and soloTrack when a spaced nested name and a hyphenated literal id are both cited', () => {
         const dualCitationContext = {
             ...projectContext,
             tracks: [
@@ -5994,9 +5999,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             ],
         };
         const leftoverPrompts = [
-            'mute Lead/Guitar and track-lead-guitar',
             'mute Lead Guitar and track-lead-guitar',
-            'solo Lead/Guitar and track-lead-guitar',
             'solo Lead Guitar and track-lead-guitar',
         ] as const;
         const expandedTrackIds = ['track-lead-guitar', 'track-aux', vocals.id] as const;

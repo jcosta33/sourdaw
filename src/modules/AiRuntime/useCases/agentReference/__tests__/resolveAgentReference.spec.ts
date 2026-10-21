@@ -612,9 +612,15 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
             reason: 'ambiguous-target',
         });
+        // The comma lists another item, so "master, drums" never states Master Drums and the id stands alone.
         expect(resolveTrack('mute master, drums', 'master', masterDrumsContext)).toMatchObject({
+            status: 'resolved',
+            id: 'master',
+            evidence: 'literal-id',
+        });
+        expect(resolveTrack('mute master, drums', 'track-master-drums', masterDrumsContext)).toMatchObject({
             status: 'rejected',
-            reason: 'ambiguous-target',
+            reason: 'asserted-target-mismatch',
         });
     });
 
@@ -891,7 +897,7 @@ describe('resolveAgentReference', () => {
         });
     });
 
-    it('keeps a slash-collapsed nested name and a hyphenated literal id ambiguous when both are cited', () => {
+    it('reads no name across a slash the name lacks, leaving the hyphenated literal id it cites', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];
         if (!firstTrack) {
@@ -908,14 +914,15 @@ describe('resolveAgentReference', () => {
         expect(
             resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-lead-guitar', slashNestedNameContext)
         ).toMatchObject({
-            status: 'rejected',
-            reason: 'ambiguous-target',
+            status: 'resolved',
+            id: 'track-lead-guitar',
+            evidence: 'literal-id',
         });
         expect(
             resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-aux', slashNestedNameContext)
         ).toMatchObject({
             status: 'rejected',
-            reason: 'ambiguous-target',
+            reason: 'asserted-target-mismatch',
         });
     });
 
@@ -1540,6 +1547,16 @@ describe('sibling names the prompt states as closely as each other', () => {
         ['mute Gtr.', 'Gtr', 'Gtr.'],
         ['mute Pad... and then Bass', 'Pad', 'Pad...'],
         ['mute Synth 1.', 'Synth 1', 'Synth 1.'],
+        ['can you mute Lead?!', 'Lead', 'Lead?'],
+        ['mute Pad.)', 'Pad', 'Pad.'],
+        ['mute Pad!!', 'Pad', 'Pad!'],
+        ['mute Pad?)', 'Pad', 'Pad?'],
+        ['mute Pad)', 'Pad', 'Pad)'],
+        ['please mute Lead?"', 'Lead', 'Lead?'],
+        ['mute Pad.”', 'Pad', 'Pad.'],
+        ['mute Lead!? ok', 'Lead', 'Lead!'],
+        ['mute Pad...please', 'Pad', 'Pad...'],
+        ['mute Synth+', 'Synth', 'Synth+'],
     ])('keeps "%s" ambiguous between %s and %s', (prompt, bare, punctuated) => {
         const project = namedTracksProject([bare, punctuated]);
         const siblingIds = [trackIdNamed(project, bare), trackIdNamed(project, punctuated)];
@@ -1556,7 +1573,6 @@ describe('sibling names the prompt states as closely as each other', () => {
     it.each([
         ['mute Kick (In)', ['Kick In', 'Kick (In)'], 'Kick (In)'],
         ['mute Synth #1', ['Synth 1', 'Synth #1'], 'Synth #1'],
-        ['mute Synth+', ['Synth', 'Synth+'], 'Synth+'],
         ['mute Vox.Dbl', ['Vox Dbl', 'Vox.Dbl'], 'Vox.Dbl'],
         ['mute Vox Dbl', ['Vox Dbl', 'Vox.Dbl'], 'Vox Dbl'],
         ['mute Cafe', ['Café', 'Cafe'], 'Cafe'],
@@ -1583,6 +1599,53 @@ describe('sibling names the prompt states as closely as each other', () => {
             status: 'rejected',
             reason: 'ambiguous-target',
         });
+    });
+
+    it('keeps the literal id "mute Bass!!" states ahead of the name Bass! that reads no further', () => {
+        const project = createProjectState();
+        const template = project.tracks[0]!;
+        const context: ProjectContext = {
+            ...project,
+            tracks: [
+                { ...template, id: 'bass', name: 'Low' },
+                { ...template, id: 'zz', name: 'Bass!' },
+            ],
+            selectedTrackId: null,
+        };
+
+        expect(resolveTrack('mute Bass!!', 'bass', context)).toEqual(resolvedTo('bass', 'Low', 'literal-id'));
+        expect(resolveTrack('mute Bass!!', 'zz', context)).toEqual(
+            rejectedWith('asserted-target-mismatch', [referenceCandidate('bass', 'Low', 'literal-id')])
+        );
+    });
+
+    it.each(['mute Bass & Drums', 'mute Bass + Drums', 'mute Bass/Drums', 'mute Bass; Drums', 'mute Bass.\nDrums'])(
+        'never reads Bass Drums across the list punctuation of "%s"',
+        (prompt) => {
+            const project = namedTracksProject(['Bass', 'Drums', 'Bass Drums']);
+            const listedIds = [trackIdNamed(project, 'Bass'), trackIdNamed(project, 'Drums')];
+
+            for (const assertedId of [...listedIds, trackIdNamed(project, 'Bass Drums')]) {
+                expect(resolveTrack(prompt, assertedId, project)).toMatchObject({
+                    status: 'rejected',
+                    reason: 'ambiguous-target',
+                    candidateIds: listedIds,
+                });
+            }
+        }
+    );
+
+    it.each([
+        ['mute hi hat', 'Hi-Hat'],
+        ['mute hi_hat', 'Hi-Hat'],
+        ['mute Kick In', 'Kick (In)'],
+        ['mute Guitar L/R', 'Guitar L/R'],
+        ['mute Bass & Drums', 'Bass & Drums'],
+    ])('reads "%s" as %s across the separator the name itself has', (prompt, name) => {
+        const project = namedTracksProject([name, 'Bass', 'Drums']);
+        const id = trackIdNamed(project, name);
+
+        expect(resolveTrack(prompt, id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
     });
 
     it.each(['ΟΔΟΣ', 'οδος'])('resolves "mute ΟΔΟΣ" to the exact name %s despite its final sigma', (name) => {

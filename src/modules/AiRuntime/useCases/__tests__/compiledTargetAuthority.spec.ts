@@ -1855,3 +1855,93 @@ describe('a name stated with its punctuation folded picks its track as the share
         expect(targetsOf(result)).toEqual([track(name).id]);
     });
 });
+
+describe('list punctuation between two names never states the name joining them', () => {
+    const listed = namedTracksContext(['Bass', 'Drums', 'Bass Drums']);
+    const turnDownTrack = (name: string) => trackItem('setTrackGain', listed.track(name), { deltaDb: -3 });
+    it.each([
+        'Turn down Bass & Drums by 3 dB',
+        'Turn down Bass + Drums by 3 dB',
+        'Turn down Bass / Drums by 3 dB',
+        'Turn down Bass; Drums by 3 dB',
+        'Turn down Bass. Drums stay as they are.',
+        'Turn down these tracks by 3 dB:\n- Bass\n- Drums',
+    ])('refuses a Bass Drums pick for %j', (prompt) => {
+        const result = compileAndBridge(prompt, [turnDownTrack('Bass Drums')], [], listed.context);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+
+    // "Turn down Bass; Drums by 3 dB" is left out: its first clause states no figure, so the value
+    // check refuses the Bass call whatever the target reading.
+    it.each([
+        'Turn down Bass & Drums by 3 dB',
+        'Turn down Bass + Drums by 3 dB',
+        'Turn down Bass / Drums by 3 dB',
+        'Turn down these tracks by 3 dB:\n- Bass\n- Drums',
+        'Turn down Bass and Drums by 3 dB',
+    ])('grounds the Bass and Drums picks for %j', (prompt) => {
+        const result = compileAndBridge(prompt, [turnDownTrack('Bass'), turnDownTrack('Drums')], [], listed.context);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([listed.track('Bass').id, listed.track('Drums').id]);
+    });
+
+    it('grounds a Bass Drums pick the request types', () => {
+        const result = compileAndBridge(
+            'Turn down Bass Drums by 3 dB',
+            [turnDownTrack('Bass Drums')],
+            [],
+            listed.context
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([listed.track('Bass Drums').id]);
+    });
+});
+
+describe('a device name fragment picks only on the track the request names as owner', () => {
+    const ownedVocals = createTrack({
+        id: 'track-owned-vocals',
+        name: 'Vocals',
+        devices: [{ id: 'device-owned-vocals-eq', type: 'builtin-eq', name: 'EQ', bypassed: false }],
+    });
+    const ownedKeys = createTrack({
+        id: 'track-owned-keys',
+        name: 'Keys',
+        kind: 'midi',
+        devices: [{ id: 'device-owned-keys-eq', type: 'builtin-eq', name: 'EQ', bypassed: false }],
+    });
+    const ownedContext: ProjectContext = { ...projectContext, tracks: [ownedVocals, ownedKeys, master] };
+    const [vocalsOwnedEq, keysOwnedEq] = [ownedVocals.devices[0]!, ownedKeys.devices[0]!];
+    const bypassEqs: CompiledItem = roleItem(
+        'bypassDevice',
+        { bypassed: true },
+        { targetArgument: 'deviceId', entity: 'device', match: { all: [{ nameIncludes: 'EQ' }] } },
+        2
+    );
+
+    it.each([
+        ['bypass the EQ on Vocals', vocalsOwnedEq.id, 1],
+        ['bypass the EQ on Keys', keysOwnedEq.id, 0],
+    ])('grounds only the EQ "%s" names the owner of', (prompt, keptId, refusedIndex) => {
+        const result = compileAndBridge(prompt, [bypassEqs], [], ownedContext);
+
+        expect(targetsOf(result, 'deviceId')).toEqual([keptId]);
+        expect(result.rejections).toEqual([
+            {
+                index: refusedIndex,
+                name: 'bypassDevice',
+                reason: 'Compiled target deviceId is not authorized by the user request',
+            },
+        ]);
+    });
+
+    it('grounds both EQs for "bypass the EQs on Vocals and Keys"', () => {
+        const result = compileAndBridge('bypass the EQs on Vocals and Keys', [bypassEqs], [], ownedContext);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual([vocalsOwnedEq.id, keysOwnedEq.id]);
+    });
+});
