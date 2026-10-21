@@ -1776,6 +1776,22 @@ describe('sibling names the prompt states as closely as each other', () => {
         expect(resolveTrack(prompt, id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
     });
 
+    it.each(['mute Bob’s Bass', 'mute Bob‘s Bass', 'mute Bob`s Bass', 'mute Bob′s Bass'])(
+        'reads "%s" as Bob\'s Bass beside the Bob and Bass tracks it names across the apostrophe',
+        (prompt) => {
+            const project = namedTracksProject(["Bob's Bass", 'Bob', 'Bass']);
+            const pickedId = trackIdNamed(project, "Bob's Bass");
+
+            expect(resolveTrack(prompt, pickedId, project)).toEqual(resolvedTo(pickedId, "Bob's Bass", 'exact-name'));
+            for (const sibling of ['Bob', 'Bass']) {
+                expect(resolveTrack(prompt, trackIdNamed(project, sibling), project)).toMatchObject({
+                    status: 'rejected',
+                    reason: 'asserted-target-mismatch',
+                });
+            }
+        }
+    );
+
     it.each(['mute Oʻahu and Other', 'mute Oʻahu Other'])(
         'keeps "%s" ambiguous between the two tracks it names',
         (prompt) => {
