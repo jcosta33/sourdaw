@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/transportControls/pausePlayback.ts
+  s_ba8dd89de9aac7::t_34f6d30d5223b1 11,87-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f97dff5711fa7cfa6582f1323742cceada052a0",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
