@@ -186,6 +186,56 @@ describe('scheduleAudioClips loop-origin anchored passes', () => {
         expect(wrap.start).toHaveBeenCalledWith(2, 0, 0.5);
     });
 
+    it('keeps the anchored two-segment read for a leftward trim (negative advance)', () => {
+        // The leftward population: the clip was looped at beat 4 (`setClipLoop`
+        // stamps the anchor there), then its head extended left to 2 — advance
+        // = 2 − 4 = −2. The pass enters at phase positiveModulo(−2, 4) = 2 and
+        // the recovered region sits at offset − (−2) = offset + 2 = [3, 7):
+        // each pass reads the region tail [5, 7), then its wrapped head
+        // [3, 5). A Math.max(0, advance) clamp at the read site slides the
+        // read back to the unsplit offset window [1, 5) — the exact regression
+        // this case pins.
+        const sources: Array<ReturnType<typeof makeFakeSource>> = [];
+        mockCreateBufferSource.mockImplementation(() => {
+            const fake = makeFakeSource();
+            sources.push(fake);
+            return fake as unknown as AudioBufferSourceNode;
+        });
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 4 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            trimmedLoopedClip({
+                startBeat: 2,
+                endBeat: 10,
+                regionStartBeat: 2,
+                regionEndBeat: 10,
+                loopLength: 4,
+                loopOriginBeat: 4,
+            }),
+        ] as never);
+        trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    kind: 'audio',
+                    muted: false,
+                    clips: [],
+                    freezeState: { status: 'active', frozenBufferId: null },
+                },
+            ],
+        };
+
+        scheduleAudioClips(0, 32, 0, new Set(), new Set(), [], defaultTransportState);
+
+        // Two passes (8-beat visual over loop 4) x two segments: each pass
+        // enters at source beat 5 (2.5 s) for 1 s of region tail, then wraps
+        // to the region head (1.5 s) for the remaining 1 s.
+        expect(sources).toHaveLength(4);
+        expect(sources[0]!.start).toHaveBeenCalledWith(1, 2.5, 1);
+        expect(sources[1]!.start).toHaveBeenCalledWith(2, 1.5, 1);
+        expect(sources[2]!.start).toHaveBeenCalledWith(3, 2.5, 1);
+        expect(sources[3]!.start).toHaveBeenCalledWith(4, 1.5, 1);
+    });
+
     it('never reads past the region end', () => {
         const sources = scheduleWindow();
 

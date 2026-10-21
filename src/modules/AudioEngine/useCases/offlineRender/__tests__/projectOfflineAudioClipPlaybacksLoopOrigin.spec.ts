@@ -59,6 +59,35 @@ describe('projectOfflineAudioClipPlaybacks with a loop anchor', () => {
         expect(headWrap.startSec).toBeCloseTo(headTail.startSec + headTail.playDuration, 9);
     });
 
+    it('keeps the anchored two-segment read for a leftward trim (negative advance)', () => {
+        // The leftward population through the real projector: the clip was
+        // looped at beat 4 (anchor 4), then its head extended left to 2 —
+        // advance = 2 − 4 = −2. The pass enters at phase positiveModulo(−2, 4)
+        // = 2 and the recovered region sits at offset − (−2) = offset + 2 =
+        // [3, 7): each pass projects as the region tail (source [5, 7)) then
+        // its wrapped head (source [3, 5)). A Math.max(0, advance) clamp at
+        // the read site slides the read back to the unsplit offset window
+        // [1, 5) — the exact regression this case pins.
+        const playbacks = projectOfflineAudioClipPlaybacks({
+            clip: { ...CLIP_BASE, startBeat: 2, endBeat: 10, loopOriginBeat: 4 },
+            bufferDurationSeconds: 4,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 40,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => beat * 0.5,
+            resolveTempoAtBeat: () => 120,
+        });
+
+        expect(playbacks).toHaveLength(4); // 2 passes x 2 segments
+        expect(playbacks[0]).toMatchObject({ startSec: 1, bufferOffsetSec: 2.5, playDuration: 1 });
+        expect(playbacks[1]).toMatchObject({ startSec: 2, bufferOffsetSec: 1.5, playDuration: 1 });
+        // The wrap seam is contiguous, and the second pass repeats the read.
+        expect(playbacks[1]!.startSec).toBeCloseTo(playbacks[0]!.startSec + playbacks[0]!.playDuration, 9);
+        expect(playbacks[2]).toMatchObject({ startSec: 3, bufferOffsetSec: 2.5, playDuration: 1 });
+        expect(playbacks[3]).toMatchObject({ startSec: 4, bufferOffsetSec: 1.5, playDuration: 1 });
+    });
+
     it('never reads past the region end in any pass', () => {
         const playbacks = project({ loopOriginBeat: 0 });
         for (const playback of playbacks) {
