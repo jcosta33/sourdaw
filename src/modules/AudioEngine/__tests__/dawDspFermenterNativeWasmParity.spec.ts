@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 import { expect, it } from 'vitest';
 
-import { FermenterInstance, initSync } from '../daw_dsp.js';
+import { FermenterInstance, initSync } from '../wasm/daw_dsp.js';
 
 const FRAMES_PER_BLOCK = 128;
 const BLOCKS = 40;
