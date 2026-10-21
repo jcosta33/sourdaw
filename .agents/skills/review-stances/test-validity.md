@@ -6,6 +6,55 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-12 — closed pipes hid a surviving process group (PR #5240 review repair)
+
+The native mutation runner had no real-child fixture: direct-child close canceled KILL while a
+same-group descendant could close inherited pipes and resist TERM. Assertion fixtures also omitted
+exit zero with the otherwise correct expected-panic transcript, so widening the exit-101 oracle
+could stay green.
+
+Observe the real direct-child close, a live TERM-resistant descendant with closed inherited pipes,
+and a separate unaffected process. Require the runner to remain pending until group absence,
+exercise TERM/KILL deadlines with a controlled clock, and forbid signals after observed absence.
+Exhaust confirmation through injected liveness ports and require the same ownership error, retained
+mutated source and partial evidence, and no restored cases. Independently reject the correct panic
+transcript with exit zero; widening admission to 101 or zero must fail that case.
+
+The immutable event base can precede both synthetic integration parents when main advances. Drive
+the native job's configured checkout depth through a tiny real Git fetch topology; require the
+event base, candidate head and integration commit to resolve. A literal depth assertion alone does
+not prove object availability. Typecheck the real-process fixture, including callback-captured PIDs
+and the process signal port's literal return type, and recognize coded ESRCH from a foreign Error realm.
+
+Preserve bounded operation, signal and conventional errno metadata after a non-ESRCH inspection or
+termination failure, including when later ESRCH permits completion. Inject EIO followed by ESRCH
+and persistent EIO separately: the first still refuses mutation proof, the second retains mutated
+source and partial evidence without restoration. Never infer the first intermittent failure's cause
+from a later pass or retain raw error text in public diagnostics.
+
+Inspection EPERM is not proof of a foreign UID or group absence: Darwin's group signal traversal
+can exclude every zombie member before reap removes the group. Keep inspection EPERM provisional
+until exact ESRCH, without changing deadlines or signaling policy. A real owned-child fixture
+with injected EPERM must remain unsettled before ESRCH and recover only that provisional failure;
+persistent EPERM must exhaust the existing deadline, retain mutated source and report its typed
+diagnostic. EIO and actual termination EPERM must remain fatal after later absence. Current XNU
+main explains a possible mechanism, never the installed kernel or a historical run's zombie state.
+
+### 2026-10-12 — one near-zero tempo missed governing identity (escaped via PR #5199)
+
+PR #5199's opening-fold regression covered one positive near-zero tempo and a later distinct
+change. It never placed multiple differing values entirely inside the origin tolerance: beats
+`2e-7`, `4e-7`, `6e-7` at 90, 120, 160 BPM returned a 90 BPM tail. Public review
+`5472288669` flagged absent opening-fold coverage; final `5474617910` omitted this cluster.
+Private prompt and tier are unavailable, so the established miss is input coverage.
+
+Probe exact-zero and strictly-positive clusters with distinct values and no later boundary;
+require 160 BPM at the relocated origin. Independently observe sampled-ramp boundary integrals
+and terminal tempo so an identity repair cannot replace finite-span means. Reverting the authored
+identity binding must fail the unchanged cluster cases. A deliberate full-history workflow edit
+also updates its owning independent assertion and regenerated snapshot; the snapshot diff must
+contain only the intended checkout depth, and a depth-two mutation must fail the assertion.
+
 ### 2026-10-12 — a release budget missed the still-open PCM entry (PR #5239 review repair)
 
 An aborted bank could hold both a sealed sample and an unfinished reservation. Release freed
@@ -261,6 +310,44 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-21 — final storage cleanup outlived the returned leak verdict
+
+PR #5274 (`40baa0716b`) recorded a retained-storage verdict before an existing final cleanup
+attempt. A first refusal followed by complete proof could remove the real owned payload in that
+final attempt while the guard still returned `reason: leak` and a retained message. The historical
+review stance, prompt, and tier are unestablished; the missing oracle compared the final
+filesystem state with the reported disposition.
+
+Probe the real guarded child and owned storage with one controlled proof refusal followed by
+complete direct and claimed proof. Require both physical removal and a result without a
+storage-only leak. Keep a persistently incomplete or thrown proof retained, preserve an earlier
+nonstorage failure, and retain child-authored text that resembles the guard's diagnostic.
+
+### 2026-10-12 — one omitted Darwin field did not prove a bounded omission sequence
+
+PR #5274 (`40baa0716b`) tested one missing descriptor type followed by complete proof,
+but did not exercise two omissions before a complete catalog. Live account captures
+later demonstrated transient `f,n` records without `t`; their exact historical failed-run
+descriptor identities and review dispatch are unestablished.
+
+Probe the real parser and census with two omissions then complete third proof, persistent
+three omissions, a third live borrower, a third uncovered live PID, and the unchanged
+five-second deadline. Assert observation counts and remaining command timeouts. Pair the
+controlled census with real owned release and borrower retention; a parser result alone
+does not prove deletion. Reverting the bounded admission must fail the release case.
+
+Probe two successive exclusively new, same-UID live PID gaps, then require a third wholly
+complete catalog to release real owned storage. A protected borrower in that third catalog
+must veto deletion; another new PID there must retain storage. Keep a prior missing PID
+present in the next pre-sample as a refusal, and assert the shared three-observation and
+original five-second bounds on every path.
+
+An earlier `dead` sample does not bind a later startup recovery: a new uncovered live PID
+can make that later census `unknown` while the new run itself succeeds. Require retention
+only for the exact later PID-coverage diagnostic, reject other unexpected diagnostics,
+and inspect both the original run and claim payloads. Keep complete-proof deletion
+unconditional; observing a prior sample or the new run's exit code cannot prove it.
 
 ### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
 

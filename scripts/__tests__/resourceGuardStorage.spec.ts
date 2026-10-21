@@ -13,7 +13,7 @@ import {
     statSync,
     writeFileSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -167,6 +167,167 @@ function claimPayloads(root: string): string[] {
     );
 }
 
+async function runMarkedGuard(root: string): Promise<{
+    result: Awaited<ReturnType<typeof runGuardedCommand>>;
+    tempDirectory: string;
+    token: string;
+    pid: number;
+    supervisorPid: number;
+    ownerPid: number;
+}> {
+    const run = randomUUID();
+    const marker = join(root, `guard-${run}.json`);
+    const preparedResult = join(root, `guard-${run}.pending`);
+    const resultPath = join(root, `guard-${run}.result.json`);
+    const options: Parameters<typeof runGuardedCommand>[0] = {
+        command: process.execPath,
+        args: [
+            '-e',
+            `const fs=require('node:fs'),path=require('node:path'),tmp=require('node:os').tmpdir();const owner=JSON.parse(fs.readFileSync(path.join(path.dirname(tmp),'owner.json'),'utf8'));fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp,ownerPid:owner.owner.pid}))`,
+        ],
+        profile: 'focused',
+        availableMemoryBytes: abundantMemoryBytes,
+        maxRssBytes: 512 * 1024 ** 2,
+        admissionRoot: root,
+        storageRoot: join(root, 'storage'),
+        diskReserveBytes: 1,
+    };
+    const supervisor = spawn(
+        process.execPath,
+        [
+            '--input-type=module',
+            '-e',
+            `const {writeFileSync,renameSync}=await import('node:fs');const {runGuardedCommand}=await import(${JSON.stringify(guardPath)});const result=await runGuardedCommand(${JSON.stringify(options)});writeFileSync(${JSON.stringify(preparedResult)},JSON.stringify(result));renameSync(${JSON.stringify(preparedResult)},${JSON.stringify(resultPath)});`,
+        ],
+        { stdio: 'ignore' }
+    );
+    const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+        supervisor.once('error', reject);
+        supervisor.once('close', (code, signal) => resolve({ code, signal }));
+    });
+    const supervisorPid = supervisor.pid;
+    if (supervisorPid !== undefined) {
+        childPids.add(supervisorPid);
+    }
+    const exit = await closed;
+    let observed: { pid: number; tmp: string; ownerPid: number } | undefined;
+    if (existsSync(marker)) {
+        observed = JSON.parse(readFileSync(marker, 'utf8'));
+    }
+    if (observed !== undefined) {
+        childPids.add(observed.pid);
+    }
+    if (supervisorPid === undefined || exit.code !== 0 || exit.signal !== null) {
+        throw new Error(
+            `marked guard supervisor failed: pid=${supervisorPid ?? 'missing'} code=${exit.code} signal=${exit.signal}`
+        );
+    }
+    if (observed === undefined || !existsSync(resultPath)) {
+        throw new Error('marked guard child marker or complete supervisor result is missing');
+    }
+    const result: Awaited<ReturnType<typeof runGuardedCommand>> = JSON.parse(readFileSync(resultPath, 'utf8'));
+    expect(isAlive(observed.pid)).toBe(false);
+    expect(isAlive(supervisorPid)).toBe(false);
+    const token = basename(dirname(observed.tmp));
+    expect(observed.tmp).toBe(join(root, 'storage', token, 'tmp'));
+    return {
+        result,
+        tempDirectory: observed.tmp,
+        token,
+        pid: observed.pid,
+        supervisorPid,
+        ownerPid: observed.ownerPid,
+    };
+}
+
+function retainedStorageTokens(root: string): { direct: string[]; claims: string[] } {
+    const storageRoot = join(root, 'storage');
+    const direct = readdirSync(storageRoot)
+        .filter((name) => name !== '.claims')
+        .map((token) => {
+            expect(readOwner(join(storageRoot, token, 'tmp')).token).toBe(token);
+            return token;
+        });
+    const claims = claimPayloads(storageRoot).map((payload) => {
+        const token = readOwner(join(payload, 'tmp')).token;
+        expect(basename(payload)).toBe(token);
+        return token;
+    });
+    return { direct, claims };
+}
+
+type PriorMarkedGuard = { tempDirectory: string; token: string; supervisorPid?: number };
+
+function expectMarkedRecovery(
+    root: string,
+    prior: PriorMarkedGuard[],
+    fresh: Awaited<ReturnType<typeof runMarkedGuard>>,
+    originalStillLive = false
+): void {
+    const knownTokens = [...prior.map((run) => run.token), fresh.token];
+    expect(new Set(knownTokens).size).toBe(knownTokens.length);
+    const diagnostics = fresh.result.output
+        .split('\n')
+        .filter((line) => line.startsWith('guard storage file-use proof unavailable: '));
+    const retained = retainedStorageTokens(root);
+    const retainedTokens = [...retained.direct, ...retained.claims];
+    console.log(
+        JSON.stringify({
+            recovery: fresh.result,
+            firstDiagnostic: diagnostics[0] ?? null,
+            originalToken: prior[0]?.token,
+            freshToken: fresh.token,
+            freshSupervisorPid: fresh.supervisorPid,
+            freshOwnerPid: fresh.ownerPid,
+            priorTokens: prior.map((run) => run.token),
+            retained,
+        })
+    );
+    expect(fresh.result.code).toBe(0);
+    expect(Number.isInteger(fresh.supervisorPid) && fresh.supervisorPid > 0).toBe(true);
+    expect(fresh.supervisorPid).not.toBe(process.pid);
+    expect(fresh.ownerPid).toBe(fresh.supervisorPid);
+    expect(isAlive(fresh.supervisorPid)).toBe(false);
+    expect(isAlive(fresh.pid)).toBe(false);
+    expect(retainedTokens.every((token) => knownTokens.includes(token))).toBe(true);
+    expect(new Set(retainedTokens).size).toBe(retainedTokens.length);
+    for (const run of [...prior, fresh]) {
+        expect(existsSync(run.tempDirectory)).toBe(retained.direct.includes(run.token));
+        if (run.supervisorPid !== undefined) {
+            expect(run.supervisorPid).not.toBe(process.pid);
+            expect(isAlive(run.supervisorPid)).toBe(false);
+        }
+    }
+    const expectedDiagnostics: unknown[] = [];
+    if (diagnostics.length > 0) {
+        expectedDiagnostics.push(
+            expect.stringMatching(
+                /^guard storage file-use proof unavailable: (?:lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+|lsof-fields-unusable:descriptor-type-missing)$/
+            )
+        );
+    }
+    expect(diagnostics).toEqual(expectedDiagnostics);
+    const freshRetained = retainedTokens.includes(fresh.token);
+    if (fresh.result.reason === undefined) {
+        expect(freshRetained).toBe(false);
+        expect(fresh.result.output).not.toContain('guard storage retained:');
+    } else {
+        expect(fresh.result.reason).toBe('leak');
+        expect(diagnostics).toHaveLength(1);
+        expect(fresh.result.output).toContain(
+            'guard storage retained: process-tree exit or storage ownership could not be proved'
+        );
+        // The result records the first failed release; a final cleanup retry can remove its payload.
+    }
+    if (originalStillLive) {
+        expect(retained.direct).toContain(prior[0]?.token);
+    } else if (diagnostics.length === 0) {
+        expect(fresh.result.reason).toBeUndefined();
+        expect(retained.direct).toEqual([]);
+        expect(retained.claims).toEqual([]);
+    }
+}
+
 describe('guard-owned temporary storage', () => {
     it('defaults to the canonical Git primary or the non-Git command volume', () => {
         const commonDirectory = execFileSync('git', ['rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim();
@@ -276,6 +437,153 @@ describe('guard-owned temporary storage', () => {
         expect(readdirSync(join(root, 'storage')).filter((name) => !name.startsWith('.'))).toEqual([]);
         expect(readFileSync(foreign, 'utf8')).toBe('foreign');
     });
+
+    it.each([
+        {
+            scenario: 'successful child and final proof',
+            proof: 'complete',
+            childExit: 0,
+            diskPressure: false,
+            reason: undefined,
+        },
+        {
+            scenario: 'nonzero child and final proof',
+            proof: 'complete',
+            childExit: 7,
+            diskPressure: false,
+            reason: undefined,
+        },
+        {
+            scenario: 'earlier disk pressure and final proof',
+            proof: 'complete',
+            childExit: 0,
+            diskPressure: true,
+            reason: 'pressure',
+        },
+        {
+            scenario: 'persistent incomplete proof',
+            proof: 'incomplete',
+            childExit: 0,
+            diskPressure: false,
+            reason: 'leak',
+        },
+        { scenario: 'persistent thrown proof', proof: 'throws', childExit: 0, diskPressure: false, reason: 'leak' },
+    ] as const)(
+        'reports final owned-storage disposition for $scenario',
+        async ({ proof, childExit, diskPressure, reason }) => {
+            const root = fixture();
+            const marker = join(root, 'child.json');
+            const proofPaths: string[] = [];
+            const releases: { treeStopped: boolean; removed?: boolean; threw?: boolean }[] = [];
+            const retainedLine = 'guard storage retained: process-tree exit or storage ownership could not be proved';
+            let tempExistedWhileAlive = false;
+            let tempDirectory: string | undefined;
+            let childAction = `process.exitCode=${childExit}`;
+            if (diskPressure) {
+                childAction = 'setInterval(() => {}, 1000)';
+            } else if (childExit === 7) {
+                childAction = `process.stdout.write(${JSON.stringify(`${retainedLine}\n`)});${childAction}`;
+            }
+            const options: Partial<Parameters<typeof runGuardedCommand>[0]> = {
+                args: [
+                    '-e',
+                    `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));${childAction}`,
+                ],
+                storageFactory: (input) => {
+                    const storage = createGuardStorage({
+                        ...input,
+                        ports: {
+                            ...input.ports,
+                            localReleaseAllowed: (_owner, _original, current) => {
+                                proofPaths.push(current ?? 'missing');
+                                if (proof === 'throws') {
+                                    throw new Error('controlled proof unavailable');
+                                }
+                                return proof === 'complete' && proofPaths.length > 1;
+                            },
+                        },
+                    });
+                    tempDirectory = storage.tempDirectory;
+                    return {
+                        ...storage,
+                        release: async (treeStopped) => {
+                            try {
+                                const removed = await storage.release(treeStopped);
+                                releases.push({ treeStopped, removed });
+                                return removed;
+                            } catch (error) {
+                                releases.push({ treeStopped, threw: true });
+                                throw error;
+                            }
+                        },
+                    };
+                },
+            };
+            if (diskPressure) {
+                options.hostSampleIntervalMs = 20;
+                options.sampleIntervalMs = 20;
+                options.diskSampler = () => {
+                    if (!existsSync(marker)) {
+                        return 1000;
+                    }
+                    const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+                    tempExistedWhileAlive ||= isAlive(started.pid) && existsSync(started.tmp);
+                    return 0;
+                };
+            }
+            const result = await guarded(root, options);
+            expect(existsSync(marker)).toBe(true);
+            const child: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+            childPids.add(child.pid);
+            if (diskPressure) {
+                expect(tempExistedWhileAlive).toBe(true);
+            }
+            expect(isAlive(child.pid)).toBe(false);
+            expect(child.tmp).toBe(tempDirectory);
+            expect(tempDirectory).toBeDefined();
+            if (tempDirectory === undefined) {
+                throw new Error('guard storage was not created');
+            }
+            const token = basename(dirname(tempDirectory));
+            const retained = proof !== 'complete';
+            let expectedReleases: { treeStopped: boolean; removed?: boolean; threw?: boolean }[] = [
+                { treeStopped: true, removed: false },
+                { treeStopped: true, removed: true },
+            ];
+            if (proof === 'incomplete') {
+                expectedReleases = [
+                    { treeStopped: true, removed: false },
+                    { treeStopped: true, removed: false },
+                ];
+            } else if (proof === 'throws') {
+                expectedReleases = [
+                    { treeStopped: true, threw: true },
+                    { treeStopped: true, threw: true },
+                ];
+            }
+            expect(releases).toEqual(expectedReleases);
+            expect(proofPaths).toHaveLength(retained ? 2 : 3);
+            expect(proofPaths[0]).toBe(join(root, 'storage', token, 'tmp'));
+            expect(proofPaths[1]).toBe(proofPaths[0]);
+            if (!retained) {
+                expect(proofPaths[2]).toContain('/.claims/');
+            }
+            expect(existsSync(tempDirectory)).toBe(retained);
+            const ownerPath = join(dirname(tempDirectory), 'owner.json');
+            expect(existsSync(ownerPath)).toBe(retained);
+            if (retained) {
+                expect(JSON.parse(readFileSync(ownerPath, 'utf8')).token).toBe(token);
+            }
+            expect(claimPayloads(join(root, 'storage'))).toEqual([]);
+            expect(result.code).toBe(diskPressure ? null : childExit);
+            expect(result.reason).toBe(reason);
+            expect(result.output.split(retainedLine).length - 1).toBe(retained || childExit === 7 ? 1 : 0);
+            if (diskPressure) {
+                expect(result.output).toContain('disk space below');
+            }
+        },
+        10_000
+    );
 
     it('contains post-spawn publication failure and retains uncertain storage without masking the failure', async () => {
         const root = fixture();
@@ -519,6 +827,7 @@ describe('guard-owned temporary storage', () => {
             await waitUntil(() => existsSync(marker));
             const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             const rootPid = Number(readFileSync(rootMarker, 'utf8'));
+            const originalToken = readOwner(started.tmp).token;
             childPids.add(started.pid);
             childPids.add(rootPid);
             const startedAt = execFileSync('ps', ['-p', String(started.pid), '-o', 'lstart='], {
@@ -536,30 +845,26 @@ describe('guard-owned temporary storage', () => {
             const tempExists = existsSync(started.tmp);
             console.log(JSON.stringify({ scenario, program, pid: started.pid, startedAt, alive, tempExists }));
             expect(alive && !tempExists).toBe(false);
+            const prior: PriorMarkedGuard[] = [{ tempDirectory: started.tmp, token: originalToken }];
             if (alive) {
                 if (scenario === 'parent exit') {
                     expect(JSON.parse(readFileSync(resultPath, 'utf8')).reason).toBe('leak');
                 }
-                expect((await guarded(root)).code).toBe(0);
+                const interim = await runMarkedGuard(root);
+                expectMarkedRecovery(root, prior, interim, true);
+                prior.push({
+                    tempDirectory: interim.tempDirectory,
+                    token: interim.token,
+                    supervisorPid: interim.supervisorPid,
+                });
+                expect(isAlive(started.pid)).toBe(true);
                 expect(existsSync(started.tmp)).toBe(true);
                 await kill(started.pid);
             }
             await waitForStorageAbandonment([started.tmp], deadline);
-            const recovery = await guarded(root);
-            expect(recovery.code).toBe(0);
+            const recovery = await runMarkedGuard(root);
             expect(isAlive(started.pid)).toBe(false);
-            if (existsSync(started.tmp)) {
-                console.log(
-                    JSON.stringify({
-                        retainedAfterExit: true,
-                        scenario,
-                        program,
-                        recoveryReason: recovery.reason,
-                        evidence: recovery.output.slice(-512),
-                    })
-                );
-            }
-            expect(existsSync(started.tmp)).toBe(false);
+            expectMarkedRecovery(root, prior, recovery);
         },
         15_000
     );
@@ -673,21 +978,83 @@ describe('guard-owned temporary storage', () => {
         20_000
     );
 
-    it('treats an exit-zero empty process census as unavailable monitoring evidence and retains live storage', async () => {
+    async function verifyEmptyProcessCensusAdmission(holdPreparedRecord: boolean): Promise<void> {
         const deadline = Date.now() + 20_000;
         const root = fixture();
         const marker = join(root, 'empty.json');
         const resultPath = join(root, 'result.json');
+        const rootMarker = join(root, 'root.pid');
+        const childMarker = join(root, 'child.pid');
+        const admitted = join(root, 'admission.json');
+        const prepared = join(root, 'admission.pending');
+        const preparationReady = join(root, 'preparation-ready');
+        const publishPrepared = join(root, 'publish-prepared');
+        const samplesPath = join(root, 'samples.jsonl');
         const bin = join(root, 'bin');
         mkdirSync(bin);
         const fakePs = join(bin, 'ps');
+        writeFileSync(join(bin, 'package.json'), '{}\n');
         writeFileSync(
             fakePs,
-            `#!/bin/sh\ncase "$*" in\n *"pid=,ppid=,pgid=,rss=,command="*) if [ -f '${marker.replaceAll("'", "'\\''")}' ]; then exit 0; fi ;;\nesac\nexec /bin/ps "$@"\n`
+            `#!${process.execPath}
+const fs=require('node:fs');const {execFileSync}=require('node:child_process');
+const args=process.argv.slice(2),marker=${JSON.stringify(marker)},rootMarker=${JSON.stringify(rootMarker)},childMarker=${JSON.stringify(childMarker)};
+if(!args.includes('pid=,ppid=,pgid=,rss=,command=')){
+ process.stdout.write(execFileSync('/bin/ps',args,{encoding:'utf8'}));
+}else if(fs.existsSync(marker)){
+ fs.appendFileSync(${JSON.stringify(samplesPath)},JSON.stringify({empty:true})+'\\n');
+}else{
+ const output=execFileSync('/bin/ps',args,{encoding:'utf8'});
+ const rootPid=fs.existsSync(rootMarker)?Number(fs.readFileSync(rootMarker,'utf8')):undefined;
+ const rows=output.trimEnd().split('\\n').map(line=>{
+  const match=/^\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+/.exec(line);
+  if(!match)throw new Error('unusable controlled monitor row');
+  return {line,pid:Number(match[1]),parentPid:Number(match[2]),group:Number(match[3])};
+ });
+ const descendants=new Set();let changed=true;
+ while(changed){changed=false;for(const row of rows){if(row.pid!==rootPid&&(row.parentPid===rootPid||descendants.has(row.parentPid))&&!descendants.has(row.pid)){descendants.add(row.pid);changed=true}}}
+ const visible=rows.filter(row=>!descendants.has(row.pid));
+ const pids=visible.map(row=>row.pid);
+ const childPid=fs.existsSync(childMarker)?Number(fs.readFileSync(childMarker,'utf8')):undefined;
+ const rootRow=rows.find(row=>row.pid===rootPid);
+ const sample={empty:false,rootPid,supervisorPid:process.ppid,rootPresent:pids.includes(rootPid),supervisorPresent:pids.includes(process.ppid),admittedDescendants:visible.filter(row=>descendants.has(row.pid)).map(row=>row.pid),childPid,childPresent:pids.includes(childPid),rootGroup:rootRow?.group};
+ fs.appendFileSync(${JSON.stringify(samplesPath)},JSON.stringify(sample)+'\\n');
+ const catalog=visible.map(row=>row.line).join('\\n')+'\\n';
+ if(childPid!==undefined&&descendants.has(childPid)&&sample.rootPresent&&sample.supervisorPresent&&!fs.existsSync(${JSON.stringify(admitted)})){
+  const record=JSON.stringify({childPid,rootPid,rootGroup:rootRow.group});
+  if(${holdPreparedRecord}){
+   fs.writeFileSync(${JSON.stringify(prepared)},'');
+   fs.writeFileSync(${JSON.stringify(preparationReady)},'prepared');
+   let published=false;
+   const watch=fs.watch(${JSON.stringify(root)},()=>publish());
+   function publish(){
+    if(published||!fs.existsSync(${JSON.stringify(publishPrepared)}))return;
+    published=true;watch.close();
+    fs.writeFileSync(${JSON.stringify(prepared)},record);fs.renameSync(${JSON.stringify(prepared)},${JSON.stringify(admitted)});
+    process.stdout.write(catalog);
+   }
+   publish();
+  }else{fs.writeFileSync(${JSON.stringify(prepared)},record);fs.renameSync(${JSON.stringify(prepared)},${JSON.stringify(admitted)});process.stdout.write(catalog)}
+ }else process.stdout.write(catalog);
+}
+`
         );
         chmodSync(fakePs, 0o700);
-        const descendant = `require('node:fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir()}));setInterval(()=>{},1000)`;
-        const parent = `setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',env:{TMPDIR:process.env.TMPDIR,TMP:process.env.TMP,TEMP:process.env.TEMP,PATH:process.env.PATH}});child.unref()},375);setTimeout(()=>process.exit(0),1500)`;
+        const descendant = `
+const fs=require('node:fs');const {execFileSync}=require('node:child_process');
+fs.writeFileSync(${JSON.stringify(childMarker)},String(process.pid));
+const watch=fs.watch(${JSON.stringify(root)},()=>ready());
+function ready(){
+ if(!fs.existsSync(${JSON.stringify(admitted)}))return;
+ const admission=JSON.parse(fs.readFileSync(${JSON.stringify(admitted)},'utf8'));
+ if(admission.childPid!==process.pid)return;
+ watch.close();
+ fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp:require('node:os').tmpdir(),group:Number(execFileSync('/bin/ps',['-p',String(process.pid),'-o','pgid='],{encoding:'utf8'})),sessionPresent:process.env.SOURDAW_PROCESS_SESSION!==undefined}));
+ setInterval(()=>{},1000);
+}
+ready();
+`;
+        const parent = `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(rootMarker)},String(process.pid));const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',env:{TMPDIR:process.env.TMPDIR,TMP:process.env.TMP,TEMP:process.env.TEMP,PATH:process.env.PATH}});child.unref();setInterval(()=>{},1000);`;
         const options = {
             command: process.execPath,
             args: ['-e', parent],
@@ -711,9 +1078,32 @@ describe('guard-owned temporary storage', () => {
             throw new Error('empty census supervisor did not start');
         }
         childPids.add(supervisor.pid);
+        if (holdPreparedRecord) {
+            await waitUntil(() => existsSync(preparationReady));
+            const childPid = Number(readFileSync(childMarker, 'utf8'));
+            const rootPid = Number(readFileSync(rootMarker, 'utf8'));
+            childPids.add(childPid);
+            childPids.add(rootPid);
+            try {
+                expect(readFileSync(prepared, 'utf8')).toBe('');
+                expect(existsSync(admitted)).toBe(false);
+                expect(existsSync(marker)).toBe(false);
+                expect(isAlive(childPid)).toBe(true);
+            } finally {
+                writeFileSync(publishPrepared, 'publish');
+            }
+        }
         await waitUntil(() => existsSync(marker));
-        const started: { pid: number; tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
+        const started: { pid: number; tmp: string; group: number; sessionPresent: boolean } = JSON.parse(
+            readFileSync(marker, 'utf8')
+        );
         childPids.add(started.pid);
+        const admission: { childPid: number; rootPid: number; rootGroup: number } = JSON.parse(
+            readFileSync(admitted, 'utf8')
+        );
+        childPids.add(admission.rootPid);
+        const originalToken = readOwner(started.tmp).token;
+        const ownerTrackedAtChildReady = readOwner(started.tmp).tracked.map((identity) => identity.pid);
         // Unknown-tree monitor cleanup includes the guard's 7s wait and two 2s cleanup waits.
         await waitUntil(() => existsSync(resultPath), 15_000);
         const result = JSON.parse(readFileSync(resultPath, 'utf8'));
@@ -723,16 +1113,60 @@ describe('guard-owned temporary storage', () => {
                 code: result.code,
                 alive: isAlive(started.pid),
                 tempExists: existsSync(started.tmp),
+                admission,
+                ownerTrackedAtChildReady,
+                ownerTrackedAtGuardReturn: readOwner(started.tmp).tracked.map((identity) => identity.pid),
+                sessionPresent: started.sessionPresent,
+                childGroup: started.group,
             })
         );
         expect(isAlive(started.pid)).toBe(true);
         expect(existsSync(started.tmp)).toBe(true);
+        const samples: {
+            empty: boolean;
+            childPresent?: boolean;
+            rootPid?: number;
+            rootPresent?: boolean;
+            supervisorPresent?: boolean;
+            admittedDescendants?: number[];
+        }[] = readFileSync(samplesPath, 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line));
+        const usable = samples.filter((sample) => !sample.empty);
+        expect(usable.length).toBeGreaterThan(0);
+        expect(usable.every((sample) => sample.supervisorPresent)).toBe(true);
+        expect(usable.filter((sample) => sample.rootPid !== undefined).every((sample) => sample.rootPresent)).toBe(
+            true
+        );
+        expect(usable.some((sample) => sample.rootPid === admission.rootPid && sample.rootPresent)).toBe(true);
+        expect(
+            usable.every((sample) => sample.childPresent === false && sample.admittedDescendants?.length === 0)
+        ).toBe(true);
+        expect(samples.filter((sample) => sample.empty).length).toBeGreaterThanOrEqual(3);
+        expect(ownerTrackedAtChildReady).not.toContain(started.pid);
+        expect(readOwner(started.tmp).tracked.map((identity) => identity.pid)).not.toContain(started.pid);
+        expect(started.sessionPresent).toBe(false);
+        expect(started.group).not.toBe(admission.rootGroup);
+
         expect(result.reason).toBe('monitor');
         expect(result.code).not.toBe(0);
         await kill(started.pid);
+        await waitUntil(() => supervisor.exitCode !== null || supervisor.signalCode !== null);
+        await kill(admission.rootPid);
+        expect(isAlive(supervisor.pid)).toBe(false);
+        expect(isAlive(admission.rootPid)).toBe(false);
         await waitForStorageAbandonment([started.tmp], deadline);
-        expect((await guarded(root)).code).toBe(0);
-        expect(existsSync(started.tmp)).toBe(false);
+        const recovery = await runMarkedGuard(root);
+        expectMarkedRecovery(root, [{ tempDirectory: started.tmp, token: originalToken }], recovery);
+    }
+
+    it('treats an exit-zero empty process census as unavailable monitoring evidence and retains live storage', async () => {
+        await verifyEmptyProcessCensusAdmission(false);
+    }, 20_000);
+
+    it('keeps admission readiness pending until its complete record is published', async () => {
+        await verifyEmptyProcessCensusAdmission(true);
     }, 20_000);
 
     it('gives a nested guard its own temp and reserve without cleaning the live parents temp', async () => {
@@ -1124,13 +1558,542 @@ describe('storage ownership recovery', () => {
         expect(inspections).toEqual(expectedInspections);
     });
 
+    it.skipIf(process.getuid === undefined).each([
+        { scenario: 'third complete census', omissions: 2, state: 'dead', samples: 3, reason: undefined },
+        {
+            scenario: 'persistent omission',
+            omissions: 3,
+            state: 'unknown',
+            samples: 3,
+            reason: 'lsof-fields-unusable:descriptor-type-missing',
+        },
+        { scenario: 'third live borrower', omissions: 2, state: 'alive', samples: 3, reason: undefined },
+        {
+            scenario: 'descriptor omission then complete PID coverage',
+            omissions: 1,
+            state: 'dead',
+            samples: 3,
+            processSamples: 5,
+            reason: undefined,
+        },
+        {
+            scenario: 'descriptor omission then live borrower',
+            omissions: 1,
+            state: 'alive',
+            samples: 3,
+            processSamples: 4,
+            reason: undefined,
+        },
+        {
+            scenario: 'descriptor omission then persistent PID gap',
+            omissions: 1,
+            state: 'unknown',
+            samples: 3,
+            processSamples: 5,
+            reason: 'lsof-live-pid-missing:count=1',
+        },
+        {
+            scenario: 'descriptor omission then another new PID',
+            omissions: 1,
+            state: 'unknown',
+            samples: 3,
+            processSamples: 5,
+            reason: 'lsof-live-pid-missing:count=1',
+        },
+        {
+            scenario: 'expired second observation',
+            omissions: 2,
+            state: 'unknown',
+            samples: 2,
+            reason: 'file-census-time-bound',
+        },
+        {
+            scenario: 'third missing live PID',
+            omissions: 2,
+            state: 'unknown',
+            samples: 3,
+            reason: 'lsof-live-pid-missing:count=1',
+        },
+        {
+            scenario: 'persistent first PID gap despite another newborn',
+            omissions: 0,
+            state: 'unknown',
+            samples: 2,
+            reason: 'lsof-live-pid-missing:count=2',
+        },
+        {
+            scenario: 'unknown descriptor type',
+            omissions: 0,
+            state: 'unknown',
+            samples: 1,
+            reason: 'lsof-fields-unusable:unknown-file-type',
+        },
+        {
+            scenario: 'post-death recovery live PID gap',
+            omissions: 0,
+            state: 'unknown',
+            samples: 2,
+            reason: 'lsof-live-pid-missing:count=1',
+        },
+    ])(
+        'bounds Darwin census observations for $scenario',
+        ({ scenario, omissions, state, samples, processSamples, reason }) => {
+            const root = fixture();
+            // Isolate builtin substitutions in a child; the real parser, census and
+            // private-storage checks run without changing the test worker's globals.
+            const program = `
+            import childProcess from 'node:child_process';
+            import os from 'node:os';
+            import {syncBuiltinESMExports} from 'node:module';
+            const scenario=${JSON.stringify(scenario)},omissions=${omissions};
+            const mixedOmission=scenario.startsWith('descriptor omission then ');
+            const uid=process.getuid(),pid=process.pid,newPid=pid+100000,newerPid=pid+100001;
+            let samples=0,processSamples=0,now=0;
+            const timeouts=[];
+            os.platform=()=> 'darwin';
+            Date.now=()=>now;
+            process.kill=()=>true;
+            childProcess.spawnSync=(command,args,options)=>{
+                timeouts.push({command,timeout:options.timeout});
+                let stdout;
+                if(command==='ps'){
+                    if(args[0]==='-p')stdout=uid+' S\\n';
+                    else {
+                        processSamples++;
+                        let pids=[pid];
+                        if(scenario==='third missing live PID')pids.push(newPid);
+                        if(scenario==='post-death recovery live PID gap'&&processSamples>=3)pids.push(newPid);
+                        if(scenario==='persistent first PID gap despite another newborn'){
+                            if(processSamples>=2)pids.push(newPid);
+                            if(processSamples>=4)pids.push(newerPid);
+                        }
+                        if(mixedOmission&&processSamples>=3)pids.push(newPid);
+                        if(scenario==='descriptor omission then another new PID'&&processSamples>=5)pids.push(newerPid);
+                        stdout=pids.map(pid=>pid+' '+uid).join('\\n')+'\\n';
+                    }
+                }else if(command==='lsof'){
+                    samples++;
+                    now+=scenario==='expired second observation'?2500:100;
+                    if(samples<=omissions){
+                        stdout='p'+pid+'\\0\\nf3\\0nFD unavailable\\0\\n';
+                        if(mixedOmission)stdout='p'+pid+'\\0\\nfcwd\\0tDIR\\0n'+${JSON.stringify(join(root, 'tmp'))}+'\\0\\np'+newPid+'\\0\\nf3\\0nFD unavailable\\0\\n';
+                    }
+                    else {
+                        const type=scenario==='unknown descriptor type'?'UNKNOWN':'DIR';
+                        const path=scenario==='third live borrower'?${JSON.stringify(join(root, 'tmp'))}:'/outside';
+                        stdout='p'+pid+'\\0\\nfcwd\\0t'+type+'\\0n'+path+'\\0\\n';
+                        if(mixedOmission&&samples>=3&&scenario!=='descriptor omission then persistent PID gap'){
+                            const borrowed=scenario==='descriptor omission then live borrower'?${JSON.stringify(join(root, 'tmp'))}:'/outside';
+                            stdout+='p'+newPid+'\\0\\nfcwd\\0tDIR\\0n'+borrowed+'\\0\\n';
+                        }
+                    }
+                }else throw new Error('unexpected command '+command);
+                return {status:0,stdout,stderr:''};
+            };
+            syncBuiltinESMExports();
+            const {storageFileState}=await import(${JSON.stringify(guardPath)});
+            const reasons=[];
+            let state,retained,proofBeforeRecovery,claimPayloadCount;
+            if(scenario==='post-death recovery live PID gap'){
+                const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
+                const {randomUUID}=await import('node:crypto');
+                const {existsSync,readdirSync}=await import('node:fs');
+                const storageRoot=${JSON.stringify(join(root, 'storage'))};
+                const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>state=storageFileState([original,current],[],reason=>reasons.push(reason))};
+                const storage=createGuardStorage({root:storageRoot,token:randomUUID(),owner:${JSON.stringify(fakeOwner)},ports});
+                proofBeforeRecovery=storageFileState([storage.tempDirectory],[]);
+                createGuardStorage({root:storageRoot,token:randomUUID(),owner:${JSON.stringify(fakeReclaimer)},ports});
+                retained=existsSync(storage.tempDirectory);
+                claimPayloadCount=readdirSync(storageRoot+'/.claims').length;
+            }else state=storageFileState([${JSON.stringify(join(root, 'tmp'))}],[],reason=>reasons.push(reason));
+            console.log(JSON.stringify({state,reasons,samples,processSamples,timeouts,retained,proofBeforeRecovery,claimPayloadCount}));
+        `;
+            chmodSync(root, 0o700);
+            const observed: {
+                state: string;
+                reasons: string[];
+                samples: number;
+                processSamples: number;
+                timeouts: { command: string; timeout: number }[];
+                retained?: boolean;
+                proofBeforeRecovery?: string;
+                claimPayloadCount?: number;
+            } = JSON.parse(
+                execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 10_000,
+                })
+            );
+            expect(observed.state).toBe(state);
+            expect(observed.samples).toBe(samples);
+            expect(observed.reasons).toEqual(reason === undefined ? [] : [expect.stringContaining(reason)]);
+            const censusTimeouts = observed.timeouts.filter((sample) => sample.command === 'lsof');
+            expect(censusTimeouts.map((sample) => sample.timeout)).toEqual(
+                Array.from({ length: samples }, (_, index) => {
+                    if (scenario === 'post-death recovery live PID gap') {
+                        return 5000;
+                    }
+                    const elapsedPerObservation = scenario === 'expired second observation' ? 2500 : 100;
+                    return 5000 - index * elapsedPerObservation;
+                })
+            );
+            if (processSamples !== undefined) {
+                expect(observed.processSamples).toBe(processSamples);
+            } else if (state === 'dead') {
+                expect(observed.processSamples).toBe(4);
+            }
+            if (scenario === 'post-death recovery live PID gap') {
+                expect(observed.proofBeforeRecovery).toBe('dead');
+                expect(observed.claimPayloadCount).toBe(0);
+                expect(observed.retained).toBe(true);
+            }
+        }
+    );
+
+    it.skipIf(process.getuid === undefined).each([
+        {
+            scenario: 'successive newborns reach complete third catalog',
+            ending: 'complete',
+            secondSnapshot: 'live',
+            state: 'dead',
+            samples: 3,
+            processSamples: 6,
+        },
+        {
+            scenario: 'successive newborns reveal protected third-catalog borrower',
+            ending: 'borrower',
+            secondSnapshot: 'live',
+            state: 'alive',
+            samples: 3,
+            processSamples: 5,
+        },
+        {
+            scenario: 'successive newborns exhaust third catalog with another newborn',
+            ending: 'third newborn',
+            secondSnapshot: 'live',
+            state: 'unknown',
+            samples: 3,
+            processSamples: 6,
+        },
+        {
+            scenario: 'successive newborns reach the original deadline',
+            ending: 'deadline',
+            secondSnapshot: 'live',
+            state: 'unknown',
+            samples: 3,
+            processSamples: 5,
+        },
+        {
+            scenario: 'second newborn has another UID',
+            ending: 'complete',
+            secondSnapshot: 'wrong UID',
+            state: 'unknown',
+            samples: 2,
+            processSamples: 4,
+        },
+        {
+            scenario: 'second newborn has unknown state',
+            ending: 'complete',
+            secondSnapshot: 'unknown state',
+            state: 'unknown',
+            samples: 2,
+            processSamples: 4,
+        },
+        {
+            scenario: 'second newborn snapshot is denied',
+            ending: 'complete',
+            secondSnapshot: 'denied',
+            state: 'unknown',
+            samples: 2,
+            processSamples: 4,
+        },
+    ] as const)(
+        'bounds successive Darwin PID arrivals for $scenario',
+        ({ ending, secondSnapshot, state, samples, processSamples }) => {
+            const root = fixture();
+            chmodSync(root, 0o700);
+            const temp = join(root, 'tmp');
+            const program = `
+                import childProcess from 'node:child_process';
+                import os from 'node:os';
+                import {syncBuiltinESMExports} from 'node:module';
+                const ending=${JSON.stringify(ending)},secondSnapshot=${JSON.stringify(secondSnapshot)};
+                const uid=process.getuid(),pid=process.pid,firstPid=pid+100000,secondPid=pid+100001,thirdPid=pid+100002;
+                const temp=${JSON.stringify(temp)};
+                let fileSamples=0,processSamples=0,now=0;
+                const timeouts=[],accountPids=[],catalogPids=[],snapshotPids=[];
+                os.platform=()=> 'darwin';
+                Date.now=()=>now;
+                process.kill=()=>true;
+                childProcess.spawnSync=(command,args,options)=>{
+                    timeouts.push({command,timeout:options.timeout});
+                    if(command==='ps'&&args[0]==='-p'){
+                        const inspected=Number(args[1]);
+                        snapshotPids.push(inspected);
+                        if(inspected===secondPid&&secondSnapshot==='denied')return {status:1,stdout:'',stderr:'denied'};
+                        const user=inspected===secondPid&&secondSnapshot==='wrong UID'?uid+1:uid;
+                        const state=inspected===secondPid&&secondSnapshot==='unknown state'?'?':'S';
+                        return {status:0,stdout:user+' '+state+'\\n',stderr:''};
+                    }
+                    if(command==='ps'){
+                        processSamples++;
+                        const accounts=[
+                            [pid],[pid,firstPid],[pid,firstPid],[pid,firstPid,secondPid],
+                            [pid,firstPid,secondPid],
+                            ending==='third newborn'?[pid,firstPid,secondPid,thirdPid]:[pid,firstPid,secondPid],
+                        ];
+                        const pids=accounts[processSamples-1];
+                        if(pids===undefined)throw new Error('account observation exceeded six samples');
+                        accountPids.push(pids);
+                        return {status:0,stdout:pids.map(value=>value+' '+uid).join('\\n')+'\\n',stderr:''};
+                    }
+                    if(command==='lsof'){
+                        fileSamples++;
+                        now+=ending==='deadline'&&fileSamples===3?4800:100;
+                        const pids=fileSamples===1?[pid]:fileSamples===2?[pid,firstPid]:[pid,firstPid,secondPid];
+                        catalogPids.push(pids);
+                        const stdout=pids.map(value=>{
+                            const path=ending==='borrower'&&fileSamples===3&&value===secondPid?temp:'/outside';
+                            return 'p'+value+'\\0\\nfcwd\\0tDIR\\0n'+path+'\\0\\n';
+                        }).join('');
+                        return {status:0,stdout,stderr:''};
+                    }
+                    throw new Error('unexpected command '+command);
+                };
+                syncBuiltinESMExports();
+                const {storageFileState}=await import(${JSON.stringify(guardPath)});
+                const reasons=[];
+                const result=storageFileState([temp],[],reason=>reasons.push(reason));
+                console.log(JSON.stringify({result,reasons,fileSamples,processSamples,timeouts,accountPids,catalogPids,snapshotPids,pid,firstPid,secondPid,thirdPid,uid}));
+            `;
+            const observed: {
+                result: string;
+                reasons: string[];
+                fileSamples: number;
+                processSamples: number;
+                timeouts: { command: string; timeout: number }[];
+                accountPids: number[][];
+                catalogPids: number[][];
+                snapshotPids: number[];
+                pid: number;
+                firstPid: number;
+                secondPid: number;
+                thirdPid: number;
+                uid: number;
+            } = JSON.parse(
+                execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 10_000,
+                })
+            );
+            const { pid, firstPid, secondPid, thirdPid, uid } = observed;
+            const thirdAccounts =
+                ending === 'third newborn' ? [pid, firstPid, secondPid, thirdPid] : [pid, firstPid, secondPid];
+            const expectedAccounts = [
+                [pid],
+                [pid, firstPid],
+                [pid, firstPid],
+                [pid, firstPid, secondPid],
+                [pid, firstPid, secondPid],
+                thirdAccounts,
+            ];
+            expect(observed.result).toBe(state);
+            expect(observed.fileSamples).toBe(samples);
+            expect(observed.processSamples).toBe(processSamples);
+            expect(observed.accountPids).toEqual(expectedAccounts.slice(0, processSamples));
+            expect(observed.catalogPids).toEqual(
+                [[pid], [pid, firstPid], [pid, firstPid, secondPid]].slice(0, samples)
+            );
+            expect(observed.snapshotPids).toEqual(
+                ending === 'third newborn' ? [firstPid, secondPid, thirdPid] : [firstPid, secondPid]
+            );
+            expect(
+                observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)
+            ).toEqual([5000, 4900, 4800].slice(0, samples));
+            let expectedReason: string | undefined;
+            if (ending === 'deadline') {
+                expectedReason = 'file-census-time-bound';
+            }
+            if (ending === 'third newborn') {
+                expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${thirdPid}/${uid}/S`;
+            }
+            if (secondSnapshot === 'wrong UID') {
+                expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${secondPid}/${uid + 1}/S`;
+            }
+            if (secondSnapshot === 'unknown state') {
+                expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${secondPid}/${uid}/?`;
+            }
+            if (secondSnapshot === 'denied') {
+                expectedReason = `lsof-live-pid-missing:count=1:pid/uid/state=${secondPid}/unknown/unknown`;
+            }
+            expect(observed.reasons).toEqual(expectedReason === undefined ? [] : [expectedReason]);
+        }
+    );
+
+    it.skipIf(process.getuid === undefined).each([
+        { scenario: 'complete current coverage', gap: false, expectedStates: ['dead', 'dead', 'dead'] },
+        { scenario: 'new uncovered live PID', gap: true, expectedStates: ['unknown'] },
+    ] as const)('requires fresh startup recovery proof for $scenario', ({ gap, expectedStates }) => {
+        const root = fixture();
+        const program = `
+            import childProcess from 'node:child_process';
+            import os from 'node:os';
+            import {syncBuiltinESMExports} from 'node:module';
+            import {randomUUID} from 'node:crypto';
+            import {existsSync,readFileSync,readdirSync} from 'node:fs';
+            import {join} from 'node:path';
+            const gap=${gap},uid=process.getuid(),pid=process.pid,newPid=pid+100000,newerPid=pid+100001;
+            const storageRoot=${JSON.stringify(join(root, 'storage'))};
+            let fileSamples=0,processSamples=0,now=0;
+            const timeouts=[],proofPaths=[],accountPids=[],catalogPids=[];
+            os.platform=()=> 'darwin';
+            Date.now=()=>now;
+            process.kill=()=>true;
+            childProcess.spawnSync=(command,args,options)=>{
+                timeouts.push({command,timeout:options.timeout});
+                let stdout;
+                if(command==='ps'){
+                    if(args[0]==='-p')stdout=uid+' S\\n';
+                    else {
+                        processSamples++;
+                        const pids=[pid];
+                        if((gap&&processSamples>=3)||(!gap&&processSamples>=4))pids.push(newPid);
+                        if(!gap&&processSamples>=6)pids.push(newerPid);
+                        accountPids.push(pids);
+                        stdout=pids.map(value=>value+' '+uid).join('\\n')+'\\n';
+                    }
+                }else if(command==='lsof'){
+                    fileSamples++;
+                    now+=100;
+                    const covered=gap||fileSamples<=2?[pid]:fileSamples===3?[pid,newPid]:[pid,newPid,newerPid];
+                    catalogPids.push(covered);
+                    stdout=covered.map(value=>'p'+value+'\\0\\nfcwd\\0tDIR\\0n/outside\\0\\n').join('');
+                }else throw new Error('unexpected command '+command);
+                return {status:0,stdout,stderr:''};
+            };
+            syncBuiltinESMExports();
+            const {storageFileState}=await import(${JSON.stringify(guardPath)});
+            const {createGuardStorage,recoverGuardStorage}=await import(${JSON.stringify(storagePath)});
+            const reasons=[],states=[];
+            const ports={
+                identityState:()=> 'dead',
+                sessionState:(_owner,original,current=original)=>{
+                    proofPaths.push({original,current});
+                    const state=storageFileState([original,current],[],reason=>reasons.push(reason));
+                    states.push(state);
+                    return state;
+                },
+            };
+            const originalToken=randomUUID();
+            const storage=createGuardStorage({root:storageRoot,token:originalToken,owner:${JSON.stringify(fakeOwner)},ports});
+            const proofBeforeRecovery=storageFileState([storage.tempDirectory],[]);
+            recoverGuardStorage(storageRoot,ports,${JSON.stringify(fakeReclaimer)});
+            const originalRetained=existsSync(storage.tempDirectory);
+            const ownerPath=join(storageRoot,originalToken,'owner.json');
+            const originalOwner=existsSync(ownerPath)?JSON.parse(readFileSync(ownerPath,'utf8')):undefined;
+            const claims=readdirSync(join(storageRoot,'.claims')).flatMap(token=>{
+                const claim=join(storageRoot,'.claims',token);
+                return readdirSync(claim).filter(name=>name!=='claim.json').map(name=>{
+                    const path=join(claim,name);
+                    return {name,owner:JSON.parse(readFileSync(join(path,'owner.json'),'utf8'))};
+                });
+            });
+            console.log(JSON.stringify({proofBeforeRecovery,states,reasons,fileSamples,processSamples,timeouts,proofPaths,accountPids,catalogPids,originalRetained,originalOwner,claims,pid,newPid,newerPid,uid,originalToken}));
+        `;
+        const observed: {
+            proofBeforeRecovery: string;
+            states: string[];
+            reasons: string[];
+            fileSamples: number;
+            processSamples: number;
+            timeouts: { command: string; timeout: number }[];
+            proofPaths: { original: string; current: string }[];
+            accountPids: number[][];
+            catalogPids: number[][];
+            originalRetained: boolean;
+            originalOwner?: { token: string };
+            claims: { name: string; owner: { token: string } }[];
+            pid: number;
+            newPid: number;
+            newerPid: number;
+            uid: number;
+            originalToken: string;
+        } = JSON.parse(
+            execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 10_000,
+            })
+        );
+        expect(observed.proofBeforeRecovery).toBe('dead');
+        expect(observed.states).toEqual(expectedStates);
+        expect(observed.reasons).toEqual(
+            gap ? [`lsof-live-pid-missing:count=1:pid/uid/state=${observed.newPid}/${observed.uid}/S`] : []
+        );
+        expect(observed.fileSamples).toBe(gap ? 2 : 6);
+        expect(observed.processSamples).toBe(gap ? 4 : 12);
+        const { pid, newPid, newerPid } = observed;
+        let expectedAccountPids = [
+            [pid],
+            [pid],
+            [pid],
+            [pid, newPid],
+            [pid, newPid],
+            [pid, newPid, newerPid],
+            ...Array.from({ length: 6 }, () => [pid, newPid, newerPid]),
+        ];
+        let expectedCatalogPids = [
+            [pid],
+            [pid],
+            [pid, newPid],
+            [pid, newPid, newerPid],
+            [pid, newPid, newerPid],
+            [pid, newPid, newerPid],
+        ];
+        if (gap) {
+            expectedAccountPids = [[pid], [pid], [pid, newPid], [pid, newPid]];
+            expectedCatalogPids = [[pid], [pid]];
+        }
+        expect(observed.accountPids).toEqual(expectedAccountPids);
+        expect(observed.catalogPids).toEqual(expectedCatalogPids);
+        expect(observed.timeouts.filter((sample) => sample.command === 'lsof').map((sample) => sample.timeout)).toEqual(
+            gap ? [5000, 5000] : [5000, 5000, 4900, 4800, 5000, 5000]
+        );
+        expect(observed.proofPaths).toHaveLength(gap ? 1 : 3);
+        expect(observed.proofPaths[0]?.current).toBe(observed.proofPaths[0]?.original);
+        if (!gap) {
+            expect(observed.proofPaths[1]?.current).toBe(observed.proofPaths[1]?.original);
+            expect(observed.proofPaths[2]?.current).toContain('/.claims/');
+            expect(observed.proofPaths[2]?.current).not.toBe(observed.proofPaths[2]?.original);
+        }
+        expect(observed.originalRetained).toBe(gap);
+        expect(observed.originalOwner?.token).toBe(gap ? observed.originalToken : undefined);
+        expect(observed.claims).toEqual([]);
+    });
+
     it.skipIf(process.platform !== 'darwin').each([
-        { scenario: 'valid replacement reclaims', persistent: false, consumer: false, released: true },
-        { scenario: 'live consumer replacement retains', persistent: false, consumer: true, released: false },
-        { scenario: 'persistent missing type retains', persistent: true, consumer: false, released: false },
+        { scenario: 'valid replacement reclaims', omissions: 1, persistent: false, consumer: false, released: true },
+        { scenario: 'third observation reclaims', omissions: 2, persistent: false, consumer: false, released: true },
+        { scenario: 'third live consumer retains', omissions: 2, persistent: false, consumer: true, released: false },
+        {
+            scenario: 'live consumer replacement retains',
+            omissions: 1,
+            persistent: false,
+            consumer: true,
+            released: false,
+        },
+        {
+            scenario: 'persistent missing type retains',
+            omissions: 3,
+            persistent: true,
+            consumer: false,
+            released: false,
+        },
     ])(
         'takes bounded fresh file proof for a missing descriptor type: $scenario',
-        async ({ persistent, consumer, released }) => {
+        async ({ omissions, persistent, consumer, released }) => {
             const root = fixture();
             const bin = join(root, 'bin');
             mkdirSync(bin);
@@ -1138,13 +2101,14 @@ describe('storage ownership recovery', () => {
             const utility = join(bin, 'lsof');
             writeFileSync(
                 utility,
-                `#!/bin/sh\nif ${persistent ? 'true' : `[ ! -e '${count}' ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
+                `#!/bin/sh\nif ${persistent ? 'true' : `[ ! -e '${count}' ] || [ $(/usr/bin/wc -l < '${count}') -lt ${omissions} ]`}; then\n echo incomplete >> '${count}'\n printf 'p1\\0\\nf3\\0n/not-owned\\0\\n'\nelse\n echo complete >> '${count}'\n exec /usr/sbin/lsof "$@"\nfi\n`
             );
             chmodSync(utility, 0o700);
             const resultPath = join(root, 'result.json');
             const diagnosticPath = join(root, 'proof-diagnostic.json');
             const program = `
-            const {writeFileSync,existsSync}=await import('node:fs');
+            const {writeFileSync,existsSync,readdirSync}=await import('node:fs');
+            const {join}=await import('node:path');
             const {spawn}=await import('node:child_process');
             const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
             const {storageFileState}=await import(${JSON.stringify(guardPath)});
@@ -1158,7 +2122,9 @@ describe('storage ownership recovery', () => {
                     await new Promise((resolve,reject)=>{holder.once('spawn',resolve);holder.once('error',reject)});
                 }
                 const released=await storage.release(true);
-                writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({released,exists:existsSync(storage.tempDirectory)}));
+                const claimsRoot=${JSON.stringify(join(root, 'storage', '.claims'))};
+                const claimPayloads=readdirSync(claimsRoot).flatMap(claim=>readdirSync(join(claimsRoot,claim)).filter(name=>name!=='claim.json')).length;
+                writeFileSync(${JSON.stringify(resultPath)},JSON.stringify({released,exists:existsSync(storage.tempDirectory),claimPayloads}));
                 writeFileSync(${JSON.stringify(diagnosticPath)},JSON.stringify(reasons));
             } finally {if(holder){holder.kill('SIGKILL');await closed}}
         `;
@@ -1175,15 +2141,19 @@ describe('storage ownership recovery', () => {
             expect(JSON.parse(readFileSync(resultPath, 'utf8')), readFileSync(diagnosticPath, 'utf8')).toEqual({
                 released,
                 exists: !released,
+                claimPayloads: 0,
             });
             const samples = readFileSync(count, 'utf8').trim().split('\n');
-            expect(samples.slice(0, 2)).toEqual(persistent ? ['incomplete', 'incomplete'] : ['incomplete', 'complete']);
+            expect(samples.slice(0, omissions)).toEqual(Array.from({ length: omissions }, () => 'incomplete'));
+            if (!persistent) {
+                expect(samples[omissions]).toBe('complete');
+            }
             if (released) {
-                expect(samples.length).toBeGreaterThanOrEqual(3);
-                expect(samples.length).toBeLessThanOrEqual(4);
-                expect(samples.slice(2).every((sample) => sample === 'complete')).toBe(true);
+                expect(samples.length).toBeGreaterThanOrEqual(omissions + 2);
+                expect(samples.length).toBeLessThanOrEqual(omissions + 3);
+                expect(samples.slice(omissions).every((sample) => sample === 'complete')).toBe(true);
             } else {
-                expect(samples.length).toBe(2);
+                expect(samples.length).toBe(persistent ? 3 : omissions + 1);
             }
         },
         15_000

@@ -68,6 +68,19 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-10-21 — final cleanup changed storage state after result construction
+
+PR #5274 (`40baa0716b`) set a storage-only leak reason and retained message before its
+existing `finally` cleanup attempt. Complete proof on that final attempt could delete the
+owned payload while the returned result still said it was retained. The historical review
+stance, prompt, and tier are unestablished. A result assembled before finalization was not
+an oracle for the final state.
+
+Probe a real guarded child and owned payload with the first release refused and the final
+direct and claimed release permitted. Assert exact owner and claim removal alongside the
+reported reason and output. Persistent refusal must still report retention, and an earlier
+process or resource failure must remain a failure after storage removal.
+
 ### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
 
 The orchestrator packet prescribed the requested beat-four anchor without tracing
@@ -540,6 +553,21 @@ Probe: render a mono buffer through each real factory in Chromium OfflineAudioCo
 must produce a right-channel peak; Widener at non-unity width must emit equal left and right
 samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
 Removing the explicit speakers upmix at either input must turn its mono assertion red.
+
+### 2026-10-12 — near-zero tempo identity escape (PR #5199)
+
+Commit `77f11923e6bb9906c14d84d3709dac4c97dd5a61` relocated the projected opening
+boundary to zero but lost the selected authored governing beat. Three instant changes at
+`2e-7`, `4e-7`, `6e-7` beats with 90, 120, 160 BPM projected a 90 BPM tail instead of 160.
+Public review `5472288669` flagged the opening fold without a case; final review
+`5474617910` missed multiple positive changes in the origin bucket. Missing input coverage
+is established; private prompt and tier are unavailable.
+
+Relocate the engine coordinate independently of authored tempo identity. Probe several distinct
+values within the origin tolerance, both with an exact-zero member and entirely positive starts;
+require the last value to govern the terminal segment. Separately preserve each sampled ramp
+boundary's beat integral and final tail. Restoring the zero-coordinate lookup must fail the
+cluster cases without requiring a renderer sample rate.
 
 ### 2026-10-11 — warning-only Faust failure produced an incomplete musician export (#5215)
 
