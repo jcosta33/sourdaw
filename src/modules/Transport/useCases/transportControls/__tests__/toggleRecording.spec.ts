@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
+import { type TimeSignatureChange } from '../../../models/TimeSignatureMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { executePlayheadSeek } from '../executePlayheadSeek';
 import { recordingLifecycle } from '../recordingLifecycle';
+import { resolveRollStartBeat } from '../resolveRollStartBeat';
 import { toggleRecording } from '../toggleRecording';
 
 type TestRecordingBuffer = {
@@ -23,6 +27,7 @@ type TestRecordingClip = {
 type TestRecordedCapture = {
     provisionalStartBeat: number;
     mediaOriginSeconds: number;
+    sourceContextOriginSeconds: number;
 };
 
 type TestTrack = {
@@ -37,12 +42,14 @@ type TestTrackState = {
 
 const armedAudioTrack = (): TestTrack[] => [{ id: 'track-audio', kind: 'audio', armed: true }];
 
-type TestRecordingResult = { kind: 'completed'; buffer: TestRecordingBuffer } | { kind: 'failed'; reason: string };
+type TestRecordingResult =
+    | { kind: 'completed'; buffer: TestRecordingBuffer; sampleZeroContextFrame: number; sampleRate: number }
+    | { kind: 'failed'; reason: string };
 
 type StartAudioRecording = (trackId: string, callback: (result: TestRecordingResult) => void) => Promise<boolean>;
 
 const mocks = vi.hoisted(() => {
-    const timeSignatureMapStore: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
+    const timeSignatureMapStore: { value: { changes: TimeSignatureChange[] } | null } = { value: { changes: [] } };
     const tempoMapStore: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
     return {
         tempoMapStore,
@@ -90,7 +97,17 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 
 // Side-effecting collaborators of the count-in / recording paths.
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: mocks.ensureTrackStrips }));
-vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
+vi.mock('../startPlayback', () => ({
+    startPlayback: async (onRoll?: (contextSeconds: number, beat: number) => void) => {
+        await mocks.startPlayback();
+        const state = getTransportState();
+        if (state) {
+            playheadClockRef.beat = resolveRollStartBeat(state, mocks.timeSignatureMapStore.value?.changes ?? []);
+            playheadClockRef.audioTimeSeconds = mocks.getAudioContext().currentTime;
+            onRoll?.(playheadClockRef.audioTimeSeconds, playheadClockRef.beat);
+        }
+    },
+}));
 vi.mock('../stopActiveRecording', () => ({
     stopActiveRecording: mocks.stopActiveRecording,
 }));
@@ -129,6 +146,13 @@ describe('toggleRecording', () => {
     // clicks are scheduled on), so tests that exercise the armed start must
     // advance `currentTime` alongside the fake wall timers.
     const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
+    let sampleZeroFrame = 0;
+
+    function publishPlaybackClock(beat: number): void {
+        playheadClockRef.beat = beat;
+        playheadClockRef.audioTimeSeconds = audioClock.currentTime;
+        playheadPositionRef.current = beat;
+    }
 
     function elapse(ms: number): void {
         audioClock.currentTime += ms / 1000;
@@ -141,7 +165,11 @@ describe('toggleRecording', () => {
         // resumeEngine returns Promise<void>; default to resolved so the `.catch`
         // chain in the count-in path has a thenable.
         mocks.resumeEngine.mockResolvedValue(undefined);
-        mocks.startAudioRecording.mockResolvedValue(true);
+        sampleZeroFrame = 0;
+        mocks.startAudioRecording.mockImplementation(() => {
+            sampleZeroFrame = Math.round(audioClock.currentTime * 48000);
+            return Promise.resolve(true);
+        });
         mocks.stopAudioRecording.mockResolvedValue(undefined);
         // `startPlayback` now resolves when the transport has actually rolled,
         // and the recording path waits on it; the default here is a roll that
@@ -161,6 +189,7 @@ describe('toggleRecording', () => {
         audioClock.currentTime = 0;
         audioClock.baseLatency = 0;
         audioClock.outputLatency = 0;
+        publishPlaybackClock(0);
         mocks.getAudioContext.mockReturnValue(audioClock);
         // clearAllMocks keeps return values, so a track snapshot an earlier test
         // installed would otherwise leak into every later one through the
@@ -345,6 +374,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recording_clip]);
+        publishPlaybackClock(recording_clip.startBeat);
 
         toggleRecording();
 
@@ -357,7 +387,12 @@ describe('toggleRecording', () => {
             throw new Error('Expected recording callback to be registered');
         }
 
-        recording_callback({ kind: 'completed', buffer: recorded_buffer });
+        recording_callback({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: recorded_buffer,
+        });
 
         expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({
             buffer: recorded_buffer,
@@ -404,6 +439,7 @@ describe('toggleRecording', () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
+            playheadPosition: 4,
             isRecording: false,
             countInEnabled: false,
             punchInEnabled: false,
@@ -431,7 +467,12 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ kind: 'completed', buffer: { duration: 2 } });
+        captured({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 2 },
+        });
         await Promise.resolve();
 
         const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
@@ -459,6 +500,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recordingClip]);
+        publishPlaybackClock(recordingClip.startBeat);
 
         toggleRecording();
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
@@ -467,11 +509,21 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ kind: 'completed', buffer: { duration: 2 } });
+        captured({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 2 },
+        });
         await vi.waitFor(() => expect(mocks.commitRecording).toHaveBeenCalledOnce());
 
         const capture = mocks.commitRecording.mock.calls[0]?.[1];
-        expect(capture).toEqual({ provisionalStartBeat: 4, mediaOriginSeconds: expect.any(Number) });
+        expect(capture).toEqual({
+            provisionalStartBeat: 4,
+            mediaOriginSeconds: expect.any(Number),
+            sourceContextOriginSeconds: 9.9,
+            sourceDurationSeconds: 2,
+        });
         expect(capture?.mediaOriginSeconds).toBeCloseTo(secondsBetweenBeats([], 0, 3.8, 120), 9);
     });
 
@@ -513,7 +565,12 @@ describe('toggleRecording', () => {
         }
         // The stop, 50 ms into a hold that is still open.
         audioClock.currentTime = 10.05;
-        captured({ kind: 'completed', buffer: { duration: 2 } });
+        captured({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 2 },
+        });
         await Promise.resolve();
 
         const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
@@ -547,6 +604,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recordingClip]);
+        publishPlaybackClock(recordingClip.startBeat);
 
         toggleRecording();
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
@@ -556,7 +614,12 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ kind: 'completed', buffer: { duration: 2 } });
+        captured({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 2 },
+        });
         await Promise.resolve();
 
         const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
@@ -598,7 +661,12 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ kind: 'completed', buffer: { duration: 4 } });
+        captured({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 4 },
+        });
         await Promise.resolve();
 
         const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
@@ -639,6 +707,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recordingClip]);
+        publishPlaybackClock(recordingClip.startBeat);
 
         toggleRecording();
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
@@ -647,7 +716,12 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ kind: 'completed', buffer: { duration: 4 } });
+        captured({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 4 },
+        });
         await Promise.resolve();
 
         const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
@@ -681,6 +755,7 @@ describe('toggleRecording', () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
+            playheadPosition: 4,
             isRecording: false,
             countInEnabled: false,
             punchInEnabled: false,
@@ -708,7 +783,12 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ kind: 'completed', buffer: { duration: 2 } });
+        captured({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 2 },
+        });
         await Promise.resolve();
 
         const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
@@ -961,16 +1041,20 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ kind: 'completed', buffer: { duration: 2 } });
+        captured({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 2 },
+        });
 
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
     });
 
-    it('falls back to 120 bpm in the recorder callback when the transport snapshot is null', async () => {
-        // The transport tempo at buffer-commit time is read fresh. If the snapshot
-        // is null, the `?? 120` fallback must drive the sample->beat conversion.
-        // Tempo 60 would yield endBeat 12; the 120 fallback yields endBeat 14,
-        // so asserting 14 proves the null-transport fallback was used.
+    it('keeps captured origin while placement falls back to 120 bpm for a null transport snapshot', async () => {
+        // Sample origin stays at admission's 60 BPM beat 10 (second 10).
+        // A null placement snapshot still uses 120 BPM to place the captured
+        // two seconds: the clip ends at beat 24, without retiming its source.
         const recordingClip = {
             id: 'clip-recording',
             trackId: 'track-audio',
@@ -991,6 +1075,7 @@ describe('toggleRecording', () => {
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
         mocks.startRecording.mockReturnValue([recordingClip]);
+        publishPlaybackClock(recordingClip.startBeat);
 
         toggleRecording();
         await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
@@ -1002,15 +1087,20 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ kind: 'completed', buffer: { duration: 2 } });
+        captured({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 2 },
+        });
         await Promise.resolve();
 
         const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clipUpdate) {
             throw new Error('Expected the recording clip to be committed');
         }
-        // durationBeats = 2 * (120/60) = 4 -> endBeat 14 (not 12 from tempo 60).
-        expect(clipUpdate.endBeat).toBe(14);
+        expect(clipUpdate.endBeat).toBe(24);
+        expect(mocks.commitRecording.mock.calls[0]?.[1]?.mediaOriginSeconds).toBe(10);
     });
 
     describe('recording admission (#3679)', () => {
@@ -1130,7 +1220,7 @@ describe('toggleRecording', () => {
             await vi.waitFor(() => {
                 expect(mocks.startRecording).toHaveBeenCalledOnce();
             });
-            expect(mocks.startRecording).toHaveBeenCalledWith(8);
+            expect(mocks.startRecording).toHaveBeenCalledWith(8, expect.any(Function));
             expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
         });
 
@@ -1164,7 +1254,7 @@ describe('toggleRecording', () => {
             // boundary and opens the take there.
             audioClock.currentTime = 12;
             await vi.advanceTimersByTimeAsync(800);
-            expect(mocks.startRecording).toHaveBeenCalledWith(8);
+            expect(mocks.startRecording).toHaveBeenCalledWith(8, expect.any(Function));
         });
 
         it('canceling the count-in cancels the armed audio-clock start', () => {
@@ -1235,7 +1325,7 @@ describe('toggleRecording', () => {
             await vi.waitFor(() => {
                 expect(mocks.startRecording).toHaveBeenCalledOnce();
             });
-            expect(mocks.startRecording).toHaveBeenCalledWith(undefined);
+            expect(mocks.startRecording).toHaveBeenCalledWith(undefined, expect.any(Function));
             expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
         });
     });

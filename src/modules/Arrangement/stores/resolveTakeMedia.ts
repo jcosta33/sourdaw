@@ -15,6 +15,7 @@ import { type Clip } from '../models/Track';
 
 type TakeMedia = {
     earliestBeat: number;
+    latestBeatAt?: (fragmentStartBeat: number) => number;
     /** Carries the loop-occurrence count for probability rolls, never an audio seek. */
     sourceStartBeat: number;
     /** Compatibility offset, read at the fragment's start tempo. */
@@ -31,7 +32,7 @@ type TakeMedia = {
  * MIDI retains its beat-domain offsets and loop-occurrence origin.
  */
 export function resolveTakeMedia(
-    take: Pick<Take, 'sourceOffsetBeats' | 'sourceOffsetSeconds' | 'passAnchorSeconds' | 'passDepthSeconds'>,
+    take: Pick<Take, 'sourceOffsetBeats' | 'sourceOffsetSeconds' | 'passAnchorSeconds' | 'passDepthSeconds' | 'passSourceEndSeconds'>,
     clip: Clip,
     timeline: TempoTimeline
 ): TakeMedia {
@@ -121,6 +122,12 @@ export function resolveTakeMedia(
     return {
         earliestBeat: Math.max(clip.startBeat, passStartBeat),
         sourceStartBeat,
+        ...(take.passSourceEndSeconds === undefined ? {} : {
+            latestBeatAt: (beat: number) => {
+                const remaining = take.passSourceEndSeconds! - sourceAt(beat);
+                return remaining <= 0 ? beat : timeline.beatAtSeconds(timeline.secondsAtBeat(beat) + remaining / rate);
+            },
+        }),
         offsetAt,
         clipAt: (beat) => {
             const offsetSeconds = sourceAt(beat);

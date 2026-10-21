@@ -43,6 +43,8 @@ export type Take = {
      * material sounds from its clip's start, bounded by its clip alone.
      */
     passDepthSeconds?: number;
+    /** Exclusive ending in the recorded PCM, frozen per captured audio pass. */
+    passSourceEndSeconds?: number;
 };
 
 type TakeSourceDepthFields = Pick<Take, 'passAnchorSeconds' | 'passDepthSeconds'> & {

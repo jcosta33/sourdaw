@@ -61,7 +61,7 @@ export function resolveTrackClipsWithComping(
 
         const media = resolveTakeMedia(take, sourceClip, timeline);
         const overlapStart = Math.max(region.startBeat, media.earliestBeat);
-        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat);
+        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeatAt?.(overlapStart) ?? Infinity);
         if (overlapStart >= overlapEnd) {
             continue;
         }

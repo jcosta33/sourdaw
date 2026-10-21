@@ -8,10 +8,16 @@ import { stopTrackInputMonitoring } from '../audioRecorder/stopTrackInputMonitor
 export async function startAudioRecording(
     trackId: string,
     onTerminal: Parameters<typeof startAudioRecordingRepo>[1],
-    inputId?: string | null
+    inputId?: string | null,
+    onCaptureClock?: Parameters<typeof startAudioRecordingRepo>[3]
 ): Promise<boolean> {
     const selectedInputId = inputId === undefined ? getSelectedInputId() : inputId;
-    const admitted = await startAudioRecordingRepo(trackId, onTerminal, selectedInputId);
+    let admitted: boolean;
+    if (onCaptureClock === undefined) {
+        admitted = await startAudioRecordingRepo(trackId, onTerminal, selectedInputId);
+    } else {
+        admitted = await startAudioRecordingRepo(trackId, onTerminal, selectedInputId, onCaptureClock);
+    }
     if (!admitted) {
         return false;
     }
