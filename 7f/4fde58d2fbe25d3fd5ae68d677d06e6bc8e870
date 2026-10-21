@@ -1,0 +1,33 @@
+src/modules/TimelineEditor/presentations/views/AutomationLane/NotePropertyLane.tsx
+  s_d257b09300b1ad::t_caa5553e7d9348 148-149,153,234-235,270,296
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  s_ba8dd89de9aac7::t_29ff04118e3644 170-235
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_d257b09300b1ad::t_9b5e0d5784f476 564
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollExpressionLaneReach.spec.tsx
+  s_ba8dd89de9aac7::t_2d61c4653982f4 26-28,39,346-430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f4fde58d2fbe25d3fd5ae68d677d06e6bc8e870",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
