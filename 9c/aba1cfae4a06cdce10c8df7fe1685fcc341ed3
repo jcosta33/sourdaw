@@ -1,0 +1,30 @@
+scripts/resourceGuard.ts
+  s_1c08b47ac3792f::t_c1430ad873c0af 1579-1603,1620-1636,1638
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_1c08b47ac3792f::t_b7dca38dfd3d48 1867
+  s_1c08b47ac3792f::t_551203f97fd112 172-179
+  s_1c08b47ac3792f::t_6d4997c56dc2a4 1327-1332
+  s_1c08b47ac3792f::t_491ce444bb54e1 1310-1322,1324,1326,1333-1335,1337-1365
+  s_1c08b47ac3792f::t_27e992f9ed714b 1792
+  s_1c08b47ac3792f::t_c1be58a2b15395 1323,1325,1336
+  s_1c08b47ac3792f::t_227b4b15aa38fb 1888-1889,1893-1894
+  s_1c08b47ac3792f::t_9a70c32368912a 1818-1819,1821-1822,1826,1828-1829
+docs/06-testing.md
+  s_1c08b47ac3792f::t_9438f5412bb472 757-760
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9caba1cfae4a06cdce10c8df7fe1685fcc341ed3",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
