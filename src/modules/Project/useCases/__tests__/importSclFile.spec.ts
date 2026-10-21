@@ -4,11 +4,7 @@ import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { type ProjectStoreState } from '../../stores/projectStore';
 import { importSclFile } from '../importSclFile';
 
-type ParseSclResult = {
-    name: string;
-    description: string;
-    frequencies: number[];
-};
+type ParseSclResult = Awaited<ReturnType<typeof import('../../repositories/nativeTuning/parseScl').parseScl>>;
 
 const mocks = vi.hoisted(() => {
     let projectValue: ProjectStoreState | null = null;
@@ -87,9 +83,12 @@ describe('importSclFile', () => {
         mocks.projectStore.value = initialProject;
         mocks.pickFiles.mockResolvedValue([selectedFile]);
         mocks.parseScl.mockResolvedValue({
-            name: 'Bright twelve',
-            description: 'A test tuning',
-            frequencies,
+            status: 'parsed',
+            scale: {
+                name: 'Bright twelve',
+                description: 'A test tuning',
+                frequencies,
+            },
         });
 
         await importSclFile();
@@ -120,9 +119,12 @@ describe('importSclFile', () => {
         mocks.projectStore.value = createProjectState();
         mocks.pickFiles.mockResolvedValue([selectedFile]);
         mocks.parseScl.mockResolvedValue({
-            name: 'Bright twelve',
-            description: 'A test tuning',
-            frequencies: [220, 440, 880],
+            status: 'parsed',
+            scale: {
+                name: 'Bright twelve',
+                description: 'A test tuning',
+                frequencies: [220, 440, 880],
+            },
         });
 
         await importSclFile();
@@ -146,5 +148,30 @@ describe('importSclFile', () => {
         expect(mocks.projectStore.set).not.toHaveBeenCalled();
         expect(mocks.registerTuningTable).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('reports a domain error before any project or engine write', async () => {
+        const initialProject = createProjectState();
+        const prior = structuredClone(initialProject);
+        mocks.projectStore.value = initialProject;
+        mocks.pickFiles.mockResolvedValue([new File(['invalid'], 'demo.scl')]);
+        mocks.parseScl.mockResolvedValue({
+            status: 'invalid',
+            error: {
+                kind: 'zero-denominator',
+                line: 5,
+                reason: 'Zero denominator in ratio',
+            },
+        });
+
+        await importSclFile();
+
+        expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Failed to import Scala file at line 5: Zero denominator in ratio',
+            'error'
+        );
+        expect(mocks.projectStore.value).toEqual(prior);
+        expect(mocks.projectStore.set).not.toHaveBeenCalled();
+        expect(mocks.registerTuningTable).not.toHaveBeenCalled();
     });
 });

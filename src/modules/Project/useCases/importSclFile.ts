@@ -23,7 +23,12 @@ export async function importSclFile(): Promise<void> {
 
         const content = await firstFile.text();
 
-        const result = await parseScl(content);
+        const parsed = await parseScl(content);
+        if (parsed.status === 'invalid') {
+            notifyUser(`Failed to import Scala file at line ${parsed.error.line}: ${parsed.error.reason}`, 'error');
+            return;
+        }
+        const result = parsed.scale;
 
         const project = projectStore.value;
         if (!project) {
