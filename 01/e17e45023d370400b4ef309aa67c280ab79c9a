@@ -1,0 +1,50 @@
+src/modules/AiRuntime/__tests__/toolDescriptionAccuracy.spec.ts
+  s_29d8df116c5b92::t_98fa62a46498b2 15,381-382,385,392,434,443-449,457,618-619,622-623,634-635
+tests/e2e/scriptedToolProvider.ts
+  s_29d8df116c5b92::t_59305726ca494d 1,3-7,9,11,13,15-16,19-40,43,45,51-57,59-60,62-76,78-81,83-134,136-149,151-152,154-167
+  s_29d8df116c5b92::t_c568a40f131d69 10,46-50
+  s_29d8df116c5b92::t_fea6479b9b4a9e 8,41
+tests/e2e/aiProviderToolAuthority.spec.ts
+  s_29d8df116c5b92::t_ac1870a05eff20 41,43,286,296
+  s_29d8df116c5b92::t_175db31a9a863e 127-132,161
+  s_29d8df116c5b92::t_6d14d903f96cfd 183-186,196,229,269
+  s_29d8df116c5b92::t_1ecedf40b03d1c 234-252
+  s_29d8df116c5b92::t_3bbf09668fc741 1-20,24-40,42,44-62,64-67,74-81,86-92,95-105,107-113,119-126,136-139,157-160,162-166,174-182,194-195,204-216,224-228,255-266,270-271,273-285,287-288,293-295,297,299-300,313-321,324-325,329-349,358,371-375
+  s_29d8df116c5b92::t_5504203129e18e 114,133-135,167-173
+  s_29d8df116c5b92::t_f4b12f4106d282 272,359-362
+  s_29d8df116c5b92::t_893721c7b97e67 363-366
+  s_29d8df116c5b92::t_d8d4368dfbe08e 21-23,69-72,82-85,93-94,106,115-118,140-156,187-193,197-203,220-223,230-233,253-254,267-268,289-292,298,301-312,326-328,350-357,367-370
+  s_29d8df116c5b92::t_fea6479b9b4a9e 63,68,73,217-219
+  s_29d8df116c5b92::t_2b735867a5a90b 322-323
+src/modules/AiRuntime/useCases/__tests__/getPlanningProviderToolSchemas.spec.ts
+  s_29d8df116c5b92::t_2c46f659914155 38-40,60-63,73,75-77,79-84,86-91,93-100,103-130,132-134,140-143,153-156,158
+  s_29d8df116c5b92::t_ac1870a05eff20 5,64,78,92,135-139
+  s_29d8df116c5b92::t_fc762c4c626311 1,3,6-37,44-48,51-59,65-72
+src/modules/AiRuntime/models/__tests__/WorkflowCapability.spec.ts
+  s_29d8df116c5b92::t_2e260f53da9101 8
+  s_29d8df116c5b92::t_ac1870a05eff20 9
+  s_29d8df116c5b92::t_284f1148f12dcb 10
+src/modules/AiRuntime/useCases/__tests__/gainSchemaCeilingParity.spec.ts
+  s_29d8df116c5b92::t_98fa62a46498b2 12-13,144-145,155
+  s_29d8df116c5b92::t_120f2766c75e78 146-153
+src/modules/AiRuntime/models/ToolDefinitions.ts
+  s_29d8df116c5b92::t_2e260f53da9101 4
+src/modules/AiRuntime/useCases/getPlanningProviderToolSchemas.ts
+  s_29d8df116c5b92::t_2e260f53da9101 4,11-12,19-20,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01e17e45023d370400b4ef309aa67c280ab79c9a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
