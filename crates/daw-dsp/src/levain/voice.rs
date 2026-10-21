@@ -785,6 +785,7 @@ pub struct LevainVoice {
     /// humanized timing offset. A stolen predecessor's de-click fade still
     /// runs while the count drains (see `tick`).
     pending_samples: u32,
+    realism_attack_pending: bool,
 
     // MPE per-note expression (audit MD-2). Held for the note's lifetime and
     // read at block rate (bend, pressure) or per sample (slide tilt). Neutral
@@ -843,6 +844,7 @@ impl LevainVoice {
             vibrato_depth_scale: 1.0,
             humanize_tune_semitones: 0.0,
             pending_samples: 0,
+            realism_attack_pending: false,
             expr_bend_semitones: 0.0,
             expr_pressure: 0.0,
             expr_slide: 0.0,
@@ -865,6 +867,7 @@ impl LevainVoice {
         gain: f32,
         pool: &SamplePool,
     ) {
+        self.cancel_pending_attack();
         let was_sounding = self.active
             && self.any_primary_active()
             && (self.amp_env.current_level() * self.gain.current > 1e-4);
@@ -986,6 +989,31 @@ impl LevainVoice {
         self.pending_samples = self.pending_samples.saturating_add(samples);
     }
 
+    pub fn cancel_pending_attack(&mut self) {
+        self.pending_samples = 0;
+        self.realism_attack_pending = false;
+    }
+
+    pub fn defer_realism_attack(&mut self) {
+        self.realism_attack_pending = true;
+    }
+
+    pub fn take_realism_attack(&mut self) -> bool {
+        if !self.active || !self.held || self.pending_samples > 0 || !self.realism_attack_pending {
+            return false;
+        }
+        self.realism_attack_pending = false;
+        true
+    }
+
+    pub fn attack_is_pending(&self) -> bool {
+        self.pending_samples > 0
+    }
+
+    pub fn is_sounding(&self) -> bool {
+        self.active && ((self.pending_samples == 0 && self.amp_env.is_active()) || self.crossfading)
+    }
+
     /// Point this voice at a new Attack/Release macro scaling. A sounding voice
     /// re-derives its envelope from the zone's own ADSR immediately, so a
     /// player dragging Release over a held chord hears it on that chord rather
@@ -1019,8 +1047,21 @@ impl LevainVoice {
     /// remaining tail under the release envelope, which is only reachable once
     /// the loop stops holding the playhead back. See `SamplePlayback::exit_loop`.
     pub fn release(&mut self) {
+        self.realism_attack_pending = false;
         self.held = false;
         self.amp_env.release();
+        if self.pending_samples > 0 {
+            self.pending_samples = 0;
+            for stream in self
+                .playback
+                .iter_mut()
+                .chain(self.layer_secondary.iter_mut())
+            {
+                stream.active = false;
+            }
+            self.layer_active = false;
+            self.active = self.steal_crossfading;
+        }
         for stream in self
             .playback
             .iter_mut()
@@ -1046,6 +1087,7 @@ impl LevainVoice {
         sample_rate: f32,
         pool: &SamplePool,
     ) {
+        self.realism_attack_pending = false;
         let lead = &self.playback[self.lead_mic];
         let lead_rate = pool
             .get(lead.sample_id)
@@ -1114,6 +1156,7 @@ impl LevainVoice {
         sample_rate: f32,
         pool: &SamplePool,
     ) {
+        self.realism_attack_pending = false;
         for (playback, transition) in self.playback.iter().zip(self.crossfade_playback.iter_mut()) {
             if playback.active {
                 transition.configure_with_pool(transition_sample, note, 1.0, pool, sample_rate);
@@ -1258,20 +1301,15 @@ impl LevainVoice {
             return output;
         }
 
-        // Humanized timing: hold the note's attack until its offset elapses.
-        // A steal de-click still in flight is served first — its window is
-        // ~1 ms against typical offsets of tens of ms, and letting the fade
-        // finish matters more than sub-millisecond offset accuracy in the one
-        // case where the incoming note took a sounding voice's slot.
-        if self.pending_samples > 0 && !self.crossfading {
-            self.pending_samples -= 1;
-            self.age = self.age.saturating_add(1);
-            self.samples_since_on = self.samples_since_on.saturating_add(1);
-            return output;
-        }
-
         self.age = self.age.saturating_add(1);
         self.samples_since_on = self.samples_since_on.saturating_add(1);
+
+        // The incoming clock drains even while a stolen predecessor fades.
+        // A legato crossfade continues an existing line and keeps its clock.
+        if self.pending_samples > 0 && (!self.crossfading || self.steal_crossfading) {
+            self.pending_samples -= 1;
+            return self.tick_pending_onset(pool);
+        }
 
         let env = self.amp_env.tick();
         if !self.amp_env.is_active() && !self.steal_crossfading {
@@ -1374,6 +1412,40 @@ impl LevainVoice {
         // Track energy for voice monitoring (simple exponential RMS).
         self.energy = self.energy * self.energy_decay + energy_input * (1.0 - self.energy_decay);
 
+        output
+    }
+
+    /// Only the stolen predecessor advances while the incoming attack waits.
+    fn tick_pending_onset(&mut self, pool: &SamplePool) -> [f32; MAX_MIC_POSITIONS] {
+        let mut output = [0.0; MAX_MIC_POSITIONS];
+        if !self.steal_crossfading {
+            return output;
+        }
+        self.crossfade_amount = (self.crossfade_amount + self.crossfade_rate).min(1.0);
+        let gain_old = if self.crossfade_amount < 1.0 {
+            (self.crossfade_amount * std::f32::consts::FRAC_PI_2).cos()
+        } else {
+            0.0
+        };
+        let mut energy_input = 0.0;
+        for (sample, outgoing) in output[..self.mic_count]
+            .iter_mut()
+            .zip(self.crossfade_playback.iter_mut())
+        {
+            *sample = outgoing.read_sample(pool) * gain_old;
+            energy_input += sample.abs();
+        }
+        let outgoing_finished = self.crossfade_playback[..self.mic_count]
+            .iter()
+            .all(|outgoing| !outgoing.active);
+        if self.crossfade_amount >= 1.0 || outgoing_finished {
+            self.crossfading = false;
+            self.steal_crossfading = false;
+            for outgoing in self.crossfade_playback.iter_mut() {
+                outgoing.active = false;
+            }
+        }
+        self.energy = self.energy * self.energy_decay + energy_input * (1.0 - self.energy_decay);
         output
     }
 
@@ -1939,6 +2011,73 @@ mod tests {
             );
             prev = curr;
         }
+    }
+
+    #[test]
+    fn a_delayed_stolen_attack_freezes_incoming_clocks_while_the_old_voice_fades() {
+        let (pool, zone) = tonal_sample(SAMPLE_RATE, 1.0, 220.0, 60);
+        let mut voice = LevainVoice::new(SAMPLE_RATE);
+        voice.trigger(60, 2, 127, &NoteZones::single(zone), 0, 1.0, &pool);
+        for _ in 0..500 {
+            voice.tick(&pool);
+        }
+        voice.trigger(67, 3, 100, &NoteZones::single(zone), 0, 0.8, &pool);
+        voice.apply_note_humanization(
+            &NoteHumanization {
+                timing_offset: 0.002,
+                ..NoteHumanization::default()
+            },
+            SAMPLE_RATE,
+            &pool,
+        );
+        let humanized = voice.pending_samples;
+        voice.delay_onset(476);
+        voice.defer_realism_attack();
+        let total_delay = humanized + 476;
+        let incoming_position = voice.playback[0].position;
+        let envelope_level = voice.amp_env.current_level();
+        let mut outgoing_peak = 0.0_f32;
+        for frame in 0..total_delay {
+            assert!(!voice.take_realism_attack());
+            let sample = voice.tick(&pool)[0];
+            if frame < (0.001 * SAMPLE_RATE) as u32 {
+                outgoing_peak = outgoing_peak.max(sample.abs());
+            } else {
+                assert_eq!(sample, 0.0);
+            }
+            assert_eq!(voice.playback[0].position, incoming_position);
+            assert_eq!(voice.amp_env.current_level(), envelope_level);
+        }
+        assert!(outgoing_peak > 0.001);
+        assert!(voice.take_realism_attack());
+        assert!(!voice.take_realism_attack());
+        voice.tick(&pool);
+        assert!(voice.playback[0].position > incoming_position);
+        assert!(voice.amp_env.current_level() > envelope_level);
+        assert_eq!((voice.note, voice.channel), (67, 3));
+    }
+
+    #[test]
+    fn pending_realism_markers_do_not_survive_release_reset_or_retrigger() {
+        let (pool, zone) = tonal_sample(SAMPLE_RATE, 1.0, 220.0, 60);
+        let mut voice = LevainVoice::new(SAMPLE_RATE);
+        voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.delay_onset(88);
+        voice.defer_realism_attack();
+        voice.release();
+        for _ in 0..128 {
+            assert!(!voice.take_realism_attack());
+            assert_eq!(voice.tick(&pool)[0], 0.0);
+        }
+        voice.trigger(67, 1, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        assert!(!voice.attack_is_pending());
+        assert!(!voice.take_realism_attack());
+        voice.defer_realism_attack();
+        voice.start_crossfade(&NoteZones::single(zone), 69, 0.03, SAMPLE_RATE, &pool);
+        assert!(!voice.take_realism_attack());
+        voice.defer_realism_attack();
+        voice.cancel_pending_attack();
+        assert!(!voice.take_realism_attack());
     }
 
     // -----------------------------------------------------------------------

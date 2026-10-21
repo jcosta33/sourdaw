@@ -298,6 +298,7 @@ impl LevainEngine {
         self.sample_pool = Arc::new(SamplePool::new());
         for voice in &mut self.voice_pool.voices {
             voice.active = false;
+            voice.cancel_pending_attack();
         }
         self.auto_divisi.clear();
         self.fallback.enabled = true;
@@ -532,6 +533,7 @@ impl LevainEngine {
 
         for voice in &mut self.voice_pool.voices {
             voice.active = false;
+            voice.cancel_pending_attack();
         }
         self.auto_divisi.clear();
         std::mem::swap(&mut self.zone_map, &mut pending.zone_map);
@@ -571,6 +573,7 @@ impl LevainEngine {
         }
         for voice in &mut self.voice_pool.voices {
             voice.active = false;
+            voice.cancel_pending_attack();
         }
         self.auto_divisi.clear();
         let zone_map = std::mem::replace(&mut self.zone_map, ZoneMap::new());
@@ -774,11 +777,6 @@ impl LevainEngine {
     ) {
         let mut art = articulation;
 
-        // Realism layer transient (bow scrape onset, etc).
-        for realism in self.realism.iter_mut() {
-            realism.note_on(note);
-        }
-
         // Track for release triggers.
         self.release_tracker.note_on(note);
 
@@ -816,6 +814,9 @@ impl LevainEngine {
         let Some(zones) = zones else {
             // No samples loaded — use fallback sine tone so the instrument isn't silent.
             self.fallback.note_on(note, gain);
+            for realism in self.realism.iter_mut() {
+                realism.note_on(note);
+            }
             return;
         };
 
@@ -831,6 +832,7 @@ impl LevainEngine {
         let vibrato_phase = humanize.vibrato_phase;
         let vibrato_rate_scale = humanize.vibrato_rate_scale;
 
+        let fresh_attack = matches!(&legato_result, LegatoResult::Normal);
         match legato_result {
             LegatoResult::Normal => {
                 let voice = &mut self.voice_pool.voices[voice_idx];
@@ -852,6 +854,7 @@ impl LevainEngine {
                     self.ensemble_timing
                         .onset_delay_samples(note, self.sample_rate),
                 );
+                voice.defer_realism_attack();
                 self.attach_dynamic_layer(voice_idx, art, note, &zones, velocity);
             }
             LegatoResult::TrueTransition {
@@ -971,6 +974,11 @@ impl LevainEngine {
                 }
             }
         }
+        if !fresh_attack {
+            for realism in self.realism.iter_mut() {
+                realism.note_on(note);
+            }
+        }
     }
 
     pub fn note_off(&mut self, note: u8) {
@@ -979,9 +987,24 @@ impl LevainEngine {
             return;
         }
 
-        // Realism release transient (bow lift noise burst).
-        for realism in self.realism.iter_mut() {
-            realism.note_off(note);
+        let matching_voices = self.voice_pool.voices.iter().filter(|voice| {
+            voice.active
+                && voice.note == note
+                && self
+                    .pending_note_off_channel
+                    .is_none_or(|channel| voice.channel == channel)
+        });
+        let mut has_pending_attack = false;
+        let mut has_started_attack = false;
+        for voice in matching_voices {
+            has_pending_attack |= voice.attack_is_pending();
+            has_started_attack |= !voice.attack_is_pending();
+        }
+        let cancelled_attack = has_pending_attack && !has_started_attack;
+        if !cancelled_attack {
+            for realism in self.realism.iter_mut() {
+                realism.note_off(note);
+            }
         }
 
         // Update legato tracking.
@@ -1002,7 +1025,11 @@ impl LevainEngine {
             .release_note_matching(note, self.pending_note_off_channel);
         // Fire release trigger if available (audit F5), after releasing sounding voices
         // so the new release-trigger voice is not immediately silenced by this note-off.
-        self.trigger_release_if_available(note, cc1);
+        if cancelled_attack {
+            self.release_tracker.note_off(note, cc1);
+        } else {
+            self.trigger_release_if_available(note, cc1);
+        }
     }
 
     /// Note-off narrowed to one MPE member channel, so releasing a note on
@@ -1338,14 +1365,6 @@ impl LevainEngine {
             }
         }
 
-        // Gate the realism layer's continuous bow/breath noise on whether
-        // anything is actually sounding this block. A real instrument makes
-        // no noise floor when nobody is playing it. Voices only flip active
-        // state at block boundaries (MIDI events are drained at block start
-        // and envelope-driven voice deactivations are picked up next
-        // block), so block-granularity is sufficient.
-        let voices_active = self.voice_pool.active_count() > 0 || self.fallback.active_count() > 0;
-
         let mics = self.loaded_mics();
         // The fallback stands in for the sample content a load in flight will
         // bring, so it rides the first enabled position — the path the
@@ -1355,13 +1374,22 @@ impl LevainEngine {
         let fallback_mic = (0..mics)
             .find(|&mic| self.mic_mixer.is_enabled(mic))
             .unwrap_or(0);
+        let fallback_active = self.fallback.active_count() > 0;
         for i in 0..len {
             let mut mic_sums = [0.0_f32; MAX_MIC_POSITIONS];
 
-            // Sum all active voices, per mic position.
+            let mut voices_active = fallback_active;
+            // Count sounding voices on this frame, including a stolen tail,
+            // while each fresh attack starts its realism on the sample clock.
             for voice in self.voice_pool.voices.iter_mut() {
                 if !voice.active {
                     continue;
+                }
+                voices_active |= voice.is_sounding();
+                if voice.take_realism_attack() {
+                    for realism in self.realism.iter_mut() {
+                        realism.note_on(voice.note);
+                    }
                 }
                 let voice_mics = voice.tick(&self.sample_pool);
                 for (sum, sample) in mic_sums[..mics].iter_mut().zip(voice_mics) {
@@ -3683,6 +3711,64 @@ mod tests {
             distinct.len() > notes.len() / 2,
             "notes struck together must land at different moments, got {delays:?}"
         );
+    }
+
+    #[test]
+    fn bowed_and_wind_realism_start_with_the_fresh_ensemble_attack() {
+        for instrument in ["violin-1", "flute"] {
+            let mut off = ensemble_engine(false);
+            off.set_instrument(instrument);
+            off.set_param("legato_enabled", 0.0);
+            off.note_on(64, 100);
+            let undelayed = render(&mut off, 12);
+            let mut on = ensemble_engine(true);
+            on.set_instrument(instrument);
+            on.set_param("legato_enabled", 0.0);
+            let delay = on.ensemble_timing.onset_delay_samples(64, SAMPLE_RATE) as usize;
+            on.note_on(64, 100);
+            let delayed = render(&mut on, 12);
+            assert!(delayed[..delay].iter().all(|sample| *sample == 0.0));
+            assert_eq!(&delayed[delay..], &undelayed[..undelayed.len() - delay]);
+        }
+    }
+
+    #[test]
+    fn a_cancelled_fresh_bowed_attack_never_emits_ghost_pcm() {
+        for stop_all in [false, true] {
+            let mut engine = ensemble_engine(true);
+            engine.set_instrument("violin-1");
+            engine.note_on_with_channel(67, 100, 3);
+            assert!(render(&mut engine, 1).iter().all(|sample| *sample == 0.0));
+            if stop_all {
+                engine.all_notes_off();
+            } else {
+                engine.note_off_on_channel(67, 3);
+            }
+            assert!(render(&mut engine, 8).iter().all(|sample| *sample == 0.0));
+            assert_eq!(engine.active_voice_count(), 0);
+        }
+    }
+
+    #[test]
+    fn cancelling_a_pending_attack_preserves_an_independent_sounding_release_tail() {
+        fn prepared() -> LevainEngine {
+            let mut engine = ensemble_engine(true);
+            engine.set_instrument("violin-1");
+            engine.set_param("legato_enabled", 0.0);
+            engine.note_on(60, 100);
+            render(&mut engine, 8);
+            engine.note_off(60);
+            engine
+        }
+        let mut reference = prepared();
+        let mut pending = prepared();
+        pending.note_on_with_channel(67, 100, 3);
+        assert_eq!(render(&mut pending, 1), render(&mut reference, 1));
+        pending.note_off_on_channel(67, 3);
+        let actual = render(&mut pending, 8);
+        let expected = render(&mut reference, 8);
+        assert!(expected.iter().any(|sample| sample.abs() > 1e-6));
+        assert_eq!(actual, expected);
     }
 
     #[test]

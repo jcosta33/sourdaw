@@ -6,11 +6,9 @@ import { findVoiceByNote } from './findVoiceByNote';
 /**
  * Main entry point: schedule a drum hit for a given MIDI note within a kit.
  *
- * Every drum voice scales its level linearly with the velocity it receives, so
- * the kit's linear `kitGain` is applied to the velocity after clip gain has
- * been folded in and clamped: the kit level then trims every hit by the same
- * ratio, however loud the note and clip are. A hit with no level left schedules
- * nothing, since a silent voice has nothing to play.
+ * Clip gain sets the legacy clamped velocity. Kit output trim scales every
+ * amplitude-envelope point separately, preserving the hit's decay and timbre.
+ * A hit left with no level schedules nothing.
  */
 export function scheduleDrumKitNote(
     ctx: BaseAudioContext,
@@ -27,9 +25,9 @@ export function scheduleDrumKitNote(
         return;
     }
     const clippedVelocity = Math.max(0, Math.min(127, velocity * clipGain));
-    const leveledVelocity = clippedVelocity * Math.max(0, kitGain);
-    if (leveledVelocity <= 0) {
+    const outputGain = Math.max(0, kitGain);
+    if (clippedVelocity <= 0 || outputGain <= 0) {
         return;
     }
-    scheduleDrumVoice(ctx, dest, voice.type, startTime, leveledVelocity);
+    scheduleDrumVoice(ctx, dest, voice.type, startTime, clippedVelocity, outputGain);
 }

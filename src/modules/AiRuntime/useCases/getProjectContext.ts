@@ -17,6 +17,7 @@ import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { gainLaneLevelLaw, toLevelDb } from '#/utils/audioLevelLaw';
 import { MIN_CLIP_LOOP_LENGTH_BEATS, projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { isDrumDevice } from '#/utils/deviceTypeMatching';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
@@ -282,6 +283,15 @@ export function getProjectContext(): ProjectContext {
                     descriptor?.parameters ?? [],
                     data.parameterValues
                 );
+                if (isDrumDevice(data.type) && !Object.hasOwn(data.parameterValues, 'level')) {
+                    // Old kits sound at the declared unity default, while the
+                    // command must still guard and undo the field's absence.
+                    parameters.push(
+                        ...projectDeviceDescriptorParameters(
+                            descriptor?.parameters.filter((parameter) => parameter.id === 'level') ?? []
+                        ).map((parameter) => ({ ...parameter, valuePresent: false }))
+                    );
+                }
                 return {
                     id: data.id,
                     name: data.name,

@@ -51,7 +51,7 @@ describe('scheduleDrumKitNote', () => {
 
         scheduleDrumKitNote(context, destination, KIT_808_DEF, 36, 1.25, 64, 1, 1);
 
-        expect(scheduleDrumVoice).toHaveBeenCalledWith(context, destination, 'kick', 1.25, 64);
+        expect(scheduleDrumVoice).toHaveBeenCalledWith(context, destination, 'kick', 1.25, 64, 1);
     });
 
     it('should clamp velocity after applying clip gain', () => {
@@ -61,7 +61,7 @@ describe('scheduleDrumKitNote', () => {
 
         scheduleDrumKitNote(context, destination, KIT_808_DEF, 36, 1.25, 100, 2, 1);
 
-        expect(scheduleDrumVoice).toHaveBeenCalledExactlyOnceWith(context, destination, 'kick', 1.25, 127);
+        expect(scheduleDrumVoice).toHaveBeenCalledExactlyOnceWith(context, destination, 'kick', 1.25, 127, 1);
     });
 
     it('should scale the clamped hit by the kit gain, so a loud clip cannot push the kit level out', () => {
@@ -72,8 +72,8 @@ describe('scheduleDrumKitNote', () => {
         scheduleDrumKitNote(context, destination, KIT_808_DEF, 36, 1.25, 100, 1, 0.5);
         scheduleDrumKitNote(context, destination, KIT_808_DEF, 38, 1.5, 100, 2, 0.5);
 
-        expect(scheduleDrumVoice).toHaveBeenNthCalledWith(1, context, destination, 'kick', 1.25, 50);
-        expect(scheduleDrumVoice).toHaveBeenNthCalledWith(2, context, destination, 'snare', 1.5, 63.5);
+        expect(scheduleDrumVoice).toHaveBeenNthCalledWith(1, context, destination, 'kick', 1.25, 100, 0.5);
+        expect(scheduleDrumVoice).toHaveBeenNthCalledWith(2, context, destination, 'snare', 1.5, 127, 0.5);
     });
 
     it('should schedule nothing for a hit left with no level', () => {

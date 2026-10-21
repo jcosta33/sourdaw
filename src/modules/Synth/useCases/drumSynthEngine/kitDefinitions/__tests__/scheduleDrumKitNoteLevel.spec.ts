@@ -9,11 +9,10 @@ import { KIT_808_DEF } from '../getDrumKitDefByIndex';
 import { scheduleDrumKitNote } from '../scheduleDrumKitNote';
 
 /**
- * The real 808 voices, unmocked: the level a hit reaches is the loudest value
- * any of its gain stages is scheduled to, which every voice derives from the
- * velocity it receives.
+ * Every amplitude point of the real 808 voices, including their decay floors,
+ * must move together so output trim preserves the whole envelope.
  */
-function scheduledPeak(midiNote: number, kitGain: number): number {
+function scheduledAmplitudes(midiNote: number, kitGain: number): number[] {
     const ctx = createMockAudioContext();
     scheduleDrumKitNote(
         asBaseAudioContext(ctx),
@@ -25,7 +24,7 @@ function scheduledPeak(midiNote: number, kitGain: number): number {
         1,
         kitGain
     );
-    let peak = 0;
+    const amplitudes: number[] = [];
     for (const result of ctx.createGain.mock.results) {
         const param = result.value.gain;
         const scheduled = [
@@ -34,20 +33,28 @@ function scheduledPeak(midiNote: number, kitGain: number): number {
             ...param.exponentialRampToValueAtTime.mock.calls,
         ];
         for (const [value] of scheduled) {
-            peak = Math.max(peak, Number(value));
+            amplitudes.push(Number(value));
         }
     }
-    return peak;
+    return amplitudes;
 }
 
 describe('the drum kit gain levels every 808 voice', () => {
     it.each(KIT_808_DEF.voices.map((voice) => [voice.name, voice.midiNote] as const))(
-        '%s (note %i) peaks at the kit gain times its unity level',
+        '%s (note %i) scales its entire amplitude envelope with the kit level',
         (_name, midiNote) => {
-            const unity = scheduledPeak(midiNote, 1);
-            expect(unity).toBeGreaterThan(0.001);
-            expect(scheduledPeak(midiNote, 0.4) / unity).toBeCloseTo(0.4, 9);
-            expect(scheduledPeak(midiNote, 0.8) / unity).toBeCloseTo(0.8, 9);
+            const unity = scheduledAmplitudes(midiNote, 1);
+            expect(Math.max(...unity)).toBeGreaterThan(0.001);
+            for (const gain of [0.001, 0.4, 0.8]) {
+                const trimmed = scheduledAmplitudes(midiNote, gain);
+                expect(trimmed).toHaveLength(unity.length);
+                for (let point = 0; point < unity.length; point++) {
+                    expect(trimmed[point], `gain ${gain}, envelope point ${point}`).toBeCloseTo(
+                        unity[point]! * gain,
+                        12
+                    );
+                }
+            }
         }
     );
 });

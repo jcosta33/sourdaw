@@ -131,6 +131,12 @@ const deviceStrategyDefinitions = [
                 );
             }
             const valueUnit = normalizeDeviceParameterValueUnit(parameter.unit);
+            let valueGuard: { expectedValue?: number; expectedValuePresent?: boolean } = {
+                expectedValue: parameter.value,
+            };
+            if (parameter.valuePresent === false) {
+                valueGuard = { expectedValuePresent: false };
+            }
             return {
                 type: 'setDeviceParameter',
                 payload: {
@@ -141,7 +147,7 @@ const deviceStrategyDefinitions = [
                     expectedTrackId: target.track.id,
                     expectedDeviceType: target.device.type,
                     expectedDeviceIds: target.track.devices.map((device) => device.id),
-                    expectedValue: parameter.value,
+                    ...valueGuard,
                     expectedTrackFrozen: false,
                 },
             };

@@ -25,9 +25,9 @@ function posted(processor: LevainProcessorLike): { type?: string; loadToken?: nu
     return processor.port.postMessage.mock.calls.map(([message]) => message as { type?: string });
 }
 
-function stageBank(processor: LevainProcessorLike, loadToken: number, instrumentId: string): void {
+function stageBank(processor: LevainProcessorLike, loadToken: number, instrumentId: string, constant?: number): void {
     send(processor, { type: 'beginSampleBank', bankKey: `bank-${loadToken}`, instrumentId, loadToken });
-    const data = new Float32Array(SAMPLE_FRAMES).map((_, frame) => Math.sin(frame * 0.05) * 0.5);
+    const data = new Float32Array(SAMPLE_FRAMES).map((_, frame) => constant ?? Math.sin(frame * 0.05) * 0.5);
     send(processor, {
         type: 'beginSample',
         loadToken,
@@ -46,7 +46,7 @@ function stageBank(processor: LevainProcessorLike, loadToken: number, instrument
         articulationId: 0,
         rootNote: 60,
         loKey: 0,
-        hiKey: 127,
+        hiKey: constant === undefined ? 127 : 66,
         loVel: 0,
         hiVel: 127,
         rrPos: 0,
@@ -85,7 +85,11 @@ function hasRetiredBank(processor: LevainProcessorLike): boolean {
     return processor._instance.has_retired_bank();
 }
 
-async function renderFreshEnsembleAttack(note: number, ensembleTiming: boolean): Promise<Float32Array[]> {
+async function renderFreshEnsembleAttack(
+    note: number,
+    ensembleTiming: boolean,
+    instrumentId = 'marimba'
+): Promise<Float32Array[]> {
     vi.resetModules();
     const { registry } = installWorkletGlobals<LevainProcessorLike>();
     await import('../levainProcessor');
@@ -96,8 +100,8 @@ async function renderFreshEnsembleAttack(note: number, ensembleTiming: boolean):
     const processor = new Processor({ processorOptions: { wasmModule } });
     send(processor, { type: 'init' });
 
-    // Neutral realism keeps bow and breath noise out of the sample-onset measurement.
-    loadBank(processor, 1, 'marimba');
+    // The neutral default isolates sample timing; bowed callers include realism.
+    loadBank(processor, 1, instrumentId);
     expect(posted(processor)).toContainEqual({ type: 'sampleBankLoaded', loadToken: 1 });
     send(processor, { type: 'param', name: 'humanize', value: 0 });
     send(processor, { type: 'param', name: 'legatoEnabled', value: 0 });
@@ -119,6 +123,80 @@ async function renderFreshEnsembleAttack(note: number, ensembleTiming: boolean):
         expect(channel.every(Number.isFinite)).toBe(true);
         expect(channel.some((sample) => Math.abs(sample) > 1e-6)).toBe(true);
     }
+    return rendered;
+}
+
+async function renderStolenAttack(incomingPcm: number): Promise<Float32Array> {
+    vi.resetModules();
+    const { registry } = installWorkletGlobals<LevainProcessorLike>();
+    await import('../levainProcessor');
+    const Processor = registry.get('levain-processor');
+    if (!Processor) {
+        throw new TypeError('Expected levain-processor registration');
+    }
+    const processor = new Processor({ processorOptions: { wasmModule } });
+    send(processor, { type: 'init' });
+    stageBank(processor, 1, 'marimba', 0.25);
+    send(processor, {
+        type: 'beginSample',
+        loadToken: 1,
+        sampleId: 1,
+        frameCount: SAMPLE_FRAMES,
+        channels: 1,
+        sampleRate: 48_000,
+    });
+    send(processor, {
+        type: 'sampleChunk',
+        loadToken: 1,
+        sampleId: 1,
+        data: new Float32Array(SAMPLE_FRAMES).fill(incomingPcm),
+    });
+    send(processor, { type: 'sealSample', loadToken: 1, sampleId: 1 });
+    send(processor, {
+        type: 'addZone',
+        loadToken: 1,
+        zoneId: 1,
+        sampleId: 1,
+        articulationId: 0,
+        rootNote: 67,
+        loKey: 67,
+        hiKey: 127,
+        loVel: 0,
+        hiVel: 127,
+        rrPos: 0,
+        rrLen: 1,
+        micId: 0,
+        loopMode: 'forward',
+        loopStart: 0,
+        loopEnd: SAMPLE_FRAMES,
+        loopCrossfade: 0,
+        gainDb: 0,
+        attack: 0.005,
+        decay: 0.1,
+        sustain: 1,
+        release: 0.3,
+    });
+    send(processor, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+    expect(posted(processor)).toContainEqual({ type: 'sampleBankLoaded', loadToken: 1 });
+    send(processor, { type: 'param', name: 'humanize', value: 0 });
+    send(processor, { type: 'param', name: 'legatoEnabled', value: 0 });
+    send(processor, { type: 'param', name: 'ensembleTiming', value: 1 });
+    for (let voice = 0; voice < 64; voice++) {
+        send(processor, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 0 });
+    }
+    const output = makeChannels(2, FRAMES);
+    for (let quantum = 0; quantum < 8; quantum++) {
+        vi.stubGlobal('currentFrame', quantum * FRAMES);
+        expect(processor.process([], [output])).toBe(true);
+    }
+    send(processor, { type: 'noteOn', note: 67, velocity: 100, sampleFrame: 8 * FRAMES });
+    const rendered = new Float32Array(8 * FRAMES);
+    for (let quantum = 0; quantum < 8; quantum++) {
+        vi.stubGlobal('currentFrame', (8 + quantum) * FRAMES);
+        expect(processor.process([], [output])).toBe(true);
+        rendered.set(output[0]!, quantum * FRAMES);
+    }
+    expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
     return rendered;
 }
 
@@ -196,6 +274,50 @@ describe('shipped LevainProcessor bank retirement', () => {
         }
         const peak = output[0]!.reduce((max, sample) => Math.max(max, Math.abs(sample)), 0);
         expect(peak).toBeGreaterThan(1e-6);
+    });
+
+    it('delays bowed realism with the fresh sample attack', async () => {
+        const off = await renderFreshEnsembleAttack(64, false, 'violin-1');
+        const on = await renderFreshEnsembleAttack(64, true, 'violin-1');
+        for (let channel = 0; channel < 2; channel++) {
+            expect(on[channel]!.subarray(0, 88)).toEqual(new Float32Array(88));
+            expect(on[channel]!.subarray(88)).toEqual(off[channel]!.subarray(0, off[channel]!.length - 88));
+        }
+    });
+
+    it('never emits a cancelled fresh bowed attack after its pending offset', async () => {
+        const { registry } = installWorkletGlobals<LevainProcessorLike>();
+        await import('../levainProcessor');
+        const Processor = registry.get('levain-processor');
+        if (!Processor) {
+            throw new TypeError('Expected levain-processor registration');
+        }
+        const processor = new Processor({ processorOptions: { wasmModule } });
+        send(processor, { type: 'init' });
+        loadBank(processor, 1, 'violin-1');
+        send(processor, { type: 'param', name: 'humanize', value: 0 });
+        send(processor, { type: 'param', name: 'legatoEnabled', value: 0 });
+        send(processor, { type: 'param', name: 'ensembleTiming', value: 1 });
+        send(processor, { type: 'noteOn', note: 67, velocity: 100, sampleFrame: 0 });
+        send(processor, { type: 'noteOff', note: 67, sampleFrame: 128 });
+        const output = makeChannels(2, FRAMES);
+        for (let quantum = 0; quantum < 8; quantum++) {
+            vi.stubGlobal('currentFrame', quantum * FRAMES);
+            expect(processor.process([], [output])).toBe(true);
+            for (const channel of output) {
+                expect(channel).toEqual(new Float32Array(FRAMES));
+            }
+        }
+        expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+    });
+
+    it('keeps a stolen incoming sample silent until its ensemble offset while the old voice fades', async () => {
+        const sounding = await renderStolenAttack(0.5);
+        const silent = await renderStolenAttack(0);
+        expect(sounding.subarray(0, 476)).toEqual(silent.subarray(0, 476));
+        const difference = sounding.map((sample, frame) => sample - silent[frame]!);
+        expect(difference.subarray(476).some((sample) => Math.abs(sample) > 1e-6)).toBe(true);
+        expect(silent.subarray(0, 48).every((sample) => sample > 1e-6)).toBe(true);
     });
 
     it('spreads compiled sample attacks by pitch and replays the same shifted stereo PCM', async () => {

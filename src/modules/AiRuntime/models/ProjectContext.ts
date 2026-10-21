@@ -274,6 +274,8 @@ export type ProjectContextDevice = {
 };
 
 export type ProjectContextDeviceParameter = {
+    /** False when `value` is an effective default absent from saved project truth. */
+    valuePresent?: boolean;
     id: string;
     name: string;
     type: 'float' | 'int' | 'bool' | 'choice';
