@@ -27,6 +27,7 @@ import {
     linuxStorageFileState,
     linuxStorageFileCensus,
     linuxFilePorts,
+    LINUX_CENSUS_OBSERVATIONS,
     parseLinuxFileSnapshot,
     parseLinuxStartTicks,
     startTimeExcuseSupervisor,
@@ -1180,6 +1181,87 @@ ready();
         await verifyEmptyProcessCensusAdmission(true);
     }, 20_000);
 
+    const retainedNotice = 'guard storage retained: process-tree exit or storage ownership could not be proved';
+    it.each([
+        { scenario: 'a later release proof supersedes an unavailable one', unavailable: 'first release' },
+        { scenario: 'every release proof stays unavailable', unavailable: 'every release' },
+        { scenario: 'startup recovery retains an earlier run', unavailable: 'earlier run' },
+    ] as const)(
+        'keeps storage proof evidence out of the child output unless it explains retention: $scenario',
+        async ({ unavailable }) => {
+            const root = fixture();
+            // The guard returns its output tail trimmed.
+            const childOutput = JSON.stringify({ child: 'output' });
+            const earlier = createGuardStorage({
+                root: join(root, 'storage'),
+                token: randomUUID(),
+                owner: fakeOwner,
+                ports: deadPorts,
+            });
+            const earlierToken = basename(dirname(earlier.tempDirectory));
+            const states: string[] = [];
+            let releases = 0;
+            // Shared storage is outside the automatic proof, so the guard's own census reports why.
+            const unavailableProof = (
+                sessionState: StorageRecoveryPorts['sessionState'],
+                ...args: Parameters<StorageRecoveryPorts['sessionState']>
+            ) => {
+                chmodSync(args[1], 0o755);
+                try {
+                    const state = sessionState(...args);
+                    states.push(state);
+                    return state;
+                } finally {
+                    chmodSync(args[1], 0o700);
+                }
+            };
+            const result = await guarded(root, {
+                args: ['-e', `process.stdout.write(${JSON.stringify(`${childOutput}\n`)})`],
+                storageFactory: (input) =>
+                    createGuardStorage({
+                        ...input,
+                        ports: {
+                            identityState: input.ports.identityState,
+                            sessionState: (owner, original, current) => {
+                                if (owner.token !== earlierToken) {
+                                    return input.ports.sessionState(owner, original, current);
+                                }
+                                if (unavailable !== 'earlier run') {
+                                    return 'alive';
+                                }
+                                return unavailableProof(input.ports.sessionState, owner, original, current);
+                            },
+                            localReleaseAllowed: (owner, original, current) => {
+                                releases += 1;
+                                if (
+                                    unavailable === 'earlier run' ||
+                                    (unavailable === 'first release' && releases > 1)
+                                ) {
+                                    return true;
+                                }
+                                return unavailableProof(input.ports.sessionState, owner, original, current) === 'dead';
+                            },
+                        },
+                    }),
+            });
+            expect(states.length).toBeGreaterThan(0);
+            expect(states.every((state) => state === 'unknown')).toBe(true);
+            expect(existsSync(earlier.tempDirectory)).toBe(true);
+            if (unavailable === 'every release') {
+                expect(result.reason).toBe('leak');
+                expect(result.output).toBe(
+                    `${childOutput}\n\nguard storage file-use proof unavailable: storage-not-private-same-uid\n\n${retainedNotice}`
+                );
+                return;
+            }
+            expect(releases).toBeGreaterThan(unavailable === 'first release' ? 1 : 0);
+            expect(result.reason, proofDiagnostic(result)).toBeUndefined();
+            expect(result.output).toBe(childOutput);
+            expect(JSON.parse(result.output)).toEqual({ child: 'output' });
+        },
+        15_000
+    );
+
     it('gives a nested guard its own temp and reserve without cleaning the live parents temp', async () => {
         const root = fixture();
         const nestedOptions = {
@@ -1224,6 +1306,7 @@ describe('storage ownership recovery', () => {
         { scenario: 'newborn cwd borrower', released: false, state: 'alive' },
         { scenario: 'newborn descriptor borrower', released: false, state: 'alive' },
         { scenario: 'previously inspected process becomes a borrower', released: false, state: 'alive' },
+        { scenario: 'second process arrival', released: true, state: 'dead' },
         { scenario: 'repeated process arrival', released: false, state: 'unknown' },
         { scenario: 'denied replacement census', released: false, state: 'unknown' },
         { scenario: 'incomplete replacement census', released: false, state: 'unknown' },
@@ -1236,6 +1319,14 @@ describe('storage ownership recovery', () => {
         const reports: string[] = [];
         const inspections: number[][] = [];
         const states: string[] = [];
+        // Each re-list adds one new live PID until this many have arrived.
+        let arrivals = 1;
+        if (scenario === 'second process arrival') {
+            arrivals = 2;
+        }
+        if (scenario === 'repeated process arrival') {
+            arrivals = LINUX_CENSUS_OBSERVATIONS;
+        }
         const ports: StorageRecoveryPorts = {
             identityState: () => 'dead',
             sessionState: (_owner, original, current = original) => {
@@ -1263,7 +1354,7 @@ describe('storage ownership recovery', () => {
                             if (scenario === 'incomplete replacement census') {
                                 return 'process-users-unusable';
                             }
-                            return scenario === 'repeated process arrival' ? [123, 124, 125] : [123, 124];
+                            return Array.from({ length: Math.min(lists, arrivals) + 1 }, (_, index) => 123 + index);
                         },
                         isGone: () => false,
                         now: () => sampledAt,
@@ -1302,7 +1393,7 @@ describe('storage ownership recovery', () => {
                 );
                 states.push(observed);
                 inspections.push(inspected);
-                expect(lists).toBeLessThanOrEqual(2);
+                expect(lists).toBeLessThanOrEqual(Math.min(arrivals + 1, LINUX_CENSUS_OBSERVATIONS));
                 return observed;
             },
         };
@@ -1311,7 +1402,10 @@ describe('storage ownership recovery', () => {
         expect(existsSync(storage.tempDirectory)).toBe(!released);
         expect(states.every((observed) => observed === state)).toBe(true);
         expect(inspections).not.toHaveLength(0);
-        let expectedInspection = [123, 123, 124];
+        // Every observation inspects the whole list the previous re-list returned.
+        let expectedInspection = Array.from({ length: Math.min(arrivals + 1, LINUX_CENSUS_OBSERVATIONS) }, (_, round) =>
+            Array.from({ length: round + 1 }, (_, index) => 123 + index)
+        ).flat();
         if (scenario === 'expired first census') {
             expectedInspection = [123];
         }
@@ -1323,6 +1417,11 @@ describe('storage ownership recovery', () => {
         }
         if (!released && state === 'unknown') {
             expect(reports).not.toHaveLength(0);
+        }
+        if (scenario === 'repeated process arrival') {
+            expect(new Set(reports)).toEqual(
+                new Set([`proc-live-pid-uninspected:pid=${123 + LINUX_CENSUS_OBSERVATIONS}`])
+            );
         }
     });
 
@@ -1494,6 +1593,62 @@ describe('storage ownership recovery', () => {
                 expect(reports[0]).toContain(`pid=123:phase=cwd:error=${cwdDenied ? 'EPERM' : 'ENOENT'}`);
                 expect(reports[0]).not.toContain('private path');
             }
+        }
+    );
+
+    it.each([
+        { scenario: 'reaped after an FD-list denial', phase: 'fd-list', status: 'reaped', state: 'dead' },
+        { scenario: 'zombie after an FD-list denial', phase: 'fd-list', status: 'zombie', state: 'dead' },
+        { scenario: 'running after an FD-list denial', phase: 'fd-list', status: 'running', state: 'unknown' },
+        { scenario: 'zombie after a cwd denial', phase: 'cwd', status: 'zombie', state: 'unknown' },
+    ] as const)(
+        'counts a denied same-UID process as released only once it is gone or a zombie: $scenario',
+        ({ phase, status, state }) => {
+            const reports: string[] = [];
+            // An exiting task's dropped mm makes the kernel own /proc/<pid>/fd as root.
+            const denied = Object.assign(new Error('private path must not be emitted'), { code: 'EACCES' });
+            let reaped = false;
+            const observed = linuxStorageFileState(
+                [123],
+                501,
+                ['/owned/run/tmp'],
+                5_000,
+                (reason) => reports.push(reason),
+                {
+                    inspectUid: () => 501,
+                    readCwd: () => {
+                        if (phase === 'cwd') {
+                            throw denied;
+                        }
+                        return '/elsewhere';
+                    },
+                    listDescriptors: () => {
+                        throw denied;
+                    },
+                    readDescriptor: () => undefined,
+                    readStatus: () => {
+                        if (status === 'reaped') {
+                            reaped = true;
+                            throw Object.assign(new Error('private path must not be emitted'), { code: 'ENOENT' });
+                        }
+                        if (status === 'zombie') {
+                            return terminalStatus;
+                        }
+                        return terminalStatus.replace('Z (zombie)', 'R (running)');
+                    },
+                    isGone: () => reaped,
+                    now: () => 0,
+                }
+            );
+            expect(observed).toBe(state);
+            const expectedReports: string[] = [];
+            if (state === 'unknown') {
+                const snapshot = status === 'zombie' ? 'Z' : 'R';
+                expectedReports.push(
+                    `proc-inspection-unavailable:pid=123:phase=${phase}:error=EACCES:pid/tgid/uids/state/threads=123/123/501,501,501,501/${snapshot}/1`
+                );
+            }
+            expect(reports).toEqual(expectedReports);
         }
     );
 

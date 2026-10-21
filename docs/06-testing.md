@@ -737,11 +737,15 @@ evidence, and denied, malformed, truncated, or incomplete file evidence retains 
 On Linux, a descriptor that closes during inspection is checked with link and directory metadata.
 Reopening the descriptor directory can recreate the scanner's own closed slot and cannot prove
 that it remains open. A present slot or unavailable directory still retains storage.
-After a Linux `ENOENT` inspection failure, fresh complete status may prove file release only for
+A Linux process that is gone when sampled after a failed inspection holds no files. An exiting
+task drops its memory map before its files, and from then on the kernel owns `/proc/<pid>/fd` as
+root, so a same-UID exit denies the descriptor list until the PID is reaped. After an `ENOENT`
+inspection failure, or a denied descriptor list, fresh complete status may prove file release only for
 a zombie whose PID and thread-group ID match the inspected PID, whose four UIDs match the guard,
 and whose thread count is exactly one. A zombie leader with other threads remains uncertain.
 This evidence must arrive within the existing proof deadline and never releases PID ownership
-or signaling fences. Denied inspection and unavailable or malformed status still retain storage,
+or signaling fences. A denied working directory, a denied descriptor list from a process still
+running, and unavailable or malformed status still retain storage,
 with one exception: a denied process whose `/proc` start time strictly precedes the supervisor
 that created the storage is excused. A live supervisor's start is read from `/proc`; recovery of
 an exited or crashed run, including a moved claim, compares against the `/proc` start ticks that
@@ -753,14 +757,21 @@ process explicitly handed that path is, like an elevated descendant, outside thi
 On macOS, an unreaped same-UID process positively sampled in zombie state has already released
 its file table; this exception never releases process-identity or signaling fences.
 File inspection checks same-UID process coverage again after reading files, so a process born
-during inspection cannot disappear from the proof. On Linux, a newly listed live same-UID process
-permits one complete replacement inspection of the full fresh process list. On macOS, an otherwise
-valid catalog missing only a descriptor type, or omitting a newly observed positively live same-UID
-process, may be discarded for one complete replacement. Each platform allows at most two
-observations within the same five-second proof deadline; both macOS conditions share that limit.
-Only wholly complete replacement evidence permits deletion; another uncovered process, ambiguous
-identity, malformed catalog, denied inspection or unavailable evidence retains storage. Processes created after the final proof remain outside
-that observation; this is conservative sampled evidence, not a guarantee of continuous isolation.
+during inspection cannot disappear from the proof. On Linux, each newly listed live same-UID process
+discards the observation for a complete replacement inspection of the full fresh process list.
+Unrelated same-account work, a concurrent census's own `ps` among it, is born between inspection
+and re-list often enough that one replacement cannot carry a busy account, so replacements repeat
+up to a fixed observation bound inside the same five-second proof deadline, and a live arrival after
+the last observation retains storage. On macOS, an otherwise valid catalog missing only a
+descriptor type, or omitting a newly observed positively live same-UID process, may be discarded
+for a complete replacement within three observations that both conditions share, inside the same
+deadline. Only wholly complete replacement evidence permits deletion; an uncovered process after
+the bound, ambiguous identity, malformed catalog, denied inspection or unavailable evidence retains
+storage. Processes created after the final proof remain outside that observation; this is
+conservative sampled evidence, not a guarantee of continuous isolation.
+The guard's output is the child's output tail, which callers parse. A file-use proof diagnostic
+joins it only immediately before the retention notice it explains: a release attempt that a later
+proof superseded, and startup recovery that retains an earlier run's storage, leave it unchanged.
 Other Unix platforms without these file inspection APIs retain storage when proof is unavailable.
 
 Automatic Unix reclamation covers the guard's own UID and requires private `0700` owned storage.

@@ -22,6 +22,23 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-21 — the Linux census treated busy-account transients as live users (introduced by PR #5274)
+
+The third escape of one guard lesson. PRs #5345 and #5355 repaired only the long-lived denied
+process, so the runner-account "Review tooling unit suite" still failed six rows whenever guard
+specs ran beside other workers. Three transients remained. A second same-UID arrival during the one
+permitted replacement, often a concurrent census's own `ps`, gave `proc-live-pid-uninspected`. An
+exiting task denies `/proc/<pid>/fd` once its memory map is gone; reaped before its status read, it
+gave `phase=fd-list:error=EACCES` with unknown status, and the guard never sampled it as gone again.
+A release attempt that a later proof superseded still wrote its diagnostic into the child's parsed
+output. Both prior fixes were verified only beside a quiet account, never under concurrent churn.
+
+Probe: inject a second live arrival and require reclamation after a complete third inspection, and
+endless arrivals that end retained at the observation bound. Deny an FD list, then report the PID
+gone or a single-thread zombie, and require release; a running status or a denied cwd still retains.
+Make the first release proof unavailable and a later one succeed, and require byte-identical child
+output; persistent unavailability must keep the diagnostic beside the retention notice.
+
 ### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
 
 PR #5345 excused an uninspectable same-UID process only when it predated the run's live

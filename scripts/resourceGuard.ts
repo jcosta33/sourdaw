@@ -1406,8 +1406,14 @@ export function linuxStorageFileState(
                     // Diagnostics cannot turn an unavailable inspection into proof.
                 }
             }
+            // An exiting task drops its mm before its files, and from then on the kernel owns
+            // /proc/<pid>/fd as root: a same-UID exit denies the FD list until reaping removes
+            // the PID. Only a later gone or zombie sample proves that this denial was the exit.
+            if (ports.isGone(pid)) {
+                continue;
+            }
             if (
-                (error as NodeJS.ErrnoException).code === 'ENOENT' &&
+                (code === 'ENOENT' || (code === 'EACCES' && phase === 'fd-list')) &&
                 now() <= deadline &&
                 linuxTerminalFilesReleased(snapshot, pid, uid)
             ) {
@@ -1421,6 +1427,11 @@ export function linuxStorageFileState(
     }
     return 'dead';
 }
+
+// Unrelated same-account work, such as a concurrent census's own `ps`, can be born between
+// any inspection and its re-list. Each such arrival discards the whole observation for a
+// complete replacement until this bound or the original proof deadline runs out.
+export const LINUX_CENSUS_OBSERVATIONS = 32;
 
 export function linuxStorageFileCensus(
     pids: number[],
@@ -1440,7 +1451,7 @@ export function linuxStorageFileCensus(
         return 'unknown';
     };
     const now = ports.now ?? Date.now;
-    for (let observation = 0; observation < 2; observation++) {
+    for (let observation = 0; observation < LINUX_CENSUS_OBSERVATIONS; observation++) {
         const state = linuxStorageFileState(pids, uid, tempDirectories, deadline, report, ports.files);
         if (state !== 'dead') {
             return state;
@@ -1456,10 +1467,10 @@ export function linuxStorageFileCensus(
         if (uninspectedPid === undefined) {
             return 'dead';
         }
-        if (observation === 1) {
+        if (observation === LINUX_CENSUS_OBSERVATIONS - 1) {
             return unknown(`proc-live-pid-uninspected:pid=${uninspectedPid}`);
         }
-        // Discard the stale inspection once; replacement covers the whole fresh list.
+        // Discard the stale inspection; each replacement covers the whole fresh list.
         pids = currentPids;
     }
     return unknown('file-census-unavailable');
@@ -1715,12 +1726,11 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             durationMs: 0,
         };
     }
-    let storageEvidenceReported = false;
+    // The output is the child's stream, which callers parse. Evidence joins it only beside
+    // the retention notice it explains, never for an attempt that a later proof superseded.
+    let storageEvidence: string | undefined;
     const storagePorts = storageRecoveryPorts((reason) => {
-        if (!storageEvidenceReported) {
-            output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${reason}\n`));
-            storageEvidenceReported = true;
-        }
+        storageEvidence ??= reason;
     });
     let storage: ReturnType<typeof createGuardStorage>;
     try {
@@ -1740,6 +1750,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         }
         throw error;
     }
+    // Startup recovery evidence concerns earlier runs' storage, which stays retained for a
+    // later start; it does not explain this run's own storage disposition.
+    storageEvidence = undefined;
     const releaseBeforeSpawn = async (): Promise<boolean> => {
         const removed = await storage.release(true).catch(() => false);
         if (ownedSession) {
@@ -2021,6 +2034,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         throw completion.error;
     }
     if (!storageRemoved) {
+        if (storageEvidence !== undefined) {
+            output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${storageEvidence}\n`));
+        }
         output.append(
             Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
         );
