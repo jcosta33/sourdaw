@@ -318,6 +318,13 @@ type ChunkPacer = {
     /** Resolve when a chunk may be posted; reject if the load was aborted, the worklet refused it or the processor ended. */
     reserve: () => Promise<void>;
     /**
+     * Aborts, with the error, once the worklet refuses the load, the processor
+     * ends or the pacer is disposed: no answer will come for anything the load
+     * stages after that, so a wait outside the pacer (the zone-table build)
+     * stops on it too.
+     */
+    stopped: AbortSignal;
+    /**
      * The load is over. Its unacknowledged chunks are still queued on the
      * worklet's port, ahead of any abort, so it keeps their credits until the
      * worklet has passed them (see `createChunkPacer`); `abortDelivered` false
@@ -377,7 +384,8 @@ function withdrawFromChunkBudget(waiter: BudgetWaiter): boolean {
  * `sampleBankError` for this load, or the processor's `error`/`disposed`: a
  * processor that stops answering must not leave the load waiting for an
  * acknowledgement that will never come. Messages carrying another load's
- * token are not this load's to act on.
+ * token are not this load's to act on. A load makes its pacer before it posts
+ * `beginSampleBank`, whatever its role, so the pacer hears every answer to it.
  *
  * The pacer outlives its load while it still holds credits. The worklet reads
  * its port in order, so once the load's chunks are passed it answers the
@@ -390,6 +398,7 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
     let failure: Error | null = null;
     let queued: BudgetWaiter | null = null;
     let ended = false;
+    const stop = new AbortController();
 
     function stopListeningWhenDone(): void {
         if (ended && held === 0) {
@@ -398,6 +407,7 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
     }
     function fail(error: Error): void {
         failure ??= error;
+        stop.abort(failure);
         if (queued && withdrawFromChunkBudget(queued)) {
             queued.resolve(false);
         }
@@ -479,6 +489,7 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
     nodePort.addEventListener('message', onMessage);
     return {
         reserve,
+        stopped: stop.signal,
         dispose: (abortDelivered) => {
             ended = true;
             fail(new Error('Levain sample upload ended'));
@@ -662,7 +673,7 @@ export async function loadInstrumentFromManifest({
     let releaseStarted = false;
     let handshake: SampleBankHandshake | null = null;
     let completed = false;
-    // Paces the chunk uploads of this load; made when the first sample uploads.
+    // Paces the chunk uploads of this load; made with its handshake.
     let chunkPacer: ChunkPacer | null = null;
     try {
         // Hold this load's `beginSampleBank` until every earlier load on the
@@ -681,6 +692,11 @@ export async function loadInstrumentFromManifest({
         }
         const loadToken = allocateBankLoadToken();
         handshake = createSampleBankHandshake(nodePort, loadToken, signal);
+        // Made before the begin whatever the role: a load that uploads no PCM
+        // still stages its zone tables, and must hear the processor end or
+        // the worklet refuse the load while they are being built.
+        const pacer = createChunkPacer(nodePort, loadToken, signal);
+        chunkPacer = pacer;
         nodePort.postMessage({
             type: 'beginSampleBank',
             bankKey: bank.bankKey,
@@ -700,8 +716,7 @@ export async function loadInstrumentFromManifest({
             }
             sampleIdMap.set(file, sampleId);
             if (uploadRequired) {
-                chunkPacer ??= createChunkPacer(nodePort, loadToken, signal);
-                await uploadSampleInChunks(nodePort, loadToken, sampleId, decoded, chunkPacer);
+                await uploadSampleInChunks(nodePort, loadToken, sampleId, decoded, pacer);
             }
         }
 
@@ -795,9 +810,12 @@ export async function loadInstrumentFromManifest({
         }
 
         const dimensions = { numArticulations: bank.numArticulations, numMics: bank.numMics };
-        const tables = await raceAbortSignal(buildZoneTables({ zones: zoneSpans, ...dimensions }, signal), signal);
-        chunkPacer ??= createChunkPacer(nodePort, loadToken, signal);
-        await uploadZoneTables(nodePort, loadToken, dimensions, tables, chunkPacer);
+        // The build stops at once on an abort, on this load's refusal or on the
+        // processor ending, and nothing is staged once any of them has come.
+        const building = signal ? AbortSignal.any([signal, pacer.stopped]) : pacer.stopped;
+        const tables = await raceAbortSignal(buildZoneTables({ zones: zoneSpans, ...dimensions }, building), building);
+        building.throwIfAborted();
+        await uploadZoneTables(nodePort, loadToken, dimensions, tables, pacer);
 
         nodePort.postMessage({ type: 'commitSampleBank', loadToken });
         // From here the worklet may commit before it ever sees a later abort
