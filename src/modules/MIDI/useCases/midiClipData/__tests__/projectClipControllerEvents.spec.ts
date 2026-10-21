@@ -216,18 +216,24 @@ describe('projectClipControllerEvents', () => {
             ]);
         });
 
-        it('plays a portamento release on the closing line, below the latch threshold', () => {
+        it.each([
+            ['a portamento release', 'portamento-off', 65],
+            ['a legato release', 'legato-off', 68],
+            ['a hold 2 release', 'hold-2-off', 69],
+        ])('plays %s on the closing line, below the latch threshold', (_kind, id, cc) => {
             // Portamento, legato and hold 2 are not pedals, so their closing-line
-            // releases are admitted only through the switch-controller fallthrough.
+            // releases are admitted only through the switch-controller fallthrough,
+            // which reaches the whole way to CC69 — sostenuto and una corda sit on
+            // the same fallthrough and are pinned above.
             const events = projectClipControllerEvents({
-                controlChanges: [controller('portamento-off', 4, 0, 65)],
+                controlChanges: [controller(id, 4, 0, cc)],
                 clip: { startBeat: 0, endBeat: 4 },
                 fromBeat: 0,
                 toBeat: 8,
             });
 
-            expect(events.map(({ id, beat, closesClip }) => [id, beat, closesClip])).toEqual([
-                ['portamento-off', 4, true],
+            expect(events.map(({ id: eventId, beat, closesClip }) => [eventId, beat, closesClip])).toEqual([
+                [id, 4, true],
             ]);
         });
 
