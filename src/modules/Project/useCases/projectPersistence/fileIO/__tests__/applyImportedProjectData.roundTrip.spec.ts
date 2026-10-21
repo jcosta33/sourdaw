@@ -121,6 +121,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     return { ...actual, stopRecording };
 });
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
@@ -133,6 +135,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(() => ''),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectRevision: vi.fn(),
     compactProject,

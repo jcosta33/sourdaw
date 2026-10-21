@@ -8,10 +8,21 @@ import {
     type RetiredTakeLaneSnapshot,
 } from '#/utils/handlerContract';
 
-vi.mock('#/modules/MIDI/useCases', () => ({
-    midiClipSplitStateMatches: vi.fn(),
-    restoreMidiClipSplitState: vi.fn(),
-}));
+vi.mock('#/modules/MIDI/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+    return {
+        adaptGrooveTemplateForConsumer: actual.adaptGrooveTemplateForConsumer,
+        decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
+        getGrooveTemplate: actual.getGrooveTemplate,
+        getScopedGrooveAssignment: actual.getScopedGrooveAssignment,
+        getScopedGrooveConsumerId: actual.getScopedGrooveConsumerId,
+        getStraightGrooveTemplateId: actual.getStraightGrooveTemplateId,
+        projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
+        restoreGrooveAssignment: actual.restoreGrooveAssignment,
+        midiClipSplitStateMatches: vi.fn(),
+        restoreMidiClipSplitState: vi.fn(),
+    };
+});
 
 vi.mock('../../../stores/clipSatelliteState', () => ({
     clipSatelliteEntriesMatchSnapshot: vi.fn(),
@@ -38,16 +49,28 @@ vi.mock('../../../useCases/comping/removeTakesForClips', () => ({
     removeTakesForClips: vi.fn(),
 }));
 
+vi.mock('../../../useCases/comping/planTakeRetirement', () => ({
+    planTakeRetirement: vi.fn(),
+}));
+
+vi.mock('../../../useCases/comping/restoreTakeReKeyTransitions', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../useCases/comping/restoreTakeReKeyTransitions')>();
+    return { ...actual, restoreTakeReKeyTransitions: vi.fn(actual.restoreTakeReKeyTransitions) };
+});
+
 vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
     restoreTakesForClip: vi.fn(),
 }));
 
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../../stores/clipSatelliteState';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { applyClipAutomationLaneTransition } from '../../../useCases/clip/applyClipAutomationLaneTransition';
 import { clipAutomationLaneTransitionMatchesStore } from '../../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { clipSplitStateRestorable } from '../../../useCases/clipEditing/clipSplitStateRestorable';
 import { replaceClipSplitTrackState } from '../../../useCases/clipEditing/replaceClipSplitTrackState';
 import { removeTakesForClips } from '../../../useCases/comping/removeTakesForClips';
+import { planTakeRetirement } from '../../../useCases/comping/planTakeRetirement';
+import { restoreTakeReKeyTransitions } from '../../../useCases/comping/restoreTakeReKeyTransitions';
 import { restoreTakesForClip } from '../../../useCases/comping/restoreTakesForClip';
 import { handleRestoreClipSplitState } from '../handleRestoreClipSplitState';
 
@@ -60,6 +83,8 @@ const mockedWriteSatellite = vi.mocked(writeClipSatelliteEntry);
 const mockedLaneTransitionMatches = vi.mocked(clipAutomationLaneTransitionMatchesStore);
 const mockedApplyLaneTransition = vi.mocked(applyClipAutomationLaneTransition);
 const mockedRemoveTakes = vi.mocked(removeTakesForClips);
+const mockedPlanRetirement = vi.mocked(planTakeRetirement);
+const mockedRestoreReKey = vi.mocked(restoreTakeReKeyTransitions);
 const mockedRestoreTakes = vi.mocked(restoreTakesForClip);
 
 function makeClipSnapshot(id: string): ClipStateSnapshot {
@@ -104,6 +129,20 @@ function makeAction(expected: ClipSplitActionSnapshot, replacement: ClipSplitAct
     };
 }
 
+function makeAsymmetricAction(field: 'clipSatellites' | 'clipAutomationLanes', side: 'expected' | 'replacement') {
+    let asymmetricSnapshot: ClipSplitActionSnapshot;
+    if (field === 'clipSatellites') {
+        asymmetricSnapshot = makeSnapshot({ clipSatellites: [] });
+    } else {
+        asymmetricSnapshot = makeSnapshot({ clipAutomationLanes: [] });
+    }
+
+    if (side === 'expected') {
+        return makeAction(asymmetricSnapshot, makeSnapshot());
+    }
+    return makeAction(makeSnapshot(), asymmetricSnapshot);
+}
+
 function makeTakeLaneAction(
     expected: ClipSplitActionSnapshot,
     replacement: ClipSplitActionSnapshot,
@@ -117,6 +156,7 @@ function makeTakeLaneAction(
 
 beforeEach(() => {
     vi.clearAllMocks();
+    takeLaneStore.set({ lanes: [] });
     mockedRestorable.mockReturnValue(true);
     mockedReplaceTrackState.mockReturnValue(true);
     mockedMidiMatches.mockReturnValue(true);
@@ -125,9 +165,30 @@ beforeEach(() => {
     mockedLaneTransitionMatches.mockReturnValue(true);
     mockedApplyLaneTransition.mockReturnValue(true);
     mockedRemoveTakes.mockReturnValue([]);
+    mockedPlanRetirement.mockReturnValue(null);
 });
 
 describe('handleRestoreClipSplitState — satellites', () => {
+    it.each(['clipSatellites', 'clipAutomationLanes'] as const)(
+        'refuses asymmetric %s presence during session admission, preflight and execution',
+        (field) => {
+            for (const side of ['expected', 'replacement'] as const) {
+                const action = makeAsymmetricAction(field, side);
+                expect(handleRestoreClipSplitState.validateSessionActionArguments?.(action.payload)).toBe(false);
+                expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(
+                    false
+                );
+                expect(handleRestoreClipSplitState.execute(action)).toEqual({ status: 'conflict' });
+                expect(mockedReplaceTrackState).not.toHaveBeenCalled();
+                expect(mockedRestoreMidi).not.toHaveBeenCalled();
+                expect(mockedApplyLaneTransition).not.toHaveBeenCalled();
+                expect(mockedWriteSatellite).not.toHaveBeenCalled();
+                expect(mockedRestoreTakes).not.toHaveBeenCalled();
+                expect(mockedRemoveTakes).not.toHaveBeenCalled();
+            }
+        }
+    );
+
     it('writes every replacement satellite entry on execute', () => {
         const satellites = [
             {
@@ -167,7 +228,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
         );
 
         expect(result).toEqual({ status: 'conflict' });
-        expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites);
+        expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites, []);
         expect(mockedReplaceTrackState).not.toHaveBeenCalled();
         expect(mockedRestoreMidi).not.toHaveBeenCalled();
         expect(mockedWriteSatellite).not.toHaveBeenCalled();
@@ -186,7 +247,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
         mockedRestoreMidi.mockReturnValue(false);
         const satellites = [{ clipId: 'c2', gainEnvelope: null, warpState: null }];
         const result = handleRestoreClipSplitState.execute(
-            makeAction(makeSnapshot(), makeSnapshot({ clipSatellites: satellites }))
+            makeAction(makeSnapshot({ clipSatellites: satellites }), makeSnapshot({ clipSatellites: satellites }))
         );
 
         expect(result).toEqual({ status: 'conflict' });
@@ -197,10 +258,13 @@ describe('handleRestoreClipSplitState — satellites', () => {
         mockedSatellitesMatch.mockReturnValue(false);
         const satellites = [{ clipId: 'c1', gainEnvelope: null, warpState: null }];
 
-        const action = makeAction(makeSnapshot({ clipSatellites: satellites }), makeSnapshot());
+        const action = makeAction(
+            makeSnapshot({ clipSatellites: satellites }),
+            makeSnapshot({ clipSatellites: satellites })
+        );
 
         expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
-        expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites);
+        expect(mockedSatellitesMatch).toHaveBeenCalledWith(satellites, []);
     });
 
     it('validate skips the satellite check for a legacy payload', () => {
@@ -253,7 +317,7 @@ describe('handleRestoreClipSplitState — clip automation lanes', () => {
         );
 
         expect(result).toEqual({ status: 'conflict' });
-        expect(mockedLaneTransitionMatches).toHaveBeenCalledWith(['c2'], [fragmentLane], []);
+        expect(mockedLaneTransitionMatches).toHaveBeenCalledWith(['c2'], [fragmentLane], [], []);
         expect(mockedReplaceTrackState).not.toHaveBeenCalled();
         expect(mockedApplyLaneTransition).not.toHaveBeenCalled();
         expect(mockedWriteSatellite).not.toHaveBeenCalled();
@@ -284,6 +348,32 @@ describe('handleRestoreClipSplitState — clip automation lanes', () => {
         expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
         expect(mockedLaneTransitionMatches).not.toHaveBeenCalled();
     });
+
+    it.each(['expected', 'replacement'] as const)(
+        'refuses %s automation with a foreign clip or track before writes',
+        (side) => {
+            for (const foreignLane of [
+                { ...fragmentLane, clipId: 'unrelated-clip' },
+                { ...fragmentLane, trackId: 'unrelated-track' },
+            ]) {
+                const action = makeAction(
+                    makeSnapshot({ clipAutomationLanes: [] }),
+                    makeSnapshot({ clipAutomationLanes: [] })
+                );
+                action.payload[side] = makeSnapshot({ clipAutomationLanes: [foreignLane] });
+                expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(
+                    false
+                );
+                expect(handleRestoreClipSplitState.execute(action)).toEqual({ status: 'conflict' });
+                expect(mockedReplaceTrackState).not.toHaveBeenCalled();
+                expect(mockedRestoreMidi).not.toHaveBeenCalled();
+                expect(mockedApplyLaneTransition).not.toHaveBeenCalled();
+                expect(mockedWriteSatellite).not.toHaveBeenCalled();
+                expect(mockedRestoreTakes).not.toHaveBeenCalled();
+                expect(mockedRemoveTakes).not.toHaveBeenCalled();
+            }
+        }
+    );
 });
 
 describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
@@ -298,16 +388,27 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
         retiredTakeIds: ['take-1'],
     };
 
-    it('undo leg retires the right half takes and captures them into the shared payload array', () => {
-        mockedRemoveTakes.mockReturnValue([retiredLane]);
+    it('undo leg stages right half takes without mutating shared history before commit', () => {
+        mockedPlanRetirement.mockReturnValue({ lanes: [], retiredLanes: [retiredLane] });
         const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
         const action = makeTakeLaneAction(makeSnapshot(), makeSnapshot({ rightClip: null }), retiredTakeLanes);
 
         const result = handleRestoreClipSplitState.execute(action);
 
-        expect(result).toEqual({ status: 'written' });
+        expect(result).toMatchObject({
+            status: 'written',
+            afterCommit: expect.any(Function),
+            afterAmbiguousCommit: expect.any(Function),
+        });
         expect(mockedRemoveTakes).toHaveBeenCalledWith(['c2']);
-        expect(retiredTakeLanes).toEqual([retiredLane]);
+        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set());
+        expect(mockedPlanRetirement.mock.invocationCallOrder[0]).toBeLessThan(
+            mockedRestoreReKey.mock.invocationCallOrder[0]!
+        );
+        expect(mockedRestoreReKey.mock.invocationCallOrder[0]).toBeLessThan(
+            mockedRemoveTakes.mock.invocationCallOrder[0]!
+        );
+        expect(retiredTakeLanes).toEqual([]);
         expect(mockedRestoreTakes).not.toHaveBeenCalled();
     });
 
@@ -318,6 +419,31 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
 
         expect(result).toEqual({ status: 'written' });
         expect(mockedRemoveTakes).toHaveBeenCalledWith(['c2']);
+    });
+
+    it('leaves a sole transition-owned take out of the retirement capture', () => {
+        const ownedTake = { id: 'owned-take', clipId: 'c1', name: 'Owned', startBeat: 0, endBeat: 4, selected: false };
+        const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
+        const base = makeTakeLaneAction(makeSnapshot(), makeSnapshot({ rightClip: null }), retiredTakeLanes);
+        const action = {
+            ...base,
+            payload: {
+                ...base.payload,
+                reKeyedTakeLanes: [
+                    {
+                        laneId: 'owned-lane',
+                        trackId: 't1',
+                        takesBefore: [ownedTake],
+                        takesAfter: [{ ...ownedTake, clipId: 'c2', startBeat: 2 }],
+                        regionsBefore: [],
+                        regionsAfter: [],
+                    },
+                ],
+            },
+        };
+        expect(handleRestoreClipSplitState.execute(action)).toMatchObject({ status: 'written' });
+        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set([ownedTake.id]));
+        expect(retiredTakeLanes).toEqual([]);
     });
 
     it('undo leg retires nothing when the track restore conflicts', () => {
@@ -349,6 +475,21 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
         const result = handleRestoreClipSplitState.execute(action);
 
         expect(result).toEqual({ status: 'written' });
+        expect(mockedRestoreTakes).not.toHaveBeenCalled();
+        expect(mockedRemoveTakes).not.toHaveBeenCalled();
+    });
+
+    it('refuses a retired lane id reused by a foreign track before every restore route', () => {
+        takeLaneStore.set({
+            lanes: [{ id: retiredLane.lane.id, trackId: 'foreign-track', takes: [], activeCompRegions: [] }],
+        });
+        const action = makeTakeLaneAction(makeSnapshot({ rightClip: null }), makeSnapshot(), [retiredLane]);
+        expect(handleRestoreClipSplitState.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+        expect(handleRestoreClipSplitState.execute(action)).toEqual({ status: 'conflict' });
+        expect(mockedReplaceTrackState).not.toHaveBeenCalled();
+        expect(mockedRestoreMidi).not.toHaveBeenCalled();
+        expect(mockedApplyLaneTransition).not.toHaveBeenCalled();
+        expect(mockedWriteSatellite).not.toHaveBeenCalled();
         expect(mockedRestoreTakes).not.toHaveBeenCalled();
         expect(mockedRemoveTakes).not.toHaveBeenCalled();
     });

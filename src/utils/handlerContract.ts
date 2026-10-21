@@ -526,6 +526,10 @@ export type RippleShiftSnapshot = {
     readonly origStartBeat: number;
     readonly origEndBeat: number;
     readonly automationDelta: number;
+    /** Complete shifted-clip lane membership, owner tracks and points after
+     *  the forward ripple. Historical captures without this field can only
+     *  authenticate an empty live automation scope. */
+    readonly expectedAutomationLanes?: readonly ClipAutomationLaneActionSnapshot[];
 };
 /** A take captured inside a comp take lane — structural mirror of Arrangement's
  *  `Take`, declared here because model isolation forbids importing it. Arrays
@@ -1137,6 +1141,8 @@ export type AppAction =
               clipId: string;
               trackId: string;
               clipSnapshot: ClipSnapshot;
+              /** Original clip slot. Older entries without it append. */
+              clipIndex?: number;
               ripplePlan: RipplePlanSnapshot | null;
               midiNotesSnapshot: MidiNotesSnapshot | null;
               midiCcSnapshot: MidiCcSnapshot | null;
@@ -1364,7 +1370,7 @@ export type AppAction =
     | { type: 'duplicateClip'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateClipToNextBar'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateTrack'; payload: { trackId: string; targetTrackId?: string; select?: boolean } }
-    | { type: 'removeClip'; payload: { clipId: string } }
+    | { type: 'removeClip'; payload: { clipId: string; /** Internal captured replay preference. */ ripple?: boolean } }
     | { type: 'renameClip'; payload: { clipId: string; name: string } }
     | {
           type: 'splitClip';

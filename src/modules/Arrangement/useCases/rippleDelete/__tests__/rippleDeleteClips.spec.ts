@@ -57,6 +57,12 @@ describe('rippleDeleteClips', () => {
         mocks.removeTakesForClips.mockReturnValue([]);
     });
 
+    it.each([false, true])('passes the explicit replay preference=%s to its planner', (ripple) => {
+        mocks.planRippleDelete.mockReturnValue(null);
+        expect(rippleDeleteClips({ trackId: 't1', clipIds: ['c1'], ripple })).toBeNull();
+        expect(mocks.planRippleDelete).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'], ripple });
+    });
+
     it('executes the plan and updates state', () => {
         const mockPlan = {
             removedClips: [{ id: 'c1' }],

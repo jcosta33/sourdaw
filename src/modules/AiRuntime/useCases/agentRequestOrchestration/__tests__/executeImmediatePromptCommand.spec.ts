@@ -61,6 +61,8 @@ function buildAgentApproval(sourceRevision: string): AgentApproval {
 }
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(() => ''),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectRevision: mocks.captureProjectRevision,
     createCrdtDoc: vi.fn(),

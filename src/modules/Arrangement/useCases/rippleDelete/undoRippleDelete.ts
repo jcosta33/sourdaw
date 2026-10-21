@@ -18,6 +18,8 @@ type RippleDeleteShift = {
 
 type UndoRippleDeleteInput = {
     trackId: string;
+    /** Captured slot for a single-clip removal; legacy/multi-remove callers append. */
+    clipIndex?: number;
     removedClips: Clip[];
     shiftedClips: RippleDeleteShift[];
     /** Gain envelopes/warp states the removed clips carried, restored verbatim. */
@@ -30,6 +32,7 @@ type UndoRippleDeleteInput = {
 
 export function undoRippleDelete({
     trackId,
+    clipIndex,
     removedClips,
     shiftedClips,
     clipSatellites,
@@ -63,10 +66,13 @@ export function undoRippleDelete({
                 };
             });
 
-            return {
-                ...track,
-                clips: [...restoredClips, ...removedClips],
-            };
+            const clips = [...restoredClips];
+            clips.splice(
+                clipIndex === undefined ? clips.length : Math.min(clipIndex, clips.length),
+                0,
+                ...removedClips
+            );
+            return { ...track, clips };
         }),
     });
 
