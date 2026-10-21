@@ -1,11 +1,38 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip, type Track, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { trimClipStart } from '#/modules/Arrangement/useCases';
+import { type ActionUndoEntry } from '#/modules/Command/models/UndoEntry';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+    undo,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
+import { handleRestoreTrackClipStates } from '../../../handlers/clip/handleRestoreTrackClipStates';
 import { handleTrimClipStart } from '../../../handlers/clip/handleTrimClipStart';
 import { setClipLoop } from '../../clipLoop/setClipLoop';
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
+
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
 
 /**
  * #4988 — the loop anchor's write law. A looped clip's start trim advances the
@@ -217,11 +244,13 @@ describe('trimClipStart loop anchoring', () => {
         expect(restored.loopOriginBeat).toBe(0);
     });
 
-    it('replays a legacy extension inverse with the mint the fieldless payload always produced', () => {
-        // An entry recorded before the inverse carried an anchor decodes
-        // without the field and replays the mint law it always did: the
-        // rightward replay of a pre-anchor extension entry still mints at the
-        // pre-action start. The field's absence is the legacy behavior, kept.
+    it('mints at the pre-action start when a fresh rightward trim dispatches without an anchor field', () => {
+        // Fresh user actions dispatch without the anchor field and keep the
+        // mint law exactly as it always was — the undo seam distinguishes a
+        // recorded legacy entry from a fresh dispatch, not the use case. A
+        // keyless legacy REPLAY of this shape is normalized to the explicit
+        // anchorless restoration at the seam; see 'legacy undo entries replay
+        // anchorless through the undo seam' below.
         trackStore.set({
             ...defaultTrackState,
             tracks: [midiTrack([loopedClip({ id: 'c-legacy-ext', startBeat: 2, endBeat: 16 })])],
@@ -232,6 +261,30 @@ describe('trimClipStart loop anchoring', () => {
         const replayed = readClip('c-legacy-ext');
         expect(replayed.startBeat).toBe(4);
         expect(replayed.loopOriginBeat).toBe(2);
+    });
+
+    it('drops a non-finite restore anchor to the absent behavior (#5198)', () => {
+        // A persisted `1e999` decodes as Infinity; written into clip state it
+        // derives a NaN loop window in every reader. The restore leg treats a
+        // non-finite anchor exactly like an absent one: an already-anchored
+        // clip keeps its finite anchor, and an anchorless clip runs the mint
+        // law on finite values.
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [midiTrack([loopedClip({ id: 'c-anchored', loopOriginBeat: 0 })])],
+        });
+        expect(trimClipStart('c-anchored', 6, Number.POSITIVE_INFINITY)).toBe(true);
+        expect(readClip('c-anchored').startBeat).toBe(6);
+        expect(readClip('c-anchored').loopOriginBeat).toBe(0);
+
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [midiTrack([loopedClip({ id: 'c-mint', startBeat: 0 })])],
+        });
+        expect(trimClipStart('c-mint', 3, Number.NaN)).toBe(true);
+        const minted = readClip('c-mint');
+        expect(minted.loopOriginBeat).toBe(0);
+        expect(Number.isFinite(readClip('c-mint').loopOriginBeat)).toBe(true);
     });
 });
 
@@ -258,5 +311,141 @@ describe('setClipLoop loop anchoring', () => {
         setClipLoop('c-plain', false);
         expect(readClip('c-plain').loopEnabled).toBe(false);
         expect(readClip('c-plain').loopOriginBeat).toBe(0);
+    });
+
+    it('drops a non-finite anchor to the fresh-enable restamp law (#5198)', () => {
+        // A corrupted persisted payload can decode a bare number slot as
+        // Infinity; the tri-state anchor treats it exactly like absence — the
+        // fresh-enable restamp — so a finite anchor lands and the corrupted
+        // value never enters clip state.
+        expect(setClipLoop('c-plain', true, Number.POSITIVE_INFINITY)).toBe(true);
+        const enabled = readClip('c-plain');
+        expect(enabled.loopEnabled).toBe(true);
+        expect(enabled.loopOriginBeat).toBe(0);
+    });
+});
+
+describe('legacy undo entries replay anchorless through the undo seam (#5198)', () => {
+    /** Mirrors the production registration for exactly the handlers the replay dispatches. */
+    function registerReplayHandlers(): void {
+        clearHandlerRegistry();
+        registerHandlerMap({
+            trimClipStart: handleTrimClipStart,
+            restoreTrackClipStates: handleRestoreTrackClipStates,
+        });
+    }
+
+    /** The legacy extension entry: recorded before inverses carried anchors. */
+    function legacyExtensionEntry(clipId: string): ActionUndoEntry {
+        return {
+            kind: 'action',
+            id: 'legacy-trim-undo',
+            label: 'Trim clip start',
+            timestamp: 0,
+            source: 'manual',
+            action: { type: 'trimClipStart', payload: { clipId, newStartBeat: 2 } },
+            // Keyless — decoding a pre-#5198 entry produces no anchor field.
+            inverseAction: { type: 'trimClipStart', payload: { clipId, newStartBeat: 4 } },
+        };
+    }
+
+    /** The whole-track restore captured while the clip sat at its pre-extension state: start 4, offsets 0, anchorless. */
+    function legacyWholeTrackEntry(): TrackClipStateSnapshot {
+        const track = trackStore.value?.tracks[0];
+        const clip = track?.clips[0];
+        if (!track || !clip) {
+            throw new Error('Expected the seeded legacy clip');
+        }
+        const preExtension = { ...structuredClone(clip), startBeat: 4, audioOffsetBeats: 0, midiOffsetBeats: 0 };
+        return {
+            trackId: track.id,
+            clips: [preExtension],
+            trackFields: {
+                kind: track.kind,
+                devices: structuredClone(track.devices),
+                frozen: track.frozen,
+                freezeState: structuredClone(track.freezeState),
+                activeAlternativeId: track.activeAlternativeId,
+                alternatives: structuredClone(track.alternatives),
+            },
+            midiNotesByClipId: {},
+            midiCcByClipId: {},
+            midiPitchBendByClipId: {},
+            clipSatellites: [],
+            clipAutomationLanes: [],
+        };
+    }
+
+    beforeEach(() => {
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('legacy loop anchor undo replay');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        registerReplayHandlers();
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        // A pre-anchor session: the born-looped clip was extended 4 -> 2
+        // (leftward, so no anchor ever minted) and carries the extension's
+        // re-based offsets. Its recorded inverse replays the pre-extension
+        // start 4.
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [
+                midiTrack([
+                    loopedClip({
+                        id: 'c-legacy',
+                        startBeat: 2,
+                        endBeat: 16,
+                        audioOffsetBeats: -2,
+                        midiOffsetBeats: 2,
+                    }),
+                ]),
+            ],
+        });
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
+    it('replays a keyless legacy trim inverse anchorless and lets a deeper legacy restore execute', async () => {
+        // An older whole-track restore captured the clip at its pre-extension
+        // state — anchorless, because the field did not exist yet.
+        const olderEntry = legacyWholeTrackEntry();
+
+        undoHistoryStore.set({ past: [legacyExtensionEntry('c-legacy')], future: [] });
+        await undo();
+
+        const restored = readClip('c-legacy');
+        expect(restored.startBeat).toBe(4);
+        expect(restored.audioOffsetBeats).toBe(0);
+        // The pre-action state carried no anchor, and the replay writes none:
+        // minting at the extension start would derive a spurious advance and
+        // make the older anchorless restore below conflict.
+        expect(Object.hasOwn(restored, 'loopOriginBeat')).toBe(false);
+        expect(
+            resolveClipLoopOriginAdvance({
+                startBeat: restored.startBeat,
+                loopOriginBeat: restored.loopOriginBeat,
+                loopEnabled: restored.loopEnabled === true,
+            })
+        ).toBe(0);
+
+        // The older entry's snapshot matches the anchorless live state again,
+        // so it executes instead of returning conflict and bricking the undo
+        // stack behind it.
+        expect(
+            handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: { expected: [olderEntry], replacement: [structuredClone(olderEntry)] },
+            })
+        ).toEqual({ status: 'written' });
     });
 });

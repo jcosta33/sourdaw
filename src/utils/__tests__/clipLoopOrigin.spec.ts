@@ -4,6 +4,8 @@ import {
     CLIP_LOOP_WINDOW_BEAT_TOLERANCE,
     isBeatInClipLoopWindow,
     resolveClipLoopOriginAdvance,
+    resolveLoopAnchoredStartBeat,
+    resolveLoopedOffsetBeats,
 } from '../clipLoopOrigin';
 
 /**
@@ -38,6 +40,39 @@ describe('resolveClipLoopOriginAdvance', () => {
 
     it('advances zero for a stale anchor while the loop is off', () => {
         expect(resolveClipLoopOriginAdvance(STALE_ANCHOR_LOOP_OFF_CLIP)).toBe(0);
+    });
+
+    it('advances zero for a non-finite anchor — corruption reads as absence (#5198)', () => {
+        // A persisted `1e999` decodes as Infinity and can reach clip state
+        // through a store updater, which applies no finiteness guard. Left
+        // alone, `startBeat - Infinity` derives a NaN window whose segment
+        // extents pass every `<= 0` death guard and reach `source.start()` as
+        // the RangeError that kills a scheduler tick. The same degradation
+        // `normalize_clip` applies to the document wins: the anchor is absent.
+        expect(
+            resolveClipLoopOriginAdvance({ startBeat: 1, loopOriginBeat: Number.POSITIVE_INFINITY, loopEnabled: true })
+        ).toBe(0);
+        expect(resolveClipLoopOriginAdvance({ startBeat: 1, loopOriginBeat: Number.NaN, loopEnabled: true })).toBe(0);
+        expect(
+            resolveClipLoopOriginAdvance({ startBeat: 1, loopOriginBeat: Number.NEGATIVE_INFINITY, loopEnabled: true })
+        ).toBe(0);
+    });
+});
+
+describe('resolveLoopAnchoredStartBeat', () => {
+    it('stamps the anchor while the loop is on', () => {
+        expect(resolveLoopAnchoredStartBeat(ANCHORED_CLIP)).toBe(0);
+    });
+
+    it('stamps the clip start for an absent or stale anchor', () => {
+        expect(resolveLoopAnchoredStartBeat({ ...ANCHORED_CLIP, loopOriginBeat: undefined })).toBe(1);
+        expect(resolveLoopAnchoredStartBeat(STALE_ANCHOR_LOOP_OFF_CLIP)).toBe(1);
+    });
+
+    it('stamps the clip start for a non-finite anchor (#5198)', () => {
+        // The occurrence index derives pass starts from this figure; Infinity
+        // would stamp occurrence windows measured from Infinity.
+        expect(resolveLoopAnchoredStartBeat({ ...ANCHORED_CLIP, loopOriginBeat: Number.POSITIVE_INFINITY })).toBe(1);
     });
 });
 
@@ -109,5 +144,34 @@ describe('isBeatInClipLoopWindow', () => {
         expect(isBeatInClipLoopWindow({ ...STALE_ANCHOR_LOOP_OFF_CLIP, relativeBeat: -10 })).toBe(true);
         expect(isBeatInClipLoopWindow({ ...STALE_ANCHOR_LOOP_OFF_CLIP, relativeBeat: 3.5 })).toBe(true);
         expect(isBeatInClipLoopWindow({ ...STALE_ANCHOR_LOOP_OFF_CLIP, relativeBeat: 4 })).toBe(false);
+    });
+
+    it('falls back to the pre-anchor law for a non-finite anchor (#5198)', () => {
+        // The corrupted anchor reads as absent, like the normalizer leaves the
+        // document — not as an advance-zero window that would drop legacy
+        // material below the region head.
+        const corrupted = { ...ANCHORED_CLIP, loopOriginBeat: Number.POSITIVE_INFINITY } as const;
+        expect(isBeatInClipLoopWindow({ ...corrupted, relativeBeat: -10 })).toBe(true);
+        expect(isBeatInClipLoopWindow({ ...corrupted, relativeBeat: 3.5 })).toBe(true);
+        expect(isBeatInClipLoopWindow({ ...corrupted, relativeBeat: 4 })).toBe(false);
+    });
+});
+
+describe('resolveLoopedOffsetBeats', () => {
+    const input = {
+        loopEnabled: true,
+        clipDurationBeats: 12,
+        configuredLoopLengthBeats: 4,
+    } as const;
+
+    it('keeps the offset while the loop is off', () => {
+        expect(resolveLoopedOffsetBeats({ ...input, loopEnabled: false, offsetBeats: -3 })).toBe(-3);
+        expect(resolveLoopedOffsetBeats({ ...input, loopEnabled: false, offsetBeats: 9 })).toBe(9);
+    });
+
+    it('wraps the offset into the loop while the loop is on', () => {
+        expect(resolveLoopedOffsetBeats({ ...input, offsetBeats: 4 })).toBe(0);
+        expect(resolveLoopedOffsetBeats({ ...input, offsetBeats: 6 })).toBe(2);
+        expect(resolveLoopedOffsetBeats({ ...input, offsetBeats: -1 })).toBe(3);
     });
 });

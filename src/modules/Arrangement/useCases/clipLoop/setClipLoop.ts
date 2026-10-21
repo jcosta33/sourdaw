@@ -17,6 +17,11 @@ import { updateClip } from '../../repositories/track/updateClip';
  * restore entry replays exactly the restamp it always did.
  */
 export function setClipLoop(clipId: string, enabled: boolean | undefined, anchorBeat?: number | null): boolean {
+    // A non-finite anchor is corrupted data, not an anchor state (#5198): a
+    // persisted `1e999` decodes as Infinity, and writing it into clip state
+    // derives a NaN loop window in every reader. Drop it to the absent form —
+    // exactly the behavior a payload without the field gets.
+    const restoreAnchorBeat = anchorBeat !== null && !Number.isFinite(anchorBeat) ? undefined : anchorBeat;
     return updateClip(clipId, (context) => {
         const updatedClip = { ...context };
         if (enabled === undefined) {
@@ -24,15 +29,15 @@ export function setClipLoop(clipId: string, enabled: boolean | undefined, anchor
         } else {
             updatedClip.loopEnabled = enabled;
         }
-        if (anchorBeat === undefined) {
+        if (restoreAnchorBeat === undefined) {
             // The fresh-enable restamp law.
             if (enabled === true) {
                 updatedClip.loopOriginBeat = context.startBeat;
             }
-        } else if (anchorBeat === null) {
+        } else if (restoreAnchorBeat === null) {
             delete updatedClip.loopOriginBeat;
         } else {
-            updatedClip.loopOriginBeat = anchorBeat;
+            updatedClip.loopOriginBeat = restoreAnchorBeat;
         }
         return updatedClip;
     });

@@ -1,6 +1,5 @@
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
-import { loopOriginEntry } from '#/utils/clipLoopOrigin';
-import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { loopOriginEntry, resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
 
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -12,19 +11,16 @@ import { findClipById } from '../../services/findClipById';
  * the loop length, so scheduling only sees the offset's phase inside
  * `[0, loopLength)` — but the piano roll, splitting, and glue all read the raw
  * figure. Wrap the trim's advance into that range so every consumer stays
- * inside the loop the clip plays.
+ * inside the loop the clip plays. The wrap is the util's single implementation,
+ * shared with `slipClipContent`.
  */
 function loopedMidiOffsetBeats(clip: Clip, offset: number): number {
-    const loopEnabled = clip.loopEnabled ?? false;
-    if (!loopEnabled) {
-        return offset;
-    }
-    const { loopLengthBeats } = projectClipLoopExpansion({
+    return resolveLoopedOffsetBeats({
+        offsetBeats: offset,
+        loopEnabled: clip.loopEnabled ?? false,
         clipDurationBeats: clip.endBeat - clip.startBeat,
         configuredLoopLengthBeats: clip.loopLength,
-        loopEnabled,
     });
-    return ((offset % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
 }
 
 /**
@@ -67,6 +63,11 @@ export function trimClipStart(clipId: string, newStartBeat: number, anchorBeat?:
     if (!Number.isFinite(newStartBeat)) {
         return false;
     }
+    // A non-finite anchor is corrupted data, not an anchor state (#5198): a
+    // persisted `1e999` decodes as Infinity, and writing it into clip state
+    // derives a NaN loop window in every reader. Drop it to the absent form —
+    // exactly the behavior a payload without the field gets.
+    const restoreAnchorBeat = anchorBeat !== null && !Number.isFinite(anchorBeat) ? undefined : anchorBeat;
 
     try {
         const state = getTrackState();
@@ -97,12 +98,12 @@ export function trimClipStart(clipId: string, newStartBeat: number, anchorBeat?:
             // results — an explicit-undefined key is a shape no clip writer
             // may leave behind (#4988).
             let restoredAnchorBeat: number | null | undefined;
-            if (anchorBeat === undefined) {
+            if (restoreAnchorBeat === undefined) {
                 restoredAnchorBeat =
                     context.loopOriginBeat ??
                     (context.loopEnabled === true && startBeat >= context.startBeat ? context.startBeat : undefined);
             } else {
-                restoredAnchorBeat = anchorBeat;
+                restoredAnchorBeat = restoreAnchorBeat;
             }
             const updated = {
                 ...context,

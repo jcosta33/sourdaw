@@ -102,6 +102,13 @@ function makeFakeSource(): { start: ReturnType<typeof vi.fn<StartFn>>; [k: strin
             if (when < 0 || offset < 0 || duration < 0) {
                 throw new RangeError('start() arguments must be non-negative');
             }
+            // NaN passes the Web Audio non-negative check the same way it
+            // passes every `<= 0` death guard upstream; a NaN reaching the
+            // node is the RangeError that kills a live scheduler tick, so the
+            // seam refuses it here too.
+            if (!Number.isFinite(when) || !Number.isFinite(offset) || !Number.isFinite(duration)) {
+                throw new RangeError('start() arguments must be finite');
+            }
         }),
         onended: null,
     };
@@ -214,6 +221,43 @@ describe('scheduleAudioClips loop-origin anchored passes', () => {
 
         // The pre-anchor read: one source per pass, reading [1, 5) — past the
         // region end, exactly as before the anchor existed.
+        expect(sources).toHaveLength(4);
+        expect(sources[0]!.start).toHaveBeenCalledWith(0.5, 0.5, 2);
+    });
+
+    it('reads a non-finite anchor as absent so no NaN reaches start() (#5198)', () => {
+        // A corrupted persisted payload can decode the anchor slot as
+        // Infinity (JSON `1e999`), and a store updater writes it into clip
+        // state without the normalizer's finiteness guard. `startBeat -
+        // Infinity` made every segment extent NaN, which passed the `<= 0`
+        // guards and reached `source.start(now, NaN, NaN)` — the RangeError
+        // that skips that tick's automation and modulation passes. The
+        // degraded read is the anchorless one, and the fake above now throws
+        // on non-finite args, so any NaN regression fails right here.
+        const sources: Array<ReturnType<typeof makeFakeSource>> = [];
+        mockCreateBufferSource.mockImplementation(() => {
+            const fake = makeFakeSource();
+            sources.push(fake);
+            return fake as unknown as AudioBufferSourceNode;
+        });
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 4 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([trimmedLoopedClip({ loopOriginBeat: Number.POSITIVE_INFINITY })] as never);
+        trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    kind: 'audio',
+                    muted: false,
+                    clips: [],
+                    freezeState: { status: 'active', frozenBufferId: null },
+                },
+            ],
+        };
+
+        scheduleAudioClips(0, 32, 0, new Set(), new Set(), [], defaultTransportState);
+
+        // The anchorless figures: one source per pass, reading [1, 5) —
+        // finite args only.
         expect(sources).toHaveLength(4);
         expect(sources[0]!.start).toHaveBeenCalledWith(0.5, 0.5, 2);
     });

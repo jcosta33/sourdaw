@@ -1,5 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { type ActionUndoEntry } from '#/modules/Command/models/UndoEntry';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+    undo,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
@@ -14,6 +29,16 @@ import { handleSetClipColor } from '../handleSetClipColor';
 import { handleSetClipFade } from '../handleSetClipFade';
 import { handleSetClipLoop } from '../handleSetClipLoop';
 import { handleSetClipLoopLength } from '../handleSetClipLoopLength';
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
+
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
 
 const clip: Clip = {
     id: 'clip-1',
@@ -306,24 +331,6 @@ describe('clip loop disable undo keeps the pre-disable anchor (#5198)', () => {
         expect(advance).toBe(4);
         expect((restored!.audioOffsetBeats ?? 0) - advance).toBe(0);
     });
-
-    it('replays a legacy entry recorded without the anchor exactly as before (enable restamp)', () => {
-        runEnableTrimDisable();
-        // A legacy inverse carries no anchor field: decoding it must behave
-        // exactly as before the field existed — the enable restamps at the
-        // live start.
-        const legacyInverse = {
-            type: 'restoreClipLoop',
-            payload: {
-                clipId: clip.id,
-                expected: { present: true, enabled: false },
-                replacement: { present: true, enabled: true },
-            },
-        } as const;
-        expect(handleRestoreClipLoop.execute(legacyInverse)).toEqual({ status: 'written' });
-        const restored = trackStore.value?.tracks[0]?.clips[0];
-        expect(restored).toMatchObject({ loopEnabled: true, loopOriginBeat: 4, startBeat: 4 });
-    });
 });
 
 describe('clip loop enable undo removes the minted anchor (#5198)', () => {
@@ -388,6 +395,121 @@ describe('clip loop enable undo removes the minted anchor (#5198)', () => {
         // The older entry's anchorless snapshot matches live state again, so
         // it executes instead of returning conflict and leaving a conflicted
         // entry that bricks the user's next undo.
+        expect(
+            handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: { expected: [olderEntry], replacement: [structuredClone(olderEntry)] },
+            })
+        ).toEqual({ status: 'written' });
+    });
+});
+
+describe('legacy loop entries replay anchorless through the undo seam (#5198)', () => {
+    function registerReplayHandlers(): void {
+        clearHandlerRegistry();
+        registerHandlerMap({
+            restoreClipLoop: handleRestoreClipLoop,
+            restoreTrackClipStates: handleRestoreTrackClipStates,
+        });
+    }
+
+    /** The legacy disable-undo entry: recorded before the restore carried anchors. */
+    function legacyDisableUndoEntry(): ActionUndoEntry {
+        return {
+            kind: 'action',
+            id: 'legacy-loop-undo',
+            label: 'Disable clip loop',
+            timestamp: 0,
+            source: 'manual',
+            action: { type: 'setClipLoop', payload: { clipId: clip.id, enabled: false } },
+            // Keyless — decoding a pre-#5198 entry produces no anchor field.
+            inverseAction: {
+                type: 'restoreClipLoop',
+                payload: {
+                    clipId: clip.id,
+                    expected: { present: true, enabled: false },
+                    replacement: { present: true, enabled: true },
+                },
+            },
+        };
+    }
+
+    /** The whole-track restore captured while the clip was looped and anchorless — the pre-disable state. */
+    function legacyWholeTrackEntry(): TrackClipStateSnapshot {
+        const track = trackStore.value?.tracks[0];
+        const seededClip = track?.clips[0];
+        if (!track || !seededClip) {
+            throw new Error('Expected the seeded clip');
+        }
+        return {
+            trackId: track.id,
+            clips: [{ ...structuredClone(seededClip), loopEnabled: true }],
+            trackFields: {
+                kind: track.kind,
+                devices: structuredClone(track.devices),
+                frozen: track.frozen,
+                freezeState: structuredClone(track.freezeState),
+                activeAlternativeId: track.activeAlternativeId,
+                alternatives: structuredClone(track.alternatives),
+            },
+            midiNotesByClipId: {},
+            midiCcByClipId: {},
+            midiPitchBendByClipId: {},
+            clipSatellites: [],
+            clipAutomationLanes: [],
+        };
+    }
+
+    beforeEach(() => {
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('legacy loop anchor undo replay');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        registerReplayHandlers();
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        // The document after a legacy disable: looping off, and — the field
+        // not existing yet — no anchor. The recorded inverse replays the
+        // enable.
+        seedClip();
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
+    it('replays a keyless legacy loop inverse anchorless and lets a deeper legacy restore execute', async () => {
+        // An older whole-track restore captured the clip looped and
+        // anchorless — its pre-disable state.
+        const olderEntry = legacyWholeTrackEntry();
+
+        undoHistoryStore.set({ past: [legacyDisableUndoEntry()], future: [] });
+        await undo();
+
+        const restored = trackStore.value?.tracks[0]?.clips[0];
+        expect(restored?.loopEnabled).toBe(true);
+        // The replay restamped nothing: the pre-action clip carried no
+        // anchor, and minting one at the enable would write a key into a
+        // legacy document and make the older restore below conflict.
+        expect(Object.hasOwn(restored ?? {}, 'loopOriginBeat')).toBe(false);
+        expect(
+            resolveClipLoopOriginAdvance({
+                startBeat: restored!.startBeat,
+                loopOriginBeat: restored!.loopOriginBeat,
+                loopEnabled: restored!.loopEnabled === true,
+            })
+        ).toBe(0);
+
+        // The older entry's anchorless snapshot matches live state again, so
+        // it executes instead of returning conflict and bricking the undo
+        // stack behind it.
         expect(
             handleRestoreTrackClipStates.execute({
                 type: 'restoreTrackClipStates',

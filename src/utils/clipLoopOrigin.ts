@@ -20,6 +20,8 @@
  * not wrap an unlooped clip's read at a boundary nothing loops on.
  */
 
+import { projectClipLoopExpansion } from './clipLoopProjection';
+
 export type ClipLoopOriginInput = Readonly<{
     startBeat: number;
     loopOriginBeat: number | undefined;
@@ -27,9 +29,22 @@ export type ClipLoopOriginInput = Readonly<{
     loopEnabled: boolean;
 }>;
 
+/**
+ * Whether the clip carries an anchor a reader may derive from. A non-finite
+ * value is corruption, not an anchor: it can reach clip state through a store
+ * updater, which — unlike `normalize_clip` — applies no finiteness guard, and
+ * `startBeat - Infinity` would derive a `NaN` loop window whose segment
+ * extents survive every `<= 0` death guard and reach `source.start()` as the
+ * RangeError that kills a scheduler tick. Every reader degrades the same way
+ * the CRDT normalizer does: the anchor is absent, the advance is zero.
+ */
+function isPresentLoopOriginBeat(loopOriginBeat: number | undefined): loopOriginBeat is number {
+    return loopOriginBeat !== undefined && Number.isFinite(loopOriginBeat);
+}
+
 /** How far start trims have advanced this clip's head past its loop anchor. */
 export function resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat, loopEnabled }: ClipLoopOriginInput): number {
-    if (loopEnabled !== true || loopOriginBeat === undefined) {
+    if (loopEnabled !== true || !isPresentLoopOriginBeat(loopOriginBeat)) {
         return 0;
     }
     return startBeat - loopOriginBeat;
@@ -39,10 +54,46 @@ export function resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat, loopEn
  * The source-anchored start the occurrence index and comping resolvers stamp:
  * the anchor's start while the loop is on, the clip's own start otherwise —
  * the pre-anchor reading — so a stale anchor from a past enable never
- * re-rolls a de-looped clip's passes.
+ * re-rolls a de-looped clip's passes, and a non-finite one never stamps an
+ * occurrence window measured from Infinity.
  */
 export function resolveLoopAnchoredStartBeat({ startBeat, loopOriginBeat, loopEnabled }: ClipLoopOriginInput): number {
-    return loopEnabled === true && loopOriginBeat !== undefined ? loopOriginBeat : startBeat;
+    return loopEnabled === true && isPresentLoopOriginBeat(loopOriginBeat) ? loopOriginBeat : startBeat;
+}
+
+type ClipLoopedOffsetInput = Readonly<{
+    offsetBeats: number;
+    loopEnabled: boolean;
+    clipDurationBeats: number;
+    configuredLoopLengthBeats: number | undefined;
+}>;
+
+/**
+ * The content offset a looped clip stores: `offsetBeats` itself while the loop
+ * is off, and its phase inside `[0, loopLength)` while the loop is on — the
+ * same projection `projectClipLoopExpansion` gives the scheduling loop, so a
+ * figure past the loop (a whole-loop advance, or a slip that crossed the
+ * region end) stores as the equivalent phase instead of a raw figure the
+ * loop-window readers would read one loop away from the material.
+ *
+ * Shared by every writer that re-bases a looped clip's content offset
+ * (`trimClipStart`, `slipClipContent`) so the wrap cannot drift between them.
+ */
+export function resolveLoopedOffsetBeats({
+    offsetBeats,
+    loopEnabled,
+    clipDurationBeats,
+    configuredLoopLengthBeats,
+}: ClipLoopedOffsetInput): number {
+    if (!loopEnabled) {
+        return offsetBeats;
+    }
+    const { loopLengthBeats } = projectClipLoopExpansion({
+        clipDurationBeats,
+        configuredLoopLengthBeats,
+        loopEnabled,
+    });
+    return ((offsetBeats % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
 }
 
 type ClipLoopOriginShiftInput = Readonly<{
@@ -151,7 +202,7 @@ export function isBeatInClipLoopWindow({
     loopLengthBeats,
     loopEnabled,
 }: ClipLoopWindowMembershipInput): boolean {
-    if (loopOriginBeat === undefined || loopEnabled !== true) {
+    if (!isPresentLoopOriginBeat(loopOriginBeat) || loopEnabled !== true) {
         return relativeBeat < loopLengthBeats;
     }
     const windowFloorBeat = -resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat, loopEnabled });
