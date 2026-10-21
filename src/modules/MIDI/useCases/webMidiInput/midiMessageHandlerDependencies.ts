@@ -23,10 +23,10 @@ import { playheadPositionRef, transportStore } from '#/modules/Transport/stores'
 
 import { processRealtimeMidiInput } from '../../repositories/webMidi/processRealtimeMidiInput';
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
-import { appendRecordedMidiCC } from '../appendRecordedMidiCC';
 import { appendRecordedMidiNote } from '../appendRecordedMidiNote';
 import { createMidiNote } from '../createMidiNote';
-import { addPitchBend } from '../midiEvent/addPitchBend';
+import { bufferRecordedMidiCC } from '../recordedControllerTake/bufferRecordedMidiCC';
+import { bufferRecordedMidiPitchBend } from '../recordedControllerTake/bufferRecordedMidiPitchBend';
 import { stepRecordNoteOff } from '../stepRecording/stepRecordNoteOff';
 import { stepRecordNoteOn } from '../stepRecording/stepRecordNoteOn';
 
@@ -46,10 +46,10 @@ function getSynthParamsForTrack(trackId: string): ReturnType<typeof getSynthPara
 }
 
 export const midiMessageHandlerDependencies = {
-    addPitchBend,
-    appendRecordedMidiCC,
     appendRecordedMidiNote,
     applyMidiMappings,
+    bufferRecordedMidiCC,
+    bufferRecordedMidiPitchBend,
     completeMidiLearn,
     createMidiNote,
     eventBus: WebMidiEventBus,

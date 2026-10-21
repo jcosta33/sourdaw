@@ -245,6 +245,7 @@ describe('createMidiChannelControllerState', () => {
     it('returns a fresh state with defaults', () => {
         const state = createMidiChannelControllerState();
         expect(state.highResolution.size).toBe(0);
+        expect(state.heldPedals.size).toBe(0);
         expect(state.selectedParameterKind).toBeNull();
         expect(state.selectedParameterMsb).toBe(0);
         expect(state.selectedParameterLsb).toBe(0);

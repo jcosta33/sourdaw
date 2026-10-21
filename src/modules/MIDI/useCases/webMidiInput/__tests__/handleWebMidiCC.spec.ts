@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
-import { midiStore } from '../../../stores/midiStore';
-import { appendRecordedMidiCC } from '../../appendRecordedMidiCC';
-import { addPitchBend } from '../../midiEvent/addPitchBend';
+import { recordedControllerTakeState } from '../../../repositories/webMidi/recordedControllerTakeState';
+import { bufferRecordedMidiCC } from '../../recordedControllerTake/bufferRecordedMidiCC';
+import { bufferRecordedMidiPitchBend } from '../../recordedControllerTake/bufferRecordedMidiPitchBend';
 
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const target_track_id = vi.hoisted(() => ({ value: null as string | null }));
@@ -82,8 +82,8 @@ function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {})
         sendNativeLiveMidiControl: send_native_live_midi_control,
         getTransportStoreValue: () => ({ isRecording: false, overdubEnabled: false, isLooping: false, tempo: 120 }),
         getCompensationDelay: () => 0,
-        addPitchBend,
-        appendRecordedMidiCC,
+        bufferRecordedMidiCC,
+        bufferRecordedMidiPitchBend,
         ...overrides,
     };
 }
@@ -830,12 +830,9 @@ describe('handleWebMidiCC', () => {
         const at_beat = (recordingBeat: number) => ({ audioTime: 2, recordingBeat });
 
         const recorded_cc_rows = () =>
-            (midiStore.value?.ccByClipId[RECORDING_CLIP_ID] ?? []).map(({ controller, value, beat, channel }) => ({
-                controller,
-                value,
-                beat,
-                channel,
-            }));
+            (recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.cc ?? []).map(
+                ({ controller, value, beat, channel }) => ({ controller, value, beat, channel })
+            );
 
         beforeEach(() => {
             target_track_id.value = 'track-1';
@@ -843,7 +840,7 @@ describe('handleWebMidiCC', () => {
             audio_clock.baseLatency = 0;
             audio_clock.outputLatency = 0;
             tempoMapStore.set({ changes: [] });
-            midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+            recordedControllerTakeState.buffers.clear();
         });
 
         afterEach(() => {
@@ -871,7 +868,7 @@ describe('handleWebMidiCC', () => {
 
             fn(0, 64, 127, at_beat(6));
 
-            expect(midiStore.value?.ccByClipId).toEqual({});
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
         });
 
         it('records nothing while the target track is not armed', () => {
@@ -881,7 +878,7 @@ describe('handleWebMidiCC', () => {
 
             fn(0, 64, 127, at_beat(6));
 
-            expect(midiStore.value?.ccByClipId).toEqual({});
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
         });
 
         it('records nothing without a target track', () => {
@@ -890,7 +887,7 @@ describe('handleWebMidiCC', () => {
 
             fn(0, 64, 127, at_beat(6));
 
-            expect(midiStore.value?.ccByClipId).toEqual({});
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
         });
 
         it('records an ordinary controller on the channel it arrived on', () => {
@@ -906,7 +903,7 @@ describe('handleWebMidiCC', () => {
 
             fn(0, controller, 0, at_beat(6));
 
-            expect(midiStore.value?.ccByClipId).toEqual({});
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
         });
 
         it('does not record a controller an active mapping owns', () => {
@@ -951,7 +948,7 @@ describe('handleWebMidiCC', () => {
 
             fn(3, 1, 90, at_beat(5));
 
-            expect(midiStore.value?.ccByClipId).toEqual({});
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
         });
 
         it('records an RPN 0 sequence as the four raw messages in arrival order', () => {
@@ -1018,8 +1015,8 @@ describe('handleWebMidiCC', () => {
             const fn = handleWebMidiCC._factory(
                 recording_dependencies({
                     applyMidiMappings: apply_midi_mappings,
-                    appendRecordedMidiCC: () => {
-                        throw new Error('store unavailable');
+                    bufferRecordedMidiCC: () => {
+                        throw new Error('buffer unavailable');
                     },
                 })
             );

@@ -175,6 +175,51 @@ describe('ingestChannelControlChange', () => {
         });
     });
 
+    describe('held pedals', () => {
+        it('keeps the last position of sustain, sostenuto and soft per channel, as the wire carried it', () => {
+            ingest(64, 127);
+            ingest(64, 40);
+            ingest(66, 90);
+            ingest(67, 1);
+            ingest(64, 100, 5);
+
+            expect(channelControllerState.get(CHANNEL)?.heldPedals).toEqual(
+                new Map([
+                    [64, 40],
+                    [66, 90],
+                    [67, 1],
+                ])
+            );
+            expect(channelControllerState.get(5)?.heldPedals).toEqual(new Map([[64, 100]]));
+        });
+
+        it('keeps a pedal that has been lifted as a zero position', () => {
+            ingest(64, 127);
+            ingest(64, 0);
+
+            expect(channelControllerState.get(CHANNEL)?.heldPedals.get(64)).toBe(0);
+        });
+
+        it('does not keep controllers that are not held pedals', () => {
+            ingest(1, 90);
+            ingest(65, 127);
+            ingest(7, 100);
+
+            expect(channelControllerState.get(CHANNEL)?.heldPedals.size).toBe(0);
+        });
+
+        it('lifts every pedal of the channel on Reset All Controllers and leaves other channels held', () => {
+            ingest(64, 127);
+            ingest(66, 127);
+            ingest(64, 127, 5);
+
+            ingest(121, 0);
+
+            expect(channelControllerState.get(CHANNEL)?.heldPedals.size).toBe(0);
+            expect(channelControllerState.get(5)?.heldPedals.get(64)).toBe(127);
+        });
+    });
+
     describe('hostile and out-of-spec input', () => {
         it('clamps a data byte above the legal 7-bit range', () => {
             const resolved = ingest(64, 300);

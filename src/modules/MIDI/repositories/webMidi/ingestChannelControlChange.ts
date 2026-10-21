@@ -6,6 +6,7 @@ import {
     CC_NRPN_LSB,
     CC_NRPN_MSB,
     CC_RPN_LSB,
+    CC_RESET_ALL_CONTROLLERS,
     CC_RPN_MSB,
     HIGH_RESOLUTION_MAX,
     MAX_BEND_RANGE_SEMITONES,
@@ -17,6 +18,7 @@ import {
     highResolutionMsbCcFor,
     isDataEntryCc,
     isHighResolutionLsbCc,
+    isHeldPedalCc,
     isHighResolutionMsbCc,
     isParameterSelectCc,
     isPitchBendSensitivitySelected,
@@ -264,6 +266,14 @@ export function ingestChannelControlChange({
 
     if (isHighResolutionLsbCc(cc)) {
         return ingestHighResolutionLsb(state, cc, byte);
+    }
+
+    if (isHeldPedalCc(cc)) {
+        state.heldPedals.set(cc, byte);
+    } else if (cc === CC_RESET_ALL_CONTROLLERS) {
+        // The message that lifts every pedal; remembering one past it would
+        // press it back onto the next take.
+        state.heldPedals.clear();
     }
 
     return sevenBitResult(cc, byte);

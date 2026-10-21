@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
-import { midiStore } from '../../../stores/midiStore';
-import { addPitchBend } from '../../midiEvent/addPitchBend';
+import { recordedControllerTakeState } from '../../../repositories/webMidi/recordedControllerTakeState';
+import { bufferRecordedMidiCC } from '../../recordedControllerTake/bufferRecordedMidiCC';
+import { bufferRecordedMidiPitchBend } from '../../recordedControllerTake/bufferRecordedMidiPitchBend';
 
 const mpe_enabled = vi.hoisted(() => ({ value: true }));
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
@@ -64,7 +65,8 @@ function make_dependencies(
         getTransportStoreValue: () => ({ isRecording: false, overdubEnabled: false, isLooping: false, tempo: 120 }),
         getTrackStoreState: () => ({ tracks: [], selectedTrackId: null }),
         getCompensationDelay: () => 0,
-        addPitchBend,
+        bufferRecordedMidiCC,
+        bufferRecordedMidiPitchBend,
         ...overrides,
     };
 }
@@ -445,7 +447,8 @@ describe('handleWebMidiPitchBend', () => {
                     tempo: 120,
                 }),
                 getCompensationDelay: () => 0,
-                addPitchBend,
+                bufferRecordedMidiCC,
+                bufferRecordedMidiPitchBend,
                 ...overrides,
             });
 
@@ -453,15 +456,13 @@ describe('handleWebMidiPitchBend', () => {
         const at_beat = (recordingBeat: number) => ({ audioTime: 2, recordingBeat });
 
         const recorded_rows = () =>
-            (midiStore.value?.pitchBendByClipId[RECORDING_CLIP_ID] ?? []).map(({ value, beat, channel }) => ({
-                value,
-                beat,
-                channel,
-            }));
+            (recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.pitchBend ?? []).map(
+                ({ value, beat, channel }) => ({ value, beat, channel })
+            );
 
         beforeEach(() => {
             tempoMapStore.set({ changes: [] });
-            midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+            recordedControllerTakeState.buffers.clear();
         });
 
         afterEach(() => {
@@ -506,7 +507,7 @@ describe('handleWebMidiPitchBend', () => {
 
             fn(0, 127, 127, at_beat(6));
 
-            expect(midiStore.value?.pitchBendByClipId).toEqual({});
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
         });
 
         it('keeps an MPE member-channel bend as per-note data and records the master channel bend', () => {
@@ -525,7 +526,7 @@ describe('handleWebMidiPitchBend', () => {
 
             fn(2, 0, 96, at_beat(6));
 
-            expect(midiStore.value?.pitchBendByClipId).toEqual({});
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
             expect(activeNotes.get(key)?.pitchBend).toBe(4096);
 
             fn(0, 0, 96, at_beat(6));

@@ -1,4 +1,4 @@
-import { getMidiStoreState } from '#/modules/MIDI/useCases';
+import { flushRecordedControllers, getMidiStoreState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -66,6 +66,12 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
     },
     describe: (action) => {
         const { clip } = action.payload;
+        // The controllers a MIDI take recorded wait in memory until now. They
+        // are written into the clip first so the snapshot below holds them: a
+        // snapshot read before this would restore the take without them.
+        if (clip.type === 'midi') {
+            flushRecordedControllers({ clipId: clip.id, trackId: clip.trackId });
+        }
         // The inverse removes the clip through the ordinary removal path, which
         // deletes the clip's MIDI data. Carry it on the redo exactly as the
         // clip-restore route does, so undoing and redoing a recorded MIDI take

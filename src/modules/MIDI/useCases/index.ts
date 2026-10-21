@@ -26,6 +26,7 @@ export { getChordTrackHandlers } from './getChordTrackHandlers';
 export { appendRecordedMidiNote } from './appendRecordedMidiNote';
 export { createMidiNote } from './createMidiNote';
 export { isValidMidiNoteSnapshot } from './isValidMidiNoteSnapshot';
+export { flushRecordedControllers } from './recordedControllerTake/flushRecordedControllers';
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 export { downloadMidiFile } from './exportMidiFile';
