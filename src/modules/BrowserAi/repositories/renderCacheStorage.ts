@@ -12,6 +12,7 @@ type CacheState = {
     occupied: Set<string>;
     order: string[];
     totalBytes: number;
+    hasUnknownDirectory: boolean;
 };
 
 function isPcmSize(size: number): boolean {
@@ -21,15 +22,24 @@ function isPcmSize(size: number): boolean {
 async function reconcileCache(directory: FileSystemDirectoryHandle): Promise<CacheState> {
     const sizes = new Map<string, number>();
     const occupied = new Set<string>();
+    const modifiedAt = new Map<string, number>();
     let totalBytes = 0;
+    let hasUnknownDirectory = false;
     for await (const [name, handle] of directory) {
         occupied.add(name);
-        if (handle.kind !== 'file' || name === RECENCY_FILE) continue;
+        if (handle.kind === 'directory') {
+            hasUnknownDirectory = true;
+            continue;
+        }
+        if (name === RECENCY_FILE) continue;
         const file = await handle.getFile();
         // Unknown files consume space but never become eviction candidates.
         totalBytes += file.size;
         const key = name.endsWith(RENDER_CACHE_EXTENSION) ? name.slice(0, -RENDER_CACHE_EXTENSION.length) : '';
-        if (CACHE_KEY.test(key) && isPcmSize(file.size)) sizes.set(key, file.size);
+        if (CACHE_KEY.test(key) && isPcmSize(file.size)) {
+            sizes.set(key, file.size);
+            modifiedAt.set(key, file.lastModified);
+        }
     }
 
     let savedOrder: unknown = null;
@@ -47,10 +57,14 @@ async function reconcileCache(directory: FileSystemDirectoryHandle): Promise<Cac
             if (typeof key === 'string' && sizes.has(key)) orderedKeys.add(key);
         }
     }
-    for (const key of [...sizes.keys()].sort()) {
+    // Upgrading or recovering a missing index retains the files' last-write order.
+    const unindexedKeys = [...sizes.keys()].sort(
+        (left, right) => (modifiedAt.get(left) ?? 0) - (modifiedAt.get(right) ?? 0) || left.localeCompare(right)
+    );
+    for (const key of unindexedKeys) {
         orderedKeys.add(key);
     }
-    return { sizes, occupied, order: [...orderedKeys], totalBytes };
+    return { sizes, occupied, order: [...orderedKeys], totalBytes, hasUnknownDirectory };
 }
 
 async function writeFile(handle: FileSystemFileHandle, data: string | ArrayBuffer): Promise<void> {
@@ -105,6 +119,8 @@ export async function accessRenderCache({
             return cached;
         }
 
+        // Unknown hierarchies cannot be safely measured or reclaimed by this cache.
+        if (state.hasUnknownDirectory) return null;
         // A same-named directory or invalid PCM is not an entry this cache may replace.
         if (state.occupied.has(name) && !state.sizes.has(cacheKey)) return null;
         const previousSize = state.sizes.get(cacheKey) ?? 0;

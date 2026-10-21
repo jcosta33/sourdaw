@@ -13,7 +13,7 @@ const B = 'b'.repeat(64);
 const C = 'c'.repeat(64);
 const INDEX = 'recency.json';
 
-type Entry = { kind: 'file'; bytes: Uint8Array } | { kind: 'directory' };
+type Entry = { kind: 'file'; bytes: Uint8Array; lastModified?: number } | { kind: 'directory' };
 
 function storage() {
     const entries = new Map<string, Entry>();
@@ -39,6 +39,7 @@ function storage() {
                     const bytes = entry.bytes.slice();
                     return {
                         size: bytes.byteLength,
+                        lastModified: entry.lastModified ?? 0,
                         arrayBuffer: () => Promise.resolve(bytes.buffer),
                         text: () => Promise.resolve(new TextDecoder().decode(bytes)),
                     };
@@ -102,8 +103,8 @@ function storage() {
         failClose(name: string) {
             failClose = name;
         },
-        seed(name: string, bytes: Uint8Array) {
-            entries.set(name, { kind: 'file', bytes });
+        seed(name: string, bytes: Uint8Array, lastModified = 0) {
+            entries.set(name, { kind: 'file', bytes, lastModified });
         },
         payloadBytes() {
             return [...entries]
@@ -219,6 +220,33 @@ describe('bounded render cache', () => {
         expect(await read(B)).not.toBeNull();
         expect(await read(C)).not.toBeNull();
         expect(new Set(disk.requests)).toEqual(new Set(['sourdaw:render-cache']));
+    });
+
+    it.each(['absent', 'corrupt'])('evicts the oldest cold file when its recency index is %s', async (indexState) => {
+        disk.seed(`${B}.pcm`, new Uint8Array(new Float32Array([2]).buffer), 100);
+        disk.seed(`${A}.pcm`, new Uint8Array(new Float32Array([1]).buffer), 200);
+        if (indexState === 'corrupt') disk.seed(INDEX, new TextEncoder().encode('{broken'));
+
+        await write(C);
+
+        expect(disk.removed).toEqual([`${B}.pcm`]);
+        expect(await read(A)).not.toBeNull();
+        expect(await read(C)).not.toBeNull();
+        expect(disk.payloadBytes()).toBe(8);
+    });
+
+    it('refuses admission without eviction when an unknown directory prevents byte accounting', async () => {
+        await write(A);
+        await write(B);
+        disk.entries.set('foreign-directory', { kind: 'directory' });
+        const before = [...disk.entries];
+
+        await write(C);
+
+        expect([...disk.entries]).toEqual(before);
+        expect(disk.removed).toEqual([]);
+        expect(await read(A)).not.toBeNull();
+        expect(await read(B)).not.toBeNull();
     });
 
     it('counts unknown payloads without deleting them to admit a render', async () => {
