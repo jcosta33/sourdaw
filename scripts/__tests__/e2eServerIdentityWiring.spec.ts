@@ -392,4 +392,27 @@ describe('cold first-paint warmup', () => {
         expect(warmupMocks.launch).not.toHaveBeenCalled();
         expect(warmupMocks.goto).not.toHaveBeenCalled();
     });
+
+    it('checks the serving identity of, and warms, every distinct project origin once', async () => {
+        const builtOrigin = 'http://localhost:4173';
+        const devOrigin = 'http://localhost:5173';
+        const multiOriginConfig = {
+            projects: [
+                { name: 'built', use: { baseURL: builtOrigin } },
+                { name: 'dev-only', use: { baseURL: devOrigin } },
+                { name: 'built-again', use: { baseURL: builtOrigin } },
+            ],
+        } as Parameters<typeof warmFirstPaint>[0];
+        vi.spyOn(console, 'log').mockImplementation(() => {});
+
+        await warmFirstPaint(multiOriginConfig);
+
+        expect(warmupMocks.assertIdentity.mock.calls.map(([origin]) => origin)).toEqual([builtOrigin, devOrigin]);
+        expect(warmupMocks.newPage.mock.calls.map(([options]) => options)).toEqual([
+            { baseURL: builtOrigin },
+            { baseURL: devOrigin },
+        ]);
+        expect(warmupMocks.goto).toHaveBeenCalledTimes(2);
+        expect(warmupMocks.close).toHaveBeenCalledTimes(2);
+    });
 });
