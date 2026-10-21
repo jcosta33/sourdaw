@@ -88,7 +88,8 @@ function hasRetiredBank(processor: LevainProcessorLike): boolean {
 async function renderFreshEnsembleAttack(
     note: number,
     ensembleTiming: boolean,
-    instrumentId = 'marimba'
+    instrumentId = 'marimba',
+    attackSpreadMs?: number
 ): Promise<Float32Array[]> {
     vi.resetModules();
     const { registry } = installWorkletGlobals<LevainProcessorLike>();
@@ -106,6 +107,9 @@ async function renderFreshEnsembleAttack(
     send(processor, { type: 'param', name: 'humanize', value: 0 });
     send(processor, { type: 'param', name: 'legatoEnabled', value: 0 });
     send(processor, { type: 'param', name: 'ensembleTiming', value: ensembleTiming ? 1 : 0 });
+    if (attackSpreadMs !== undefined) {
+        send(processor, { type: 'param', name: 'attackSpread', value: attackSpreadMs });
+    }
     send(processor, { type: 'noteOn', note, velocity: 100, sampleFrame: 0 });
 
     const quanta = 12;
@@ -298,6 +302,47 @@ describe('shipped LevainProcessor bank retirement', () => {
         send(processor, { type: 'param', name: 'humanize', value: 0 });
         send(processor, { type: 'param', name: 'legatoEnabled', value: 0 });
         send(processor, { type: 'param', name: 'ensembleTiming', value: 1 });
+        send(processor, { type: 'noteOn', note: 67, velocity: 100, sampleFrame: 0 });
+        send(processor, { type: 'noteOff', note: 67, sampleFrame: 128 });
+        const output = makeChannels(2, FRAMES);
+        for (let quantum = 0; quantum < 8; quantum++) {
+            vi.stubGlobal('currentFrame', quantum * FRAMES);
+            expect(processor.process([], [output])).toBe(true);
+            for (const channel of output) {
+                expect(channel).toEqual(new Float32Array(FRAMES));
+            }
+        }
+        expect(posted(processor)).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+    });
+
+    // This direct backend parameter aligns the attack with the worklet's
+    // block-start event drain; it makes no claim about the UI control range.
+    it('calibrates a neutral attack to exactly one render quantum', async () => {
+        const off = await renderFreshEnsembleAttack(67, false, 'marimba', 3.23);
+        const on = await renderFreshEnsembleAttack(67, true, 'marimba', 3.23);
+        for (let channel = 0; channel < 2; channel++) {
+            const plain = off[channel]!;
+            const delayed = on[channel]!;
+            expect(delayed.subarray(0, FRAMES)).toEqual(new Float32Array(FRAMES));
+            expect(delayed.subarray(FRAMES)).toEqual(plain.subarray(0, plain.length - FRAMES));
+            expect(onsetFrame(delayed) - onsetFrame(plain)).toBe(FRAMES);
+        }
+    });
+
+    it('cancels a fresh bowed attack at its calibrated first audible frame', async () => {
+        const { registry } = installWorkletGlobals<LevainProcessorLike>();
+        await import('../levainProcessor');
+        const Processor = registry.get('levain-processor');
+        if (!Processor) {
+            throw new TypeError('Expected levain-processor registration');
+        }
+        const processor = new Processor({ processorOptions: { wasmModule } });
+        send(processor, { type: 'init' });
+        loadBank(processor, 1, 'violin-1');
+        send(processor, { type: 'param', name: 'humanize', value: 0 });
+        send(processor, { type: 'param', name: 'legatoEnabled', value: 0 });
+        send(processor, { type: 'param', name: 'ensembleTiming', value: 1 });
+        send(processor, { type: 'param', name: 'attackSpread', value: 3.23 });
         send(processor, { type: 'noteOn', note: 67, velocity: 100, sampleFrame: 0 });
         send(processor, { type: 'noteOff', note: 67, sampleFrame: 128 });
         const output = makeChannels(2, FRAMES);

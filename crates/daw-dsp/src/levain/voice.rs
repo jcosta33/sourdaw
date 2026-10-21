@@ -1007,7 +1007,7 @@ impl LevainVoice {
     }
 
     pub fn attack_is_pending(&self) -> bool {
-        self.pending_samples > 0
+        self.pending_samples > 0 || self.realism_attack_pending
     }
 
     pub fn is_sounding(&self) -> bool {
@@ -1047,10 +1047,11 @@ impl LevainVoice {
     /// remaining tail under the release envelope, which is only reachable once
     /// the loop stops holding the playhead back. See `SamplePlayback::exit_loop`.
     pub fn release(&mut self) {
+        let attack_is_pending = self.attack_is_pending();
         self.realism_attack_pending = false;
         self.held = false;
         self.amp_env.release();
-        if self.pending_samples > 0 {
+        if attack_is_pending {
             self.pending_samples = 0;
             for stream in self
                 .playback
@@ -2055,6 +2056,36 @@ mod tests {
         assert!(voice.playback[0].position > incoming_position);
         assert!(voice.amp_env.current_level() > envelope_level);
         assert_eq!((voice.note, voice.channel), (67, 3));
+    }
+
+    #[test]
+    fn cancelling_at_the_onset_boundary_keeps_the_outgoing_steal_fade() {
+        let (pool, zone) = tonal_sample(SAMPLE_RATE, 1.0, 220.0, 60);
+        let mut voice = LevainVoice::new(SAMPLE_RATE);
+        voice.trigger(60, 2, 127, &NoteZones::single(zone), 0, 1.0, &pool);
+        for _ in 0..500 {
+            voice.tick(&pool);
+        }
+        voice.trigger(67, 3, 100, &NoteZones::single(zone), 0, 0.8, &pool);
+        voice.delay_onset(1);
+        voice.defer_realism_attack();
+        let incoming_position = voice.playback[0].position;
+        voice.tick(&pool);
+        assert_eq!(voice.pending_samples, 0);
+        assert!(voice.attack_is_pending());
+        assert_eq!(voice.amp_env.current_level(), 0.0);
+        voice.release();
+        assert!(voice.active && voice.steal_crossfading);
+        assert!(!voice.playback[0].active);
+        assert!(!voice.take_realism_attack());
+        let mut outgoing_peak = 0.0_f32;
+        for _ in 0..128 {
+            outgoing_peak = outgoing_peak.max(voice.tick(&pool)[0].abs());
+            assert_eq!(voice.playback[0].position, incoming_position);
+        }
+        assert!(outgoing_peak > 0.001);
+        assert!(!voice.active);
+        assert_eq!(voice.tick(&pool), [0.0; MAX_MIC_POSITIONS]);
     }
 
     #[test]

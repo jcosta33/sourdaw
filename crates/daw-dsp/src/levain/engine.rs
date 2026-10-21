@@ -2060,10 +2060,39 @@ mod tests {
             .collect()
     }
 
+    // A cancelled humanized attack has no release tail. Observe the exact
+    // note/channel starting before a release fixture claims it is ringing.
+    fn render_until_target_attack_starts(engine: &mut LevainEngine, note: u8, channel: u8) {
+        let humanize_frames =
+            (engine.humanizer.config.timing_max * engine.humanizer.amount * SAMPLE_RATE).ceil()
+                as usize;
+        let ensemble_frames = engine
+            .ensemble_timing
+            .onset_delay_samples(note, SAMPLE_RATE) as usize;
+        let max_blocks = (humanize_frames + ensemble_frames) / 128 + 2;
+        for _ in 0..max_blocks {
+            let output = render(engine, 1);
+            let started = engine.voice_pool.voices.iter().any(|voice| {
+                voice.active
+                    && voice.held
+                    && voice.note == note
+                    && voice.channel == channel
+                    && !voice.attack_is_pending()
+                    && voice.amp_env.current_level() > 0.0
+            });
+            if started {
+                assert!(output.iter().any(|sample| sample.abs() > 1e-6));
+                return;
+            }
+        }
+        panic!("note {note} on channel {channel} never started within its onset bound");
+    }
+
     #[test]
     fn expression_skips_a_still_ringing_voice_at_the_same_pitch() {
         let mut engine = engine_with_sawtooth_zone();
         engine.note_on(60, 100);
+        render_until_target_attack_starts(&mut engine, 60, 0);
         engine.note_off(60);
         engine.note_on(60, 100);
 
@@ -2130,8 +2159,10 @@ mod tests {
         // A retrigger over a ringing tail is how Levain ends up with two voices
         // at one pitch; give them distinct channels to narrow against.
         engine.note_on_with_channel(60, 100, 2);
+        render_until_target_attack_starts(&mut engine, 60, 2);
         engine.note_off_on_channel(60, 2);
         engine.note_on_with_channel(60, 100, 3);
+        render_until_target_attack_starts(&mut engine, 60, 3);
 
         engine.note_off_on_channel(60, 3);
 
@@ -2146,8 +2177,10 @@ mod tests {
     fn channel_agnostic_note_off_still_releases_every_voice_at_the_pitch() {
         let mut engine = engine_with_sawtooth_zone();
         engine.note_on_with_channel(60, 100, 2);
+        render_until_target_attack_starts(&mut engine, 60, 2);
         engine.note_off(60);
         engine.note_on_with_channel(60, 100, 3);
+        render_until_target_attack_starts(&mut engine, 60, 3);
 
         // Channel-unaware callers (scheduled playback, panic) must not be able
         // to leave a voice hanging.
@@ -3739,6 +3772,37 @@ mod tests {
             engine.set_instrument("violin-1");
             engine.note_on_with_channel(67, 100, 3);
             assert!(render(&mut engine, 1).iter().all(|sample| *sample == 0.0));
+            if stop_all {
+                engine.all_notes_off();
+            } else {
+                engine.note_off_on_channel(67, 3);
+            }
+            assert!(render(&mut engine, 8).iter().all(|sample| *sample == 0.0));
+            assert_eq!(engine.active_voice_count(), 0);
+        }
+    }
+
+    #[test]
+    fn a_bowed_attack_cancelled_after_its_last_silent_frame_never_starts() {
+        for stop_all in [false, true] {
+            let mut engine = ensemble_engine(true);
+            engine.set_instrument("violin-1");
+            engine.set_param("legato_enabled", 0.0);
+            engine.set_param("attack_spread", 3.23);
+            assert_eq!(
+                engine.ensemble_timing.onset_delay_samples(67, SAMPLE_RATE),
+                128
+            );
+            engine.note_on_with_channel(67, 100, 3);
+            assert!(render(&mut engine, 1).iter().all(|sample| *sample == 0.0));
+            let voice = engine
+                .voice_pool
+                .voices
+                .iter()
+                .find(|voice| voice.active)
+                .unwrap();
+            assert!(voice.attack_is_pending());
+            assert_eq!(voice.amp_env.current_level(), 0.0);
             if stop_all {
                 engine.all_notes_off();
             } else {
