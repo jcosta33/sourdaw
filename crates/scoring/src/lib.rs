@@ -45,7 +45,7 @@ fn sanitize_block(block: &mut [f32]) -> usize {
 /// Wasm-only by construction; the native build is unaffected.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
-fn init_panic_hook() {
+fn init_scoring_panic_hook() {
     console_error_panic_hook::set_once();
 }
 

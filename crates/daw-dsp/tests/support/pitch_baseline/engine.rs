@@ -4,7 +4,7 @@
 
 //! Top-level engine wrapper for Knead Real-time pitch manipulation.
 
-use daw_dsp::knead::psola::{psola_process_span, PsolaConfig};
+use super::psola::{psola_process_span, PsolaConfig};
 use daw_dsp::knead::voicing::{is_voiced, VoicingConfig};
 use super::yin::{yin_frame, YinConfig};
 

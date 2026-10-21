@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 pub mod yin;
+pub mod psola;
 pub mod engine;
 pub mod crumbs;
 
