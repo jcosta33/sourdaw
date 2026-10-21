@@ -561,6 +561,7 @@ export const PianoRoll = ({
                         >
                             <div style={{ width: contentWidth, height: '100%' }}>
                                 <NotePropertyLane
+                                    primaryNotes={notes}
                                     clipId={clipId}
                                     trackId={trackId}
                                     selectedNoteIds={selectedNoteIds}

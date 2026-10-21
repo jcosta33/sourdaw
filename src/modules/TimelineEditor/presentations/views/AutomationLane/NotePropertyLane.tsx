@@ -145,11 +145,12 @@ const buildLaneNotes = (
     clipId: string | null,
     notesByClipId: Record<string, MidiNote[]>,
     openedClipNotes: Record<string, MidiNote[]> | undefined,
-    selectedNoteIds: Set<string>
+    selectedNoteIds: Set<string>,
+    primaryNotes?: readonly MidiNote[]
 ): LaneNoteEntry[] => {
     const entries: LaneNoteEntry[] = [];
     if (clipId) {
-        for (const note of notesByClipId[clipId] ?? []) {
+        for (const note of primaryNotes ?? notesByClipId[clipId] ?? []) {
             entries.push({ note, clipId });
         }
     }
@@ -230,6 +231,8 @@ type NotePropertyLaneProps = {
      */
     trackId: string;
     selectedNoteIds: Set<string>;
+    /** Display projection with canonical IDs; omitted callers read the raw primary clip. */
+    primaryNotes?: readonly MidiNote[];
     /**
      * Notes of the clips the piano roll has open alongside the primary clip,
      * keyed by clip id (the primary clip is excluded). The lane draws and edits
@@ -264,6 +267,7 @@ type NotePropertyLaneProps = {
 export const NotePropertyLane = ({
     clipId,
     selectedNoteIds,
+    primaryNotes,
     openedClipNotes,
     beatWidth,
     scrollRef,
@@ -289,7 +293,7 @@ export const NotePropertyLane = ({
         selectedTrackId: null,
     });
 
-    const laneNotes = buildLaneNotes(clipId, midiState.notesByClipId, openedClipNotes, selectedNoteIds);
+    const laneNotes = buildLaneNotes(clipId, midiState.notesByClipId, openedClipNotes, selectedNoteIds, primaryNotes);
 
     // Every clip in scope resolves its own color, the same lookup the piano
     // roll's renderer uses for opened clips — a secondary clip's bars must not
