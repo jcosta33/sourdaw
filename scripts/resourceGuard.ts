@@ -1442,10 +1442,12 @@ export function storageFileState(
             if (users.status !== 0 || users.stderr !== '') {
                 return 'process-users-unavailable';
             }
-            const pids = sameUserProcessIds(users.stdout, uid, process.pid, ownedPids);
-            if (pids === undefined || pids.length > 8192) {
+            const listed = sameUserProcessIds(users.stdout, uid, process.pid, ownedPids);
+            if (listed === undefined || listed.length > 8192) {
                 return 'process-users-unusable';
             }
+            // The listing lists its own ps, which has exited by inspection time.
+            const pids = listed.filter((pid) => pid !== users.pid);
             return Date.now() >= deadline ? 'file-census-time-bound' : pids;
         };
         let pids = readProcessUsers();
@@ -1500,9 +1502,17 @@ export function storageFileState(
                     return currentPids === 'file-census-time-bound' ? expired() : unknown(currentPids);
                 }
                 const missing = new Map<number, string>();
+                // A missed process found gone may have forked a storage user after the process
+                // lists were taken; only a fresh observation, whose lists include any heir, can
+                // cover it. A process that left no heir is simply absent from the fresh lists.
+                const exited: number[] = [];
                 let onlySameUidPids = true;
                 for (const pid of new Set([...pids, ...currentPids])) {
-                    if (census.pids.has(pid) || processIsGone(pid)) {
+                    if (census.pids.has(pid)) {
+                        continue;
+                    }
+                    if (processIsGone(pid)) {
+                        exited.push(pid);
                         continue;
                     }
                     if (Date.now() > deadline) {
@@ -1514,8 +1524,8 @@ export function storageFileState(
                     if (snapshot?.uid === uid && snapshot.state === 'Z') {
                         continue;
                     }
-                    // A process that exits before its sample holds no files; only exact ESRCH proves it.
                     if (snapshot === undefined && processIsGone(pid)) {
+                        exited.push(pid);
                         continue;
                     }
                     // Any same-UID state, including ps's undetermined `?`, earns inspection, never a skip.
@@ -1525,8 +1535,14 @@ export function storageFileState(
                 if (Date.now() >= deadline) {
                     return expired();
                 }
+                const describeExited = () =>
+                    `lsof-missed-pid-exited:count=${exited.length}:pid=${exited.slice(0, 4).join(',')}`;
                 if (missing.size === 0) {
-                    return 'dead';
+                    if (exited.length === 0) {
+                        return 'dead';
+                    }
+                    uncovered = describeExited();
+                    continue;
                 }
                 const describe = (pids: number[]) =>
                     `lsof-live-pid-missing:count=${pids.length}:pid/uid/state=${pids
@@ -1550,11 +1566,11 @@ export function storageFileState(
                 if (scoped.kind === 'unavailable') {
                     return unknown(scoped.reason);
                 }
-                if (scoped.pids.length === 0) {
+                if (scoped.pids.length === 0 && exited.length === 0) {
                     return 'dead';
                 }
                 // Discard the whole observation: a fresh catalog must cover what stayed missed.
-                uncovered = describe(scoped.pids);
+                uncovered = scoped.pids.length === 0 ? describeExited() : describe(scoped.pids);
             }
             return expired();
         }
