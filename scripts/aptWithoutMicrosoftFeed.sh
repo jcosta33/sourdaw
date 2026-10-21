@@ -40,8 +40,14 @@ summarize_sources() {
     function is_feed(uri) {
       return index(uri, prefix) == 1 && substr(uri, length(prefix) + 1) ~ release
     }
+    # apt reads Enabled through StringToBool: these words, case-insensitive,
+    # and any whole value strtol (base 0) reads as zero mean false.
+    function is_false(value) {
+      value = tolower(value)
+      return value ~ /^(no|false|without|off|disable)$/ || value ~ /^[+-]?(0+|0x0+)$/
+    }
     function finish_stanza(    count, uris, i, named, feeds) {
-      if (stanza_has_types && tolower(stanza_enabled) != "no") {
+      if (stanza_has_types && !is_false(stanza_enabled)) {
         count = split(stanza_uris, uris, /[ \t]+/)
         named = 0
         feeds = 0

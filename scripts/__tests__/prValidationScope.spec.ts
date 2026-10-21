@@ -3,6 +3,7 @@ import {
     appendFileSync,
     chmodSync,
     cpSync,
+    existsSync,
     mkdtempSync,
     mkdirSync,
     readFileSync,
@@ -13,7 +14,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
@@ -371,6 +372,13 @@ const SHARED_OR_BROWSER_OWNED_SCRIPTS = [
     'loopbackOpenAiProvider',
     'offlineAudioWorkletTrace',
 ];
+// The tooling unit suite excludes these specs, so they and every script they reach must plan broad.
+const RESOURCE_GUARD_SPECS = [
+    'scripts/__tests__/resourceGuard.spec.ts',
+    'scripts/__tests__/resourceGuardStorage.spec.ts',
+    'scripts/__tests__/resourceGuardShowOutput.spec.ts',
+];
+const RELATIVE_IMPORT = /(?:\bfrom|\bimport|\bvi\.mock)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
 const folders: string[] = [];
 const callerTrace2Event = process.env.GIT_TRACE2_EVENT;
 
@@ -401,6 +409,31 @@ function fixturePlaywright(root: string): void {
 
 function fixtureBrowserCase(root: string, path: string): void {
     writeFileSync(join(root, path), "import { test } from '@playwright/test';\ntest('fixture', () => {});\n");
+}
+
+function resolveRelativeImport(importer: string, specifier: string): string {
+    const base = posix.join(posix.dirname(importer), specifier);
+    const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`];
+    const found = candidates.find((candidate) => /\.tsx?$/.test(candidate) && existsSync(resolve(candidate)));
+    if (found === undefined) {
+        throw new Error(`${importer} imports unresolved ${specifier}`);
+    }
+    return found;
+}
+
+function relativeImportClosure(roots: readonly string[]): string[] {
+    const reached = new Set<string>();
+    const pending = [...roots];
+    for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+        if (reached.has(path)) {
+            continue;
+        }
+        reached.add(path);
+        for (const [, specifier] of readFileSync(resolve(path), 'utf8').matchAll(RELATIVE_IMPORT)) {
+            pending.push(resolveRelativeImport(path, specifier));
+        }
+    }
+    return [...reached].sort();
 }
 
 function allSelected(plan: ReturnType<typeof selectValidationPlan>): string[] {
@@ -808,6 +841,21 @@ describe('required affected verification', () => {
             expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
             expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
         }
+    });
+
+    it('keeps every resource guard spec and the scripts it reaches off the tooling profile', () => {
+        const closure = relativeImportClosure(RESOURCE_GUARD_SPECS);
+        expect(closure).toEqual(
+            expect.arrayContaining([
+                ...RESOURCE_GUARD_SPECS,
+                'scripts/resourceGuard.ts',
+                'scripts/resourceGuardStorage.ts',
+                'scripts/pnpmModulesPreflight.ts',
+            ])
+        );
+        expect(closure.every((path) => path.startsWith('scripts/'))).toBe(true);
+        const toolingPaths = closure.filter((path) => selectValidationPlan([path], INVENTORY).profile !== 'broad');
+        expect(toolingPaths).toEqual([]);
     });
 
     it.each([

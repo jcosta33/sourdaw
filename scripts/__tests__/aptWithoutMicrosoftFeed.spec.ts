@@ -186,6 +186,30 @@ describe('aptWithoutMicrosoftFeed', () => {
         }
     });
 
+    // apt's StringToBool reads each of these as false, so the stanza is off.
+    it.each(['false', 'FALSE', 'off', 'Without', 'disable', '0', '00', '0x0'])(
+        'refuses when the only Ubuntu-signed stanzas carry Enabled: %s',
+        (spelling) => {
+            const disabled = UBUNTU_SOURCES.replaceAll('Types: deb\n', `Types: deb\nEnabled: ${spelling}\n`);
+            const fixture = aptFixture({ 'microsoft-prod.list': MICROSOFT_FEED_LIST, 'ubuntu.sources': disabled });
+
+            const result = runHelper(fixture);
+
+            expect(result.status).toBe(2);
+            expect(result.stderr).toContain('no enabled apt source signed by the Ubuntu archive key would remain');
+        }
+    );
+
+    it.each(['yes', 'On', '1', 'unrecognised'])('keeps Ubuntu-signed stanzas carrying Enabled: %s', (spelling) => {
+        const enabled = UBUNTU_SOURCES.replaceAll('Types: deb\n', `Types: deb\nEnabled: ${spelling}\n`);
+        const fixture = aptFixture({ 'microsoft-prod.list': MICROSOFT_FEED_LIST, 'ubuntu.sources': enabled });
+
+        const result = runHelper(fixture);
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(seenParts(fixture)).toEqual({ 'ubuntu.sources': enabled });
+    });
+
     it.runIf(process.getuid?.() !== 0)('refuses an unreadable source file', () => {
         const fixture = aptFixture({ 'microsoft-prod.list': MICROSOFT_FEED_LIST, 'ubuntu.sources': UBUNTU_SOURCES });
         chmodSync(join(fixture.parts, 'ubuntu.sources'), 0o000);
