@@ -113,11 +113,12 @@ async function executeActionGroupUndo(entries: readonly UndoEntry[]): Promise<Un
         return { status: 'inert' };
     }
 
-    // Keyless legacy trim/loop inverses normalize to the explicit anchorless
-    // restoration before dispatch (#5198): their pre-action clips were
-    // anchorless by construction, and replaying them through the handlers'
-    // fresh-action mint laws would mint anchors the pre-action state never
-    // carried.
+    // Keyless legacy trim/loop/slip inverses normalize to the explicit
+    // anchorless restoration before dispatch (#5198): their pre-action clips
+    // were anchorless by construction, and replaying them through the
+    // handlers' fresh-action mint laws would mint anchors the pre-action
+    // state never carried — or, for a slip, re-wrap a captured offset the
+    // forward law must never touch on a replay.
     const actions = [...entries].reverse().map((entry) => normalizeLegacyLoopAnchorInverse(entry.inverseAction!));
     const result = await executeAppActionBatch(actions, {
         skipUndo: true,

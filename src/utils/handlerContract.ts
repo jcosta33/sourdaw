@@ -1433,10 +1433,13 @@ export type AppAction =
               /**
                * The row shift a recorded inverse must apply to restore the rows
                * the forward slip's raising wrap lifted (#5198): the lift carried
-               * negative. Only recorded inverses set it — a fresh dispatch is
+               * negative, zero included — the replay keys verbatim restoration
+               * on this key's presence, so a recorded inverse is never keyed
+               * keyless. Only recorded inverses set it — a fresh dispatch is
                * keyless and keeps the forward wrap law, and entries recorded
-               * before the field existed decode without it and replay exactly
-               * the offset-only inverse they always were.
+               * before the field existed decode without it; the undo seams'
+               * legacy normalizer re-keys those to the same verbatim
+               * restoration (`rowLiftBeats: 0`).
                */
               rowLiftBeats?: number;
           };

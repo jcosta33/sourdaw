@@ -66,13 +66,14 @@ export function slipClipContent(
             offsetBeats: newOffset,
         });
         if (inverseRowShiftBeats !== undefined) {
-            // A recorded inverse carries its own row restoration — the un-lift
-            // of the raising wrap the forward slip applied (#5198). The
-            // verbatim offset above plus the recorded shift is the whole
-            // replay: the captured state, byte-exact. Entries recorded before
-            // the field existed decode without it and take the forward law,
-            // which for their offset-only inverses moves no rows — the
-            // pre-anchor behavior exactly.
+            // A recorded inverse is a restoration, never a fresh slip: its
+            // verbatim offset plus its recorded row shift is the whole replay
+            // — the captured state, byte-exact (#5198). Every inverse arrives
+            // keyed: new captures record `rowLiftBeats` always, zero
+            // included, and the undo seams' legacy normalizer keys the
+            // entries recorded before the field existed to the same verbatim
+            // restoration. A keyless dispatch is therefore always a fresh
+            // action, and only fresh slips take the forward wrap law below.
             shiftClipMidiNotes(clipId, inverseRowShiftBeats);
         } else if (rowLiftBeats !== 0) {
             // The wrap lifted a negative figure to its positive phase; the

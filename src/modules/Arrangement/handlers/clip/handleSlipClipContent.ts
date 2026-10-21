@@ -43,18 +43,18 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
                 // loop above the unmoved window and plays total silence
                 // (#5198). Capture the lift the forward pass is about to
                 // apply — computed from the same pre-action clip the offset
-                // reads — carried negative. A keyless payload decodes as the
-                // offset-only inverse entries recorded before the field
-                // existed, whose replay moves no rows.
+                // reads — carried negative, zero included: the replay keys
+                // verbatim restoration on the key's presence, so omitting it
+                // at lift 0 would send the undo through the fresh-action wrap
+                // law, re-wrapping a captured figure that is not a phase of
+                // the live loop config instead of restoring it.
                 const lift = slipWrapRowLiftBeats({
                     loopEnabled: clip.loopEnabled ?? false,
                     clipDurationBeats: clip.endBeat - clip.startBeat,
                     configuredLoopLengthBeats: clip.loopLength,
                     offsetBeats: action.payload.offset,
                 });
-                if (lift !== 0) {
-                    inversePayload.rowLiftBeats = -lift;
-                }
+                inversePayload.rowLiftBeats = lift === 0 ? 0 : -lift;
             }
             return {
                 label,

@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type Clip, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { slipClipContent } from '#/modules/Arrangement/useCases/clipEditing/slipClipContent';
+import { normalizeLegacyLoopAnchorInverse } from '#/modules/Command/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
 import { selectMidiNotesForLoopWindow } from '#/modules/Transport/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { handleSlipClipContent } from '../../../handlers/clip/handleSlipClipContent';
 import { createTrack } from '../../../models/Track';
@@ -81,6 +83,15 @@ function storedNoteBeats(clipId: string): number[] {
 
 function storedPressBeats(clipId: string): number[] {
     return (midiStore.value?.ccByClipId[clipId] ?? []).map((row) => row.beat);
+}
+
+/** The undo seams' replay at unit scale: the legacy normalization, then the dispatch. */
+function executeThroughUndoSeam(action: AppAction) {
+    const normalized = normalizeLegacyLoopAnchorInverse(action);
+    if (normalized.type !== 'slipClipContent') {
+        throw new Error('Expected slipClipContent action from the undo seam');
+    }
+    return handleSlipClipContent.execute(normalized);
 }
 
 /** The scheduling selector on the clip's stored figures — the admission law the audience hears. */
@@ -220,12 +231,14 @@ describe('a slip undo restores the rows its raising wrap lifted (#5198)', () => 
         expectPreSlipStateRestored();
     });
 
-    it('control: a keyless legacy slip inverse moves no rows, as the pre-anchor replay never did', () => {
-        // Entries recorded before the lift field existed decode without it. A
-        // pre-anchor slip never shifted rows, so its inverse must not either:
-        // the keyless replay restores the offset and leaves the stored figures
-        // exactly where the forward left them — no lift restoration is
-        // invented for a payload that never carried one.
+    it('control: a keyless legacy slip inverse restores verbatim through the undo seam — no wrap, no row movement', () => {
+        // Entries recorded before the lift field existed decode without it.
+        // The pre-anchor slip undo restored the captured offset verbatim and
+        // moved no rows — the forward wrap law did not exist yet — and the
+        // undo seam keys the legacy payload to that same restoration
+        // (`rowLiftBeats: 0`, zero included). Never the fresh wrap law: a
+        // wrap here would re-wrap the captured figure, and never an invented
+        // un-lift for a payload that never carried one.
         seed([loopedClip('c-loop')]);
         expect(slipClipContent('c-loop', 'midi', -1)).toBe(true);
         expect(storedNoteBeats('c-loop')).toEqual([4, 5, 6, 7]);
@@ -234,7 +247,7 @@ describe('a slip undo restores the rows its raising wrap lifted (#5198)', () => 
             type: 'slipClipContent',
             payload: { clipId: 'c-loop', clipType: 'midi', offset: 0 },
         } as const;
-        expect(handleSlipClipContent.execute(keylessLegacyInverse)).toEqual({ status: 'written' });
+        expect(executeThroughUndoSeam(keylessLegacyInverse)).toEqual({ status: 'written' });
 
         expect(readClip('c-loop').midiOffsetBeats).toBe(0);
         expect(storedNoteBeats('c-loop')).toEqual([4, 5, 6, 7]);
@@ -299,5 +312,64 @@ describe('a slip undo restores the captured offset verbatim, not its phase at re
         expect(restored.midiOffsetBeats).toBe(3);
         expect(storedNoteBeats('c-loop')).toEqual([0, 1, 2, 3]);
         expect(audibleStoredNotes(restored)).toBe(1);
+    });
+
+    it('records the zero-lift inverse so an undo restores a de-phased captured offset verbatim', () => {
+        // The zero-lift slip is where keying the inverse on a NON-ZERO lift
+        // broke: offset 3 under a loop shrunk to 2 is a stale phase, and the
+        // slip to 5 wraps DOWN to phase 1 — no row ride, so the capture keyed
+        // only on a non-zero lift recorded a keyless inverse. The keyless
+        // replay then took the fresh wrap law: the captured 3 re-wrapped to
+        // phase 1, byte-identical to the post-slip state, the entry consumed
+        // with the pre-slip state lost. The capture records the key always —
+        // zero included — because the replay keys the restoration on the
+        // key's PRESENCE, so the undo restores the captured 3 and the single
+        // audible row it carried.
+        seed([{ ...loopedClip('c-loop'), loopLength: 2, midiOffsetBeats: 3 }]);
+
+        const action = {
+            type: 'slipClipContent',
+            payload: { clipId: 'c-loop', clipType: 'midi', offset: 5 },
+        } as const;
+        const description = handleSlipClipContent.describe(action);
+        expect(handleSlipClipContent.execute(action)).toEqual({ status: 'written' });
+        expect(readClip('c-loop').midiOffsetBeats).toBe(1);
+        if (description.inverseAction?.type !== 'slipClipContent') {
+            throw new Error('Expected slip inverse action');
+        }
+        expect(description.inverseAction.payload.offset).toBe(3);
+        expect(description.inverseAction.payload.rowLiftBeats).toBe(0);
+        expect(handleSlipClipContent.execute(description.inverseAction)).toEqual({ status: 'written' });
+
+        const restored = readClip('c-loop');
+        expect(restored.midiOffsetBeats).toBe(3);
+        expect(storedNoteBeats('c-loop')).toEqual([0, 1, 2, 3]);
+        expect(storedPressBeats('c-loop')).toEqual([0]);
+        expect(audibleStoredNotes(restored)).toBe(1);
+    });
+
+    it('restores a keyless legacy raw offset through the undo seam verbatim, moving no rows', () => {
+        // A pre-field build recorded offset-only slip inverses, and its
+        // pre-PR undo restored the captured raw figure verbatim — no wrap law
+        // existed. Replayed keyless, the handler cannot tell the inverse from
+        // a fresh slip: the captured −1 re-wraps to its phase 3 AND the
+        // raising wrap shifts every row +4, a state the pre-action clip never
+        // carried. The undo seam keys the legacy payload to the same
+        // restoration the field now always records, so the −1 comes back
+        // exactly as captured with the rows unmoved — 3 of 4 audible through
+        // the anchored window, as before the slip.
+        seed([{ ...loopedClip('c-loop'), midiOffsetBeats: -1 }]);
+
+        const keylessLegacyInverse = {
+            type: 'slipClipContent',
+            payload: { clipId: 'c-loop', clipType: 'midi', offset: -1 },
+        } as const;
+        expect(executeThroughUndoSeam(keylessLegacyInverse)).toEqual({ status: 'written' });
+
+        const restored = readClip('c-loop');
+        expect(restored.midiOffsetBeats).toBe(-1);
+        expect(storedNoteBeats('c-loop')).toEqual([0, 1, 2, 3]);
+        expect(storedPressBeats('c-loop')).toEqual([0]);
+        expect(audibleStoredNotes(restored)).toBe(3);
     });
 });

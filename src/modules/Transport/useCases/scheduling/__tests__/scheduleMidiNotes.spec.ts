@@ -960,6 +960,51 @@ describe('scheduleMidiNotes', () => {
         });
     });
 
+    it('counts a non-dyadic exact-multiple advance tolerantly through the live occurrence floor', async () => {
+        // The live mirror of the offline twin's tolerant floor (#5198): 16.5
+        // is exactly 15 × 1.1, but the correctly-rounded quotient sits one ulp
+        // below the integer, so the raw floor counts 14 and the first
+        // post-trim pass re-rolls a pass that had already sounded. The
+        // segment shape below is the producing line's own input — a comp
+        // segment whose source starts 16.5 beats before its window — read by
+        // the real scheduler, so a revert of the live floor to the raw
+        // quotient turns this red at 14.
+        expect(16.5 / 1.1).toBeLessThan(15);
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 40, loopEnabled: true, loopLength: 1.1 });
+        const track = midiTrack({ clips: [sourceClip] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'event-alpha', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100, probability: 50 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                startBeat: 16.5,
+                endBeat: 19,
+                regionStartBeat: 16.5,
+                regionEndBeat: 19,
+                sourceStartBeat: 0,
+            },
+        ]);
+
+        await scheduleMidiNotes(16.5, 18, 16.5, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: 'clip-1',
+            eventId: 'event-alpha',
+            absoluteOccurrenceIndex: 15,
+            probabilityPercent: 50,
+        });
+    });
+
     // §6 — A Yeast generator can emit notes for a clip that has none. Those
     // notes must be fully-specified MidiNotes, not malformed {} spreads.
     it('schedules well-formed notes when Yeast generates onto an empty clip (§6)', async () => {
