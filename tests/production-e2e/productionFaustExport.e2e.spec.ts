@@ -291,7 +291,8 @@ async function setShortLoop(page: Page, app: FrameLocator): Promise<void> {
 }
 
 async function openBakery(app: FrameLocator): Promise<Locator> {
-    await app.locator('body').press('Control+Shift+E');
+    const isMac = await app.locator('body').evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
+    await app.locator('body').press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
     const dialog = app.getByRole('dialog').filter({ hasText: /The Bakery/i });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('radio', { name: /Loop region/i }).check();
