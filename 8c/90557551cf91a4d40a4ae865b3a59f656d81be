@@ -1,0 +1,42 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_1c08b47ac3792f::t_1c8f7d66696051 37-39,41-42
+scripts/resourceGuard.ts
+  s_1c08b47ac3792f::t_5c5d3706a435d2 1425-1435,1437-1439,1441
+  s_1c08b47ac3792f::t_12b2643bb769ef 1257,1260-1267
+  s_1c08b47ac3792f::t_5fa108539e3b84 1367-1380
+  s_d257b09300b1ad::t_a9fe7f458d3c63 1268
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_1c08b47ac3792f::t_105b4a95c25f42 1623-1624,1626-1650,1653,1657-1662,1664-1666
+  s_1c08b47ac3792f::t_8cc10b719a31d6 1257-1260
+  s_1c08b47ac3792f::t_034ad93befbf17 1186-1188,1190-1197,1200,1213-1215,1217,1221,1227,1241,1244-1250,1254,1262-1263,1272-1274,1277,1281
+  s_1c08b47ac3792f::t_d6920fcff9699e 1686-1688,1692,1695-1700,1704,1707
+  s_1c08b47ac3792f::t_d08386a9be46af 1189
+  s_1c08b47ac3792f::t_3428324c9cb9c9 1261
+  s_1c08b47ac3792f::t_5a63949bd8cd18 1264
+docs/06-testing.md
+  s_1c08b47ac3792f::t_9b86ff3f33fd76 746-748,751
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c90557551cf91a4d40a4ae865b3a59f656d81be",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
