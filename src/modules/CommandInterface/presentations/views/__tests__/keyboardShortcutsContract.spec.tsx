@@ -342,7 +342,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
 
         it('keeps modal and input gates and keyup cleanup', () => {
             openSessionWithCommandHandlers();
-            render(<Host />);
+            const { unmount } = render(<Host />);
             const input = mount(document.createElement('input'));
             const dialog = mount(document.createElement('div'));
             dialog.setAttribute('role', 'dialog');
@@ -354,6 +354,10 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             expect(lastIsInput()).toBe(true);
             dialogButton.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
             expect(mocks.handleKeyup).toHaveBeenCalledExactlyOnceWith('Enter');
+
+            unmount();
+            dialogButton.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+            expect(mocks.handleKeyup).toHaveBeenCalledTimes(1);
         });
     });
 
