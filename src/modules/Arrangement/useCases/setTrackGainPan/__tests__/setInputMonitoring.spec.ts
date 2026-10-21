@@ -63,11 +63,11 @@ describe('setInputMonitoring', () => {
         expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', null);
     });
 
-    it('sets monitoring to OFF and stops that track’s listening edge only', () => {
+    it('sets monitoring to OFF and reconciles its committed owner', () => {
         setInputMonitoring('t1', 'off');
 
-        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledTimes(1);
-        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledWith('t1');
+        expect(mocks.reconcileAutoInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
         expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
@@ -81,8 +81,8 @@ describe('setInputMonitoring', () => {
         expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
-    it.each(['on', 'off'] as const)('does not reconcile Auto when setting %s', (mode) => {
-        setInputMonitoring('t1', mode);
+    it('does not reconcile while setting On', () => {
+        setInputMonitoring('t1', 'on');
 
         expect(mocks.reconcileAutoInputMonitoring).not.toHaveBeenCalled();
     });

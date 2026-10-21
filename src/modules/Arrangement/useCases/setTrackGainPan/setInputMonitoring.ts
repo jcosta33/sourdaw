@@ -1,8 +1,4 @@
-import {
-    reconcileAutoInputMonitoring,
-    startInputMonitoring,
-    stopTrackInputMonitoring,
-} from '#/modules/AudioEngine/useCases';
+import { reconcileAutoInputMonitoring, startInputMonitoring } from '#/modules/AudioEngine/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -19,13 +15,10 @@ export function setInputMonitoring(trackId: string, mode: InputMonitoring): void
     }
     updateTrack(trackId, (time) => ({ ...time, inputMonitoring: mode }));
 
-    // Stopping is per track: other tracks keep their monitor edges and the
-    // shared capture stays live while any of them still listens. Auto belongs
-    // to its owner, which follows arm and transport state.
+    // The monitor owner follows committed intent during an optimistic Off, so
+    // a refused project write cannot discard an already admitted listening edge.
     if (mode === 'on') {
         void startInputMonitoring(trackId, track?.inputId);
-    } else if (mode === 'off') {
-        stopTrackInputMonitoring(trackId);
     } else {
         reconcileAutoInputMonitoring();
     }
