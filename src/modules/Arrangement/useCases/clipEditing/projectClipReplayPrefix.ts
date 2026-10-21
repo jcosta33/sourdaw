@@ -111,7 +111,7 @@ function shiftProjectedLanes(
     });
 }
 
-function projectRemoval(state: ShiftedOwnerState, clipId: string): ShiftedOwnerState | null {
+function projectRemoval(state: ShiftedOwnerState, clipId: string, ripple?: boolean): ShiftedOwnerState | null {
     const owner = state.clips.find((candidate) => candidate.clip.id === clipId);
     if (!owner) {
         return null;
@@ -121,7 +121,7 @@ function projectRemoval(state: ShiftedOwnerState, clipId: string): ShiftedOwnerS
             .filter((candidate) => candidate.owningTrackId === owner.owningTrackId)
             .map(({ clip }) => clip),
         clipIds: [clipId],
-        rippleEnabled: workspaceStore.value?.rippleEditing ?? false,
+        rippleEnabled: ripple ?? workspaceStore.value?.rippleEditing ?? false,
     });
     if (!plan) {
         return null;
@@ -155,7 +155,7 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
             clips: state.clips.map((owner) => ({ ...owner, clip: projectClipEdit(owner.clip, action) })),
         };
         if (action.type === 'removeClip') {
-            const removal = projectRemoval(state, action.payload.clipId);
+            const removal = projectRemoval(state, action.payload.clipId, action.payload.ripple);
             if (!removal) {
                 return null;
             }

@@ -6,6 +6,7 @@ import {
     getCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -19,7 +20,7 @@ import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
 import { pairedInverseForRedo } from './takeRetirementRedo';
-import { isRemoveClipSessionEntry } from './validateClipEditSessionEntries';
+import { isRemoveClipSessionEntry, isRemoveClipSessionPayload } from './validateClipEditSessionEntries';
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
@@ -27,7 +28,7 @@ type MinimalClipShape = { id: string; trackId: string; name: string; startBeat: 
 
 type RemoveClipAction = Extract<AppAction, { type: 'removeClip' }>;
 type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
-type Description = { label: string; inverseAction?: RestoreClipAction | null };
+type Description = { label: string; inverseAction?: RestoreClipAction | null; redoAction?: RemoveClipAction };
 const pendingDescriptions = new WeakMap<RemoveClipAction, Description>();
 
 function findOwningTrackId(clipId: string): string | undefined {
@@ -65,6 +66,7 @@ function batchMembersAreIndependent(action: RemoveClipAction, context: HandlerVa
 
 export const handleRemoveClip = createHandler<'removeClip'>({
     validateSessionEntry: isRemoveClipSessionEntry,
+    validateSessionActionArguments: isRemoveClipSessionPayload,
     // Batch co-execution (grouped redo, atomic batches) preflights the state the
     // action assumes — the clip it names is still present — and refuses the whole
     // batch once a target is gone. Single-action dispatch never calls validate,
@@ -82,14 +84,19 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         return valid;
     },
     execute: (alpha) => {
+        const ripple = alpha.payload.ripple ?? workspaceStore.value?.rippleEditing ?? false;
         const pending = discardPendingCapture(alpha);
+        const pendingRedo = pending?.redoAction;
         // Redo runs with skipUndo. Retain its actual producer capture so the
         // following Undo authenticates the shifted owners this replay wrote,
         // and restores exactly the material this replay retired.
         const paired = pairedInverseForRedo(alpha);
-        const actual = pending || paired?.type === 'restoreClip' ? describeRemoval(alpha) : null;
+        const actual =
+            pending || paired?.type === 'restoreClip'
+                ? describeRemoval({ ...alpha, payload: { ...alpha.payload, ripple } })
+                : null;
         const fresh = paired?.type === 'restoreClip' ? actual?.inverseAction : null;
-        const documentBeforeReplay = fresh ? captureDurableDocumentWitness() : null;
+        const documentBeforeReplay = fresh || pendingRedo ? captureDurableDocumentWitness() : null;
         const ownsPublication = actual?.inverseAction ? captureProjectMutationAuthorization() : null;
         // Bind now, inside the actual handler scope, while its exact transaction
         // owner is visible. Later group members publish under this same owner.
@@ -97,17 +104,17 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         const installCapture = () => {
             // Both successful and ambiguously published commits can run observers
             // before this effect. Only this mutation owner may refresh its inverse.
-            if (
-                fresh?.type === 'restoreClip' &&
-                getCrdtDoc('root') &&
-                captureDurableDocumentWitness() !== documentBeforeReplay &&
-                ownsPublication?.()
-            ) {
-                commitRedoInverseCapture(alpha, fresh);
+            if (getCrdtDoc('root') && captureDurableDocumentWitness() !== documentBeforeReplay && ownsPublication?.()) {
+                if (fresh?.type === 'restoreClip') {
+                    commitRedoInverseCapture(alpha, fresh);
+                }
+                if (pendingRedo) {
+                    pendingRedo.payload.ripple = ripple;
+                }
             }
         };
         const committedResult = () => {
-            if (!fresh) {
+            if (!fresh && !pendingRedo) {
                 return undefined;
             }
             return {
@@ -117,7 +124,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             };
         };
 
-        executeRemoval(alpha);
+        executeRemoval(alpha, ripple);
         if (pending && actual?.inverseAction && ownsPublication?.() && !findOwningTrackId(alpha.payload.clipId)) {
             // Earlier batch members have applied. Record exactly the material
             // this removal received, after every owner write completed.
@@ -128,6 +135,9 @@ export const handleRemoveClip = createHandler<'removeClip'>({
     describe: (alpha, context) => {
         discardPendingCapture(alpha);
         const description = describeRemoval(alpha);
+        if (description.inverseAction) {
+            description.redoAction = { type: 'removeClip', payload: { ...alpha.payload } };
+        }
         if (context?.executionMode !== 'isolated-preview') {
             pendingDescriptions.set(alpha, description);
         }
@@ -157,7 +167,7 @@ function describeRemoval(alpha: RemoveClipAction): Description {
         return { label: 'Remove clip' };
     }
 
-    const plan = planRippleDelete({ trackId, clipIds: [alpha.payload.clipId] });
+    const plan = planRippleDelete({ trackId, clipIds: [alpha.payload.clipId], ripple: alpha.payload.ripple });
     const removedClips: readonly MinimalClipShape[] = structuredClone(plan?.removedClips ?? []);
     const ripplePlan = plan
         ? {
@@ -208,13 +218,13 @@ function describeRemoval(alpha: RemoveClipAction): Description {
     };
 }
 
-function executeRemoval(action: RemoveClipAction): void {
+function executeRemoval(action: RemoveClipAction, ripple: boolean): void {
     const trackId = findOwningTrackId(action.payload.clipId);
     if (!trackId) {
         removeClip(action.payload.clipId);
         return;
     }
-    const rippleResult = rippleDeleteClips({ trackId, clipIds: [action.payload.clipId] });
+    const rippleResult = rippleDeleteClips({ trackId, clipIds: [action.payload.clipId], ripple });
     if (rippleResult === null) {
         removeClip(action.payload.clipId);
         return;

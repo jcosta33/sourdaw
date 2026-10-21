@@ -979,6 +979,8 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 });
             }
             const forward = ownerProjections();
+            // A new browser document resets this UI preference; replay must not.
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
             reloadSavedProject();
             expect(ownerProjections()).toEqual(forward);
             for (let cycle = 0; cycle < 2; cycle += 1) {
@@ -1018,6 +1020,192 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             }
         }
     );
+
+    it.each([false, true])(
+        'saved removal retains ripple=%s with the opposite reloaded workspace mode',
+        async (ripple) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
+            const peerClip = { ...createClipFixture('peer-mode-clip', 20, 24), trackId: 'peer-mode-track' };
+            trackStore.set({
+                ...trackStore.value!,
+                selectedTrackId: null,
+                tracks: [
+                    ...trackStore.value!.tracks,
+                    TrackDummy.create({ id: 'peer-mode-track', clips: [peerClip], kind: 'midi' }),
+                ],
+            });
+            const take = { ...createTake('clip-a', 'Removed pass', 0, 4, 0.25), id: 'mode-take', selected: true };
+            const peerTake = {
+                ...createTake(peerClip.id, 'Peer pass', 20, 24, 1),
+                id: 'peer-mode-take',
+                selected: true,
+            };
+            const peerLane = {
+                ...createTakeLane(peerClip.trackId),
+                id: 'peer-mode-lane',
+                takes: [peerTake],
+                activeCompRegions: [{ startBeat: 21, endBeat: 23, takeId: peerTake.id }],
+            };
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        ...createTakeLane(TRACK_ID),
+                        id: 'mode-lane',
+                        takes: [take],
+                        activeCompRegions: [{ startBeat: 1, endBeat: 3, takeId: take.id }],
+                    },
+                    peerLane,
+                ],
+            });
+            midiStore.set({
+                probabilitySeed: 42,
+                notesByClipId: {
+                    'clip-a': [{ id: 'mode-note', pitch: 60, startBeat: 0.5, duration: 3, velocity: 90 }],
+                    [peerClip.id]: [{ id: 'peer-mode-note', pitch: 72, startBeat: 1, duration: 2, velocity: 80 }],
+                },
+                ccByClipId: { 'clip-a': [{ id: 'mode-cc', controller: 64, value: 127, beat: 2, channel: 1 }] },
+                pitchBendByClipId: { 'clip-a': [{ id: 'mode-bend', value: 123, beat: 1, channel: 1 }] },
+            });
+            const shifted = automationLane('mode-shifted', 'clip-b');
+            shifted.points = [{ id: 'mode-point', beat: 5, value: 0.4, curve: 'linear', tension: 0 }];
+            automationStore.set({
+                lanes: [
+                    shifted,
+                    { ...automationLane('mode-peer', peerClip.id), trackId: peerClip.trackId },
+                    // Existing removal replay appends restored automation lanes.
+                    automationLane('mode-removed', 'clip-a'),
+                ],
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            const before = ownerProjections();
+            // Change the UI preference while the real dispatcher is held at
+            // snapshot admission. The committed producer must choose the new mode.
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: !ripple });
+            let admit!: () => void;
+            let entered!: () => void;
+            const admission = new Promise<void>((resolve) => {
+                admit = resolve;
+            });
+            const waiting = new Promise<void>((resolve) => {
+                entered = resolve;
+            });
+            configureAutomergeStoragePort({
+                getDoc: (docId) => getCrdtDoc<Record<string, unknown>>(docId),
+                getDocHeads: (docId) => Automerge.getHeads(getCrdtDoc(docId)!),
+                getSemanticMessage: () => undefined,
+                hasDoc: (docId) => getCrdtDoc(docId) !== undefined,
+                mutateDoc: ({ docId, changeFn, message, changedKeys, snapshotTransaction }) => {
+                    mutateCrdtDoc({ id: docId, changeFn, message, localSlots: changedKeys, snapshotTransaction });
+                },
+                waitForSnapshotTransaction: () => {
+                    entered();
+                    return admission;
+                },
+            });
+            const dispatch = executeAppAction(
+                { type: 'removeClip', payload: { clipId: 'clip-a' } },
+                { source: 'manual' }
+            );
+            await waiting;
+            expect(ownerProjections()).toEqual(before);
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
+            admit();
+            await dispatch;
+            registerCrdtStorageRuntime();
+            expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({
+                startBeat: ripple ? 0 : 4,
+                endBeat: ripple ? 4 : 8,
+            });
+            const forward = ownerProjections();
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            expect((saved.past as { redoAction: AppAction }[])[0]!.redoAction).toEqual({
+                type: 'removeClip',
+                payload: { clipId: 'clip-a', ripple },
+            });
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: !ripple });
+            reloadSavedProject();
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                expect((await undo()).headConsumed).toBe(true);
+                expect(ownerProjections()).toEqual(before);
+                expect(workspaceStore.value?.rippleEditing).toBe(!ripple);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+                );
+                reloadSavedProject();
+                await redo();
+                expect(undoHistoryStore.value?.future).toHaveLength(0);
+                expect(ownerProjections()).toEqual(forward);
+                expect(takeLaneStore.value?.lanes.find((lane) => lane.id === peerLane.id)).toEqual(peerLane);
+                expect(workspaceStore.value?.rippleEditing).toBe(!ripple);
+                reloadSavedProject();
+            }
+        }
+    );
+
+    it.each(['absent redo', 'absent choice'] as const)('retains legacy removal replay with %s', async (legacy) => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        const forward = ownerProjections();
+        expect((await undo()).headConsumed).toBe(true);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const entry = (
+            saved.future as { redoAction?: { payload: { ripple?: boolean } }; redoActionOperationVersion?: number }[]
+        )[0]!;
+        if (legacy === 'absent redo') {
+            delete entry.redoAction;
+            delete entry.redoActionOperationVersion;
+        } else {
+            delete entry.redoAction!.payload.ripple;
+        }
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        hydrateProductionContracts();
+        expect(undoHistoryStore.value?.future).toHaveLength(1);
+        await redo();
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
+        expect(ownerProjections()).toEqual(forward);
+    });
+
+    it.each([
+        { name: 'forward mode', leg: 'action', key: 'ripple', value: 'true' },
+        { name: 'redo mode null', leg: 'redoAction', key: 'ripple', value: null },
+        { name: 'redo mode number', leg: 'redoAction', key: 'ripple', value: 1 },
+        { name: 'foreign redo target', leg: 'redoAction', key: 'clipId', value: 'clip-b' },
+        { name: 'extra redo argument', leg: 'redoAction', key: 'unknown', value: true },
+        { name: 'explicit true forward false redo', leg: 'redoAction', key: 'ripple', value: false, forward: true },
+        { name: 'explicit false forward true redo', leg: 'redoAction', key: 'ripple', value: true, forward: false },
+    ])('rejects saved removal $name before hydration and replay writes', async ({ leg, key, value, forward }) => {
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        expect((await undo()).headConsumed).toBe(true);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const entries = saved.future as Record<string, { payload: Record<string, unknown> }>[];
+        entries[0]![leg]!.payload[key] = value;
+        if (forward !== undefined) {
+            entries[0]!.action!.payload.ripple = forward;
+        }
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        const raw = structuredClone(getCrdtDoc('root'));
+        const owners = ownerProjections();
+        const heads = Automerge.getHeads(getCrdtDoc('root')!);
+        hydrateProductionContracts();
+        expect(undoHistoryStore.value?.future).toEqual([]);
+        const hydratedHistory = structuredClone(undoHistoryStore.value);
+        await redo();
+        expect(undoHistoryStore.value).toEqual(hydratedHistory);
+        expect(getCrdtDoc('root')).toEqual(raw);
+        expect(ownerProjections()).toEqual(owners);
+        expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+    });
 
     it('replays a saved grouped ripple removal then split repeatedly', async () => {
         workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });

@@ -8,6 +8,7 @@ import { getTrackStoreState } from '../getTrackStoreState';
 type PlanRippleDeleteInput = {
     trackId: string;
     clipIds: string[];
+    ripple?: boolean;
 };
 
 export type PlanRippleDeleteOutput = ReturnType<typeof deriveRippleDelete<Clip>>;
@@ -18,7 +19,7 @@ export function planRippleDelete<TClip extends ClipSnapshot>(
     state: { tracks: readonly { id: string; clips: readonly TClip[] }[] }
 ): ReturnType<typeof deriveRippleDelete<TClip>>;
 export function planRippleDelete(
-    { trackId, clipIds }: PlanRippleDeleteInput,
+    { trackId, clipIds, ripple }: PlanRippleDeleteInput,
     state: { tracks: readonly { id: string; clips: readonly ClipSnapshot[] }[] } | null = getTrackStoreState()
 ): ReturnType<typeof deriveRippleDelete<ClipSnapshot>> {
     const track = state?.tracks.find((candidateTrack) => candidateTrack.id === trackId);
@@ -28,6 +29,6 @@ export function planRippleDelete(
     return deriveRippleDelete({
         clips: track.clips,
         clipIds,
-        rippleEnabled: workspaceStore.value?.rippleEditing ?? false,
+        rippleEnabled: ripple ?? workspaceStore.value?.rippleEditing ?? false,
     });
 }

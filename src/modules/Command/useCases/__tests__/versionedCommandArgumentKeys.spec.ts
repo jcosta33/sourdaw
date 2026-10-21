@@ -289,3 +289,33 @@ describe('versionedCommandArgumentKeys — dense array admission (#4938)', () =>
         ).toBe(true);
     });
 });
+
+describe('versioned removal replay preference', () => {
+    it.each([{}, { ripple: false }, { ripple: true }])('admits absent or boolean captured choice %j', (choice) => {
+        expect(validateVersionedCommandArguments('removeClip', { clipId: 'c1', ...choice })).toBe(true);
+    });
+    it.each([null, 0, 1, 'true', {}, []])('rejects invalid captured choice %j', (ripple) => {
+        expect(validateVersionedCommandArguments('removeClip', { clipId: 'c1', ripple })).toBe(false);
+    });
+    it('rejects extra replay fields', () => {
+        expect(validateVersionedCommandArguments('removeClip', { clipId: 'c1', ripple: true, unknown: true })).toBe(
+            false
+        );
+    });
+});
+
+it('admits the published optional restoreClip slot contract without imposing domain integer policy', () => {
+    const payload = {
+        clipId: 'c1',
+        trackId: 't1',
+        clipSnapshot: { id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 },
+        ripplePlan: null,
+        midiNotesSnapshot: null,
+        midiCcSnapshot: null,
+        midiPitchBendSnapshot: null,
+    };
+    expect(validateVersionedCommandArguments('restoreClip', payload)).toBe(true);
+    expect(validateVersionedCommandArguments('restoreClip', { ...payload, clipIndex: 0 })).toBe(true);
+    expect(validateVersionedCommandArguments('restoreClip', { ...payload, clipIndex: 1.5 })).toBe(true);
+    expect(validateVersionedCommandArguments('restoreClip', { ...payload, clipIndex: '0' })).toBe(false);
+});
