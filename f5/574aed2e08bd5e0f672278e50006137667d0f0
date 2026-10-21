@@ -1,0 +1,47 @@
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/helpers.spec.ts
+  s_59e31a5c6f3e31::t_2d5cf7308f8c60 12,20
+  s_59e31a5c6f3e31::t_5a1cad7a70c139 42-49
+src/modules/Project/useCases/projectTemplates/templateFiles/stringOrchestra.ts
+  s_59e31a5c6f3e31::t_336fb3bf85e851 1-46
+src/modules/Levain/useCases/createLevainTemplateDeviceState.ts
+  s_59e31a5c6f3e31::t_336fb3bf85e851 1-8
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/stringOrchestra.spec.ts
+  s_59e31a5c6f3e31::t_91a680afabae89 1-5,7-13,24-36,43-57,59-81,83-99
+  s_59e31a5c6f3e31::t_0ba15c1332a6ab 14-23
+  s_59e31a5c6f3e31::t_79f2f6d8ec2583 6,37-42
+  s_59e31a5c6f3e31::t_bf08bd5004fa42 58,82
+src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts
+  s_59e31a5c6f3e31::t_336fb3bf85e851 12,94-101
+  s_29d8df116c5b92::t_74c3b439f9a45f 102
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/getTemplates.spec.ts
+  s_59e31a5c6f3e31::t_2d5cf7308f8c60 19
+src/modules/Levain/useCases/index.ts
+  s_59e31a5c6f3e31::t_336fb3bf85e851 15
+src/modules/Levain/useCases/__tests__/createLevainTemplateDeviceState.spec.ts
+  s_59e31a5c6f3e31::t_2d5cf7308f8c60 1-11,13-19
+  s_59e31a5c6f3e31::t_86eb20e761cf7d 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f5574aed2e08bd5e0f672278e50006137667d0f0",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
