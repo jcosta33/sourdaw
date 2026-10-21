@@ -1,0 +1,34 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_1c08b47ac3792f::t_a5e3eb2e9416ea 40-41
+scripts/resourceGuard.ts
+  s_1c08b47ac3792f::t_b36433b4658475 1476-1487,1489-1490,1502,1506-1510
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_1c08b47ac3792f::t_511e44029f8c94 1717-1793
+  s_ba8dd89de9aac7::t_63ec9d47a17791 1716
+docs/06-testing.md
+  s_1c08b47ac3792f::t_fe076085957f26 748-750
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "289907e2e2653a492b62bffaeb6be4ef138d6950",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
