@@ -567,6 +567,34 @@ describe('a compiled selector cannot take authority the request does not give', 
         expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
     });
 
+    it('refuses a selection member that meets the selection but the request protects', () => {
+        const result = compileMix('set the volume of the audio tracks to 75% but leave Guitar alone', [
+            trackItem('setTrackGain', mixGuitar, { gain: 0.75 }),
+        ]);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+
+    it('refuses a bounded selection beside a mention that only approximates a track name', () => {
+        const result = compileMix('mute all tracks routed to Vocalz', [
+            {
+                id: 'mute-midi-tracks',
+                name: 'muteTrack',
+                arguments: { muted: true },
+                selector: {
+                    targetArgument: 'trackId',
+                    entity: 'track',
+                    where: { kind: 'midi' },
+                    quantity: { unit: 'targets', exactly: 1 },
+                },
+            },
+        ]);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'muteTrack', reason: UNAUTHORIZED_TRACK });
+    });
+
     it('refuses a device on a track the request protects', () => {
         const result = compileMix('bypass the EQs but leave Keys alone', [bypassItem(mixKeysEq, mixKeys.id)]);
 
