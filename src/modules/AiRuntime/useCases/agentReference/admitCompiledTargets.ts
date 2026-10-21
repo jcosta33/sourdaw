@@ -370,6 +370,7 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): Comp
     const statesEveryPredicate =
         predicates.names.every((name) => wholeWordsPattern(name, 'iu').test(text)) &&
         predicates.ids.every((id) => statesObject(text, id, input));
+    console.log('DBG5', JSON.stringify({ text, predicates, statesEveryPredicate, targets: input.targetIds }));
     if (!statesEveryPredicate) {
         return UNAUTHORIZED;
     }
