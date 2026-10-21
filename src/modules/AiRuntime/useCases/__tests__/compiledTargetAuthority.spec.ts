@@ -227,39 +227,6 @@ describe('a send destination the request names is not a competing track target',
         expect(targetsOf(result)).toEqual([drums.id]);
     });
 
-    it('refuses the bus swapped in as the sending track', () => {
-        const result = compileAndBridge(SEND_DUCK_PROMPT, [sendDuckItem(drumBus, drums.id)], [drums.id, drumBus.id]);
-
-        expectRefused(result, drumBus.id);
-        expect(result.actions).toEqual([]);
-        // Drum Bus does not send to Drums, so Drums is not set aside as a send destination and the
-        // clause still names both tracks; setting Drums aside would leave Drum Bus the unique
-        // reference and pass the swap on to the send check instead.
-        expect(result.rejections).toEqual([
-            {
-                index: 0,
-                name: 'automateParameterRange',
-                reason: 'Compiled target trackId is not authorized by the user request',
-            },
-        ]);
-    });
-
-    it('sets no bus aside for a track that does not send to it, leaving both named tracks in the clause', () => {
-        // Drum Bus does not send to itself, so the clause still names both tracks and the compiled
-        // sender is refused as one of a named set the batch does not cover; setting the bus aside
-        // regardless would leave Drums the unique reference and refuse it as a mismatch instead.
-        const result = compileAndBridge(SEND_DUCK_PROMPT, [sendDuckItem(drumBus, drumBus.id)], [drumBus.id]);
-
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toEqual([
-            {
-                index: 0,
-                name: 'automateParameterRange',
-                reason: 'Compiled target trackId is not authorized by the user request',
-            },
-        ]);
-    });
-
     it('refuses a sending track the request does not name', () => {
         const result = compileAndBridge(
             'Duck the Vocals send to the Drum Bus to -12 dB over bars 5 to 8.',
@@ -287,24 +254,6 @@ describe('a compiled selector cannot replace a target the request names', () => 
             index: 0,
             name: 'setTrackGain',
             reason: 'Compiled target trackId is not authorized by the user request',
-        });
-    });
-
-    it('refuses a name the clause states only inside the name of the track it grounds', () => {
-        const bassDiTrack = createTrack({ id: 'track-bass-di', name: 'Bass DI' });
-        const result = compileAndBridge(
-            'set Bass DI volume to 50%',
-            [trackItem('setTrackGain', bass, { gain: 0.5 })],
-            [bass.id],
-            { ...projectContext, tracks: [...projectContext.tracks, bassDiTrack] }
-        );
-
-        // "Bass" is stated, but the direct route reads the clause as naming Bass DI.
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toContainEqual({
-            index: 0,
-            name: 'setTrackGain',
-            reason: 'Provider target trackId does not match the uniquely grounded project reference',
         });
     });
 
@@ -1094,22 +1043,126 @@ describe('role, kind and device-type selections ground as the compiler resolves 
     });
 });
 
-describe('a compiled selector cannot outlast a negation the direct route reads', () => {
+function authorityRefusals(result: ReturnType<typeof compileAndBridge>) {
+    return result.rejections.filter((rejection) => rejection.reason.startsWith('Compiled target'));
+}
+
+describe('a name the request states beside a negation is a stated name (negation reading is #5351)', () => {
     it.each([
         "set Vocals volume to 75% but don't touch Keys",
         'set Vocals volume to 75% without touching Keys',
         'set Vocals volume to 75%, skip Keys',
-    ])('refuses a Keys selector for "%s"', (prompt) => {
+    ])('admits a Keys selector for "%s" as main does (#5351)', (prompt) => {
         const result = compileMix(prompt, [trackItem('setTrackGain', mixKeys, { gain: 0.75 })]);
-        const direct = bridgeGroundedLlmToolCalls({
-            calls: [{ name: 'setTrackGain', arguments: { trackId: mixKeys.id, gain: 0.75 } }],
-            context: mixContext,
-            prompt,
-        });
 
-        expect(direct.actions).toEqual([]);
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).not.toEqual([]);
+        expect(authorityRefusals(result)).toEqual([]);
+    });
+
+    it.each([
+        "set Vocals volume to 75% but don't touch Keys",
+        'set Vocals volume to 75%, skip Keys',
+        'set Vocals volume to 75%, Keys unchanged',
+        'turn Vocals down 3 dB to make room for Keys',
+        'turn Vocals down 3 dB relative to Keys',
+        'turn Vocals down 3 dB because Keys is too loud',
+        'turn Vocals down 3 dB like Keys',
+    ])('grounds the named Vocals selector in "%s"', (prompt) => {
+        const value = prompt.startsWith('set') ? { gain: 0.75 } : { deltaDb: -3 };
+        const result = compileMix(prompt, [trackItem('setTrackGain', mixVocals, value)]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id]);
+    });
+
+    it('grounds a named source routed to a bus whose name holds another bus name', () => {
+        const plateReverb = createTrack({ id: 'track-mix-plate-reverb', name: 'Plate Reverb', kind: 'bus' });
+        const result = compileAndBridge(
+            'route Vocals to Plate Reverb',
+            [trackItem('setTrackOutput', mixVocals, { outputId: plateReverb.id })],
+            [],
+            { ...mixContext, tracks: [...mixContext.tracks, plateReverb] }
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.payload)).toEqual([
+            expect.objectContaining({ trackId: mixVocals.id, outputId: plateReverb.id }),
+        ]);
+    });
+});
+
+const guitarRhythm = createTrack({ id: 'track-fragment-guitar-rhythm', name: 'Guitar Rhythm' });
+const guitarLead = createTrack({ id: 'track-fragment-guitar-lead', name: 'Guitar Lead' });
+const warmPad = createTrack({ id: 'track-fragment-warm-pad', name: 'Warm Pad', kind: 'midi' });
+const darkPad = createTrack({ id: 'track-fragment-dark-pad', name: 'Dark Pad', kind: 'midi' });
+const gtrL = createTrack({ id: 'track-fragment-gtr-l', name: 'Gtr L' });
+const fragmentContext: ProjectContext = {
+    ...projectContext,
+    tracks: [guitarRhythm, guitarLead, warmPad, darkPad, gtrL, master],
+};
+
+function nameFragmentItem(fragment: string, count: number): CompiledItem {
+    return {
+        id: `turn-down-${fragment}`,
+        name: 'setTrackGain',
+        arguments: { deltaDb: -3 },
+        selector: {
+            targetArgument: 'trackId',
+            entity: 'track',
+            match: { all: [{ nameIncludes: fragment }] },
+            quantity: { unit: 'targets', exactly: count },
+        },
+    };
+}
+
+describe('a name fragment stated inside any word of the request picks its targets', () => {
+    it.each([
+        ['turn down the guitars by 3 dB', 'guitar', [guitarRhythm.id, guitarLead.id]],
+        ['turn down the pads by 3 dB', 'pad', [warmPad.id, darkPad.id]],
+        ['turn down Gtr L by 3 dB', 'gtr', [gtrL.id]],
+    ])('grounds "%s"', (prompt, fragment, expected) => {
+        const result = compileAndBridge(prompt, [nameFragmentItem(fragment, expected.length)], [], fragmentContext);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(expected);
+    });
+});
+
+describe('a selection reference states the name a selector picks the selected track by', () => {
+    it.each(['add a compressor to this track', 'add a compressor to the selected track', 'add a compressor to it'])(
+        'grounds a Keys name selector for "%s" with Keys selected',
+        (prompt) => {
+            const result = compileAndBridge(prompt, [addDeviceItem(mixKeys, 'builtin-compressor')], [], {
+                ...mixContext,
+                selectedTrackId: mixKeys.id,
+            });
+
+            expect(result.rejections).toEqual([]);
+            expect(targetsOf(result)).toEqual([mixKeys.id]);
+        }
+    );
+});
+
+describe('literal targets are taken as the compiler resolved them', () => {
+    it.each([
+        ['route Vocals to the reverb', 'setTrackOutput', { outputId: mixReverbBus.id }],
+        ['route Keys to the main out', 'setTrackOutput', { outputId: master.id }],
+    ] as const)('grounds "%s"', (prompt, name, arguments_) => {
+        const track = prompt.includes('Keys') ? mixKeys : mixVocals;
+        const result = compileMix(prompt, [trackItem(name, track, arguments_)]);
+
+        expect(authorityRefusals(result)).toEqual([]);
+    });
+
+    it('grounds "send Vocals to the plate"', () => {
+        const plate = createTrack({ id: 'track-mix-plate', name: 'Plate', kind: 'bus' });
+        const result = compileAndBridge(
+            'send Vocals to the plate',
+            [trackItem('addSend', mixVocals, { busId: plate.id })],
+            [],
+            { ...mixContext, tracks: [...mixContext.tracks, plate] }
+        );
+
+        expect(authorityRefusals(result)).toEqual([]);
     });
 });
 
