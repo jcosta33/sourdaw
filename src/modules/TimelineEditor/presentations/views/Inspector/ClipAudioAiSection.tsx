@@ -90,11 +90,15 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
         try {
             const result = await polyphonicAudioToMidi({ clipId: clip.id });
             if (result) {
-                insertPolyphonicMidiNotes(result.notes, result.sourceClip, trackId);
-                notifyAiChange('Polyphonic MIDI conversion complete', [
-                    `Detected ${result.notes.length} polyphonic notes`,
-                    'New MIDI track and clip created',
-                ]);
+                const inserted = await insertPolyphonicMidiNotes(result.notes, result.sourceClip, trackId);
+                if (inserted) {
+                    notifyAiChange('Polyphonic MIDI conversion complete', [
+                        `Detected ${result.notes.length} polyphonic notes`,
+                        'New MIDI track and clip created',
+                    ]);
+                } else {
+                    notifyUser('Polyphonic MIDI conversion failed', 'error');
+                }
             } else {
                 notifyUser('No notes detected in audio', 'warning');
             }
@@ -185,13 +189,13 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                         variant="ghost"
                         size="xs"
                         className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
-                        onClick={() => {
+                        onClick={async () => {
                             // audioToMidi silently no-ops (missing clip/buffer, no onsets
                             // detected, or MIDI track resolution failed) instead of throwing —
                             // its boolean return is the only signal a conversion actually
                             // happened, so the success toast must be gated on it or a no-op
                             // click reports success it never delivered.
-                            const converted = audioToMidi({ clipId: clip.id, trackId });
+                            const converted = await audioToMidi({ clipId: clip.id, trackId });
                             if (converted) {
                                 notifyAiChange('Audio converted to MIDI', [
                                     'New MIDI clip created from detected onsets',
