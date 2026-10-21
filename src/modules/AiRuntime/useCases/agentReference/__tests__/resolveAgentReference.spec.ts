@@ -612,16 +612,24 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
             reason: 'ambiguous-target',
         });
-        // The comma lists another item, so "master, drums" never states Master Drums and the id stands alone.
-        expect(resolveTrack('mute master, drums', 'master', masterDrumsContext)).toMatchObject({
-            status: 'resolved',
-            id: 'master',
-            evidence: 'literal-id',
-        });
-        expect(resolveTrack('mute master, drums', 'track-master-drums', masterDrumsContext)).toMatchObject({
-            status: 'rejected',
-            reason: 'asserted-target-mismatch',
-        });
+        // With no Drums track the comma joins Master Drums, so the id and that name stay ambiguous.
+        for (const assertedId of ['master', 'track-master-drums']) {
+            expect(resolveTrack('mute master, drums', assertedId, masterDrumsContext)).toMatchObject({
+                status: 'rejected',
+                reason: 'ambiguous-target',
+                candidateIds: ['track-master-drums', 'master'],
+            });
+        }
+        // Beside a Drums track the comma lists another item, so "master, drums" never states Master Drums.
+        const drums = { ...fixtureTrack, id: 'track-drums-listed', name: 'Drums' };
+        const listedContext = { ...project, tracks: [masterDrums, master, drums] };
+        for (const assertedId of ['master', 'track-master-drums', 'track-drums-listed']) {
+            expect(resolveTrack('mute master, drums', assertedId, listedContext)).toMatchObject({
+                status: 'rejected',
+                reason: 'ambiguous-target',
+                candidateIds: ['master', 'track-drums-listed'],
+            });
+        }
     });
 
     it.each([
@@ -897,7 +905,7 @@ describe('resolveAgentReference', () => {
         });
     });
 
-    it('reads no name across a slash the name lacks, leaving the hyphenated literal id it cites', () => {
+    it('reads a name across a slash the name lacks only where no other track is named past it', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];
         if (!firstTrack) {
@@ -911,18 +919,22 @@ describe('resolveAgentReference', () => {
             ],
         };
 
+        // No Guitar track is named past the slash, so "Lead/Guitar" states Lead Guitar beside the id.
+        for (const assertedId of ['track-lead-guitar', 'track-aux']) {
+            expect(
+                resolveTrack('delete Lead/Guitar and track-lead-guitar', assertedId, slashNestedNameContext)
+            ).toMatchObject({ status: 'rejected', reason: 'ambiguous-target' });
+        }
+        const guitarContext = {
+            ...slashNestedNameContext,
+            tracks: [...slashNestedNameContext.tracks, { ...firstTrack, id: 'track-guitar', name: 'Guitar' }],
+        };
         expect(
-            resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-lead-guitar', slashNestedNameContext)
-        ).toMatchObject({
-            status: 'resolved',
-            id: 'track-lead-guitar',
-            evidence: 'literal-id',
-        });
-        expect(
-            resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-aux', slashNestedNameContext)
+            resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-lead-guitar', guitarContext)
         ).toMatchObject({
             status: 'rejected',
-            reason: 'asserted-target-mismatch',
+            reason: 'ambiguous-target',
+            candidateIds: ['track-lead-guitar', 'track-guitar'],
         });
     });
 
@@ -1646,6 +1658,55 @@ describe('sibling names the prompt states as closely as each other', () => {
         const id = trackIdNamed(project, name);
 
         expect(resolveTrack(prompt, id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
+    });
+
+    it.each([
+        ['mute kick-2', ['Kick', 'Kick 2'], 'Kick 2'],
+        ['mute drums-bus', ['Drums', 'Drums Bus'], 'Drums Bus'],
+        ['mute drums/bus', ['Drums', 'Drums Bus'], 'Drums Bus'],
+        ['mute vocals–lead', ['Vocals Lead', 'Vocals'], 'Vocals Lead'],
+        ['mute mid-side', ['Mid/Side', 'Mid', 'Side'], 'Mid/Side'],
+        ['mute hi-hat', ['Hi Hat', 'Snare'], 'Hi Hat'],
+        ['mute Hi/Hat', ['Hi Hat', 'Snare'], 'Hi Hat'],
+        ['mute kick-in', ['Kick (In)', 'Kick', 'Kick Out'], 'Kick (In)'],
+        ['mute kick (out)', ['Kick (In)', 'Kick', 'Kick Out'], 'Kick Out'],
+        ['mute master-take', ['Master/Take', 'Snare'], 'Master/Take'],
+        ['mute R&B-Keys', ['R&B Keys', 'Keys'], 'R&B Keys'],
+        ["mute Rock-'n'-Roll", ["Rock 'n' Roll", 'Roll'], "Rock 'n' Roll"],
+        ['mute Bob`s Bass', ["Bob's Bass", 'Bass'], "Bob's Bass"],
+        ['mute Bob′s Bass', ["Bob's Bass", 'Bass'], "Bob's Bass"],
+    ])('reads "%s" among %j as %s across a dash, or punctuation no other name follows', (prompt, names, picked) => {
+        const project = namedTracksProject(names);
+        const pickedId = trackIdNamed(project, picked);
+
+        expect(resolveTrack(prompt, pickedId, project)).toEqual(resolvedTo(pickedId, picked, 'exact-name'));
+        for (const sibling of names.filter((name) => name !== picked)) {
+            expect(resolveTrack(prompt, trackIdNamed(project, sibling), project)).toMatchObject({
+                status: 'rejected',
+                reason: 'asserted-target-mismatch',
+            });
+        }
+    });
+
+    it('reads "mute master/take" as Master Take beside the master track, whose id it reaches past', () => {
+        const project = createProjectState();
+        const template = project.tracks[0]!;
+        const context: ProjectContext = {
+            ...project,
+            tracks: [
+                { ...template, id: 'master-take', name: 'Master Take' },
+                { ...template, id: 'master', name: 'Master', kind: 'master' },
+            ],
+            selectedTrackId: null,
+        };
+
+        expect(resolveTrack('mute master/take', 'master-take', context)).toEqual(
+            resolvedTo('master-take', 'Master Take', 'exact-name')
+        );
+        expect(resolveTrack('mute master/take', 'master', context)).toMatchObject({
+            status: 'rejected',
+            reason: 'asserted-target-mismatch',
+        });
     });
 
     it.each(['ΟΔΟΣ', 'οδος'])('resolves "mute ΟΔΟΣ" to the exact name %s despite its final sigma', (name) => {

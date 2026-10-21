@@ -27,12 +27,14 @@ const WORD_BOUNDARY_AFTER = '(?![\\p{L}\\p{N}])';
 const TRAILING_PUNCTUATION = /[^\p{L}\p{N}]+$/u;
 
 /**
- * What joins any two words of a name: a run of space on one line, or the underscore that stands for a
- * space in identifiers and file names ("hi_hat"). Every other character, a line break included, may
- * start another item ("Bass & Drums", "Bass | Drums", a bulleted list), so it joins a name's words
- * only where the name itself has it between them.
+ * What joins any two words of a name wherever the text has it, folded: a run of space on one line, the
+ * underscore that stands for a space in identifiers and file names ("hi_hat"), or a dash of any kind
+ * ("hi-hat" and "Lead–Vox" state Hi Hat and Lead Vox, "hi hat" states Hi-Hat).
  */
-const NAME_WORD_SPACE = '\\p{Zs}\\t_';
+const NAME_WORD_SPACE = /^[\p{Zs}\t_-]$/u;
+
+/** A run of the text between two words of a name, which the reading then accepts or refuses. */
+const ANY_JOINER = '([^\\p{L}\\p{N}]+)';
 
 /**
  * Lowercasing a whole word turns a closing sigma into ς while lowercasing it alone gives σ, so a name
@@ -42,9 +44,12 @@ function foldFinalSigma(folded: string): string {
     return folded.replaceAll('ς', 'σ');
 }
 
-/** Typographic apostrophes and dashes are the separator a name types as ' or -: "Jose’s", "Hi–Hat". */
+/**
+ * Typographic and look-alike apostrophes (the backtick and the prime among them) and every dash are the
+ * separator a name types as ' or -: "Jose’s", "Bob`s", "Hi–Hat".
+ */
 function foldTypographicSeparators(folded: string): string {
-    return folded.replaceAll(/[‘’ʼ]/gu, "'").replaceAll(/\p{Pd}/gu, '-');
+    return folded.replaceAll(/[`‘’‛′ʹʻʼ]/gu, "'").replaceAll(/\p{Pd}/gu, '-');
 }
 
 /**
@@ -68,19 +73,31 @@ function getNameSeparators(name: string): string[] {
         .slice(1, -1);
 }
 
-/** The character as a literal inside a character class. */
-function escapeClassCharacter(character: string): string {
-    return /[\\\]^-]/u.test(character) ? `\\${character}` : character;
+/**
+ * Whether the folded joiner is only word space, dashes and the punctuation the name's own separator
+ * there has, so "Kick In" reads Kick (In) and "Guitar L-R" reads Guitar L/R.
+ */
+function joinsAsNameSeparator(joiner: string, nameSeparator: string): boolean {
+    return Array.from(joiner).every(
+        (character) => NAME_WORD_SPACE.test(character) || nameSeparator.includes(character)
+    );
 }
 
-/**
- * What may join two of the name's words in the text: a run of space and of the characters the name's
- * own separator there has, so "Kick In" reads Kick (In) and "Bass - Drums" reads Bass-Drums, never
- * Bass Drums.
- */
-function getWordJoiner(nameSeparator: string): string {
-    const ownCharacters = Array.from(new Set(nameSeparator), escapeClassCharacter).join('');
-    return `[${NAME_WORD_SPACE}${ownCharacters}]+`;
+/** One joiner a match of the name crossed, with the folded offset where the rest of the match starts. */
+type NameJoint = { joiner: string; nameSeparator: string; restStart: number };
+
+/** The joiners of a match whose captures alternate word, joiner, word, in the order the name has them. */
+function getNameJoints(match: RegExpExecArray, nameSeparators: readonly string[]): NameJoint[] {
+    const pieces = match.slice(1);
+    const joints: NameJoint[] = [];
+    let position = match.index + (pieces[0] ?? '').length;
+    for (let index = 1; index < pieces.length; index += 2) {
+        const joiner = pieces[index] ?? '';
+        position += joiner.length;
+        joints.push({ joiner, nameSeparator: nameSeparators[(index - 1) / 2] ?? '', restStart: position });
+        position += (pieces[index + 1] ?? '').length;
+    }
+    return joints;
 }
 
 /** The text folded as normalizeName folds case and diacritics, with each folded code unit's offset in the text. */
@@ -162,19 +179,47 @@ function findTypedRanges(text: string, name: string): AgentReferenceTextRange[] 
 }
 
 /**
+ * Every match of the global pattern the reading accepts. A refused match gives way to one starting
+ * inside it, so a reading refused at one word may still start at the next.
+ */
+function findAcceptedMatches(
+    folded: string,
+    pattern: RegExp,
+    accepts: (match: RegExpExecArray) => boolean
+): RegExpExecArray[] {
+    const matches: RegExpExecArray[] = [];
+    for (let match = pattern.exec(folded); match !== null; match = pattern.exec(folded)) {
+        if (accepts(match)) {
+            matches.push(match);
+        } else {
+            pattern.lastIndex = match.index + 1;
+        }
+    }
+    return matches;
+}
+
+/** Whether the text states any of the names, each read with no other name to stop its own joints. */
+function statesAnyName(text: string, names: readonly string[], forms: AgentReferenceNameForms): boolean {
+    return names.some((name) => findAgentReferenceNameSpans(text, name, forms, []).length > 0);
+}
+
+/**
  * Every range of the text that states the name: its words folded as normalizeAgentReferenceText folds
- * them, final sigma aside, in order, joined by a run of space, underscore and the punctuation the name
- * itself has between those words ("hi hat" and "hi_hat" state Hi-Hat, while "Bass & Drums" and
- * "Bass | Drums" never state Bass Drums), the final word in either grammatical number when the forms
- * allow it. A range the name as typed
- * covers reads as typed and reaches as far as the typed name does, short of the punctuation closing
- * it, wherever the text goes on: "Kick (In)" reads Kick (In) more closely than Kick In, and "Lead?" in
- * "mute Lead?!" reads no further than Lead does.
+ * them, final sigma aside, in order, the final word in either grammatical number when the forms allow
+ * it. Space, underscore and any dash join two of its words wherever the text has them ("hi hat",
+ * "hi_hat" and "hi–hat" state Hi-Hat, "hi-hat" states Hi Hat). Any other punctuation joins them where
+ * the name itself has it there ("Guitar L/R"), or where the rest of the reading past it names none of
+ * the sibling names by itself: beside a Drums track and no Bus, "drums/bus" states Drums Bus, while
+ * beside Bass and Drums tracks "Bass & Drums", "Bass | Drums" and a bulleted list of the two never
+ * state Bass Drums. A range the name as typed covers reads as typed and reaches as far as the typed
+ * name does, short of the punctuation closing it, wherever the text goes on: "Kick (In)" reads
+ * Kick (In) more closely than Kick In, and "Lead?" in "mute Lead?!" reads no further than Lead does.
  */
 export function findAgentReferenceNameSpans(
     text: string,
     name: string,
-    forms: AgentReferenceNameForms
+    forms: AgentReferenceNameForms,
+    siblingNames: readonly string[]
 ): AgentReferenceNameSpan[] {
     const tokens = normalizeName(name)
         .split(' ')
@@ -185,16 +230,24 @@ export function findAgentReferenceNameSpans(
     }
     const finalForms = forms === 'exact' ? [finalToken] : getNumberForms(finalToken);
     const words = [...tokens.slice(0, -1).map(escapeRegExp), `(?:${finalForms.map(escapeRegExp).join('|')})`];
-    const separators = getNameSeparators(name);
-    const needle = words
-        .map((word, index) => (index === 0 ? word : `${getWordJoiner(separators[index - 1] ?? '')}${word}`))
-        .join('');
+    const needle = words.map((word, index) => (index === 0 ? `(${word})` : `${ANY_JOINER}(${word})`)).join('');
     const pattern = new RegExp(`${WORD_BOUNDARY_BEFORE}${needle}${WORD_BOUNDARY_AFTER}`, 'gu');
     const { folded, offsets } = foldWithOffsets(text);
+    const toTextOffset = (foldedOffset: number): number => offsets[foldedOffset] ?? text.length;
+    const nameSeparators = getNameSeparators(name);
+    const otherNames = siblingNames.filter((sibling) => normalizeName(sibling) !== tokens.join(' '));
+    const continuesName = (match: RegExpExecArray): boolean => {
+        const end = toTextOffset(match.index + match[0].length);
+        return getNameJoints(match, nameSeparators).every(
+            (joint) =>
+                joinsAsNameSeparator(joint.joiner, joint.nameSeparator) ||
+                !statesAnyName(text.slice(toTextOffset(joint.restStart), end), otherNames, forms)
+        );
+    };
     const typedRanges = findTypedRanges(text, name);
-    return Array.from(folded.matchAll(pattern), (match): AgentReferenceNameSpan => {
-        const start = offsets[match.index] ?? text.length;
-        const end = offsets[match.index + match[0].length] ?? text.length;
+    return findAcceptedMatches(folded, pattern, continuesName).map((match): AgentReferenceNameSpan => {
+        const start = toTextOffset(match.index);
+        const end = toTextOffset(match.index + match[0].length);
         const typedRange = typedRanges.find((typed) => typed.start <= start && end <= typed.end);
         if (typedRange !== undefined) {
             return { ...typedRange, closeness: 'typed' };

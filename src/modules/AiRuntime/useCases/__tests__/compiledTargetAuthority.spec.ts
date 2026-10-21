@@ -1901,7 +1901,7 @@ describe('list punctuation between two names never states the name joining them'
     });
 });
 
-describe("a name's words join only across space and the separators the name itself has there", () => {
+describe("a name's words join across space and dashes, and across other punctuation only where the name has it or no other name follows", () => {
     const listed = namedTracksContext(['Bass', 'Drums', 'Bass Drums']);
     it.each([
         'set "Bass" "Drums" volume to 50%',
@@ -1910,8 +1910,7 @@ describe("a name's words join only across space and the separators the name itse
         'set Bass (Drums) volume to 50%',
         'set Bass: Drums volume to 50%',
         'set Bass * Drums volume to 50%',
-        // A spaced hyphen joins only a name with a hyphen there, as "hi hat" reads Hi-Hat and not the reverse.
-        'set Bass - Drums volume to 50%',
+        'set Bass + Drums volume to 50%',
     ])('refuses a Bass Drums pick for %j', (prompt) => {
         const result = compileAndBridge(
             prompt,
@@ -1924,6 +1923,22 @@ describe("a name's words join only across space and the separators the name itse
         expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
     });
 
+    // A dash joins a name's words as a space does, spaced or not, so "Bass - Drums" states Bass Drums.
+    it.each(['set Bass - Drums volume to 50%', 'set Bass-Drums volume to 50%', 'set Bass — Drums volume to 50%'])(
+        'grounds a Bass Drums pick for %j',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [trackItem('setTrackGain', listed.track('Bass Drums'), { gain: 0.5 })],
+                [],
+                listed.context
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(targetsOf(result)).toEqual([listed.track('Bass Drums').id]);
+        }
+    );
+
     it.each([
         ['set hi hat volume to 50%', 'Hi-Hat'],
         ['set hi_hat volume to 50%', 'Hi-Hat'],
@@ -1932,12 +1947,60 @@ describe("a name's words join only across space and the separators the name itse
         ['set Kick In volume to 50%', 'Kick (In)'],
         ['set Lead/Guitar volume to 50%', 'Lead/Guitar'],
         ['set Bass - Drums volume to 50%', 'Bass-Drums'],
+        ['set Lead-Vox volume to 50%', 'Lead Vox'],
+        ['set Lead–Vox volume to 50%', 'Lead Vox'],
+        ['set Lead—Vox volume to 50%', 'Lead Vox'],
+        ['set Hi-Hat volume to 50%', 'Hi Hat'],
+        ['set drum-bus volume to 50%', 'Drum Bus'],
+        ['set Guitar-2 volume to 50%', 'Guitar 2'],
+        ['set 808-Kick volume to 50%', '808 Kick'],
+        ['set kick-in volume to 50%', 'Kick (In)'],
+        ['set Vox-Dbl volume to 50%', 'Vox.Dbl'],
+        ['set Guitar L-R volume to 50%', 'Guitar L/R'],
+        ['set Sax-Alto volume to 50%', 'Sax: Alto'],
+        ['set Bass-Upright volume to 50%', 'Bass, Upright'],
+        ['set R&B-Keys volume to 50%', 'R&B Keys'],
+        ["set Rock-'n'-Roll volume to 50%", "Rock 'n' Roll"],
+        ['set Bob`s Bass volume to 50%', "Bob's Bass"],
+        ['set Bob′s Bass volume to 50%', "Bob's Bass"],
+        ["set Bob's Bass volume to 50%", 'Bob`s Bass'],
     ])('grounds "%s" for %s', (prompt, name) => {
         const { context, track } = namedTracksContext([name, 'Snare']);
         const result = compileAndBridge(prompt, [trackItem('setTrackGain', track(name), { gain: 0.5 })], [], context);
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual([track(name).id]);
+    });
+
+    // Punctuation the name lacks joins its words when what follows names no other track by itself.
+    it.each([
+        ['set mid-side volume to 50%', ['Mid/Side', 'Mid', 'Side'], 'Mid/Side'],
+        ['set Hi/Hat volume to 50%', ['Hi Hat', 'Snare'], 'Hi Hat'],
+        ['set hi-hat volume to 50%', ['Hi Hat', 'Snare'], 'Hi Hat'],
+        ['set kick-in volume to 50%', ['Kick (In)', 'Kick', 'Kick Out'], 'Kick (In)'],
+        ['set kick (out) volume to 50%', ['Kick (In)', 'Kick', 'Kick Out'], 'Kick Out'],
+        ['set drums/bus volume to 50%', ['Drums', 'Drums Bus'], 'Drums Bus'],
+        ['set drums-bus volume to 50%', ['Drums', 'Drums Bus'], 'Drums Bus'],
+        ['set kick-2 volume to 50%', ['Kick', 'Kick 2'], 'Kick 2'],
+        ['set vocals–lead volume to 50%', ['Vocals Lead', 'Vocals'], 'Vocals Lead'],
+    ])('grounds "%s" among %j for %s', (prompt, names, picked) => {
+        const { context, track } = namedTracksContext(names);
+        const result = compileAndBridge(prompt, [trackItem('setTrackGain', track(picked), { gain: 0.5 })], [], context);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([track(picked).id]);
+    });
+
+    it.each([
+        ['set drums/bus volume to 50%', ['Drums', 'Drums Bus'], 'Drums'],
+        ['set kick (out) volume to 50%', ['Kick (In)', 'Kick', 'Kick Out'], 'Kick'],
+        ['set kick-2 volume to 50%', ['Kick', 'Kick 2'], 'Kick'],
+    ])('refuses "%s" among %j for the shorter %s it reads past', (prompt, names, picked) => {
+        const { context, track } = namedTracksContext(names);
+        const result = compileAndBridge(prompt, [trackItem('setTrackGain', track(picked), { gain: 0.5 })], [], context);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
     });
 });
 
@@ -1978,12 +2041,36 @@ describe('a device name fragment picks only on the track the request names as ow
         ]);
     });
 
-    it('grounds both EQs for "bypass the EQs on Vocals and Keys"', () => {
-        const result = compileAndBridge('bypass the EQs on Vocals and Keys', [bypassEqs], [], ownedContext);
+    it.each([
+        ['bypass the Vocals EQ', null],
+        ['bypass Vocals EQ', null],
+        ['bypass the EQ of Vocals', null],
+        ['bypass the EQ for Vocals', null],
+        ["bypass Vocals' EQ", null],
+        ['bypass the EQ (Vocals)', null],
+        ['mute Vocals and bypass its EQ', ownedVocals.id],
+        ['bypass the EQ on that track', ownedVocals.id],
+        ['bypass the EQ on this track', ownedVocals.id],
+    ])('grounds only the Vocals EQ for "%s" with %s selected', (prompt, selectedTrackId) => {
+        const result = compileAndBridge(prompt, [bypassEqs], [], { ...ownedContext, selectedTrackId });
 
-        expect(result.rejections).toEqual([]);
-        expect(targetsOf(result, 'deviceId')).toEqual([vocalsOwnedEq.id, keysOwnedEq.id]);
+        expect(targetsOf(result, 'deviceId')).toEqual([vocalsOwnedEq.id]);
+        expect(result.rejections).toContainEqual({
+            index: 1,
+            name: 'bypassDevice',
+            reason: 'Compiled target deviceId is not authorized by the user request',
+        });
     });
+
+    it.each(['bypass the EQs on Vocals and Keys', 'bypass the Vocals and Keys EQs', 'bypass every EQ'])(
+        'grounds both EQs for "%s"',
+        (prompt) => {
+            const result = compileAndBridge(prompt, [bypassEqs], [], ownedContext);
+
+            expect(result.rejections).toEqual([]);
+            expect(targetsOf(result, 'deviceId')).toEqual([vocalsOwnedEq.id, keysOwnedEq.id]);
+        }
+    );
 });
 
 describe('a clip name fragment picks only on the track the request names as owner', () => {
@@ -2021,6 +2108,20 @@ describe('a clip name fragment picks only on the track the request names as owne
             { index: 1, name: 'muteClip', reason: 'Compiled target clipId is not authorized by the user request' },
         ]);
     });
+
+    it.each(['mute the Vocals Verse clip', "mute Vocals' Verse clip"])(
+        'grounds only the Verse clip on the track "%s" names',
+        (prompt) => {
+            const result = compileAndBridge(prompt, [muteVerseClips], [], clipContext);
+
+            expect(targetsOf(result, 'clipId')).toEqual(['clip-vocals-verse']);
+            expect(result.rejections).toContainEqual({
+                index: 1,
+                name: 'muteClip',
+                reason: 'Compiled target clipId is not authorized by the user request',
+            });
+        }
+    );
 
     it('grounds both Verse clips for "mute the Verse clips on Vocals and Keys"', () => {
         const result = compileAndBridge('mute the Verse clips on Vocals and Keys', [muteVerseClips], [], clipContext);

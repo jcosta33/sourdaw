@@ -8,7 +8,6 @@ import {
     type AgentReferenceNameForms,
     type AgentReferenceTextRange,
 } from './findAgentReferenceNameSpans';
-import { getAgentReferenceCandidates } from './getAgentReferenceCandidates';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getBestAgentReferenceNameRanges, type AgentReferenceNamedRange } from './getBestAgentReferenceNameRanges';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
@@ -16,7 +15,8 @@ import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
-import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
+import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
+import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 
 /*
@@ -27,10 +27,11 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * never states. Every target the request protects or excludes is refused. What the request states is
  * the shared reference resolver's own reading of it, never a matcher of this file's: the resolver's
  * `naming` mode, which reads an object by its literal id or its whole name, case, diacritics and
- * punctuation folded, its words joined only across space and the punctuation the name itself has
- * between them ("Bass & Drums" and "Bass - Drums" state no Bass Drums, "hi hat" states Hi-Hat), and
- * never lengthened by punctuation closing it ("Lead?!" states Lead as closely as Lead?),
- * against every candidate whatever selection the request refers to, and takes the
+ * punctuation folded, its words joined across space and any dash ("hi hat" states Hi-Hat, "Lead-Vox"
+ * Lead Vox), and across other punctuation only where the name has it there or what follows it names
+ * no other object by itself ("drums/bus" states Drums Bus beside Drums, while "Bass & Drums" states no
+ * Bass Drums beside Bass and Drums), never lengthened by punctuation closing it ("Lead?!" states Lead
+ * as closely as Lead?), against every candidate whatever selection the request refers to, and takes the
  * final word of a name in either grammatical number ("the vocal" states Vocals), a form the direct
  * route leaves to its approximate reading. Each stated range names only the objects whose names read
  * it best, so "Vocal" states Vocal and not Vocals, "Café" states Café and not Cafe, and "Drum Bus"
@@ -40,15 +41,16 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * target or owner track. A name fragment is stated for a target it picks when it occurs as a whole
  * word, in either number, outside every range that states a longer whole name of another object, so
  * "the Drum Bus" states a "Bus" fragment for the Drum Bus and never for the FX Bus, while "the guitars"
- * states a "guitar" fragment for Guitar 2 beside the Guitar track. A fragment picks an object a track
- * owns (a device, clip or automation lane), as a whole name does, only on the track the request
- * qualifies as its owner or selects, or on a track it names, so "bypass the EQ on Vocals" never states
- * the EQ on Keys and "mute the Verse clip on Vocals" never the Verse clip on Keys. The text read is
- * the whole request less its restrictions and the values any call of the batch writes, so an
- * instruction may pick by a name an earlier one states ("turn Vocals down and pan it left"). A
- * selection reference ("this track", "the selected track", "it" or "its" for the selected track) that
- * resolves to the picked objects states those picks only when the request names no object of that
- * kind, so "set Vocals volume so it sits better" never stands for the selected Keys.
+ * states a "guitar" fragment for Guitar 2 beside the Guitar track. Once the request names or selects
+ * any track, a fragment picks an object a track owns (a device, clip or automation lane) only on one
+ * of those tracks, however the request phrases the owner, so "bypass the EQ on Vocals", "bypass the
+ * Vocals EQ" and "bypass Vocals' EQ" never state the EQ on Keys, nor "mute the Vocals Verse clip" the
+ * Verse clip on Keys; a request naming and selecting no track ("bypass every EQ") leaves the owner
+ * open. The text read is the whole request less its restrictions and the values any call of the
+ * batch writes, so an instruction may pick by a name an earlier one states ("turn Vocals down and pan
+ * it left"). A selection reference ("this track", "the selected track", "it" or "its" for the
+ * selected track) that resolves to the picked objects states those picks only when the request names
+ * no object of that kind, so "set Vocals volume so it sits better" never stands for the selected Keys.
  *
  * Literal targets, owner-track picks in a request that names and selects no track, and selections
  * by role, role family, kind, device type, tag, condition or no filter at all, are taken as the
@@ -201,30 +203,55 @@ function isTrackOwned(id: string, context: ProjectContext): boolean {
     return context.tracks.some((track) => getTrackOwnedObjectIds(track.id, context).includes(id));
 }
 
+/** The name of every object in the project, which a value or fragment read in the text never runs into. */
+function getProjectObjectNames(context: ProjectContext): string[] {
+    const trackNames = context.tracks.flatMap((track) => [
+        track.name,
+        ...track.clips.map((clip) => clip.name),
+        ...track.devices.flatMap((device) => (device.name === undefined ? [] : [device.name])),
+    ]);
+    const laneNames = (context.automationLanes ?? []).map((lane) => lane.name);
+    const layerNames = (context.adjustmentLayers ?? []).map((layer) => layer.name);
+    return [...trackNames, ...laneNames, ...layerNames];
+}
+
+/** "that track" points at a track as "this track" does, though the shared reading takes only the latter. */
+const DEMONSTRATIVE_TRACK_REFERENCE = /\bthat (?:audio |midi |bus |folder )?track\b/u;
+
 /**
- * The track-owned objects the text can refer to: those resolution draws its candidates from, narrowed
- * to an owner-qualified or selected track ("the EQ on Vocals", "the Verse clip on Vocals"), with every
- * object of the capability on each track the text names. Null when a dependency already fixes the
- * owner.
+ * Whether the text refers to the selected track: "this track", "the selected track" or "that track"
+ * whatever is selected, or "it" or "its" while a track is selected.
+ */
+function refersToSelectedTrack(text: string, context: ProjectContext): boolean {
+    if (hasExplicitTrackSelection(text) || DEMONSTRATIVE_TRACK_REFERENCE.test(normalizeAgentReferenceText(text))) {
+        return true;
+    }
+    return context.selectedTrackId !== null && /\bits?\b/iu.test(text);
+}
+
+/**
+ * The track-owned objects the text can refer to: every object on a track the text names, by whole
+ * name or id in any phrasing ("the Vocals EQ", "the EQ of Vocals", "Vocals' EQ", "the EQ on Vocals"),
+ * and on the selected track when the text refers to it. Null when a dependency already fixes the owner,
+ * or when the text names and selects no track, which leaves every owner open.
  */
 function readReachableOwnedIds(
     text: string,
-    capability: Capability,
     context: ProjectContext,
     dependencyId?: string
 ): ReadonlySet<string> | null {
     if (dependencyId !== undefined) {
         return null;
     }
-    const candidateIds = getAgentReferenceCandidates({ prompt: text, capability, context }).map(
-        (candidate) => candidate.id
+    const namedTrackIds = readStatedIds(text, 'track', context);
+    const selectsTrack = refersToSelectedTrack(text, context);
+    if (namedTrackIds.length === 0 && !selectsTrack) {
+        return null;
+    }
+    const selectedTrackIds = selectsTrack && context.selectedTrackId !== null ? [context.selectedTrackId] : [];
+    return new Set(
+        [...namedTrackIds, ...selectedTrackIds].flatMap((trackId) => getTrackOwnedObjectIds(trackId, context))
     );
-    const ownedByNamedTracks = readStatedIds(text, 'track', context).flatMap((trackId) =>
-        getTrackOwnedObjectIds(trackId, context).filter((id) =>
-            isAgentReferenceCapabilityCandidate({ capability, context, dependencyId: trackId, id })
-        )
-    );
-    return new Set([...candidateIds, ...ownedByNamedTracks]);
 }
 
 type MaskedRequest = { prompt: string; maskedPrompt: string; clauses: ReturnType<typeof getPromptClauses> };
@@ -267,9 +294,10 @@ function blankRange(text: string, { start, end }: AgentReferenceTextRange): stri
  * Bass Drum") follows the target it is written to, and "rename Kick to Kick In" keeps the earlier
  * mention of the target.
  */
-function maskWrittenValues(text: string, values: readonly string[]): string {
+function maskWrittenValues(text: string, values: readonly string[], context: ProjectContext): string {
+    const objectNames = getProjectObjectNames(context);
     return values.reduce((masked, value) => {
-        const last = findAgentReferenceNameSpans(masked, value, NAME_FORMS).at(-1);
+        const last = findAgentReferenceNameSpans(masked, value, NAME_FORMS, objectNames).at(-1);
         return last === undefined ? masked : blankRange(masked, last);
     }, text);
 }
@@ -321,7 +349,7 @@ function getEvidenceText(
     restrictionRanges: readonly AgentReferenceTextRange[]
 ): string {
     const unrestricted = restrictionRanges.reduce(blankRange, request.prompt);
-    return maskWrittenValues(unrestricted, input.valueTexts);
+    return maskWrittenValues(unrestricted, input.valueTexts, input.context);
 }
 
 /** The whole names, name fragments and owner tracks a selector picks its targets by. */
@@ -378,8 +406,9 @@ function extendsBeyond(range: AgentReferenceTextRange, inner: AgentReferenceText
  * somewhere no range states a longer whole name of another object, so "Bus" inside "the Drum Bus"
  * states the Drum Bus and never the FX Bus. A whole name read no further than the fragment leaves it
  * standing: "the guitars" states the Guitar track and the "guitar" fragment for Guitar 2 alike. A
- * target a track owns must also be one the text can refer to, so "the EQ on Vocals" never states the
- * EQ on Keys, nor "the Verse clip on Vocals" the Verse clip on Keys.
+ * target a track owns must also sit on a track the text names or selects, when it names or selects
+ * any, so "the Vocals EQ" never states the EQ on Keys, nor "the Verse clip on Vocals" the Verse clip
+ * on Keys.
  */
 function statesFragment(
     text: string,
@@ -388,7 +417,7 @@ function statesFragment(
     nameRanges: readonly AgentReferenceNamedRange[],
     reachableIds: ReadonlySet<string> | null
 ): boolean {
-    const occurrences = findAgentReferenceNameSpans(text, fragment, NAME_FORMS);
+    const occurrences = findAgentReferenceNameSpans(text, fragment, NAME_FORMS, getProjectObjectNames(input.context));
     const pickedIds = input.targetIds.filter((targetId) => {
         const name = getObjectName(targetId, input.context);
         return name === undefined || name.toLowerCase().includes(fragment.toLowerCase());
@@ -412,7 +441,7 @@ function statesNamePicks(text: string, picks: NamePicks, input: CompiledTargetAu
         }
     }
     const { nameRanges } = readNaming(text, capability, context, dependencyId);
-    const reachableIds = readReachableOwnedIds(text, capability, context, dependencyId);
+    const reachableIds = readReachableOwnedIds(text, context, dependencyId);
     return picks.fragments.every((fragment) => statesFragment(text, fragment, input, nameRanges, reachableIds));
 }
 

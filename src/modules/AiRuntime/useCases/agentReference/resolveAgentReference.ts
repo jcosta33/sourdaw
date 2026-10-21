@@ -226,11 +226,12 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
     if (literalIdRanges.length === 0) {
         return;
     }
+    const candidateNames = candidates.map((candidate) => candidate.name);
     for (const candidate of candidates) {
         if (evidenceById.get(candidate.id) !== 'exact-name') {
             continue;
         }
-        const nameRanges = findAgentReferenceNameSpans(prompt, candidate.name, forms);
+        const nameRanges = findAgentReferenceNameSpans(prompt, candidate.name, forms, candidateNames);
         if (nameRanges.length === 0) {
             continue;
         }
@@ -288,9 +289,10 @@ function removeLiteralIdEvidenceNestedInExactNames(
     evidenceById: Map<string, AgentReferenceEvidence>,
     forms: AgentReferenceNameForms
 ): void {
+    const candidateNames = candidates.map((candidate) => candidate.name);
     const exactNameRanges = candidates.flatMap((candidate) =>
         evidenceById.get(candidate.id) === 'exact-name'
-            ? findAgentReferenceNameSpans(prompt, candidate.name, forms)
+            ? findAgentReferenceNameSpans(prompt, candidate.name, forms, candidateNames)
             : []
     );
     if (exactNameRanges.length === 0) {
@@ -446,6 +448,7 @@ function readNameEvidence(
     forms: AgentReferenceNameForms
 ): Map<string, AgentReferenceEvidence> {
     const evidenceById = new Map<string, AgentReferenceEvidence>();
+    const candidateNames = candidates.map((candidate) => candidate.name);
     for (const candidate of candidates) {
         if (capability === 'output' && candidate.id === 'master' && !containsQualifiedMasterOutputReference(prompt)) {
             continue;
@@ -458,7 +461,7 @@ function readNameEvidence(
             evidenceById.set(candidate.id, 'literal-id');
             continue;
         }
-        if (findAgentReferenceNameSpans(prompt, candidate.name, forms).length > 0) {
+        if (findAgentReferenceNameSpans(prompt, candidate.name, forms, candidateNames).length > 0) {
             if (
                 capability === 'vca-group' &&
                 reservedVcaGroupReferenceWords.has(normalizeAgentReferenceText(candidate.name)) &&
