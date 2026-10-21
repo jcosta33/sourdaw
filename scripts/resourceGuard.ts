@@ -1218,17 +1218,22 @@ function uncoveredDarwinProcesses(
     return uncovered;
 }
 
+const DARWIN_EXIT_WINDOW_MS = 500;
+const DARWIN_EXIT_POLL_MS = 20;
+
 // lsof cannot read an exiting process that ps still lists. A process that stays
 // unreadable by PID proves it holds no files only by exiting within this bound.
+// The window counts completed pauses, so it lasts at least its length in real time.
 function awaitDarwinExits(
     pids: number[],
     uid: number,
     deadline: number,
     ports: DarwinFilePorts
 ): UncoveredDarwinProcess[] | undefined {
-    const exitDeadline = Math.min(deadline, ports.now() + 500);
-    while (pids.some((pid) => !ports.isGone(pid)) && ports.now() < exitDeadline) {
-        ports.pause(20);
+    let waited = 0;
+    while (waited < DARWIN_EXIT_WINDOW_MS && ports.now() < deadline && pids.some((pid) => !ports.isGone(pid))) {
+        ports.pause(DARWIN_EXIT_POLL_MS);
+        waited += DARWIN_EXIT_POLL_MS;
     }
     return uncoveredDarwinProcesses(pids, new Set(), uid, deadline, ports);
 }
@@ -1517,6 +1522,19 @@ export function linuxStorageFileCensus(
     return unknown('file-census-unavailable');
 }
 
+// Whole-account catalogs one proof may take within its single deadline.
+const DARWIN_WHOLE_OBSERVATIONS = 3;
+
+// A previously listed PID still uncovered is a persistent gap, never a newborn.
+function newLiveProcess(
+    pid: number,
+    snapshot: UncoveredDarwinProcess['snapshot'],
+    listedBefore: number[],
+    uid: number
+): boolean {
+    return !listedBefore.includes(pid) && snapshot?.uid === uid && ['R', 'S', 'I', 'T', 'U'].includes(snapshot.state);
+}
+
 export function darwinStorageFileCensus(
     initialPids: number[],
     uid: number,
@@ -1530,11 +1548,12 @@ export function darwinStorageFileCensus(
         return 'unknown';
     };
     let pids = initialPids;
-    for (let observation = 0; observation < 2; observation += 1) {
+    for (let observation = 0; observation < DARWIN_WHOLE_OBSERVATIONS; observation += 1) {
+        const replaceable = observation < DARWIN_WHOLE_OBSERVATIONS - 1;
         if (ports.now() >= deadline) {
             return unknown('file-census-time-bound');
         }
-        if (observation === 1) {
+        if (observation > 0) {
             const replacement = ports.readProcessUsers();
             if (typeof replacement === 'string') {
                 return unknown(replacement);
@@ -1548,13 +1567,13 @@ export function darwinStorageFileCensus(
         if (ports.now() >= deadline) {
             return unknown('file-census-time-bound');
         }
+        // A descriptor can close between lsof's field reads. Discard that whole catalog
+        // while observations remain; a process the last one leaves incomplete is inspected by PID.
+        if (replaceable && census.incomplete.size > 0) {
+            continue;
+        }
         if (census.paths.some((path) => referencesStoragePath(path, tempDirectories))) {
             return 'alive';
-        }
-        // A descriptor can close between lsof's field reads. Discard that catalog
-        // once; a process left incomplete by the replacement is inspected again by PID.
-        if (observation === 0 && census.incomplete.size > 0) {
-            continue;
         }
         // lsof can finish a catalog captured before a new borrower starts.
         // Require coverage of processes observed on both sides of inspection.
@@ -1563,7 +1582,7 @@ export function darwinStorageFileCensus(
             return unknown(currentPids);
         }
         const uncovered = uncoveredDarwinProcesses(
-            new Set([...pids, ...currentPids]),
+            new Set([...pids, ...currentPids, ...census.incomplete]),
             census.inspected,
             uid,
             deadline,
@@ -1572,10 +1591,19 @@ export function darwinStorageFileCensus(
         if (uncovered === undefined || ports.now() >= deadline) {
             return unknown('lsof-coverage-time-bound');
         }
+        // A verified new live PID can replace this whole catalog while observations
+        // remain in the shared limit and original deadline.
+        if (
+            replaceable &&
+            uncovered.length > 0 &&
+            uncovered.every(({ pid, snapshot }) => newLiveProcess(pid, snapshot, pids, uid))
+        ) {
+            continue;
+        }
         // Same-UID work elsewhere on the host starts processes and closes descriptors
         // during every whole-account catalog, and lsof transiently skips a busy
-        // long-lived process. Inspect exactly the uncovered processes by PID; a
-        // replacement whole-account catalog races the next unrelated process.
+        // long-lived process. Inspect whatever the last whole observation leaves
+        // uncovered by PID rather than racing the next unrelated process again.
         return darwinUncoveredFileState(
             uncovered.map(({ pid }) => pid),
             census.inspected,
@@ -2070,65 +2098,74 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     const sampleTimer = setInterval(sampleTick, input.sampleIntervalMs ?? defaultSampleIntervalMs);
     const timeoutTimer = setTimeout(() => stop('timeout'), timeoutMs);
 
-    try {
-        const result = await childCompletion;
-        if (child.pid !== undefined && reason === undefined) {
-            const exitedCleanly = await waitForProcessTreeExit(child.pid, tracked, processToken, 500);
-            if (!exitedCleanly) {
-                terminateProcessTree(child.pid, 'SIGTERM', tracked, processToken);
-                const exitedAfterTerm = await waitForProcessTreeExit(child.pid, tracked, processToken, 1_000);
-                if (!exitedAfterTerm) {
-                    terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
-                    const exitedAfterKill = await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000);
-                    if (!exitedAfterKill) {
-                        output.append(
-                            Buffer.from(`\nprocesses survived forced cleanup:\n${sessionProcessSummary(processToken)}`)
-                        );
-                        reason = 'leak';
+    const completeSpawnedCommand = async () => {
+        try {
+            const result = await childCompletion;
+            if (child.pid !== undefined && reason === undefined) {
+                const exitedCleanly = await waitForProcessTreeExit(child.pid, tracked, processToken, 500);
+                if (!exitedCleanly) {
+                    terminateProcessTree(child.pid, 'SIGTERM', tracked, processToken);
+                    const exitedAfterTerm = await waitForProcessTreeExit(child.pid, tracked, processToken, 1_000);
+                    if (!exitedAfterTerm) {
+                        terminateProcessTree(child.pid, 'SIGKILL', tracked, processToken);
+                        const exitedAfterKill = await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000);
+                        if (!exitedAfterKill) {
+                            output.append(
+                                Buffer.from(
+                                    `\nprocesses survived forced cleanup:\n${sessionProcessSummary(processToken)}`
+                                )
+                            );
+                            reason = 'leak';
+                        }
                     }
                 }
             }
+            if (child.pid !== undefined && reason !== undefined) {
+                await waitForProcessTreeExit(child.pid, tracked, processToken, 7_000);
+            }
+            await cleanupStorage();
+            return { succeeded: true as const, result };
+        } catch (error) {
+            await cleanupStorage();
+            return { succeeded: false as const, error };
+        } finally {
+            clearInterval(sampleTimer);
+            clearTimeout(timeoutTimer);
+            process.removeListener('SIGINT', onSigint);
+            process.removeListener('SIGTERM', onSigterm);
+            if (forceKillTimer !== undefined) {
+                clearTimeout(forceKillTimer);
+            }
+            // The existing final attempt can prove removal after the first attempt could not.
+            await cleanupStorage();
         }
-        if (child.pid !== undefined && reason !== undefined) {
-            await waitForProcessTreeExit(child.pid, tracked, processToken, 7_000);
-        }
-        const storageRemoved = await cleanupStorage();
+    };
+    const completion = await completeSpawnedCommand();
+    if (!completion.succeeded) {
         if (!storageRemoved) {
-            output.append(
-                Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
-            );
-            reason ??= 'leak';
-        }
-        const tail = output.result();
-        return {
-            ...result,
-            signal: interruptedSignal ?? result.signal,
-            reason,
-            ...tail,
-            peakRssBytes,
-            maxRssBytes,
-            durationMs: Date.now() - startedAt,
-        };
-    } catch (error) {
-        const cleaned = await cleanupStorage();
-        if (!cleaned) {
             throw new Error(
-                `${error instanceof Error ? error.message : String(error)}; guard storage retained: ownership or process-tree exit unproved`,
-                { cause: error }
+                `${completion.error instanceof Error ? completion.error.message : String(completion.error)}; guard storage retained: ownership or process-tree exit unproved`,
+                { cause: completion.error }
             );
         }
-        throw error;
-    } finally {
-        clearInterval(sampleTimer);
-        clearTimeout(timeoutTimer);
-        process.removeListener('SIGINT', onSigint);
-        process.removeListener('SIGTERM', onSigterm);
-        if (forceKillTimer !== undefined) {
-            clearTimeout(forceKillTimer);
-        }
-        // Spawn errors still need cleanup; a removed run is already absent on the normal route.
-        await cleanupStorage();
+        throw completion.error;
     }
+    if (!storageRemoved) {
+        output.append(
+            Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
+        );
+        reason ??= 'leak';
+    }
+    const tail = output.result();
+    return {
+        ...completion.result,
+        signal: interruptedSignal ?? completion.result.signal,
+        reason,
+        ...tail,
+        peakRssBytes,
+        maxRssBytes,
+        durationMs: Date.now() - startedAt,
+    };
 }
 
 export function emitGuardedResult(label: string, result: GuardedCommandResult, showSuccessOutput = false): number {

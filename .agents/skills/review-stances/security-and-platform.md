@@ -35,6 +35,26 @@ whole-account catalog, so its single replacement catalog failed as well.
 Probe: run a guarded no-op in a populated account beside an uninspectable process that predates the
 supervisor and a source of short-lived same-UID processes, and require reclamation. Keep the denial
 retained for a process started after the supervisor, and keep a newborn or skipped consumer retained.
+This narrows the 2026-10-12 lesson below: a new live PID no longer discards a whole catalog. Each
+uncovered live PID instead receives its own PID inspection inside the bounded observations, the
+account is listed again afterwards, and only a process that stays unreadable and alive past the
+half-second exit window retains storage.
+
+### 2026-10-12 — transient Darwin descriptor omission exhausted complete-census admission
+
+PR #5274 (`40baa0716b`) added conservative whole-account file proof but allowed only two
+observations. Live account captures later showed complete/incomplete/complete catalogs;
+the incomplete records had `f,n` without `t`. A vnode can have that shape, so skipping
+nonabsolute unknown records cannot prove safe deletion. The historical review stance,
+prompt and tier are unestablished; the uncovered risk was bounded census availability.
+
+Probe: inject two successive missing-type catalogs, then a wholly usable third catalog
+with fresh before/after PID coverage. Require owned release only from the complete catalog.
+Persistent omissions, a third live borrower, expiry of the original five-second budget,
+and an uncovered live PID in the final catalog must retain storage. Descriptor omissions and
+exclusively new, same-UID live PID gaps may each discard a whole catalog only while another
+of the three observations remains. A previously missing PID still present in the next
+pre-sample is not new. Never merge partial catalogs or extend the deadline.
 
 ### 2026-10-10 — verification temporary storage lacked an owned deletion boundary
 
