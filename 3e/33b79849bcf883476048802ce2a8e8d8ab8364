@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/settleVerifiedBatchReplay.ts
+  s_29d8df116c5b92::t_c1fa58e6ccaaf5 125,151
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/verifiedBatchReplayThreadContext.spec.ts
+  s_29d8df116c5b92::t_3b16818e7f2e27 1,29,361,370-386,389-391,394-395,401-403,431-467,470-472,475-476,482-484,496
+  s_29d8df116c5b92::t_13c22f481bbffa 193-196,388,392-393,396-400,404-411,469,473-474,477-481,485-495
+  s_29d8df116c5b92::t_4b73a6792de7fb 387,468
+  s_29d8df116c5b92::t_e7fd05c80b8cb4 497
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3e33b79849bcf883476048802ce2a8e8d8ab8364",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
