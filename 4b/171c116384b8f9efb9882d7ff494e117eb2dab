@@ -1,0 +1,19 @@
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  s_1c08b47ac3792f::t_35f154e1e577ac 32-34,283-288,298-299,301-305,348-349,352,355,472-473,494,502,642,721-722,727
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b171c116384b8f9efb9882d7ff494e117eb2dab",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
