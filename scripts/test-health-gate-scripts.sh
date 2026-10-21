@@ -234,7 +234,9 @@ function expect(condition, message) {
 // no key material behind it, and the reader refuses it exactly as it refuses a real one. The sixth
 // was audited on 2026-10-20: the match is the Bacteria parameter name `band0_convolutionIr` compared
 // with `key ===` in a test filter, a parameter id with no secret behind it, flagged only in commit
-// b4d8147 of a merged branch.
+// b4d8147 on the closed, unmerged branch of pull request #5225
+// (origin/agent/5172/bacteria-body-picker), which the full-history scan still reads. The entry goes
+// dead once that branch ref is deleted.
 expect(
     gitleaksIgnore ===
         'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3288\n' +
