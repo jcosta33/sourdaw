@@ -135,4 +135,59 @@ describe('emitted WAV loudness analysis', () => {
         );
         expect(Math.max(...decoded.subarray(0, 100))).toBeLessThanOrEqual(1);
     });
+
+    it('sign-extends emitted 24-bit negative boundaries and matches negative-only decoded meters', async () => {
+        const rate = 48000;
+        const samples = Float32Array.from(
+            { length: rate },
+            (_, frame) => -0.35 + 0.1 * Math.sin((2 * Math.PI * 1000 * frame) / rate)
+        );
+        samples[0] = -1;
+        samples[1] = -1 / 8388608;
+        const bytes = new Uint8Array(
+            await audioBufferToWav(
+                { length: samples.length, sampleRate: rate, numberOfChannels: 1, getChannelData: () => samples },
+                24,
+                undefined,
+                { mode: 'none' }
+            )
+        );
+        expect([...bytes.subarray(44, 50)]).toEqual([0, 0, 128, 255, 255, 255]);
+
+        const decoded = new Float32Array(samples.length);
+        for (let frame = 0; frame < decoded.length; frame++) {
+            const offset = 44 + frame * 3;
+            const raw = bytes[offset]! + bytes[offset + 1]! * 256 + bytes[offset + 2]! * 65536;
+            decoded[frame] = (raw >= 8388608 ? raw - 16777216 : raw) / 8388608;
+        }
+        expect(decoded[0]).toBe(-1);
+        expect(decoded[1]).toBe(-1 / 8388608);
+        expect(decoded.every((value) => value <= 0)).toBe(true);
+
+        const first = createWavLoudnessReportAnalyzer(createIncrementalMd5());
+        first.write(bytes);
+        const second = createWavLoudnessReportAnalyzer(createIncrementalMd5(), first.finish().relativeGatePower);
+        second.write(bytes);
+        const report = second.finish();
+        if (!('value' in report.integrated) || !('value' in report.maxMomentary) || !('value' in report.truePeak)) {
+            throw new Error('Expected negative-only emitted WAV meters.');
+        }
+        expect(report.integrated.value).toBeCloseTo(
+            measureIntegratedLoudness({ channels: [decoded], length: decoded.length, sampleRate: rate })!,
+            5
+        );
+        expect(report.maxMomentary.value).toBeCloseTo(
+            measureMaxWindowedLoudness({
+                channels: [decoded],
+                length: decoded.length,
+                sampleRate: rate,
+                windowSeconds: 0.4,
+            })!,
+            5
+        );
+        expect(report.truePeak.value).toBeCloseTo(
+            20 * Math.log10(measureTruePeak({ channels: [decoded], length: decoded.length })),
+            5
+        );
+    });
 });

@@ -108,7 +108,7 @@ export function createWavLoudnessReportAnalyzer(
                 if (shape.bitDepth === 16) value = sampleView.getInt16(0, true) / 32768;
                 else if (shape.bitDepth === 24) {
                     const raw = sample[0]! | (sample[1]! << 8) | (sample[2]! << 16);
-                    value = raw / 8388608;
+                    value = (raw >= 0x800000 ? raw - 0x1000000 : raw) / 8388608;
                 } else value = sampleView.getFloat32(0, true);
                 if (!Number.isFinite(value)) throw new Error('WAV report input has nonfinite audio.');
                 channels[channelIndex]![blockUsed] = value;
