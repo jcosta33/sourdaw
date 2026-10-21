@@ -15,3 +15,11 @@ export function hasTrackControlRestriction(prompt: string): boolean {
         .trim();
     return trackControlRestrictionPatterns.some((pattern) => pattern.test(restrictionEvidence));
 }
+
+/** Where each restriction phrase begins in the text, in order, read with the same vocabulary. */
+export function findTrackControlRestrictionStarts(text: string): number[] {
+    const lowered = text.toLowerCase();
+    return trackControlRestrictionPatterns
+        .flatMap((pattern) => [...lowered.matchAll(new RegExp(pattern.source, 'gu'))].map((match) => match.index))
+        .sort((left, right) => left - right);
+}

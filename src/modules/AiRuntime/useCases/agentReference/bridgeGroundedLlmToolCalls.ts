@@ -33,7 +33,6 @@ import {
 } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
-import { resolveAutomationLaneTarget, SEND_TARGET_PREFIX } from '../../transformers/resolveAutomationLaneTarget';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
@@ -45,8 +44,8 @@ import {
     validateArbitraryCommandListEvidence,
 } from '../validateArbitraryCommandListEvidence';
 
+import { admitsCompiledTargets, getAutomatedSendBusIds } from './admitCompiledTargets';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
-import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
     BATCH_LOCAL_BINDING_PATTERN,
@@ -168,6 +167,8 @@ type GroundToolCallInput = {
     batchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     call: ToolCallResult;
     catalog: GroundingCatalog;
+    /** Every id the compiled list's own selectors excluded or protected; empty off the compiled route. */
+    compilerExcludedIds: ReadonlySet<string>;
     context: ProjectContext;
     /** What the admitted creative authority says about this call, when the run has one. */
     creativeAdmission?: CreativeCallAdmission;
@@ -4012,76 +4013,12 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
-/** The existing objects of one capability the request text names by literal id, whole name, or selection. */
-function getNamedExistingTargetIds(input: {
-    capability: GroundingRules['targetRules'][number]['capability'];
-    context: ProjectContext;
-    dependencyId?: string;
-    prompt: string;
-}): string[] {
-    return resolveAgentReference({ ...input, assertedId: undefined })
-        .candidates.filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
-        .map((candidate) => candidate.id);
+function getBatchCreatedIds(bindings: ReadonlyMap<string, BatchLocalCreationBinding>): ReadonlySet<string> {
+    return new Set([...bindings.values()].map((binding) => binding.createdId));
 }
 
-/**
- * The bus a call's `send:<busId>` parameter names, when the asserted track already sends to it.
- *
- * "Duck the Kick send to the Drum Bus" names the bus as the send the parameter selects, not as a
- * second candidate for the sending track, so resolving the track sets that bus aside. A track that
- * does not send to the bus earns no such exclusion, so the bus cannot stand in for the sender.
- */
-function getAutomatedSendBusIds(parameterId: unknown, trackId: unknown, context: ProjectContext): string[] {
-    if (typeof parameterId !== 'string' || !parameterId.startsWith(SEND_TARGET_PREFIX)) {
-        return [];
-    }
-    return resolveAutomationLaneTarget(context, trackId, parameterId) === null
-        ? []
-        : [parameterId.slice(SEND_TARGET_PREFIX.length)];
-}
-
-function getOwningTrackId(objectId: string, context: ProjectContext): string | undefined {
-    const owner = context.tracks.find(
-        (track) =>
-            track.devices.some((device) => device.id === objectId) || track.clips.some((clip) => clip.id === objectId)
-    );
-    return owner?.id ?? context.automationLanes?.find((lane) => lane.id === objectId)?.trackId;
-}
-
-/**
- * Whether a compiled selector's targets stand on the compiler's resolution alone.
- *
- * Compiler evidence proves which objects a selector resolves to, never that the request asked for
- * them. A clause that names objects of the target's capability authorizes only what its own words
- * resolve to, so its compiled targets go through the same reference resolution a direct call gets.
- * A clause that names none is a bounded selection ("all audio tracks") the compiler resolves; when
- * it still names the tracks owning such objects, every compiled object must belong to one of them.
- */
-function compiledTargetsNeedNoReferenceResolution(input: {
-    capability: GroundingRules['targetRules'][number]['capability'];
-    context: ProjectContext;
-    dependencyId?: string;
-    prompt: string;
-    targetIds: readonly string[];
-}): boolean {
-    if (getNamedExistingTargetIds(input).length > 0) {
-        return false;
-    }
-    if (getAgentReferenceCapabilityKind(input.capability) === 'track') {
-        return true;
-    }
-    const namedTrackIds = getNamedExistingTargetIds({
-        capability: 'track',
-        context: input.context,
-        prompt: input.prompt,
-    });
-    if (namedTrackIds.length === 0) {
-        return true;
-    }
-    return input.targetIds.every((targetId) => {
-        const ownerId = getOwningTrackId(targetId, input.context);
-        return ownerId !== undefined && namedTrackIds.includes(ownerId);
-    });
+function unauthorizedCompiledTargetReason(argument: string): string {
+    return `Compiled target ${argument} is not authorized by the user request`;
 }
 
 function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
@@ -4385,6 +4322,7 @@ function groundToolCall({
     batchLocalCreationBindings,
     call,
     catalog,
+    compilerExcludedIds,
     context,
     creativeAdmission,
     creativeAuthorityMode,
@@ -4678,16 +4616,22 @@ function groundToolCall({
                 );
             }
             if (
-                compiledTargetsNeedNoReferenceResolution({
+                !admitsCompiledTargets({
                     capability: targetRule.capability,
+                    catalog,
+                    compilerExcludedIds,
                     context,
-                    prompt: targetPrompt,
+                    createdIds: getBatchCreatedIds(batchLocalCreationBindings),
+                    prompt,
+                    sendBusIds: [],
+                    targetPrompt,
                     targetIds: compilerTargetOverride.stableIds,
                 })
             ) {
-                groundedArguments[targetRule.argument] = [...compilerTargetOverride.stableIds];
-                continue;
+                return rejection(index, call.name, unauthorizedCompiledTargetReason(targetRule.argument));
             }
+            groundedArguments[targetRule.argument] = [...compilerTargetOverride.stableIds];
+            continue;
         }
         if (targetRule.cardinality === 'many') {
             const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
@@ -4801,16 +4745,14 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = assertedValue;
             continue;
         }
-        if (
-            compilerTargetOverride !== undefined &&
-            'stableIds' in compilerTargetOverride &&
-            admitsCompilerResolvedTargetWithoutReferenceResolution(call.name, prompt)
-        ) {
+        if (compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride) {
+            const admitsCompilerResolution = admitsCompilerResolvedTargetWithoutReferenceResolution(call.name, prompt);
             if (
-                compilerTargetOverride.cardinality !== 'one' ||
-                compilerTargetOverride.stableIds.length !== 1 ||
-                targetRule.capability !== compilerTargetOverride.capability ||
-                assertedValue !== compilerTargetOverride.stableIds[0]
+                admitsCompilerResolution &&
+                (compilerTargetOverride.cardinality !== 'one' ||
+                    compilerTargetOverride.stableIds.length !== 1 ||
+                    targetRule.capability !== compilerTargetOverride.capability ||
+                    assertedValue !== compilerTargetOverride.stableIds[0])
             ) {
                 return rejection(
                     index,
@@ -4819,14 +4761,25 @@ function groundToolCall({
                 );
             }
             if (
-                compiledTargetsNeedNoReferenceResolution({
+                !admitsCompiledTargets({
                     capability: targetRule.capability,
+                    catalog,
+                    compilerExcludedIds,
                     context,
+                    createdIds: getBatchCreatedIds(batchLocalCreationBindings),
                     dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
-                    prompt: targetPrompt,
+                    prompt,
+                    sendBusIds:
+                        targetRule.argument === 'trackId'
+                            ? getAutomatedSendBusIds(groundedArguments.parameterId, assertedValue, context)
+                            : [],
+                    targetPrompt,
                     targetIds: compilerTargetOverride.stableIds,
                 })
             ) {
+                return rejection(index, call.name, unauthorizedCompiledTargetReason(targetRule.argument));
+            }
+            if (admitsCompilerResolution) {
                 groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
                 continue;
             }
@@ -4852,7 +4805,7 @@ function groundToolCall({
         // is never the one it names, however the request words it.
         const batchCreatedIds =
             compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride
-                ? [...batchLocalCreationBindings.values()].map((binding) => binding.createdId)
+                ? [...getBatchCreatedIds(batchLocalCreationBindings)]
                 : [];
         const result = resolveAgentReference({
             prompt: targetPrompt,
@@ -5910,6 +5863,10 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
+    const compilerExcludedIds: ReadonlySet<string> = new Set(
+        compilerEvidence?.selectors.flatMap((selector) => [...selector.excludedIds, ...selector.protectedExclusions]) ??
+            []
+    );
     let compilerTargetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> | undefined;
     let compilerActionCommandGraph: ActionCommandGraph | undefined;
     if (compilerEvidence !== undefined) {
@@ -6693,6 +6650,7 @@ export function bridgeGroundedLlmToolCalls({
                 batchLocalCreationBindings: visibleBindings,
                 call,
                 catalog,
+                compilerExcludedIds,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
                 ...(creativeAuthority === undefined ? {} : { creativeAuthorityMode: creativeAuthority.mode }),

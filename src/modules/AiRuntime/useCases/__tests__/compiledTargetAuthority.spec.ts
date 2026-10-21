@@ -21,7 +21,9 @@ type CompiledItem = {
     selector?: {
         targetArgument: string;
         entity: 'track' | 'device';
-        where: Record<string, string>;
+        where?: Record<string, string>;
+        match?: { any: { nameIncludes: string }[] };
+        excludeIds?: string[];
         quantity: { unit: 'targets'; exactly: number };
     };
     dependsOn?: string[];
@@ -141,9 +143,14 @@ const createPlateBusItem: CompiledItem = {
     arguments: { name: 'Plate Bus', binding: 'plate-bus' },
 };
 
-function compileAndBridge(prompt: string, items: CompiledItem[], targetIds: string[]) {
+function compileAndBridge(
+    prompt: string,
+    items: CompiledItem[],
+    targetIds: string[],
+    context: ProjectContext = projectContext
+) {
     const compiled = compileArbitraryCommandList({
-        context: projectContext,
+        context,
         revision: REVISION,
         calls: [
             {
@@ -171,7 +178,7 @@ function compileAndBridge(prompt: string, items: CompiledItem[], targetIds: stri
     return bridgeGroundedLlmToolCalls({
         calls: compiled.compilerEvidence.commands,
         compilerEvidence: compiled.compilerEvidence,
-        context: projectContext,
+        context,
         projectRevision: REVISION,
         prompt,
     });
@@ -465,5 +472,194 @@ describe('a compiled selector the request authorizes still grounds', () => {
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual([vocals.id, drums.id, bass.id]);
+    });
+});
+
+const UNAUTHORIZED_TRACK = 'Compiled target trackId is not authorized by the user request';
+
+const mixVocals = createTrack({
+    id: 'track-mix-vocals',
+    name: 'Vocals',
+    devices: [
+        { id: 'device-mix-vocals-eq', type: 'builtin-eq', bypassed: false },
+        { id: 'device-mix-vocals-compressor', type: 'builtin-compressor', bypassed: false },
+    ],
+});
+const mixKeys = createTrack({
+    id: 'track-mix-keys',
+    name: 'Keys',
+    kind: 'midi',
+    devices: [{ id: 'device-mix-keys-eq', type: 'builtin-eq', bypassed: false }],
+});
+const mixDrums = createTrack({ id: 'track-mix-drums', name: 'Drums' });
+const mixBass = createTrack({ id: 'track-mix-bass', name: 'Bass' });
+const mixGuitar = createTrack({ id: 'track-mix-guitar', name: 'Guitar' });
+const mixReverbBus = createTrack({ id: 'track-mix-reverb-bus', name: 'Reverb Bus', kind: 'bus' });
+const mixDrumBus = createTrack({ id: 'track-mix-drum-bus', name: 'Drum Bus', kind: 'bus' });
+const mixVocalsEq = mixVocals.devices[0]!;
+const mixVocalsCompressor = mixVocals.devices[1]!;
+const mixKeysEq = mixKeys.devices[0]!;
+
+const mixContext: ProjectContext = {
+    ...projectContext,
+    tracks: [mixVocals, mixKeys, mixDrums, mixBass, mixGuitar, mixReverbBus, mixDrumBus, master],
+    availableDeviceTypes: [
+        { id: 'builtin-eq', name: 'EQ' },
+        { id: 'builtin-compressor', name: 'Compressor' },
+    ],
+};
+
+function compileMix(prompt: string, items: CompiledItem[]) {
+    return compileAndBridge(prompt, items, [], mixContext);
+}
+
+function addDeviceItem(track: ProjectTrack, deviceType: string): CompiledItem {
+    return trackItem('addDevice', track, { deviceType });
+}
+
+function everyAudioTrackExceptVocals(name: string, arguments_: Record<string, unknown>): CompiledItem {
+    return {
+        id: `${name}-audio-tracks`,
+        name,
+        arguments: arguments_,
+        selector: {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { kind: 'audio' },
+            excludeIds: [mixVocals.id],
+            quantity: { unit: 'targets', exactly: 3 },
+        },
+    };
+}
+
+describe('a compiled selector cannot take authority the request does not give', () => {
+    it.each(['set Vocalz volume to 75%', 'set Vocal volume to 75%'])(
+        'refuses a selector where "%s" only approximates a track name',
+        (prompt) => {
+            const result = compileMix(prompt, [trackItem('setTrackGain', mixKeys, { gain: 0.75 })]);
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+        }
+    );
+
+    it('refuses a selection member the request protects', () => {
+        const result = compileMix('set the volume of the audio tracks to 75% but leave Keys alone', [
+            trackItem('setTrackGain', mixKeys, { gain: 0.75 }),
+        ]);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+
+    it('refuses a device on a track the request protects', () => {
+        const result = compileMix('bypass the EQs but leave Keys alone', [bypassItem(mixKeysEq, mixKeys.id)]);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({
+            index: 0,
+            name: 'bypassDevice',
+            reason: 'Compiled target deviceId is not authorized by the user request',
+        });
+    });
+
+    it('refuses a selector for a request that names and selects no track', () => {
+        const result = compileMix('set volume to 75%', [trackItem('setTrackGain', mixKeys, { gain: 0.75 })]);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+});
+
+describe('compiled selectors for objects the request names or selects still ground', () => {
+    it('grounds one selector resolving both named tracks', () => {
+        const result = compileMix('add a compressor to Vocals and Bass', [
+            {
+                id: 'compress-vocals-and-bass',
+                name: 'addDevice',
+                arguments: { deviceType: 'builtin-compressor' },
+                selector: {
+                    targetArgument: 'trackId',
+                    entity: 'track',
+                    match: { any: [{ nameIncludes: 'Vocals' }, { nameIncludes: 'Bass' }] },
+                    quantity: { unit: 'targets', exactly: 2 },
+                },
+            },
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id, mixBass.id]);
+    });
+
+    it('grounds one selector per named track', () => {
+        const result = compileMix('add a compressor to Vocals and Bass', [
+            addDeviceItem(mixVocals, 'builtin-compressor'),
+            addDeviceItem(mixBass, 'builtin-compressor'),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixVocals.id, mixBass.id]);
+    });
+
+    it('grounds a selector for each of three named tracks', () => {
+        const result = compileMix('add an EQ to Drums, Bass and Guitar', [
+            addDeviceItem(mixDrums, 'builtin-eq'),
+            addDeviceItem(mixBass, 'builtin-eq'),
+            addDeviceItem(mixGuitar, 'builtin-eq'),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixDrums.id, mixBass.id, mixGuitar.id]);
+    });
+
+    it('grounds sources beside the destinations the request routes them to', () => {
+        const result = compileMix('route Vocals to the Reverb Bus and Keys to the Drum Bus', [
+            trackItem('setTrackOutput', mixVocals, { outputId: mixReverbBus.id }),
+            trackItem('setTrackOutput', mixKeys, { outputId: mixDrumBus.id }),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.payload)).toEqual([
+            expect.objectContaining({ trackId: mixVocals.id, outputId: mixReverbBus.id }),
+            expect.objectContaining({ trackId: mixKeys.id, outputId: mixDrumBus.id }),
+        ]);
+    });
+
+    it('grounds both named devices on one named track', () => {
+        const result = compileMix('bypass the EQ and the compressor on Vocals', [
+            bypassItem(mixVocalsEq, mixVocals.id),
+            bypassItem(mixVocalsCompressor, mixVocals.id),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id, mixVocalsCompressor.id]);
+    });
+
+    it('grounds a named device on each of two named tracks', () => {
+        const result = compileMix('bypass the EQ on Vocals and the EQ on Keys', [
+            bypassItem(mixVocalsEq, mixVocals.id),
+            bypassItem(mixKeysEq, mixKeys.id),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id, mixKeysEq.id]);
+    });
+
+    it('grounds a bounded selection less the track it excepts', () => {
+        const result = compileMix('add an EQ to every audio track except Vocals', [
+            everyAudioTrackExceptVocals('addDevice', { deviceType: 'builtin-eq' }),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixDrums.id, mixBass.id, mixGuitar.id]);
+    });
+
+    it('grounds a bounded selection less the track it names as other than the selection', () => {
+        const result = compileMix('lower every audio track other than Vocals by 3 dB', [
+            everyAudioTrackExceptVocals('setTrackGain', { deltaDb: -3 }),
+        ]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mixDrums.id, mixBass.id, mixGuitar.id]);
     });
 });
