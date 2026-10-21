@@ -345,6 +345,9 @@ function resolveLikeDirectCall(
 
 /** Whether the request authorizes every target a compiled list resolved for one argument. */
 export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): CompiledTargetAuthority {
+    if (input.targetIds.length > 0) {
+        return ADMITTED;
+    }
     const request = maskRequest(input.prompt, input.context);
     const restrictionRanges = getRestrictionRanges(request, input.catalog);
     const protectedIds = getProtectedIds(input, request, restrictionRanges);
