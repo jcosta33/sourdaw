@@ -332,7 +332,8 @@ function expectMarkedRecovery(
         expect(fresh.result.output).toContain(
             'guard storage retained: process-tree exit or storage ownership could not be proved'
         );
-        // The result records the first failed release; a final cleanup retry can remove its payload.
+        // The verdict is classified after the final cleanup attempt, so a leak keeps this run's storage.
+        expect(freshRetained).toBe(true);
     }
     if (originalStillLive) {
         expect(retained.direct).toContain(prior[0]?.token);
@@ -1180,13 +1181,15 @@ ready();
         expectMarkedRecovery(root, [{ tempDirectory: started.tmp, token: originalToken }], recovery);
     }
 
+    // Beyond the monitor cleanup waits, the recovering guard's file proofs can each spend their
+    // whole five-second deadline retaking catalogs on a busy host.
     it('treats an exit-zero empty process census as unavailable monitoring evidence and retains live storage', async () => {
         await verifyEmptyProcessCensusAdmission(false);
-    }, 20_000);
+    }, 30_000);
 
     it('keeps admission readiness pending until its complete record is published', async () => {
         await verifyEmptyProcessCensusAdmission(true);
-    }, 20_000);
+    }, 30_000);
 
     it('gives a nested guard its own temp and reserve without cleaning the live parents temp', async () => {
         const root = fixture();
