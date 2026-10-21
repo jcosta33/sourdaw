@@ -38,6 +38,16 @@ use wasm_bindgen::prelude::*;
 /// with the ceiling.
 pub const LEVAIN_BLOCK_FRAMES: usize = 4096;
 
+/// Floats one sample-upload chunk carries at most, and so the most one host
+/// message copies into the engine on the render thread (64 KiB).
+///
+/// `sample_write_floats` never offers a larger window and
+/// `commit_sample_frames` refuses a larger count, so the figure is enforced
+/// here rather than trusted to the host. The loader restates it in
+/// `src/infra/audioWorklet/levainSampleChunk.ts`, and a spec pins the two
+/// equal.
+pub const LEVAIN_SAMPLE_CHUNK_FLOATS: usize = 16_384;
+
 /// WASM-exported Levain instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct LevainInstance {
@@ -137,8 +147,15 @@ impl LevainInstance {
         self.engine.handle_cc(cc, value);
     }
 
-    /// Add a sample to the uniquely-owned loading bank. `data` is interleaved
-    /// f32 PCM. Returns `None` if the bank is already shared or exceeds limits.
+    /// Add a whole sample to the uniquely-owned loading bank in one call. `data`
+    /// is interleaved f32 PCM. Returns `None` if the bank is already shared or
+    /// exceeds limits.
+    ///
+    /// Not what the worklet calls: copying a whole sample is one message-sized
+    /// cost on the render thread, which `begin_sample`, `sample_write_ptr` and
+    /// `commit_sample_frames` bound to one chunk. The native host (which builds
+    /// banks on a control thread) and the pinned wasm measurement recipes
+    /// (`benches/wasm/deviceRecipes.js`) still use this one.
     pub fn add_sample(
         &mut self,
         data: Vec<f32>,
@@ -148,6 +165,69 @@ impl LevainInstance {
     ) -> Option<u32> {
         self.engine
             .add_sample(data, frame_count, channels, sample_rate)
+    }
+
+    /// Start uploading a sample into the staged bank, reserving storage for
+    /// all of its PCM. Returns the id the sample will have once sealed, or
+    /// `None` when the engine refuses (no staged bank, a sample already open,
+    /// a shared bank, or limits exceeded).
+    ///
+    /// This is the one allocation of the upload: the chunks that follow
+    /// (`sample_write_ptr`, `commit_sample_frames`) allocate nothing and each
+    /// copies at most `LEVAIN_SAMPLE_CHUNK_FLOATS` floats.
+    pub fn begin_sample(
+        &mut self,
+        frame_count: u32,
+        channels: u8,
+        sample_rate: f32,
+    ) -> Option<u32> {
+        self.engine.begin_sample(frame_count, channels, sample_rate)
+    }
+
+    /// Address in this module's linear memory where the next chunk of the open
+    /// sample goes, or 0 when `sample_id` is not the open sample. Write at most
+    /// `sample_write_floats` floats there, then call `commit_sample_frames`.
+    /// Read the module's `memory.buffer` after this call: growing it
+    /// elsewhere detaches earlier buffers.
+    pub fn sample_write_ptr(&mut self, sample_id: u32) -> *mut f32 {
+        self.engine
+            .sample_write_window(sample_id)
+            .map_or(std::ptr::null_mut(), |(ptr, _)| ptr)
+    }
+
+    /// Floats the host may write at `sample_write_ptr` next: what the open
+    /// sample still needs, at most `LEVAIN_SAMPLE_CHUNK_FLOATS`. Zero when
+    /// `sample_id` is not the open sample.
+    pub fn sample_write_floats(&mut self, sample_id: u32) -> u32 {
+        self.engine
+            .sample_write_window(sample_id)
+            .map_or(0, |(_, floats)| floats as u32)
+    }
+
+    /// Count `float_count` floats the host wrote at `sample_write_ptr` as part
+    /// of the open sample. Allocates nothing. Refuses (false) for another
+    /// sample id or a count above `sample_write_floats`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have written `float_count` floats at the address
+    /// `sample_write_ptr` returned for this sample. Nothing in Rust can check
+    /// that the host did.
+    pub unsafe fn commit_sample_frames(&mut self, sample_id: u32, float_count: u32) -> bool {
+        // SAFETY: forwarded to the caller, which promises the write above. On
+        // wasm the host is the worklet, which writes the floats through
+        // `sample_write_ptr` just before it calls.
+        unsafe {
+            self.engine
+                .commit_sample_frames(sample_id, float_count as usize)
+        }
+    }
+
+    /// Publish the open sample once every one of its floats is written.
+    /// Allocates and frees nothing. Returns false, leaving the sample open,
+    /// for another id or a short sample.
+    pub fn seal_sample(&mut self, sample_id: u32) -> bool {
+        self.engine.seal_sample(sample_id)
     }
 
     /// Reset this device to a uniquely-owned empty loading bank.

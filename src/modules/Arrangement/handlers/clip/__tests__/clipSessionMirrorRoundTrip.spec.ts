@@ -84,6 +84,7 @@ import { handleDuplicateClipAt } from '../handleDuplicateClipAt';
 import { handleMoveClips } from '../handleMoveClips';
 import { handleRemoveClip } from '../handleRemoveClip';
 import { handleRestoreClipMoves } from '../handleRestoreClipMoves';
+import { handleRestoreClipSplitState } from '../handleRestoreClipSplitState';
 import { handleRestoreDrawnClip } from '../handleRestoreDrawnClip';
 import { isMoveClipSessionEntry } from '../validateClipEditSessionEntries';
 
@@ -833,6 +834,59 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
+    });
+
+    it('replays a saved grouped ripple removal then split repeatedly', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+        const removedLane = automationLane('remove-split-a', 'clip-a');
+        const shiftedLane = automationLane('remove-split-b', 'clip-b');
+        shiftedLane.points = [{ id: 'remove-split-point', beat: 6.5, value: 0.75, curve: 'linear', tension: 0 }];
+        automationStore.set({ lanes: [removedLane, shiftedLane] });
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: {
+                'clip-b': [{ id: 'remove-split-note', pitch: 60, startBeat: 0, duration: 4, velocity: 90 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        trackStore.set({ ...trackStore.value!, selectedTrackId: null });
+        await executeAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-a' } },
+            { source: 'manual', groupId: 'fresh-remove-split' }
+        );
+        expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 0, endBeat: 4 });
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-b', beat: 2, rightClipId: 'fresh-right' } },
+            { source: 'manual', groupId: 'fresh-remove-split' }
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+        );
+        const forwardOwners = ownerProjections();
+        reloadSavedProject();
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        for (let cycle = 0; cycle < 2; cycle += 1) {
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 0, endBeat: 4 });
+            expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 4, endBeat: 8 });
+            expect(clipOnTrack(TRACK_ID, 'fresh-right')).toBeUndefined();
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(2)
+            );
+            reloadSavedProject();
+            await redo();
+            expect(undoHistoryStore.value?.future).toHaveLength(0);
+            expect(undoHistoryStore.value?.past).toHaveLength(2);
+            expect(ownerProjections()).toEqual(forwardOwners);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+            reloadSavedProject();
+        }
     });
 
     it('atomic ripple repair: captures adjacent removals at their actual prefix and replays every owner', async () => {
@@ -1659,6 +1713,45 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(ownerProjections()).toEqual(owners);
         }
     );
+
+    it('refuses saved split Redo after a peer reuses its minted MIDI note identity', async () => {
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: {
+                'clip-a': [{ id: 'peer-owner-fresh-source-note', pitch: 60, startBeat: 0, duration: 4, velocity: 90 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        flushAutomergeStorageWrites();
+        agentProjectInspectionPort.setProvider(captureAgentProjectInspectionState);
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+            { source: 'manual' }
+        );
+        const mintedNoteId = midiStore.value!.notesByClipId['clip-right']![0]!.id;
+        expect(mintedNoteId).not.toBe('peer-owner-fresh-source-note');
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        reloadSavedProject();
+        expect((await undo()).headConsumed).toBe(true);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        reloadSavedProject();
+        expect(Object.hasOwn(midiStore.value!.notesByClipId, 'clip-right')).toBe(false);
+        syncPeerProject((project) => {
+            project.midi.notesByClipId['clip-b'] = [
+                { id: mintedNoteId, pitch: 72, startBeat: 0, duration: 1, velocity: 80 },
+            ];
+        });
+        expectValidProject();
+        await expectReplayRefused('redo');
+        expectValidProject();
+    });
 
     it('keeps a saved comped split pending when a peer reuses its captured lane id on another track', async () => {
         await persistCompedSplit();
@@ -5132,6 +5225,235 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             authority: getCrdtDoc<{ takeLanes: { lanes: unknown[] } }>('root')?.takeLanes.lanes,
         }).toEqual({ projection: lanes, authority: lanes });
     });
+
+    it.each([
+        { deniedFirst: false, grouped: false },
+        { deniedFirst: true, grouped: false },
+        { deniedFirst: false, grouped: true },
+        { deniedFirst: true, grouped: true },
+    ])(
+        'preserves split captures after refused Undo deniedFirst=$deniedFirst grouped=$grouped',
+        async ({ deniedFirst, grouped }) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            await executeAppAction(
+                { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'refused-right' } },
+                { groupId: grouped ? 'refused-splits' : undefined }
+            );
+            if (grouped) {
+                await executeAppAction(
+                    { type: 'splitClip', payload: { clipId: 'clip-b', beat: 6, rightClipId: 'refused-right-b' } },
+                    { groupId: 'refused-splits' }
+                );
+            }
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(
+                    grouped ? 2 : 1
+                )
+            );
+            reloadSavedProject();
+            const laterTake = { ...createTake('refused-right', 'Later take', 2, 4), selected: true };
+            syncPeerProject((project) => {
+                project.takeLanes.lanes.push({
+                    ...createTakeLane(TRACK_ID),
+                    id: 'later-right-lane',
+                    takes: [laterTake],
+                    activeCompRegions: [],
+                });
+            });
+            await flushPersistence();
+            const beforeHistory = structuredClone(undoHistoryStore.value);
+            const beforeRaw = structuredClone(getCrdtDoc('root'));
+            const beforeHeads = Automerge.getHeads(getCrdtDoc('root')!);
+            const beforeOwners = ownerProjections();
+            const beforeMirror = sessionStorage.getItem(UNDO_SESSION_KEY);
+            if (deniedFirst) {
+                if (grouped) {
+                    refuseBatchAtCommit();
+                } else {
+                    productionBriefAdmissionPort.setGuard(() => {
+                        let checks = 0;
+                        return { allowsCurrent: () => ++checks === 1 };
+                    });
+                }
+                expect((await undo()).headConsumed).toBe(false);
+                expect(getCrdtDoc('root')).toEqual(beforeRaw);
+                expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(beforeHeads);
+                expect(ownerProjections()).toEqual(beforeOwners);
+                expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toBe(beforeMirror);
+                expect
+                    .soft(undoHistoryStore.value, 'refused execution must preserve the captured replay payload')
+                    .toEqual(beforeHistory);
+            }
+            productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+            const foreignTrack = createTrack({ name: 'Foreign', kind: 'midi' });
+            foreignTrack.id = 'foreign-track';
+            foreignTrack.clips = [{ ...createClipFixture('foreign-clip', 0, 4), trackId: foreignTrack.id }];
+            const foreignTake = { ...createTake('foreign-clip', 'Independent take', 0, 4), selected: true };
+            const foreignLane = {
+                ...createTakeLane(foreignTrack.id),
+                id: 'later-right-lane',
+                takes: [foreignTake],
+                activeCompRegions: [],
+            };
+            syncPeerProject((project) => {
+                project.takeLanes.lanes = [foreignLane];
+                project.tracks.tracks.push(foreignTrack);
+            });
+            expectValidProject();
+            expect(
+                (await undo()).headConsumed,
+                'same valid replay must succeed regardless of an earlier refused attempt'
+            ).toBe(true);
+            expect(clipOnTrack(TRACK_ID, 'refused-right')).toBeUndefined();
+            expect(takeLaneStore.value?.lanes).toEqual([foreignLane]);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(undoHistoryStore.value?.future).toHaveLength(grouped ? 2 : 1);
+            if (grouped) {
+                expect(clipOnTrack(TRACK_ID, 'refused-right-b')).toBeUndefined();
+            }
+        }
+    );
+
+    it.each(
+        (['committed', 'warning', 'ambiguous', 'rollback', 'displaced'] as const).flatMap((terminal) =>
+            [false, true].map((grouped) => ({ terminal, grouped }))
+        )
+    )(
+        'installs split captures only for its own committed Undo terminal=$terminal grouped=$grouped',
+        async ({ terminal, grouped }) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            await executeAppAction(
+                { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'terminal-right' } },
+                { groupId: grouped ? 'terminal-splits' : undefined }
+            );
+            if (grouped) {
+                await executeAppAction(
+                    { type: 'splitClip', payload: { clipId: 'clip-b', beat: 6, rightClipId: 'terminal-right-b' } },
+                    { groupId: 'terminal-splits' }
+                );
+            }
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(
+                    grouped ? 2 : 1
+                )
+            );
+            reloadSavedProject();
+            const laterTake = { ...createTake('terminal-right', 'Later right take', 2, 4), selected: true };
+            const laterLane = {
+                ...createTakeLane(TRACK_ID),
+                id: 'terminal-later-lane',
+                takes: [laterTake],
+                activeCompRegions: [],
+            };
+            syncPeerProject((project) => {
+                project.takeLanes.lanes.push(laterLane);
+            });
+            const rootBeforeUndo = Automerge.clone(getCrdtDoc('root')!);
+            const heldEntry = undoHistoryStore.value?.past.find(
+                (entry) =>
+                    entry.kind === 'action' &&
+                    entry.action.type === 'splitClip' &&
+                    entry.action.payload.clipId === 'clip-a'
+            );
+            if (
+                heldEntry?.kind !== 'action' ||
+                heldEntry.inverseAction?.type !== 'restoreClipSplitState' ||
+                heldEntry.redoAction?.type !== 'restoreClipSplitState'
+            ) {
+                throw new Error('Expected paired split capture');
+            }
+            const capture = heldEntry.inverseAction.payload.retiredTakeLanes;
+            expect(heldEntry.redoAction.payload.retiredTakeLanes).toBe(capture);
+            expect(capture).toEqual([]);
+            const originalExecute = handleRestoreClipSplitState.execute;
+            let intercepted = false;
+            const restoreEffect = vi
+                .spyOn(handleRestoreClipSplitState, 'execute')
+                .mockImplementation(async (action, context) => {
+                    const result = await originalExecute(action, context);
+                    if (!result?.afterCommit || !result.afterAmbiguousCommit) {
+                        throw new Error('Expected deferred split capture');
+                    }
+                    const afterCommit = result.afterCommit;
+                    const afterAmbiguousCommit = result.afterAmbiguousCommit;
+                    return {
+                        ...result,
+                        afterCommit: async () => {
+                            if (terminal === 'warning' && !intercepted) {
+                                intercepted = true;
+                                throw new Error('Controlled split committed warning');
+                            }
+                            if (terminal === 'rollback' && !intercepted) {
+                                intercepted = true;
+                                replaceCrdtDocInLineage({ id: 'root', doc: rootBeforeUndo });
+                            }
+                            await afterCommit();
+                        },
+                        afterAmbiguousCommit: async () => {
+                            if (terminal === 'displaced' && !intercepted) {
+                                intercepted = true;
+                                replaceCrdtDocInLineage({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
+                            }
+                            await afterAmbiguousCommit();
+                            if (terminal === 'warning') {
+                                throw new Error('Controlled unreconciled split committed warning');
+                            }
+                        },
+                    };
+                });
+            if (terminal === 'ambiguous' || terminal === 'displaced') {
+                let throwAfterPublication = true;
+                configureAutomergeStoragePort({
+                    getDoc: (docId) => getCrdtDoc<Record<string, unknown>>(docId),
+                    getDocHeads: (docId) => Automerge.getHeads(getCrdtDoc(docId)!),
+                    getSemanticMessage: () => undefined,
+                    hasDoc: (docId) => getCrdtDoc(docId) !== undefined,
+                    mutateDoc: ({ docId, changeFn, message, changedKeys, snapshotTransaction }) => {
+                        mutateCrdtDoc({ id: docId, changeFn, message, localSlots: changedKeys, snapshotTransaction });
+                        if (throwAfterPublication) {
+                            throwAfterPublication = false;
+                            throw new Error('Controlled failure after own split Undo publication');
+                        }
+                    },
+                });
+            }
+            try {
+                if (terminal === 'warning' || terminal === 'ambiguous' || terminal === 'displaced') {
+                    await expect(undo()).rejects.toSatisfy(isAppActionCommittedError);
+                } else {
+                    expect((await undo()).headConsumed).toBe(true);
+                }
+            } finally {
+                restoreEffect.mockRestore();
+                registerCrdtStorageRuntime();
+            }
+            expect(heldEntry.inverseAction.payload.retiredTakeLanes).toBe(capture);
+            expect(heldEntry.redoAction.payload.retiredTakeLanes).toBe(capture);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(undoHistoryStore.value?.future).toHaveLength(grouped ? 2 : 1);
+            if (terminal === 'rollback' || terminal === 'displaced') {
+                expect(intercepted).toBe(true);
+                expect(capture).toEqual([]);
+                return;
+            }
+            expect(capture).toEqual([{ lane: laterLane, laneIndex: 0, retiredTakeIds: [laterTake.id] }]);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(
+                    grouped ? 2 : 1
+                )
+            );
+            reloadSavedProject();
+            await redo();
+            expect(takeLaneStore.value?.lanes).toEqual([laterLane]);
+            expectValidProject();
+        }
+    );
 
     it.each([false, true])(
         'four repairs: keeps a paired remove capture unchanged when Redo aborts at commit grouped=%s',

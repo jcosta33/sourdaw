@@ -36,7 +36,7 @@ vi.mock('#/infra/release/deviceReleaseAdmission', () => ({
 vi.mock('#/modules/PluginHost/useCases', () => ({
     compileFaustDSP: vi.fn(),
     createFaustNode: vi.fn(),
-    isFaustModule: vi.fn(() => false),
+    isFaustModule: (type: string) => WITHHELD_TYPES.has(type),
     // The `withheld-instrument` arm below rides on this, which is the same
     // question `isOfflineInstrumentDevice` asks of any non-builtin id.
     isFaustInstrumentModule: (deviceType: string) => deviceType === 'withheld-instrument',
@@ -87,7 +87,9 @@ describe('a withheld device in the offline chain', () => {
         const ctx = makeContext(0.05);
         const devices = [device('withheld-effect', 'd-withheld'), device('fermenter', 'd-fermenter')];
 
-        const entries = await buildDeviceChain(ctx, devices, ctx.createGain(), ctx.createGain());
+        const entries = await buildDeviceChain(ctx, devices, ctx.createGain(), ctx.createGain(), {
+            refuseFailedFaustDevices: true,
+        });
 
         // Both entries are present — the withheld one is a silent stand-in, not
         // a drop — and the note surface is on exactly the device that voices.

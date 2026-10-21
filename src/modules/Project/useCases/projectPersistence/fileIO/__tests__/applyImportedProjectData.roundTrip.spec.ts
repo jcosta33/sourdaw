@@ -137,7 +137,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
-
+    captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectRevision: vi.fn(),
     compactProject,
     createCrdtDoc: vi.fn(),

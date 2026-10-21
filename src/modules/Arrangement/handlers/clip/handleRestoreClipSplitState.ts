@@ -1,3 +1,4 @@
+import { captureDurableDocumentWitness, captureProjectMutationAuthorization, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { midiClipSplitStateMatches } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
@@ -105,7 +106,24 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         if (!clipSplitStateMatches(action)) {
             return { status: 'conflict' };
         }
-        return restoreClipSplitState(action.payload) ? { status: 'written' } : { status: 'conflict' };
+        const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
+        const documentBeforeReplay = capture ? captureDurableDocumentWitness() : null;
+        const ownsPublication = capture ? captureProjectMutationAuthorization() : null;
+        ownsPublication?.();
+        const stagedRetired = capture ? [...capture] : undefined;
+        const payload = stagedRetired ? { ...action.payload, retiredTakeLanes: stagedRetired } : action.payload;
+        if (!restoreClipSplitState(payload)) {
+            return { status: 'conflict' };
+        }
+        const installCapture = () => {
+            if (capture && stagedRetired && getCrdtDoc('root') &&
+                captureDurableDocumentWitness() !== documentBeforeReplay && ownsPublication?.()) {
+                capture.splice(0, capture.length, ...stagedRetired);
+            }
+        };
+        return capture
+            ? { status: 'written', afterCommit: installCapture, afterAmbiguousCommit: installCapture }
+            : { status: 'written' };
     },
     describe: () => ({ label: 'Restore clip split state', inverseAction: null }),
     previewExecution: 'isolated-project',
