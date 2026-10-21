@@ -1,0 +1,27 @@
+src/modules/Arrangement/useCases/clipEditing/slipClipContent.ts
+  s_1c08b47ac3792f::t_1d2ae5d996af5c 46-52,57-59,61
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_1c08b47ac3792f::t_4edc31aa9d7539 311-313
+src/modules/Transport/useCases/scheduling/__tests__/processLiveYeastTrackBlock.spec.ts
+  s_1c08b47ac3792f::t_c641c29e9ed081 174-179,183
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_1c08b47ac3792f::t_342e8a81e92bf9 4194-4196,4224-4226
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_1c08b47ac3792f::t_7f298b450bef64 691
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cea19939ec565996d1e7fe17eb315aa90de560c9",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
