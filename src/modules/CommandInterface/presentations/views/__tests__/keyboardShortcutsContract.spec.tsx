@@ -278,18 +278,82 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             expect(canvasEvent.defaultPrevented).toBe(true);
         });
 
-        it('still delegates non-Tab and modified Tab shortcuts from controls', () => {
+        it('still delegates unrelated and modified shortcuts from controls', () => {
             openSessionWithCommandHandlers();
             mocks.handleKeydown.mockReturnValue(true);
             render(<Host />);
             const button = mount(document.createElement('button'));
 
-            const spaceEvent = dispatchKey(button, { key: ' ' });
+            const unrelatedEvent = dispatchKey(button, { key: 'b' });
             const modifiedTabEvent = dispatchKey(button, { key: 'Tab', ctrlKey: true });
 
             expect(mocks.handleKeydown).toHaveBeenCalledTimes(2);
-            expect(spaceEvent.defaultPrevented).toBe(true);
+            expect(unrelatedEvent.defaultPrevented).toBe(true);
             expect(modifiedTabEvent.defaultPrevented).toBe(true);
+        });
+    });
+
+    describe('native button activation', () => {
+        it.each(['Enter', ' '])('leaves unmodified %s to a focused button', (key) => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            button.focus();
+
+            const event = dispatchKey(button, { key });
+
+            expect(mocks.handleKeydown).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it.each(['Enter', ' '])('routes modified %s from a focused button', (key) => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            button.focus();
+
+            const event = dispatchKey(button, { key, metaKey: true });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ key, mod: true, isInput: false })
+            );
+            expect(event.defaultPrevented).toBe(true);
+        });
+
+        it('continues routing unrelated keys and unmarked workspace Enter and Space', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            const canvas = mount(document.createElement('canvas'));
+            button.focus();
+
+            const unrelated = dispatchKey(button, { key: 'b' });
+            const workspaceEnter = dispatchKey(canvas, { key: 'Enter' });
+            const workspaceSpace = dispatchKey(document.body, { key: ' ' });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledTimes(3);
+            expect(unrelated.defaultPrevented).toBe(true);
+            expect(workspaceEnter.defaultPrevented).toBe(true);
+            expect(workspaceSpace.defaultPrevented).toBe(true);
+        });
+
+        it('keeps modal and input gates and keyup cleanup', () => {
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            const input = mount(document.createElement('input'));
+            const dialog = mount(document.createElement('div'));
+            dialog.setAttribute('role', 'dialog');
+            const dialogButton = dialog.appendChild(document.createElement('button'));
+
+            dispatchKey(input, { key: 'Enter' });
+            expect(lastIsInput()).toBe(true);
+            dispatchKey(dialogButton, { key: 'Enter' });
+            expect(lastIsInput()).toBe(true);
+            dialogButton.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+            expect(mocks.handleKeyup).toHaveBeenCalledExactlyOnceWith('Enter');
         });
     });
 
