@@ -1,0 +1,33 @@
+src/modules/Arrangement/useCases/toggleTrackState/toggleInputMonitoring.ts
+  s_59e31a5c6f3e31::t_482acbfbfa5280 33-34
+  s_59e31a5c6f3e31::t_f42960addaa919 1
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/refusedOffGesture.integration.spec.ts
+  s_59e31a5c6f3e31::t_da0f06d9243151 9,20-21
+  s_59e31a5c6f3e31::t_486bad203fcf23 1-8,10-19,22-51,54-55,57-120,134,153-154,166-168,177,244
+  s_59e31a5c6f3e31::t_dc1604d5f2cd39 52,56,185-188,191,206
+  s_59e31a5c6f3e31::t_9766c1a4eb4b48 179-184,189-190,192-205,207-243
+  s_59e31a5c6f3e31::t_7f1f53de76a8fa 53,121-133,135-152,155-165,169-176,178
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/toggleInputMonitoring.spec.ts
+  s_59e31a5c6f3e31::t_cfd42501db02c3 72,74-75,90
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setInputMonitoring.spec.ts
+  s_59e31a5c6f3e31::t_cfd42501db02c3 66,69-70,84-85
+src/modules/Arrangement/useCases/setTrackGainPan/setInputMonitoring.ts
+  s_59e31a5c6f3e31::t_482acbfbfa5280 18-19
+  s_59e31a5c6f3e31::t_96af09411b5067 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3dfb4b1d3aaba7d171e0f2f35c443e1c34775594",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
