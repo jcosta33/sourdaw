@@ -1,0 +1,44 @@
+src/modules/AiRuntime/useCases/agentReference/findAgentReferenceNameSpans.ts
+  s_1c08b47ac3792f::t_87c0ded6c85f2e 242-248
+  s_1c08b47ac3792f::t_96ee23a8080e08 51-53,69-72,74
+  s_1c08b47ac3792f::t_41e0799a83db2c 111-119,122-126,129-137
+  s_1c08b47ac3792f::t_f87784c460b4ff 267,273-282
+  s_1c08b47ac3792f::t_128e48cd66a12c 231-235
+  s_1c08b47ac3792f::t_bdc00ae66e29e2 187-188,191,198-203
+  s_1c08b47ac3792f::t_514a8c2c4a09ea 15-17
+  s_1c08b47ac3792f::t_dcd16f53de4075 26-30
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_1c08b47ac3792f::t_4806d9be750a33 1763-1764
+  s_1c08b47ac3792f::t_f4a0fb46f19f59 1718-1762,1765-1770
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_1c08b47ac3792f::t_14820c5a6a82fd 2190-2341,2345-2428
+  s_1c08b47ac3792f::t_056930688c7913 2342-2344
+  s_1c08b47ac3792f::t_dd5b5da8dca868 2429-2449
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_0c2d6a835a4819 32-39
+  s_1c08b47ac3792f::t_34ce8298b0bd65 522-523,526
+  s_1c08b47ac3792f::t_7fe985d741a0a6 297-303
+  s_1c08b47ac3792f::t_91e7d890b2baa3 225-278,281-283,289-294
+  s_1c08b47ac3792f::t_f4d9c5c6d226c2 310-311,313-315
+  s_1c08b47ac3792f::t_3fd39c9cab3bd8 296,559-562,567
+  s_1c08b47ac3792f::t_c694494a84b97a 50-57
+  s_1c08b47ac3792f::t_61b51bbb7f380e 516
+  s_1c08b47ac3792f::t_068985804bd6e1 540-541,545
+  s_1c08b47ac3792f::t_c9bb0f33770455 295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34bb3f71b6b9491c47fda1a40e3dc7530313df02",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
