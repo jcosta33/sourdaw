@@ -7,6 +7,7 @@ pub mod db;
 pub mod denormal;
 pub mod lifecycle;
 pub mod oversample;
+pub mod pitch;
 pub mod resonance;
 pub mod sanitize;
 pub mod time_stretch;

@@ -368,14 +368,10 @@ impl ScoringEngine {
                     .extract(&mut self.analysis_window, window_len);
                 normalize(&mut self.analysis_window);
 
-                // Run YIN (primary)
-                let (yin_freq, yin_conf) = self.yin.detect(&self.analysis_window);
-
-                // Run MPM (cross-check) on YIN's autocorrelation — one FFT
-                // pair per analysis tick instead of two.
-                let (mpm_freq, mpm_clarity) = self
-                    .mpm
-                    .detect_from_autocorr(&self.analysis_window, &self.yin.autocorr);
+                // Both detectors consume one cached autocorrelation per tick.
+                let ((yin_freq, yin_conf), (mpm_freq, mpm_clarity)) = self
+                    .yin
+                    .detect_with_mpm(&self.analysis_window, &mut self.mpm);
 
                 // Use YIN as primary; use MPM as fallback if YIN confidence is low
                 let (freq, conf) = if yin_conf > 0.5 {
