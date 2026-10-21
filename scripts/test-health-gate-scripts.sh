@@ -1032,8 +1032,8 @@ expect(
     'required end-to-end jobs must run only the selected validated spec groups'
 );
 expect(
-    stepNamed(nightlyUnit, 'Run shard')?.run === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
-    'nightly unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
+    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun,
+    'nightly unit shard must delegate its exact matrix shard through the same isolated account as the required unit suite'
 );
 expect(
     stepNamed(nightlyE2e, 'Run shard')?.run === 'pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob',
@@ -1190,8 +1190,8 @@ for (const [file, parsed] of Object.entries(workflowsByFile)) {
     }
 }
 expect(
-    stepNamed(nightlyUnit, 'Run shard')?.run === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
-    'nightly unit Run shard must run through the test:run wrapper that applies the census exclusion'
+    stepNamed(nightlyUnit, 'Run shard')?.run === unitRun,
+    'nightly unit Run shard must reach the test:run wrapper that applies the census exclusion through the isolated account'
 );
 expect(
     unitFailureWarning?.if === shardFailureCondition,
