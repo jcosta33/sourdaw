@@ -104,6 +104,16 @@ describe('buildLevainZoneTablesInWorker', () => {
         expect(garbling.terminated).toBe(true);
     });
 
+    it('rejects when the Worker answer cannot be deserialized, and terminates it', async () => {
+        const pending = buildLevainZoneTablesInWorker(REQUEST);
+        const worker = await startedWorker();
+
+        worker.onmessageerror?.({ data: null } as MessageEvent<unknown>);
+
+        expect(worker.terminated).toBe(true);
+        await expect(pending).rejects.toThrow('Levain zone-table worker failed: it sent an unreadable message');
+    });
+
     it('stops waiting at once when the load aborts, terminating the Worker', async () => {
         const controller = new AbortController();
         const reason = new Error('superseded');

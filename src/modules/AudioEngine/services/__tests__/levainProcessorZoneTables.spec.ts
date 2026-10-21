@@ -540,6 +540,55 @@ describe('shipped LevainProcessor zone-table staging', () => {
         }
     });
 
+    it('drops a zone-table chunk that reaches a follower after its owner failed, and the follower stays live', async () => {
+        const create = await processorFactory();
+        const request: LevainZoneTableRequest = { zones: [WIDE_ZONE], numArticulations: 1, numMics: 1 };
+        const owner = create();
+        const follower = create();
+        const sample = [sine(SAMPLE_FRAMES, 0.01)];
+        stageBankContents(owner, 1, 'owner-fails', [WIDE_ZONE], sample);
+        stageBankContents(follower, 2, 'owner-fails', [WIDE_ZONE], sample);
+        const deliveries: Array<Record<string, unknown> & { type: string }> = [];
+        deliverZoneTables((data) => deliveries.push(data), 2, request, computeLevainZoneTables(wasmModule, request));
+        expect(deliveries.map(({ type }) => type)).toEqual([
+            'reserveZoneTables',
+            'zoneTableChunk',
+            'zoneTableChunk',
+            'sealZoneTables',
+        ]);
+        const written = (): number => posted(follower).filter(({ type }) => type === 'zoneTableChunkWritten').length;
+        // The follower's loader has posted its tables; the worklet has read the reservation and the LUT chunk.
+        send(follower, deliveries[0]);
+        send(follower, deliveries[1]);
+        expect(written()).toBe(1);
+
+        // The owner fails (it seals tables it never reserved), which rejects every follower of its bank.
+        send(owner, { type: 'sealZoneTables', loadToken: 1 });
+        const refusal = 'Levain DSP could not seal zone tables that are incomplete';
+        expect(bankErrors(owner)).toEqual([refusal]);
+        expect(bankErrors(follower)).toEqual([refusal]);
+        const engine = engineOf(follower);
+        const memory = follower._memory;
+        if (!memory) {
+            throw new TypeError('Expected the engine memory');
+        }
+        const window = (): number[] => [
+            ...new Uint32Array(memory.buffer, engine.zone_table_write_ptr(), engine.zone_table_write_words()),
+        ];
+        const windowBefore = window();
+
+        // The arena chunk the follower's loader posted before it heard is now stale.
+        send(follower, deliveries[2]);
+
+        expect(window()).toEqual(windowBefore);
+        expect(written()).toBe(1);
+        expect(posted(follower).filter(({ type }) => type === 'error')).toEqual([]);
+        expect(bankErrors(follower)).toEqual([refusal]);
+        stageBankContents(follower, 3, 'after-owner-failed', [WIDE_ZONE], sample);
+        stageAndCommit(follower, 3, request);
+        expect(loaded(follower, 3)).toBe(true);
+    });
+
     it('retires a reservation an abort catches mid-staging and frees it in the paced release', async () => {
         const zones = largestBankZones();
         const request: LevainZoneTableRequest = { zones, numArticulations: 32, numMics: 8 };

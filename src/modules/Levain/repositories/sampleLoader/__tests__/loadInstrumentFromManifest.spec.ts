@@ -1980,7 +1980,7 @@ describe('loadInstrumentFromManifest', () => {
             });
         });
 
-        it('stops waiting for the builder at once on an abort, passing it the signal', async () => {
+        it('stops waiting for the builder at once on an abort, and tells the builder to stop', async () => {
             const building = Promise.withResolvers<{ lut: Uint32Array; arena: Uint32Array }>();
             buildZoneTables.mockReturnValueOnce(building.promise);
             const port = makePort();
@@ -1998,12 +1998,221 @@ describe('loadInstrumentFromManifest', () => {
             await vi.waitFor(() => {
                 expect(buildZoneTables).toHaveBeenCalledTimes(1);
             });
-            expect(buildZoneTables.mock.calls[0]![1]).toBe(controller.signal);
+            const builderSignal = buildZoneTables.mock.calls[0]![1];
+            expect(builderSignal?.aborted).toBe(false);
             controller.abort(reason);
 
             await expect(pending).rejects.toBe(reason);
+            expect(builderSignal?.reason).toBe(reason);
             expect(postedTypes(port)).not.toContain('reserveZoneTables');
             expect(postedTypes(port)).toContain('abortSampleBank');
+        });
+
+        it('hands the builder each zone of a bank of several articulations and mics with the ids and ranges its addZone carries', async () => {
+            const zone = (file: string, span: Record<string, number>): Record<string, unknown> => ({
+                ...MANIFEST.articulations[0]!.zones[0]!,
+                file,
+                ...span,
+            });
+            const manifest = {
+                ...MANIFEST,
+                micPositions: ['close', 'decca-tree', 'room'],
+                articulations: [
+                    {
+                        type: 'sustain',
+                        id: 0,
+                        zones: [
+                            zone('sus-close.wav', {
+                                micId: 0,
+                                rootNote: 48,
+                                loKey: 36,
+                                hiKey: 59,
+                                loVel: 0,
+                                hiVel: 63,
+                            }),
+                            zone('sus-room.wav', {
+                                micId: 2,
+                                rootNote: 72,
+                                loKey: 60,
+                                hiKey: 84,
+                                loVel: 64,
+                                hiVel: 127,
+                            }),
+                        ],
+                    },
+                    {
+                        type: 'spiccato',
+                        id: 7,
+                        zones: [
+                            zone('spic-tree.wav', {
+                                micId: 1,
+                                rootNote: 50,
+                                loKey: 40,
+                                hiKey: 52,
+                                loVel: 16,
+                                hiVel: 95,
+                            }),
+                            zone('spic-room.wav', {
+                                micId: 2,
+                                rootNote: 64,
+                                loKey: 53,
+                                hiKey: 70,
+                                loVel: 96,
+                                hiVel: 127,
+                            }),
+                        ],
+                    },
+                    {
+                        type: 'pizzicato',
+                        id: 10,
+                        zones: [
+                            zone('pizz-close.wav', {
+                                micId: 0,
+                                rootNote: 45,
+                                loKey: 30,
+                                hiKey: 47,
+                                loVel: 32,
+                                hiVel: 111,
+                            }),
+                            zone('pizz-tree.wav', {
+                                micId: 1,
+                                rootNote: 67,
+                                loKey: 61,
+                                hiKey: 77,
+                                loVel: 0,
+                                hiVel: 31,
+                            }),
+                        ],
+                    },
+                ],
+            };
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(manifest) })
+            );
+            const port = makePort();
+
+            await loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                buildZoneTables,
+                basePath: '/spans',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+
+            const addZoneSpans = postedMessages(port)
+                .filter((message) => message.type === 'addZone')
+                .map(({ zoneId, articulationId, micId, loKey, hiKey, loVel, hiVel }) => ({
+                    zoneId,
+                    articulationId,
+                    micId,
+                    loKey,
+                    hiKey,
+                    loVel,
+                    hiVel,
+                }));
+            expect(addZoneSpans.map(({ zoneId, articulationId, micId }) => [zoneId, articulationId, micId])).toEqual([
+                [0, 0, 0],
+                [1, 0, 2],
+                [2, 7, 1],
+                [3, 7, 2],
+                [4, 10, 0],
+                [5, 10, 1],
+            ]);
+            expect(buildZoneTables).toHaveBeenCalledTimes(1);
+            const [request] = buildZoneTables.mock.calls[0]!;
+            expect(request.zones).toEqual(addZoneSpans);
+            expect(request).toMatchObject({ numArticulations: 11, numMics: 3 });
+        });
+
+        describe('a load that uploads no PCM, ended while its builder works', () => {
+            /** A follower or ready load of its own bank: it posts no chunk before its tables. */
+            function loadWithoutPcm(port: FakePort, name: string, signal?: AbortSignal): Promise<unknown> {
+                return loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    buildZoneTables,
+                    basePath: `/${name}`,
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                    signal,
+                });
+            }
+
+            /** Tables of more chunks than the in-flight budget: six LUT chunks and one arena chunk. */
+            function tablesOfManyChunks(): { lut: Uint32Array; arena: Uint32Array } {
+                return { lut: new Uint32Array(6 * 2 * LEVAIN_ZONE_TABLE_CHUNK_ENTRIES), arena: new Uint32Array(1) };
+            }
+
+            function tableChunkCount(port: FakePort): number {
+                return postedTypes(port).filter((type) => type === 'zoneTableChunk').length;
+            }
+
+            type HeldLoad = {
+                building: PromiseWithResolvers<{ lut: Uint32Array; arena: Uint32Array }>;
+                port: FakePort;
+                pending: Promise<unknown>;
+                loadToken: unknown;
+                builderSignal: AbortSignal | undefined;
+            };
+
+            /** Start a load that uploads no PCM on a processor that has stopped answering chunks, held at its build. */
+            async function loadHeldAtItsBuild(name: string, signal?: AbortSignal): Promise<HeldLoad> {
+                const building = Promise.withResolvers<{ lut: Uint32Array; arena: Uint32Array }>();
+                buildZoneTables.mockReturnValueOnce(building.promise);
+                const port = makePort({ uploadRequired: false, chunkAnswers: 'never' });
+                const pending = loadWithoutPcm(port, name, signal);
+                void pending.catch(() => {});
+                await vi.waitFor(() => {
+                    expect(buildZoneTables).toHaveBeenCalledTimes(1);
+                });
+                const loadToken = postedMessages(port)[0]!.loadToken;
+                return { building, port, pending, loadToken, builderSignal: buildZoneTables.mock.calls[0]![1] };
+            }
+
+            it('rejects as processor ended and stages nothing when the processor is disposed during the build', async () => {
+                const { building, port, pending, builderSignal } = await loadHeldAtItsBuild('ended-during-build');
+
+                port.emit({ type: 'disposed' });
+
+                await expect(pending).rejects.toThrow('Levain processor ended during sample-bank loading');
+                expect(builderSignal?.aborted).toBe(true);
+                building.resolve(tablesOfManyChunks());
+                await pause(20);
+                expect(postedTypes(port)).not.toContain('reserveZoneTables');
+                expect(tableChunkCount(port)).toBe(0);
+            }, 2000);
+
+            it('rejects with the refusal and stages nothing when its sampleBankError arrives during the build', async () => {
+                const { building, port, pending, loadToken, builderSignal } =
+                    await loadHeldAtItsBuild('refused-during-build');
+
+                port.emit({ type: 'sampleBankError', loadToken, message: 'Levain DSP rejected the zone' });
+
+                await expect(pending).rejects.toThrow('Levain sample-bank load failed: Levain DSP rejected the zone');
+                expect(builderSignal?.aborted).toBe(true);
+                building.resolve(tablesOfManyChunks());
+                await pause(20);
+                expect(postedTypes(port)).not.toContain('reserveZoneTables');
+                expect(tableChunkCount(port)).toBe(0);
+            }, 2000);
+
+            it('returns its chunk credits when the processor ends during the build, so a later load of more chunks than the budget completes', async () => {
+                const controller = new AbortController();
+                const { building, port, pending } = await loadHeldAtItsBuild('credits-after-end', controller.signal);
+                port.emit({ type: 'disposed' });
+                building.resolve(tablesOfManyChunks());
+                await pause(20);
+                // The device goes away too: its load is aborted.
+                controller.abort();
+                await Promise.allSettled([pending]);
+
+                buildZoneTables.mockResolvedValueOnce(tablesOfManyChunks());
+                const healthy = makePort({ uploadRequired: false });
+                await loadWithoutPcm(healthy, 'credits-healthy');
+
+                expect(tableChunkCount(healthy)).toBe(7);
+                expect(postedTypes(healthy)).toContain('commitSampleBank');
+            }, 2000);
         });
     });
 });
