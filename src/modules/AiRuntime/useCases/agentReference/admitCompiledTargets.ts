@@ -45,6 +45,8 @@ export type CompiledTargetAuthorityInput = {
     /** Every id the compiled list's own selectors excluded or protected. */
     compilerExcludedIds: ReadonlySet<string>;
     context: ProjectContext;
+    /** Objects this batch creates; a compiled selector resolved only objects that already exist. */
+    createdIds: ReadonlySet<string>;
     dependencyId?: string;
     /** Ids the batch's calls of this action bind to their other target arguments. */
     otherArgumentIds: readonly string[];
@@ -368,6 +370,14 @@ function resolveLikeDirectCall(
         dependencyId: input.dependencyId,
         excludedIds: excludedIds.filter((id) => id !== targetId),
     });
+    // An approximate name is not a reference the clause grounds: whether the selector's own terms
+    // are stated decides a clause whose only mention is one.
+    const groundsExactly = result.candidates.some((candidate) =>
+        candidate.evidence.some((evidence) => evidence !== 'fuzzy-name')
+    );
+    if (!groundsExactly) {
+        return 'none';
+    }
     if (result.status === 'resolved') {
         return 'target';
     }
@@ -398,7 +408,9 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): Comp
     if (input.clauseStart !== undefined) {
         text = getInstructionText(request, input.clauseStart, input.catalog);
     }
-    const setAside = [...new Set([...protectedIds, ...input.sendBusIds, ...input.otherArgumentIds])];
+    const setAside = [
+        ...new Set([...input.createdIds, ...protectedIds, ...input.sendBusIds, ...input.otherArgumentIds]),
+    ];
     const direct = resolveLikeDirectCall(input, text, setAside);
     if (direct === 'target') {
         return ADMITTED;

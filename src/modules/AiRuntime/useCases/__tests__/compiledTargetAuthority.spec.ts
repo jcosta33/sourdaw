@@ -271,6 +271,12 @@ describe('a compiled selector cannot replace a target the request names', () => 
 
         expectRefused(result, keys.id);
         expect(result.actions).toEqual([]);
+        // The direct route grounds Vocals here, so the compiled Keys is refused as that mismatch.
+        expect(result.rejections).toContainEqual({
+            index: 0,
+            name: 'setTrackGain',
+            reason: 'Provider target trackId does not match the uniquely grounded project reference',
+        });
     });
 
     it('refuses a gain selector for an unnamed track in the coordinated request', () => {
@@ -406,6 +412,31 @@ describe('a compiled selector cannot stand in for an object the same batch creat
         );
 
         expectRefused(result, keys.id);
+    });
+
+    it('grounds a selection sent to a bus the batch creates and the clause names', () => {
+        const result = compileAndBridge(
+            'Create a Plate Bus and send every audio track to the Plate Bus at -6 dB',
+            [
+                createPlateBusItem,
+                {
+                    id: 'send-audio-tracks',
+                    name: 'addSend',
+                    arguments: { busId: '$plate-bus', levelDb: -6 },
+                    selector: {
+                        targetArgument: 'trackId',
+                        entity: 'track',
+                        where: { kind: 'audio' },
+                        quantity: { unit: 'targets', exactly: 3 },
+                    },
+                    dependsOn: [createPlateBusItem.id],
+                },
+            ],
+            [vocals.id, drums.id, bass.id]
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([vocals.id, drums.id, bass.id]);
     });
 
     it('grounds an existing track the request names beside a track the batch creates', () => {
