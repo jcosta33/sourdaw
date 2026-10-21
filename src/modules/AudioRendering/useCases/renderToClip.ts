@@ -30,12 +30,18 @@ export type RenderToClipOutput = {
     audioBufferId: string;
 };
 
-// A render that carried a tail holds audio past the selection, so the clip spans
-// the buffer's own duration through the tempo map. A render with none holds the
-// selection exactly, but its frame count is rounded up to a whole sample, so
-// reading the end back from the buffer would land a hair past the musical end
-// and put duplicates off the grid.
+// A capped render may end before the selection even when a tail was requested.
+// Compare in frames so ordinary one-frame rounding keeps the musical endpoint.
+// A complete render with a tail spans the buffer; without one it ends on the grid.
 function resolveClipEndBeat(input: RenderToClipInput): number {
+    const sampleRate = input.buffer.sampleRate;
+    const startSamples = Math.round(readSecondsAtBeat({ beat: input.startBeat }) * sampleRate);
+    const requestedEndSamples = Math.round(readSecondsAtBeat({ beat: input.endBeat }) * sampleRate);
+    const renderedEndSamples = startSamples + input.buffer.length;
+    if (renderedEndSamples + 1 < requestedEndSamples) {
+        return readBeatAtSamples({ samples: renderedEndSamples, sampleRate });
+    }
+
     if (input.tailSeconds <= 0) {
         return input.endBeat;
     }

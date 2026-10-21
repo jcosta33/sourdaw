@@ -53,7 +53,7 @@ describe('renderToClip', () => {
     });
 
     it('writes the buffer into the cache, creates a clip on the target track, and records an undo entry', () => {
-        const buffer = { length: 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
+        const buffer = { length: 4 * 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
         mocks.addClip.mockReturnValue({ id: 'clip-new', trackId: 'track-1' });
 
         const result = renderToClip({
@@ -86,7 +86,7 @@ describe('renderToClip', () => {
     });
 
     it('creates a new audio track when targetTrackId is "new"', () => {
-        const buffer = { length: 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
+        const buffer = { length: 4 * 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
         mocks.addTrack.mockReturnValue({ id: 'track-fresh', name: 'Rendered', kind: 'audio' });
         mocks.addClip.mockReturnValue({ id: 'clip-fresh', trackId: 'track-fresh' });
 
@@ -107,6 +107,28 @@ describe('renderToClip', () => {
     });
 
     describe('a render that carried a tail', () => {
+        it('ends at the returned audio when the offline cap cuts off the selection across a tempo change', () => {
+            setTempoMap([
+                { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-b', beat: 8, tempo: 60, curve: 'instant' },
+            ]);
+
+            // Beat 4 starts at 2 s. The cap ends after the change at beat 8
+            // (4 s), where each remaining second is one beat.
+            const buffer = createBufferMetadata(2 ** 30);
+            const expectedEndBeat = 8 + (2 + buffer.duration - 4);
+            const ends = placeRender({
+                startBeat: 4,
+                endBeat: 50_000,
+                tailSeconds: 2,
+                buffer,
+            });
+
+            expect(ends.first).toBeCloseTo(expectedEndBeat, 5);
+            expect(ends.redo).toBeCloseTo(expectedEndBeat, 5);
+            expect(ends.first).toBeLessThan(50_000);
+        });
+
         it('spans the buffer at a tempo other than 120', () => {
             setFlatTempo(133);
 
@@ -176,6 +198,21 @@ describe('renderToClip', () => {
     });
 
     describe('a render that carried no tail', () => {
+        it('ends at the returned audio when the offline cap cuts off the selection', () => {
+            const buffer = createBufferMetadata(2 ** 30);
+            const expectedEndBeat = (buffer.length / SAMPLE_RATE) * 2;
+            const ends = placeRender({
+                startBeat: 0,
+                endBeat: 50_000,
+                tailSeconds: 0,
+                buffer,
+            });
+
+            expect(ends.first).toBeCloseTo(expectedEndBeat, 5);
+            expect(ends.redo).toBeCloseTo(expectedEndBeat, 5);
+            expect(ends.first).toBeLessThan(50_000);
+        });
+
         it('keeps the exact musical end although the buffer length is rounded up to a whole sample', () => {
             setFlatTempo(133);
 
@@ -278,4 +315,16 @@ function createRenderedBuffer(lengthSamples: number): AudioBuffer {
         copyFromChannel: () => undefined,
         copyToChannel: () => undefined,
     };
+}
+
+function createBufferMetadata(lengthSamples: number): AudioBuffer {
+    return {
+        duration: lengthSamples / SAMPLE_RATE,
+        length: lengthSamples,
+        numberOfChannels: 1,
+        sampleRate: SAMPLE_RATE,
+        getChannelData: () => {
+            throw new Error('endpoint placement must not read PCM');
+        },
+    } as unknown as AudioBuffer;
 }
