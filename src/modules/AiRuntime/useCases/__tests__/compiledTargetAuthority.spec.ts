@@ -664,6 +664,31 @@ describe('a selection never reaches a track the request excepts', () => {
 });
 
 describe('a name stated only inside a protection picks no target', () => {
+    it('refuses a set member picked by a name the request states only inside a track it protects', () => {
+        const bassDiTrack = createTrack({ id: 'track-bass-di', name: 'Bass DI' });
+        const result = compileAndBridge(
+            'create VCA group named Low but leave Bass DI alone',
+            [
+                {
+                    id: 'group-bass',
+                    name: 'createVcaGroup',
+                    arguments: { name: 'Low' },
+                    selector: {
+                        targetArgument: 'trackIds',
+                        entity: 'track',
+                        where: { name: 'Bass' },
+                        quantity: { unit: 'targets', exactly: 1 },
+                    },
+                },
+            ],
+            [],
+            { ...projectContext, tracks: [vocals, keys, drums, bass, bassDiTrack, master] }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
+    });
+
     it('refuses a track picked by a name the request states only in the clip it protects', () => {
         const bassWithVerse: ProjectTrack = {
             ...bass,
