@@ -1,0 +1,30 @@
+release/open-source-inventory.json
+  s_ba8dd89de9aac7::t_9f6420c8353fab 2130-2132
+  s_1c08b47ac3792f::t_e7bd3905c71050 2128-2129
+scripts/aptWithoutMicrosoftFeed.sh
+  s_ba8dd89de9aac7::t_6d26390bdd6969 22-24,33,36-42,51,73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "409d55a45c1630e4d87515cb8e4f267b01bf62d1",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
