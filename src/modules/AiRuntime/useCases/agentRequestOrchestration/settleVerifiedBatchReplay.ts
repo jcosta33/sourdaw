@@ -1,4 +1,4 @@
-import { createVersionedCommandReceipt, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
+import { createVersionedCommandReceipt, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
 import { updateChatMessage } from '../../stores/chatStore';
 import {
@@ -38,14 +38,16 @@ function restoreVerifiedExecutions(
     const current = getPendingActionConfirmation(confirmation.id) ?? confirmation;
     const recordedCommandIds = new Set(current.executedActions.map((execution) => execution.commandId));
     const approvedLabels = confirmedBatchOutcomeSupport.getApprovalLabelsByCommandId(confirmation);
+    const approvedBatch = confirmation.approvalSnapshot.commandBatch;
+    const parsedBatch = approvedBatch
+        ? parseVersionedCommandBatchEnvelope(approvedBatch.serialized, approvedBatch.authority)
+        : null;
     const approvedCommands = new Map(
-        (confirmation.approvalSnapshot.commandEnvelopes ?? []).flatMap((serialized) => {
-            const parsed = parseVersionedCommandEnvelope(serialized);
-            if (parsed.status !== 'valid') {
-                return [];
-            }
-            return [[parsed.envelope.commandId, parsed.envelope] as const];
-        })
+        parsedBatch?.status === 'valid' &&
+            parsedBatch.envelope.runId === receipt.runId &&
+            parsedBatch.envelope.batchId === receipt.batchId
+            ? parsedBatch.envelope.commands.map((command) => [command.commandId, command] as const)
+            : []
     );
     for (const [index, command] of receipt.commandOutcomes.entries()) {
         if (

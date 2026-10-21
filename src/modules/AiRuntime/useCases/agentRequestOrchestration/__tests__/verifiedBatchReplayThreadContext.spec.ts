@@ -192,7 +192,7 @@ beforeEach(() => {
 afterEach(resetThread);
 
 describe('verified replay settlement read by the planner thread', () => {
-    it('restores approved metadata in the real receipt presentation without replacing a rich sibling', async () => {
+    it('presents canonical batch metadata despite a divergent valid standalone copy and preserves a rich sibling', async () => {
         const device = {
             type: 'addDevice',
             payload: { trackId: 'track-a', deviceType: 'builtin-compressor', deviceId: 'device-restored' },
@@ -212,14 +212,42 @@ describe('verified replay settlement read by the planner thread', () => {
             outcome: 'committed',
         } satisfies PendingAppActionConfirmation['executedActions'][number];
         recordPendingActionExecution({ confirmationId: replay.confirmation.id, execution: richExecution });
-        const serialized = replay.confirmation.approvalSnapshot.commandEnvelopes?.[1];
-        if (!serialized) {
+        const batch = replay.confirmation.approvalSnapshot.commandBatch;
+        if (!batch) {
+            throw new Error('Expected approved command batch.');
+        }
+        const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+        if (parsed.status !== 'valid') {
+            throw new Error(parsed.reason);
+        }
+        const approved = parsed.envelope.commands[1];
+        if (!approved) {
             throw new Error('Expected approved device command.');
         }
-        const approved = parseVersionedCommandEnvelope(serialized);
-        if (approved.status !== 'valid') {
-            throw new Error(approved.reason);
+        const standalone = serializeVersionedCommandEnvelope({
+            ...createVersionedCommandEnvelope({
+                action: { ...device, payload: { ...device.payload, deviceId: 'device-standalone' } },
+                applicationAssignedIds: [{ argument: 'deviceId', value: 'device-standalone' }],
+                availableDeviceVersions: {},
+                expectedEffect: approved.expectedEffect,
+                normalizedProjectRevision: approved.normalizedProjectRevision,
+                objectReferences: [
+                    { argument: 'trackId', id: 'track-a', scope: 'stable' },
+                    { argument: 'deviceId', id: 'device-standalone', scope: 'stable' },
+                ],
+                parameterUnits: [],
+                reason: approved.reason,
+                time: [],
+            }),
+            commandId: approved.commandId,
+            issuedAt: approved.issuedAt + 1_000,
+        });
+        expect(parseVersionedCommandEnvelope(standalone).status).toBe('valid');
+        const standaloneCommands = replay.confirmation.approvalSnapshot.commandEnvelopes;
+        if (!standaloneCommands) {
+            throw new Error('Expected standalone command copies.');
         }
+        standaloneCommands[1] = standalone;
 
         await settleVerifiedBatchReplay(replay);
         await settleVerifiedBatchReplay(replay);
@@ -229,19 +257,66 @@ describe('verified replay settlement read by the planner thread', () => {
             throw new Error('Expected restored confirmation.');
         }
         const presentation = projectSectionRenderConfirmation({ confirmation: restored });
-        expect(presentation.receipt).toContain(`Command: v1 ${approved.envelope.commandId}`);
-        expect(presentation.receipt).toContain(`commandId=${approved.envelope.commandId}, objectId=device-restored`);
-        expect(presentation.receipt).toContain(`issuedAt=${String(approved.envelope.issuedAt)}`);
+        expect(presentation.receipt).toContain(`Command: v1 ${approved.commandId}`);
+        expect(presentation.receipt).toContain(`commandId=${approved.commandId}, objectId=device-restored`);
+        expect(presentation.receipt).toContain(`issuedAt=${String(approved.issuedAt)}`);
         expect(restored.executedActions).toHaveLength(2);
         expect(restored.executedActions[0]).toEqual(richExecution);
         expect(restored.executedActions[1]?.applicationAssigned).toEqual({
             ids: [
-                { field: 'commandId', value: approved.envelope.commandId },
+                { field: 'commandId', value: approved.commandId },
                 { field: 'objectId', value: 'device-restored' },
             ],
-            timestamps: [{ field: 'issuedAt', value: approved.envelope.issuedAt }],
+            timestamps: [{ field: 'issuedAt', value: approved.issuedAt }],
         });
     });
+
+    it.each(['missing', 'invalid', 'run-mismatch', 'batch-mismatch', 'authority-mismatch'] as const)(
+        'keeps minimal reconstruction when the canonical batch is %s despite a valid standalone copy',
+        async (state) => {
+            const replay = createReplay({ id: state, actions: [TEMPO], status: 'committed' });
+            const snapshot = replay.confirmation.approvalSnapshot;
+            const batch = snapshot.commandBatch;
+            const standalone = snapshot.commandEnvelopes?.[0];
+            if (!batch || !standalone) {
+                throw new Error('Expected canonical batch and standalone command.');
+            }
+            expect(parseVersionedCommandEnvelope(standalone).status).toBe('valid');
+            const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
+            if (parsed.status !== 'valid') {
+                throw new Error(parsed.reason);
+            }
+            if (state === 'missing') {
+                snapshot.commandBatch = undefined;
+            } else if (state === 'invalid') {
+                batch.serialized = 'invalid batch';
+            } else if (state === 'authority-mismatch') {
+                batch.authority.projectId = 'another-project';
+            } else {
+                const envelope = { ...parsed.envelope };
+                if (state === 'run-mismatch') {
+                    envelope.runId = 'another-run';
+                } else {
+                    envelope.batchId = 'another-batch';
+                }
+                batch.serialized = JSON.stringify(envelope);
+                expect(parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority).status).toBe('valid');
+            }
+
+            await settleVerifiedBatchReplay(replay);
+
+            const restored = getPendingActionConfirmation(replay.confirmation.id);
+            expect(restored?.executedActions).toHaveLength(1);
+            expect(restored?.executedActions[0]).toEqual({
+                actionType: 'setTempo',
+                commandId: replay.receipt.commandOutcomes[0]?.commandId,
+                label: 'Approved setTempo 1',
+                executionKind: 'project',
+                affectedIds: [...(replay.receipt.commandOutcomes[0]?.affectedIds ?? [])],
+                outcome: 'committed',
+            });
+        }
+    );
 
     it('restores schema metadata required by the real committed section-render retry admission', async () => {
         const action = {
