@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
-import { desktopListen, isDesktopRuntime } from '#/utils/desktopBridge';
+import { desktopListen } from '#/utils/desktopBridge';
+import { getPlatformCapabilities } from '#/utils/platformCapabilities';
 
 import { type MidiInputInfo, type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
@@ -275,7 +276,7 @@ type InitWebMidiInput = {
 };
 
 export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<boolean> {
-    const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
+    const capabilities = getPlatformCapabilities();
     const state = getState();
 
     if (!state.isSupported) {
@@ -284,8 +285,9 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
     }
 
     const initGeneration = claimInitGeneration();
+    let webMidiFailure: string | null = null;
 
-    if (webMidiSupported) {
+    if (capabilities.webMidiApiPresent) {
         try {
             const access = await navigator.requestMIDIAccess({ sysex: false });
             if (!isCurrentInit(initGeneration)) {
@@ -322,11 +324,12 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
 
             return true;
         } catch (error) {
+            webMidiFailure = enumerationFailureMessage(error);
             logger.warn('[MIDI] Web MIDI failed, trying native fallback:', error);
         }
     }
 
-    if (isDesktopRuntime()) {
+    if (capabilities.isDesktopApp) {
         try {
             setNativeMode(true);
             const ports = await listNativeMidiInputs();
@@ -389,6 +392,6 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
         }
     }
 
-    setState({ isSupported: false });
+    setState({ isSupported: false, enumerationError: webMidiFailure });
     return false;
 }

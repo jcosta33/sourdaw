@@ -38,16 +38,51 @@ describe('MidiStatusBadge', () => {
         vi.clearAllMocks();
     });
 
-    it('renders nothing when Web MIDI is unsupported', () => {
-        useStoreMock.mockReturnValue({ isSupported: false, inputs: [], selectedInputId: null });
+    it('shows a causal unavailable status when the browser has no MIDI route', () => {
+        useStoreMock.mockReturnValue({ isSupported: false, inputs: [], selectedInputId: null, enumerationError: null });
 
-        const { container } = renderBadge();
+        renderBadge();
 
-        expect(container).toBeEmptyDOMElement();
+        expect(screen.getByRole('button', { name: /MIDI input is not supported in this browser/i })).toHaveTextContent(
+            'MIDI unavailable'
+        );
+    });
+
+    it('shows a runtime access failure without claiming the browser API is absent', () => {
+        useStoreMock.mockReturnValue({
+            isSupported: false,
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: 'Permission denied',
+        });
+
+        renderBadge();
+
+        const button = screen.getByRole('button', { name: /Permission denied/i });
+        expect(button).toHaveTextContent('MIDI unavailable');
+        expect(button).not.toHaveAccessibleName(/not supported in this browser/i);
+    });
+
+    it('shows native enumeration errors without marking native MIDI unsupported', () => {
+        useStoreMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: 'Native MIDI list failed',
+        });
+
+        renderBadge();
+
+        expect(screen.getByRole('button', { name: /Native MIDI list failed/i })).toHaveTextContent('MIDI error');
     });
 
     it('shows a disconnected label when Web MIDI is supported but no input is selected', () => {
-        useStoreMock.mockReturnValue({ isSupported: true, inputs: [buildInput()], selectedInputId: null });
+        useStoreMock.mockReturnValue({
+            isSupported: true,
+            inputs: [buildInput()],
+            selectedInputId: null,
+            enumerationError: null,
+        });
 
         renderBadge();
 
@@ -59,6 +94,7 @@ describe('MidiStatusBadge', () => {
             isSupported: true,
             inputs: [buildInput()],
             selectedInputId: 'input-1',
+            enumerationError: null,
         });
 
         renderBadge();
@@ -72,6 +108,7 @@ describe('MidiStatusBadge', () => {
             isSupported: true,
             inputs: [buildInput({ name: 'Extremely Long Controller Name', manufacturer: 'Unknown' })],
             selectedInputId: 'input-1',
+            enumerationError: null,
         });
 
         renderBadge();
@@ -85,6 +122,7 @@ describe('MidiStatusBadge', () => {
             isSupported: true,
             inputs: [buildInput({ manufacturer: 'Unknown' })],
             selectedInputId: 'input-1',
+            enumerationError: null,
         });
 
         renderBadge();
@@ -93,7 +131,7 @@ describe('MidiStatusBadge', () => {
     });
 
     it('opens the preferences dialog when clicked', () => {
-        useStoreMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null });
+        useStoreMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null, enumerationError: null });
 
         renderBadge();
         fireEvent.click(screen.getByRole('button'));

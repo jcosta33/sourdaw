@@ -22,6 +22,9 @@ const getStateMock = vi.hoisted(() =>
     }))
 );
 const requestMidiAccessMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
+const getPlatformCapabilitiesMock = vi.hoisted(() =>
+    vi.fn(() => ({ webMidiApiPresent: true, hasMidiInput: true, isDesktopApp: false }))
+);
 const setActiveInputMock = vi.hoisted(() => vi.fn<(input: TestMidiInput | null) => void>());
 const setMidiAccessMock = vi.hoisted(() => vi.fn<(access: MIDIAccess) => void>());
 const setStateMock = vi.hoisted(() =>
@@ -48,6 +51,10 @@ vi.mock('#/utils/desktopBridge', () => ({
     isDesktopRuntime: vi.fn(),
     desktopInvoke: vi.fn(),
     desktopListen: vi.fn().mockResolvedValue(() => {}),
+}));
+
+vi.mock('#/utils/platformCapabilities', () => ({
+    getPlatformCapabilities: () => getPlatformCapabilitiesMock(),
 }));
 
 vi.mock('../../getMidiAccess', () => ({
@@ -105,6 +112,12 @@ vi.mock('../selectMidiInputNative', () => ({
 describe('initWebMidi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        getPlatformCapabilitiesMock.mockImplementation(() => {
+            const webMidiApiPresent = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
+            const isDesktopApp = vi.mocked(isDesktopRuntime)();
+            return { webMidiApiPresent, hasMidiInput: webMidiApiPresent || isDesktopApp, isDesktopApp };
+        });
         webMidiRuntime.initGeneration = 0;
         getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null, enumerationError: null });
         readPersistedInputIdMock.mockReturnValue(null);
@@ -261,7 +274,7 @@ describe('initWebMidi', () => {
         const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(false);
-        expect(setStateMock).toHaveBeenCalledWith({ isSupported: false });
+        expect(setStateMock).toHaveBeenCalledWith({ isSupported: false, enumerationError: 'no access' });
     });
 
     it('should remove the active event listener when the selected input disappears', async () => {
