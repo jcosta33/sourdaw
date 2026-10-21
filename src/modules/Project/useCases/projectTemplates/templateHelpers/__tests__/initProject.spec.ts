@@ -6,6 +6,7 @@ import { defaultPreferences } from '#/modules/Preferences/useCases';
 const mocks = vi.hoisted(() => ({
     createTrack: vi.fn(() => ({ id: 'master', name: 'Master', kind: 'master' })),
     resetArrangementStoresForProject: vi.fn(),
+    getAllTracks: vi.fn(() => []),
     replaceChordTrackState: vi.fn(),
     hydrateGrooveTemplates: vi.fn(),
     transportSet: vi.fn(),
