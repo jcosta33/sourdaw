@@ -36,7 +36,9 @@ export function scheduleFrozenTrack(
      * dying pass's tail past the seam, and an unfloored mid-buffer join would
      * layer the incoming pass's pre-window content underneath it.
      */
-    windowStartBeat: number | null
+    windowStartBeat: number | null,
+    /** Same clock/position pair as live audio; omitted by callers without a captured tick. */
+    positionAudioTimeSeconds?: number
 ): boolean {
     if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
         return false;
@@ -74,7 +76,7 @@ export function scheduleFrozenTrack(
     // drifting against the un-frozen tracks around it the moment a tempo change
     // sat between the playhead and the track's first clip.
     const startTime =
-        getCurrentTime() +
+        (positionAudioTimeSeconds ?? getCurrentTime()) +
         secondsBetweenBeats(changes, accumulatedPosition, trackStartBeat, defaultTempo) +
         compensation;
     const now = getCurrentTime();
@@ -88,7 +90,9 @@ export function scheduleFrozenTrack(
     let floorSeconds = startTime;
     if (windowStartBeat !== null && windowStartBeat > trackStartBeat) {
         floorSeconds =
-            now + secondsBetweenBeats(changes, accumulatedPosition, windowStartBeat, defaultTempo) + compensation;
+            (positionAudioTimeSeconds ?? now) +
+            secondsBetweenBeats(changes, accumulatedPosition, windowStartBeat, defaultTempo) +
+            compensation;
     }
     const audibleStartSeconds = Math.max(startTime, floorSeconds);
     const skipSeconds = audibleStartSeconds - startTime;

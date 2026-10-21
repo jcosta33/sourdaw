@@ -67,7 +67,9 @@ export function scheduleAudioClips(
     scheduledAudioClipsSet: Set<string>,
     scheduledFrozenTracks: Set<string>,
     activeAudioSources: AudioBufferSourceNode[],
-    transport: TransportState
+    transport: TransportState,
+    /** Audio-clock instant represented by accumulatedPosition, captured before scheduler awaits. */
+    positionAudioTimeSeconds?: number
 ): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -141,7 +143,8 @@ export function scheduleAudioClips(
                     accumulatedPosition,
                     activeAudioSources,
                     transport.tempo,
-                    floorsToWindowStart ? fromBeat : null
+                    floorsToWindowStart ? fromBeat : null,
+                    positionAudioTimeSeconds
                 );
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
@@ -221,7 +224,7 @@ export function scheduleAudioClips(
             // rate the audio itself was rendered at.
             function beatToAudioTime(beat: number): number {
                 return (
-                    getCurrentTime() +
+                    (positionAudioTimeSeconds ?? getCurrentTime()) +
                     secondsBetweenBeats(changes, accumulatedPosition, beat, transport.tempo) +
                     compensation
                 );
@@ -312,10 +315,9 @@ export function scheduleAudioClips(
                     secondsAtBeat: (beat) => secondsBetweenBeats(changes, 0, beat, transport.tempo),
                 });
 
-                // The pass head's time is read before `now`, in the same order
-                // the single-source read always used: the two clock reads are
-                // independent, and the late-start branch below measures the
-                // elapsed span against this pass's head instant.
+                // Map the pass head from the clock paired with its position.
+                // The live clock below remains independent: a genuinely late
+                // source catches up without moving later passes off their grid.
                 const iterStartTime = beatToAudioTime(iterStartBeat);
                 const now = getCurrentTime();
                 type StartedSegment = {

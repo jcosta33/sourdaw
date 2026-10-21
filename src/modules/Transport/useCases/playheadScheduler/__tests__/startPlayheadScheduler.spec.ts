@@ -366,6 +366,50 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerTimingDiagnostics.snapshot().ticksSettled).toBe(1);
     });
 
+    it.each([
+        { route: 'normal', position: 0, tickTime: 0.01, looping: false, expectedPositions: [0.02] },
+        {
+            route: 'dying and incoming seam',
+            position: 3.75,
+            tickTime: 0.05,
+            looping: true,
+            expectedPositions: [3.85, -0.15],
+        },
+        { route: 'late wrap', position: 3.9, tickTime: 0.1, looping: true, expectedPositions: [0.1] },
+        { route: 'relocation', position: 0, tickTime: 0.05, looping: false, expectedPositions: [16] },
+    ])(
+        'pairs the captured tick clock with the $route audio positions after MIDI awaits',
+        async ({ route, position, tickTime, looping, expectedPositions }) => {
+            transportStoreState.value = playingState({
+                playheadPosition: position,
+                isLooping: looping,
+                loopStart: 0,
+                loopEnd: 4,
+            });
+            if (route === 'relocation')
+                evaluateFollowActionsMock.mockReturnValueOnce({ jumpToPosition: 16, shouldStop: false });
+            const quantum = 128 / 48_000;
+            vi.mocked(scheduleMidiNotes).mockImplementation(async () => {
+                ctxTime.now += quantum;
+            });
+            try {
+                startPlayheadScheduler();
+                ctxTime.now = tickTime;
+                emitSchedulerTick(schedulerSession.worker as unknown as SchedulerWorkerHarness);
+                await vi.waitFor(() => expect(schedulerTimingDiagnostics.snapshot().ticksSettled).toBe(1));
+                const calls = vi.mocked(scheduleAudioClips).mock.calls;
+                expect(calls).toHaveLength(expectedPositions.length);
+                for (const [index, position] of expectedPositions.entries()) {
+                    expect(calls[index]?.[2]).toBeCloseTo(position, 12);
+                    expect(calls[index]?.[7]).toBe(tickTime);
+                }
+                expect(ctxTime.now).toBeGreaterThan(tickTime);
+            } finally {
+                vi.mocked(scheduleMidiNotes).mockImplementation(() => Promise.resolve());
+            }
+        }
+    );
+
     it('skips a tick when a prior tick is still in flight', async () => {
         transportStoreState.value = playingState();
         // scheduleMidiNotes resolves on the next microtask; the second tick

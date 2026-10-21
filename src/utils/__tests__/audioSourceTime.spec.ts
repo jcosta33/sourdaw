@@ -79,6 +79,76 @@ describe('audio source and timeline seconds', () => {
 });
 
 describe('canonical loop source boundary', () => {
+    it.each([
+        { audioOffsetBeats: 5, loopOriginBeat: 1, sourceHead: 0.5, headEnd: 3 },
+        { audioOffsetBeats: 8, loopOriginBeat: -2, sourceHead: 0, headEnd: 4 },
+    ])(
+        'preserves legacy beat-region phase for offset $audioOffsetBeats across repeated passes',
+        ({ audioOffsetBeats, loopOriginBeat, sourceHead, headEnd }) => {
+            for (const iterationStartBeat of [6, 10, 14]) {
+                const segments = projectAudioLoopPassSegments({
+                    clip: { startBeat: 6, audioOffsetBeats, loopOriginBeat, loopEnabled: true },
+                    loopLengthBeats: 4,
+                    iterationStartBeat,
+                    iterationEndBeat: iterationStartBeat + 4,
+                    stretchRatio: 1,
+                    tempoAtClipStart: 120,
+                    secondsAtBeat: (beat) => (beat <= 8 ? beat / 2 : 4 + beat - 8),
+                });
+                expect(segments).toEqual([
+                    { startOffsetBeats: 0, endOffsetBeats: headEnd, sourceStartSeconds: sourceHead },
+                    ...(headEnd < 4 ? [{ startOffsetBeats: headEnd, endOffsetBeats: 4, sourceStartSeconds: 0 }] : []),
+                ]);
+            }
+        }
+    );
+
+    it.each([0, -1, 7])(
+        'keeps authoritative canonical head %s even without a captured loop boundary',
+        (audioOffsetSeconds) => {
+            expect(
+                projectAudioLoopPassSegments({
+                    clip: {
+                        startBeat: 6,
+                        loopOriginBeat: 1,
+                        loopEnabled: true,
+                        audioOffsetBeats: 5,
+                        audioOffsetSeconds,
+                    },
+                    loopLengthBeats: 4,
+                    iterationStartBeat: 6,
+                    iterationEndBeat: 10,
+                    stretchRatio: 1,
+                    tempoAtClipStart: 120,
+                    secondsAtBeat: (beat) => beat / 2,
+                })[0]?.sourceStartSeconds
+            ).toBe(audioOffsetSeconds);
+        }
+    );
+
+    it('keeps the canonical first entry and later tempo-mapped phase distinct', () => {
+        const clip = {
+            startBeat: 4,
+            loopOriginBeat: 2,
+            loopEnabled: true,
+            audioOffsetSeconds: 7,
+            audioLoopStartSeconds: 5.5,
+        };
+        const heads = [4, 8].map(
+            (iterationStartBeat) =>
+                projectAudioLoopPassSegments({
+                    clip,
+                    loopLengthBeats: 4,
+                    iterationStartBeat,
+                    iterationEndBeat: iterationStartBeat + 4,
+                    stretchRatio: 1.5,
+                    tempoAtClipStart: 60,
+                    secondsAtBeat: (beat) => (beat <= 4 ? beat / 2 : beat - 2),
+                })[0]?.sourceStartSeconds
+        );
+        expect(heads).toEqual([7, 8.5]);
+    });
+
     it.each([0, -1, 5.5])(
         'keeps signed source boundary %s independently of the new placement tempo',
         (audioLoopStartSeconds) => {
