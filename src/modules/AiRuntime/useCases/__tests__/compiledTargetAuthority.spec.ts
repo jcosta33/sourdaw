@@ -655,7 +655,7 @@ describe('a name stated only inside a protection picks no target', () => {
             ],
         };
         const result = compileAndBridge(
-            'set the volume to 75% but leave Bass Verse unchanged',
+            'set the volume to 75% but leave Bass Verse alone',
             [trackItem('setTrackGain', bass, { gain: 0.75 })],
             [bass.id],
             { ...projectContext, tracks: [vocals, keys, drums, bassWithVerse, master] }
