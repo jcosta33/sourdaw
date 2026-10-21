@@ -375,6 +375,8 @@ impl EngineHandle {
         self.retrospective.arm(track_id, self.sample_rate, channels);
         if self.retrospective.target_track_id().is_some() {
             self.request_capture_open();
+        } else {
+            self.close_unused_capture();
         }
     }
 
@@ -414,10 +416,24 @@ impl EngineHandle {
         self.audio_thread.request_capture_open();
     }
 
-    /// Stop retrospective retention. Capture-callback writes keep nothing
-    /// until the next arm.
+    /// Stop retrospective retention and release its input holder. A take
+    /// keeps capture open independently until its own accepted release.
     pub fn disarm_retrospective_capture(&mut self) {
         self.retrospective.disarm();
+        self.close_unused_capture();
+    }
+
+    fn close_unused_capture(&mut self) {
+        if !self.capture_period_requested
+            || !self.capture_consumers.is_empty()
+            || self.retrospective.target_track_id().is_some()
+        {
+            return;
+        }
+        self.capture_period_requested = false;
+        // An in-flight old reader may still publish; detach its slot.
+        self.input_latency_frames = audio_thread::new_input_latency_slot();
+        self.audio_thread.request_capture_close();
     }
 
     /// The track id last passed to [`Self::arm_retrospective_capture`], if
@@ -951,12 +967,7 @@ impl EngineHandle {
             .position(|held| *held == plugin_id)
         {
             self.capture_consumers.swap_remove(slot);
-            if self.capture_consumers.is_empty() && self.retrospective.target_track_id().is_none() {
-                self.capture_period_requested = false;
-                // An in-flight old reader may still publish; detach its slot.
-                self.input_latency_frames = audio_thread::new_input_latency_slot();
-                self.audio_thread.request_capture_close();
-            }
+            self.close_unused_capture();
         }
     }
 
@@ -1623,6 +1634,7 @@ mod tests {
     use rtrb::{Consumer, Producer, RingBuffer};
     use std::any::Any;
     use std::cell::RefCell;
+    use std::sync::atomic::Ordering;
     use triple_buffer::Input;
 
     /// The pre-built instance a detached-effect batch carries, built here on
@@ -2068,6 +2080,138 @@ mod tests {
             owner_rx.try_recv().is_err(),
             "one successful arm asks exactly once"
         );
+    }
+
+    #[test]
+    fn arm_only_disarm_closes_capture_and_reopens_a_fresh_period() {
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+        engine.arm_retrospective_capture(3, 2);
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        engine.input_latency_frames.store(512, Ordering::Relaxed);
+
+        engine.disarm_retrospective_capture();
+
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+        assert_eq!(engine.retrospective_capture_target(), None);
+        assert_eq!(engine.input_latency_frames(), 0);
+        engine.disarm_retrospective_capture();
+        assert!(
+            owner.try_recv().is_err(),
+            "duplicate disarm cannot close twice"
+        );
+
+        engine.arm_retrospective_capture(4, 1);
+        assert!(matches!(
+            owner.try_recv(),
+            Ok(OwnerCommand::PrepareCapture(_))
+        ));
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        assert_eq!(engine.retrospective_capture_target(), Some(4));
+        assert!(owner.try_recv().is_err());
+    }
+
+    #[test]
+    fn arm_then_take_disarm_keeps_capture_until_the_take_releases() {
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+        engine.arm_retrospective_capture(3, 2);
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        engine.register_capture_consumer(7).unwrap();
+        assert!(owner.try_recv().is_err(), "the take shares the armed input");
+        engine.input_latency_frames.store(512, Ordering::Relaxed);
+
+        engine.disarm_retrospective_capture();
+
+        assert!(owner.try_recv().is_err(), "disarm must not cut the take");
+        assert_eq!(engine.input_latency_frames(), 512);
+        engine.unregister_capture_consumer(7).unwrap();
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+        assert_eq!(engine.input_latency_frames(), 0);
+        assert!(owner.try_recv().is_err());
+    }
+
+    #[test]
+    fn take_then_arm_release_keeps_capture_until_the_arm_disarms() {
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+        engine.register_capture_consumer(7).unwrap();
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        engine.arm_retrospective_capture(3, 2);
+        assert!(
+            owner.try_recv().is_err(),
+            "arm must not replace the take's input"
+        );
+        engine.input_latency_frames.store(512, Ordering::Relaxed);
+        engine.unregister_capture_consumer(7).unwrap();
+        assert!(
+            owner.try_recv().is_err(),
+            "the arm independently holds capture"
+        );
+        assert_eq!(engine.input_latency_frames(), 512);
+
+        engine.disarm_retrospective_capture();
+
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+        assert_eq!(engine.input_latency_frames(), 0);
+        assert!(owner.try_recv().is_err());
+    }
+
+    #[test]
+    fn repeated_and_refused_retrospective_arms_hold_only_one_capture_period() {
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+        engine.arm_retrospective_capture(0, 2);
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        for track_id in 1..16 {
+            engine.arm_retrospective_capture(track_id, 2);
+        }
+        assert!(
+            engine.retrospective_capture_target().unwrap() < 15,
+            "an undrained ring eventually refuses a replacement arm"
+        );
+        assert!(
+            owner.try_recv().is_err(),
+            "rearms never replace the live input"
+        );
+
+        engine.disarm_retrospective_capture();
+
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+        assert_eq!(engine.retrospective_capture_target(), None);
+        engine.disarm_retrospective_capture();
+        assert!(
+            owner.try_recv().is_err(),
+            "one successful arm period releases once"
+        );
+    }
+
+    #[test]
+    fn invalid_retrospective_arm_releases_only_its_previous_holder() {
+        for take_active in [false, true] {
+            let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+            let (audio_thread, owner) = observed_audio_thread_handle();
+            engine.audio_thread = audio_thread;
+            engine.arm_retrospective_capture(3, 2);
+            assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+            if take_active {
+                engine.register_capture_consumer(7).unwrap();
+            }
+
+            engine.arm_retrospective_capture(4, 0);
+
+            assert_eq!(engine.retrospective_capture_target(), None);
+            if take_active {
+                assert!(owner.try_recv().is_err(), "invalid arm cannot cut a take");
+                engine.unregister_capture_consumer(7).unwrap();
+            }
+            assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+            assert!(owner.try_recv().is_err());
+        }
     }
 
     /// A failed arm (zero channels) leaves the ring disarmed and must not
