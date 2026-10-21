@@ -352,6 +352,25 @@ function assertAcceptancePreconditions(
     assertAcceptanceAuthorization(number, head, document.authorization, state.unresolvedThreads, port);
 }
 
+/**
+ * A reviewer APPROVE is the delivery authorization (#4584), and the authorization binds only when
+ * no review threads remain unresolved — an approval posted over open threads can never authorize
+ * its head, and the persisted publication then replays forever without one, stranding the head
+ * until a new commit and a full fresh round (#5436). Refuse before any remote write, naming the
+ * open threads; resolve them and publish again.
+ */
+function assertApprovalWithoutOpenThreads(number: number, head: string, port: PublishReviewPort): void {
+    if (port.reviewState === undefined) {
+        fail(`an approval of pull request ${String(number)} requires a review-state reader to prove no open threads`);
+    }
+    const state = port.reviewState(number, head);
+    if (state.unresolvedThreads > 0) {
+        fail(
+            `pull request ${String(number)} head ${head.slice(0, 9)} has ${String(state.unresolvedThreads)} unresolved review thread(s); an approval cannot authorize delivery over open threads — resolve them and publish again`
+        );
+    }
+}
+
 export function publishPreparedReview(
     number: number,
     prepared: PreparedReviewPublication,
@@ -375,7 +394,17 @@ export function publishReview(
     port: PublishReviewPort,
     boundary?: PullRequestReviewPublicationMutationBoundary
 ): number {
-    return publishPreparedReview(number, prepareReviewPublication(number, port), port, boundary);
+    // Fresh reviewer publications only: an APPROVE over unresolved review threads can never
+    // authorize its head, and the persisted publication then replays forever without an
+    // authorization, stranding the head until a new commit and a full fresh round (#5436).
+    // Recovery re-posts are the exact-replay exception and stay ungated here. Preparing is
+    // read-only, and the extra `pullRequest` read the gate would need is avoided: ports are
+    // one-shot about head movement, so the prepared head is passed instead.
+    const prepared = prepareReviewPublication(number, port);
+    if (parseReviewDocument(prepared.document).event === 'APPROVE') {
+        assertApprovalWithoutOpenThreads(number, prepared.head, port);
+    }
+    return publishPreparedReview(number, prepared, port, boundary);
 }
 
 export function shellPort(

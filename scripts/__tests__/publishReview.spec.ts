@@ -173,6 +173,7 @@ function fakePort(
         actorNodeId?: string;
         login?: string;
         labels?: { name: string; description?: string }[];
+        unresolvedThreads?: number;
     } = {}
 ) {
     const calls: string[] = [];
@@ -240,6 +241,14 @@ function fakePort(
         },
         publicReviews: () => [],
         publicReviewComments: () => [],
+        // Every approval publication now proves no review thread is open, so the
+        // default state reads zero; a case sets `unresolvedThreads` to exercise
+        // the refusal.
+        reviewState: () => ({
+            latestReviewerStateOnHead: null,
+            latestReviewerReviewDatabaseId: null,
+            unresolvedThreads: input.unresolvedThreads ?? 0,
+        }),
         log: (message) => logs.push(message),
     };
     return { port, calls, logs, posted };
@@ -492,6 +501,35 @@ describe('review publish', () => {
             publishPreparedReview(42, { head: 'headsha', document, payloadDigest: 'unused' }, fixture.port)
         ).toThrow(/approval context/);
         expect(fixture.posted.review).toBeUndefined();
+    });
+
+    it('refuses a reviewer approval over unresolved review threads before any remote write', () => {
+        const fixture = fakePort({ unresolvedThreads: 2 });
+        const journal = vi.fn();
+        expect(() =>
+            publishReview(42, fixture.port, {
+                ownerOid: 'owner',
+                journalReviewPublication: journal,
+                markRemoteMutationAttempt: vi.fn(),
+                markDefinitiveNoMutationHttpStatus: vi.fn(),
+                registerSuccessfulCompletion: vi.fn(),
+            })
+        ).toThrow(/has 2 unresolved review thread\(s\); an approval cannot authorize delivery/u);
+        // The refusal lands before the publication journal, so no mutation was
+        // attempted and nothing posted (#5436).
+        expect(journal).not.toHaveBeenCalled();
+        expect(fixture.posted.review).toBeUndefined();
+        expect(fixture.calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('still posts a change request over unresolved review threads', () => {
+        const fixture = fakePort({
+            unresolvedThreads: 1,
+            json: { event: 'REQUEST_CHANGES', body: 'Please fix the merge gate.', comments: [validComment] },
+        });
+
+        expect(publishReview(42, fixture.port)).toBe(99);
+        expect(fixture.posted.review?.event).toBe('REQUEST_CHANGES');
     });
 
     it.each(['baseSha', 'baseRefName', 'headSha', 'pr'] as const)(
@@ -2265,6 +2303,24 @@ describe('shellPort postReview state verification', () => {
                         state: 'OPEN',
                         headRefOid: head,
                         labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+                    });
+                }
+                if (command === 'gh' && args[0] === 'api' && args.includes('reviews')) {
+                    // The approval-thread gate reads the live review state; this
+                    // head carries no reviews and no threads.
+                    return JSON.stringify({
+                        data: {
+                            repository: {
+                                pullRequest: {
+                                    reviews: {
+                                        nodes: [],
+                                        pageInfo: { hasPreviousPage: false, startCursor: null },
+                                        headRefOid: head,
+                                    },
+                                    reviewThreads: { nodes: [] },
+                                },
+                            },
+                        },
                     });
                 }
                 throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
