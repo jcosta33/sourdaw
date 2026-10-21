@@ -221,3 +221,19 @@ describe('MicBlendSlider — full mixer mode', () => {
         expect(onSend).toHaveBeenCalledWith(0, 'volume', 1);
     });
 });
+
+
+it('selects a sparse bank index without adjusting its mix or sending engine parameters', () => {
+    const select = vi.fn();
+    const send = vi.fn();
+    const update = vi.fn();
+    const room = { ...createDefaultPatch().micPositions[2]! };
+    render(<MicBlendSlider micPositions={[null, room]} showFull selectedMicIndex={1}
+        onSelectMic={select} onSendMicParam={send} onUpdateMicPosition={update} />);
+    const button = screen.getByRole('button', { name: 'Select Room mic' });
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(button);
+    expect(select).toHaveBeenCalledWith(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+});

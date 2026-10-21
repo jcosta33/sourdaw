@@ -1,6 +1,7 @@
+import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
 
-import { toLevainDeviceState } from '../models/LevainDeviceState';
+import { fromLevainDeviceState, toLevainDeviceState } from '../models/LevainDeviceState';
 import { levainStore } from '../stores/levainStore';
 
 /**
@@ -25,8 +26,22 @@ export function commitLevainDeviceState(deviceId: string): void {
         return;
     }
 
+    const device = trackStore.value?.tracks
+        .flatMap((track) => track.devices)
+        .find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
+    if (!device || (device.deviceState && device.deviceState.version !== 1)) {
+        return;
+    }
+    const prior = fromLevainDeviceState(device.deviceState);
+    if (prior?.instrumentId === patch.instrumentId && prior.currentArticulation === patch.currentArticulation) {
+        return;
+    }
+    // Read the peer's current tier at the write boundary, even if its UI projection has not run yet.
+    const tier = device.deviceState?.data.disclosureTier === 'expert' ? 'expert' : 'basic';
+    const encoded = toLevainDeviceState(patch, tier);
+    const state = { ...encoded, data: { ...device.deviceState?.data, ...encoded.data } };
     void executeAppAction(
-        { type: 'setDeviceState', payload: { deviceId, state: toLevainDeviceState(patch) } },
+        { type: 'setDeviceState', payload: { deviceId, state } },
         { skipMacroRecording: true }
     );
 }

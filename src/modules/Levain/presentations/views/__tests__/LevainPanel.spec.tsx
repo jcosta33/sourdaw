@@ -2,6 +2,7 @@ import { render, screen, within, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createDefaultPatch } from '../../../models/LevainPatch';
+import { setLevainPanelUiLevel } from '../../../useCases/setLevainPanelUiLevel';
 import { sendMicParamToEngine } from '../../../useCases/levainParamBridge/sendMicParamToEngine';
 import { setMacroWithAudio } from '../../../useCases/levainParamBridge/setMacroWithAudio';
 import { LevainPanel } from '../LevainPanel';
@@ -66,7 +67,7 @@ function baseState(): PanelState {
             masterGain: 0.8,
             releaseTriggers: { enabled: false, dynamicScale: false },
         },
-        uiLevel: 1,
+        uiLevel: 6,
         engineReady: true,
         sampleLoadProgress: null,
         sampleLoadError: null,
@@ -88,6 +89,8 @@ vi.mock('../../../stores/levainStore', () => ({
     setCurrentArticulation: vi.fn(),
     updateMicPosition: vi.fn(),
 }));
+
+vi.mock('../../../useCases/setLevainPanelUiLevel', () => ({ setLevainPanelUiLevel: vi.fn() }));
 
 vi.mock('../../../useCases/loadPreset', () => ({
     loadInstrument: vi.fn(),
@@ -115,6 +118,8 @@ vi.mock('#/components/daw/DawPluginChip', () => ({
             data-testid="daw-plugin-chip"
             role={role}
             aria-checked={rest['aria-checked']}
+            aria-pressed={rest['aria-pressed']}
+            aria-label={rest['aria-label']}
         >
             {children}
         </button>
@@ -427,4 +432,49 @@ describe('LevainPanel', () => {
             expect(faceplate?.className).not.toContain('overflow-hidden');
         });
     });
+});
+
+
+it('Basic keeps the browser, selection detail and macros while Expert reveals the same patch controls', () => {
+    vi.clearAllMocks();
+    panelState = { ...baseState(), uiLevel: 1, loadedMicPositions: [null, 'room', 'close'] };
+    const { rerender } = render(<LevainPanel deviceId="test-device" />);
+    const group = screen.getByRole('group', { name: 'Levain control detail' });
+    expect(within(group).getAllByRole('button')).toHaveLength(2);
+    expect(within(group).getByRole('button', { name: 'Basic' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /Solo Violin/ })).toBeInTheDocument();
+    expect(screen.getByTestId('macro-strip')).toBeInTheDocument();
+    const detail = screen.getByRole('region', { name: 'Selection detail' });
+    expect(detail).toHaveTextContent('Selected patch articulation');
+    expect(detail).toHaveTextContent('Long');
+    for (const id of ['articulation-list', 'expression-panel', 'legato-tuning', 'humanize-panel', 'fader']) {
+        expect(screen.queryByTestId(id)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText('Desk')).not.toBeInTheDocument();
+    expect(screen.queryByText('Quick read')).not.toBeInTheDocument();
+    fireEvent.click(within(group).getByRole('button', { name: 'Expert' }));
+    expect(setLevainPanelUiLevel).toHaveBeenCalledWith('test-device', 6);
+    // A completed callback alone must not paint an uncommitted choice.
+    expect(screen.queryByTestId('expression-panel')).not.toBeInTheDocument();
+    panelState = { ...panelState, uiLevel: 6 };
+    rerender(<LevainPanel deviceId="test-device" />);
+    expect(screen.getByTestId('expression-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('articulation-list')).toBeInTheDocument();
+    expect(screen.getByText('Desk')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Room mic' }));
+    expect(detail).toHaveTextContent('Selected micRoom');
+    fireEvent.click(screen.getByRole('button', { name: 'Select Close mic' }));
+    expect(detail).toHaveTextContent('Selected micClose');
+    expect(sendMicParamToEngine).not.toHaveBeenCalled();
+    panelState = { ...panelState, uiLevel: 1, currentArticulationDisplay: 'Tremolo' };
+    rerender(<LevainPanel deviceId="test-device" />);
+    expect(detail).toHaveTextContent('Tremolo');
+    expect(detail).toHaveTextContent('Selected micClose');
+    expect(screen.queryByTestId('fader')).not.toBeInTheDocument();
+});
+
+it('has no fictional selected microphone without a committed bank', () => {
+    panelState = { ...baseState(), uiLevel: 1, loadedMicPositions: null };
+    render(<LevainPanel deviceId="test-device" />);
+    expect(screen.getByRole('region', { name: 'Selection detail' })).toHaveTextContent('No loaded mic');
 });

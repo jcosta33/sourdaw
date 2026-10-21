@@ -153,3 +153,8 @@ describe('levainStore mutators', () => {
         });
     });
 });
+
+
+it('defaults to Basic without persisting a choice on registration', () => {
+    expect(defaultLevainState.uiLevel).toBe(1);
+});

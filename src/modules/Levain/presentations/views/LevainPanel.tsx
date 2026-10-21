@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
+import { DawEffectDisclosure } from '#/components/daw/DawEffectDisclosure';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -17,6 +18,7 @@ import { sendMicParamToEngine } from '../../useCases/levainParamBridge/sendMicPa
 import { setLevainParamWithAudio } from '../../useCases/levainParamBridge/setLevainParamWithAudio';
 import { setMacroWithAudio } from '../../useCases/levainParamBridge/setMacroWithAudio';
 import { loadInstrument } from '../../useCases/loadPreset';
+import { setLevainPanelUiLevel } from '../../useCases/setLevainPanelUiLevel';
 import { ArticulationList } from '../components/ArticulationList';
 import { ExpressionPanel } from '../components/ExpressionPanel';
 import { HumanizePanel } from '../components/HumanizePanel';
@@ -71,6 +73,13 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     const state = instances[deviceId] ?? defaultLevainState;
     const [search, setSearch] = useState('');
     const [family, setFamily] = useState('All');
+    const [micSelection, setMicSelection] = useState<{
+        deviceId: string;
+        instrumentId: InstrumentId;
+        bank: typeof state.loadedMicPositions;
+        index: number;
+    } | null>(null);
+    const expert = state.uiLevel === 6;
 
     const { patch, currentArticulationDisplay: currentArt, engineReady, sampleLoadProgress } = state;
     const sampleLoadError = state.sampleLoadError ?? null;
@@ -91,6 +100,14 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         );
     }
     const visibleMicCount = visibleMicPositions.filter((mic) => mic !== null).length;
+    const selectedMicIndex =
+        micSelection?.deviceId === deviceId &&
+        micSelection.instrumentId === patch.instrumentId &&
+        micSelection.bank === loadedMicPositions &&
+        visibleMicPositions[micSelection.index]
+            ? micSelection.index
+            : null;
+    const selectedMic = selectedMicIndex === null ? null : visibleMicPositions[selectedMicIndex];
 
     // Load readout: a failure surfaces as an explicit error (not a synthetic
     // 100% then "Ready"); otherwise show the live percentage or idle "Ready".
@@ -193,16 +210,18 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         </Stack>
                     </Stack>
 
-                    <section className="levain-window min-h-0 overflow-y-auto p-2">
-                        <div className="px-2 pb-2 text-micro uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
-                            Articulation rail
-                        </div>
-                        <ArticulationList
-                            articulations={patch.articulations}
-                            current={patch.currentArticulation}
-                            onSelect={(type) => setLevainParamWithAudio(deviceId, 'currentArticulation', type)}
-                        />
-                    </section>
+                    {expert ? (
+                        <section className="levain-window min-h-0 overflow-y-auto p-2">
+                            <div className="px-2 pb-2 text-micro uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
+                                Articulation rail
+                            </div>
+                            <ArticulationList
+                                articulations={patch.articulations}
+                                current={patch.currentArticulation}
+                                onSelect={(type) => setLevainParamWithAudio(deviceId, 'currentArticulation', type)}
+                            />
+                        </section>
+                    ) : null}
                 </Stack>
 
                 <Stack as="section" gap={3} className="@container min-w-0 overflow-y-auto pr-1">
@@ -219,14 +238,16 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 className="levain-window"
                                 label="Artic"
                                 value={currentArt}
-                                detail="Current technique"
+                                detail="Selected patch articulation"
                             />
-                            <DawPluginMetricTile
-                                className="levain-window"
-                                label="Legato"
-                                value={patch.legato.enabled ? 'On' : 'Off'}
-                                detail="Transition engine"
-                            />
+                            {expert ? (
+                                <DawPluginMetricTile
+                                    className="levain-window"
+                                    label="Legato"
+                                    value={patch.legato.enabled ? 'On' : 'Off'}
+                                    detail="Transition engine"
+                                />
+                            ) : null}
                             <DawPluginMetricTile
                                 className="levain-window"
                                 label="Load"
@@ -241,61 +262,88 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         </Row>
                     </Row>
 
-                    <SectionCard
-                        title="Phrase"
-                        detail="Dynamics, vibrato, and legato belong together where the line is most visible."
-                    >
-                        <ExpressionPanel
-                            expression={patch.expression}
-                            legato={patch.legato}
-                            onChangeExp={(partial) =>
-                                setLevainParamWithAudio(deviceId, 'expression', {
-                                    ...patch.expression,
-                                    ...partial,
-                                })
-                            }
-                            onChangeLeg={(partial) =>
-                                setLevainParamWithAudio(deviceId, 'legato', { ...patch.legato, ...partial })
-                            }
+                    <DawEffectDisclosure
+                        tier={expert ? 'lab' : 'play'}
+                        options={['play', 'lab']}
+                        labels={{ play: 'Basic', lab: 'Expert' }}
+                        groupLabel="Levain control detail"
+                        tone="amber"
+                        onChange={(tier) => void setLevainPanelUiLevel(deviceId, tier === 'lab' ? 6 : 1)}
+                    />
+                    <section aria-label="Selection detail" className="levain-window p-3">
+                        <DawReadoutRow label="Selected instrument" value={instLabel} />
+                        <DawReadoutRow label="Selected patch articulation" value={currentArt} />
+                        <DawReadoutRow
+                            label="Selected mic"
+                            value={selectedMic?.name ?? (visibleMicCount === 0 ? 'No loaded mic' : 'No mic selected')}
                         />
-                    </SectionCard>
+                    </section>
+                    {expert ? (
+                        <>
+                            <SectionCard
+                                title="Phrase"
+                                detail="Dynamics, vibrato, and legato belong together where the line is most visible."
+                            >
+                                <ExpressionPanel
+                                    expression={patch.expression}
+                                    legato={patch.legato}
+                                    onChangeExp={(partial) =>
+                                        setLevainParamWithAudio(deviceId, 'expression', {
+                                            ...patch.expression,
+                                            ...partial,
+                                        })
+                                    }
+                                    onChangeLeg={(partial) =>
+                                        setLevainParamWithAudio(deviceId, 'legato', { ...patch.legato, ...partial })
+                                    }
+                                />
+                            </SectionCard>
 
-                    <div className="grid grid-cols-1 @[540px]:grid-cols-2 gap-3">
-                        <SectionCard
-                            title="Lift"
-                            detail="Transition timing and portamento stay tactile instead of technical."
-                        >
-                            <LegatoTuning
-                                config={patch.legato}
-                                onChange={(partial) =>
-                                    setLevainParamWithAudio(deviceId, 'legato', { ...patch.legato, ...partial })
-                                }
-                            />
-                        </SectionCard>
+                            <div className="grid grid-cols-1 @[540px]:grid-cols-2 gap-3">
+                                <SectionCard
+                                    title="Lift"
+                                    detail="Transition timing and portamento stay tactile instead of technical."
+                                >
+                                    <LegatoTuning
+                                        config={patch.legato}
+                                        onChange={(partial) =>
+                                            setLevainParamWithAudio(deviceId, 'legato', { ...patch.legato, ...partial })
+                                        }
+                                    />
+                                </SectionCard>
 
-                        <SectionCard title="Spread" detail="Keep the ensemble alive without turning it into soup.">
-                            <HumanizePanel
-                                config={patch.humanize}
-                                onChange={(partial) =>
-                                    setLevainParamWithAudio(deviceId, 'humanize', {
-                                        ...patch.humanize,
-                                        ...partial,
-                                    })
-                                }
-                            />
-                        </SectionCard>
-                    </div>
+                                <SectionCard title="Spread" detail="Keep the ensemble alive without turning it into soup.">
+                                    <HumanizePanel
+                                        config={patch.humanize}
+                                        onChange={(partial) =>
+                                            setLevainParamWithAudio(deviceId, 'humanize', {
+                                                ...patch.humanize,
+                                                ...partial,
+                                            })
+                                        }
+                                    />
+                                </SectionCard>
+                            </div>
 
-                    <SectionCard title="Stage" detail="Mic balance should feel spatial, not like raw mixer math.">
-                        <MicBlendSlider
-                            micPositions={visibleMicPositions}
-                            showFull
-                            onSendMicParam={(micIndex, name, value) =>
-                                sendMicParamToEngine(deviceId, micIndex, name, value)
-                            }
-                            onUpdateMicPosition={(index, partial) => updateMicPosition(deviceId, index, partial)}
-                        />
-                    </SectionCard>
+                            <SectionCard title="Stage" detail="Mic balance should feel spatial, not like raw mixer math.">
+                                <MicBlendSlider
+                                    micPositions={visibleMicPositions}
+                                    selectedMicIndex={selectedMicIndex}
+                                    onSelectMic={(index) => setMicSelection({
+                                        deviceId,
+                                        instrumentId: patch.instrumentId,
+                                        bank: loadedMicPositions,
+                                        index,
+                                    })}
+                                    showFull
+                                    onSendMicParam={(micIndex, name, value) =>
+                                        sendMicParamToEngine(deviceId, micIndex, name, value)
+                                    }
+                                    onUpdateMicPosition={(index, partial) => updateMicPosition(deviceId, index, partial)}
+                                />
+                            </SectionCard>
+                        </>
+                    ) : null}
                 </Stack>
 
                 <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
@@ -312,80 +360,84 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         />
                     </SectionCard>
 
-                    <SectionCard title="Desk" detail="A couple of master moves for the final line.">
-                        <Row justify="between" gap={3}>
-                            <Stack align="center" gap={1}>
-                                <RotaryKnob
-                                    value={patch.masterGain}
-                                    onChange={(value) => setLevainParamWithAudio(deviceId, 'masterGain', value)}
-                                    min={0}
-                                    max={2}
-                                    step={0.01}
-                                    defaultValue={0.8}
-                                    size="md"
-                                    tone="amber"
-                                    aria-label="Master"
-                                />
-                                <span className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">
-                                    Master
-                                </span>
-                                <span className="font-mono text-caption text-foreground/85">
-                                    {(patch.masterGain * 100).toFixed(0)}%
-                                </span>
-                            </Stack>
+                    {expert ? (
+                        <>
+                            <SectionCard title="Desk" detail="A couple of master moves for the final line.">
+                                <Row justify="between" gap={3}>
+                                    <Stack align="center" gap={1}>
+                                        <RotaryKnob
+                                            value={patch.masterGain}
+                                            onChange={(value) => setLevainParamWithAudio(deviceId, 'masterGain', value)}
+                                            min={0}
+                                            max={2}
+                                            step={0.01}
+                                            defaultValue={0.8}
+                                            size="md"
+                                            tone="amber"
+                                            aria-label="Master"
+                                        />
+                                        <span className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">
+                                            Master
+                                        </span>
+                                        <span className="font-mono text-caption text-foreground/85">
+                                            {(patch.masterGain * 100).toFixed(0)}%
+                                        </span>
+                                    </Stack>
 
-                            <Stack gap={2}>
-                                <DawPluginChip
-                                    active={patch.releaseTriggers.enabled}
-                                    tone="amber"
-                                    size="sm"
-                                    onClick={() =>
-                                        setLevainParamWithAudio(deviceId, 'releaseTriggers', {
-                                            ...patch.releaseTriggers,
-                                            enabled: !patch.releaseTriggers.enabled,
-                                        })
-                                    }
-                                >
-                                    Release tails
-                                </DawPluginChip>
-                                <DawPluginChip
-                                    active={patch.releaseTriggers.dynamicScale}
-                                    tone="amber"
-                                    size="sm"
-                                    onClick={() =>
-                                        setLevainParamWithAudio(deviceId, 'releaseTriggers', {
-                                            ...patch.releaseTriggers,
-                                            dynamicScale: !patch.releaseTriggers.dynamicScale,
-                                        })
-                                    }
-                                >
-                                    Dynamic tails
-                                </DawPluginChip>
-                            </Stack>
-                        </Row>
-                    </SectionCard>
+                                    <Stack gap={2}>
+                                        <DawPluginChip
+                                            active={patch.releaseTriggers.enabled}
+                                            tone="amber"
+                                            size="sm"
+                                            onClick={() =>
+                                                setLevainParamWithAudio(deviceId, 'releaseTriggers', {
+                                                    ...patch.releaseTriggers,
+                                                    enabled: !patch.releaseTriggers.enabled,
+                                                })
+                                            }
+                                        >
+                                            Release tails
+                                        </DawPluginChip>
+                                        <DawPluginChip
+                                            active={patch.releaseTriggers.dynamicScale}
+                                            tone="amber"
+                                            size="sm"
+                                            onClick={() =>
+                                                setLevainParamWithAudio(deviceId, 'releaseTriggers', {
+                                                    ...patch.releaseTriggers,
+                                                    dynamicScale: !patch.releaseTriggers.dynamicScale,
+                                                })
+                                            }
+                                        >
+                                            Dynamic tails
+                                        </DawPluginChip>
+                                    </Stack>
+                                </Row>
+                            </SectionCard>
 
-                    <SectionCard title="Quick read" detail="A compact performance summary for the current line.">
-                        <Stack gap={2}>
-                            <DawReadoutRow label="Instrument" value={instLabel} valueClassName="text-foreground/85" />
-                            <DawReadoutRow
-                                label="Family"
-                                value={patch.instrumentFamily}
-                                valueClassName="text-foreground/85"
-                            />
-                            <DawReadoutRow label="Phrase" value={currentArt} valueClassName="text-foreground/85" />
-                            <DawReadoutRow
-                                label="Humanize"
-                                value={`${Math.round(patch.humanize.amount * 100)}%`}
-                                valueClassName="text-foreground/85"
-                            />
-                            <DawReadoutRow
-                                label="Space"
-                                value={`${visibleMicCount} mic${visibleMicCount === 1 ? '' : 's'}`}
-                                valueClassName="text-foreground/85"
-                            />
-                        </Stack>
-                    </SectionCard>
+                            <SectionCard title="Quick read" detail="A compact performance summary for the current line.">
+                                <Stack gap={2}>
+                                    <DawReadoutRow label="Instrument" value={instLabel} valueClassName="text-foreground/85" />
+                                    <DawReadoutRow
+                                        label="Family"
+                                        value={patch.instrumentFamily}
+                                        valueClassName="text-foreground/85"
+                                    />
+                                    <DawReadoutRow label="Phrase" value={currentArt} valueClassName="text-foreground/85" />
+                                    <DawReadoutRow
+                                        label="Humanize"
+                                        value={`${Math.round(patch.humanize.amount * 100)}%`}
+                                        valueClassName="text-foreground/85"
+                                    />
+                                    <DawReadoutRow
+                                        label="Space"
+                                        value={`${visibleMicCount} mic${visibleMicCount === 1 ? '' : 's'}`}
+                                        valueClassName="text-foreground/85"
+                                    />
+                                </Stack>
+                            </SectionCard>
+                        </>
+                    ) : null}
                 </Stack>
             </div>
         </div>

@@ -9,7 +9,7 @@ describe('toLevainDeviceState', () => {
 
         expect(toLevainDeviceState(patch)).toEqual({
             version: LEVAIN_DEVICE_STATE_VERSION,
-            data: { instrumentId: 'cello', currentArticulation: 'pizzicato' },
+            data: { instrumentId: 'cello', currentArticulation: 'pizzicato', disclosureTier: 'basic' },
         });
     });
 });
@@ -21,6 +21,7 @@ describe('fromLevainDeviceState', () => {
         expect(fromLevainDeviceState(toLevainDeviceState(patch))).toEqual({
             instrumentId: 'horn',
             currentArticulation: 'marcato',
+            disclosureTier: 'basic',
         });
     });
 
@@ -61,4 +62,15 @@ describe('fromLevainDeviceState', () => {
         expect(fromLevainDeviceState({ version: LEVAIN_DEVICE_STATE_VERSION })).toBeNull();
         expect(fromLevainDeviceState('cello')).toBeNull();
     });
+});
+
+
+it('adds a validated tier without changing the version or losing legacy identity', () => {
+    const patch = createDefaultPatch('cello');
+    expect(fromLevainDeviceState(toLevainDeviceState(patch, 'expert'))?.disclosureTier).toBe('expert');
+    for (const tier of [undefined, null, 'lab', 6]) {
+        expect(fromLevainDeviceState({ version: 1, data: {
+            instrumentId: 'cello', currentArticulation: 'pizzicato', disclosureTier: tier,
+        } })).toEqual({ instrumentId: 'cello', currentArticulation: 'pizzicato', disclosureTier: 'basic' });
+    }
 });
