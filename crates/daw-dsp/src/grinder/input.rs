@@ -96,6 +96,12 @@ impl NoiseGate {
             return input;
         }
 
+        // Leave invalid samples for the output-boundary scrub without poisoning recursive
+        // detector/gain state. Resume the gate's timing when finite audio returns.
+        if !input.is_finite() {
+            return input;
+        }
+
         // Envelope follower
         let abs_in = input.abs();
         if abs_in > self.envelope {
@@ -327,6 +333,88 @@ mod tests {
     }
 
     const FADE_SAMPLE_RATE: f32 = 48_000.0;
+
+    fn assert_gate_recovers_after_non_finite_input(invalid: f32, initially_open: bool) {
+        let configured_gate = || {
+            let mut gate = NoiseGate::new(FADE_SAMPLE_RATE);
+            gate.set_param("gateEnabled", 1.0);
+            gate.set_param("gateThreshold", -40.0);
+            gate.set_param("gateAttack", 2.0);
+            gate.set_param("gateRelease", 60.0);
+            if initially_open {
+                for _ in 0..48_000 {
+                    gate.process_sample(0.5);
+                }
+            } else {
+                gate.reset();
+            }
+            gate
+        };
+        let mut gate = configured_gate();
+        let mut reference = configured_gate();
+        assert_eq!(gate.is_open, initially_open);
+
+        let invalid_output = gate.process_sample(invalid);
+        if invalid.is_nan() {
+            assert!(invalid_output.is_nan(), "output-boundary scrub owns NaN");
+        } else {
+            assert_eq!(
+                invalid_output, invalid,
+                "output-boundary scrub owns infinity"
+            );
+        }
+        // envelope_db clamps its readout, so also inspect the recursive state directly.
+        assert!(
+            gate.envelope.is_finite(),
+            "invalid input poisoned the detector"
+        );
+        assert!(gate.envelope_db().is_finite());
+        assert!(gate.gain().is_finite(), "invalid input poisoned the gain");
+
+        // The healthy reference omits the invalid sample. Matching every finite sample pins
+        // attack, detector fall, hold and release timing, including closing and reopening.
+        for (input, samples, should_open) in [
+            (0.5, 48_000, true),
+            (0.0, 96_000, false),
+            (0.5, 48_000, true),
+        ] {
+            for _ in 0..samples {
+                let output = gate.process_sample(input);
+                assert!(output.is_finite(), "finite input must resume finite output");
+                assert_eq!(output, reference.process_sample(input));
+                assert_eq!(gate.envelope, reference.envelope);
+                assert_eq!(gate.gain(), reference.gain());
+                assert_eq!(gate.is_open, reference.is_open);
+                assert_eq!(gate.hold_counter, reference.hold_counter);
+            }
+            assert_eq!(gate.is_open, should_open);
+            if should_open {
+                assert!(gate.gain() > 0.999, "the note must reopen the gate");
+            } else {
+                assert!(gate.gain() < 0.001, "silence must close to the noise floor");
+            }
+        }
+    }
+
+    #[test]
+    fn open_gate_recovers_after_nan() {
+        assert_gate_recovers_after_non_finite_input(f32::NAN, true);
+    }
+
+    #[test]
+    fn closed_gate_recovers_after_nan() {
+        assert_gate_recovers_after_non_finite_input(f32::NAN, false);
+    }
+
+    #[test]
+    fn open_gate_recovers_after_infinity() {
+        assert_gate_recovers_after_non_finite_input(f32::INFINITY, true);
+    }
+
+    #[test]
+    fn closed_gate_recovers_after_infinity() {
+        assert_gate_recovers_after_non_finite_input(f32::INFINITY, false);
+    }
 
     /// A one-pole fade crosses 10 % to 90 % of its swing in ln(9) time constants.
     const TEN_TO_NINETY_TIME_CONSTANTS: f32 = 2.197_224_6;
