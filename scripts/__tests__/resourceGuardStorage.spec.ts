@@ -2500,7 +2500,12 @@ describe('storage ownership recovery', () => {
                 // inspection, so it never proves coverage.
                 expect(samples).toEqual(['incomplete', 'incomplete', 'incomplete', 'targeted']);
             } else {
-                expect(samples).toHaveLength(omissions + 1);
+                // A real descriptor closing mid-read can discard the first complete catalog too
+                // while another of the three observations remains; the consumer's directory in
+                // a later catalog still retains storage without any PID inspection.
+                expect(samples.length, samples.join(',')).toBeGreaterThanOrEqual(omissions + 1);
+                expect(samples.length, samples.join(',')).toBeLessThanOrEqual(3);
+                expect(samples).not.toContain('targeted');
             }
         },
         15_000
