@@ -1,0 +1,43 @@
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_e614f30c07f03d 306-307,311-312
+  s_1c08b47ac3792f::t_21b20dd3013bbf 364
+  s_1c08b47ac3792f::t_cf33d49652a09b 308-310
+  s_1c08b47ac3792f::t_05cf0465fe6578 388
+  s_1c08b47ac3792f::t_aecbbac2c93277 275-278
+  s_1c08b47ac3792f::t_d4ab7a767f4c2d 333
+  s_1c08b47ac3792f::t_f6dc125fc4c52b 442
+  s_1c08b47ac3792f::t_b715243baf3172 227
+  s_1c08b47ac3792f::t_3f2f2964ee03bf 367
+  s_1c08b47ac3792f::t_d158163248f99b 249
+  s_1c08b47ac3792f::t_a750b1af19b594 68
+  s_1c08b47ac3792f::t_fd69cf0a0bd7f2 154-156,160-195,199-215,220-226,228-232,255-258
+  s_1c08b47ac3792f::t_b0d23108cdf350 374-375
+  s_1c08b47ac3792f::t_4822c04c59ee6e 23-27
+  s_1c08b47ac3792f::t_4d2a445694d45d 419
+  s_1c08b47ac3792f::t_7f4b5bc8589e10 216-219,233-248,250-253
+  s_1c08b47ac3792f::t_ade7164c74fa2e 28-30
+  s_1c08b47ac3792f::t_7b836cf67ada45 196-198
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_81e0626eb8c193 173-174
+  s_1c08b47ac3792f::t_c42099442331ec 4692,4828
+  s_1c08b47ac3792f::t_cfc4a7d7a7298d 4385
+  s_1c08b47ac3792f::t_aeb212baffde65 6659
+  s_1c08b47ac3792f::t_560631cf97415b 4064-4072,4078-4080,4082-4083
+  s_1c08b47ac3792f::t_caa3d34e0041d3 6730
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e72dab9ca93d47c11261b2a4962f1b8d686b8429",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
