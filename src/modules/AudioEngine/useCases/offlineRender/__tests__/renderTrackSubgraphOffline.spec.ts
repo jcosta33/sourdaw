@@ -1,6 +1,13 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
-import { adjustmentLayerStore, trackStore, vcaGroupStore, type Device, type Track } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    trackStore,
+    vcaGroupStore,
+    type AdjustmentLayer,
+    type Device,
+    type Track,
+} from '#/modules/Arrangement/stores';
 // Statically imported so the barrel load is paid once at module init rather
 // than inside a test's time budget.
 import { getEffectiveGain } from '#/modules/Arrangement/useCases';
@@ -2169,13 +2176,15 @@ describe('renderTrackSubgraphOffline', () => {
         });
 
         it.each([
-            { seedSensitive: false, compensationDelay: 0 },
-            { seedSensitive: false, compensationDelay: 0.125 },
-            { seedSensitive: true, compensationDelay: 0 },
-            { seedSensitive: true, compensationDelay: 0.125 },
+            { layerScope: 'crop', compensationDelay: 0 },
+            { layerScope: 'crop', compensationDelay: 0.125 },
+            { layerScope: 'crossing', compensationDelay: 0 },
+            { layerScope: 'crossing', compensationDelay: 0.125 },
+            { layerScope: 'history-only', compensationDelay: 0 },
+            { layerScope: 'history-only', compensationDelay: 0.125 },
         ])(
-            'emits history-origin gain/pan across the crop with seed-sensitive layers $seedSensitive and delay $compensationDelay',
-            async ({ seedSensitive, compensationDelay }) => {
+            'emits history-origin gain/pan with $layerScope layers and delay $compensationDelay',
+            async ({ layerScope, compensationDelay }) => {
                 const tickSeconds = 4.8 * Math.log(175 / 150);
                 const historySeconds = 4.8 * Math.log(150 / 100);
                 const changes = [
@@ -2210,36 +2219,53 @@ describe('renderTrackSubgraphOffline', () => {
                     effectType: 'pan' as const,
                     parameters: [{ name: 'Pan', value: 100, min: -100, max: 100, unit: '%' }],
                 };
-                // At beat zero this layer is fully active; at the requested
-                // beat four it is half active, exposing the compensation seed.
+                // The history-only fade has finished by the crop, but its
+                // writes must still reach the graph during history warmup.
+                const historyEndBeat = layerScope === 'history-only' ? 4 : 8;
                 const historyFade = {
                     ...fade,
                     id: 'history-fade',
-                    regions: [{ id: 'history', startBeat: 0, endBeat: 8, blend: 1, fadeInBeats: 0, fadeOutBeats: 8 }],
+                    regions: [
+                        {
+                            id: 'history',
+                            startBeat: 0,
+                            endBeat: historyEndBeat,
+                            blend: 1,
+                            fadeInBeats: 0,
+                            fadeOutBeats: historyEndBeat,
+                        },
+                    ],
                 };
                 const historyPan = { ...pan, id: 'history-pan', regions: historyFade.regions };
-                adjustmentLayerStore.set({
-                    layers: seedSensitive ? [fade, pan, historyFade, historyPan] : [fade, pan],
-                });
+                const layers: AdjustmentLayer[] = [];
+                if (layerScope !== 'history-only') {
+                    layers.push(fade, pan);
+                }
+                if (layerScope !== 'crop') {
+                    layers.push(historyFade, historyPan);
+                }
+                adjustmentLayerStore.set({ layers });
                 const project = suppliedDocument([track], {
                     tempoMap: { changes },
                     transport: { ...defaultTransportState, tempo: TEMPO, scheduleGrainMs: tickSeconds * 1000 },
                 });
                 const gainAtBeat = (beat: number): number => {
-                    const fadeBlend = beat < 4 ? 0 : (beat - 4) / 4;
-                    const historyBlend = seedSensitive ? 1 - beat / 8 : 0;
+                    const fadeBlend = layerScope === 'history-only' || beat < 4 ? 0 : (beat - 4) / 4;
+                    const historyBlend = layerScope === 'crop' ? 0 : Math.max(0, 1 - beat / historyEndBeat);
                     return 0.8 * (1 + (10 ** (-12 / 20) - 1) * fadeBlend) * (1 + (10 ** (-12 / 20) - 1) * historyBlend);
                 };
                 const panAtBeat = (beat: number): number =>
-                    (beat < 4 ? 0 : (beat - 4) / 4) + (seedSensitive ? 1 - beat / 8 : 0);
+                    (layerScope === 'history-only' || beat < 4 ? 0 : (beat - 4) / 4) +
+                    (layerScope === 'crop' ? 0 : Math.max(0, 1 - beat / historyEndBeat));
                 try {
                     delay.mockReturnValue(compensationDelay);
-                    const render = async (startBeat: number) => {
+                    const render = async (startBeat: number, targetMixer: 'bake' | 'keepLive' = 'bake') => {
                         const buffer = await renderTrackSubgraphOffline({
                             targetTrackId: track.id,
                             renderTracks: [track],
                             startBeat,
                             endBeat: 8,
+                            targetMixer,
                             source: { project },
                         });
                         expect(buffer).not.toBeNull();
@@ -2252,14 +2278,11 @@ describe('renderTrackSubgraphOffline', () => {
                     };
                     const whole = await render(0);
                     const cropped = await render(4);
-                    expect(cropped.gain).toEqual(whole.gain);
-                    expect(cropped.pan).toEqual(whole.pan);
+                    expect({ gain: cropped.gain, pan: cropped.pan }).toEqual({ gain: whole.gain, pan: whole.pan });
                     expect(cropped.buffer.length).toBeLessThan(whole.buffer.length);
                     expect(cropped.buffer.duration).toBeCloseTo(4.8 * Math.log(200 / 150), 4);
-                    if (compensationDelay > 0) {
-                        expect(cropped.gain[0]).toEqual([gainAtBeat(0), 0]);
-                        expect(cropped.pan[0]).toEqual([panAtBeat(0), 0]);
-                    }
+                    expect(cropped.gain[0]).toEqual([gainAtBeat(0), 0]);
+                    expect(cropped.pan[0]).toEqual([panAtBeat(0), 0]);
                     const seedCount = compensationDelay > 0 ? 1 : 0;
                     // The analytical ramp integral is t = 4.8 ln((100 +
                     // 12.5 beat) / 100). These ticks straddle the crop.
@@ -2274,6 +2297,10 @@ describe('renderTrackSubgraphOffline', () => {
                         expect(gainWrite[1]).toBeCloseTo(tick * tickSeconds + compensationDelay, 10);
                         expect(panWrite[1]).toBeCloseTo(tick * tickSeconds + compensationDelay, 10);
                     }
+                    const keepLive = await render(4, 'keepLive');
+                    expect(keepLive.gain).toEqual([]);
+                    expect(keepLive.pan).toEqual([]);
+                    expect(keepLive.buffer.length).toBe(cropped.buffer.length);
                 } finally {
                     delay.mockRestore();
                     adjustmentLayerStore.set({ layers: [] });

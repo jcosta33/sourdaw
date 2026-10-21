@@ -299,7 +299,7 @@ export async function renderTrackSubgraphOffline({
                 layers: adjustmentLayers,
                 trackId: track.id,
                 allTrackIds,
-                spanStartBeat: startBeat,
+                spanStartBeat: renderStartBeat,
                 spanEndBeat: endBeat,
             }),
         ])
