@@ -6,6 +6,7 @@ import {
     getCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -19,7 +20,7 @@ import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
 import { pairedInverseForRedo } from './takeRetirementRedo';
-import { isRemoveClipSessionEntry } from './validateClipEditSessionEntries';
+import { isRemoveClipSessionEntry, isRemoveClipSessionPayload } from './validateClipEditSessionEntries';
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
@@ -31,6 +32,7 @@ type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
 // Batch descriptions precede every write. Keep the admitted inverse object,
 // then fill it from the actual prefix when this member enters its transaction.
 const pendingInverseCaptures = new WeakMap<object, RestoreClipAction>();
+const pendingRedoCaptures = new WeakMap<object, RemoveClipAction>();
 
 function findOwningTrackId(clipId: string): string | undefined {
     return getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId))?.id;
@@ -67,6 +69,7 @@ function batchMembersAreIndependent(action: RemoveClipAction, context: HandlerVa
 
 export const handleRemoveClip = createHandler<'removeClip'>({
     validateSessionEntry: isRemoveClipSessionEntry,
+    validateSessionActionArguments: isRemoveClipSessionPayload,
     // Batch co-execution (grouped redo, atomic batches) preflights the state the
     // action assumes — the clip it names is still present — and refuses the whole
     // batch once a target is gone. Single-action dispatch never calls validate,
@@ -78,6 +81,9 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             false) &&
         batchMembersAreIndependent(action, context),
     execute: (alpha) => {
+        const ripple = alpha.payload.ripple ?? workspaceStore.value?.rippleEditing ?? false;
+        const pendingRedo = pendingRedoCaptures.get(alpha);
+        pendingRedoCaptures.delete(alpha);
         const pendingInverse = pendingInverseCaptures.get(alpha);
         pendingInverseCaptures.delete(alpha);
         if (pendingInverse) {
@@ -91,25 +97,26 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         // and restores exactly the material this replay retired.
         const paired = pairedInverseForRedo(alpha);
         const fresh = paired?.type === 'restoreClip' ? handleRemoveClip.describe(alpha).inverseAction : null;
-        const documentBeforeReplay = fresh ? captureDurableDocumentWitness() : null;
-        const ownsPublication = fresh ? captureProjectMutationAuthorization() : null;
+        pendingRedoCaptures.delete(alpha);
+        const documentBeforeReplay = fresh || pendingRedo ? captureDurableDocumentWitness() : null;
+        const ownsPublication = fresh || pendingRedo ? captureProjectMutationAuthorization() : null;
         // Bind now, inside the actual handler scope, while its exact transaction
         // owner is visible. Later group members publish under this same owner.
         ownsPublication?.();
         const installCapture = () => {
             // Both successful and ambiguously published commits can run observers
             // before this effect. Only this mutation owner may refresh its inverse.
-            if (
-                fresh?.type === 'restoreClip' &&
-                getCrdtDoc('root') &&
-                captureDurableDocumentWitness() !== documentBeforeReplay &&
-                ownsPublication?.()
-            ) {
-                commitRedoInverseCapture(alpha, fresh);
+            if (getCrdtDoc('root') && captureDurableDocumentWitness() !== documentBeforeReplay && ownsPublication?.()) {
+                if (fresh?.type === 'restoreClip') {
+                    commitRedoInverseCapture(alpha, fresh);
+                }
+                if (pendingRedo) {
+                    pendingRedo.payload.ripple = ripple;
+                }
             }
         };
         const committedResult = () => {
-            if (!fresh) {
+            if (!fresh && !pendingRedo) {
                 return undefined;
             }
             return {
@@ -133,7 +140,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             removeClip(alpha.payload.clipId);
             return committedResult();
         }
-        const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId] });
+        const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId], ripple });
         if (rippleResult === null) {
             removeClip(alpha.payload.clipId);
             return committedResult();
@@ -162,7 +169,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             return { label: 'Remove clip' };
         }
 
-        const plan = planRippleDelete({ trackId, clipIds: [alpha.payload.clipId] });
+        const plan = planRippleDelete({ trackId, clipIds: [alpha.payload.clipId], ripple: alpha.payload.ripple });
         const ripplePlan = plan
             ? {
                   removedClips: structuredClone(plan.removedClips) as readonly MinimalClipShape[],
@@ -210,7 +217,11 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         if (context && context.actionIndex > 0) {
             pendingInverseCaptures.set(alpha, inverseAction);
         }
-        return { label: `Remove clip "${clipSnapshot.name}"`, inverseAction };
+        // Resolve the preference again at the actual execution prefix, then
+        // publish it into this history object only after its owner commits.
+        const redoAction: RemoveClipAction = { type: 'removeClip', payload: { ...alpha.payload } };
+        pendingRedoCaptures.set(alpha, redoAction);
+        return { label: `Remove clip "${clipSnapshot.name}"`, inverseAction, redoAction };
     },
     undoable: true,
 });

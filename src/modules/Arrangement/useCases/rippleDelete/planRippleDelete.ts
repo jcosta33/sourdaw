@@ -20,6 +20,7 @@ type RippleDeletePlan<ClipShape extends ClipSnapshot = Clip> = {
 type PlanRippleDeleteInput = {
     trackId: string;
     clipIds: string[];
+    ripple?: boolean;
 };
 
 export type PlanRippleDeleteOutput = RippleDeletePlan | null;
@@ -34,7 +35,7 @@ export function planRippleDelete<ClipShape extends ClipSnapshot>(
     state: RippleDeleteOwnerState<ClipShape>
 ): RippleDeletePlan<ClipShape> | null;
 export function planRippleDelete(
-    { trackId, clipIds }: PlanRippleDeleteInput,
+    { trackId, clipIds, ripple }: PlanRippleDeleteInput,
     state: RippleDeleteOwnerState<ClipSnapshot> | null = getTrackStoreState()
 ): RippleDeletePlan<ClipSnapshot> | null {
     if (!state) {
@@ -63,7 +64,7 @@ export function planRippleDelete(
         }
     }
     const gap = deleteEnd - deleteStart;
-    const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
+    const rippleEnabled = ripple ?? workspaceStore.value?.rippleEditing ?? false;
     const shiftedClips: RippleDeleteShift[] = [];
 
     const nextClips = track.clips.reduce<ClipSnapshot[]>((accumulator, clip) => {

@@ -266,13 +266,30 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
     );
 }
 
+export function isRemoveClipSessionPayload(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.clipId === 'string' &&
+        value.clipId.length > 0 &&
+        (!Object.hasOwn(value, 'ripple') || typeof value.ripple === 'boolean') &&
+        Object.keys(value).every((key) => key === 'clipId' || key === 'ripple')
+    );
+}
+
 export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): boolean {
-    if (entry.action.type !== 'removeClip' || entry.inverseAction?.type !== 'restoreClip' || entry.redoAction) {
+    if (entry.action.type !== 'removeClip' || entry.inverseAction?.type !== 'restoreClip') {
         return false;
     }
     return (
+        isRemoveClipSessionPayload(entry.action.payload) &&
         entry.action.payload.clipId === entry.inverseAction.payload.clipId &&
-        isRestoreClipSessionPayload(entry.inverseAction.payload)
+        isRestoreClipSessionPayload(entry.inverseAction.payload) &&
+        (!entry.redoAction ||
+            (entry.redoAction.type === 'removeClip' &&
+                isRemoveClipSessionPayload(entry.redoAction.payload) &&
+                entry.redoAction.payload.clipId === entry.action.payload.clipId &&
+                (entry.action.payload.ripple === undefined ||
+                    entry.redoAction.payload.ripple === entry.action.payload.ripple)))
     );
 }
 

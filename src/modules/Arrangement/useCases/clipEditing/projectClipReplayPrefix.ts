@@ -10,13 +10,13 @@ type ShiftedOwnerState = {
     lanes: readonly ClipAutomationLaneSnapshot[];
 };
 
-function projectRemoval(state: ShiftedOwnerState, clipId: string): ShiftedOwnerState | null {
+function projectRemoval(state: ShiftedOwnerState, clipId: string, ripple?: boolean): ShiftedOwnerState | null {
     const target = state.clips.find((owner) => owner.clip.id === clipId);
     if (!target) {
         return null;
     }
     const plan = planRippleDelete(
-        { trackId: target.owningTrackId, clipIds: [clipId] },
+        { trackId: target.owningTrackId, clipIds: [clipId], ripple },
         {
             tracks: [
                 {
@@ -69,7 +69,7 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
     };
     for (const action of priorActions) {
         if (action.type === 'removeClip') {
-            const removal = projectRemoval(state, action.payload.clipId);
+            const removal = projectRemoval(state, action.payload.clipId, action.payload.ripple);
             if (!removal) {
                 return null;
             }
