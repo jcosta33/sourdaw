@@ -1,0 +1,19 @@
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_59e31a5c6f3e31::t_35d5a8bc217a51 182-195,706-712,716,734,761,768,771-772,826,830,837
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ded3ceb08e85390d688a94ad5ed61c6c7bd2f9e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
