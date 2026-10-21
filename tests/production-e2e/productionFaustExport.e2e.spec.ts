@@ -423,8 +423,8 @@ test('production Faust plays and exports after slow native loading, refuses a na
         const activePromise = captureWav(page, dialog, testInfo, 'active-tape-delay');
         await holdAndRelease(frame, 'offline');
         const active = await activePromise;
-        // Select the actual bus through its visible track row, then toggle the
-        // device's own inspector control; no store or app-action bridge is used.
+        // Select the actual bus through its visible track row; the mute and
+        // device controls exercise the real UI, not the store or action bridge.
         await app
             .getByRole('grid', { name: /Track list/i })
             .first()
@@ -432,6 +432,26 @@ test('production Faust plays and exports after slow native loading, refuses a na
             .first()
             .click();
         const inspector = app.getByRole('complementary', { name: 'Inspector panel' });
+        await expect(inspector.getByRole('button', { name: 'Bypass Tape Delay', exact: true })).toBeVisible();
+        const trackList = app.getByRole('grid', { name: /Track list/i }).first();
+        const beforeMuted = (await frame.evaluate(() => window.productionFaustProbe.snapshot())).loads.filter(
+            (load) => load.context === 'offline'
+        ).length;
+        await trackList.getByRole('button', { name: 'Mute Delay Bus', exact: true }).click();
+        await expect(trackList.getByRole('button', { name: 'Unmute Delay Bus', exact: true })).toBeVisible();
+        dialog = await openBakery(app);
+        const muted = await captureWav(page, dialog, testInfo, 'muted-delay-bus');
+        const mutedLoads = (await frame.evaluate(() => window.productionFaustProbe.snapshot())).loads.filter(
+            (load) => load.context === 'offline'
+        );
+        expect(mutedLoads).toHaveLength(beforeMuted + 1);
+        expect(mutedLoads.at(-1)).toMatchObject({ nativeCompleted: true, constructions: 1 });
+        const mutedReturnContrast = pcmContrast(active, muted);
+        observations.activeMutedReturnContrast = mutedReturnContrast;
+        expect(mutedReturnContrast.rms).toBeGreaterThan(0.0001);
+        expect(mutedReturnContrast.relativeRms).toBeGreaterThan(0.005);
+        await trackList.getByRole('button', { name: 'Unmute Delay Bus', exact: true }).click();
+        await expect(trackList.getByRole('button', { name: 'Mute Delay Bus', exact: true })).toBeVisible();
         await inspector.getByRole('button', { name: 'Bypass Tape Delay', exact: true }).click();
         await expect(inspector.getByRole('button', { name: 'Enable Tape Delay', exact: true })).toBeVisible();
         const beforeBypass = (await frame.evaluate(() => window.productionFaustProbe.snapshot())).loads.filter(
@@ -480,6 +500,7 @@ test('production Faust plays and exports after slow native loading, refuses a na
         observations.repeatedActiveContrast = repeatedActiveContrast;
         // Repeated active PCM controls for unrelated synth variation.
         expect(repeatedActiveContrast.rms).toBeLessThan(contrast.rms / 4);
+        expect(repeatedActiveContrast.rms).toBeLessThan(mutedReturnContrast.rms / 4);
         expect(recoveryContrast.rms).toBeGreaterThan(0.0001);
         expect(recoveryContrast.relativeRms).toBeGreaterThan(0.005);
         const recoveredLoad = (await frame.evaluate(() => window.productionFaustProbe.snapshot())).loads.findLast(
