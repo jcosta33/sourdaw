@@ -1,0 +1,28 @@
+scripts/__tests__/e2eLaunchOverlayBound.spec.ts
+  s_d257b09300b1ad::t_6aad8fb437005f 185-188
+  s_d257b09300b1ad::t_51be50be0d7f3e 167-184,189-196,199-233
+  s_d257b09300b1ad::t_37a01d30e62418 595-626
+  s_d257b09300b1ad::t_9f0d9ec8d0f1b7 466-525
+  s_d257b09300b1ad::t_92d16feb8c3b14 290
+  s_d257b09300b1ad::t_47e801e1df0c09 257
+  s_d257b09300b1ad::t_6fab84b235d9fd 197-198
+  s_d257b09300b1ad::t_0c258d733ce386 237-238
+  s_d257b09300b1ad::t_34c1a067d214d2 26
+  s_d257b09300b1ad::t_f0f1f20b5f0ca3 74-83,89-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cdf56ae23082998f2f3be0264309ca2c6025dee2",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
