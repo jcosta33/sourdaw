@@ -682,6 +682,24 @@ test.describe('Tempo source-time musician acceptance #5039 #5042', () => {
     test('real imported phrase survives comp split, live/export, saved replay and tempo relocation', async ({
         page,
     }, info) => {
+        const readTakeState = () =>
+            page.evaluate(async () => {
+                const crdtPath = '/src/modules/CrdtDocument/useCases/index.ts';
+                const arrangementPath = '/src/modules/Arrangement/stores/index.ts';
+                const crdt: typeof import('../../src/modules/CrdtDocument/useCases') = await import(crdtPath);
+                const arrangement: typeof import('../../src/modules/Arrangement/stores') = await import(
+                    arrangementPath
+                );
+                type TakeState = import('../../src/modules/Arrangement/stores/takeLaneStore').TakeLaneStoreState;
+                const document = crdt.getCrdtDoc<{ takeLanes?: TakeState }>('root');
+                // Preserve every stored/projected field, including optional source-depth metadata.
+                return JSON.parse(
+                    JSON.stringify({
+                        raw: document?.takeLanes ?? null,
+                        projected: arrangement.takeLaneStore.value,
+                    })
+                ) as { raw: TakeState | null; projected: TakeState | null };
+            });
         const fixture = await importFixture(page);
         await reopenCanonicalSeed(page, fixture, info);
         await exportPcm(page, info, 'before-comp-split');
@@ -698,6 +716,17 @@ test.describe('Tempo source-time musician acceptance #5039 #5042', () => {
             payload: { trackId: fixture.trackId, startBeat: 2, endBeat: 8, takeId },
         });
         await realPlayback(page, fixture, info, 'before-split');
+        const beforeSplitTakes = await readTakeState();
+        expect(beforeSplitTakes.raw).toEqual(beforeSplitTakes.projected);
+        expect(beforeSplitTakes.projected?.lanes).toHaveLength(1);
+        expect(beforeSplitTakes.projected?.lanes[0]?.takes).toHaveLength(1);
+        expect(beforeSplitTakes.projected?.lanes[0]?.takes[0]).toMatchObject({
+            id: takeId,
+            clipId: fixture.clipId,
+            startBeat: 2,
+            endBeat: 8,
+        });
+        expect(beforeSplitTakes.projected?.lanes[0]?.activeCompRegions).toEqual([{ startBeat: 2, endBeat: 8, takeId }]);
         const rightId = await splitUi(page, fixture);
         await expect
             .poll(async () =>
@@ -712,6 +741,29 @@ test.describe('Tempo source-time musician acceptance #5039 #5042', () => {
                 [2, 4],
                 [4, 8],
             ]);
+        const afterSplitTakes = await readTakeState();
+        expect(afterSplitTakes.raw).toEqual(afterSplitTakes.projected);
+        expect(afterSplitTakes.projected?.lanes).toHaveLength(1);
+        expect(afterSplitTakes.projected?.lanes[0]?.id).toBe(beforeSplitTakes.projected?.lanes[0]?.id);
+        expect(afterSplitTakes.projected?.lanes[0]?.takes).toHaveLength(2);
+        expect(afterSplitTakes.projected?.lanes[0]?.takes.map(({ clipId }) => clipId)).toEqual([
+            fixture.clipId,
+            rightId,
+        ]);
+        const splitLane = afterSplitTakes.projected?.lanes[0];
+        expect(splitLane?.takes.map(({ startBeat, endBeat }) => [startBeat, endBeat])).toEqual([
+            [2, 4],
+            [4, 8],
+        ]);
+        const leftTake = splitLane?.takes.find((take) => take.clipId === fixture.clipId);
+        const rightTake = splitLane?.takes.find((take) => take.clipId === rightId);
+        if (!leftTake || !rightTake) throw new Error('Split take owners are absent');
+        expect(leftTake.id).toBe(takeId);
+        expect(rightTake.id).not.toBe(takeId);
+        expect(splitLane?.activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 4, takeId: leftTake.id },
+            { startBeat: 4, endBeat: 8, takeId: rightTake.id },
+        ]);
         await assertWaveformPixels(page, fixture, info, 'canonical-right-fragment', [
             { startBeat: 5.5, baselineBeat: 5 },
             { startBeat: 6.5, baselineBeat: 6.1 },
@@ -719,10 +771,17 @@ test.describe('Tempo source-time musician acceptance #5039 #5042', () => {
         await realPlayback(page, fixture, info, 'after-comp-split');
         await exportPcm(page, info, 'after-comp-split');
         await saveReload(page, fixture);
+        await expect.poll(readTakeState).toEqual(afterSplitTakes);
         await page.getByRole('button', { name: 'Undo', exact: true }).click();
         await expect.poll(async () => (await clips(page, fixture.trackId)).length).toBe(1);
+        await expect.poll(readTakeState).toEqual(beforeSplitTakes);
         await page.getByRole('button', { name: 'Redo', exact: true }).click();
         await expect.poll(async () => (await clips(page, fixture.trackId)).length).toBe(2);
+        await expect.poll(readTakeState).toEqual(afterSplitTakes);
+        await info.attach('saved-split-exact-take-replay', {
+            body: JSON.stringify({ beforeSplitTakes, afterSplitTakes, afterSavedRedo: await readTakeState() }),
+            contentType: 'application/json',
+        });
         await exportPcm(page, info, 'saved-replayed-comp-split');
         // Finish the selected-comp replay proof before isolating movement from comp bounds.
         // These are real UI region removals and an ordinary mute, never a store fixture.
