@@ -1,0 +1,48 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/hasTrackControlRestriction.ts
+  s_1c08b47ac3792f::t_6b46f15c93ff65 1
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_8d994def7e0240 14
+  s_1c08b47ac3792f::t_8bb30e7ef29af1 127,229,231,233-252,254-255,257-259
+  s_1c08b47ac3792f::t_e7ebf0d0a5dad3 27-28
+  s_1c08b47ac3792f::t_68406875dec6ff 326-328
+  s_1c08b47ac3792f::t_065658846582c8 267,272-273,277-279
+  s_1c08b47ac3792f::t_5b7f4cba7080ed 129-133,137-140,142-149,153,155-159,162-165
+  s_1c08b47ac3792f::t_04acf76df33ef6 332-335
+  s_1c08b47ac3792f::t_3634c23851458a 121,123-126
+  s_1c08b47ac3792f::t_f21c5159239920 15-16
+  s_1c08b47ac3792f::t_b8ea5e6bf84a4b 280-281
+  s_1c08b47ac3792f::t_067c4d4ff57175 274-276
+  s_1c08b47ac3792f::t_4623012639a3c1 128
+  s_1c08b47ac3792f::t_24891fad06a7d8 72-75,293-296
+src/modules/AiRuntime/useCases/agentReference/getAutomatedSendBusIds.ts
+  s_1c08b47ac3792f::t_b89d4354dce195 1-19
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findTrackControlRestrictionStarts.ts
+  s_1c08b47ac3792f::t_36131762c0ca94 1-9
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_1c08b47ac3792f::t_427fdfb070ee59 9-13
+  s_1c08b47ac3792f::t_82acaa2c2291be 221-223,227-233
+  s_1c08b47ac3792f::t_18960ebe5439ff 224-226,234-235
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_ddf9de81f9b448 1512-1516
+  s_1c08b47ac3792f::t_8d90ac6ab5c194 47
+  s_1c08b47ac3792f::t_d630d0023d624b 4627
+  s_1c08b47ac3792f::t_b833c05c043cbf 4754-4778,4780-4783,4791,4794-4795
+  s_1c08b47ac3792f::t_c3b4030574f04e 75
+  s_1c08b47ac3792f::t_2dec878af00c24 4850-4854
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2e6086cfa130c40f7ba49e001b670b75377c2b1",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
