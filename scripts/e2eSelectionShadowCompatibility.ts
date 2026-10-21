@@ -156,8 +156,10 @@ export function unsupportedShadowReport(input: {
 }) {
     const { root, integrationRoot, scopePath, base, head, integrationSha } = input;
     const rawDiff = git(['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--'], root);
-    const integrationDiff = integrationDeltaDiff(integrationRoot, base, integrationSha);
-    const changedPaths = unionChangedPaths(rawDiff.toString('utf8'), integrationDiff);
+    const changedPaths = unionChangedPaths(
+        rawDiff.toString('utf8'),
+        integrationDeltaDiff(integrationRoot, base, integrationSha)
+    );
     const inventory = listIntegrationInventory(integrationRoot, integrationSha);
     const full = inventory.filter((row) => row.path !== SMOKE_SPEC).map((row) => row.path);
     if (full.length === 0) {
@@ -192,17 +194,14 @@ export function unsupportedShadowReport(input: {
     const durationText = git(['show', `${integrationSha}:scripts/e2eSpecDurations.json`], integrationRoot).toString(
         'utf8'
     );
-    const inventoryPaths = inventory.map((row) => row.path);
-    const durations = parseSpecDurations(durationText);
-    const expectedPlan = selectValidationPlan(changedPaths, inventoryPaths, durations);
+    const expectedPlan = selectValidationPlan(
+        changedPaths,
+        inventory.map((row) => row.path),
+        parseSpecDurations(durationText)
+    );
     const scopeBytes = readFileSync(scopePath);
     const livePlan: unknown = JSON.parse(scopeBytes.toString('utf8'));
-    const agreement = comparePlans(expectedPlan, livePlan, {
-        paths: changedPaths,
-        inventory: inventoryPaths,
-        durations,
-        statusDiffs: [rawDiff.toString('utf8'), integrationDiff],
-    });
+    const agreement = comparePlans(expectedPlan, livePlan);
     if (!agreement.agrees) {
         throw new Error(
             `Authoritative scope artifact disagrees with the control selector or inventory: ${agreement.detail}`

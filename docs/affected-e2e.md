@@ -31,6 +31,10 @@ The planner retains the broad validation profile for product changes, CodeQL sel
 literal filenames at the runner boundary, and the required Gate's selected-job checks. A failed
 graph or missing dependency installation must never produce an empty or silently narrowed matrix.
 
+The advisory selection shadow recomputes the plan without the graph helper, so it does not verify a
+graph-narrowed selection: it records one as an explained skip (`affected-graph-narrowing-unverified`)
+and fails only when a non-narrowed plan differs from its recomputation.
+
 This follows the affected-task pattern of comparing Git changes with reverse dependencies described
 by [Nx](https://nx.dev/docs/features/ci-features/affected), using the already installed
 dependency-cruiser rather than adopting Nx. Google's [TAP account](https://abseil.io/resources/swe-book/html/ch23.html)

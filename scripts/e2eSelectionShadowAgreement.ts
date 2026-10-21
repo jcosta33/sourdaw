@@ -2,9 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 
 import { git, PLANNER_SOURCES } from './e2eSelectionShadowIntegration.ts';
-import { parseChangedPaths, selectValidationPlan } from './prValidationScope.ts';
+import { parseChangedPaths } from './prValidationScope.ts';
 
-import type { SpecDurations } from './e2eShardPartition.ts';
 import type { ValidationPlan } from './prValidationScope.ts';
 
 // The shadow is advisory. A condition it cannot measure honestly is a skip with a reason, never a
@@ -13,7 +12,8 @@ type ShadowSkipCode =
     | 'integration-selector-differs'
     | 'integration-duration-planner-differs'
     | 'integration-execution-policy-differs'
-    | 'integration-selector-differs-from-control';
+    | 'integration-selector-differs-from-control'
+    | 'affected-graph-narrowing-unverified';
 
 export class ShadowSkipError extends Error {
     readonly code: ShadowSkipCode;
@@ -100,67 +100,26 @@ function withoutAffectedGraphDiagnostic(live: ValidationPlan): { plan: Validatio
     return { plan: { ...live, reasons: rest }, notes: [`affected-graph-diagnostic: ${last.reason}`] };
 }
 
-// The inputs the planner saw: the planner narrows only for a nonempty product set under src/modules/
-// and only when neither the candidate diff nor the integration delta deletes, renames, copies, or
-// retypes a path.
-export type PlanContext = {
-    paths: readonly string[];
-    inventory: readonly string[];
-    durations: SpecDurations;
-    statusDiffs: readonly string[];
-};
-
-const FULL_COVERAGE_REASON_SUFFIX = 'full browser coverage';
-const HISTORICAL_STATUS = /(?:^|\0)(?:D|R\d+|C\d+|T)\0/;
-const BROWSER_AI_SPEC_PREFIX = 'tests/e2e/browserAi';
-
-function plannerWasEligibleToNarrow(expected: ValidationPlan, statusDiffs: readonly string[]): boolean {
-    if (statusDiffs.some((diff) => HISTORICAL_STATUS.test(diff))) {
-        return false;
+// The affected-graph helper picks the owners and specs of a narrowed selection, and this job does not
+// install it, so no recomputation here can tell a correct narrowing from a forged one. Such a plan is
+// recorded as an explained skip rather than checked against its own claim.
+function narrowedOwners(live: ValidationPlan): string[] {
+    const owners = new Set<string>();
+    for (const row of live.reasons) {
+        if (row.reason.startsWith(NARROW_REASON_PREFIX)) {
+            for (const owner of row.reason.slice(NARROW_REASON_PREFIX.length).split(', ')) {
+                owners.add(owner);
+            }
+        }
     }
-    const productPaths = expected.reasons
-        .filter((row) => row.reason.endsWith(FULL_COVERAGE_REASON_SUFFIX))
-        .map((row) => row.path);
-    return productPaths.length > 0 && productPaths.every((path) => path.startsWith('src/modules/'));
+    return [...owners].sort();
 }
 
-function rebuiltNarrowPlan(live: ValidationPlan, context: PlanContext): ValidationPlan | null {
-    const ownerRow = live.reasons.find((row) => row.reason.startsWith(NARROW_REASON_PREFIX));
-    const specs = planSpecs(live);
-    const known = new Set(context.inventory);
-    if (!ownerRow || specs.length === 0 || specs.some((spec) => !known.has(spec))) {
-        return null;
-    }
-    return selectValidationPlan(context.paths, context.inventory, context.durations, false, {
-        kind: 'narrow',
-        owners: ownerRow.reason.slice(NARROW_REASON_PREFIX.length).split(', '),
-        specs,
-        browserAi: specs.some((spec) => spec.startsWith(BROWSER_AI_SPEC_PREFIX)),
-    });
-}
-
-function narrowedAgreement(expected: ValidationPlan, live: ValidationPlan, context: PlanContext): PlanAgreement | null {
-    if (!live.reasons.some((row) => row.reason.startsWith(NARROW_REASON_PREFIX))) {
-        return null;
-    }
-    const rebuilt = plannerWasEligibleToNarrow(expected, context.statusDiffs) ? rebuiltNarrowPlan(live, context) : null;
-    if (!rebuilt || !isDeepStrictEqual(rebuilt, live)) {
-        return { agrees: false, detail: 'narrowed authoritative plan is not one the planner can emit' };
-    }
-    const liveSpecs = planSpecs(live);
-    return {
-        agrees: true,
-        liveSpecs: [...liveSpecs].sort(),
-        notes: [`affected-graph-narrowing: ${liveSpecs.length} of ${planSpecs(expected).length} specs`],
-    };
-}
-
-// Authority: the scope artifact. The shadow reproduces its inputs; it admits only the two outputs
-// that come from the optional affected-graph helper, which this job does not install:
-//  - the diagnostic row the planner appends after a full-coverage fallback, and
-//  - a narrowed selection, accepted only when the planner was eligible to narrow and rebuilding it from
-//    the live owners and specs reproduces the live plan exactly.
-export function comparePlans(expected: ValidationPlan, live: unknown, context: PlanContext): PlanAgreement {
+// Authority: the scope artifact. The shadow reproduces its inputs and requires the live plan to equal
+// the recomputed one, admitting only the output of the optional affected-graph helper it does not run:
+//  - the diagnostic row the planner appends after a full-coverage fallback, which is stripped, and
+//  - a narrowed selection, which cannot be verified and is therefore skipped with a reason.
+export function comparePlans(expected: ValidationPlan, live: unknown): PlanAgreement {
     if (!isPlanShape(live)) {
         return { agrees: false, detail: 'authoritative plan is malformed' };
     }
@@ -168,14 +127,17 @@ export function comparePlans(expected: ValidationPlan, live: unknown, context: P
     if (!stripped) {
         return { agrees: false, detail: 'authoritative plan repeats the affected-graph diagnostic' };
     }
+    const owners = narrowedOwners(stripped.plan);
+    if (owners.length > 0) {
+        throw new ShadowSkipError(
+            'affected-graph-narrowing-unverified',
+            `Authoritative scope narrowed the selection to feature owners (${owners.join(', ')}); the shadow does not run the affected-graph helper and cannot verify it`
+        );
+    }
     if (isDeepStrictEqual(expected, stripped.plan)) {
         return { agrees: true, liveSpecs: planSpecs(expected).sort(), notes: stripped.notes };
     }
-    const narrowed = narrowedAgreement(expected, stripped.plan, context);
-    if (narrowed?.agrees) {
-        return { ...narrowed, notes: [...stripped.notes, ...narrowed.notes] };
-    }
-    return narrowed ?? { agrees: false, detail: 'authoritative plan differs from the recomputed plan' };
+    return { agrees: false, detail: 'authoritative plan differs from the recomputed plan' };
 }
 
 export function skipWhenIntegrationSourcesDiffer(

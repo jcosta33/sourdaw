@@ -140,7 +140,8 @@ function withShadowCliCheckouts(
         integration: string
     ) => void,
     dirtyControlPath?: string,
-    advertiseCleanControl = false
+    advertiseCleanControl = false,
+    scopeOverride?: (plan: ReturnType<typeof selectValidationPlan>) => unknown
 ): void {
     const root = mkdtempSync(join(process.cwd(), '.agents/shadow-cli-'));
     const repository = join(root, 'repository');
@@ -284,7 +285,13 @@ function withShadowCliCheckouts(
         }
         const plan = selectValidationPlan([...new Set(changed)].sort(), [SMOKE_SPEC, 'tests/e2e/example.spec.ts']);
         mkdirSync(join(candidateRoot, 'shadow-scope'));
-        const scopeText = JSON.stringify(capability === 'invalid-scope' ? { ...plan, browser: false } : plan);
+        let scope: unknown = plan;
+        if (capability === 'invalid-scope') {
+            scope = { ...plan, browser: false };
+        } else if (scopeOverride) {
+            scope = scopeOverride(plan);
+        }
+        const scopeText = JSON.stringify(scope);
         writeFileSync(join(candidateRoot, 'shadow-scope/pr-validation-scope.json'), scopeText);
         writeFileSync(join(candidateRoot, 'github-output.txt'), 'preserved\n');
         const cliArgs = [join(controlRoot, 'scripts/e2eSelectionShadow.ts'), 'shadow-scope/pr-validation-scope.json'];
@@ -490,6 +497,37 @@ describe('E2E selection shadow', () => {
             'playwright.config.ts'
         );
     }, 30_000);
+
+    it.each(['absent', 'present'] as const)(
+        'records a graph-narrowed scope as an explained skip on the %s route',
+        (capability) => {
+            const narrowedScope = (specs: string[]) => (plan: ReturnType<typeof selectValidationPlan>) => ({
+                ...plan,
+                matrix: { include: specs.length === 0 ? [] : [{ id: 1, specs }] },
+                reasons: plan.reasons.map((row) =>
+                    row.path === 'src/feature.ts' ? { ...row, reason: 'affected feature owners: Tuner' } : row
+                ),
+            });
+            for (const specs of [['tests/e2e/example.spec.ts'], []]) {
+                withShadowCliCheckouts(
+                    capability,
+                    (result, report) => {
+                        expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
+                        expect(report).toMatchObject({
+                            measurementStatus: 'skipped',
+                            skipReason: 'affected-graph-narrowing-unverified',
+                        });
+                        expect(report.skipDetail).toMatch(/Tuner/);
+                        expect(report).not.toHaveProperty('failureReason');
+                    },
+                    undefined,
+                    false,
+                    narrowedScope(specs)
+                );
+            }
+        },
+        60_000
+    );
 
     it('reports an older head without shadow capability as unsupported full coverage', () => {
         withShadowCliCheckouts('absent', (result, report, base, head, integration) => {
@@ -1343,72 +1381,37 @@ describe('E2E selection shadow agreement with the authoritative scope', () => {
         browserAi: false,
         owners: ['Tuner'],
     };
+    const narrowedPlan = (paths: string[], selection = narrow) =>
+        selectValidationPlan(paths, inventoryPaths, undefined, false, selection);
+    const unverified = (livePlan: unknown, integrationDiff?: string) =>
+        thrownBy(() => measureShadow(fixture({ livePlan, integrationDiff })));
 
-    it('admits an authoritative narrowed selection that is a subset of the full inventory', () => {
-        const livePlan = selectValidationPlan([candidate], inventoryPaths, undefined, false, narrow);
-        expect(livePlan.matrix.include.flatMap((group) => group.specs)).toEqual([mainOnlySpec]);
-        const report = measureShadow(fixture({ livePlan }));
-        expect(report.measurementStatus).toBe('complete');
-        expect(report.liveSelectedSpecs).toEqual([mainOnlySpec]);
-        expect(report.counts).toEqual({ inventory: 313, candidate: 313, liveSelected: 1 });
+    it('skips with the owners named for an honest-looking graph-narrowed selection', () => {
+        const error = unverified(narrowedPlan([candidate]));
+        expect(error).toMatchObject({ name: 'ShadowSkipError', code: 'affected-graph-narrowing-unverified' });
+        expect((error as Error).message).toMatch(/Tuner/);
     });
 
-    it('refuses a narrowed selection naming a spec outside the integration inventory or changing the profile', () => {
-        const unknown = selectValidationPlan([candidate], inventoryPaths, undefined, false, {
-            ...narrow,
-            specs: ['tests/e2e/notInIntegration.spec.ts'],
+    it('skips, not admits, a forged narrowing that names one owner and one of its many specs', () => {
+        const forged = narrowedPlan([candidate], { ...narrow, owners: ['Bacteria'], specs: [mainOnlySpec] });
+        expect(unverified(forged)).toMatchObject({
+            name: 'ShadowSkipError',
+            code: 'affected-graph-narrowing-unverified',
         });
-        const plan = selectValidationPlan([candidate], inventoryPaths, undefined, false, narrow);
-        for (const livePlan of [
-            unknown,
-            { ...plan, codeql: !plan.codeql },
-            { ...plan, reasons: plan.reasons.map((row) => ({ ...row, path: `${row.path}.other` })) },
-        ]) {
-            expect(() => measureShadow(fixture({ livePlan }))).toThrow(disagrees);
-        }
     });
 
-    describe('refuses a narrowed plan the planner can never emit', () => {
-        const narrowPlan = (paths: string[], selection = narrow) =>
-            selectValidationPlan(paths, inventoryPaths, undefined, false, selection);
-        const withNarrowRow = (full: ReturnType<typeof selectValidationPlan>, narrowed: typeof full) =>
-            full.reasons.map((row) => (row.path === candidate ? (narrowed.reasons[0] ?? row) : row));
-
-        it('keeps a src/infra change narrowed to one spec', () => {
-            const infra = 'src/infra/clock.ts';
-            const full = selectValidationPlan([candidate, infra].sort(), inventoryPaths);
-            const narrowed = narrowPlan([candidate]);
-            const livePlan = { ...full, matrix: narrowed.matrix, reasons: withNarrowRow(full, narrowed) };
-            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `M\0${infra}\0` }))).toThrow(disagrees);
+    it('skips a graph-narrowed plan even when the plan also mismatches elsewhere', () => {
+        const livePlan = { ...narrowedPlan([candidate]), codeql: !narrowedPlan([candidate]).codeql };
+        expect(unverified(livePlan, 'M\0src/infra/clock.ts\0')).toMatchObject({
+            code: 'affected-graph-narrowing-unverified',
         });
+    });
 
-        it('drops the changed browser spec and turns browserAi off', () => {
-            const aiSpec = 'tests/e2e/browserAiPanelsTestId.spec.ts';
-            const paths = [candidate, aiSpec].sort();
-            const integrationDiff = `M\0${aiSpec}\0`;
-            const honest = narrowPlan(paths);
-            expect(honest.browserAi).toBe(true);
-            expect(measureShadow(fixture({ livePlan: honest, integrationDiff })).measurementStatus).toBe('complete');
-            const livePlan = { ...honest, browserAi: false, matrix: narrowPlan([candidate]).matrix };
-            expect(() => measureShadow(fixture({ livePlan, integrationDiff }))).toThrow(disagrees);
-        });
-
-        it('empties the matrix for a deletion', () => {
-            const deleted = 'src/modules/Tuner/presentations/views/RetiredPanel.tsx';
-            const livePlan = narrowPlan([candidate, deleted].sort(), { ...narrow, specs: [] });
-            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `D\0${deleted}\0` }))).toThrow(disagrees);
-            const present = narrowPlan([candidate, deleted].sort());
-            expect(() => measureShadow(fixture({ livePlan: present, integrationDiff: `D\0${deleted}\0` }))).toThrow(
-                disagrees
-            );
-        });
-
-        it('narrows a selector change to zero specs', () => {
-            const selector = 'scripts/prValidationScope.ts';
-            const full = selectValidationPlan([candidate, selector].sort(), inventoryPaths);
-            const narrowed = narrowPlan([candidate], { ...narrow, specs: [] });
-            const livePlan = { ...full, matrix: narrowed.matrix, reasons: withNarrowRow(full, narrowed) };
-            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `M\0${selector}\0` }))).toThrow(disagrees);
-        });
+    it('still fails a non-narrowed plan that differs from the recomputed plan', () => {
+        const plan = selectValidationPlan([candidate], inventoryPaths);
+        const error = unverified({ ...plan, matrix: narrowedPlan([candidate]).matrix });
+        expect(error).toBeInstanceOf(Error);
+        expect(error).not.toMatchObject({ name: 'ShadowSkipError' });
+        expect((error as Error).message).toContain(disagrees);
     });
 });
