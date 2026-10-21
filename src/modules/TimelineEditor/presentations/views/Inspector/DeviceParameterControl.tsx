@@ -16,7 +16,10 @@ import {
     type ModulationStoreState,
 } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 import { cn } from '#/utils/Styles/cn';
 
@@ -185,7 +188,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
     const laneLookup = buildLaneLookup(autoState.lanes);
     const targetId = createDeviceAutomationTargetId(device.id, param.id);
-    const devices = trackState.tracks.find((track) => track.id === trackId)?.devices ?? [device];
+    const owner = trackState.tracks.find((track) => track.id === trackId);
+    const devices = owner?.devices ?? [device];
     const activeLane =
         laneLookup.get(`${trackId}|${targetId}`) ??
         findEquivalentAutomationLane(
@@ -208,7 +212,31 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     // a `choice` option carries its index, a legal-set option carries the
     // setting itself. Either way what the option carries is what gets written.
     const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
-        setDeviceParameter(device.id, param.id, Number(event.target.value));
+        const selectedValue = Number(event.target.value);
+        if (device.parameterValues[param.id] === selectedValue) {
+            return;
+        }
+        const authority = captureProjectTransitionAuthority();
+        const valuePresent = Object.hasOwn(device.parameterValues, param.id);
+        void executeUserAppAction(
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: device.id,
+                    paramId: param.id,
+                    value: selectedValue,
+                    expectedTrackId: trackId,
+                    expectedDeviceType: device.type,
+                    expectedDeviceIds: devices.map((candidate) => candidate.id),
+                    expectedValuePresent: valuePresent,
+                    expectedValue: valuePresent ? device.parameterValues[param.id] : undefined,
+                    expectedTrackFrozen: owner?.frozen,
+                },
+            },
+            { shouldExecute: authority.isCurrent }
+        ).catch((error: unknown) => {
+            notifyUser(error instanceof Error ? error.message : 'Device parameter change failed', 'error');
+        });
     };
 
     const isChoice = param.type === 'choice' && param.choices && param.choices.length > 0;

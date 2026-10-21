@@ -11,6 +11,15 @@ import type { Device, Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockSetDeviceParameter = vi.fn();
+const mockExecuteUserAppAction = vi.hoisted(() =>
+    vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve())
+);
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
+}));
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: () => ({ isCurrent: () => true }),
+}));
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
@@ -248,7 +257,7 @@ describe('DeviceParameterControl', () => {
         expect(screen.getByTestId('compact-select')).toBeInTheDocument();
     });
 
-    it('should call setDeviceParameter when choice selection changes', () => {
+    it('dispatches one guarded action when choice selection changes', () => {
         const choiceParam: DeviceParameterView = {
             ...mockParam,
             type: 'choice',
@@ -256,7 +265,24 @@ describe('DeviceParameterControl', () => {
         };
         render(<DeviceParameterControl param={choiceParam} device={mockDevice} trackId="track-1" />);
         fireEvent.change(screen.getByTestId('compact-select'), { target: { value: '1' } });
-        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 1);
+        expect(mockSetDeviceParameter).not.toHaveBeenCalled();
+        expect(mockExecuteUserAppAction).toHaveBeenCalledOnce();
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    deviceId: 'device-1',
+                    paramId: 'gain',
+                    value: 1,
+                    expectedTrackId: 'track-1',
+                    expectedDeviceType: 'effect',
+                    expectedDeviceIds: ['device-1'],
+                    expectedValue: 0.5,
+                    expectedValuePresent: true,
+                }),
+            },
+            { shouldExecute: expect.any(Function) }
+        );
     });
 
     // ── A parameter whose engine distinguishes fewer settings than its range ──
@@ -305,7 +331,20 @@ describe('DeviceParameterControl', () => {
         render(<DeviceParameterControl param={crustOversamplingParam()} device={crustDevice} trackId="track-1" />);
 
         fireEvent.change(screen.getByTestId('compact-select'), { target: { value: '2' } });
-        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-crust', 'oversampling', 2);
+        expect(mockSetDeviceParameter).not.toHaveBeenCalled();
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    deviceId: 'device-crust',
+                    paramId: 'oversampling',
+                    value: 2,
+                    expectedValue: 4,
+                    expectedValuePresent: true,
+                }),
+            },
+            { shouldExecute: expect.any(Function) }
+        );
     });
 
     it('shows the member in force when the stored value sits between two of them', () => {
