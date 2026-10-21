@@ -1,0 +1,223 @@
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_ba8dd89de9aac7::t_e74e784ec12f54 259-264
+src/modules/AiRuntime/transformers/__tests__/promptNoteWindowLaw.spec.ts
+  s_ba8dd89de9aac7::t_7c43e968e8be6b 1-256
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_ba8dd89de9aac7::t_911c2743260d35 1145
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/midiStrategy.spec.ts
+  s_ba8dd89de9aac7::t_01f89dbd087a4b 211-526
+src/modules/AiRuntime/transformers/llmActionStrategies/midiStrategy.ts
+  s_ba8dd89de9aac7::t_4a95bdd3b721cd 7,65-69,71,73,76,79-86
+src/modules/AiRuntime/transformers/validateNotesWithinClipWindow.ts
+  s_ba8dd89de9aac7::t_e8b4c08327ef85 1-2,5-20,29-33,37,42-54,59-157,162,169,175,181-188
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_ba8dd89de9aac7::t_93c5369b3c2253 556-599
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ba8dd89de9aac7::t_06478bd8ae6141 4134-4145
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_ba8dd89de9aac7::t_145bcb18e0825b 271
+src/modules/Arrangement/handlers/clip/__tests__/clipMetadataUndo.spec.ts
+  s_ba8dd89de9aac7::t_b2496a8c91ef6d 1-19,23,27,33-42,193-196,203,278,289-604
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipMoves.spec.ts
+  s_ba8dd89de9aac7::t_63334390857233 81-95
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreReversedClip.spec.ts
+  s_ba8dd89de9aac7::t_a39aa17e0c1c6c 208-244
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_ba8dd89de9aac7::t_7f466bf265a408 3-4,297-497
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_ba8dd89de9aac7::t_d5ca2ced7947ea 79,92-94,103,116-123
+src/modules/Arrangement/handlers/clip/handleRestoreClipLoop.ts
+  s_ba8dd89de9aac7::t_51969af25a43a6 28-33
+src/modules/Arrangement/handlers/clip/handleRestoreClipMoves.ts
+  s_ba8dd89de9aac7::t_715e1d630a0483 1,41-49
+src/modules/Arrangement/handlers/clip/handleRestoreCrossfadeClips.ts
+  s_ba8dd89de9aac7::t_8a924060786d33 9-15,26,39-41,50-53
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  s_ba8dd89de9aac7::t_3c397f4610310c 198-202
+src/modules/Arrangement/handlers/clip/handleSetClipLoop.ts
+  s_ba8dd89de9aac7::t_4bfd3f81569fa3 15-23,25-29
+src/modules/Arrangement/models/Track.ts
+  s_ba8dd89de9aac7::t_d77d0ebca572e6 129-139
+src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignature.spec.ts
+  s_ba8dd89de9aac7::t_beff45d1cd6d12 30-31,33,70-71,134,359-399
+src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts
+  s_ba8dd89de9aac7::t_0c8384c4cfa817 2,13-16,37,59-69,87
+src/modules/Arrangement/stores/__tests__/trackStorePersistenceRoundTrip.spec.ts
+  s_ba8dd89de9aac7::t_80981910a0fc91 78-111
+src/modules/Arrangement/stores/trackStore.ts
+  s_ba8dd89de9aac7::t_5589f21ac03d49 290-292
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_ba8dd89de9aac7::t_e7688af4e8f840 782-847
+src/modules/Arrangement/useCases/__tests__/resolveCompingLoopRunUp.spec.ts
+  s_ba8dd89de9aac7::t_7178190aee5db4 3,62,208-262
+src/modules/Arrangement/useCases/clip/addClip.ts
+  s_ba8dd89de9aac7::t_44371dff0ab943 1-2,43-44,102-106
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_ba8dd89de9aac7::t_5e26eaba41507c 4,109-112
+src/modules/Arrangement/useCases/clipEditing/__tests__/createAlternativeClips.spec.ts
+  s_ba8dd89de9aac7::t_4bc73f5fb6ff90 224-260
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_ba8dd89de9aac7::t_3652b83f048ae2 19,408-565
+src/modules/Arrangement/useCases/clipEditing/__tests__/placementLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_1fdb1719ee9b45 1-466
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_ba8dd89de9aac7::t_ee60037926ebbf 275-412
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeDeletionLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_620b3a29aa5175 1-389
+src/modules/Arrangement/useCases/clipEditing/__tests__/slipClipContentLoopWrap.spec.ts
+  s_ba8dd89de9aac7::t_54f725cead9e22 1-166
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_34ab39dd7e7505 1-306
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_202f6ad49a268e 1-451
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartMidiNoteShift.spec.ts
+  s_ba8dd89de9aac7::t_6eb88255ea5dd8 7,210-281
+src/modules/Arrangement/useCases/clipEditing/createAlternativeClips.ts
+  s_ba8dd89de9aac7::t_e0249968a66c3d 2,226-229
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_ba8dd89de9aac7::t_fa49a9be9fb214 1-2,72-83,118
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_ba8dd89de9aac7::t_448e4559943b37 3,665-688,699,737-758,768
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_ba8dd89de9aac7::t_eaf46056613ac0 2,33-41
+src/modules/Arrangement/useCases/clipEditing/restoreCrossfadeClips.ts
+  s_ba8dd89de9aac7::t_1c13d904130dec 1-2,14,40-42,107-112
+src/modules/Arrangement/useCases/clipEditing/slipClipContent.ts
+  s_ba8dd89de9aac7::t_187f5854a8684d 4-5,15-30,62-75
+src/modules/Arrangement/useCases/clipLoop/setClipLoop.ts
+  s_ba8dd89de9aac7::t_92a3daf97cc4ba 3-24,32-41
+src/modules/Arrangement/useCases/comping/__tests__/migrateTrimmedClipPassTakes.spec.ts
+  s_ba8dd89de9aac7::t_1646493cf083c3 1-238
+src/modules/Arrangement/useCases/comping/migrateTrimmedClipPassTakes.ts
+  s_ba8dd89de9aac7::t_09cdf69d733498 1-90
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_ba8dd89de9aac7::t_fe7da294a79998 3-4,779-934
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_ba8dd89de9aac7::t_826f1f045734d2 9
+src/modules/Arrangement/useCases/index.ts
+  s_ba8dd89de9aac7::t_8c9ea410d16ec0 137
+src/modules/Arrangement/useCases/rippleDelete/undoRippleDelete.ts
+  s_ba8dd89de9aac7::t_4d6fd159a27e6f 2,64-67
+src/modules/Arrangement/useCases/rippleInsert/__tests__/undoRippleInsertClip.spec.ts
+  s_ba8dd89de9aac7::t_8b4d3d533c54e0 91-171
+src/modules/Arrangement/useCases/rippleInsert/rippleInsertClip.ts
+  s_ba8dd89de9aac7::t_4e9061844ef221 2,43-46
+src/modules/Arrangement/useCases/rippleInsert/undoRippleInsertClip.ts
+  s_ba8dd89de9aac7::t_39ab214acefec8 1-2,41-44
+src/modules/Arrangement/useCases/rippleMove/rippleMoveClip.ts
+  s_ba8dd89de9aac7::t_266555a9cea7b1 2,79-82
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeDeleteLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_891b26f9990169 1-337
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_ba8dd89de9aac7::t_2eb8116ef272bd 2,1060-1065,1079-1098,1116,1165-1178,1189,1268-1274
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidi.spec.ts
+  s_ba8dd89de9aac7::t_d2583e8e0e2863 528-595
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_ba8dd89de9aac7::t_fdefe4ae5c43a6 17-18
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_ba8dd89de9aac7::t_8750017dc2c5d4 325
+src/modules/AudioEngine/useCases/offlineRender/__tests__/getSourceOccurrenceOffset.spec.ts
+  s_ba8dd89de9aac7::t_a1064d8778c8d6 1-143
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineAudioClipPlaybacksLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_bf4b53f85a9ff7 1-400
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingCompedTakeLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_083a73195f8afa 1-160
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_f4717947dcf1d5 1-92
+src/modules/AudioEngine/useCases/offlineRender/__tests__/reverseClipLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_2c742950005823 1-96
+src/modules/AudioEngine/useCases/offlineRender/getSourceOccurrenceOffset.ts
+  s_ba8dd89de9aac7::t_e3e49860ab1c34 15-17,40-56
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineAudioClipPlaybacks.ts
+  s_ba8dd89de9aac7::t_6b31dc3684ee35 4,26,98,100-102,151-166,168-211,214-217,232-236,238-242,255-368
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ba8dd89de9aac7::t_c4320fa4bba870 880
+src/modules/Command/useCases/__tests__/undo.spec.ts
+  s_ba8dd89de9aac7::t_0a20773d0abbb1 294-395
+src/modules/Command/useCases/normalizeLegacyLoopAnchorInverse.ts
+  s_ba8dd89de9aac7::t_da49e1d5864de5 1-38
+src/modules/Command/useCases/undo.ts
+  s_ba8dd89de9aac7::t_5d2c8bd3ec721c 11,116-121,165
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_ba8dd89de9aac7::t_c5eba2c21d7a77 1641,1839,3442,3570,4001
+src/modules/MIDI/useCases/grooveTemplates/__tests__/projectClipMidiEventsLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_0f5b8d186d387e 1-176
+src/modules/MIDI/useCases/grooveTemplates/createGrooveMidiEventProjector.ts
+  s_ba8dd89de9aac7::t_e61a25d04289a6 19-20
+src/modules/MIDI/useCases/grooveTemplates/getGrooveProjection.ts
+  s_ba8dd89de9aac7::t_095af36fd0579c 1-2,24-30,71,81-90
+src/modules/MIDI/useCases/grooveTemplates/projectClipMidiEvents.ts
+  s_ba8dd89de9aac7::t_6378793fa86a24 21-22,36,49
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerEvents.spec.ts
+  s_ba8dd89de9aac7::t_46743732f76452 4,529-623
+src/modules/MIDI/useCases/midiClipData/projectClipControllerEvents.ts
+  s_ba8dd89de9aac7::t_ab5f791a6e0008 1,15-20,99-113,154-170,176-192,195-217
+src/modules/MIDI/useCases/midiClipData/projectMidiClipPlayback.ts
+  s_ba8dd89de9aac7::t_c1857918d8700a 15,68,86
+src/modules/Project/models/ProjectData.ts
+  s_ba8dd89de9aac7::t_2c966a3d0e8c35 253
+src/modules/Project/stores/arrangementStore.ts
+  s_ba8dd89de9aac7::t_be1249e0318a09 57
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_ba8dd89de9aac7::t_3fc73b287021e8 65-66,147-148,159-160
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_ba8dd89de9aac7::t_669f084dc07b14 38-39,120-121,132-133
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMigratesTrimmedClipPassTakes.spec.ts
+  s_ba8dd89de9aac7::t_b9eedc0a98d80e 1-321
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_ba8dd89de9aac7::t_c53450201525e2 56-57,138-139
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_ba8dd89de9aac7::t_73153ea8b3672e 52-53,134-135,146-147
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts
+  s_ba8dd89de9aac7::t_6dfb2c9dc9b8ed 32
+src/modules/Project/useCases/projectPersistence/fileIO/serializeArrangementTracks.ts
+  s_ba8dd89de9aac7::t_5f741569d48efe 63
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_ba8dd89de9aac7::t_857247f2eb3f50 3,92
+src/modules/Transport/useCases/scheduling/__tests__/loopWindowBoundary.spec.ts
+  s_ba8dd89de9aac7::t_58a5de8237b11f 1-219
+src/modules/Transport/useCases/scheduling/__tests__/negativeAdvanceLiveAdmission.spec.ts
+  s_ba8dd89de9aac7::t_44fbdefb9a1e74 1-213
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLiveSeam.spec.ts
+  s_ba8dd89de9aac7::t_2d43391d96f3d4 1-299
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_6ce14157009f48 1-356
+src/modules/Transport/useCases/scheduling/__tests__/selectMidiNotesForLoopWindow.spec.ts
+  s_ba8dd89de9aac7::t_8f8e582cd9fbee 24-27
+src/modules/Transport/useCases/scheduling/__tests__/selectMidiNotesForLoopWindowBranches.spec.ts
+  s_ba8dd89de9aac7::t_623b04194884f5 30-33
+src/modules/Transport/useCases/scheduling/__tests__/selectMidiNotesForLoopWindowCompedTake.spec.ts
+  s_ba8dd89de9aac7::t_c0a04dd10c0b96 1-137
+src/modules/Transport/useCases/scheduling/__tests__/trimClipStartLoopedNoteStream.spec.ts
+  s_ba8dd89de9aac7::t_a568c678234fff 146-149
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_ba8dd89de9aac7::t_a6c18c46dec367 23,212,221-222,282-284,295-337,340-402,404-418,420,422-440,443-451,459-470,473-480,507,514,548-549,554-562,566,595-615
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ba8dd89de9aac7::t_fd51601c3f1961 27,783-791,1324-1330,1348-1357,1391
+src/modules/Transport/useCases/scheduling/selectMidiNotesForLoopWindow.ts
+  s_ba8dd89de9aac7::t_01c8efcf5d14ea 2,13-14,16,32-35,48-54,56-62,72-86,100-101,103,150-152,158-160
+src/utils/__tests__/clipLoopOrigin.spec.ts
+  s_ba8dd89de9aac7::t_02b16443503ec0 1-177
+src/utils/clipLoopOrigin.ts
+  s_ba8dd89de9aac7::t_571657ef7d6f84 1-227
+src/utils/handlerContract.ts
+  s_ba8dd89de9aac7::t_69c3d9d497b437 150,1504-1513,2214-2215,2276-2283,2292,2525-2552
+tests/e2e/transportResponsive.spec.ts
+  s_ba8dd89de9aac7::t_0b4f08c1add08d 30-37,64-65,69-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cde71ff16354d5d876b2a0f75a6c1a4e0e6f3071",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
