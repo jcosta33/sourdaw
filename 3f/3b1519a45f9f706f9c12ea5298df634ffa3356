@@ -1,0 +1,31 @@
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_ba8dd89de9aac7::t_72b32c4993259a 2,14-15,18-20,66-70,101,106
+src/modules/Arrangement/useCases/clipLoop/setClipLoop.ts
+  s_ba8dd89de9aac7::t_515eb74a3858ed 20-24,32,37,40
+src/modules/Command/useCases/undo.ts
+  s_4c8cd08893b364::t_252c1c09cd25a9 11,116-121,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f3b1519a45f9f706f9c12ea5298df634ffa3356",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
