@@ -1,0 +1,142 @@
+src/modules/Preferences/models/Preferences.ts
+  s_2bfd55a4393d7c::t_93a7cbad353c8f 68-72
+src/modules/Preferences/stores/__tests__/preferencesStore.spec.ts
+  s_1c08b47ac3792f::t_aac16860346873 112,136,146-190
+src/modules/Preferences/stores/__tests__/validateStoredPreferences.spec.ts
+  s_59e31a5c6f3e31::t_1aeb0a51f3b40c 5,288,293,312,336,357-417
+src/modules/Preferences/stores/preferencesStore.ts
+  s_59e31a5c6f3e31::t_be7f8ff1f566ae 76-98,112
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_2bfd55a4393d7c::t_81845370c169a4 61-67
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_2bfd55a4393d7c::t_220122ca45ab1a 30,1396
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  s_2bfd55a4393d7c::t_5ac7207b978622 158-162,165
+  h_beb54bf43b47b7 57
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  s_2bfd55a4393d7c::t_0752df3c23100f 18-22
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/initProject.spec.ts
+  s_29d8df116c5b92::t_4db352e9aafe1b 1-4,32-40,53-56,75-98
+  h_beb54bf43b47b7 9
+src/modules/Project/useCases/projectTemplates/templateHelpers/initProject.ts
+  s_59e31a5c6f3e31::t_3c0705ae2efc4e 3-4,28-30,32
+src/modules/Transport/useCases/__tests__/restoreTransportSnapshot.spec.ts
+  s_59e31a5c6f3e31::t_42874550556782 10-11,65,125-136
+src/modules/AiGeneration/handlers/generation/__tests__/generationHandlerHelpers.spec.ts
+  h_beb54bf43b47b7 35
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/setPlayheadFromClick.spec.ts
+  h_beb54bf43b47b7 22
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAutoFixMix.spec.ts
+  h_beb54bf43b47b7 54
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleDetectTempo.spec.ts
+  h_beb54bf43b47b7 24
+src/modules/AudioAnalysis/useCases/__tests__/insertPolyphonicMidiNotes.spec.ts
+  h_beb54bf43b47b7 28
+src/modules/CommandInterface/useCases/commands/__tests__/TransportCommands.spec.ts
+  h_beb54bf43b47b7 11
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  h_beb54bf43b47b7 157
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  h_beb54bf43b47b7 61
+src/modules/Project/useCases/projectPersistence/__tests__/projectSessionQuiescer.spec.ts
+  h_beb54bf43b47b7 29
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  h_beb54bf43b47b7 15
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  h_beb54bf43b47b7 111
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 185
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_beb54bf43b47b7 93
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/ambient.spec.ts
+  h_beb54bf43b47b7 28
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/cinematic.spec.ts
+  h_beb54bf43b47b7 32
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/edm.spec.ts
+  h_beb54bf43b47b7 27
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/hipHopTrap.spec.ts
+  h_beb54bf43b47b7 26
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/lofi.spec.ts
+  h_beb54bf43b47b7 26
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/podcast.spec.ts
+  h_beb54bf43b47b7 23
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/popSong.spec.ts
+  h_beb54bf43b47b7 26
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/rockBand.spec.ts
+  h_beb54bf43b47b7 25
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/singerSongwriter.spec.ts
+  h_beb54bf43b47b7 25
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/builder.spec.ts
+  h_beb54bf43b47b7 55
+  s_ba8dd89de9aac7::t_9a2170a96411f2 56-58
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_beb54bf43b47b7 35
+  s_ba8dd89de9aac7::t_11d65bc4beb8fc 36-39
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/snapshotHelpers.spec.ts
+  h_beb54bf43b47b7 61
+src/modules/Setlist/useCases/setlist/__tests__/advanceSetlistItemEnd.spec.ts
+  h_beb54bf43b47b7 30
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  h_beb54bf43b47b7 121
+src/modules/TimelineEditor/presentations/hooks/__tests__/useTempoEditorState.spec.ts
+  h_beb54bf43b47b7 125
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  h_beb54bf43b47b7 94
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/PlayheadDisplay.spec.tsx
+  h_beb54bf43b47b7 29
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/TransportControls.spec.tsx
+  h_beb54bf43b47b7 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7193d10c2f5cb27569eca7a256af2d6fa81c552",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
