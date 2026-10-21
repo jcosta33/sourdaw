@@ -1,0 +1,36 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_975e98586b111e 4325
+  s_1c08b47ac3792f::t_2a2286533f526a 5866-5869
+  s_1c08b47ac3792f::t_a4c3f39b3c9c87 4016-4017,4020-4021
+  s_1c08b47ac3792f::t_8c53a8c9ad5485 4748-4749,4751-4755,4764,4766-4767,4769,4771-4776,4780-4782
+  s_1c08b47ac3792f::t_706ea399c42c8e 4619,4621-4622,4624-4627,4631,4633-4634
+  s_1c08b47ac3792f::t_c692bb4d06aac1 4808
+  s_1c08b47ac3792f::t_c2a935652a79e4 6653
+  s_1c08b47ac3792f::t_929e66c0de1614 47
+  s_1c08b47ac3792f::t_2120303c78ea85 170-171
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/hasTrackControlRestriction.ts
+  s_1c08b47ac3792f::t_67f31eaa2d91e7 18-25
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_345bcad8b3fd9a 1-355
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_1c08b47ac3792f::t_1d09fafd187f72 181
+  s_1c08b47ac3792f::t_5f91f31a3be7e7 477-665
+  s_1c08b47ac3792f::t_94a4f28931995f 24-26
+  s_1c08b47ac3792f::t_8ef86652b428ba 146-151,153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7b3f8dc810183bed9e160bfde110ca6300b3c54e",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
