@@ -2883,11 +2883,15 @@ if(process.argv[2]==='-axo'){
             { mode: 0o600 }
         );
         // `forkAndExit` signals a forking holder (see startForkingHolder) and waits until it has
-        // recorded its child and exited; `handOff` waits until a live holder has recorded its heir.
+        // recorded its child and exited; `forkAndZombie` waits until an unreaped holder has recorded
+        // its child and become a zombie; `handOff` waits until a live holder has recorded its heir.
         const prologue = `const fs=require('node:fs');const fixture=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'fixture.json'),'utf8'));
 const forkAndExit=()=>{process.kill(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let gone=false;
  while(Date.now()<deadline&&!gone){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'&&fs.existsSync(fixture.childPath)}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!gone)process.exit(3);};
+const forkAndZombie=()=>{process.kill(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let zombie=false;
+ while(Date.now()<deadline&&!zombie){zombie=fs.existsSync(fixture.childPath)&&/^\\s*Z/.test(require('node:child_process').execFileSync('/bin/ps',['-o','stat=','-p',String(fixture.holder)],{encoding:'utf8'}));if(!zombie)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
+ if(!zombie)process.exit(3);fs.appendFileSync(fixture.events,'zombie\\n');};
 const handOff=(signal)=>{process.kill(fixture.holder,signal);const deadline=Date.now()+3000;let ready=false;
  while(Date.now()<deadline&&!ready){ready=fs.existsSync(fixture.childPath)&&(signal!=='SIGHUP'||require('node:child_process').execFileSync('/bin/ps',['-o','ppid=','-p',fs.readFileSync(fixture.childPath,'utf8')],{encoding:'utf8'}).trim()==='1');if(!ready)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
  if(!ready)process.exit(3);};`;
@@ -2900,8 +2904,8 @@ const args=process.argv.slice(2);
 if(args[0]==='-axo'){
  const call=fs.existsSync(fixture.calls)?Number(fs.readFileSync(fixture.calls,'utf8'))+1:1;
  fs.writeFileSync(fixture.calls,String(call));
- // Like the real process list, list only processes that still exist.
- const live=(pid)=>{try{process.kill(pid,0);return true}catch{return false}};
+ // Like the real process list, list only processes that still exist, including other accounts'.
+ const live=(pid)=>{try{process.kill(pid,0);return true}catch(error){return error.code==='EPERM'}};
  const ids=[fixture.runner,...(${scripts.listed})].filter(live);
  const output=execFileSync('/bin/ps',['-p',ids.join(','),'-o',process.argv[3]],{encoding:'utf8'});
  ${scripts.afterListing ?? ''}
@@ -3162,24 +3166,32 @@ process.stdout.write(catalog);
         20_000
     );
 
-    // Starts a detached holder with its cwd in `temp`; launchd reaps it once it exits. On SIGUSR1
-    // it forks a child into `temp`, records the child's PID, and exits. On SIGUSR2 it forks that
-    // child, records it, and moves its own cwd out while staying alive. On SIGHUP it does the same
-    // through an intermediate that exits, so the recorded heir's parent becomes launchd.
-    async function startForkingHolder(root: string, temp: string): Promise<{ holder: number; childPath: string }> {
+    // Starts a detached holder with its cwd in `temp`. Its launcher exits, so launchd reaps the
+    // holder once it exits; an `unreaped` launcher instead blocks without reaping, so the exited
+    // holder stays a zombie until the launcher is killed. On SIGUSR1 the holder forks a child into
+    // `temp`, records the child's PID, and exits. On SIGUSR2 it forks that child, records it, and
+    // moves its own cwd out while staying alive. On SIGHUP it does the same through an
+    // intermediate that exits, so the recorded heir's parent becomes launchd.
+    async function startForkingHolder(
+        root: string,
+        temp: string,
+        parent: 'launchd' | 'unreaped' = 'launchd'
+    ): Promise<{ holder: number; childPath: string }> {
         const holderPath = join(root, 'holder.pid');
         const childPath = join(root, 'child.pid');
         const holderProgram =
             "const [temp,childPath,holderPath]=process.argv.slice(1);const fs=require('node:fs');const {spawn}=require('node:child_process');const heir=()=>{const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',cwd:temp});child.unref();fs.writeFileSync(childPath,String(child.pid))};process.on('SIGUSR1',()=>{heir();process.exit(0)});process.on('SIGUSR2',()=>{heir();process.chdir('/')});process.on('SIGHUP',()=>{spawn(process.execPath,['-e',\"const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',cwd:process.argv[1]});c.unref();require('node:fs').writeFileSync(process.argv[2],String(c.pid))\",temp,childPath],{stdio:'ignore'});process.chdir('/')});fs.writeFileSync(holderPath,String(process.pid));setInterval(()=>{},1000)";
+        // A blocked event loop never collects its child's exit status.
         const launcher = spawn(
             process.execPath,
             [
                 '-e',
-                "const [program,...rest]=process.argv.slice(1);require('node:child_process').spawn(process.execPath,['-e',program,...rest],{detached:true,stdio:'ignore',cwd:rest[0]}).unref()",
+                "const [program,...rest]=process.argv.slice(1);require('node:child_process').spawn(process.execPath,['-e',program,...rest],{detached:true,stdio:'ignore',cwd:rest[0]}).unref();if(rest[3]==='unreaped')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20000)",
                 holderProgram,
                 temp,
                 childPath,
                 holderPath,
+                parent,
             ],
             { stdio: 'ignore' }
         );
@@ -3240,6 +3252,44 @@ process.stdout.write(catalog);
                 expect(state, reasons.join('; ')).toBe('alive');
                 expect(reads()).toEqual(expectedReads);
                 expect(isAlive(holder)).toBe(false);
+            } finally {
+                if (existsSync(childPath)) {
+                    childPids.add(Number(readFileSync(childPath, 'utf8')));
+                }
+            }
+        },
+        20_000
+    );
+
+    it.skipIf(process.platform !== 'darwin')(
+        'takes a fresh observation when a missed holder forks into storage and stays an unreaped zombie',
+        async () => {
+            const root = fixture();
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
+            const { holder, childPath } = await startForkingHolder(root, storage.tempDirectory, 'unreaped');
+            // Whole catalogs omit the holder and list its child once it exists. After the closing
+            // process list the holder forks into storage and exits, and nothing reaps it.
+            const { bin, reads, events } = darwinCensusFixture(
+                root,
+                { holder, childPath, temp: storage.tempDirectory },
+                {
+                    listed: "[fixture.holder,...(fs.existsSync(fixture.childPath)?[Number(fs.readFileSync(fixture.childPath,'utf8'))]:[])]",
+                    afterListing: 'if(call===2)forkAndZombie();',
+                    lsof: "if(!scoped&&fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(fixture.childPath,'utf8')),fixture.temp);",
+                }
+            );
+            try {
+                const state = await withCensusPath(bin, () =>
+                    storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+                );
+                expect(state, reasons.join('; ')).toBe('alive');
+                expect(events()).toEqual(['zombie']);
+                expect(reads()).toEqual(['whole', 'whole']);
+                // Still a zombie, so the census skipped it rather than finding it gone.
+                expect(execFileSync('/bin/ps', ['-o', 'stat=', '-p', String(holder)], { encoding: 'utf8' })).toMatch(
+                    /^\s*Z/
+                );
             } finally {
                 if (existsSync(childPath)) {
                     childPids.add(Number(readFileSync(childPath, 'utf8')));
@@ -3384,6 +3434,53 @@ else{catalog+=entry(fixture.holder,fixture.outside);if(fs.existsSync(fixture.chi
         20_000
     );
 
+    // A launchd child of another account, as every real process list holds.
+    function foreignLaunchdChild(): number {
+        const uid = process.getuid?.();
+        for (const row of execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,uid='], { encoding: 'utf8' })
+            .trim()
+            .split('\n')) {
+            const [pid, parent, user] = row.trim().split(/\s+/).map(Number);
+            if (pid !== undefined && parent === 1 && user !== uid) {
+                return pid;
+            }
+        }
+        throw new Error('no launchd child of another account is listed');
+    }
+
+    it.skipIf(process.platform !== 'darwin')(
+        "ignores another account's launchd child in the closing parent listing and releases",
+        async () => {
+            const root = fixture();
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
+            const outside = outsideDirectory(root);
+            const resident = spawnResident(outside);
+            const foreign = foreignLaunchdChild();
+            // Every listing holds the foreign process. Whole catalogs omit the resident, whose clean
+            // scoped read sends the census to the closing parent listing, which records its sighting.
+            const { bin, reads, events } = darwinCensusFixture(
+                root,
+                { resident, outside, foreign },
+                {
+                    listed: '[fixture.resident,fixture.foreign]',
+                    afterListing:
+                        "if(args[1]==='pid=,ppid=,uid=')fs.appendFileSync(fixture.events,'parents '+output.trim().split('\\n').some((row)=>row.trim().split(/\\s+/)[0]===String(fixture.foreign))+'\\n');",
+                    lsof: 'if(scoped&&requested.includes(fixture.resident))catalog+=entry(fixture.resident,fixture.outside);',
+                }
+            );
+            const state = await withCensusPath(bin, () =>
+                storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+            );
+            expect(state, reasons.join('; ')).toBe('dead');
+            expect(events()).toEqual(['parents true']);
+            expect(reads()).toEqual(['whole', 'scoped']);
+            expect(await withCensusPath(bin, () => storage.release(true)), reasons.join('; ')).toBe(true);
+            expect(existsSync(storage.tempDirectory)).toBe(false);
+        },
+        20_000
+    );
+
     it.skipIf(process.platform !== 'darwin')(
         'spends no scoped read on an observation in which a missed process exited',
         async () => {
@@ -3420,35 +3517,80 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         20_000
     );
 
+    // A detached grandchild is reaped by launchd once killed, so its exit yields exact ESRCH.
+    async function startReapedResident(root: string): Promise<number> {
+        const pidPath = join(root, 'resident.pid');
+        const launcher = spawn(
+            process.execPath,
+            [
+                '-e',
+                "const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});child.unref();require('node:fs').writeFileSync(process.argv[1],String(child.pid))",
+                pidPath,
+            ],
+            { stdio: 'ignore' }
+        );
+        if (launcher.pid !== undefined) {
+            childPids.add(launcher.pid);
+        }
+        await waitUntil(() => existsSync(pidPath));
+        const residentPid = Number(readFileSync(pidPath, 'utf8'));
+        childPids.add(residentPid);
+        return residentPid;
+    }
+
     it.skipIf(process.platform !== 'darwin')(
-        'takes a fresh observation when an omitted process exits before its state sample, then releases',
+        'releases without a fresh observation when an omitted process exits before the closing process list',
         async () => {
             const root = fixture();
-            const pidPath = join(root, 'resident.pid');
             const reasons: string[] = [];
             const storage = censusStorage(root, reasons);
-            // A detached grandchild is reaped by launchd once killed, so its exit yields exact ESRCH.
-            const launcher = spawn(
-                process.execPath,
-                [
-                    '-e',
-                    "const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});child.unref();require('node:fs').writeFileSync(process.argv[1],String(child.pid))",
-                    pidPath,
-                ],
-                { stdio: 'ignore' }
+            const residentPid = await startReapedResident(root);
+            // Whole catalogs never list the resident, which exits right after the opening process
+            // list; any child it forked by then would be in the closing list.
+            const { bin, reads, events } = darwinCensusFixture(
+                root,
+                { resident: residentPid },
+                {
+                    listed: '[fixture.resident]',
+                    afterListing: `if(call===1){
+ process.kill(fixture.resident,'SIGKILL');
+ const deadline=Date.now()+3000;let gone=false;
+ while(!gone&&Date.now()<deadline){try{process.kill(fixture.resident,0)}catch(error){gone=error.code==='ESRCH'}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
+ if(!gone)process.exit(3);
+ fs.appendFileSync(fixture.events,'exited\\n');
+}`,
+                    lsof: '',
+                }
             );
-            if (launcher.pid !== undefined) {
-                childPids.add(launcher.pid);
-            }
-            await waitUntil(() => existsSync(pidPath));
-            const residentPid = Number(readFileSync(pidPath, 'utf8'));
-            childPids.add(residentPid);
+            const state = await withCensusPath(bin, () =>
+                storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
+            );
+            expect(state, reasons.join('; ')).toBe('dead');
+            expect(events()).toEqual(['exited']);
+            expect(reads()).toEqual(['whole']);
+            expect(await withCensusPath(bin, () => storage.release(true)), reasons.join('; ')).toBe(true);
+            expect(existsSync(storage.tempDirectory)).toBe(false);
+        },
+        20_000
+    );
+
+    it.skipIf(process.platform !== 'darwin').each([
+        { listing: 'both process lists', listed: '[fixture.resident]' },
+        // Found alive after the closing list though absent from it, it may have outlived that list.
+        { listing: 'only the opening process list', listed: 'call===1?[fixture.resident]:[]' },
+    ])(
+        'takes a fresh observation when an omitted process in $listing exits before its state sample, then releases',
+        async ({ listed }) => {
+            const root = fixture();
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
+            const residentPid = await startReapedResident(root);
             // The state sample for the omitted resident kills it and reports ps's missing-PID failure.
             const { bin, reads } = darwinCensusFixture(
                 root,
                 { resident: residentPid },
                 {
-                    listed: '[fixture.resident]',
+                    listed,
                     sample: `if(args[0]==='-p'&&args[1]===String(fixture.resident)){
  process.kill(fixture.resident,'SIGKILL');
  const deadline=Date.now()+3000;
