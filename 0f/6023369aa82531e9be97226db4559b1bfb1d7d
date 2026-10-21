@@ -1,0 +1,49 @@
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_1c08b47ac3792f::t_4050845edf918a 1810
+  s_1c08b47ac3792f::t_3d1f3ed9e824e1 1814-1820
+  s_1c08b47ac3792f::t_02926d1f57738e 1792,1795
+  s_1c08b47ac3792f::t_8355d1464377aa 1824-1828,1830-1843
+  s_1c08b47ac3792f::t_29afa82766cd8d 1829
+  s_1c08b47ac3792f::t_7c8dfa56ab80f0 1740-1755,1757-1791,1793-1794,1796-1809,1811-1813,1821-1823
+  s_1c08b47ac3792f::t_7a2055f96df86a 1739
+  s_1c08b47ac3792f::t_1febe7555c29ee 1756
+docs/06-testing.md
+  s_1c08b47ac3792f::t_7313615e18b15e 745-752
+scripts/resourceGuardStorage.ts
+  s_1c08b47ac3792f::t_5c6f84a928b1d5 220-221,225,229-230
+  s_1c08b47ac3792f::t_682d0816089e4b 26-28
+  s_1c08b47ac3792f::t_c10460f0cfd17b 226
+  s_1c08b47ac3792f::t_fd6624a9524b27 227-228
+scripts/resourceGuard.ts
+  s_1c08b47ac3792f::t_6020ce7529e1eb 1133
+  s_1c08b47ac3792f::t_d92645b1a87c51 1047
+  s_1c08b47ac3792f::t_79a74d273f57c6 1134
+  s_1c08b47ac3792f::t_2983d2c05b7ba6 1470,1475-1476
+  s_1c08b47ac3792f::t_deca1595273743 1280-1293,1296-1297
+  s_1c08b47ac3792f::t_6367be80c3dd33 1307,1312
+  s_1c08b47ac3792f::t_6c5a11b3bf80b7 1609
+  s_1c08b47ac3792f::t_9df981d59018fa 1069-1070
+  s_1c08b47ac3792f::t_78a617931eb4f3 1124
+  s_1c08b47ac3792f::t_863ce11b0d33e1 1045-1046
+  s_1c08b47ac3792f::t_40b8930c0e256e 1734
+.agents/skills/review-stances/security-and-platform.md
+  s_1c08b47ac3792f::t_3cfca20641c5ed 25-38
+  s_1c08b47ac3792f::t_a85c2ca1581f31 94-96
+  s_1c08b47ac3792f::t_434894c34ec9f4 49-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f6023369aa82531e9be97226db4559b1bfb1d7d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
