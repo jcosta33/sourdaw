@@ -1,0 +1,20 @@
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_ba8dd89de9aac7::t_469995ca9a8dfa 1184-1185,1188,1192
+  s_ba8dd89de9aac7::t_d9b3a1f065ea84 335-336
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4c9e0c71f6ddf99c5ccd20447177a4c9f36b25c",
+  "prompts": {},
+  "sessions": {
+    "s_ba8dd89de9aac7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c82c6e-ff7d-4de6-8b4e-4e947915f6b1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
