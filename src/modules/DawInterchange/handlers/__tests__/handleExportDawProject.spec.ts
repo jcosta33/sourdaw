@@ -189,6 +189,44 @@ describe('handleExportDawProject', () => {
         expect(notifyUser).toHaveBeenCalledWith('Exported session.dawproject', 'success');
     });
 
+    it('should report a deferred browser close failure without notifying success', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+        vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject', missingAudioCount: 0 });
+        const failure = new Error('close failed');
+        let failClose!: (reason: Error) => void;
+        const closeFinished = new Promise<void>((_resolve, reject) => {
+            failClose = reject;
+        });
+        // Keep the rejection handled when probing code that forgets to await close().
+        void closeFinished.catch(() => undefined);
+        let closeStarted!: () => void;
+        const closeCalled = new Promise<void>((resolve) => {
+            closeStarted = resolve;
+        });
+        const writable = {
+            write: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn().mockImplementation(() => {
+                closeStarted();
+                return closeFinished;
+            }),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        vi.stubGlobal(
+            'showSaveFilePicker',
+            vi.fn().mockResolvedValue({ createWritable: () => Promise.resolve(writable) })
+        );
+
+        const exportFinished = handleExportDawProject.execute({ type: 'exportDawProject' });
+        await closeCalled;
+        failClose(failure);
+        await exportFinished;
+
+        expect(writable.abort).toHaveBeenCalledTimes(1);
+        expect(logger.error).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(logger.error).mock.calls[0]?.[0]).toMatchObject({ cause: failure });
+        expect(notifyUser).toHaveBeenCalledExactlyOnceWith('Failed to export DAWproject', 'error');
+    });
+
     it('should stay silent when the browser save picker is cancelled', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
         vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject', missingAudioCount: 0 });
