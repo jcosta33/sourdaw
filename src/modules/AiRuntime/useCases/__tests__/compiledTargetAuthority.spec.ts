@@ -1199,6 +1199,18 @@ describe('a compiled rename reads its target apart from the name it writes', () 
         expect(result.rejections).toEqual([]);
         expect(result.actions).toEqual([{ type: 'renameTrack', payload: { trackId: track.id, name } }]);
     });
+
+    it('refuses a rename of a track the request names only inside the new name', () => {
+        const result = compileAndBridge(
+            'Rename Kick to Bass Drum',
+            [trackItem('renameTrack', renameBass, { name: 'Bass Drum' })],
+            [],
+            trackRenameContext
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'renameTrack', reason: UNAUTHORIZED_TRACK });
+    });
 });
 
 describe('role-family selections worded in the singular or by another name ground as on main', () => {
@@ -1385,6 +1397,25 @@ describe('compiled renames in one clause read no written name as a target', () =
             });
         }
     );
+});
+
+describe('a name written by another rename in the batch picks no target', () => {
+    it("refuses a rename of a track the request names only inside the other rename's new name", () => {
+        const result = compileAndBridge(
+            'Rename Keys to Piano Lead and Vocals to Pads',
+            [
+                trackItem('renameTrack', coRenameKeys, { name: 'Piano Lead' }),
+                trackItem('renameTrack', coRenamePiano, { name: 'Pads' }),
+            ],
+            [],
+            coRenameContext
+        );
+
+        expect(result.actions).not.toContainEqual(
+            expect.objectContaining({ payload: expect.objectContaining({ trackId: coRenamePiano.id }) })
+        );
+        expect(result.rejections).toContainEqual({ index: 1, name: 'renameTrack', reason: UNAUTHORIZED_TRACK });
+    });
 });
 
 describe('a role selection worded by a two-word name grounds as on main', () => {
