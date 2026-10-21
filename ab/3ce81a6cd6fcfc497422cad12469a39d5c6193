@@ -1,0 +1,66 @@
+src/modules/AiRuntime/useCases/agentReference/findAgentReferenceNameSpans.ts
+  s_1c08b47ac3792f::t_44c6ac31eb6c08 77-78,80-98
+  s_1c08b47ac3792f::t_af22fa34f131c4 99,181-205,208-216,221-222,233,236-241,243-246,248
+  s_1c08b47ac3792f::t_3ab2ecd97ae3a4 30-32,36-37,47-50
+  s_1c08b47ac3792f::t_edd1eb6fd1d0f1 242
+  s_1c08b47ac3792f::t_d9f8def5412f41 52
+  s_1c08b47ac3792f::t_1f37693c2619dd 34
+  s_1c08b47ac3792f::t_77970b891db50a 35,100,249-250
+src/modules/AiRuntime/useCases/agentReference/getBestAgentReferenceNameRanges.ts
+  s_1c08b47ac3792f::t_ea04af0ca3d3e5 31,38,40
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_1c08b47ac3792f::t_f1ef6506f8497e 922-931
+  s_1c08b47ac3792f::t_2ece7f85759584 1678
+  s_1c08b47ac3792f::t_648edaa78e80c4 908
+  s_1c08b47ac3792f::t_8342c6aee05adb 1663-1677,1679-1708
+  s_1c08b47ac3792f::t_034e1e497a5b8d 615-632
+  s_1c08b47ac3792f::t_2dd898dd80c6b1 933,936-937,1709-1711
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_1c08b47ac3792f::t_7412caefa7c7aa 5819-5826,5828-5829,5831-5836,5841,5970
+  s_1c08b47ac3792f::t_b9f735ae849dde 5850-5852
+  s_1c08b47ac3792f::t_3bd5f0731eec92 5923-5928,5983
+  s_1c08b47ac3792f::t_c069f54a55c74b 5981
+  s_1c08b47ac3792f::t_519d98caf24cfe 5837-5838,5853-5854,5929-5930
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_1c08b47ac3792f::t_1c64339d902828 464
+  s_1c08b47ac3792f::t_f814d19f6fe0a7 229,234
+  s_1c08b47ac3792f::t_150142bee69706 451
+  s_1c08b47ac3792f::t_6cffa19cd85f84 292,295
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_aa612d4fbaefa2 297-298,300
+  s_1c08b47ac3792f::t_37342416150831 18-19
+  s_1c08b47ac3792f::t_4dcbca3f4404da 211
+  s_1c08b47ac3792f::t_e2fc4cbd8cd112 206-210,212-217
+  s_1c08b47ac3792f::t_ac4817994e3aef 409-411
+  s_1c08b47ac3792f::t_b953e6a9c38324 420
+  s_1c08b47ac3792f::t_1753d66960d497 51-53
+  s_1c08b47ac3792f::t_a61bbe1cd6b5e0 218-231,233-236,246-253
+  s_1c08b47ac3792f::t_21934d601e0b67 49-50
+  s_1c08b47ac3792f::t_e578f829684ea5 352
+  s_1c08b47ac3792f::t_de349369f1f82a 444
+  s_1c08b47ac3792f::t_d6afbcb7eb3352 30-34
+  s_1c08b47ac3792f::t_a03d9a475b1075 44-48
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_1c08b47ac3792f::t_42d36cce45176d 2112-2125
+  s_1c08b47ac3792f::t_1713bc2ed4bdf6 1904
+  s_1c08b47ac3792f::t_d06bec05234069 1926-1941
+  s_1c08b47ac3792f::t_2957daf4d9f450 1913
+  s_1c08b47ac3792f::t_c1d8a625f29487 1950-1966,1974-2004
+  s_1c08b47ac3792f::t_de9c0cc26efc62 2044-2062,2064-2073
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab3ce81a6cd6fcfc497422cad12469a39d5c6193",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
