@@ -1,0 +1,82 @@
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_59e31a5c6f3e31::t_c93b21aefad4a9 573-588,590-591,596,630,634-635,658-659,661-666
+  s_29d8df116c5b92::t_02e7c3e678c69f 520,527-528,543,571-572
+  s_29d8df116c5b92::t_26d0b12a246934 565,572
+  s_29d8df116c5b92::t_d8442d9a6e689c 461-462
+  h_beb54bf43b47b7 6,67-68,102-103,104,105-106,125-136,137,138,139,140-181,182-186,187,188-190,191-195,196-217,275-280,286-295,305-314,311-314,315-321,322,323-330,331,331-333,333,334,335,335-337,337,338-340,361,516,518,520,535,537,538,542-544,542-543,544,547,560-561,565,571-572,572,621-625
+  s_29d8df116c5b92::t_31450163bddc5f 281-285,296-303
+  s_29d8df116c5b92::t_a00fb6de7ecac9 516
+  s_1c08b47ac3792f::t_31327465449a2f 595
+  s_1c08b47ac3792f::t_dbbe7fce5a7055 668-678,684-692,695-698
+  s_1c08b47ac3792f::t_9f2ab4c4b513c8 549-552
+  s_1c08b47ac3792f::t_f66b1e54beb62f 21-25
+  s_1c08b47ac3792f::t_b36bf0920c8342 534
+  s_1c08b47ac3792f::t_1aa6c89ae8e870 512-515,517,519,521-529,531-533,536,539-541,545-546,548,553-559,562-564,566-568,570,574-590,592
+  s_1c08b47ac3792f::t_7384926be70445 593
+  s_1c08b47ac3792f::t_eb0322600f957a 597-614,626-634,641,648-649
+  s_1c08b47ac3792f::t_036e33de82ec00 616-625,635-640,642-647
+  s_1c08b47ac3792f::t_c2f601017159a5 651-654
+  s_1c08b47ac3792f::t_f140244edfa99c 650,660
+  s_1c08b47ac3792f::t_7911bf8192f0fc 442-457
+src/modules/AiRuntime/useCases/agentReference/findCoordinatedTrackLists.ts
+  s_29d8df116c5b92::t_e4539965b397a4 38-41,286-287
+  s_29d8df116c5b92::t_0516a746290795 44-46,48-51,54,57-60
+  s_1c08b47ac3792f::t_7478550bd23a7f 268,281
+  s_1c08b47ac3792f::t_3094c690e4ecfd 26-31
+  s_1c08b47ac3792f::t_e38d961b24022e 167-169,170-189,222-226,227,232-233
+  s_1c08b47ac3792f::t_9bb1d6825e302e 32-37
+  s_1c08b47ac3792f::t_75512f7e3d4a4d 79-80
+  s_1c08b47ac3792f::t_a09eeb5e07aff6 190-221,228-231
+  s_1c08b47ac3792f::t_4902da339f574b 269-274,282-285
+  s_1c08b47ac3792f::t_54701a77484240 81-82
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/promptScope.ts
+  s_29d8df116c5b92::t_a76ba51cbe28d8 26-27,28-30
+  s_1c08b47ac3792f::t_095ffe74999326 24
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_29d8df116c5b92::t_d00d5ab3878c49 4466-4473
+  s_1c08b47ac3792f::t_ffbdc2db275dc7 1254
+  s_1c08b47ac3792f::t_94a669f153e123 1686
+  s_1c08b47ac3792f::t_a643bc597f7c6f 1294-1295,1297-1316
+  s_1c08b47ac3792f::t_9d27bbc2bae9f4 4754-4755
+  s_1c08b47ac3792f::t_66494cc34c01f1 1680
+  s_1c08b47ac3792f::t_34c84f8fbe4f8c 1375,1381
+  s_1c08b47ac3792f::t_d765b4782fa99f 1319-1327,1331-1339
+  s_1c08b47ac3792f::t_3a8dcadfa11aba 1376-1379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "14d4e9f0e3dc837d12e971c44f96b509ef1adf5b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
