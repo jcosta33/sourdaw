@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    configureAutomergeStoragePort,
-} from '#/infra/store/storage/createAutomergeStorage';
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
@@ -178,14 +176,37 @@ describe('device automation bypasses manual command history', () => {
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
-        setActionHistoryMetadataPort({ record: () => [], markReverted: () => ({ status: 'unavailable' as const }), clear: () => undefined });
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' as const }),
+            clear: () => undefined,
+        });
         macroStore.set({ macros: [], recording: true, currentRecording: [] });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         const transition = runProjectLoadTransaction();
         expect(await transition.prepare()).toBe(true);
         expect(transition.activate()).toBe(true);
         trackStore.set({ tracks: [testTrack([structuredClone(synth)])], selectedTrackId: 'track-1', ghostClips: [] });
-        automationStore.set({ lanes: [{ id: 'automated-detune', trackId: 'track-1', parameterId: 'synth-1:detune', parameterName: 'Detune', points: [{ beat: 0, value: 5, curve: 'linear', tension: 0 }, { beat: 4, value: 65, curve: 'linear', tension: 0 }], objects: [], enabled: true, visible: true, collapsed: false, minValue: -100, maxValue: 100 }] });
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'automated-detune',
+                    trackId: 'track-1',
+                    parameterId: 'synth-1:detune',
+                    parameterName: 'Detune',
+                    points: [
+                        { beat: 0, value: 5, curve: 'linear', tension: 0 },
+                        { beat: 4, value: 65, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    enabled: true,
+                    visible: true,
+                    collapsed: false,
+                    minValue: -100,
+                    maxValue: 100,
+                },
+            ],
+        });
         transportStore.set({ ...defaultTransportState, isPlaying: true });
         tempoMapStore.set({ changes: [] });
         settlePendingProjectWritesAndCaptureRevision();
@@ -218,7 +239,10 @@ describe('device automation bypasses manual command history', () => {
         expect(macroStore.value?.currentRecording).toEqual([]);
         expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
 
-        await Command.executeAppAction({ type: 'setDeviceParameter', payload: { deviceId: synth.id, paramId: 'detune', value: 65 } });
+        await Command.executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: synth.id, paramId: 'detune', value: 65 },
+        });
         expect(dispatch).toHaveBeenCalledOnce();
         expect(rawValues()?.detune).toBe(65);
         expect(depth()).toBe(1);

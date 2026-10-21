@@ -18,6 +18,7 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import * as automationUseCases from '#/modules/Automation/useCases';
 import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -234,7 +235,12 @@ function moveKnob(clientY: number, element = knob()): void {
 function endKnob(element = knob()): void {
     fireEvent.pointerUp(element, { pointerId: 1 });
 }
-async function expectCommitted(paramId: string, value: number, historyDepth: number, deviceId = synth.id): Promise<void> {
+async function expectCommitted(
+    paramId: string,
+    value: number,
+    historyDepth: number,
+    deviceId = synth.id
+): Promise<void> {
     await waitFor(() => {
         expect(values(deviceId)[paramId]).toBe(value);
         expect(rawValues(deviceId)?.[paramId]).toBe(value);
@@ -248,7 +254,15 @@ function sliderTrack(): HTMLElement {
     }
     capturePointer(root);
     vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-        x: 0, y: 0, top: 0, bottom: 20, left: 0, right: 100, width: 100, height: 20, toJSON: () => ({}),
+        x: 0,
+        y: 0,
+        top: 0,
+        bottom: 20,
+        left: 0,
+        right: 100,
+        width: 100,
+        height: 20,
+        toJSON: () => ({}),
     });
     return root;
 }
@@ -267,11 +281,19 @@ describe('Inspector continuous parameter gestures through real history', () => {
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
-        setActionHistoryMetadataPort({ record: () => [], markReverted: () => ({ status: 'unavailable' as const }), clear: () => undefined });
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' as const }),
+            clear: () => undefined,
+        });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         await activateProject();
-        trackStore.set({ tracks: [testTrack([structuredClone(synth), structuredClone(compressor)])], selectedTrackId: 'track-1', ghostClips: [] });
+        trackStore.set({
+            tracks: [testTrack([structuredClone(synth), structuredClone(compressor)])],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
         automationStore.set({ lanes: [] });
         transportStore.set({ ...defaultTransportState, isPlaying: false });
         const context = new AudioContext();
@@ -310,7 +332,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         expect(knob()).toHaveAttribute('aria-valuenow', '65');
         endKnob();
         await expectCommitted('detune', 65, 1);
-        expect(writes()).toEqual([25, 45, 65, 65]);
+        expect(writes()).toEqual([25, 45, 65, 65, 65]);
         await act(() => undo());
         expect(rawValues()?.detune).toBe(5);
         expect(values().detune).toBe(5);
@@ -345,8 +367,15 @@ describe('Inspector continuous parameter gestures through real history', () => {
     });
 
     it('gives two parameter identities on two devices two independent entries', async () => {
-        render(<><Control /><Control deviceId={compressor.id} paramId="comp-ratio" /></>);
-        beginKnob(); moveKnob(85); endKnob();
+        render(
+            <>
+                <Control />
+                <Control deviceId={compressor.id} paramId="comp-ratio" />
+            </>
+        );
+        beginKnob();
+        moveKnob(85);
+        endKnob();
         await expectCommitted('detune', 25, 1);
         fireEvent.keyDown(screen.getByRole('slider', { name: 'Ratio' }), { key: 'End' });
         const maximum = getPluginById(compressor.type)?.parameters.find((p) => p.id === 'comp-ratio')?.maxValue;
@@ -360,8 +389,15 @@ describe('Inspector continuous parameter gestures through real history', () => {
     });
 
     it('keeps two parameters on one device in separate undo entries', async () => {
-        render(<><Control /><Control paramId="gain" /></>);
-        beginKnob(); moveKnob(85); endKnob();
+        render(
+            <>
+                <Control />
+                <Control paramId="gain" />
+            </>
+        );
+        beginKnob();
+        moveKnob(85);
+        endKnob();
         await expectCommitted('detune', 25, 1);
         fireEvent.keyDown(screen.getByRole('slider', { name: 'Gain' }), { key: 'End' });
         await expectCommitted('gain', 1, 2);
@@ -377,7 +413,8 @@ describe('Inspector continuous parameter gestures through real history', () => {
         const parameter = getPluginById(synth.type)?.parameters.find((candidate) => candidate.id === 'filterCutoff');
         if (!parameter) throw new Error('Missing Synth cutoff descriptor');
         const control = screen.getByRole('slider', { name: parameter.name });
-        beginKnob(control); moveKnob(85, control);
+        beginKnob(control);
+        moveKnob(85, control);
         const preview = engineWrites.at(-1)?.value;
         expect(preview).toBeGreaterThan(5000);
         expect(preview).toBeLessThanOrEqual(parameter.maxValue);
@@ -394,7 +431,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
     it('restores an absent field and its engine default rather than persisting a preview on undo', async () => {
         trackStore.set({ ...trackStore.value!, tracks: [testTrack([{ ...synth, parameterValues: { gain: 0.3 } }])] });
         render(<Control />);
-        beginKnob(); moveKnob(85); endKnob();
+        beginKnob();
+        moveKnob(85);
+        endKnob();
         await expectCommitted('detune', 20, 1);
         await act(() => undo());
         expect(Object.hasOwn(values(), 'detune')).toBe(false);
@@ -406,50 +445,79 @@ describe('Inspector continuous parameter gestures through real history', () => {
 
     it('settles a return-to-start drag without creating history or retaining a stale preview', async () => {
         render(<Control />);
-        beginKnob(); moveKnob(85); moveKnob(100); endKnob();
-        await executeUserAppAction({ type: 'setDeviceParameter', payload: { deviceId: compressor.id, paramId: 'comp-ratio', value: 4 } });
-        expect(writes()).toEqual([25, 5]);
+        beginKnob();
+        moveKnob(85);
+        moveKnob(100);
+        endKnob();
+        await executeUserAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: compressor.id, paramId: 'comp-ratio', value: 4 },
+        });
+        expect(writes()).toEqual([25, 5, 5]);
         expect(rawValues()?.detune).toBe(5);
         expect(depth()).toBe(0);
     });
 
     it.each(['pointerCancel', 'lostPointerCapture', 'blur', 'windowBlur'])(
-        'settles %s at most once even if pointer-up follows', async (finish) => {
+        'settles %s at most once even if pointer-up follows',
+        async (finish) => {
             render(<Control />);
             const control = knob();
-            beginKnob(control); moveKnob(85, control);
+            beginKnob(control);
+            moveKnob(85, control);
             if (finish === 'pointerCancel') fireEvent.pointerCancel(control, { pointerId: 1 });
             else if (finish === 'lostPointerCapture') fireEvent.lostPointerCapture(control, { pointerId: 1 });
             else if (finish === 'blur') fireEvent.blur(control);
             else fireEvent.blur(window);
             endKnob(control);
             await expectCommitted('detune', 25, 1);
-            expect(writes()).toEqual([25, 25]);
+            expect(writes()).toEqual([25, 25, 25]);
         }
     );
 
     it('refuses an unmounted preview without committing a ghost edit', async () => {
         const view = render(<Control />);
-        beginKnob(); moveKnob(85);
+        beginKnob();
+        moveKnob(85);
         view.unmount();
-        await executeUserAppAction({ type: 'setDeviceParameter', payload: { deviceId: compressor.id, paramId: 'comp-ratio', value: 4 } });
+        await executeUserAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: compressor.id, paramId: 'comp-ratio', value: 4 },
+        });
         expect(rawValues()?.detune).toBe(5);
         expect(depth()).toBe(0);
         expect(writes().at(-1)).toBe(5);
     });
 
     it.each(['changed-value', 'changed-type', 'removed-device', 'duplicate-owner', 'frozen-change'])(
-        'drops a stale gesture after %s without erasing current truth', async (change) => {
+        'drops a stale gesture after %s without erasing current truth',
+        async (change) => {
             render(<Control displayed={structuredClone(synth)} />);
             const control = knob();
-            beginKnob(control); moveKnob(85, control);
+            beginKnob(control);
+            moveKnob(85, control);
             act(() => {
-                const replacement = { ...synth, type: change === 'changed-type' ? 'crust' : synth.type, parameterValues: { ...synth.parameterValues, detune: change === 'changed-value' ? 17 : 5 } };
-                const track = { ...testTrack(change === 'removed-device' ? [structuredClone(compressor)] : [replacement, structuredClone(compressor)]), frozen: change === 'frozen-change' };
-                trackStore.set({ ...trackStore.value!, tracks: change === 'duplicate-owner' ? [track, { ...track, id: 'other-track' }] : [track] });
+                const replacement = {
+                    ...synth,
+                    type: change === 'changed-type' ? 'crust' : synth.type,
+                    parameterValues: { ...synth.parameterValues, detune: change === 'changed-value' ? 17 : 5 },
+                };
+                const track = {
+                    ...testTrack(
+                        change === 'removed-device'
+                            ? [structuredClone(compressor)]
+                            : [replacement, structuredClone(compressor)]
+                    ),
+                    frozen: change === 'frozen-change',
+                };
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: change === 'duplicate-owner' ? [track, { ...track, id: 'other-track' }] : [track],
+                });
             });
             const before = structuredClone(trackStore.value?.tracks);
-            moveKnob(70, control); endKnob(control);
+            moveKnob(70, control);
+            endKnob(control);
             await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
             expect(trackStore.value?.tracks).toEqual(before);
             expect(depth()).toBe(0);
@@ -460,7 +528,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
     it('preserves permission to gesture on an already-frozen owner', async () => {
         trackStore.set({ ...trackStore.value!, tracks: [{ ...testTrack([structuredClone(synth)]), frozen: true }] });
         render(<Control />);
-        beginKnob(); moveKnob(85); endKnob();
+        beginKnob();
+        moveKnob(85);
+        endKnob();
         await expectCommitted('detune', 25, 1);
         await act(() => undo());
         expect(rawValues()?.detune).toBe(5);
@@ -468,20 +538,27 @@ describe('Inspector continuous parameter gestures through real history', () => {
 
     it('refuses a queued final after its captured owner frozen state changes', async () => {
         render(<Control />);
-        beginKnob(); moveKnob(85);
+        beginKnob();
+        moveKnob(85);
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const snapshot = transactSnapshot(async (transaction) => {
             entered.resolve();
             await release.promise;
             const write = runWithAutomergeStorageTransaction(transaction, () => {
-                trackStore.set({ ...trackStore.value!, tracks: [{ ...testTrack([structuredClone(synth), structuredClone(compressor)]), frozen: true }] });
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: [{ ...testTrack([structuredClone(synth), structuredClone(compressor)]), frozen: true }],
+                });
             });
             write.commit();
         });
         await entered.promise;
         endKnob();
-        await act(async () => { release.resolve(); await snapshot; });
+        await act(async () => {
+            release.resolve();
+            await snapshot;
+        });
         await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
         expect(rawValues()?.detune).toBe(5);
         expect(depth()).toBe(0);
@@ -491,16 +568,24 @@ describe('Inspector continuous parameter gestures through real history', () => {
     it('fences a queued final commit against a same-id project transition', async () => {
         render(<Control />);
         const control = knob();
-        beginKnob(control); moveKnob(85, control);
+        beginKnob(control);
+        moveKnob(85, control);
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
-        const snapshot = transactSnapshot(async () => { entered.resolve(); await release.promise; });
+        const snapshot = transactSnapshot(async () => {
+            entered.resolve();
+            await release.promise;
+        });
         await entered.promise;
         endKnob(control);
         await activateProject();
         engineWrites.length = 0;
-        release.resolve(); await snapshot;
-        await executeUserAppAction({ type: 'setDeviceParameter', payload: { deviceId: compressor.id, paramId: 'comp-ratio', value: 4 } });
+        release.resolve();
+        await snapshot;
+        await executeUserAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: compressor.id, paramId: 'comp-ratio', value: 4 },
+        });
         expect(rawValues()?.detune).toBe(5);
         expect(depth()).toBe(0);
         expect(writes()).toEqual([]);
@@ -508,7 +593,8 @@ describe('Inspector continuous parameter gestures through real history', () => {
 
     it('restores authoritative runtime and UI after a refused final commit', async () => {
         render(<Control />);
-        beginKnob(); moveKnob(85);
+        beginKnob();
+        moveKnob(85);
         setRepairRequired();
         endKnob();
         await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
@@ -520,8 +606,11 @@ describe('Inspector continuous parameter gestures through real history', () => {
 
     it('reports an unexpected engine failure and does not leave a truth edit or preview', async () => {
         render(<Control />);
-        beginKnob(); moveKnob(85);
-        afterEngineWrite = () => { if (engineWrites.length === 2) throw new Error('Gesture engine rejected'); };
+        beginKnob();
+        moveKnob(85);
+        afterEngineWrite = () => {
+            if (engineWrites.length === 3) throw new Error('Gesture engine rejected');
+        };
         endKnob();
         await waitFor(() => expect(notifyUser).toHaveBeenCalledWith('Gesture engine rejected', 'error'));
         expect(rawValues()?.detune).toBe(5);
@@ -530,22 +619,261 @@ describe('Inspector continuous parameter gestures through real history', () => {
     });
 
     it.each(['write', 'touch', 'latch'] as const)(
-        'preserves interior manual recording samples in %s mode', async (automationMode) => {
+        'records exact event-time samples including release before a delayed final in %s mode',
+        async (automationMode) => {
             let beat = 1;
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
             setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
-            trackStore.set({ ...trackStore.value!, tracks: [{ ...testTrack([structuredClone(synth)]), automationMode }] });
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(synth)]), automationMode }],
+            });
             transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120 });
-            automationStore.set({ lanes: [{ id: 'ride', trackId: 'track-1', parameterId: 'synth-1:detune', parameterName: 'Detune', points: [], objects: [], visible: true, enabled: true, collapsed: false, minValue: -100, maxValue: 100 }] });
+            automationStore.set({
+                lanes: [
+                    {
+                        id: 'ride',
+                        trackId: 'track-1',
+                        parameterId: 'synth-1:detune',
+                        parameterName: 'Detune',
+                        points: [],
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        minValue: -100,
+                        maxValue: 100,
+                    },
+                ],
+            });
             render(<Control />);
             beginKnob();
-            for (const [index, y] of [85, 115, 55].entries()) { beat = index + 1; moveKnob(y); }
+            for (const [index, y] of [85, 115, 55].entries()) {
+                beat = index + 1;
+                moveKnob(y);
+            }
+            const entered = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<void>();
+            const snapshot = transactSnapshot(async () => {
+                entered.resolve();
+                await release.promise;
+            });
+            await entered.promise;
+            beat = 4;
+            endKnob();
+            const expectedSamples = [
+                ['track-1', 'synth-1:detune', 25, 1],
+                ['track-1', 'synth-1:detune', -15, 2],
+                ['track-1', 'synth-1:detune', 65, 3],
+                ['track-1', 'synth-1:detune', 65, 4],
+            ];
+            // This spy calls the actual owner; its real buffered curve is flushed below.
+            expect(recording.mock.calls).toEqual(expectedSamples);
             expect(rawValues()?.detune).toBe(5);
             expect(automationStore.value?.lanes[0]?.points).toEqual([]);
             expect(depth()).toBe(0);
-            endKnob(); await expectCommitted('detune', 65, 1);
+            beat = 19;
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+            await expectCommitted('detune', 65, 1);
+            expect(recording.mock.calls).toEqual(expectedSamples);
+            await act(() => undo());
+            expect(rawValues()?.detune).toBe(5);
+            await act(() => redo());
+            expect(rawValues()?.detune).toBe(65);
+            expect(recording.mock.calls).toEqual(expectedSamples);
             stopAutomationRecording(4);
             const points = automationStore.value?.lanes[0]?.points ?? [];
-            for (const value of [25, -15, 65]) expect(points.some((point) => point.value === value)).toBe(true);
+            expect(points.map(({ beat: pointBeat, value }) => [pointBeat, value])).toEqual([
+                [1, 25],
+                [2, -15],
+                [3, 65],
+                [4, 65],
+            ]);
         }
     );
+
+    it.each(['write', 'touch', 'latch'] as const)(
+        'keeps slider recording at its three change events across a held final queue in %s mode',
+        async (automationMode) => {
+            let beat = 1;
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(compressor)]), automationMode }],
+            });
+            transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+            automationStore.set({
+                lanes: [
+                    {
+                        id: 'ride',
+                        trackId: 'track-1',
+                        parameterId: 'compressor-1:comp-threshold',
+                        parameterName: 'Threshold',
+                        points: [],
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        minValue: -60,
+                        maxValue: 0,
+                    },
+                ],
+            });
+            render(<Control deviceId={compressor.id} paramId="comp-threshold" />);
+            const root = sliderTrack();
+            fireEvent.pointerDown(root, { button: 0, pointerId: 2, clientX: 40, clientY: 10 });
+            beat = 2;
+            fireEvent.pointerMove(root, { pointerId: 2, clientX: 80, clientY: 10 });
+            beat = 3;
+            fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
+            const entered = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<void>();
+            const snapshot = transactSnapshot(async () => {
+                entered.resolve();
+                await release.promise;
+            });
+            await entered.promise;
+            beat = 4;
+            fireEvent.pointerUp(root, { pointerId: 2 });
+            const expectedSamples = [
+                ['track-1', 'compressor-1:comp-threshold', -36, 1],
+                ['track-1', 'compressor-1:comp-threshold', -12, 2],
+                ['track-1', 'compressor-1:comp-threshold', -48, 3],
+            ];
+            expect(recording.mock.calls).toEqual(expectedSamples);
+            expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+            expect(automationStore.value?.lanes[0]?.points).toEqual([]);
+            expect(depth()).toBe(0);
+            beat = 19;
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+            await expectCommitted('comp-threshold', -48, 1, compressor.id);
+            await act(() => undo());
+            expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+            await act(() => redo());
+            expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-48);
+            expect(recording.mock.calls).toEqual(expectedSamples);
+            stopAutomationRecording(3);
+            expect(
+                automationStore.value?.lanes[0]?.points.map(({ beat: pointBeat, value }) => [pointBeat, value])
+            ).toEqual([
+                [1, -36],
+                [2, -12],
+                [3, -48],
+            ]);
+        }
+    );
+
+    it.each(['keyboard', 'numeric', 'ctrlKey', 'metaKey', 'blur', 'windowBlur', 'pointerCancel', 'unmount'])(
+        'does not add slider recording samples when %s settles or refuses its existing change',
+        async (finish) => {
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => 1 });
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(compressor)]), automationMode: 'touch' }],
+            });
+            transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+            const view = render(<Control deviceId={compressor.id} paramId="comp-threshold" />);
+            const root = sliderTrack();
+            const control = screen.getByRole('slider', { name: 'Threshold' });
+            if (finish === 'keyboard') fireEvent.keyDown(control, { key: 'End' });
+            else if (finish === 'numeric') {
+                fireEvent.doubleClick(control);
+                fireEvent.change(screen.getByRole('textbox'), { target: { value: '50' } });
+                fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+            } else if (finish === 'ctrlKey' || finish === 'metaKey') {
+                fireEvent.pointerDown(root, { button: 0, pointerId: 2, [finish]: true });
+            } else {
+                fireEvent.pointerDown(root, { button: 0, pointerId: 2, clientX: 40, clientY: 10 });
+                if (finish === 'blur') fireEvent.blur(control);
+                else if (finish === 'windowBlur') fireEvent.blur(window);
+                else if (finish === 'pointerCancel') fireEvent.pointerCancel(root, { pointerId: 2 });
+                else view.unmount();
+            }
+            // Drain real queued work using a separate same-value command, never a fixed delay.
+            await executeUserAppAction({
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: compressor.id,
+                    paramId: 'comp-ratio',
+                    value: 4,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            });
+            expect(recording.mock.calls).toHaveLength(1);
+            expect(recording.mock.calls[0]).toEqual(['track-1', 'compressor-1:comp-threshold', expect.any(Number), 1]);
+        }
+    );
+
+    it('retains event-time recording inputs when a delayed final is refused without recording its runtime restoration', async () => {
+        let beat = 1;
+        const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+        setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }],
+        });
+        transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'ride',
+                    trackId: 'track-1',
+                    parameterId: 'synth-1:detune',
+                    parameterName: 'Detune',
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: -100,
+                    maxValue: 100,
+                },
+            ],
+        });
+        render(<Control />);
+        beginKnob();
+        moveKnob(85);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const snapshot = transactSnapshot(async (transaction) => {
+            entered.resolve();
+            await release.promise;
+            const write = runWithAutomergeStorageTransaction(transaction, () => {
+                trackStore.set({ ...trackStore.value!, tracks: [{ ...trackStore.value!.tracks[0]!, frozen: true }] });
+            });
+            write.commit();
+        });
+        await entered.promise;
+        beat = 4;
+        endKnob();
+        beat = 19;
+        await act(async () => {
+            release.resolve();
+            await snapshot;
+        });
+        await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
+        await waitFor(() => expect(knob()).toHaveAttribute('aria-valuenow', '5'));
+        expect(rawValues()?.detune).toBe(5);
+        expect(depth()).toBe(0);
+        expect(writes().at(-1)).toBe(5);
+        expect(recording.mock.calls).toEqual([
+            ['track-1', 'synth-1:detune', 25, 1],
+            ['track-1', 'synth-1:detune', 25, 4],
+        ]);
+        stopAutomationRecording();
+        expect(automationStore.value?.lanes[0]?.points.map(({ beat: pointBeat, value }) => [pointBeat, value])).toEqual(
+            [
+                [1, 25],
+                [4, 25],
+            ]
+        );
+    });
 });

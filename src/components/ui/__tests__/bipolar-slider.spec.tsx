@@ -50,9 +50,12 @@ describe('BipolarSlider', () => {
     });
 
     it.each(['pointerCancel', 'lostPointerCapture', 'windowBlur', 'unmount'])(
-        'settles the latest pointer sample once on %s', (finish) => {
+        'settles the latest pointer sample once on %s',
+        (finish) => {
             const onValueCommit = vi.fn();
-            const view = render(<BipolarSlider value={0} onValueChange={vi.fn()} onValueCommit={onValueCommit} min={-1} max={1} />);
+            const view = render(
+                <BipolarSlider value={0} onValueChange={vi.fn()} onValueCommit={onValueCommit} min={-1} max={1} />
+            );
             const root = screen.getByRole('slider', { name: 'Bipolar value' }).closest('[data-slot="slider"]');
             if (!(root instanceof HTMLElement)) throw new Error('Missing Slider root');
             Object.defineProperties(root, {
@@ -60,7 +63,17 @@ describe('BipolarSlider', () => {
                 releasePointerCapture: { configurable: true, value: vi.fn() },
                 hasPointerCapture: { configurable: true, value: () => true },
             });
-            vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, top: 0, bottom: 20, left: 0, right: 100, width: 100, height: 20, toJSON: () => ({}) });
+            vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+                x: 0,
+                y: 0,
+                top: 0,
+                bottom: 20,
+                left: 0,
+                right: 100,
+                width: 100,
+                height: 20,
+                toJSON: () => ({}),
+            });
             fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
             fireEvent.pointerMove(root, { pointerId: 1, clientX: 80, clientY: 10 });
             if (finish === 'pointerCancel') fireEvent.pointerCancel(root, { pointerId: 1 });

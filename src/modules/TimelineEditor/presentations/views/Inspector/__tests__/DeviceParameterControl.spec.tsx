@@ -249,10 +249,21 @@ describe('DeviceParameterControl', () => {
 
     it('commits a settled knob through the guarded user action', async () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
-        await act(async () => { fireEvent.click(screen.getByTestId('rotary-knob')); });
-        expect(mockSetDeviceParameter).not.toHaveBeenCalled();
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('rotary-knob'));
+        });
+        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 1.5, { transient: true });
         expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
-            { type: 'setDeviceParameter', payload: expect.objectContaining({ deviceId: 'device-1', paramId: 'gain', value: 1.5, expectedValue: 0.5 }) },
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    deviceId: 'device-1',
+                    paramId: 'gain',
+                    value: 1.5,
+                    expectedValue: 0.5,
+                    automationRecordingPolicy: 'suppressed',
+                }),
+            },
             expect.objectContaining({ shouldExecute: expect.any(Function), onCommitted: expect.any(Function) })
         );
     });
@@ -268,10 +279,20 @@ describe('DeviceParameterControl', () => {
         });
         expect(mockSetDeviceParameter).toHaveBeenLastCalledWith('device-1', 'gain', 0.9, { transient: true });
         expect(mockExecuteUserAppAction).not.toHaveBeenCalled();
-        await act(async () => { props.onChange(0.9, false); });
+        await act(async () => {
+            props.onChange(0.9, false);
+        });
         expect(mockExecuteUserAppAction).toHaveBeenCalledOnce();
         expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
-            { type: 'setDeviceParameter', payload: expect.objectContaining({ value: 0.9, expectedValue: 0.5, expectedValuePresent: true }) },
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    value: 0.9,
+                    expectedValue: 0.5,
+                    expectedValuePresent: true,
+                    automationRecordingPolicy: 'suppressed',
+                }),
+            },
             expect.objectContaining({ shouldExecute: expect.any(Function) })
         );
     });

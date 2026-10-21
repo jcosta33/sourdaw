@@ -372,7 +372,10 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             try {
                 restoreGesturePreview(gesture);
             } catch (error) {
-                notifyUser(error instanceof Error ? error.message : 'Device parameter preview restoration failed', 'error');
+                notifyUser(
+                    error instanceof Error ? error.message : 'Device parameter preview restoration failed',
+                    'error'
+                );
             }
         }
         if (gestureRef.current === gesture) {
@@ -383,7 +386,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         }
     };
 
-    const handleKnobChange = (nextValue: number, isTransient = false): void => {
+    const handleKnobChange = (nextValue: number, isTransient = false, recordingSample = true): void => {
         if (!mounted.current) {
             return;
         }
@@ -406,26 +409,34 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             cancelGesture(gesture);
             return;
         }
-        if (isTransient) {
-            gesture.previewValue = nextValue;
-            try {
-                if (!setDeviceParameter(gesture.deviceId, gesture.paramId, nextValue, { transient: true })) {
-                    cancelGesture(gesture);
-                    return;
-                }
-                setDraft({
-                    trackId: gesture.trackId,
-                    deviceId: gesture.deviceId,
-                    paramId: gesture.paramId,
-                    value: nextValue,
-                    valuePresent: gesture.valuePresent,
-                    startingValue: gesture.value,
-                    authority: gesture.authority,
-                });
-            } catch (error) {
+        // Knob release is a physical recording sample; slider settlement is not.
+        // Capture event time before the canonical action can wait on a snapshot.
+        gesture.previewValue = nextValue;
+        try {
+            if (
+                !setDeviceParameter(gesture.deviceId, gesture.paramId, nextValue, {
+                    transient: true,
+                    ...(recordingSample ? {} : { automationRecordingPolicy: 'suppressed' }),
+                })
+            ) {
                 cancelGesture(gesture);
-                notifyUser(error instanceof Error ? error.message : 'Device parameter preview failed', 'error');
+                return;
             }
+            setDraft({
+                trackId: gesture.trackId,
+                deviceId: gesture.deviceId,
+                paramId: gesture.paramId,
+                value: nextValue,
+                valuePresent: gesture.valuePresent,
+                startingValue: gesture.value,
+                authority: gesture.authority,
+            });
+        } catch (error) {
+            cancelGesture(gesture);
+            notifyUser(error instanceof Error ? error.message : 'Device parameter preview failed', 'error');
+            return;
+        }
+        if (isTransient) {
             return;
         }
         gesture.settling = true;
@@ -436,6 +447,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     deviceId: gesture.deviceId,
                     paramId: gesture.paramId,
                     value: nextValue,
+                    // The event already reached the recording owner above.
+                    // Commit and replay must not record a delayed duplicate.
+                    automationRecordingPolicy: 'suppressed',
                     expectedTrackId: gesture.trackId,
                     expectedDeviceType: gesture.deviceType,
                     expectedDeviceIds: gesture.deviceIds,
@@ -573,8 +587,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             ? toLinear(param.defaultValue ?? param.value)
             : (param.defaultValue ?? param.value);
 
-        const onChange = (value1: number, isTransient = false) => {
-            handleKnobChange(isLog ? toLog(value1) : value1, isTransient);
+        const onChange = (value1: number, isTransient = false, recordingSample = true) => {
+            handleKnobChange(isLog ? toLog(value1) : value1, isTransient, recordingSample);
         };
 
         if (isSlider) {
@@ -583,7 +597,11 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     className="w-full"
                     onPointerDownCapture={() => startGesture()}
                     onKeyDownCapture={(event) => {
-                        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(event.key)) {
+                        if (
+                            ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(
+                                event.key
+                            )
+                        ) {
                             startGesture();
                         }
                     }}
@@ -591,7 +609,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     <BipolarSlider
                         value={mappedValue}
                         onValueChange={(nextValue) => onChange(nextValue, true)}
-                        onValueCommit={(nextValue) => onChange(nextValue, false)}
+                        onValueCommit={(nextValue) => onChange(nextValue, false, false)}
                         min={min}
                         max={max}
                         step={mappedStep}
