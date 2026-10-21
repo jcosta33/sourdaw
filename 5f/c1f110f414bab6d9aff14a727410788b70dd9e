@@ -1,0 +1,23 @@
+src/modules/AudioRendering/useCases/__tests__/renderToClip.spec.ts
+  s_59e31a5c6f3e31::t_850bfe4071ce08 56,89
+  s_59e31a5c6f3e31::t_b7ebbb63abed69 110-131,201-215,319-329
+  s_59e31a5c6f3e31::t_a7ed139f5f89f2 330
+src/modules/AudioRendering/useCases/renderToClip.ts
+  s_59e31a5c6f3e31::t_3346a29dcdeb55 33-35,37-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5fc1f110f414bab6d9aff14a727410788b70dd9e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
