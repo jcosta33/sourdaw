@@ -107,7 +107,7 @@ describe('AssetTransfer', () => {
     let peer: PeerConnectionManager;
     let onAssetAvailable: Mock<(hash: string) => void>;
     let onProgress: Mock<(hash: string, receivedChunks: number, totalChunks: number) => void>;
-    let onTransferFailed: Mock<(hash: string, reason: string) => void>;
+    let onTransferFailed: Mock<(hash: string, reason: string, disposition: 'cooldown' | 'abandoned') => void>;
     let transfer: AssetTransfer;
 
     beforeEach(() => {
@@ -115,7 +115,7 @@ describe('AssetTransfer', () => {
         peer = makePeerManager();
         onAssetAvailable = vi.fn<(hash: string) => void>();
         onProgress = vi.fn<(hash: string, receivedChunks: number, totalChunks: number) => void>();
-        onTransferFailed = vi.fn<(hash: string, reason: string) => void>();
+        onTransferFailed = vi.fn<(hash: string, reason: string, disposition: 'cooldown' | 'abandoned') => void>();
         transfer = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
     });
 
@@ -326,9 +326,12 @@ describe('AssetTransfer', () => {
 
         // A late manifest from a second peer must be ignored (no slot reset).
         await transfer.handleMessage('peer-2', manifestMessage(twoChunk));
-        // Chunk 1 completes the ORIGINAL transfer — chunk 0 was retained, so
-        // the final progress is 2/2 rather than restarting from 1/2.
+        // The losing peer cannot contribute chunks. The selected peer still
+        // completes the original bitmap at 2/2 without losing chunk 0.
         await transfer.handleMessage('peer-2', chunkMessage(1, fullChunk));
+        expect(onProgress).not.toHaveBeenCalled();
+        expect(onAssetAvailable).not.toHaveBeenCalled();
+        await transfer.handleMessage('peer-1', chunkMessage(1, fullChunk));
         expect(onProgress).toHaveBeenLastCalledWith(HASH, 2, 2);
     });
 
@@ -469,6 +472,7 @@ describe('AssetTransfer', () => {
 
         expect(onTransferFailed).toHaveBeenCalledTimes(1);
         expect(onTransferFailed.mock.calls[0]?.[0]).toBe(HASH);
+        expect(onTransferFailed.mock.calls[0]?.[2]).toBe('cooldown');
 
         // Recovery: once the cooldown expires the hash is requestable again,
         // and a fresh manifest from a different peer is accepted rather than
@@ -699,6 +703,7 @@ describe('AssetTransfer', () => {
             vi.advanceTimersByTime(ASSET_REQUEST_RETRY_COOLDOWN_MS);
         }
         expect(onTransferFailed).toHaveBeenCalledTimes(ASSET_REQUEST_MAX_ATTEMPTS);
+        expect(onTransferFailed.mock.calls.at(-1)?.[2]).toBe('abandoned');
         vi.mocked(peer.broadcastCrdtSync).mockClear();
 
         // `clip.assetHash` is remote-writable, so a hash no peer holds must
