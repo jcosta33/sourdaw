@@ -34,14 +34,24 @@ vi.mock('#/modules/Metering/presentations/views', async () => {
     return {
         LUFSMeter: () => <div data-testid="lufs-meter">LUFS Meter</div>,
         PhaseCorrelationDisplay: () => {
-            useEffect(() => () => lifecycle.phaseCleanup(), []);
+            useEffect(
+                () => () => {
+                    lifecycle.phaseCleanup();
+                },
+                []
+            );
             return <div data-testid="phase-correlation">Phase Correlation</div>;
         },
         Oscilloscope: () => <div data-testid="oscilloscope">Oscilloscope</div>,
         SpectrumAnalyzer: () => <div data-testid="spectrum-analyzer">Spectrum Analyzer</div>,
         Spectrogram: () => <div data-testid="spectrogram">Spectrogram</div>,
         Goniometer: () => {
-            useEffect(() => () => lifecycle.goniometerCleanup(), []);
+            useEffect(
+                () => () => {
+                    lifecycle.goniometerCleanup();
+                },
+                []
+            );
             return <div data-testid="goniometer">Goniometer</div>;
         },
         SpatialPanner: () => <div data-testid="spatial-panner">Spatial Panner</div>,
