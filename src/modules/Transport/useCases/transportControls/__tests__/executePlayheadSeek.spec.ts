@@ -1,6 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { audioEngine } from '#/modules/AudioEngine/useCases';
+
+import { defaultTransportState } from '../../../models/TransportState';
+import { transportStore } from '../../../stores/transportStore';
+import { claimSchedulerSession } from '../../playheadScheduler/claimSchedulerSession';
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { startPlayback } from '../startPlayback';
+import { stopPlayback } from '../stopPlayback';
+import { toggleRecording } from '../toggleRecording';
 
 const {
     mockGetTransportState,
@@ -14,6 +22,7 @@ const {
     mockStopActiveRecording,
     mockReposition,
     mockSetTransportInfo,
+    mockStartNativeSession,
     mockLogger,
 } = vi.hoisted(() => ({
     mockGetTransportState: vi.fn(),
@@ -27,6 +36,7 @@ const {
     mockStopActiveRecording: vi.fn(() => Promise.resolve()),
     mockReposition: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'no session' })),
     mockSetTransportInfo: vi.fn(),
+    mockStartNativeSession: vi.fn(() => Promise.resolve()),
     mockLogger: { warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
@@ -42,6 +52,20 @@ vi.mock('../../playheadScheduler/advanceSchedulerDiscontinuityEpoch', () => ({
 }));
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({ startPlayheadScheduler: mockStartScheduler }));
 vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({ stopPlayheadScheduler: mockStopScheduler }));
+vi.mock('#/modules/Arrangement/stores', () => ({
+    getTrackEligibility: vi.fn(() => ({ acceptsRecording: true })),
+}));
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    getTrackStoreState: vi.fn(() => ({ tracks: [{ id: 'record-track', kind: 'audio', armed: true }] })),
+    startRecording: vi.fn(() => []),
+    discardRecording: vi.fn(),
+    commitRecording: vi.fn(),
+}));
+vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
+vi.mock('../startNativeSessionAtBeat', () => ({
+    startNativeSessionAtBeat: mockStartNativeSession,
+}));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../panicYeastRuntime', () => ({ panicYeastRuntime: mockPanicYeast }));
 vi.mock('../stopActiveRecording', () => ({ stopActiveRecording: mockStopActiveRecording }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -49,12 +73,19 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         setTransportInfo: mockSetTransportInfo,
     },
     stopAllScheduled: mockStopAllScheduled,
+    resumeEngine: vi.fn(() => Promise.resolve()),
+    startAudioRecording: vi.fn(() => Promise.resolve(true)),
+    getCompensationDelay: vi.fn(() => 0),
+    nativeLiveGraphSessionOffered: vi.fn(() => true),
+    getAudioContext: vi.fn(() => ({ currentTime: 0 })),
+    stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'probe' })),
     repositionNativeLiveGraphSession: mockReposition,
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mockResetMidiState }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { executePlayheadSeek } from '../executePlayheadSeek';
 import { recordingLifecycle } from '../recordingLifecycle';
 
@@ -245,5 +276,211 @@ describe('executePlayheadSeek', () => {
                 expect.objectContaining({ message: expect.stringContaining('failed to reposition') })
             );
         });
+    });
+});
+
+function deferredFlush() {
+    let resolveFlush!: () => void;
+    let rejectFlush!: (error: Error) => void;
+    const promise = new Promise<void>((resolve, reject) => {
+        resolveFlush = resolve;
+        rejectFlush = reject;
+    });
+    return { promise, resolve: resolveFlush, reject: rejectFlush };
+}
+
+describe('deferred seek scheduler ownership', () => {
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        const actualRead = await vi.importActual<typeof import('../../../repositories/transport/getTransportState')>(
+            '../../../repositories/transport/getTransportState'
+        );
+        const actualWrite = await vi.importActual<
+            typeof import('../../../repositories/transport/updateTransportState')
+        >('../../../repositories/transport/updateTransportState');
+        mockGetTransportState.mockImplementation(actualRead.getTransportState);
+        mockUpdateTransportState.mockImplementation(actualWrite.updateTransportState);
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 4 });
+        playheadPositionRef.current = 4;
+        schedulerSession.generation += 1;
+        schedulerSession.worker = null;
+        schedulerSession.discontinuityEpoch = 0;
+        vi.stubGlobal(
+            'Worker',
+            class {
+                postMessage = vi.fn();
+                terminate = vi.fn();
+            }
+        );
+        // Keep the scheduler's browser worker boundary controlled; generation
+        // claims and the public Stop/Play orchestration remain production code.
+        mockStartScheduler.mockImplementation(() => {
+            claimSchedulerSession();
+            schedulerSession.worker = new Worker('seek-ownership-probe');
+        });
+        mockStopScheduler.mockImplementation(() => {
+            claimSchedulerSession();
+            schedulerSession.worker?.terminate();
+            schedulerSession.worker = null;
+        });
+        mockAdvanceEpoch.mockImplementation(() => {
+            schedulerSession.discontinuityEpoch += 1;
+        });
+        mockStopActiveRecording.mockImplementation(() => {
+            actualWrite.updateTransportState({ isRecording: false });
+            return Promise.resolve();
+        });
+        mockStartScheduler();
+        vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        mockStartScheduler.mockReset();
+        mockStopScheduler.mockReset();
+        mockAdvanceEpoch.mockReset();
+        mockStopActiveRecording.mockReset().mockResolvedValue(undefined);
+        mockGetTransportState.mockReset();
+        mockUpdateTransportState.mockReset();
+    });
+
+    it.each([
+        { record: false, reject: false },
+        { record: false, reject: true },
+        { record: true, reject: false },
+        { record: true, reject: true },
+    ])('preserves a Stop-to-successor session (record=$record, reject=$reject)', async ({ record, reject }) => {
+        const flush = deferredFlush();
+        mockStopActiveRecording.mockReturnValueOnce(flush.promise);
+        const seek = executePlayheadSeek(16);
+        const failure = new Error('original flush failed');
+        const outcome = seek.then(
+            () => undefined,
+            (error: unknown) => error
+        );
+        expect(mockReposition).toHaveBeenCalledExactlyOnceWith({ positionSeconds: 8 });
+        expect(mockUpdateTransportState).not.toHaveBeenCalled();
+
+        await stopPlayback();
+        mockUpdateTransportState({ playheadPosition: 32 });
+        if (record) {
+            toggleRecording();
+            await vi.waitFor(() => {
+                expect(transportStore.value?.isRecording).toBe(true);
+                expect(schedulerSession.worker).not.toBeNull();
+            });
+        } else {
+            await startPlayback();
+        }
+        const successor = {
+            worker: schedulerSession.worker,
+            generation: schedulerSession.generation,
+            epoch: schedulerSession.discontinuityEpoch,
+            state: transportStore.value,
+            beat: playheadPositionRef.current,
+        };
+        expect(successor.worker).not.toBeNull();
+        expect(successor.state?.isRecording).toBe(record);
+        vi.clearAllMocks();
+
+        if (reject) {
+            flush.reject(failure);
+        } else {
+            flush.resolve();
+        }
+        expect(await outcome).toBe(reject ? failure : undefined);
+
+        expect(schedulerSession.worker).toBe(successor.worker);
+        expect(schedulerSession.generation).toBe(successor.generation);
+        expect(schedulerSession.discontinuityEpoch).toBe(successor.epoch);
+        expect(transportStore.value).toBe(successor.state);
+        expect(playheadPositionRef.current).toBe(successor.beat);
+        expect(mockPanicYeast).not.toHaveBeenCalled();
+        expect(mockStopAllScheduled).not.toHaveBeenCalled();
+        expect(mockResetMidiState).not.toHaveBeenCalled();
+        expect(mockUpdateTransportState).not.toHaveBeenCalled();
+        expect(mockStartScheduler).not.toHaveBeenCalled();
+        expect(mockSetTransportInfo).not.toHaveBeenCalled();
+    });
+
+    it('protects a successor claimed while its native start still holds the worker', async () => {
+        const flush = deferredFlush();
+        const nativeStart = deferredFlush();
+        mockStopActiveRecording.mockReturnValueOnce(flush.promise);
+        const seek = executePlayheadSeek(16);
+        await stopPlayback();
+        mockUpdateTransportState({ playheadPosition: 32 });
+        mockStartNativeSession.mockReturnValueOnce(nativeStart.promise);
+        const playback = startPlayback();
+        const successorGeneration = schedulerSession.generation;
+        expect(schedulerSession.worker).toBeNull();
+        expect(playheadPositionRef.current).toBe(32);
+        vi.clearAllMocks();
+
+        flush.resolve();
+        await seek;
+        expect(schedulerSession.generation).toBe(successorGeneration);
+        expect(playheadPositionRef.current).toBe(32);
+        expect(mockStopScheduler).not.toHaveBeenCalled();
+        expect(mockStartScheduler).not.toHaveBeenCalled();
+        expect(mockUpdateTransportState).not.toHaveBeenCalled();
+        nativeStart.resolve();
+        await playback;
+        expect(schedulerSession.worker).not.toBeNull();
+        expect(playheadPositionRef.current).toBe(32);
+    });
+
+    it('finishes an unchanged owner after its recording flush', async () => {
+        const flush = deferredFlush();
+        mockStopActiveRecording.mockReturnValueOnce(flush.promise);
+        const seek = executePlayheadSeek(16);
+        expect(playheadPositionRef.current).toBe(4);
+        const worker = schedulerSession.worker;
+        flush.resolve();
+        await seek;
+        expect(playheadPositionRef.current).toBe(16);
+        expect(transportStore.value?.playheadPosition).toBe(16);
+        expect(schedulerSession.worker).not.toBe(worker);
+    });
+
+    it.each([false, true])('finishes a parked or paused seek (wasPlaying=%s)', async (wasPlaying) => {
+        const flush = deferredFlush();
+        mockStopActiveRecording.mockReturnValueOnce(flush.promise);
+        mockUpdateTransportState({ isPlaying: wasPlaying });
+        const seek = executePlayheadSeek(16);
+        // A pause publishes its flag before its deferred scheduler teardown.
+        mockUpdateTransportState({ isPlaying: false });
+        flush.resolve();
+        await seek;
+        expect(playheadPositionRef.current).toBe(16);
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(mockStartScheduler).not.toHaveBeenCalled();
+        expect(mockSetTransportInfo).toHaveBeenCalledWith(16, 8, 120, false, 0, 0, false);
+    });
+
+    it('commits a non-recording seek synchronously', async () => {
+        mockUpdateTransportState({ isPlaying: false, isRecording: false });
+        const seek = executePlayheadSeek(16);
+        expect(playheadPositionRef.current).toBe(16);
+        expect(transportStore.value?.playheadPosition).toBe(16);
+        expect(mockStopActiveRecording).not.toHaveBeenCalled();
+        await seek;
+    });
+
+    it('lets two deferred seeks from one owner finish in flush order', async () => {
+        const firstFlush = deferredFlush();
+        const secondFlush = deferredFlush();
+        mockStopActiveRecording.mockReturnValueOnce(firstFlush.promise).mockReturnValueOnce(secondFlush.promise);
+        const firstSeek = executePlayheadSeek(16);
+        const secondSeek = executePlayheadSeek(24);
+        firstFlush.resolve();
+        await firstSeek;
+        expect(playheadPositionRef.current).toBe(16);
+        const firstWorker = schedulerSession.worker;
+        secondFlush.resolve();
+        await secondSeek;
+        expect(playheadPositionRef.current).toBe(24);
+        expect(transportStore.value?.playheadPosition).toBe(24);
+        expect(schedulerSession.worker).not.toBe(firstWorker);
     });
 });

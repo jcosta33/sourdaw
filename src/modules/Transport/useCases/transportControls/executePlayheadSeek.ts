@@ -9,6 +9,7 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { advanceSchedulerDiscontinuityEpoch } from '../playheadScheduler/advanceSchedulerDiscontinuityEpoch';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
@@ -16,6 +17,10 @@ import { secondsBetweenBeats } from '../secondsBetweenBeats';
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { recordingLifecycle } from './recordingLifecycle';
 import { stopActiveRecording } from './stopActiveRecording';
+
+// Pending seeks share their admitted transport owner. A seek's own restart
+// advances that owner's generation without cancelling its sibling seeks.
+let seekOwner: { generation: number } | null = null;
 
 export function executePlayheadSeek(beat: number): Promise<void> {
     const state = getTransportState();
@@ -26,6 +31,9 @@ export function executePlayheadSeek(beat: number): Promise<void> {
     const wasPlaying = state.isPlaying;
     const wasRecording = state.isRecording;
     const targetBeat = Math.max(0, beat);
+    const owner =
+        seekOwner?.generation === schedulerSession.generation ? seekOwner : { generation: schedulerSession.generation };
+    seekOwner = owner;
 
     // #3101: this scheduler restarts at the target beat, and until now nothing
     // told the engine, which kept rolling from wherever it already was. Locating
@@ -67,6 +75,13 @@ export function executePlayheadSeek(beat: number): Promise<void> {
     }
 
     function finishSeek(): Promise<void> {
+        // Stop/Play and Stop/Record claim a new generation even while the
+        // successor is held before its worker starts. A late flush owns none
+        // of that session's teardown, position or restart.
+        if (schedulerSession.generation !== owner.generation) {
+            return Promise.resolve();
+        }
+
         advanceSchedulerDiscontinuityEpoch();
         const yeastPanic = panicYeastRuntime();
         if (wasPlaying) {
@@ -114,6 +129,7 @@ export function executePlayheadSeek(beat: number): Promise<void> {
             }
         }
 
+        owner.generation = schedulerSession.generation;
         return yeastPanic;
     }
 
