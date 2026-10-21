@@ -1,0 +1,32 @@
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  s_59e31a5c6f3e31::t_5ca51e8c2f83b6 6,400-402,417
+  s_59e31a5c6f3e31::t_adaa13a180c3bd 53,64-65,378-386,391-394,396-399,403-405,410,412-416,418
+  s_59e31a5c6f3e31::t_45335bbd35ee4c 387-389,395,406-409,411
+  s_59e31a5c6f3e31::t_2e1b624cfe23dd 4
+  s_59e31a5c6f3e31::t_498945506a37d7 390
+  s_59e31a5c6f3e31::t_57c3919bda11fe 419-420
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  s_59e31a5c6f3e31::t_eebc8c354a8b43 310
+src/modules/Levain/presentations/components/__tests__/LevainMacroStrip.spec.tsx
+  s_59e31a5c6f3e31::t_9ddef7a2f41f08 21-23
+  s_59e31a5c6f3e31::t_e47f68827c2ed8 42-46
+  s_59e31a5c6f3e31::t_78e32ddf5a77c8 24-41,47-62,64-66
+src/modules/Levain/presentations/components/LevainMacroStrip.tsx
+  s_59e31a5c6f3e31::t_042207d83ce78a 13,17-23,25-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9548d9c6672ce3b9930bfc67663b825d3fe954a",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
