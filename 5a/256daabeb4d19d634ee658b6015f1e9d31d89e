@@ -1,0 +1,23 @@
+crates/daw-dsp/src/levain/engine.rs
+  s_29d8df116c5b92::t_1e30001cc56fb9 2063-2090,2095,2162,2165,2180,2183,3781-3811
+crates/daw-dsp/src/levain/voice.rs
+  s_29d8df116c5b92::t_b1d756460a3595 1010,1050,1054,2061-2090
+src/modules/AudioEngine/services/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_29d8df116c5b92::t_a025cb39027eb1 91-92,110-112,318-358
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5a256daabeb4d19d634ee658b6015f1e9d31d89e",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
