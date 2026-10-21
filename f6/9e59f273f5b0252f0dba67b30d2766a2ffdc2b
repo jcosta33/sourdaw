@@ -1,0 +1,37 @@
+src/modules/Arrangement/handlers/device/__tests__/midiNodelessRuntimeGraph.integration.spec.ts
+  s_59e31a5c6f3e31::t_8d99cb5fe02cb9 1-243
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_59e31a5c6f3e31::t_2c315e658b8f5c 15,250,589-622
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_59e31a5c6f3e31::t_4e92f208a592ec 482-499
+src/modules/Arrangement/useCases/__tests__/runtimeGraphTopology.spec.ts
+  s_59e31a5c6f3e31::t_6f01ba7bee5d49 95-130
+src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts
+  s_59e31a5c6f3e31::t_564fb64184f822 15,32
+src/modules/Arrangement/useCases/device/__tests__/applyDeviceChainRuntimeDelta.spec.ts
+  s_59e31a5c6f3e31::t_08124193e84869 19,36,69,459-601
+src/modules/Arrangement/useCases/device/applyDeviceChainRuntimeDelta.ts
+  s_59e31a5c6f3e31::t_45e67d840062bd 4,6,52-53,134-142,144-169,185,194
+src/modules/Arrangement/useCases/runtimeGraphTopology.ts
+  s_59e31a5c6f3e31::t_cc253c203f2b28 2,35-43,59,72,75
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+  s_59e31a5c6f3e31::t_a4afdf96dce365 241-269
+src/modules/Arrangement/useCases/toggleTrackState/setTrackOutput.ts
+  s_59e31a5c6f3e31::t_28929c7bc6970f 39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f69e59f273f5b0252f0dba67b30d2766a2ffdc2b",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
