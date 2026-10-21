@@ -723,8 +723,15 @@ Each guarded command inherits `TMPDIR`, `TMP`, and `TEMP` before startup, pointi
 private directory under the primary repository's `.agents/guard-storage/` on the repository's
 volume. Nested guards use separate directories and retain the shared memory admission registry.
 Normal exits, spawn errors, signals, and forced termination release storage only after the entire
-tracked process tree is proven stopped. A surviving process or unavailable process census retains
-the ownership record and reports failure; the guard never deletes old unowned system-temp caches.
+tracked process tree is proven stopped. A process that survives forced cleanup is a leak: it fails
+the run and records a guard-failure receipt that stops the lane. Storage the census cannot prove free
+after the tree has exited (an unavailable or incomplete census, a foreign process holding a path
+inside it) is retained but is not a command failure: the guard keeps the directory, prints one
+warning naming its path and the census reason, returns the command's own status, and records no
+receipt, because the lost proof says nothing about the work and keeping the files is the safe
+outcome. Every later guarded start reclaims retained storage whose supervisor is dead once the
+census proves it free (`recoverGuardStorage`, run by `createGuardStorage`), and keeps what it still
+cannot prove. The guard never deletes old unowned system-temp caches.
 Before claiming or deleting storage, Unix command/environment census also vetoes removal when a
 process references its original temp path. This protects detached descendants that replace their
 environment and drop the session token. Argument references conservatively retain files too;

@@ -102,6 +102,9 @@ export type GuardedCommandResult = {
     peakRssBytes: number;
     maxRssBytes: number;
     durationMs: number;
+    // Set when the command's process tree was proved exited but the storage census could not prove
+    // its storage free: the storage is kept and a later guarded run reclaims it once provable.
+    retainedStorage?: { path: string; reason: string };
 };
 
 type GuardedCommandInput = {
@@ -1892,7 +1895,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         };
     }
     let storageEvidenceReported = false;
+    let storageProofUnavailableReason: string | undefined;
     const storagePorts = storageRecoveryPorts((reason) => {
+        storageProofUnavailableReason ??= reason;
         if (!storageEvidenceReported) {
             output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${reason}\n`));
             storageEvidenceReported = true;
@@ -1982,12 +1987,14 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     // Setup-error containment may await tree exit before the caller awaits this promise.
     void childCompletion.catch(() => undefined);
     let storageRemoved = false;
+    let treeExitProved = false;
     const cleanupStorage = async (): Promise<boolean> => {
         if (storageRemoved) {
             return true;
         }
         const treeStopped =
             child.pid === undefined || (await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000));
+        treeExitProved = treeStopped;
         const removed = await storage.release(treeStopped).catch(() => false);
         if (ownedSession && treeStopped) {
             session.release();
@@ -2196,17 +2203,28 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         }
         throw completion.error;
     }
+    // A tree that exited with only the storage census unproved is a verdict about the census, not
+    // the command: keeping the storage is the safe outcome and a later guarded run reclaims it.
+    let retainedStorage: GuardedCommandResult['retainedStorage'];
     if (!storageRemoved) {
-        output.append(
-            Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
-        );
-        reason ??= 'leak';
+        if (treeExitProved && reason !== 'leak') {
+            retainedStorage = {
+                path: dirname(storage.tempDirectory),
+                reason: storageProofUnavailableReason ?? 'storage not proved free of file use',
+            };
+        } else {
+            output.append(
+                Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
+            );
+            reason ??= 'leak';
+        }
     }
     const tail = output.result();
     return {
         ...completion.result,
         signal: interruptedSignal ?? completion.result.signal,
         reason,
+        ...(retainedStorage === undefined ? {} : { retainedStorage }),
         ...tail,
         peakRssBytes,
         maxRssBytes,
@@ -2218,11 +2236,18 @@ export function emitGuardedResult(label: string, result: GuardedCommandResult, s
     const peakMiB = Math.ceil(result.peakRssBytes / 1024 ** 2);
     const durationSeconds = (result.durationMs / 1000).toFixed(1);
     const succeeded = result.code === 0 && result.reason === undefined;
+    const retainedWarning =
+        result.retainedStorage === undefined
+            ? undefined
+            : `${label}: warning: guard storage retained, not proved free (${result.retainedStorage.reason}): ${result.retainedStorage.path}`;
     if (succeeded) {
         if (showSuccessOutput && result.output !== '') {
             console.log(result.output);
         }
         console.log(`${label}: OK (${durationSeconds}s, peak ${peakMiB} MiB)`);
+        if (retainedWarning !== undefined) {
+            console.warn(retainedWarning);
+        }
         return 0;
     }
 
@@ -2239,6 +2264,9 @@ export function emitGuardedResult(label: string, result: GuardedCommandResult, s
     }
     if (result.output !== '') {
         console.error(result.output);
+    }
+    if (retainedWarning !== undefined) {
+        console.error(retainedWarning);
     }
     if (result.reason === 'signal') {
         return result.signal === 'SIGINT' ? 130 : 143;

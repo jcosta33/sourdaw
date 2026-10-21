@@ -16,8 +16,9 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { guardFailureReceiptPath } from '../prContract';
 import {
     main,
     parseCliArgs,
@@ -323,22 +324,20 @@ function expectMarkedRecovery(
     }
     expect(diagnostics).toEqual(expectedDiagnostics);
     const freshRetained = retainedTokens.includes(fresh.token);
-    if (fresh.result.reason === undefined) {
+    expect(fresh.result.reason).toBeUndefined();
+    if (fresh.result.retainedStorage === undefined) {
         expect(freshRetained).toBe(false);
         expect(fresh.result.output).not.toContain('guard storage retained:');
     } else {
-        expect(fresh.result.reason).toBe('leak');
         expect(diagnostics).toHaveLength(1);
-        expect(fresh.result.output).toContain(
-            'guard storage retained: process-tree exit or storage ownership could not be proved'
-        );
-        // The verdict is classified after the final cleanup attempt, so a leak keeps this run's storage.
+        expect(fresh.result.retainedStorage.path).toBe(dirname(fresh.tempDirectory));
+        // The verdict is classified after the final cleanup attempt, so an unproved run keeps its storage.
         expect(freshRetained).toBe(true);
     }
     if (originalStillLive) {
         expect(retained.direct).toContain(prior[0]?.token);
     } else if (diagnostics.length === 0) {
-        expect(fresh.result.reason).toBeUndefined();
+        expect(fresh.result.retainedStorage).toBeUndefined();
         expect(retained.direct).toEqual([]);
         expect(retained.claims).toEqual([]);
     }
@@ -481,9 +480,9 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             proof: 'incomplete',
             childExit: 0,
             diskPressure: false,
-            reason: 'leak',
+            reason: undefined,
         },
-        { scenario: 'persistent thrown proof', proof: 'throws', childExit: 0, diskPressure: false, reason: 'leak' },
+        { scenario: 'persistent thrown proof', proof: 'throws', childExit: 0, diskPressure: false, reason: undefined },
     ] as const)(
         'reports final owned-storage disposition for $scenario',
         async ({ proof, childExit, diskPressure, reason }) => {
@@ -593,7 +592,11 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             expect(claimPayloads(join(root, 'storage'))).toEqual([]);
             expect(result.code).toBe(diskPressure ? null : childExit);
             expect(result.reason).toBe(reason);
-            expect(result.output.split(retainedLine).length - 1).toBe(retained || childExit === 7 ? 1 : 0);
+            // An exited tree with an unprovable census keeps its storage and warns instead of failing.
+            expect(result.retainedStorage).toEqual(
+                retained ? { path: dirname(tempDirectory), reason: 'storage not proved free of file use' } : undefined
+            );
+            expect(result.output.split(retainedLine).length - 1).toBe(childExit === 7 ? 1 : 0);
             if (diskPressure) {
                 expect(result.output).toContain('disk space below');
             }
@@ -864,7 +867,10 @@ describe('guard-owned temporary storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, 
             const prior: PriorMarkedGuard[] = [{ tempDirectory: started.tmp, token: originalToken }];
             if (alive) {
                 if (scenario === 'parent exit') {
-                    expect(JSON.parse(readFileSync(resultPath, 'utf8')).reason).toBe('leak');
+                    // The escaped descendant is outside the tracked tree, so only the storage proof sees it.
+                    expect(JSON.parse(readFileSync(resultPath, 'utf8')).retainedStorage.path).toBe(
+                        dirname(started.tmp)
+                    );
                 }
                 const interim = await runMarkedGuard(root);
                 expectMarkedRecovery(root, prior, interim, true);
@@ -3796,7 +3802,8 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
             await waitUntil(() => existsSync(resultPath) && !isAlive(supervisor.pid ?? -1), 25_000);
             const started: { tmp: string } = JSON.parse(readFileSync(marker, 'utf8'));
             const result = JSON.parse(readFileSync(resultPath, 'utf8'));
-            expect(result.reason).toBe('leak');
+            expect(result.reason).toBeUndefined();
+            expect(result.retainedStorage.path).toBe(dirname(started.tmp));
             expect(result.code).toBe(0);
             expect(
                 await main(['--profile', 'focused', '--', process.execPath], {
@@ -3807,7 +3814,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                     log: () => {},
                     error: () => {},
                 })
-            ).not.toBe(0);
+            ).toBe(0);
             expect(existsSync(started.tmp)).toBe(true);
             const recovery = await guarded(root);
             expect(recovery.code, proofDiagnostic(recovery)).toBe(0);
@@ -4022,5 +4029,151 @@ describe('disk reserve contract', () => {
         });
         expect(code).toBe(0);
         expect(observed).toBe(123 * 1024 ** 2);
+    });
+});
+
+describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
+    const unprovedPorts = (storedPorts: StorageRecoveryPorts): StorageRecoveryPorts => ({
+        ...storedPorts,
+        localReleaseAllowed: () => false,
+    });
+
+    function laneFor(root: string) {
+        const worktreePath = join(root, '.agents', 'worktrees', 'agent-1-lane');
+        mkdirSync(worktreePath, { recursive: true });
+        return {
+            primaryRoot: root,
+            laneName: 'agent-1-lane',
+            branch: 'agent/1/lane',
+            headSha: '5555555555555555555555555555555555555555',
+            worktreePath,
+        };
+    }
+
+    async function runCli(
+        root: string,
+        options: Partial<Parameters<typeof runGuardedCommand>[0]>
+    ): Promise<{ code: number; lines: string[]; result: Awaited<ReturnType<typeof runGuardedCommand>> | undefined }> {
+        const lane = laneFor(root);
+        const lines: string[] = [];
+        const capture = (...parts: unknown[]) => void lines.push(parts.join(' '));
+        const spies = [
+            vi.spyOn(console, 'log').mockImplementation(capture),
+            vi.spyOn(console, 'warn').mockImplementation(capture),
+            vi.spyOn(console, 'error').mockImplementation(capture),
+        ];
+        let result: Awaited<ReturnType<typeof runGuardedCommand>> | undefined;
+        try {
+            const code = await main(['--', process.execPath], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                assertModulesPreflight: () => {},
+                runCommand: async (input) => {
+                    result = await guarded(root, { ...input, ...options });
+                    return result;
+                },
+                log: (line) => lines.push(line),
+                error: (line) => lines.push(line),
+            });
+            return { code, lines, result };
+        } finally {
+            for (const spy of spies) {
+                spy.mockRestore();
+            }
+        }
+    }
+
+    it.each([
+        { status: 0, expectedCode: 0 },
+        { status: 7, expectedCode: 1 },
+    ])(
+        'keeps storage, warns, and records no receipt when an exited tree meets an unprovable census (status $status)',
+        async ({ status, expectedCode }) => {
+            const root = fixture();
+            let tempDirectory: string | undefined;
+            const { code, lines, result } = await runCli(root, {
+                args: ['-e', `process.exitCode=${status}`],
+                storageFactory: (input) => {
+                    const storage = createGuardStorage({ ...input, ports: unprovedPorts(input.ports) });
+                    tempDirectory = storage.tempDirectory;
+                    return storage;
+                },
+            });
+            if (tempDirectory === undefined) {
+                throw new Error('guard storage was not created');
+            }
+            const storagePath = dirname(tempDirectory);
+            expect(result?.code).toBe(status);
+            expect(result?.reason).toBeUndefined();
+            expect(code).toBe(expectedCode);
+            expect(existsSync(tempDirectory)).toBe(true);
+            expect(existsSync(guardFailureReceiptPath(root, 'agent-1-lane'))).toBe(false);
+            expect(lines.filter((line) => line.includes('guard storage retained'))).toEqual([
+                `${process.execPath}: warning: guard storage retained, not proved free (storage not proved free of file use): ${storagePath}`,
+            ]);
+            expect(lines.some((line) => line.includes('(leak'))).toBe(false);
+            if (status === 0) {
+                expect(lines.some((line) => line.includes('FAILED'))).toBe(false);
+                expect(lines.some((line) => line.startsWith(`${process.execPath}: OK (`))).toBe(true);
+            } else {
+                expect(lines.some((line) => line.includes(`FAILED (exit ${status},`))).toBe(true);
+            }
+        }
+    );
+
+    it('still reports leak and records a receipt when a process survives forced cleanup', async () => {
+        const root = fixture();
+        const pidPath = join(root, 'survivor.pid');
+        const realKill = process.kill.bind(process);
+        const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+            if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+                return true;
+            }
+            return realKill(pid, signal);
+        });
+        let survivor: number | undefined;
+        try {
+            const { code, lines, result } = await runCli(root, {
+                args: [
+                    '-e',
+                    `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});c.unref();require('node:fs').writeFileSync(${JSON.stringify(pidPath)},String(c.pid))`,
+                ],
+            });
+            survivor = Number(readFileSync(pidPath, 'utf8'));
+            expect(result?.reason).toBe('leak');
+            expect(result?.retainedStorage).toBeUndefined();
+            expect(code).toBe(1);
+            expect(lines.some((line) => line.includes('FAILED (leak'))).toBe(true);
+            expect(JSON.parse(readFileSync(guardFailureReceiptPath(root, 'agent-1-lane'), 'utf8')).reason).toBe('leak');
+        } finally {
+            killSpy.mockRestore();
+            if (survivor !== undefined) {
+                childPids.add(survivor);
+            }
+        }
+    }, 30_000);
+
+    it('reclaims retained storage on a later guarded run once provable and keeps what it cannot prove free', async () => {
+        const root = fixture();
+        const storageRoot = join(root, 'storage');
+        const unprovedCensus: StorageRecoveryPorts = {
+            identityState: () => 'dead',
+            sessionState: () => 'unknown',
+        };
+        const provable = ownedStorage(storageRoot, unprovedCensus);
+        const unprovable = ownedStorage(storageRoot, unprovedCensus);
+        expect(await provable.release(true)).toBe(false);
+        expect(await unprovable.release(true)).toBe(false);
+        const unprovableToken = basename(dirname(unprovable.tempDirectory));
+        const laterPorts: StorageRecoveryPorts = {
+            identityState: () => 'dead',
+            sessionState: (owner) => (owner.token === unprovableToken ? 'unknown' : 'dead'),
+        };
+        const result = await guarded(root, {
+            storageFactory: (input) => createGuardStorage({ ...input, ports: laterPorts }),
+        });
+        expect(result.code).toBe(0);
+        expect(existsSync(provable.tempDirectory)).toBe(false);
+        expect(existsSync(unprovable.tempDirectory)).toBe(true);
     });
 });
