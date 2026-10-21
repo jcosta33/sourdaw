@@ -24,6 +24,7 @@ type CompiledItem = {
         where?: Record<string, string>;
         match?: { all?: Record<string, string>[]; any?: Record<string, string>[] };
         excludeIds?: string[];
+        condition?: { field: 'muted'; equals: boolean };
         quantity: { unit: 'targets'; exactly: number };
     };
     dependsOn?: string[];
@@ -1107,6 +1108,147 @@ describe('a role or role family stated in the singular or through the project vo
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual(expected);
+    });
+});
+
+const mutedDrums = { ...drums, muted: true };
+const mutedBass = { ...bass, muted: true };
+const mutedContext: ProjectContext = {
+    ...projectContext,
+    tracks: [vocals, keys, mutedDrums, mutedBass, master],
+};
+const unmasteredContext: ProjectContext = { ...projectContext, tracks: [vocals, keys, drums, bass] };
+
+function everyObjectItem(name: string, arguments_: Record<string, unknown>, entity: 'track' | 'device', count: number) {
+    return roleItem(name, arguments_, { targetArgument: entity === 'track' ? 'trackId' : 'deviceId', entity }, count);
+}
+
+describe('a selector with only a condition, or no filter, stands on the selection the request states', () => {
+    it('grounds the muted tracks a request to unmute all muted tracks selects', () => {
+        const result = compileAndBridge(
+            'Unmute all muted tracks',
+            [
+                roleItem(
+                    'muteTrack',
+                    { muted: false },
+                    { targetArgument: 'trackId', entity: 'track', condition: { field: 'muted', equals: true } },
+                    2
+                ),
+            ],
+            [],
+            mutedContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([mutedDrums.id, mutedBass.id]);
+    });
+
+    it.each([
+        ['Mute all tracks', 'muteTrack', { muted: true }],
+        ['Set the volume of every track to -6 dB', 'setTrackGain', { gainDb: -6 }],
+    ])('grounds every track for "%s"', (prompt, name, arguments_) => {
+        const result = compileAndBridge(prompt, [everyObjectItem(name, arguments_, 'track', 4)], [], unmasteredContext);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([vocals.id, keys.id, drums.id, bass.id]);
+    });
+
+    it.each(['Bypass all the effects', 'Bypass every device'])('grounds every device for "%s"', (prompt) => {
+        const result = compileMix(prompt, [everyObjectItem('bypassDevice', { bypassed: true }, 'device', 3)]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id, mixVocalsCompressor.id, mixKeysEq.id]);
+    });
+
+    it('refuses a selector with no filter for a request that selects nothing', () => {
+        const result = compileAndBridge(
+            'set volume to 75%',
+            [everyObjectItem('setTrackGain', { gain: 0.75 }, 'track', 4)],
+            [],
+            unmasteredContext
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
+    });
+});
+
+describe('a selector on a track stands on the request selecting that track', () => {
+    it.each(['Bypass all devices on the selected track', 'Bypass all devices on this track'])(
+        'grounds the selected track\'s devices for "%s"',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [
+                    roleItem(
+                        'bypassDevice',
+                        { bypassed: true },
+                        { targetArgument: 'deviceId', entity: 'device', where: { trackId: mixVocals.id } },
+                        2
+                    ),
+                ],
+                [],
+                { ...mixContext, selectedTrackId: mixVocals.id }
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id, mixVocalsCompressor.id]);
+        }
+    );
+});
+
+const coRenameKeys = createTrack({ id: 'track-co-keys', name: 'Keys', kind: 'midi' });
+const coRenameVocals = createTrack({ id: 'track-co-vocals', name: 'Vocals' });
+const coRenamePiano = createTrack({ id: 'track-co-piano', name: 'Piano', kind: 'midi' });
+const coRenameContext: ProjectContext = {
+    ...projectContext,
+    tracks: [coRenameKeys, coRenameVocals, coRenamePiano, master],
+};
+
+describe('compiled renames in one clause read no written name as a target', () => {
+    it.each([
+        ['Rename Keys to Pads and Vocals to Piano Lead', [coRenameKeys, 'Pads'], [coRenameVocals, 'Piano Lead']],
+        [
+            'Rename Vocals to Lead Vocals and Keys to Piano Roll',
+            [coRenameVocals, 'Lead Vocals'],
+            [coRenameKeys, 'Piano Roll'],
+        ],
+    ] as const)(
+        'refuses neither rename target in "%s"',
+        (prompt, [firstTrack, firstName], [secondTrack, secondName]) => {
+            const result = compileAndBridge(
+                prompt,
+                [
+                    trackItem('renameTrack', firstTrack, { name: firstName }),
+                    trackItem('renameTrack', secondTrack, { name: secondName }),
+                ],
+                [],
+                coRenameContext
+            );
+
+            // The other rename's written name ("Piano Lead", "Piano Roll") is not read as naming the
+            // Piano track, so no target is refused. The second rename's value is refused by the existing
+            // value check on the compiled route, which refuses it on main too; that is not a target decision.
+            expect(result.rejections.filter((rejection) => rejection.reason.includes('trackId'))).toEqual([]);
+            expect(result.actions).toContainEqual({
+                type: 'renameTrack',
+                payload: { trackId: firstTrack.id, name: firstName },
+            });
+        }
+    );
+});
+
+describe('a role stated only by a word pair the project reads as that role grounds', () => {
+    it('grounds the backing vocals a request for the background vocals selects', () => {
+        const result = compileAndBridge(
+            'turn down the background vocals by 3 dB',
+            [turnDown({ role: 'backing vocal' }, 2)],
+            [],
+            roleContext
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([backingVoxOne.id, backingVoxTwo.id]);
     });
 });
 

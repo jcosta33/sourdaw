@@ -60,6 +60,8 @@ export type CompiledTargetAuthorityInput = {
     referenceResolved: boolean;
     /** The selector the targets came from, absent when the compiler named them literally. */
     selectorTerms?: CompiledSelectorTerms;
+    /** The nouns the request uses for objects of the target's kind ("tracks", "effects"). */
+    selectionNouns: readonly RegExp[];
     /** Buses a send parameter of the call names and its asserted track already sends to. */
     sendBusIds: readonly string[];
     /** The text values the call writes ("Bass Drum" for a rename), which name what is written, not a target. */
@@ -325,8 +327,11 @@ function getPredicateRoles(predicate: SemanticCommandListPredicate): string[] {
     return [];
 }
 
-/** One selector term: the phrases any one of which states it, and the canonical roles that do. */
-type SelectorTerm = { phrases: string[]; roles: string[] };
+/**
+ * One selector term: the phrases any one of which states it, the canonical roles that do, and the
+ * track a selection reference ("the selected track") states it by.
+ */
+type SelectorTerm = { phrases: string[]; roles: string[]; selectedTrackId?: string };
 
 /** Every term the selector rests on. */
 function getSelectorTerms(terms: CompiledSelectorTerms, context: ProjectContext): SelectorTerm[] {
@@ -341,11 +346,16 @@ function getSelectorTerms(terms: CompiledSelectorTerms, context: ProjectContext)
     if (where.type !== undefined) {
         phrases.push(getDeviceTypeWords(where.type, context));
     }
-    if (where.trackId !== undefined) {
-        phrases.push(getTrackNameWords(where.trackId, context));
-    }
     if (terms.condition !== undefined) {
         phrases.push([terms.condition.equals ? terms.condition.field : `un${terms.condition.field}`]);
+    }
+    const trackTerms: SelectorTerm[] = [];
+    if (where.trackId !== undefined) {
+        trackTerms.push({
+            phrases: getTrackNameWords(where.trackId, context),
+            roles: [],
+            selectedTrackId: where.trackId,
+        });
     }
     const match: SemanticCommandListMatch = terms.match ?? {};
     const predicates: SemanticCommandListPredicate[] = [];
@@ -357,6 +367,7 @@ function getSelectorTerms(terms: CompiledSelectorTerms, context: ProjectContext)
     }
     return [
         ...phrases.map((alternatives) => ({ phrases: alternatives, roles: [] })),
+        ...trackTerms,
         ...predicates.map((predicate) => ({
             phrases: getPredicatePhrases(predicate, context),
             roles: getPredicateRoles(predicate),
@@ -369,7 +380,28 @@ function matchesWhere(candidate: SemanticCommandListCandidate | undefined, terms
         candidate !== undefined &&
         Object.entries(terms.where ?? {}).every(
             ([field, value]) => candidate[field as keyof SemanticCommandListCandidate] === value
-        )
+        ) &&
+        (terms.condition === undefined || candidate[terms.condition.field] === terms.condition.equals)
+    );
+}
+
+/** Whether the text's own track selection ("the selected track", "this track") is the track. */
+function selectsTrack(text: string, trackId: string, context: ProjectContext): boolean {
+    const result = resolveAgentReference({ prompt: text, assertedId: trackId, capability: 'track', context });
+    return result.status === 'resolved' && result.evidence === 'selection';
+}
+
+/**
+ * Whether the clause asks for every object of the target's kind ("Mute all tracks", "Bypass all the
+ * effects"), the only request a selector with no filter at all can stand on.
+ */
+function statesWholeKindSelection(normalizedText: string, nouns: readonly RegExp[]): boolean {
+    return (
+        nouns.length > 0 &&
+        new RegExp(
+            `\\b(?:all|every|each)(?:\\s+of)?(?:\\s+the)?\\s+(?:${nouns.map((noun) => noun.source).join('|')})`,
+            'u'
+        ).test(normalizedText)
     );
 }
 
@@ -384,15 +416,16 @@ function statesSelectorTerms(input: CompiledTargetAuthorityInput, text: string):
         return false;
     }
     const selectorTerms = getSelectorTerms(terms, input.context);
-    if (selectorTerms.length === 0) {
-        return false;
-    }
     const normalizedText = normalizePromptText(scanPromptQuotedText(text).maskedText);
+    if (selectorTerms.length === 0) {
+        return statesWholeKindSelection(normalizedText, input.selectionNouns);
+    }
     const statedRoles = getStatedCanonicalRoles(normalizedText);
     const statesEveryTerm = selectorTerms.every(
         (term) =>
             term.phrases.some((phrase) => statesPhrase(normalizedText, phrase)) ||
-            term.roles.some((role) => statedRoles.has(role))
+            term.roles.some((role) => statedRoles.has(role)) ||
+            (term.selectedTrackId !== undefined && selectsTrack(text, term.selectedTrackId, input.context))
     );
     if (!statesEveryTerm) {
         return false;

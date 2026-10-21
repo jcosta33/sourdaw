@@ -58,6 +58,8 @@ export type ArbitraryCommandListSelectorEvidence = {
      * whether the request states every term the selection rests on.
      */
     where?: SemanticCommandListSelector['where'];
+    /** The selector's `condition`, present only when the selector used one, for the same reason. */
+    condition?: SemanticCommandListSelector['condition'];
     /**
      * The selector fields a `match` was compiled with, present only when the selector used one.
      * The evidence validator re-resolves this against its own context through the same shared
@@ -256,6 +258,9 @@ function resolveSelector(input: {
     };
     if (input.selector.where !== undefined) {
         evidence.where = structuredClone(input.selector.where);
+    }
+    if (input.selector.condition !== undefined) {
+        evidence.condition = { ...input.selector.condition };
     }
     return { stableIds, evidence };
 }

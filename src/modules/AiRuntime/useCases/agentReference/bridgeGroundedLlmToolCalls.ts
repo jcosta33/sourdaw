@@ -51,6 +51,7 @@ import {
     type CompiledTargetAuthorityInput,
 } from './admitCompiledTargets';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
+import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
     BATCH_LOCAL_BINDING_PATTERN,
@@ -4057,7 +4058,7 @@ function getCompiledSelectorTermsByCallIndex(
         const terms: CompiledSelectorTerms = {
             where: selector.where ?? selector.predicate?.where ?? replay?.where,
             match: selector.predicate?.match ?? replay?.match,
-            condition: selector.predicate?.condition ?? replay?.condition,
+            condition: selector.condition ?? selector.predicate?.condition ?? replay?.condition,
         };
         const ownIndexes = Array.from({ length: item.commandCount }, (_, offset) => item.commandStart + offset);
         for (const commandIndex of new Set([...ownIndexes, ...item.representativeCommandIndexes])) {
@@ -4073,6 +4074,39 @@ function getWrittenValueTexts(arguments_: Readonly<Record<string, unknown>>, gro
     return Object.entries(arguments_).flatMap(([argument, value]) =>
         typeof value === 'string' && !targetArguments.has(argument) ? [value] : []
     );
+}
+
+/**
+ * Every text value the batch's calls of this action write, so "Rename Keys to Pads and Vocals to
+ * Piano Lead" reads neither written name as a target of either rename.
+ */
+function getSameActionWrittenValueTexts(
+    call: ToolCallResult,
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
+    groundingRules: GroundingRules
+): string[] {
+    const values = [call.arguments, ...sameActionAssertedArguments].flatMap((arguments_) =>
+        getWrittenValueTexts(arguments_, groundingRules)
+    );
+    return [...new Set(values)];
+}
+
+/** The nouns the request uses for objects of the capability's kind, read from the created-object vocabulary. */
+function getSelectionNouns(capability: GroundingRules['targetRules'][number]['capability']): RegExp[] {
+    const kind = getAgentReferenceCapabilityKind(capability);
+    if (kind === 'track') {
+        return [CREATED_OBJECT_NOUNS.addTrack, CREATED_OBJECT_NOUNS.createBus];
+    }
+    if (kind === 'clip') {
+        return [CREATED_OBJECT_NOUNS.addClip];
+    }
+    if (capability === 'device' || capability === 'sidechain-capable-device') {
+        return [CREATED_OBJECT_NOUNS.addDevice];
+    }
+    if (capability === 'automation-lane') {
+        return [CREATED_OBJECT_NOUNS.addAutomationLane];
+    }
+    return [];
 }
 
 function getAssertedIds(value: unknown): string[] {
@@ -4706,7 +4740,8 @@ function groundToolCall({
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
                     sendBusIds: [],
-                    valueTexts: getWrittenValueTexts(call.arguments, groundingRules),
+                    selectionNouns: getSelectionNouns(targetRule.capability),
+                    valueTexts: getSameActionWrittenValueTexts(call, sameActionAssertedArguments, groundingRules),
                     targetPrompt,
                     targetIds: compilerTargetOverride.stableIds,
                     ...getSameActionTargetIds(sameActionAssertedArguments, groundingRules, targetRule.argument),
@@ -4850,7 +4885,8 @@ function groundToolCall({
                       selectorTerms: compiledSelectorTerms,
                       targetPrompt,
                       targetIds: compilerTargetOverride.stableIds,
-                      valueTexts: getWrittenValueTexts(call.arguments, groundingRules),
+                      selectionNouns: getSelectionNouns(targetRule.capability),
+                      valueTexts: getSameActionWrittenValueTexts(call, sameActionAssertedArguments, groundingRules),
                       ...getSameActionTargetIds(sameActionAssertedArguments, groundingRules, targetRule.argument),
                   }
                 : null;
