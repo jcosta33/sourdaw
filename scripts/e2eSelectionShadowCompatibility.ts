@@ -156,10 +156,8 @@ export function unsupportedShadowReport(input: {
 }) {
     const { root, integrationRoot, scopePath, base, head, integrationSha } = input;
     const rawDiff = git(['diff', '--name-status', '-z', '--find-renames', `${base}...${head}`, '--'], root);
-    const changedPaths = unionChangedPaths(
-        rawDiff.toString('utf8'),
-        integrationDeltaDiff(integrationRoot, base, integrationSha)
-    );
+    const integrationDiff = integrationDeltaDiff(integrationRoot, base, integrationSha);
+    const changedPaths = unionChangedPaths(rawDiff.toString('utf8'), integrationDiff);
     const inventory = listIntegrationInventory(integrationRoot, integrationSha);
     const full = inventory.filter((row) => row.path !== SMOKE_SPEC).map((row) => row.path);
     if (full.length === 0) {
@@ -174,13 +172,17 @@ export function unsupportedShadowReport(input: {
     ]) {
         const integrationEntry = treeEntry(integrationSha, path, integrationRoot);
         const controlEntry = treeEntry(base, path, root);
-        const controlBytes = controlEntry?.mode === '100644' ? git(['show', `${base}:${path}`], root) : null;
-        if (
-            integrationEntry?.mode !== '100644' ||
-            !controlBytes ||
-            !git(['show', `${integrationSha}:${path}`], integrationRoot).equals(controlBytes) ||
-            hashInventoryFile(resolve(root, path)) !== sha256(controlBytes)
-        ) {
+        if (integrationEntry?.mode !== '100644') {
+            throw new Error(`Integration selector or planner is missing or nonregular: ${path}`);
+        }
+        if (controlEntry?.mode !== '100644') {
+            throw new Error(`Control selector or planner is missing or nonregular: ${path}`);
+        }
+        const controlBytes = git(['show', `${base}:${path}`], root);
+        if (hashInventoryFile(resolve(root, path)) !== sha256(controlBytes)) {
+            throw new Error(`Control checkout differs from its immutable base: ${path}`);
+        }
+        if (!git(['show', `${integrationSha}:${path}`], integrationRoot).equals(controlBytes)) {
             throw new ShadowSkipError(
                 'integration-selector-differs-from-control',
                 `Integration selector or planner differs from control: ${path}`
@@ -190,14 +192,17 @@ export function unsupportedShadowReport(input: {
     const durationText = git(['show', `${integrationSha}:scripts/e2eSpecDurations.json`], integrationRoot).toString(
         'utf8'
     );
-    const expectedPlan = selectValidationPlan(
-        changedPaths,
-        inventory.map((row) => row.path),
-        parseSpecDurations(durationText)
-    );
+    const inventoryPaths = inventory.map((row) => row.path);
+    const durations = parseSpecDurations(durationText);
+    const expectedPlan = selectValidationPlan(changedPaths, inventoryPaths, durations);
     const scopeBytes = readFileSync(scopePath);
     const livePlan: unknown = JSON.parse(scopeBytes.toString('utf8'));
-    const agreement = comparePlans(expectedPlan, livePlan);
+    const agreement = comparePlans(expectedPlan, livePlan, {
+        paths: changedPaths,
+        inventory: inventoryPaths,
+        durations,
+        statusDiffs: [rawDiff.toString('utf8'), integrationDiff],
+    });
     if (!agreement.agrees) {
         throw new Error(
             `Authoritative scope artifact disagrees with the control selector or inventory: ${agreement.detail}`

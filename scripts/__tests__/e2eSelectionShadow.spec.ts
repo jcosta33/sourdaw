@@ -459,6 +459,38 @@ describe('E2E selection shadow', () => {
         30_000
     );
 
+    it.each(['absent', 'present'] as const)(
+        'fails when the %s candidate executes a modified control agreement rule',
+        (capability) => {
+            withShadowCliCheckouts(
+                capability,
+                (result, report) => {
+                    expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                    expect(report.measurementStatus).toBe('failed');
+                    expect(report.failureReason).toMatch(
+                        /Shadow rule in checkout disagrees with the immutable head: scripts\/e2eSelectionShadowAgreement\.ts/
+                    );
+                },
+                'scripts/e2eSelectionShadowAgreement.ts'
+            );
+        },
+        30_000
+    );
+
+    it('fails, rather than skips, when the control checkout dirties a planner source on the absent route', () => {
+        withShadowCliCheckouts(
+            'absent',
+            (result, report) => {
+                expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+                expect(report.measurementStatus).toBe('failed');
+                expect(report.failureReason).toMatch(
+                    /Control checkout differs from its immutable base: playwright\.config\.ts/
+                );
+            },
+            'playwright.config.ts'
+        );
+    }, 30_000);
+
     it('reports an older head without shadow capability as unsupported full coverage', () => {
         withShadowCliCheckouts('absent', (result, report, base, head, integration) => {
             expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(0);
@@ -1334,5 +1366,49 @@ describe('E2E selection shadow agreement with the authoritative scope', () => {
         ]) {
             expect(() => measureShadow(fixture({ livePlan }))).toThrow(disagrees);
         }
+    });
+
+    describe('refuses a narrowed plan the planner can never emit', () => {
+        const narrowPlan = (paths: string[], selection = narrow) =>
+            selectValidationPlan(paths, inventoryPaths, undefined, false, selection);
+        const withNarrowRow = (full: ReturnType<typeof selectValidationPlan>, narrowed: typeof full) =>
+            full.reasons.map((row) => (row.path === candidate ? (narrowed.reasons[0] ?? row) : row));
+
+        it('keeps a src/infra change narrowed to one spec', () => {
+            const infra = 'src/infra/clock.ts';
+            const full = selectValidationPlan([candidate, infra].sort(), inventoryPaths);
+            const narrowed = narrowPlan([candidate]);
+            const livePlan = { ...full, matrix: narrowed.matrix, reasons: withNarrowRow(full, narrowed) };
+            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `M\0${infra}\0` }))).toThrow(disagrees);
+        });
+
+        it('drops the changed browser spec and turns browserAi off', () => {
+            const aiSpec = 'tests/e2e/browserAiPanelsTestId.spec.ts';
+            const paths = [candidate, aiSpec].sort();
+            const integrationDiff = `M\0${aiSpec}\0`;
+            const honest = narrowPlan(paths);
+            expect(honest.browserAi).toBe(true);
+            expect(measureShadow(fixture({ livePlan: honest, integrationDiff })).measurementStatus).toBe('complete');
+            const livePlan = { ...honest, browserAi: false, matrix: narrowPlan([candidate]).matrix };
+            expect(() => measureShadow(fixture({ livePlan, integrationDiff }))).toThrow(disagrees);
+        });
+
+        it('empties the matrix for a deletion', () => {
+            const deleted = 'src/modules/Tuner/presentations/views/RetiredPanel.tsx';
+            const livePlan = narrowPlan([candidate, deleted].sort(), { ...narrow, specs: [] });
+            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `D\0${deleted}\0` }))).toThrow(disagrees);
+            const present = narrowPlan([candidate, deleted].sort());
+            expect(() => measureShadow(fixture({ livePlan: present, integrationDiff: `D\0${deleted}\0` }))).toThrow(
+                disagrees
+            );
+        });
+
+        it('narrows a selector change to zero specs', () => {
+            const selector = 'scripts/prValidationScope.ts';
+            const full = selectValidationPlan([candidate, selector].sort(), inventoryPaths);
+            const narrowed = narrowPlan([candidate], { ...narrow, specs: [] });
+            const livePlan = { ...full, matrix: narrowed.matrix, reasons: withNarrowRow(full, narrowed) };
+            expect(() => measureShadow(fixture({ livePlan, integrationDiff: `M\0${selector}\0` }))).toThrow(disagrees);
+        });
     });
 });

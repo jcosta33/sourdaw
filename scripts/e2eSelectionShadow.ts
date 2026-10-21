@@ -276,12 +276,14 @@ function validateMeasurementInput(input: ShadowInput): {
     assert.equal(input.sourceModes[validationPath], '100644', invalidValidation);
     assert.match(String(input.sourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
     assert.match(String(input.integrationSourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
-    const expectedPlan = selectValidationPlan(
+    const inventoryPaths = inventory.map((row) => row.path);
+    const expectedPlan = selectValidationPlan(paths, inventoryPaths, durations);
+    const agreement = comparePlans(expectedPlan, input.livePlan, {
         paths,
-        inventory.map((row) => row.path),
-        durations
-    );
-    const agreement = comparePlans(expectedPlan, input.livePlan);
+        inventory: inventoryPaths,
+        durations,
+        statusDiffs: [input.rawDiff.toString('utf8'), input.integrationDiff ?? ''],
+    });
     if (!agreement.agrees) {
         throw new Error(
             `Authoritative scope artifact disagrees with the current selector or inventory: ${agreement.detail}`
