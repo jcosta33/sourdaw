@@ -15,6 +15,7 @@ import { isProofDevice, createProofNode } from '../../engine/ProofNode';
 import { isScoringDevice, createScoringNode } from '../../engine/ScoringNode';
 import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
 import { type DeviceRuntimeOfflineFacts } from '../../models/BuiltinDeviceRuntime';
+import { type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
 
 import {
     type DeviceControllerRequest,
@@ -224,7 +225,7 @@ export type NativeDspDeviceFactory = {
      */
     readonly type: NativeDspDeviceType;
     readonly matches: (deviceType: string) => boolean;
-    readonly create: (ctx: BaseAudioContext) => Promise<NativeDspNode>;
+    readonly create: (ctx: BaseAudioContext, controlTarget?: RuntimeDeviceControlTarget) => Promise<NativeDspNode>;
     readonly runtime: DeviceRuntimeOfflineFacts;
 };
 
@@ -288,29 +289,54 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
         create: createGrandBouleOfflineNode,
         runtime: NATIVE_DSP_OFFLINE_RUNTIME,
     },
-    { type: 'gluten', matches: isGlutenDevice, create: createGlutenNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
-    { type: 'crust', matches: isCrustDevice, create: createCrustNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
+    {
+        type: 'gluten',
+        matches: isGlutenDevice,
+        create: (ctx) => createGlutenNode(ctx),
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
+    {
+        type: 'crust',
+        matches: isCrustDevice,
+        create: (ctx) => createCrustNode(ctx),
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
     {
         type: 'bacteria',
         matches: isBacteriaDevice,
-        create: createBacteriaNode,
+        create: (ctx) => createBacteriaNode(ctx),
         runtime: NATIVE_DSP_OFFLINE_RUNTIME,
     },
-    { type: 'grinder', matches: isGrinderDevice, create: createGrinderNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
-    { type: 'proof', matches: isProofDevice, create: createProofNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
+    {
+        type: 'grinder',
+        matches: isGrinderDevice,
+        create: (ctx, controlTarget) => createGrinderNode(ctx, undefined, undefined, controlTarget),
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
+    {
+        type: 'proof',
+        matches: isProofDevice,
+        create: (ctx) => createProofNode(ctx),
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
     {
         type: 'dutch-oven',
         matches: isProofChamberDevice,
-        create: createProofChamberNode,
+        create: (ctx) => createProofChamberNode(ctx),
         runtime: NATIVE_DSP_OFFLINE_RUNTIME,
     },
     {
         type: 'native-scoring',
         matches: isScoringDevice,
-        create: createScoringNode,
+        create: (ctx) => createScoringNode(ctx),
         runtime: NATIVE_DSP_OFFLINE_RUNTIME,
     },
-    { type: 'knead', matches: isKneadDevice, create: createKneadNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
+    {
+        type: 'knead',
+        matches: isKneadDevice,
+        create: (ctx) => createKneadNode(ctx),
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
 ];
 
 export function isNativeDspDevice(deviceType: string): boolean {

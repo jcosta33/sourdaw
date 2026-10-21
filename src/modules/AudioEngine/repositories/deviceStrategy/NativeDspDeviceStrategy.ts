@@ -2,6 +2,7 @@ import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 
 import { type NoteExpressionControls } from '../../engine/noteExpression';
 import { type Device } from '../../models/TrackViewTypes';
+import { type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
 import { type OfflineDeviceNode } from '../devices/types';
 
 import {
@@ -125,7 +126,20 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
 
 export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Device): Promise<NativeDspDeviceStrategy> {
     const factory = findReleasedNativeDspDeviceFactory(device.type);
-    const result = factory ? await factory.create(ctx) : null;
+    // Offline controls are local to this port and generation, as in Bacteria's
+    // direct offline API. Bind the captured device instead of reading live state.
+    const controlTarget: RuntimeDeviceControlTarget | undefined =
+        factory?.type === 'grinder'
+            ? {
+                  trackId: 'offline-grinder-track',
+                  deviceId: device.id,
+                  deviceType: factory.type,
+                  parameterIds: Object.entries(device.parameterValues)
+                      .filter(([, value]) => Number.isFinite(value))
+                      .map(([name]) => name),
+              }
+            : undefined;
+    const result = factory ? await factory.create(ctx, controlTarget) : null;
 
     if (!result) {
         throw new Error(`Failed to create Native DSP device: ${device.type}`);

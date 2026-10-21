@@ -166,7 +166,8 @@ export async function createGrinderNode(
     // sample-frame contract and is posted in call order without coalescing.
     const pendingParamPosts = new Map<string, PendingParamPost>();
     let paramFlushRafId: number | null = null;
-    const canCoalesce = typeof requestAnimationFrame === 'function';
+    const offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+    const canCoalesce = !offline && typeof requestAnimationFrame === 'function';
     const workletGeneration = allocateWorkletControlGeneration();
     const fallbackControlTarget = controlTarget
         ? Object.freeze({
@@ -259,8 +260,8 @@ export async function createGrinderNode(
             return;
         }
         if (!canCoalesce) {
-            // No rAF (offline render / non-DOM host): apply at the next safe
-            // boundary instead of stranding the already validated control.
+            // An offline render can finish before the window's next frame.
+            // Post now so setup never depends on UI animation scheduling.
             postFallbackControl(name, pending);
             return;
         }
