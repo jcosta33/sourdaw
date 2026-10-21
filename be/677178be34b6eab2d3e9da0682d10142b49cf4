@@ -1,0 +1,19 @@
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_59e31a5c6f3e31::t_e876083f2fd1c6 23,67,72,76,413,416-421,469,527-539,748-761,896-901
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be677178be34b6eab2d3e9da0682d10142b49cf4",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
