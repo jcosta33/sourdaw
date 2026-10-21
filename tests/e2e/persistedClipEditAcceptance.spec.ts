@@ -678,17 +678,34 @@ test('persisted clip edits replay exact owners and source material through real 
                     { type: 'removeClip', payload: { clipId: first.id } },
                     { type: 'splitClip', payload: { clipId: second.id, beat } },
                 ];
-                const result = await page.evaluate(async (batch: AppAction[]) => {
+                // The grouped-history contract uses sequential forward commits.
+                // Atomic forward admission is separately tracked by #5439.
+                const commits = await page.evaluate(async (batch: AppAction[]) => {
                     const path = '/src/modules/Command/useCases/index.ts';
-                    const { executeAppActionBatch }: typeof import('../../src/modules/Command/useCases') = await import(
+                    const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(
                         path
                     );
-                    return executeAppActionBatch(batch, {
-                        groupId: `acceptance-${crypto.randomUUID()}`,
-                        groupLabel: 'Acceptance ripple remove then split',
-                    });
+                    const groupId = `acceptance-${crypto.randomUUID()}`;
+                    const committed: string[] = [];
+                    for (const action of batch) {
+                        const priorCount = committed.length;
+                        await executeAppAction(action, {
+                            source: 'manual',
+                            groupId,
+                            groupLabel: 'Acceptance ripple remove then split',
+                            onCommitted: () => committed.push(action.type),
+                        });
+                        if (committed.length !== priorCount + 1) {
+                            throw new Error(`Expected exactly one real commit callback for ${action.type}`);
+                        }
+                    }
+                    return committed;
                 }, actions);
-                expect(result.status).toBe('committed');
+                expect(commits).toEqual(['removeClip', 'splitClip']);
+                await info.attach('grouped-forward-commits', {
+                    body: JSON.stringify(commits),
+                    contentType: 'application/json',
+                });
             }
         );
     });
