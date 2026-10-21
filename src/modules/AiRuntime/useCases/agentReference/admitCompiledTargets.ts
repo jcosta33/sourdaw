@@ -247,7 +247,7 @@ function statesPhrase(normalizedText: string, phrase: string): boolean {
 
 /**
  * Every canonical role the text names in a word or a word pair, read through Project's own reading
- * of track names, so the vocabulary it knows for a part ("vox", "keyboards", "synths") states it.
+ * of track names, so the vocabulary it knows for a part ("keyboards", "synths") states it.
  */
 function getStatedCanonicalRoles(normalizedText: string): Set<string> {
     const words = normalizedText.split(' ').filter((word) => word.length > 0);
