@@ -1,0 +1,33 @@
+crates/daw-core/src/tuning.rs
+  s_59e31a5c6f3e31::t_e0ce9b327f5429 193-198
+crates/daw-core/src/tuning/scala.rs
+  s_59e31a5c6f3e31::t_ffd9e719eaf405 14-51,53-56,59-100,102-104,106-112,114-117,123,128-129,131-135,138-142,170,178,186,194,202-278
+crates/sourdaw-native/src/commands/tuning.rs
+  s_59e31a5c6f3e31::t_7741e2ba911566 1-4,14-29,32,36-74
+src/modules/Project/repositories/nativeTuning/__tests__/parseScl.spec.ts
+  s_59e31a5c6f3e31::t_3da6b4fdfcd684 24,32-66
+src/modules/Project/repositories/nativeTuning/parseScl.ts
+  s_59e31a5c6f3e31::t_523f82609768dc 6-20,27-34,59-80,87-92,97
+src/modules/Project/useCases/__tests__/importSclFile.nativeWire.spec.ts
+  s_59e31a5c6f3e31::t_502bb99a6b915f 1-61
+src/modules/Project/useCases/__tests__/importSclFile.spec.ts
+  s_59e31a5c6f3e31::t_402e5d3b2ffe35 7,86-91,122-127,152-176
+src/modules/Project/useCases/importSclFile.ts
+  s_59e31a5c6f3e31::t_6549e8fdacefa2 26-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "efc5b32a972577250e598081d08d7e92d0aba317",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
