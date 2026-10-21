@@ -23,6 +23,9 @@ test.describe('Mixer snapshot recall — restores saved state', () => {
         await expect(gainSlider).toHaveAttribute('aria-valuenow', '0.8');
         await expect(recallButton).toBeDisabled();
 
+        await gainSlider.press('ArrowUp');
+        await expect(gainSlider).toHaveAttribute('aria-valuenow', '0.81');
+
         await mixer.getByRole('button', { name: 'Save mixer snapshot', exact: true }).click();
         await expect(recallButton).toBeEnabled();
 
@@ -33,6 +36,6 @@ test.describe('Mixer snapshot recall — restores saved state', () => {
         const savedSnapshot = mixer.getByRole('menu').getByRole('button', { name: 'Snapshot 1', exact: true });
         await expect(savedSnapshot).toBeVisible();
         await savedSnapshot.click();
-        await expect(gainSlider).toHaveAttribute('aria-valuenow', '0.8');
+        await expect(gainSlider).toHaveAttribute('aria-valuenow', '0.81');
     });
 });
