@@ -90,8 +90,8 @@ export function projectedTakeLaneOwners(priorActions: readonly AppAction[]): Tak
                 restoreRetiredOwners(lanes, retiredTakeLanes ?? []);
                 projectReKeyOwners(lanes, reKeyedTakeLanes ?? [], 'apply');
             } else {
-                retireClipOwners(lanes, rightClipId);
                 projectReKeyOwners(lanes, reKeyedTakeLanes ?? [], 'restore');
+                retireClipOwners(lanes, rightClipId);
             }
         }
     }

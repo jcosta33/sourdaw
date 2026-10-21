@@ -16,6 +16,7 @@ import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipR
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
 import { applyTakeReKeyTransitions } from '../../useCases/comping/applyTakeReKeyTransitions';
+import { planTakeRetirement } from '../../useCases/comping/planTakeRetirement';
 import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { restoreTakeReKeyTransitions } from '../../useCases/comping/restoreTakeReKeyTransitions';
@@ -168,11 +169,19 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         // discriminator is falsiness — `=== undefined` never fires on a real
         // payload, which is how the first cut of this leg silently never ran.
         if (!action.payload.replacement.rightClip) {
-            stagedRetired = removeTakesForClips([action.payload.rightClipId]);
+            const reKeyedTakeIds = new Set(
+                (action.payload.reKeyedTakeLanes ?? []).flatMap((transition) =>
+                    transition.takesAfter.map((take) => take.id)
+                )
+            );
+            // Capture late right-side material before the transition's liveness
+            // filter retires it. Transition-owned ids remain its sole responsibility.
+            stagedRetired = planTakeRetirement([action.payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [];
             // The split's re-key (#5048) rides the shared payload array: with
-            // the clips back on the track, the pre-split take/comp-region
-            // facets go back over the fragmented ones.
+            // the clips back on the track and the lane still present, put its
+            // pre-split facets back before retiring any remaining right material.
             restoreTakeReKeyTransitions(action.payload.reKeyedTakeLanes ?? []);
+            removeTakesForClips([action.payload.rightClipId]);
         } else if (action.payload.retiredTakeLanes !== undefined || action.payload.reKeyedTakeLanes !== undefined) {
             // Redo leg: re-splice put the right clip back; reinstate the takes
             // the undo retired from it and re-apply the split's re-key.
