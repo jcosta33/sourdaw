@@ -10,6 +10,7 @@ import { CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
+import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
@@ -36,6 +37,11 @@ export type CompiledTargetAuthorityInput = {
     prompt: string;
     /** Buses a send parameter of the call names and its asserted track already sends to. */
     sendBusIds: readonly string[];
+    /**
+     * Set when each target already resolved against the request the way a direct call does; that
+     * resolution is the naming evidence, so only the request's protections remain to apply.
+     */
+    referenceResolved: boolean;
     /** The original text of the clause the targets belong to. */
     targetPrompt: string;
     targetIds: readonly string[];
@@ -149,6 +155,20 @@ function getInstructionText(request: MaskedRequest, start: number, catalog: Grou
     return request.prompt.slice(start, nextInstruction?.start ?? limit);
 }
 
+/** The text with every whole, case-insensitive occurrence of the names blanked to equal-length spaces. */
+function maskWholeNames(text: string, names: readonly string[]): string {
+    return names
+        .filter((name) => name.trim().length > 0)
+        .reduce(
+            (masked, name) =>
+                masked.replaceAll(
+                    new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'giu'),
+                    (match) => ' '.repeat(match.length)
+                ),
+            text
+        );
+}
+
 /** Everything the request protects or excludes, with every object on a protected track. */
 function getProtectedIds(input: CompiledTargetAuthorityInput, request: MaskedRequest): Set<string> {
     const protectedIds = new Set(input.compilerExcludedIds);
@@ -166,7 +186,12 @@ function getProtectedIds(input: CompiledTargetAuthorityInput, request: MaskedReq
         for (const id of getNamedObjectIds(restriction, input.capability, input.context, input.dependencyId)) {
             protectedIds.add(id);
         }
-        for (const trackId of getTieredReferenceIds(restriction, 'track', input.context)) {
+        // "leave Bass Verse unchanged" protects the clip, not every object on a track named Bass.
+        const namedObjectNames = readReferences(restriction, input.capability, input.context, input.dependencyId)
+            .filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
+            .map((candidate) => candidate.name);
+        const trackRestriction = maskWholeNames(restriction, namedObjectNames);
+        for (const trackId of getTieredReferenceIds(trackRestriction, 'track', input.context)) {
             protectedIds.add(trackId);
             for (const ownedId of getTrackOwnedObjectIds(trackId, input.context)) {
                 protectedIds.add(ownedId);
@@ -328,6 +353,9 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): bool
     const protectedIds = getProtectedIds(input, request);
     if (targetIds.some((targetId) => protectedIds.has(targetId))) {
         return false;
+    }
+    if (input.referenceResolved) {
+        return true;
     }
     let targetPrompt = input.targetPrompt;
     if (input.clauseStart !== undefined) {

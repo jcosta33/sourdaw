@@ -4629,6 +4629,7 @@ function groundToolCall({
                     context,
                     createdIds: getBatchCreatedIds(batchLocalCreationBindings),
                     prompt,
+                    referenceResolved: false,
                     sendBusIds: [],
                     targetPrompt,
                     targetIds: compilerTargetOverride.stableIds,
@@ -4766,6 +4767,7 @@ function groundToolCall({
                           targetRule.argument === 'trackId'
                               ? getAutomatedSendBusIds(groundedArguments.parameterId, assertedValue, context)
                               : [],
+                      referenceResolved: false,
                       targetPrompt,
                       targetIds: compilerTargetOverride.stableIds,
                   }
@@ -4847,9 +4849,12 @@ function groundToolCall({
             }
             return rejection(index, call.name, `Target ${targetRule.argument} is not grounded in the user request`);
         }
-        // An action that resolves compiled targets against the request like a direct call still
-        // answers to the request's protections and the compiled authority contract.
-        if (compiledTargetAuthority !== null && !admitsCompiledTargets(compiledTargetAuthority)) {
+        // An action that resolves compiled targets against the request like a direct call has its
+        // naming evidence from that resolution, and still answers to the request's protections.
+        if (
+            compiledTargetAuthority !== null &&
+            !admitsCompiledTargets({ ...compiledTargetAuthority, referenceResolved: true })
+        ) {
             return rejection(index, call.name, unauthorizedCompiledTargetReason(targetRule.argument));
         }
 

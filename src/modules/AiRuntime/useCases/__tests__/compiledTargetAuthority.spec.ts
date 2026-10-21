@@ -20,7 +20,7 @@ type CompiledItem = {
     arguments: Record<string, unknown>;
     selector?: {
         targetArgument: string;
-        entity: 'track' | 'device';
+        entity: 'track' | 'device' | 'clip';
         where?: Record<string, string>;
         match?: { any: { nameIncludes: string }[] };
         excludeIds?: string[];
@@ -704,5 +704,76 @@ describe('compiled selectors for objects the request names or selects still grou
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual([mixDrums.id, mixBass.id, mixGuitar.id]);
+    });
+});
+
+const renameTrack: ProjectTrack = {
+    ...createTrack({ id: 'track-rename-bass', name: 'Bass' }),
+    clipCount: 2,
+    clips: [
+        { id: 'clip-rename-verse', name: 'Bass Verse', type: 'audio', startBeat: 0, endBeat: 8, noteCount: 0 },
+        { id: 'clip-rename-lead', name: 'Lead', type: 'audio', startBeat: 8, endBeat: 16, noteCount: 0 },
+    ],
+};
+const renameContext: ProjectContext = {
+    ...projectContext,
+    tracks: [renameTrack, master],
+    selectedTrackId: renameTrack.id,
+    selectedClipId: 'clip-rename-verse',
+    selectedClipIds: ['clip-rename-verse'],
+};
+
+function renameClip(prompt: string, clipName: string) {
+    return compileAndBridge(
+        prompt,
+        [
+            {
+                id: 'rename-clip',
+                name: 'renameClip',
+                arguments: { name: 'Bridge Solo' },
+                selector: {
+                    targetArgument: 'clipId',
+                    entity: 'clip',
+                    where: { name: clipName },
+                    quantity: { unit: 'targets', exactly: 1 },
+                },
+            },
+        ],
+        [],
+        renameContext
+    );
+}
+
+describe('a compiled clip rename answers to the request that names its source', () => {
+    it('grounds the named source clip when a protected clip name contains the track name', () => {
+        const result = renameClip('rename Lead to Bridge Solo; leave Bass Verse unchanged', 'Lead');
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-rename-lead', name: 'Bridge Solo' } },
+        ]);
+    });
+
+    it('grounds the selected clip a request renames without naming it', () => {
+        const result = renameClip('rename clip to Bridge Solo', 'Bass Verse');
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-rename-verse', name: 'Bridge Solo' } },
+        ]);
+    });
+
+    it('refuses a selector for a clip the request does not rename', () => {
+        const result = renameClip('rename Lead to Bridge Solo', 'Bass Verse');
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it('refuses a selector for the clip the request protects', () => {
+        const result = renameClip('rename Lead to Bridge Solo; leave Lead unchanged', 'Lead');
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
     });
 });
