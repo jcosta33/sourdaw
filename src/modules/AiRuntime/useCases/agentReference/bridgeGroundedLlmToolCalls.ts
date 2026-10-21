@@ -4693,7 +4693,6 @@ function groundToolCall({
                     clauseStart: resolvedActionScope?.start,
                     compilerExcludedIds,
                     context,
-                    createdIds: getBatchCreatedIds(batchLocalCreationBindings),
                     prompt,
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
@@ -4830,7 +4829,6 @@ function groundToolCall({
                       clauseStart: resolvedActionScope?.start,
                       compilerExcludedIds,
                       context,
-                      createdIds: getBatchCreatedIds(batchLocalCreationBindings),
                       dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
                       prompt,
                       sendBusIds:

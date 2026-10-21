@@ -45,8 +45,6 @@ export type CompiledTargetAuthorityInput = {
     /** Every id the compiled list's own selectors excluded or protected. */
     compilerExcludedIds: ReadonlySet<string>;
     context: ProjectContext;
-    /** Objects this batch creates; a compiled selector resolved only objects that already exist. */
-    createdIds: ReadonlySet<string>;
     dependencyId?: string;
     /** Ids the batch's calls of this action bind to their other target arguments. */
     otherArgumentIds: readonly string[];
@@ -400,9 +398,7 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): Comp
     if (input.clauseStart !== undefined) {
         text = getInstructionText(request, input.clauseStart, input.catalog);
     }
-    const setAside = [
-        ...new Set([...input.createdIds, ...protectedIds, ...input.sendBusIds, ...input.otherArgumentIds]),
-    ];
+    const setAside = [...new Set([...protectedIds, ...input.sendBusIds, ...input.otherArgumentIds])];
     const direct = resolveLikeDirectCall(input, text, setAside);
     if (direct === 'target') {
         return ADMITTED;
