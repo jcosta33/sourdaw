@@ -44,7 +44,7 @@ import {
     validateArbitraryCommandListEvidence,
 } from '../validateArbitraryCommandListEvidence';
 
-import { admitsCompiledTargets, getAutomatedSendBusIds } from './admitCompiledTargets';
+import { admitsCompiledTargets, type CompiledTargetAuthorityInput } from './admitCompiledTargets';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
@@ -72,6 +72,7 @@ import {
 import { type CoordinatedTrackList, findCoordinatedTrackLists } from './findCoordinatedTrackLists';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
+import { getAutomatedSendBusIds } from './getAutomatedSendBusIds';
 import {
     getBassProcessingCopyPromptScope,
     type BassProcessingCopyRequestScope,
@@ -1508,7 +1509,11 @@ function resolveActionPromptScope({
     sameActionCallCount,
     workflowCapabilityId,
 }: ResolveActionPromptScopeInput):
-    (ActionPromptScope & { compilerGroupArguments?: readonly Readonly<Record<string, unknown>>[] }) | null {
+    | (ActionPromptScope &
+          Partial<Pick<PromptClauseScope, 'start'>> & {
+              compilerGroupArguments?: readonly Readonly<Record<string, unknown>>[];
+          })
+    | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     const hasActionCancellation = isActionCancelledByPrompt({
         actionName,
@@ -4619,6 +4624,7 @@ function groundToolCall({
                 !admitsCompiledTargets({
                     capability: targetRule.capability,
                     catalog,
+                    clauseStart: resolvedActionScope?.start,
                     compilerExcludedIds,
                     context,
                     createdIds: getBatchCreatedIds(batchLocalCreationBindings),
@@ -4745,14 +4751,36 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = assertedValue;
             continue;
         }
-        if (compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride) {
-            const admitsCompilerResolution = admitsCompilerResolvedTargetWithoutReferenceResolution(call.name, prompt);
+        const compiledTargetAuthority: CompiledTargetAuthorityInput | null =
+            compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride
+                ? {
+                      capability: targetRule.capability,
+                      catalog,
+                      clauseStart: resolvedActionScope?.start,
+                      compilerExcludedIds,
+                      context,
+                      createdIds: getBatchCreatedIds(batchLocalCreationBindings),
+                      dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
+                      prompt,
+                      sendBusIds:
+                          targetRule.argument === 'trackId'
+                              ? getAutomatedSendBusIds(groundedArguments.parameterId, assertedValue, context)
+                              : [],
+                      targetPrompt,
+                      targetIds: compilerTargetOverride.stableIds,
+                  }
+                : null;
+        if (
+            compiledTargetAuthority !== null &&
+            compilerTargetOverride !== undefined &&
+            'stableIds' in compilerTargetOverride &&
+            admitsCompilerResolvedTargetWithoutReferenceResolution(call.name, prompt)
+        ) {
             if (
-                admitsCompilerResolution &&
-                (compilerTargetOverride.cardinality !== 'one' ||
-                    compilerTargetOverride.stableIds.length !== 1 ||
-                    targetRule.capability !== compilerTargetOverride.capability ||
-                    assertedValue !== compilerTargetOverride.stableIds[0])
+                compilerTargetOverride.cardinality !== 'one' ||
+                compilerTargetOverride.stableIds.length !== 1 ||
+                targetRule.capability !== compilerTargetOverride.capability ||
+                assertedValue !== compilerTargetOverride.stableIds[0]
             ) {
                 return rejection(
                     index,
@@ -4760,29 +4788,11 @@ function groundToolCall({
                     `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
                 );
             }
-            if (
-                !admitsCompiledTargets({
-                    capability: targetRule.capability,
-                    catalog,
-                    compilerExcludedIds,
-                    context,
-                    createdIds: getBatchCreatedIds(batchLocalCreationBindings),
-                    dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
-                    prompt,
-                    sendBusIds:
-                        targetRule.argument === 'trackId'
-                            ? getAutomatedSendBusIds(groundedArguments.parameterId, assertedValue, context)
-                            : [],
-                    targetPrompt,
-                    targetIds: compilerTargetOverride.stableIds,
-                })
-            ) {
+            if (!admitsCompiledTargets(compiledTargetAuthority)) {
                 return rejection(index, call.name, unauthorizedCompiledTargetReason(targetRule.argument));
             }
-            if (admitsCompilerResolution) {
-                groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
-                continue;
-            }
+            groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
+            continue;
         }
         const groundsSiblingReferences =
             compilerExpandedTargets ||
@@ -4836,6 +4846,11 @@ function groundToolCall({
                 );
             }
             return rejection(index, call.name, `Target ${targetRule.argument} is not grounded in the user request`);
+        }
+        // An action that resolves compiled targets against the request like a direct call still
+        // answers to the request's protections and the compiled authority contract.
+        if (compiledTargetAuthority !== null && !admitsCompiledTargets(compiledTargetAuthority)) {
+            return rejection(index, call.name, unauthorizedCompiledTargetReason(targetRule.argument));
         }
 
         groundedArguments[targetRule.argument] = result.id;

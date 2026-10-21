@@ -6,11 +6,11 @@ import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 
 /**
  * A compiled command list proves which objects its selectors resolve to, never that the user asked
- * for them. When a clause names its targets, every target the compiler resolved for that clause
- * must be one the clause's own words resolve to, through the same reference resolution a direct
- * call gets; a selector that names another object is refused. A clause that names no object (a
- * bounded selection such as "all audio tracks") keeps the compiler's resolution, and when it names
- * the tracks owning the objects it selects, every selected object must sit on one of them.
+ * for them. A target the request protects or excludes is refused. When a clause names objects of
+ * the target's kind, every compiled target must be one of them. A clause whose only mention is an
+ * approximate name authorizes nothing. A clause that names nothing keeps the compiler's resolution
+ * only for a bounded selection it states ("all audio tracks", "the EQs"), every target meeting it,
+ * and an owned object only on a track the clause names when it names any.
  */
 
 type ProjectTrack = ProjectContext['tracks'][number];
@@ -216,6 +216,21 @@ describe('a send destination the request names is not a competing track target',
 
         expectRefused(result, drumBus.id);
         expect(result.actions).toEqual([]);
+    });
+
+    it('sets no bus aside for a track that does not send to it, leaving the send check to refuse', () => {
+        // Drum Bus does not send to itself, so it stays a track the request names and reaches the
+        // send check; setting the bus aside regardless would refuse it as an unnamed target instead.
+        const result = compileAndBridge(SEND_DUCK_PROMPT, [sendDuckItem(drumBus, drumBus.id)], [drumBus.id]);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 0,
+                name: 'automateParameterRange',
+                reason: 'Expected gain, pan, an existing send from the track, or a parameter of a device on the track',
+            },
+        ]);
     });
 
     it('refuses a sending track the request does not name', () => {

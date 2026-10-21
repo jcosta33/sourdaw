@@ -1,4 +1,4 @@
-const trackControlRestrictionPatterns: readonly RegExp[] = [
+export const trackControlRestrictionPatterns: readonly RegExp[] = [
     /\b(?:except|excluding|besides|minus)\b/u,
     /\b(?:other|rather)\s+than\b/u,
     /\bapart\s+from\b/u,
@@ -14,12 +14,4 @@ export function hasTrackControlRestriction(prompt: string): boolean {
         .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
         .trim();
     return trackControlRestrictionPatterns.some((pattern) => pattern.test(restrictionEvidence));
-}
-
-/** Where each restriction phrase begins in the text, in order, read with the same vocabulary. */
-export function findTrackControlRestrictionStarts(text: string): number[] {
-    const lowered = text.toLowerCase();
-    return trackControlRestrictionPatterns
-        .flatMap((pattern) => [...lowered.matchAll(new RegExp(pattern.source, 'gu'))].map((match) => match.index))
-        .sort((left, right) => left - right);
 }

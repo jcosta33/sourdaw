@@ -6,13 +6,14 @@ import {
     type SemanticCommandListCandidate,
 } from '../../services/semanticCommandListCandidates';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
-import { resolveAutomationLaneTarget, SEND_TARGET_PREFIX } from '../../transformers/resolveAutomationLaneTarget';
 import { CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
-import { findTrackControlRestrictionStarts } from './groundingStrategies/hasTrackControlRestriction';
+import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
+import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
+import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
@@ -23,6 +24,8 @@ type Capability = ResolveAgentReferenceInput['capability'];
 export type CompiledTargetAuthorityInput = {
     capability: Capability;
     catalog: GroundingCatalog;
+    /** Where the clause the targets belong to starts in the request, when the scope knows it. */
+    clauseStart?: number;
     /** Every id the compiled list's own selectors excluded or protected. */
     compilerExcludedIds: ReadonlySet<string>;
     context: ProjectContext;
@@ -66,29 +69,16 @@ const SELECTION_QUALIFIER_BREAKS: ReadonlySet<string> = new Set([
 ]);
 const MAX_SELECTION_QUALIFIERS = 2;
 
-const TRACK_SELECTION_NOUNS = { singular: ['track', 'channel', 'bus'], plural: ['tracks', 'channels', 'buses', 'busses'] };
+const TRACK_SELECTION_NOUNS = {
+    singular: ['track', 'channel', 'bus'],
+    plural: ['tracks', 'channels', 'buses', 'busses'],
+};
 const DEVICE_SELECTION_NOUNS = { singular: ['device', 'plugin', 'effect', 'insert'], plural: [] as string[] };
 const CLIP_SELECTION_NOUNS = { singular: ['clip', 'region'], plural: [] as string[] };
 const LANE_SELECTION_NOUNS = { singular: ['lane'], plural: [] as string[] };
 
 type SelectionNoun = { word: string; singular: string; plural: boolean; deviceTypeName?: string };
 type BoundedSelection = { noun: SelectionNoun; qualifiers: string[] };
-
-/**
- * The bus a call's `send:<busId>` parameter names, when the asserted track already sends to it.
- *
- * "Duck the Kick send to the Drum Bus" names the bus as the send the parameter selects, not as a
- * second candidate for the sending track, so resolving the track sets that bus aside. A track that
- * does not send to the bus earns no such exclusion, so the bus cannot stand in for the sender.
- */
-export function getAutomatedSendBusIds(parameterId: unknown, trackId: unknown, context: ProjectContext): string[] {
-    if (typeof parameterId !== 'string' || !parameterId.startsWith(SEND_TARGET_PREFIX)) {
-        return [];
-    }
-    return resolveAutomationLaneTarget(context, trackId, parameterId) === null
-        ? []
-        : [parameterId.slice(SEND_TARGET_PREFIX.length)];
-}
 
 function readReferences(text: string, capability: Capability, context: ProjectContext, dependencyId?: string) {
     return resolveAgentReference({ prompt: text, assertedId: undefined, capability, context, dependencyId }).candidates;
@@ -128,43 +118,51 @@ function hasFuzzyOnlyMention(text: string, capability: Capability, context: Proj
 }
 
 function getTrackOwnedObjectIds(trackId: string, context: ProjectContext): string[] {
+    const laneIds = (context.automationLanes ?? []).filter((lane) => lane.trackId === trackId).map((lane) => lane.id);
     const track = context.tracks.find((candidate) => candidate.id === trackId);
-    const lanes = (context.automationLanes ?? []).filter((lane) => lane.trackId === trackId);
-    return [
-        ...(track?.devices.map((device) => device.id) ?? []),
-        ...(track?.clips.map((clip) => clip.id) ?? []),
-        ...lanes.map((lane) => lane.id),
-    ];
+    if (track === undefined) {
+        return laneIds;
+    }
+    return [...track.devices.map((device) => device.id), ...track.clips.map((clip) => clip.id), ...laneIds];
+}
+
+type MaskedRequest = { prompt: string; maskedPrompt: string; clauses: ReturnType<typeof getPromptClauses> };
+
+function maskRequest(prompt: string, context: ProjectContext): MaskedRequest {
+    const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
+    return { prompt, maskedPrompt, clauses: getPromptClauses(prompt, maskedPrompt) };
 }
 
 /**
- * Each restriction of the whole request, from its restriction phrase up to the next instruction or
- * the end of its sentence, so "except Vocals and Bass" keeps both members and "leave Keys alone and
- * set Drums to 50%" protects Keys alone.
+ * The request text from `start` through every following clause that continues it rather than
+ * giving another instruction, up to the end of its sentence: "add a compressor to Vocals and Bass"
+ * whole, "set Vocals to 75% but leave Keys alone" whole, and "leave Keys alone and set Drums to
+ * 50%" only up to the second instruction.
  */
-function getRestrictionTexts(prompt: string, catalog: GroundingCatalog): string[] {
-    const maskedPrompt = scanPromptQuotedText(prompt).maskedText;
-    const clauses = getPromptClauses(prompt, maskedPrompt);
-    return findTrackControlRestrictionStarts(maskedPrompt).map((start) => {
-        const sentenceEnd = /[;!?\n]|\.(?!\d)/u.exec(maskedPrompt.slice(start));
-        const limit = sentenceEnd === null ? prompt.length : start + sentenceEnd.index;
-        const nextInstruction = clauses.find(
-            (clause) =>
-                clause.start > start &&
-                clause.start < limit &&
-                resolveClauseActionIntent(clause.masked, catalog) !== null
-        );
-        return prompt.slice(start, nextInstruction?.start ?? limit);
-    });
+function getInstructionText(request: MaskedRequest, start: number, catalog: GroundingCatalog): string {
+    const sentenceEnd = /[;!?\n]|\.(?!\d)/u.exec(request.maskedPrompt.slice(start));
+    const limit = sentenceEnd === null ? request.prompt.length : start + sentenceEnd.index;
+    const nextInstruction = request.clauses.find(
+        (clause) =>
+            clause.start > start && clause.start < limit && resolveClauseActionIntent(clause.masked, catalog) !== null
+    );
+    return request.prompt.slice(start, nextInstruction?.start ?? limit);
 }
 
 /** Everything the request protects or excludes, with every object on a protected track. */
-function getProtectedIds(input: CompiledTargetAuthorityInput): Set<string> {
+function getProtectedIds(input: CompiledTargetAuthorityInput, request: MaskedRequest): Set<string> {
     const protectedIds = new Set(input.compilerExcludedIds);
-    for (const object of getApplicationProtectedObjects({ actions: [], context: input.context, prompt: input.prompt })) {
+    for (const object of getApplicationProtectedObjects({
+        actions: [],
+        context: input.context,
+        prompt: input.prompt,
+    })) {
         protectedIds.add(object.id);
     }
-    for (const restriction of getRestrictionTexts(input.prompt, input.catalog)) {
+    const restrictions = findTrackControlRestrictionStarts(request.maskedPrompt).map((start) =>
+        getInstructionText(request, start, input.catalog)
+    );
+    for (const restriction of restrictions) {
         for (const id of getNamedObjectIds(restriction, input.capability, input.context, input.dependencyId)) {
             protectedIds.add(id);
         }
@@ -228,31 +226,37 @@ function getSelectionNouns(capability: Capability, context: ProjectContext): Sel
 function getBoundedSelections(text: string, capability: Capability, context: ProjectContext): BoundedSelection[] {
     const nouns = getSelectionNouns(capability, context);
     const tokens = normalizePromptText(scanPromptQuotedText(text).maskedText).split(' ');
-    const selections: BoundedSelection[] = [];
-    tokens.forEach((token, index) => {
+    return tokens.flatMap((token, index) => {
         if (!SELECTION_QUANTIFIERS.has(token)) {
-            return;
+            return [];
         }
-        let cursor = index + 1;
-        while (token !== 'the' && SELECTION_QUANTIFIER_FILLERS.has(tokens[cursor] ?? '')) {
-            cursor += 1;
-        }
-        const qualifiers: string[] = [];
-        while (cursor < tokens.length) {
-            const word = tokens[cursor]!;
-            const noun = nouns.find((candidate) => candidate.word === word && (token !== 'the' || candidate.plural));
-            if (noun !== undefined) {
-                selections.push({ noun, qualifiers });
-                return;
-            }
-            if (SELECTION_QUALIFIER_BREAKS.has(word) || qualifiers.length === MAX_SELECTION_QUALIFIERS) {
-                return;
-            }
-            qualifiers.push(word);
-            cursor += 1;
-        }
+        const selection = readSelectionAfterQuantifier(tokens, index, nouns);
+        return selection === null ? [] : [selection];
     });
-    return selections;
+}
+
+function readSelectionAfterQuantifier(
+    tokens: readonly string[],
+    quantifierIndex: number,
+    nouns: readonly SelectionNoun[]
+): BoundedSelection | null {
+    const quantifier = tokens[quantifierIndex];
+    let cursor = quantifierIndex + 1;
+    while (quantifier !== 'the' && SELECTION_QUANTIFIER_FILLERS.has(tokens[cursor] ?? '')) {
+        cursor += 1;
+    }
+    const qualifiers: string[] = [];
+    for (const word of tokens.slice(cursor)) {
+        const noun = nouns.find((candidate) => candidate.word === word && (quantifier !== 'the' || candidate.plural));
+        if (noun !== undefined) {
+            return { noun, qualifiers };
+        }
+        if (SELECTION_QUALIFIER_BREAKS.has(word) || qualifiers.length === MAX_SELECTION_QUALIFIERS) {
+            return null;
+        }
+        qualifiers.push(word);
+    }
+    return null;
 }
 
 function stem(word: string): string {
@@ -260,20 +264,21 @@ function stem(word: string): string {
 }
 
 function getCandidateFacts(candidate: SemanticCommandListCandidate, context: ProjectContext): Set<string> {
-    const phrases = [
+    const phrases: string[] = [
         candidate.kind,
         candidate.name,
         candidate.ownerKind,
         candidate.ownerCanonicalRole,
-        candidate.ownerRoleFamily ?? undefined,
-        ...(candidate.ownerTags ?? []),
-        ...(candidate.entity === 'device' ? [getDeviceTypeName(candidate.type, context)] : []),
-    ];
-    return new Set(
-        phrases.flatMap((phrase) =>
-            phrase === undefined ? [] : normalizePromptText(phrase).split(' ').filter((word) => word.length > 0)
-        ).map(stem)
-    );
+        candidate.ownerRoleFamily,
+    ].filter((phrase): phrase is string => typeof phrase === 'string');
+    if (candidate.ownerTags !== undefined) {
+        phrases.push(...candidate.ownerTags);
+    }
+    if (candidate.entity === 'device') {
+        phrases.push(getDeviceTypeName(candidate.type, context));
+    }
+    const words = phrases.flatMap((phrase) => normalizePromptText(phrase).split(' '));
+    return new Set(words.filter((word) => word.length > 0).map(stem));
 }
 
 function satisfiesSelection(
@@ -285,7 +290,10 @@ function satisfiesSelection(
         return false;
     }
     if (selection.noun.deviceTypeName !== undefined) {
-        if (candidate.entity !== 'device' || getDeviceTypeName(candidate.type, context) !== selection.noun.deviceTypeName) {
+        if (
+            candidate.entity !== 'device' ||
+            getDeviceTypeName(candidate.type, context) !== selection.noun.deviceTypeName
+        ) {
             return false;
         }
     }
@@ -315,10 +323,15 @@ function getOwningTrackId(objectId: string, context: ProjectContext): string | u
  * object only on a track the clause names when it names any.
  */
 export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): boolean {
-    const { capability, context, dependencyId, targetIds, targetPrompt } = input;
-    const protectedIds = getProtectedIds(input);
+    const { capability, context, dependencyId, targetIds } = input;
+    const request = maskRequest(input.prompt, context);
+    const protectedIds = getProtectedIds(input, request);
     if (targetIds.some((targetId) => protectedIds.has(targetId))) {
         return false;
+    }
+    let targetPrompt = input.targetPrompt;
+    if (input.clauseStart !== undefined) {
+        targetPrompt = getInstructionText(request, input.clauseStart, input.catalog);
     }
     const setAside = new Set([...input.createdIds, ...protectedIds, ...input.sendBusIds]);
     const named = getNamedObjectIds(targetPrompt, capability, context, dependencyId).filter((id) => !setAside.has(id));
