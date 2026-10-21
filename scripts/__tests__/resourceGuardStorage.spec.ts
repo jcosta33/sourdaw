@@ -1513,7 +1513,7 @@ if(process.argv[2]==='-axo'){
     function darwinCensusFixture(
         root: string,
         values: Record<string, unknown>,
-        scripts: { listed: string; sample?: string; lsof: string }
+        scripts: { listed: string; afterListing?: string; sample?: string; lsof: string }
     ): { bin: string; reads: () => string[]; events: () => string[] } {
         const bin = join(root, 'bin');
         const log = join(root, 'lsof-reads');
@@ -1525,8 +1525,12 @@ if(process.argv[2]==='-axo'){
             JSON.stringify({ ...values, runner: process.pid, calls: join(root, 'ps-calls'), log, events }),
             { mode: 0o600 }
         );
-        const prologue =
-            "const fs=require('node:fs');const fixture=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'fixture.json'),'utf8'));";
+        // `forkAndExit` signals a forking holder (see startForkingHolder) and waits until it has
+        // recorded its child and exited.
+        const prologue = `const fs=require('node:fs');const fixture=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'fixture.json'),'utf8'));
+const forkAndExit=()=>{process.kill(fixture.holder,'SIGUSR1');const deadline=Date.now()+3000;let gone=false;
+ while(Date.now()<deadline&&!gone){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'&&fs.existsSync(fixture.childPath)}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
+ if(!gone)process.exit(3);};`;
         writeFileSync(
             join(bin, 'ps'),
             `#!${process.execPath}
@@ -1539,7 +1543,9 @@ if(args[0]==='-axo'){
  // Like the real process list, list only processes that still exist.
  const live=(pid)=>{try{process.kill(pid,0);return true}catch{return false}};
  const ids=[fixture.runner,...(${scripts.listed})].filter(live);
- process.stdout.write(execFileSync('/bin/ps',['-p',ids.join(','),'-o','pid=,uid='],{encoding:'utf8'}));
+ const output=execFileSync('/bin/ps',['-p',ids.join(','),'-o','pid=,uid='],{encoding:'utf8'});
+ ${scripts.afterListing ?? ''}
+ process.stdout.write(output);
 }else{
  ${scripts.sample ?? ''}
  process.stdout.write(execFileSync('/bin/ps',args,{encoding:'utf8'}));
@@ -1796,49 +1802,73 @@ process.stdout.write(catalog);
         20_000
     );
 
-    it.skipIf(process.platform !== 'darwin')(
-        'takes a fresh observation when a missed holder forks into storage and exits before its scoped read',
-        async () => {
+    // Starts a detached holder with its cwd in storage; launchd reaps it once it exits. On
+    // SIGUSR1 it forks a child into storage, records the child's PID, and exits.
+    async function startForkingHolder(root: string, temp: string): Promise<{ holder: number; childPath: string }> {
+        const holderPath = join(root, 'holder.pid');
+        const childPath = join(root, 'child.pid');
+        const holderProgram =
+            "const [temp,childPath,holderPath]=process.argv.slice(1);const fs=require('node:fs');process.on('SIGUSR1',()=>{const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',cwd:temp});child.unref();fs.writeFileSync(childPath,String(child.pid));process.exit(0)});fs.writeFileSync(holderPath,String(process.pid));setInterval(()=>{},1000)";
+        const launcher = spawn(
+            process.execPath,
+            [
+                '-e',
+                "const [program,...rest]=process.argv.slice(1);require('node:child_process').spawn(process.execPath,['-e',program,...rest],{detached:true,stdio:'ignore',cwd:rest[0]}).unref()",
+                holderProgram,
+                temp,
+                childPath,
+                holderPath,
+            ],
+            { stdio: 'ignore' }
+        );
+        if (launcher.pid !== undefined) {
+            childPids.add(launcher.pid);
+        }
+        await waitUntil(() => existsSync(holderPath));
+        const holder = Number(readFileSync(holderPath, 'utf8'));
+        childPids.add(holder);
+        return { holder, childPath };
+    }
+
+    it.skipIf(process.platform !== 'darwin').each([
+        {
+            check: 'its first liveness check',
+            afterListing: 'if(call===2)forkAndExit();',
+            sample: '',
+            scoped: '',
+            reads: ['whole', 'whole'],
+        },
+        {
+            check: 'its state sample',
+            afterListing: '',
+            sample: "if(args[0]==='-p'&&args[1]===String(fixture.holder)){forkAndExit();process.exit(1)}",
+            scoped: '',
+            reads: ['whole', 'whole'],
+        },
+        {
+            check: 'its scoped read',
+            afterListing: '',
+            sample: '',
+            scoped: 'forkAndExit();',
+            reads: ['whole', 'scoped', 'whole'],
+        },
+    ])(
+        'takes a fresh observation when a missed holder forks into storage and exits before $check',
+        async ({ afterListing, sample, scoped, reads: expectedReads }) => {
             const root = fixture();
             const reasons: string[] = [];
             const storage = censusStorage(root, reasons);
-            const holderPath = join(root, 'holder.pid');
-            const childPath = join(root, 'child.pid');
-            // A detached holder with its cwd in storage is reaped by launchd once it exits. On
-            // SIGUSR1 it forks a child into storage, records it, and exits.
-            const holderProgram =
-                "const [temp,childPath,holderPath]=process.argv.slice(1);const fs=require('node:fs');process.on('SIGUSR1',()=>{const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',cwd:temp});child.unref();fs.writeFileSync(childPath,String(child.pid));process.exit(0)});fs.writeFileSync(holderPath,String(process.pid));setInterval(()=>{},1000)";
-            const launcher = spawn(
-                process.execPath,
-                [
-                    '-e',
-                    "const [program,...rest]=process.argv.slice(1);require('node:child_process').spawn(process.execPath,['-e',program,...rest],{detached:true,stdio:'ignore',cwd:rest[0]}).unref()",
-                    holderProgram,
-                    storage.tempDirectory,
-                    childPath,
-                    holderPath,
-                ],
-                { stdio: 'ignore' }
-            );
-            if (launcher.pid !== undefined) {
-                childPids.add(launcher.pid);
-            }
-            await waitUntil(() => existsSync(holderPath));
-            const holder = Number(readFileSync(holderPath, 'utf8'));
-            childPids.add(holder);
-            // Whole catalogs omit the holder and list its child once it exists. The scoped read of
-            // the missed holder makes it fork and exit first, then lists nothing.
+            const { holder, childPath } = await startForkingHolder(root, storage.tempDirectory);
+            // Whole catalogs omit the holder and list its child once it exists. The holder forks
+            // and exits after the second process listing, at its state sample, or at its scoped read.
             const { bin, reads } = darwinCensusFixture(
                 root,
                 { holder, childPath, temp: storage.tempDirectory },
                 {
                     listed: "[fixture.holder,...(fs.existsSync(fixture.childPath)?[Number(fs.readFileSync(fixture.childPath,'utf8'))]:[])]",
-                    lsof: `if(scoped){
- process.kill(fixture.holder,'SIGUSR1');
- const deadline=Date.now()+3000;let gone=false;
- while(Date.now()<deadline&&!gone){try{process.kill(fixture.holder,0)}catch(error){gone=error.code==='ESRCH'&&fs.existsSync(fixture.childPath)}if(!gone)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
- if(!gone)process.exit(3);
-}else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(fixture.childPath,'utf8')),fixture.temp);`,
+                    afterListing,
+                    sample,
+                    lsof: `if(scoped){${scoped}}else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(fixture.childPath,'utf8')),fixture.temp);`,
                 }
             );
             try {
@@ -1846,7 +1876,7 @@ process.stdout.write(catalog);
                     storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
                 );
                 expect(state, reasons.join('; ')).toBe('alive');
-                expect(reads()).toEqual(['whole', 'scoped', 'whole']);
+                expect(reads()).toEqual(expectedReads);
                 expect(isAlive(holder)).toBe(false);
             } finally {
                 if (existsSync(childPath)) {
@@ -1858,11 +1888,12 @@ process.stdout.write(catalog);
     );
 
     it.skipIf(process.platform !== 'darwin')(
-        'skips an omitted process that exits before its state sample only on exact absence',
+        'takes a fresh observation when an omitted process exits before its state sample, then releases',
         async () => {
             const root = fixture();
             const pidPath = join(root, 'resident.pid');
-            const storage = ownedStorage(join(root, 'storage'));
+            const reasons: string[] = [];
+            const storage = censusStorage(root, reasons);
             // A detached grandchild is reaped by launchd once killed, so its exit yields exact ESRCH.
             const launcher = spawn(
                 process.execPath,
@@ -1894,13 +1925,15 @@ process.stdout.write(catalog);
                     lsof: '',
                 }
             );
-            const reasons: string[] = [];
             const state = await withCensusPath(bin, () =>
                 storageFileState([storage.tempDirectory], [], (reason) => reasons.push(reason))
             );
+            // Its exit proves nothing in that observation; the fresh one no longer lists it.
             expect(state, reasons.join('; ')).toBe('dead');
-            expect(reads()).toEqual(['whole']);
+            expect(reads()).toEqual(['whole', 'whole']);
             expect(isAlive(residentPid)).toBe(false);
+            expect(await withCensusPath(bin, () => storage.release(true)), reasons.join('; ')).toBe(true);
+            expect(existsSync(storage.tempDirectory)).toBe(false);
         },
         20_000
     );
