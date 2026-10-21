@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_7f18f5c99ba38c 276-277
+  s_1c08b47ac3792f::t_68a1b511842096 96-103,182,307-309
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_1c08b47ac3792f::t_a1aeb14a6815e8 1898
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_1c08b47ac3792f::t_11dea7211de199 1176-1179,1182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00e852789f42a598ba16d20898bf5f81e0ca624e",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
