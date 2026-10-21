@@ -3,6 +3,7 @@ import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/u
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type SemanticCommandListMatch, type SemanticCommandListSelector } from '../../models/SemanticCommandList';
 
+import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findTrackControlRestrictionStarts } from './groundingStrategies/findTrackControlRestrictionStarts';
@@ -10,6 +11,7 @@ import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
+import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 
 /*
@@ -18,15 +20,18 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * A compiled command list proves which objects its selectors resolve to, never that the user asked
  * for them. This check closes one hole: a selector that picks an object by a name or id the request
  * never states. Every target the request protects or excludes is refused. A selector's whole-name
- * pick must appear whole in the clause's original text, a name fragment anywhere in it, and an
- * owner-track pick as that track's whole name or id; the text read leaves out the request's
- * restrictions and the values the batch writes. A selection reference ("this track", "the selected
- * track", "it" for the selected track) that resolves to the picked objects states any of those picks.
+ * pick must appear whole in the request's original text, a name fragment as the start of a word
+ * there (optionally pluralized with "s" or "es"), and an owner-track pick as that track's whole name
+ * or id; the text read is the whole request less its restrictions and the values the batch writes,
+ * so an instruction may pick by a name an earlier one states ("turn Vocals down and pan it left").
+ * A selection reference ("this track", "the selected track", "it" for the selected track) that
+ * resolves to the picked objects states those picks only when the request names no object of that
+ * kind by name, so "set Vocals volume so it sits better" never stands for the selected Keys.
  *
- * Literal targets, and selections by role, role family, kind, device type, tag, condition or no
- * filter at all, are taken as the compiler resolved them, as before this check; so are names the
- * clause states beside a negation ("don't touch Keys"). What the request must state for those is
- * left to #5351 and #5353.
+ * Literal targets, owner-track picks in a request that names and selects no track, and selections
+ * by role, role family, kind, device type, tag, condition or no filter at all, are taken as the
+ * compiler resolved them, as before this check; so are names the request states beside a negation
+ * ("don't touch Keys"). What the request must state for those is left to #5351 and #5353.
  */
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
@@ -45,13 +50,11 @@ export type CompiledTargetAuthorityInput = {
     argument: string;
     capability: Capability;
     catalog: GroundingCatalog;
-    /** Where the clause the targets belong to starts in the request, when the scope knows it. */
-    clauseStart?: number;
     /** Every id the compiled list's own selectors excluded or protected. */
     compilerExcludedIds: ReadonlySet<string>;
     context: ProjectContext;
     dependencyId?: string;
-    /** The whole original request, where protections and exclusions are read. */
+    /** The whole original request, where protections, exclusions and naming evidence are read. */
     prompt: string;
     /**
      * Set when each target already resolved against the request the way a direct call does; that
@@ -60,8 +63,6 @@ export type CompiledTargetAuthorityInput = {
     referenceResolved: boolean;
     /** The selector the call's targets came from, absent when the compiler named every one literally. */
     selectorTerms?: CompiledSelectorTerms;
-    /** The original text of the clause the targets belong to. */
-    targetPrompt: string;
     targetIds: readonly string[];
     /** The text values the batch's calls of this action write ("Bass Drum" for a rename). */
     valueTexts: readonly string[];
@@ -216,24 +217,21 @@ function getProtectedIds(
 }
 
 /**
- * The clause text the targets are read from: the instruction from its start, with the request's
- * restrictions and the values the batch writes blanked, so a name stated only to protect an object
- * or as a new name is never read as picking a target.
+ * The text the targets are read from: the whole request, so a later instruction may pick by a name
+ * an earlier one states ("mute Vocals and bypass the EQ on it"), with its restrictions and the values
+ * the batch writes blanked, so a name stated only to protect an object or as a new name is never
+ * read as picking a target.
  */
 function getEvidenceText(
     input: CompiledTargetAuthorityInput,
     request: MaskedRequest,
     restrictionRanges: readonly { start: number; end: number }[]
 ): string {
-    if (input.clauseStart === undefined) {
-        return maskWrittenValues(input.targetPrompt, input.valueTexts);
-    }
-    const end = getInstructionEnd(request, input.clauseStart, input.catalog);
     const unrestricted = restrictionRanges.reduce(
         (text, range) => blankRange(text, range.start, range.end),
         request.prompt
     );
-    return maskWrittenValues(unrestricted.slice(input.clauseStart, end), input.valueTexts);
+    return maskWrittenValues(unrestricted, input.valueTexts);
 }
 
 /** The whole names, name fragments and owner tracks a selector picks its targets by. */
@@ -262,7 +260,7 @@ function getNamePicks(input: CompiledTargetAuthorityInput): NamePicks {
 }
 
 /**
- * Whether the clause's own selection reference is the object: "this track" or "the selected track"
+ * Whether the request's selection reference is the object: "this track" or "the selected track"
  * through the direct route's selection reading, or "it" for the selected track.
  */
 function selectsObject(text: string, objectId: string, capability: Capability, context: ProjectContext): boolean {
@@ -273,19 +271,60 @@ function selectsObject(text: string, objectId: string, capability: Capability, c
     return result.status === 'resolved' && result.evidence === 'selection';
 }
 
-/** Whether the clause selects every target, which states any name the selector picks them by. */
-function selectsEveryTarget(text: string, input: CompiledTargetAuthorityInput): boolean {
-    return input.targetIds.every((targetId) => selectsObject(text, targetId, input.capability, input.context));
+function statesWholeReference(text: string, references: readonly string[]): boolean {
+    return references.some((reference) => wholeWordsPattern(reference, 'iu').test(text));
 }
 
-/** Whether the clause states the owner track by its whole name or id, or selects it. */
+/**
+ * Whether the text names an object of the capability by its whole name or id rather than through a
+ * selection. Tracks are read against every candidate track, because the selection reading narrows
+ * its candidates to the selected track once the text says "this track".
+ */
+function namesObjectByName(text: string, capability: Capability, context: ProjectContext): boolean {
+    if (getAgentReferenceCapabilityKind(capability) === 'track') {
+        return context.tracks.some(
+            (track) =>
+                isAgentReferenceCapabilityCandidate({ capability, context, id: track.id }) &&
+                statesWholeReference(text, [track.id, track.name])
+        );
+    }
+    return readReferences(text, capability, context).some((candidate) =>
+        candidate.evidence.some((evidence) => evidence !== 'selection' && evidence !== 'fuzzy-name')
+    );
+}
+
+/**
+ * Whether the request's selection reference stands for every target, which states any name the
+ * selector picks them by; it stands for nothing once the request names an object of that kind.
+ */
+function selectsEveryTarget(text: string, input: CompiledTargetAuthorityInput): boolean {
+    return (
+        !namesObjectByName(text, input.capability, input.context) &&
+        input.targetIds.every((targetId) => selectsObject(text, targetId, input.capability, input.context))
+    );
+}
+
+/** Whether the request names a track or refers to the selected one, which an owner-track pick must answer to. */
+function refersToAnyTrack(text: string, context: ProjectContext): boolean {
+    const selectedTrackId = context.selectedTrackId;
+    return (
+        namesObjectByName(text, 'track', context) ||
+        (selectedTrackId !== null && selectsObject(text, selectedTrackId, 'track', context))
+    );
+}
+
+/** Whether the request states the owner track by its whole name or id, or selects it without naming a track. */
 function statesTrack(text: string, trackId: string, context: ProjectContext): boolean {
     const name = context.tracks.find((track) => track.id === trackId)?.name;
-    const references = name === undefined ? [trackId] : [trackId, name];
-    return (
-        references.some((reference) => wholeWordsPattern(reference, 'iu').test(text)) ||
-        selectsObject(text, trackId, 'track', context)
-    );
+    if (statesWholeReference(text, name === undefined ? [trackId] : [trackId, name])) {
+        return true;
+    }
+    return !namesObjectByName(text, 'track', context) && selectsObject(text, trackId, 'track', context);
+}
+
+/** Whether a word of the text starts with the fragment and goes on with at most a plural "s" or "es". */
+function statesFragment(text: string, fragment: string): boolean {
+    return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(fragment)}(?:e?s)?(?![\\p{L}\\p{N}])`, 'iu').test(text);
 }
 
 /** Whether the request authorizes every target a compiled list resolved for one argument. */
@@ -304,11 +343,12 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): Comp
         return ADMITTED;
     }
     const text = getEvidenceText(input, request, restrictionRanges);
-    const lowerText = text.toLowerCase();
     const statesNamePicks =
         (picks.names.every((name) => wholeWordsPattern(name, 'iu').test(text)) &&
-            picks.fragments.every((fragment) => lowerText.includes(fragment.toLowerCase()))) ||
+            picks.fragments.every((fragment) => statesFragment(text, fragment))) ||
         selectsEveryTarget(text, input);
-    const statesTrackPicks = picks.trackIds.every((trackId) => statesTrack(text, trackId, input.context));
+    const statesTrackPicks =
+        picks.trackIds.every((trackId) => statesTrack(text, trackId, input.context)) ||
+        !refersToAnyTrack(text, input.context);
     return statesNamePicks && statesTrackPicks ? ADMITTED : UNAUTHORIZED;
 }

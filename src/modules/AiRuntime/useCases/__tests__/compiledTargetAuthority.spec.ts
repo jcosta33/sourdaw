@@ -7,9 +7,10 @@ import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 /**
  * A compiled command list proves which objects its selectors resolve to, never that the user asked
  * for them (#5295). A target the request protects or excludes is refused. A selector that picks
- * its targets by a whole name, a name fragment or an owner track must pick them by something the
- * clause states outside its restrictions and written values, or by the clause's selection
- * reference. Literal targets and selections by role, kind, device type, condition or no filter
+ * its targets by a whole name, a word-start name fragment or an owner track must pick them by
+ * something the request states outside its restrictions and written values, or by its selection
+ * reference when it names no object of that kind. Literal targets, owner picks in a request that
+ * names and selects no track, and selections by role, kind, device type, condition or no filter
  * ground as the compiler resolves them.
  */
 
@@ -1430,5 +1431,154 @@ describe('a role selection worded by a two-word name grounds as on main', () => 
 
         expect(result.rejections).toEqual([]);
         expect(targetsOf(result)).toEqual([backingVoxOne.id, backingVoxTwo.id]);
+    });
+});
+
+function payloadTargets(result: ReturnType<typeof compileAndBridge>) {
+    return result.actions.map((action) => {
+        const payload = action.payload as Record<string, unknown>;
+        return payload.deviceId ?? payload.trackId;
+    });
+}
+
+describe('a later instruction picks by a name an earlier one in the request states', () => {
+    it.each([
+        [
+            'turn Vocals down 3 dB and pan it 20% left',
+            [trackItem('setTrackGain', mixVocals, { deltaDb: -3 }), trackItem('setTrackPan', mixVocals, { pan: -20 })],
+            [mixVocals.id, mixVocals.id],
+        ],
+        [
+            'turn Vocals down 3 dB and bypass its EQ',
+            [trackItem('setTrackGain', mixVocals, { deltaDb: -3 }), bypassItem(mixVocalsEq, mixVocals.id)],
+            [mixVocals.id, mixVocalsEq.id],
+        ],
+        [
+            'mute Vocals and bypass the EQ on it',
+            [trackItem('muteTrack', mixVocals, { muted: true }), bypassItem(mixVocalsEq, mixVocals.id)],
+            [mixVocals.id, mixVocalsEq.id],
+        ],
+        [
+            'Turn Vocals down 3 dB. Then bypass the EQ on that track.',
+            [trackItem('setTrackGain', mixVocals, { deltaDb: -3 }), bypassItem(mixVocalsEq, mixVocals.id)],
+            [mixVocals.id, mixVocalsEq.id],
+        ],
+        [
+            'Take the Vocals track and add a compressor to it',
+            [addDeviceItem(mixVocals, 'builtin-compressor')],
+            [mixVocals.id],
+        ],
+        ['Select Vocals. Add a compressor to it.', [addDeviceItem(mixVocals, 'builtin-compressor')], [mixVocals.id]],
+    ])('grounds "%s"', (prompt, items, expected) => {
+        const result = compileMix(prompt, items);
+
+        expect(result.rejections).toEqual([]);
+        expect(payloadTargets(result)).toEqual(expected);
+    });
+});
+
+describe('an owner-track pick answers to a request that names or selects a track', () => {
+    it('grounds the only EQ a request that names no track bypasses', () => {
+        const result = compileAndBridge('bypass the EQ', [bypassItem(vocalsEq, vocals.id)], [], {
+            ...projectContext,
+            tracks: [vocals, drums, bass, master],
+        });
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual([vocalsEq.id]);
+    });
+
+    it('grounds the EQ of a track the request describes without stating a track name', () => {
+        const result = compileMix('bypass the EQ of the vocal track', [bypassItem(mixVocalsEq, mixVocals.id)]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id]);
+    });
+
+    it('refuses devices off the selected track a request bypasses on the selected track', () => {
+        const result = compileAndBridge(
+            'Bypass all devices on the selected track',
+            [
+                roleItem(
+                    'bypassDevice',
+                    { bypassed: true },
+                    { targetArgument: 'deviceId', entity: 'device', where: { trackId: mixKeys.id } },
+                    1
+                ),
+            ],
+            [],
+            { ...mixContext, selectedTrackId: mixVocals.id }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({
+            index: 0,
+            name: 'bypassDevice',
+            reason: 'Compiled target deviceId is not authorized by the user request',
+        });
+    });
+});
+
+describe('a selection reference stands for no track once the request names one', () => {
+    it.each(['set Vocals volume to 75% so it sits better', 'set Vocals volume to 75% to match this track'])(
+        'refuses a Keys name selector for "%s" with Keys selected',
+        (prompt) => {
+            const result = compileAndBridge(prompt, [trackItem('setTrackGain', mixKeys, { gain: 0.75 })], [], {
+                ...mixContext,
+                selectedTrackId: mixKeys.id,
+            });
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+        }
+    );
+
+    it('refuses the selected Keys EQ for "it" after the request names Vocals', () => {
+        const result = compileAndBridge(
+            'turn Vocals down 3 dB and bypass the EQ on it',
+            [trackItem('setTrackGain', mixVocals, { deltaDb: -3 }), bypassItem(mixKeysEq, mixKeys.id)],
+            [],
+            { ...mixContext, selectedTrackId: mixKeys.id }
+        );
+
+        expect(payloadTargets(result)).toEqual([mixVocals.id]);
+        expect(result.rejections).toContainEqual({
+            index: 1,
+            name: 'bypassDevice',
+            reason: 'Compiled target deviceId is not authorized by the user request',
+        });
+    });
+});
+
+const fragmentDrumBus = createTrack({ id: 'track-fragment-drum-bus', name: 'Drum Bus', kind: 'bus' });
+const fragmentFxBus = createTrack({ id: 'track-fragment-fx-bus', name: 'FX Bus', kind: 'bus' });
+const fragmentKeys = createTrack({ id: 'track-fragment-keys', name: 'Keys', kind: 'midi' });
+const wordStartContext: ProjectContext = {
+    ...projectContext,
+    tracks: [fragmentDrumBus, fragmentFxBus, fragmentKeys, warmPad, darkPad, master],
+};
+
+describe('a name fragment picks its targets only as the start of a word', () => {
+    it.each([
+        ['turn down the buses by 3 dB', 'bus', [fragmentDrumBus.id, fragmentFxBus.id]],
+        ['turn down the keys by 3 dB', 'key', [fragmentKeys.id]],
+    ])('grounds "%s"', (prompt, fragment, expected) => {
+        const result = compileAndBridge(prompt, [nameFragmentItem(fragment, expected.length)], [], wordStartContext);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual(expected);
+    });
+
+    it.each([
+        ['turn down the busy part by 3 dB', 'bus', 2],
+        ['turn down the keyboard by 3 dB', 'key', 1],
+        ['turn down 3 dB and update the mix', 'pad', 2],
+        ['turn down the launchpad by 3 dB', 'pad', 2],
+        ['turn down the padding by 3 dB', 'pad', 2],
+    ])('refuses "%s" for a "%s" fragment', (prompt, fragment, count) => {
+        const result = compileAndBridge(prompt, [nameFragmentItem(fragment, count)], [], wordStartContext);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
     });
 });
