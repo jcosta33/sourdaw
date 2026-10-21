@@ -28,12 +28,13 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * the shared reference resolver's own reading of it, never a matcher of this file's: the resolver's
  * `naming` mode, which reads an object by its literal id or its whole name, case, diacritics and
  * punctuation folded, its words joined across space and any dash ("hi hat" states Hi-Hat, "Lead-Vox"
- * Lead Vox), and across other punctuation only where the name has it there or what follows it names
- * no other object by itself and starts no other object's name ("drums/bus" states Drums Bus beside
- * Drums, while "Bass & Drums" states no Bass Drums beside Bass and Drums, nor "Bass & Drum Bus" a Bass
- * Drum beside a Drum Bus), never lengthened by punctuation closing it ("Lead?!" states Lead as closely
- * as Lead?), against every candidate whatever selection the request refers to, and takes the final
- * word of a name in either grammatical number ("the vocal" states Vocals), a form the direct route
+ * Lead Vox), and across other punctuation where the name has it there or unless the words before it
+ * name another object by themselves and another object's name starts past it ("drums/bus" states
+ * Drums Bus beside Drums, "bass/guitar" Bass Guitar beside Guitar, while "Bass & Drums" states no Bass
+ * Drums beside Bass and Drums, nor "Bass & Drum Bus" a Bass Drum beside Bass and a Drum Bus), never
+ * lengthened by punctuation closing it ("Lead?!" states Lead as closely as Lead?), against every
+ * candidate whatever selection the request refers to, and takes the final word of a name in either
+ * grammatical number ("the vocal" states Vocals), a form the direct route
  * leaves to its approximate reading. Each stated range names only the objects whose names read it
  * best, so "Vocal" states Vocal and not Vocals, "Café" states Café and not Cafe however either is
  * composed, "Hi–Hat" states Hi-Hat and not Hi Hat, and "Drum Bus" states the bus and not Drum.

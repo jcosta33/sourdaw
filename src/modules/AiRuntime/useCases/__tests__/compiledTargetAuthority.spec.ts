@@ -2348,6 +2348,46 @@ describe('"it" and "its" stand for the selected track only outside object names 
         expect(result.rejections).toEqual([{ index: 1, name: 'bypassDevice', reason: UNAUTHORIZED_DEVICE }]);
     });
 
+    // "It" here sits inside a clip's name and the request names no track, so only reading the pronoun
+    // outside object names keeps the selected Keys from narrowing the owner to itself.
+    it('grounds the Hit It Verse clip on Vocals for "mute the Hit It Verse clip" with Keys selected', () => {
+        const clip = (id: string, name: string, type: 'audio' | 'midi') => ({
+            id,
+            name,
+            type,
+            startBeat: 0,
+            endBeat: 8,
+            noteCount: type === 'midi' ? 4 : 0,
+        });
+        const hitItVocals: ProjectTrack = {
+            ...createTrack({ id: 'track-pronoun-hit-it-vocals', name: 'Vocals' }),
+            clipCount: 1,
+            clips: [clip('clip-pronoun-hit-it-verse', 'Hit It Verse', 'audio')],
+        };
+        const verseKeys: ProjectTrack = {
+            ...createTrack({ id: 'track-pronoun-verse-keys', name: 'Keys', kind: 'midi' }),
+            clipCount: 1,
+            clips: [clip('clip-pronoun-keys-verse', 'Verse', 'midi')],
+        };
+        const muteVerseClips = roleItem(
+            'muteClip',
+            { muted: true },
+            { targetArgument: 'clipId', entity: 'clip', match: { all: [{ nameIncludes: 'Verse' }] } },
+            2
+        );
+
+        const result = compileAndBridge('mute the Hit It Verse clip', [muteVerseClips], [], {
+            ...projectContext,
+            tracks: [hitItVocals, verseKeys, master],
+            selectedTrackId: verseKeys.id,
+        });
+
+        expect(targetsOf(result, 'clipId')).toEqual(['clip-pronoun-hit-it-verse']);
+        expect(result.rejections).toEqual([
+            { index: 1, name: 'muteClip', reason: 'Compiled target clipId is not authorized by the user request' },
+        ]);
+    });
+
     // "bypass the EQ on Vocals if it clips" is left out: grounding refuses a bypass under an "if"
     // clause whatever the target reading, so the row would observe nothing of this one.
     it.each(['bypass the EQ on Vocals so it sounds clearer', 'bypass the EQ on Vocals, then pan it left'])(

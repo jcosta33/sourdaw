@@ -905,7 +905,7 @@ describe('resolveAgentReference', () => {
         });
     });
 
-    it('reads a name across a slash the name lacks only where no other track is named past it', () => {
+    it('reads a name across a slash the name lacks unless the slash lists two other tracks', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];
         if (!firstTrack) {
@@ -919,22 +919,31 @@ describe('resolveAgentReference', () => {
             ],
         };
 
-        // No Guitar track is named past the slash, so "Lead/Guitar" states Lead Guitar beside the id.
+        // No Lead track is named before the slash, so "Lead/Guitar" states Lead Guitar beside the id,
+        // with or without a Guitar track past it.
         for (const assertedId of ['track-lead-guitar', 'track-aux']) {
             expect(
                 resolveTrack('delete Lead/Guitar and track-lead-guitar', assertedId, slashNestedNameContext)
             ).toMatchObject({ status: 'rejected', reason: 'ambiguous-target' });
         }
-        const guitarContext = {
-            ...slashNestedNameContext,
-            tracks: [...slashNestedNameContext.tracks, { ...firstTrack, id: 'track-guitar', name: 'Guitar' }],
-        };
+        const guitar = { ...firstTrack, id: 'track-guitar', name: 'Guitar' };
+        const guitarContext = { ...slashNestedNameContext, tracks: [...slashNestedNameContext.tracks, guitar] };
         expect(
             resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-lead-guitar', guitarContext)
         ).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
-            candidateIds: ['track-lead-guitar', 'track-guitar'],
+            candidateIds: ['track-lead-guitar', 'track-aux'],
+        });
+        // Beside Lead and Guitar tracks the slash lists the two, so it never states Lead Guitar.
+        const lead = { ...firstTrack, id: 'track-lead', name: 'Lead' };
+        const listedContext = { ...slashNestedNameContext, tracks: [...slashNestedNameContext.tracks, lead, guitar] };
+        expect(
+            resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-lead-guitar', listedContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+            candidateIds: ['track-lead-guitar', 'track-lead', 'track-guitar'],
         });
     });
 
@@ -1688,6 +1697,34 @@ describe('sibling names the prompt states as closely as each other', () => {
         }
     });
 
+    // A sibling name starting past the punctuation lists it only when the words before it name another
+    // track too: with no Bass track, "bass/guitar" is Bass Guitar however a Guitar track follows.
+    it.each([
+        ['mute bass/guitar', ['Bass Guitar', 'Guitar', 'Keys'], 'Bass Guitar'],
+        ['mute "bass/guitar"', ['Bass Guitar', 'Guitar', 'Keys'], 'Bass Guitar'],
+        ['mute the Bass/Guitar track', ['Bass Guitar', 'Guitar', 'Keys'], 'Bass Guitar'],
+        ['mute Bass+Guitar', ['Bass Guitar', 'Guitar', 'Keys'], 'Bass Guitar'],
+        ['mute Bass.Guitar', ['Bass Guitar', 'Guitar', 'Keys'], 'Bass Guitar'],
+        ['mute Bass: Guitar', ['Bass Guitar', 'Guitar', 'Keys'], 'Bass Guitar'],
+        ['mute Bass (Guitar)', ['Bass Guitar', 'Guitar', 'Keys'], 'Bass Guitar'],
+        ['mute Lead/Vox', ['Lead Vox', 'Vox'], 'Lead Vox'],
+        ['mute Lead, Vox', ['Lead Vox', 'Vox'], 'Lead Vox'],
+        ['mute lead & vox', ['Lead Vox', 'Vox'], 'Lead Vox'],
+        ['mute Hi/Hat', ['Hi Hat', 'Hat'], 'Hi Hat'],
+        ['mute drums, overhead', ['Drums Overhead', 'Overhead'], 'Drums Overhead'],
+    ])('reads "%s" among %j as %s, whose words before the punctuation name no other track', (prompt, names, picked) => {
+        const project = namedTracksProject(names);
+        const pickedId = trackIdNamed(project, picked);
+
+        expect(resolveTrack(prompt, pickedId, project)).toEqual(resolvedTo(pickedId, picked, 'exact-name'));
+        for (const sibling of names.filter((name) => name !== picked)) {
+            expect(resolveTrack(prompt, trackIdNamed(project, sibling), project)).toMatchObject({
+                status: 'rejected',
+                reason: 'asserted-target-mismatch',
+            });
+        }
+    });
+
     it('reads "mute master/take" as Master Take beside the master track, whose id it reaches past', () => {
         const project = createProjectState();
         const template = project.tracks[0]!;
@@ -1723,6 +1760,20 @@ describe('sibling names the prompt states as closely as each other', () => {
         const id = trackIdNamed(project, name);
 
         expect(resolveTrack(`mute ${name}`, id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
+    });
+
+    it.each([
+        ["mute O'ahu", 'Oʻahu'],
+        ["mute O'ahu", 'Oʼahu'],
+        ["mute O'ahu", 'Oʹahu'],
+        ['mute Oʻahu', "O'ahu"],
+        ['mute Oʼahu', "O'ahu"],
+        ['mute Oʹahu', "O'ahu"],
+    ])('resolves "%s" to %s across the apostrophe each types differently', (prompt, name) => {
+        const project = namedTracksProject([name, 'Bass']);
+        const id = trackIdNamed(project, name);
+
+        expect(resolveTrack(prompt, id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
     });
 
     it.each(['mute Oʻahu and Other', 'mute Oʻahu Other'])(

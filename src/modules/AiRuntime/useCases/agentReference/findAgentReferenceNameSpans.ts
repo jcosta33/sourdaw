@@ -91,8 +91,11 @@ function joinsAsNameSeparator(joiner: string, nameSeparator: string): boolean {
     );
 }
 
-/** One joiner a match of the name crossed, with the folded offset where the rest of the match starts. */
-type NameJoint = { joiner: string; nameSeparator: string; restStart: number };
+/**
+ * One joiner a match of the name crossed, with the folded offsets where it starts and where the rest
+ * of the match starts past it.
+ */
+type NameJoint = { joiner: string; nameSeparator: string; joinerStart: number; restStart: number };
 
 /** The joiners of a match whose captures alternate word, joiner, word, in the order the name has them. */
 function getNameJoints(match: RegExpExecArray, nameSeparators: readonly string[]): NameJoint[] {
@@ -101,8 +104,14 @@ function getNameJoints(match: RegExpExecArray, nameSeparators: readonly string[]
     let position = match.index + (pieces[0] ?? '').length;
     for (let index = 1; index < pieces.length; index += 2) {
         const joiner = pieces[index] ?? '';
+        const joinerStart = position;
         position += joiner.length;
-        joints.push({ joiner, nameSeparator: nameSeparators[(index - 1) / 2] ?? '', restStart: position });
+        joints.push({
+            joiner,
+            nameSeparator: nameSeparators[(index - 1) / 2] ?? '',
+            joinerStart,
+            restStart: position,
+        });
         position += (pieces[index + 1] ?? '').length;
     }
     return joints;
@@ -223,9 +232,11 @@ function findAcceptedMatches(
     return matches;
 }
 
-/** Whether the text states any of the names, each read with no other name to stop its own joints. */
-function statesAnyName(text: string, names: readonly string[], forms: AgentReferenceNameForms): boolean {
-    return names.some((name) => findAgentReferenceNameSpans(text, name, forms, []).length > 0);
+/** Whether the whole text states one of the names, each read with no other name to stop its own joints. */
+function isAnyName(text: string, names: readonly string[], forms: AgentReferenceNameForms): boolean {
+    return names.some((name) =>
+        findAgentReferenceNameSpans(text, name, forms, []).some((span) => span.start === 0 && span.end === text.length)
+    );
 }
 
 /** Whether the text starts with any of the names, each read with no other name to stop its own joints. */
@@ -238,14 +249,16 @@ function startsWithAnyName(text: string, names: readonly string[], forms: AgentR
  * them, final sigma aside, in order, the final word in either grammatical number when the forms allow
  * it. Space, underscore and any dash join two of its words wherever the text has them ("hi hat",
  * "hi_hat" and "hi–hat" state Hi-Hat, "hi-hat" states Hi Hat). Any other punctuation joins them where
- * the name itself has it there ("Guitar L/R"), or where the rest of the reading past it names none of
- * the sibling names by itself and no sibling name starts right past it: beside a Drums track and no
- * Bus, "drums/bus" states Drums Bus, while beside Bass and Drums tracks "Bass & Drums", "Bass | Drums"
- * and a bulleted list of the two never state Bass Drums, nor beside a Drum Bus does "Bass & Drum Bus"
- * state Bass Drum. A range the name as typed covers, both read composed and with every dash as the
- * hyphen, reads as typed and reaches as far as the typed name does, short of the punctuation closing
- * it, wherever the text goes on: "Kick (In)" reads Kick (In) more closely than Kick In, "Hi–Hat" reads
- * Hi-Hat more closely than Hi Hat, and "Lead?" in "mute Lead?!" reads no further than Lead does.
+ * the name itself has it there ("Guitar L/R"), and elsewhere too unless the reading's words before it
+ * are a sibling name by themselves and a sibling name starts right past it, which reads the two as a
+ * list: beside a Drums track and no Bus, "drums/bus" states Drums Bus, and beside a Guitar track and no
+ * Bass, "bass/guitar" states Bass Guitar, while beside Bass and Drums tracks "Bass & Drums", "Bass |
+ * Drums" and a bulleted list of the two never state Bass Drums, nor beside Bass and Drum Bus tracks
+ * does "Bass & Drum Bus" state Bass Drum. A range the name as typed covers, both read composed and with
+ * every dash as the hyphen, reads as typed and reaches as far as the typed name does, short of the
+ * punctuation closing it, wherever the text goes on: "Kick (In)" reads Kick (In) more closely than
+ * Kick In, "Hi–Hat" reads Hi-Hat more closely than Hi Hat, and "Lead?" in "mute Lead?!" reads no
+ * further than Lead does.
  */
 export function findAgentReferenceNameSpans(
     text: string,
@@ -269,16 +282,14 @@ export function findAgentReferenceNameSpans(
     const nameSeparators = getNameSeparators(name);
     const otherNames = siblingNames.filter((sibling) => normalizeName(sibling) !== tokens.join(' '));
     const continuesName = (match: RegExpExecArray): boolean => {
-        const end = toTextOffset(match.index + match[0].length);
+        const start = toTextOffset(match.index);
         return getNameJoints(match, nameSeparators).every((joint) => {
             if (joinsAsNameSeparator(joint.joiner, joint.nameSeparator)) {
                 return true;
             }
-            const restStart = toTextOffset(joint.restStart);
-            return (
-                !statesAnyName(text.slice(restStart, end), otherNames, forms) &&
-                !startsWithAnyName(text.slice(restStart), otherNames, forms)
-            );
+            const nearSide = text.slice(start, toTextOffset(joint.joinerStart));
+            const farSide = text.slice(toTextOffset(joint.restStart));
+            return !(isAnyName(nearSide, otherNames, forms) && startsWithAnyName(farSide, otherNames, forms));
         });
     };
     const typedRanges = findTypedRanges(text, name);
