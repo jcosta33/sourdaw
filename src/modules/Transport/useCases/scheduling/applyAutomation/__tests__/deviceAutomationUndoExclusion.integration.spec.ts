@@ -31,7 +31,8 @@ import { tempoMapStore } from '../../../../stores/tempoMapStore';
 // shared Web Audio/native parameter boundary; no live graph exists in Vitest.
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cancelPendingAudioBufferImport: vi.fn(),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),

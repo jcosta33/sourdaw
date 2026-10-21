@@ -16,7 +16,8 @@ const mockSetDeviceParameter = vi.fn();
 const mockExecuteUserAppAction = vi.hoisted(() =>
     vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve())
 );
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
 }));
 vi.mock('#/modules/Project/useCases', () => ({

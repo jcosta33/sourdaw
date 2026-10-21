@@ -41,7 +41,8 @@ import { DeviceParameterControl } from '../DeviceParameterControl';
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
 let afterEngineWrite: (() => void) | null = null;
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cancelPendingAudioBufferImport: vi.fn(),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
