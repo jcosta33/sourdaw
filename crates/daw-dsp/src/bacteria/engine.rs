@@ -131,7 +131,121 @@ const ALIGNMENT_RING_LEN: usize = 8192;
 /// two over 6 × 4363.
 const DRY_ALIGNMENT_RING_LEN: usize = 32_768;
 
-/// Whole-sample delay used to line one band's output up with the slowest one.
+const MS_ALIGNMENT_SUPPORT: usize = 32;
+const MS_ALIGNMENT_TAPS: usize = 2 * MS_ALIGNMENT_SUPPORT + 1;
+type MsAlignmentKernels = [[f64; MS_ALIGNMENT_TAPS]; 8];
+
+/// Fractional-centered Blackman sinc, built only at construction.
+///
+/// Each nonzero eighth phase approximates its ideal added delay with complex
+/// error <= 0.00075 through omega = 40000*pi/44100, including the test's
+/// derivative enclosure and numerical/output margins. The transition above
+/// that normalized band is intentional; this is not an all-Nyquist identity.
+fn ms_alignment_kernels() -> MsAlignmentKernels {
+    let mut kernels = [[0.0; MS_ALIGNMENT_TAPS]; 8];
+    for (phase, kernel) in kernels.iter_mut().enumerate().skip(1) {
+        let center = MS_ALIGNMENT_SUPPORT as f64 + phase as f64 / 8.0;
+        for (tap, coefficient) in kernel.iter_mut().enumerate() {
+            let distance = tap as f64 - center;
+            if distance.abs() > MS_ALIGNMENT_SUPPORT as f64 {
+                continue;
+            }
+            let angle = std::f64::consts::PI * distance;
+            let window_angle = angle / MS_ALIGNMENT_SUPPORT as f64;
+            let window = 0.42 + 0.5 * window_angle.cos() + 0.08 * (2.0 * window_angle).cos();
+            *coefficient = window * angle.sin() / angle;
+        }
+        let sum: f64 = kernel.iter().sum();
+        for coefficient in kernel.iter_mut() {
+            *coefficient /= sum;
+        }
+        // Preserve DC while pinning the first moment to the desired center.
+        let moment: f64 = kernel
+            .iter()
+            .enumerate()
+            .map(|(tap, coefficient)| tap as f64 * coefficient)
+            .sum();
+        let correction = center - moment;
+        kernel[MS_ALIGNMENT_SUPPORT] -= correction;
+        kernel[MS_ALIGNMENT_SUPPORT + 1] += correction;
+    }
+    kernels
+}
+
+/// Private mono compensation for the two actual M/S sources.
+///
+/// Integer reads, including unity, return the stored f32 unchanged. Fractional
+/// reads spend 32 samples of causal support. The worst configured deficit plus
+/// the last FIR tap has age <= 4428, inside the existing 8192-sample bound.
+struct MsAlignmentDelay {
+    history: Vec<f32>,
+    write: usize,
+    delay_eighths: usize,
+    active: bool,
+}
+
+impl MsAlignmentDelay {
+    fn new() -> Self {
+        Self {
+            history: vec![0.0; ALIGNMENT_RING_LEN],
+            write: 0,
+            delay_eighths: 0,
+            active: false,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.history.fill(0.0);
+        self.write = 0;
+    }
+
+    fn invalidate(&mut self) {
+        self.reset();
+        self.active = false;
+    }
+
+    /// Retarget a continuously clocked source without slewing/crossfading.
+    /// An inactive source is explicitly empty, so it cannot resurrect a tail.
+    fn configure(&mut self, delay_eighths: usize, active: bool) {
+        let whole = delay_eighths / 8;
+        let fractional = delay_eighths % 8 != 0;
+        debug_assert!(!fractional || whole >= MS_ALIGNMENT_SUPPORT);
+        debug_assert!(
+            whole + if fractional { MS_ALIGNMENT_SUPPORT } else { 0 } < ALIGNMENT_RING_LEN
+        );
+        if self.active && !active {
+            self.reset();
+        }
+        self.delay_eighths = delay_eighths;
+        self.active = active;
+    }
+
+    #[inline]
+    fn process(&mut self, input: f32, kernels: &MsAlignmentKernels) -> f32 {
+        if !self.active {
+            return 0.0;
+        }
+        self.history[self.write] = input;
+        let whole = self.delay_eighths / 8;
+        let phase = self.delay_eighths % 8;
+        let mask = ALIGNMENT_RING_LEN - 1;
+        let output = if phase == 0 {
+            self.history[self.write.wrapping_sub(whole) & mask]
+        } else {
+            let offset = whole - MS_ALIGNMENT_SUPPORT;
+            let mut sum = 0.0_f64;
+            for (tap, coefficient) in kernels[phase].iter().enumerate() {
+                let sample = self.history[self.write.wrapping_sub(offset + tap) & mask];
+                sum += coefficient * f64::from(sample);
+            }
+            sum as f32
+        };
+        self.write = (self.write + 1) & mask;
+        output
+    }
+}
+
+/// Whole-sample alignment for the existing Serial/Parallel paths.
 ///
 /// A whole-sample delay cannot change a signal's fractional delay, and the
 /// oversampler latencies do not share one: 0 / 6.5 / 9.75 / 11.375 have
@@ -901,11 +1015,11 @@ pub struct BacteriaEngine {
     /// present its reported latency at every mix value, not only fully wet.
     dry_alignment: AlignmentDelay,
 
-    /// Holds the side signal back when Mid/Side routing runs at bandCount 1.
-    /// Band 0 processes the mid signal and carries its stage latency plus
-    /// alignment; without this, the untouched side signal recombines
-    /// out-of-phase with the delayed mid signal, smearing the stereo image.
-    side_alignment: AlignmentDelay,
+    /// M/S bypasses the crossover and legacy band padding. Both actual sources
+    /// receive their own exact-integer or bounded fractional compensation.
+    mid_alignment: MsAlignmentDelay,
+    side_alignment: MsAlignmentDelay,
+    ms_kernels: MsAlignmentKernels,
 
     /// What the device actually delays by, accumulated in `realign_bands` from
     /// each band's programmed delay.
@@ -1004,7 +1118,9 @@ impl BacteriaEngine {
             bands_l: [0.0; MAX_BANDS],
             bands_r: [0.0; MAX_BANDS],
             dry_alignment: AlignmentDelay::new(DRY_ALIGNMENT_RING_LEN),
-            side_alignment: AlignmentDelay::new(DRY_ALIGNMENT_RING_LEN),
+            mid_alignment: MsAlignmentDelay::new(),
+            side_alignment: MsAlignmentDelay::new(),
+            ms_kernels: ms_alignment_kernels(),
             reported_latency: 0,
             param_offsets: [0.0; PARAM_OFFSET_COUNT],
         };
@@ -1018,7 +1134,18 @@ impl BacteriaEngine {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        let was_mid_side = self.routing == RoutingMode::MidSide;
+        let side_was_raw = self.band_count == 1;
         self.apply_param(name, value);
+        let is_mid_side = self.routing == RoutingMode::MidSide;
+        if was_mid_side != is_mid_side {
+            self.mid_alignment.invalidate();
+            self.side_alignment.invalidate();
+        } else if is_mid_side && side_was_raw != (self.band_count == 1) {
+            // Raw side and band 1 output are different sources, even when
+            // their current settings happen to have the same delay.
+            self.side_alignment.reset();
+        }
         // Any parameter can move a band's engaged latency: the factor itself,
         // `bandCount`, or the distortion flag that decides whether the
         // oversampler is in the path at all. Names reach bands two ways (bare
@@ -1059,13 +1186,14 @@ impl BacteriaEngine {
         self.output_peak = 0.0;
         self.band_levels = [0.0; MAX_BANDS];
         self.dry_alignment.reset();
+        self.mid_alignment.reset();
         self.side_alignment.reset();
         self.param_offsets = [0.0; PARAM_OFFSET_COUNT];
     }
 
     /// Give every band the group delay the routing needs it to present.
     ///
-    /// Under a sum — `Parallel` and `MidSide` — every band has to present the
+    /// Under `Parallel`, every band has to present the
     /// same delay or they comb at their shared crossover, so the target is the
     /// worst case over active bands derived from their configured factors.
     ///
@@ -1088,6 +1216,10 @@ impl BacteriaEngine {
     /// a chain diverge from the float sum by samples, which is a comb across
     /// the dry blend and an under-report to the host.
     fn realign_bands(&mut self) {
+        if self.routing == RoutingMode::MidSide {
+            self.realign_mid_side();
+            return;
+        }
         let serial = self.routing == RoutingMode::Serial;
         let any_solo = self.bands[..self.band_count].iter().any(|b| b.solo);
         let summed_target = self
@@ -1141,20 +1273,57 @@ impl BacteriaEngine {
         // spent. Same figure the host is handed, from the same accumulation.
         self.reported_latency = device_delay.round() as u32;
         self.dry_alignment.set_delay(self.reported_latency as usize);
+    }
 
-        // When Mid/Side routing runs at bandCount 1, side has no band 1 and
-        // passes through untouched. To prevent phase-tearing and stereo smearing
-        // against mid (which carries band 0's latency), side is delayed by
-        // band 0's delivered delay.
-        let side_delay = if self.routing == RoutingMode::MidSide && self.band_count == 1 {
-            self.reported_latency as usize
+    /// M/S consumes only raw mid through band 0 and raw/processed side. Its
+    /// crossover still advances, but neither that delay nor unused bands enter
+    /// the target. All fixed terms are exact eighths at the actual factor.
+    fn realign_mid_side(&mut self) {
+        for (index, band) in self.bands.iter_mut().enumerate() {
+            if index < 2 {
+                band.alignment.set_delay(0);
+            }
+            if index >= self.band_count {
+                band.set_alignment_target(0.0, false);
+                band.clear_alignment();
+            }
+        }
+
+        let configured_mid = (self.bands[0].latency_samples() * 8.0) as usize;
+        let configured_side = if self.band_count > 1 {
+            (self.bands[1].latency_samples() * 8.0) as usize
         } else {
             0
         };
-        self.side_alignment.set_delay(side_delay);
-        if side_delay == 0 {
-            self.side_alignment.reset();
-        }
+        let support = if configured_mid % 8 != 0 || configured_side % 8 != 0 {
+            MS_ALIGNMENT_SUPPORT
+        } else {
+            0
+        };
+        let target = support + configured_mid.max(configured_side).div_ceil(8);
+        self.reported_latency = target as u32;
+        self.dry_alignment.set_delay(target);
+
+        // M/S currently ignores solo; only enabled/mute decide whether these
+        // actual processing paths run. The unprocessed single-band side is
+        // independently active even when the mid band is muted.
+        let mid_active = !self.bypassed && self.bands[0].enabled && !self.bands[0].mute;
+        let side_active = !self.bypassed
+            && (self.band_count == 1 || (self.bands[1].enabled && !self.bands[1].mute));
+        let engaged_mid = if mid_active {
+            (self.bands[0].engaged_latency_samples() * 8.0) as usize
+        } else {
+            0
+        };
+        let engaged_side = if side_active && self.band_count > 1 {
+            (self.bands[1].engaged_latency_samples() * 8.0) as usize
+        } else {
+            0
+        };
+        self.mid_alignment
+            .configure(target * 8 - engaged_mid, mid_active);
+        self.side_alignment
+            .configure(target * 8 - engaged_side, side_active);
     }
 
     /// Zero the meter of every band past `bandCount`.
@@ -1494,7 +1663,8 @@ impl BacteriaEngine {
             // moment bypass is released.
             for i in 0..len {
                 self.dry_alignment.process(left[i], right[i]);
-                self.side_alignment.process(0.0, 0.0);
+                self.mid_alignment.process(0.0, &self.ms_kernels);
+                self.side_alignment.process(0.0, &self.ms_kernels);
                 for band in self.bands.iter_mut().take(self.band_count) {
                     band.skip_sample();
                 }
@@ -1606,12 +1776,12 @@ impl BacteriaEngine {
                     let (ps, _) = if self.band_count > 1 {
                         let offsets = self.band_mod_offsets(1);
                         self.bands[1].process_sample(side, side, offsets)
-                    } else if self.band_count == 1 {
-                        let (aligned_s, _) = self.side_alignment.process(side, side);
-                        (aligned_s, aligned_s)
                     } else {
                         (side, side)
                     };
+
+                    let pm = self.mid_alignment.process(pm, &self.ms_kernels);
+                    let ps = self.side_alignment.process(ps, &self.ms_kernels);
 
                     // Decode back to L/R
                     sum_l = pm + ps;
@@ -1666,6 +1836,14 @@ impl BacteriaEngine {
     }
 
     /// Latency reported to the host for plugin delay compensation.
+    ///
+    /// M/S uses only its two actual sources, excluding the unread crossover.
+    /// Its integer target is ceil(max configured fixed delay), plus 32 samples
+    /// when either configured delay has an eighth-sample fraction. That support
+    /// costs 0.667 ms at 48 kHz; the compensator's bounded normalized passband
+    /// ends at 40000/44100 of Nyquist. DC/first-moment alignment does not make
+    /// finite 4x/8x converters or creative filters constant-delay at every
+    /// frequency. The remaining description concerns Serial/Parallel.
     ///
     /// The minimum-phase LR crossover is zero-latency; the linear-phase mode
     /// adds its `points × FIR_DELAY` term, picked up in `realign_bands` and
@@ -3160,6 +3338,123 @@ mod tests {
             (side_centroid - mid_centroid).abs() < 0.5,
             "side centroid {side_centroid:.2} and mid centroid {mid_centroid:.2} must match"
         );
+    }
+
+    #[test]
+    fn ms_alignment_kernels_obey_continuous_complex_error_bound() {
+        let kernels = ms_alignment_kernels();
+        let omega_max = 40_000.0 * std::f64::consts::PI / 44_100.0;
+        const POINTS: usize = 32_769;
+        for (phase, kernel) in kernels.iter().enumerate().skip(1) {
+            let center = 32.0 + phase as f64 / 8.0;
+            assert!(kernel.iter().all(|coefficient| coefficient.is_finite()));
+            let dc: f64 = kernel.iter().sum();
+            let moment: f64 = kernel.iter().enumerate().map(|(k, c)| k as f64 * c).sum();
+            let l1: f64 = kernel.iter().map(|c| c.abs()).sum();
+            assert!((dc - 1.0).abs() < 2.0e-14, "phase {phase}: DC {dc}");
+            assert!(
+                (moment - center).abs() < 2.0e-13,
+                "phase {phase}: first moment {moment}"
+            );
+            assert!(l1 <= 2.807443, "phase {phase}: L1 {l1}");
+            // E is the actual bank's centered response minus the independent
+            // ideal unit response. |E'| <= sum |c[k]| |k-center| encloses gaps
+            // between grid points; a grid maximum alone is insufficient.
+            let derivative_l: f64 = kernel
+                .iter()
+                .enumerate()
+                .map(|(k, c)| c.abs() * (k as f64 - center).abs())
+                .sum();
+            let mut grid_maximum = 0.0_f64;
+            for j in 0..POINTS {
+                let omega = omega_max * j as f64 / (POINTS - 1) as f64;
+                let mut re = -1.0;
+                let mut im = 0.0;
+                for (k, coefficient) in kernel.iter().enumerate() {
+                    let angle = omega * (k as f64 - center);
+                    re += coefficient * angle.cos();
+                    im -= coefficient * angle.sin();
+                }
+                grid_maximum = grid_maximum.max(re.hypot(im));
+            }
+            // The final margin includes f64 coefficient/evaluation error and
+            // one f32 output rounding for unit-bounded input (2^-24 * L1).
+            let enclosed = grid_maximum
+                + derivative_l * omega_max / (2.0 * (POINTS - 1) as f64)
+                + 1.0e-10
+                + 2.0e-7;
+            println!("M/S phase {phase}: DC {dc:.16}, moment {moment:.15}, L1 {l1:.9}, continuous complex bound {enclosed:.12}");
+            assert!(
+                enclosed <= 0.00075,
+                "phase {phase}: continuous error {enclosed}"
+            );
+        }
+    }
+
+    #[test]
+    fn ms_alignment_integer_reads_are_exact_and_history_keeps_clocking() {
+        let kernels = ms_alignment_kernels();
+        for delay in [0, 1, 39, 4396] {
+            let mut ring = MsAlignmentDelay::new();
+            ring.configure(delay * 8, true);
+            let source = [0.25_f32, -0.0, -0.375, f32::MIN_POSITIVE];
+            for n in 0..delay + source.len() + 8 {
+                let input = source.get(n).copied().unwrap_or(0.0);
+                let expected = n
+                    .checked_sub(delay)
+                    .and_then(|i| source.get(i))
+                    .copied()
+                    .unwrap_or(0.0);
+                assert_eq!(
+                    ring.process(input, &kernels).to_bits(),
+                    expected.to_bits(),
+                    "delay {delay}, frame {n}"
+                );
+            }
+        }
+        let mut ring = MsAlignmentDelay::new();
+        ring.configure(0, true);
+        assert_eq!(ring.process(1.0, &kernels), 1.0);
+        for _ in 1..8 {
+            ring.process(0.0, &kernels);
+        }
+        ring.configure(39 * 8, true);
+        for n in 8..48 {
+            assert_eq!(ring.process(0.0, &kernels), if n == 39 { 1.0 } else { 0.0 });
+        }
+    }
+
+    #[test]
+    fn ms_alignment_fractional_reset_and_inactive_sources_cannot_replay() {
+        let kernels = ms_alignment_kernels();
+        for phase in 1..8 {
+            let mut ring = MsAlignmentDelay::new();
+            ring.configure(32 * 8 + phase, true);
+            let response: Vec<_> = (0..96)
+                .map(|n| ring.process(if n == 0 { 1.0 } else { 0.0 }, &kernels))
+                .collect();
+            assert!(response.iter().any(|x| x.abs() > 0.5));
+            for (actual, coefficient) in response.iter().zip(kernels[phase]) {
+                assert_eq!(actual.to_bits(), (coefficient as f32).to_bits());
+            }
+            ring.process(0.7, &kernels);
+            ring.reset();
+            assert_eq!(ring.delay_eighths, 32 * 8 + phase);
+            assert!(ring.active);
+            for _ in 0..128 {
+                assert_eq!(ring.process(0.0, &kernels), 0.0);
+            }
+            ring.process(0.7, &kernels);
+            ring.configure(32 * 8 + phase, false);
+            assert!(ring.history.iter().all(|&x| x == 0.0));
+            for _ in 0..8 {
+                assert_eq!(ring.process(1.0, &kernels), 0.0);
+            }
+            ring.configure(32 * 8 + phase, true);
+            for _ in 0..128 {
+                assert_eq!(ring.process(0.0, &kernels), 0.0);
+            }
+        }
     }
 
     // ── Crossover slope and mode must change the sound (#2400) ─────────────
