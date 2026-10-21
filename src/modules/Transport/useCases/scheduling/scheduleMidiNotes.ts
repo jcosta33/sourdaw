@@ -8,6 +8,7 @@ import {
     getCompensationDelay,
     getCurrentTime,
     getDefaultBendRangeSemitones,
+    projectNoteExpressionCurves,
     registerScheduledSource,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
@@ -53,7 +54,7 @@ import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { resolvePlaybackNoteReceiver } from './resolvePlaybackNoteReceiver';
 import { resolveStoredControllerClips } from './resolveStoredControllerClips';
 import { restoreStoredControllers } from './restoreStoredControllers';
-import { createSameFramePostQueue } from './sameFramePostQueue';
+import { createSameFramePostQueue, type SameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
 import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
@@ -742,6 +743,44 @@ function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams
     return params;
 }
 
+type PostNoteExpressionInput = {
+    posts: SameFramePostQueue;
+    trackId: string;
+    pitch: number;
+    channel: number;
+    sampleFrame: number;
+    expression: ScheduledMpeParams | undefined;
+};
+
+/**
+ * Queue one expression update for a held note, in the window's same-frame order
+ * (after the note-on at its frame). It carries the bend range the bend was
+ * recorded under, and only when there is a bend, as the start event always has.
+ */
+function postNoteExpression({
+    posts,
+    trackId,
+    pitch,
+    channel,
+    sampleFrame,
+    expression,
+}: PostNoteExpressionInput): void {
+    posts.add('expression', sampleFrame, () =>
+        applyNoteExpression({
+            trackId,
+            note: pitch,
+            channel,
+            expression: {
+                pressure: expression?.pressure,
+                slide: expression?.slide,
+                pitchBend: expression?.pitchBend,
+            },
+            sampleFrame,
+            bendRangeSemitones: expression?.pitchBendRangeSemitones,
+        })
+    );
+}
+
 type PlaceSamplesOnClockInput = {
     startSamples: number;
     accumulatedSamples: number;
@@ -1297,7 +1336,7 @@ export async function scheduleMidiNotes(
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const iterOffset = iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-                let iterNotes: readonly LiveYeastNote[];
+                let iterNotes: readonly (LiveYeastNote & Pick<ScheduledMidiNote, 'expression'>)[];
                 if (yeastDevice) {
                     iterNotes = liveYeastNotesByRoute.get(yeastRouteId) ?? [];
                 } else if (clip.loopEnabled) {
@@ -1525,25 +1564,48 @@ export async function scheduleMidiNotes(
                             // member default — the range they were actually
                             // performed under (audit MD-8).
                             const mpe = resolveScheduledMpeParams(note);
-                            const noteBendRange = mpe?.pitchBendRangeSemitones;
+                            // The recorded curves ride in the note's window,
+                            // ahead of it like its release, so a stop or seek
+                            // drops them where it drops the release. Placed
+                            // through the clock the note's own start and
+                            // release used, from the projected start, so a
+                            // curve keeps its place in a moved note.
+                            const curves = note.expression
+                                ? projectNoteExpressionCurves({
+                                      note,
+                                      startBeat: noteStartBeat,
+                                      releaseFrame: endSampleFrame,
+                                      frameAtBeat: (beat) =>
+                                          placeSamplesOnClock({
+                                              startSamples: beatToSamples(changes, beat, transport.tempo, sr),
+                                              accumulatedSamples,
+                                              sampleRate: sr,
+                                              compensation,
+                                          }).sampleFrame,
+                                  })
+                                : undefined;
                             // MPE per-note expression (audit MD-2). Same
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
                             // to the voice this noteOn just started.
-                            posts.add('expression', sampleFrame, () =>
-                                applyNoteExpression({
+                            postNoteExpression({
+                                posts,
+                                trackId: track.id,
+                                pitch,
+                                channel: noteChannel,
+                                sampleFrame,
+                                expression: curves?.atStart ?? mpe,
+                            });
+                            for (const change of curves?.changes ?? []) {
+                                postNoteExpression({
+                                    posts,
                                     trackId: track.id,
-                                    note: pitch,
+                                    pitch,
                                     channel: noteChannel,
-                                    expression: {
-                                        pressure: mpe?.pressure,
-                                        slide: mpe?.slide,
-                                        pitchBend: mpe?.pitchBend,
-                                    },
-                                    sampleFrame,
-                                    bendRangeSemitones: noteBendRange,
-                                })
-                            );
+                                    sampleFrame: change.frame,
+                                    expression: change.expression,
+                                });
+                            }
                             // Grand Boule is the one worklet synth whose
                             // `noteOff` reads a release velocity in slot 3 and
                             // its member channel in slot 4; Fermenter, Levain

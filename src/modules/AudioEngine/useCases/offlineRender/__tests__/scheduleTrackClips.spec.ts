@@ -1691,10 +1691,23 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
      * collaborator of the scheduler was called.
      */
     async function dispatchOneNote(
-        note: Partial<{ pressure: number; slide: number; pitchBend: number; pitchBendRangeSemitones: number }>,
-        options: { deviceType?: string; withExpressionSurface?: boolean } = {}
+        note: Partial<{
+            pressure: number;
+            slide: number;
+            pitchBend: number;
+            pitchBendRangeSemitones: number;
+            startBeat: number;
+            duration: number;
+            expression: NonNullable<MidiStoreState>['notesByClipId'][string][number]['expression'];
+        }>,
+        options: {
+            deviceType?: string;
+            withExpressionSurface?: boolean;
+            /** A tempo map; the render then places beats through the production projection. */
+            changes?: Parameters<typeof scheduleTrackClips>[0]['changes'];
+        } = {}
     ): Promise<Arrivals> {
-        const { deviceType = 'levain', withExpressionSurface = true } = options;
+        const { deviceType = 'levain', withExpressionSurface = true, changes } = options;
         const arrivals: Arrivals = { order: [], noteOn: [], expression: [] };
 
         const strategy: DeviceNodeEntry['strategy'] = {
@@ -1742,10 +1755,10 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             destination: {} as AudioNode,
             durationSeconds: 60,
             defaultTempo: 120,
-            changes: [],
+            changes: changes ?? [],
             projections: {
                 projectMidiEvents,
-                projectPpqEndpoints,
+                projectPpqEndpoints: changes ? projectTransportEndpoints : projectPpqEndpoints,
                 processYeastMidi,
                 resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
@@ -1760,6 +1773,16 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
 
         schedulePendingSuspends(offlineCtx, pendingWorkletEvents, 60);
         return arrivals;
+    }
+
+    /** The updates the instrument received, as the frame they applied at and the wire values they carry. */
+    function appliedExpression(arrivals: Arrivals) {
+        return arrivals.expression.map((request) => ({
+            sampleFrame: request.sampleFrame,
+            pressure: Math.round(request.pressure * 127),
+            slide: Math.round(request.slide * 63 + 64),
+            bendSemitones: request.bendSemitones,
+        }));
     }
 
     it('hands the instrument the note expression at the note-on frame, after the note-on', async () => {
@@ -1833,6 +1856,95 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         );
 
         expect(arrivals.expression).toEqual([]);
+    });
+
+    describe('recorded expression curves', () => {
+        const curvedNote = {
+            startBeat: 1,
+            duration: 3,
+            pressure: 10,
+            slide: 64,
+            pitchBend: 1_000,
+            pitchBendRangeSemitones: 12,
+            expression: {
+                pressure: [
+                    { offsetBeats: 0.5, value: 40 },
+                    { offsetBeats: 1.5, value: 90 },
+                    { offsetBeats: 2.5, value: 20 },
+                ],
+            },
+        };
+        const bend = (1_000 / 8_192) * 12;
+
+        it('hands the instrument each curve point at its own frame, across a tempo change inside the note', async () => {
+            // The live scheduler's case for the same note: 120 BPM to beat 2, 60
+            // BPM after it, so the points at beats 1.5, 2.5 and 3.5 sit at 0.75 s,
+            // 1.5 s and 2.5 s, and each carries the dimensions that did not move.
+            const arrivals = await dispatchOneNote(curvedNote, {
+                changes: [
+                    { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-1', beat: 2, tempo: 60, curve: 'instant' },
+                ],
+            });
+
+            expect(appliedExpression(arrivals)).toEqual([
+                { sampleFrame: 24_000, pressure: 10, slide: 64, bendSemitones: bend },
+                { sampleFrame: 36_000, pressure: 40, slide: 64, bendSemitones: bend },
+                { sampleFrame: 72_000, pressure: 90, slide: 64, bendSemitones: bend },
+                { sampleFrame: 120_000, pressure: 20, slide: 64, bendSemitones: bend },
+            ]);
+            expect(arrivals.order).toEqual([
+                'noteOn',
+                'expression',
+                'expression',
+                'expression',
+                'expression',
+                'noteOff',
+            ]);
+        });
+
+        it('moves the points with the note when the projection moves its start', async () => {
+            mocks.projection.startOffset = 0.25;
+            try {
+                const arrivals = await dispatchOneNote(curvedNote);
+
+                // The note sounds at beat 1.25, so its points sit half a beat,
+                // one and a half and two and a half beats after that.
+                expect(appliedExpression(arrivals).map(({ sampleFrame }) => sampleFrame)).toEqual([
+                    30_000, 42_000, 66_000, 90_000,
+                ]);
+            } finally {
+                mocks.projection.startOffset = 0;
+            }
+        });
+
+        it('posts no point at or after the frame the release is posted on', async () => {
+            // The release of this one-beat note is at frame 48000, the second point's.
+            const arrivals = await dispatchOneNote({
+                startBeat: 1,
+                duration: 1,
+                pressure: 10,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 0.5, value: 40 },
+                        { offsetBeats: 1, value: 90 },
+                        { offsetBeats: 1.5, value: 20 },
+                    ],
+                },
+            });
+
+            expect(appliedExpression(arrivals).map(({ sampleFrame, pressure }) => [sampleFrame, pressure])).toEqual([
+                [24_000, 10],
+                [36_000, 40],
+            ]);
+            expect(arrivals.order).toEqual(['noteOn', 'expression', 'expression', 'noteOff']);
+        });
+
+        it('sends no curve to Toaster, which has no voice to bend', async () => {
+            const arrivals = await dispatchOneNote(curvedNote, { deviceType: 'toaster' });
+
+            expect(arrivals.expression).toEqual([]);
+        });
     });
 });
 

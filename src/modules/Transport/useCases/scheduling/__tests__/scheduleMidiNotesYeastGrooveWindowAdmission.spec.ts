@@ -103,6 +103,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: vi.fn(),
+    projectNoteExpressionCurves: vi.fn(),
     registerScheduledSource: registerScheduledSourceMock,
     // The one definition of the MPE member default, as the production barrel
     // exports it (audit MD-8).

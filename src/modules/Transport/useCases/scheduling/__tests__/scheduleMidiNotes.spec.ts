@@ -51,6 +51,16 @@ vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
     };
 });
 
+/**
+ * The engine barrel's own projection of a note's expression curves, loaded on its
+ * own so the double below can keep the rest of the barrel doubled.
+ */
+const realProjectNoteExpressionCurves = vi.hoisted(async () => {
+    const actual = await vi.importActual<
+        Pick<typeof import('#/modules/AudioEngine/useCases'), 'projectNoteExpressionCurves'>
+    >('#/modules/AudioEngine/useCases/noteExpression/projectNoteExpressionCurves');
+    return actual.projectNoteExpressionCurves;
+});
 const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 /** What the engine double answers with: the context's sample rate and each track strip's device nodes. */
@@ -94,8 +104,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     ),
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
     applyNoteExpression: vi.fn(),
+    // The real projection: what a curve becomes is the contract under test here,
+    // with only the engine surface around it doubled.
+    projectNoteExpressionCurves: await realProjectNoteExpressionCurves,
     registerScheduledSource: registerScheduledSourceMock,
     // The one definition of the MPE member default, as the production barrel
     // exports it (audit MD-8).
@@ -1559,6 +1572,253 @@ describe('scheduleMidiNotes', () => {
                 sampleFrame: expect.any(Number),
                 // No bend, so no range — this assertion keeps its original
                 // exact shape rather than gaining a pinned fallback.
+            });
+        });
+
+        describe('recorded expression curves', () => {
+            function fermenterStripWithControls() {
+                const noteOn = vi.fn();
+                const noteOff = vi.fn();
+                vi.mocked(ensureTrackStrip).mockImplementation(
+                    () =>
+                        ({
+                            gainNode: {},
+                            preFaderTap: { connect: vi.fn() },
+                            deviceNodes: [
+                                {
+                                    type: 'fermenter',
+                                    deviceId: 'device-1',
+                                    fermenterControls: { noteOn, noteOff, noteExpression: vi.fn() },
+                                },
+                            ],
+                        }) as never
+                );
+                return { noteOn, noteOff };
+            }
+
+            function scheduleFermenterNotes(notes: Record<string, unknown>[], clip: Record<string, unknown> = {}) {
+                const track = midiTrack({
+                    clips: [midiClip(clip)],
+                    devices: [{ id: 'device-1', type: 'fermenter' }],
+                });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': notes } };
+            }
+
+            /** What the engine was asked to apply, as frame and expression, in the order it was asked. */
+            function appliedExpression() {
+                return vi.mocked(applyNoteExpression).mock.calls.map(([input]) => ({
+                    sampleFrame: input.sampleFrame,
+                    expression: input.expression,
+                    bendRangeSemitones: input.bendRangeSemitones,
+                }));
+            }
+
+            const frameAt = (seconds: number) => Math.round(seconds * 48_000);
+
+            it('applies each point at its own frame, across a tempo change inside the note', async () => {
+                const { noteOn, noteOff } = fermenterStripWithControls();
+                // 120 BPM to beat 2, 60 BPM after: beats 1 to 4 span 3 s, and
+                // the points at beats 1.5, 2.5 and 3.5 sit at 0.75 s, 1.5 s and 2.5 s.
+                (tempoMapStore as { value: unknown }).value = {
+                    changes: [
+                        { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                        { id: 'tempo-1', beat: 2, tempo: 60, curve: 'instant' },
+                    ],
+                };
+                scheduleFermenterNotes([
+                    {
+                        id: 'n0',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 3,
+                        velocity: 100,
+                        pressure: 10,
+                        slide: 64,
+                        pitchBend: 1000,
+                        pitchBendRangeSemitones: 12,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 0.5, value: 40 },
+                                { offsetBeats: 1.5, value: 90 },
+                                { offsetBeats: 2.5, value: 20 },
+                            ],
+                        },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                const carried = { slide: 64, pitchBend: 1000 };
+                expect(appliedExpression()).toEqual([
+                    { sampleFrame: frameAt(0.5), expression: { pressure: 10, ...carried }, bendRangeSemitones: 12 },
+                    { sampleFrame: frameAt(0.75), expression: { pressure: 40, ...carried }, bendRangeSemitones: 12 },
+                    { sampleFrame: frameAt(1.5), expression: { pressure: 90, ...carried }, bendRangeSemitones: 12 },
+                    { sampleFrame: frameAt(2.5), expression: { pressure: 20, ...carried }, bendRangeSemitones: 12 },
+                ]);
+                expect(noteOff.mock.calls[0]![1]).toBe(frameAt(3));
+                // The note-on is queued ahead of the first update at its frame.
+                expect(noteOn.mock.calls[0]![2]).toBe(frameAt(0.5));
+                expect(noteOn.mock.invocationCallOrder[0]).toBeLessThan(
+                    vi.mocked(applyNoteExpression).mock.invocationCallOrder[0]!
+                );
+            });
+
+            it('carries the dimension that did not move at each point', async () => {
+                fermenterStripWithControls();
+                scheduleFermenterNotes([
+                    {
+                        id: 'n0',
+                        pitch: 64,
+                        startBeat: 0,
+                        duration: 2,
+                        velocity: 100,
+                        pressure: 10,
+                        slide: 64,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 0.5, value: 40 },
+                                { offsetBeats: 1, value: 90 },
+                            ],
+                            pitchBend: [{ offsetBeats: 0.25, value: 1000 }],
+                        },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(appliedExpression().map(({ expression }) => expression)).toEqual([
+                    { pressure: 10, slide: 64, pitchBend: undefined },
+                    { pressure: 10, slide: 64, pitchBend: 1000 },
+                    { pressure: 40, slide: 64, pitchBend: 1000 },
+                    { pressure: 90, slide: 64, pitchBend: 1000 },
+                ]);
+            });
+
+            it('merges a point on the start frame into the start event', async () => {
+                fermenterStripWithControls();
+                scheduleFermenterNotes([
+                    {
+                        id: 'n0',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 2,
+                        velocity: 100,
+                        pressure: 10,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 1e-6, value: 70 },
+                                { offsetBeats: 1, value: 90 },
+                            ],
+                        },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(
+                    appliedExpression().map(({ sampleFrame, expression }) => [sampleFrame, expression.pressure])
+                ).toEqual([
+                    [frameAt(0.5), 70],
+                    [frameAt(1), 90],
+                ]);
+            });
+
+            it('posts nothing at or after the frame the release is posted on', async () => {
+                const { noteOff } = fermenterStripWithControls();
+                // The loop ends the note after one beat, so the points at
+                // beats 1.5 and 2 of the recording never play.
+                scheduleFermenterNotes(
+                    [
+                        {
+                            id: 'n0',
+                            pitch: 64,
+                            startBeat: 0,
+                            duration: 3,
+                            velocity: 100,
+                            pressure: 10,
+                            expression: {
+                                pressure: [
+                                    { offsetBeats: 0.5, value: 40 },
+                                    { offsetBeats: 1, value: 90 },
+                                    { offsetBeats: 2, value: 20 },
+                                ],
+                            },
+                        },
+                    ],
+                    { endBeat: 1 }
+                );
+                vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
+                    input.events.map((event) => ({ ...event, duration: 1 }))
+                );
+
+                await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                const releaseFrame = noteOff.mock.calls[0]![1] as number;
+                expect(releaseFrame).toBe(frameAt(0.5));
+                expect(appliedExpression().map(({ sampleFrame }) => sampleFrame)).toEqual([0, frameAt(0.25)]);
+                expect(appliedExpression().every(({ sampleFrame }) => (sampleFrame ?? 0) < releaseFrame)).toBe(true);
+            });
+
+            it('moves the points with a grooved note on each pass of a looped clip', async () => {
+                const { noteOn } = fermenterStripWithControls();
+                // The groove pushes every note a quarter beat late.
+                vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
+                    input.events.map((event) => ({
+                        ...event,
+                        startBeat: input.iterationStartBeat + event.startBeat - input.midiOffsetBeats + 0.25,
+                    }))
+                );
+                scheduleFermenterNotes(
+                    [
+                        {
+                            id: 'n0',
+                            pitch: 64,
+                            startBeat: 0.5,
+                            duration: 1,
+                            velocity: 100,
+                            pressure: 10,
+                            expression: { pressure: [{ offsetBeats: 0.5, value: 80 }] },
+                        },
+                    ],
+                    { loopEnabled: true, loopLength: 2 }
+                );
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                // Passes start at beats 0 and 2: the notes sound at 0.75 and
+                // 2.75, their curve points half a beat after.
+                expect(noteOn.mock.calls.map((call) => call[2])).toEqual([frameAt(0.375), frameAt(1.375)]);
+                expect(
+                    appliedExpression().map(({ sampleFrame, expression }) => [sampleFrame, expression.pressure])
+                ).toEqual([
+                    [frameAt(0.375), 10],
+                    [frameAt(0.625), 80],
+                    [frameAt(1.375), 10],
+                    [frameAt(1.625), 80],
+                ]);
+            });
+
+            it('posts the curve of a note only on the window that starts the note', async () => {
+                fermenterStripWithControls();
+                scheduleFermenterNotes([
+                    {
+                        id: 'n0',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 3,
+                        velocity: 100,
+                        pressure: 10,
+                        expression: { pressure: [{ offsetBeats: 1, value: 80 }] },
+                    },
+                ]);
+
+                // The point at beat 2 lies in the second window, yet the note
+                // belongs to the first.
+                await scheduleMidiNotes(0, 1.5, 0, new Set<string>(), [], defaultTransportState, 120);
+                await scheduleMidiNotes(1.5, 3, 1.5, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(appliedExpression().map(({ expression }) => expression.pressure)).toEqual([10, 80]);
             });
         });
     });

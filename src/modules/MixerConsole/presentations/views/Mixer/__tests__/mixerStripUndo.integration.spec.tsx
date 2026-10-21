@@ -293,6 +293,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
+    projectNoteExpressionCurves: vi.fn(),
     applyRuntimeGraphDelta: vi.fn(),
     audioEngine: vi.fn(),
     cacheAudioBuffer: vi.fn(),
