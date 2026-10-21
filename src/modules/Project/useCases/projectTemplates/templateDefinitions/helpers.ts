@@ -9,6 +9,7 @@ import { createPodcastTemplate } from '../templateFiles/podcast';
 import { createPopSongTemplate } from '../templateFiles/popSong';
 import { createRockBandTemplate } from '../templateFiles/rockBand';
 import { createSingerSongwriterTemplate } from '../templateFiles/singerSongwriter';
+import { createStringOrchestraTemplate } from '../templateFiles/stringOrchestra';
 
 export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
 
@@ -89,6 +90,15 @@ export const templates: ProjectTemplate[] = [
         category: 'film',
         executionBoundary: 'app-action',
         create: () => createSuccessfulTemplate(createCinematicTemplate),
+    },
+    {
+        id: 'string-orchestra',
+        name: 'String Orchestra',
+        description:
+            'Five Levain string sections with distinct installed instruments, audience-facing stage pans, a shared Strings bus and one hall send per section.',
+        category: 'film',
+        executionBoundary: 'app-action',
+        create: () => createSuccessfulTemplate(createStringOrchestraTemplate),
     },
     {
         id: 'podcast',
