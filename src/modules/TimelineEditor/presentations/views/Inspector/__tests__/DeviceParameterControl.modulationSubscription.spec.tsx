@@ -1,9 +1,15 @@
 import { Profiler, type ProfilerOnRenderCallback } from 'react';
 
-import { render, act } from '@testing-library/react';
+import { render, act, fireEvent, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
+import { modulationDragPreviewStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
+}));
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
 
@@ -71,6 +77,8 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
 
     beforeEach(() => {
         renderCount = 0;
+        vi.mocked(executeUserAppAction).mockClear();
+        modulationDragPreviewStore.set({ modulatorId: null });
         modulationStore.set({
             modulators: [
                 {
@@ -128,7 +136,8 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
             </Profiler>
         );
         const rendersAfterMount = renderCount;
-        expect(getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        const initial = JSON.parse(getByTestId('rotary-knob').dataset.modulations!);
+        expect(initial).toEqual([expect.objectContaining({ id: 'mod-related', amount: 1, activity: 0 })]);
 
         act(() => {
             modulationRuntimeStore.set({ runtimeValues: { 'mod-related': 0.6, 'mod-unrelated': 0 } });
@@ -136,7 +145,87 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
 
         expect(renderCount).toBeGreaterThan(rendersAfterMount);
         expect(JSON.parse(getByTestId('rotary-knob').dataset.modulations!)).toEqual([
-            { id: 'Gain', amount: 0.6, color: 'var(--color-accent-cyan)' },
+            expect.objectContaining({
+                id: 'mod-related',
+                amount: 1,
+                activity: 0.6,
+                color: expect.stringContaining('oklch'),
+            }),
         ]);
+    });
+
+    it('keeps two source colors distinct and stable when the mappings reorder', () => {
+        const second = {
+            // This ID hashes to the same palette slot as mod-related.
+            id: 'mod-1',
+            name: 'Second LFO',
+            trackId: 'track-1',
+            kind: 'lfo' as const,
+            config: { kind: 'lfo' as const, waveform: 'sine' as const, rate: 1, sync: true, phase: 0, depth: 1 },
+            mappings: [{ targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'gain', amount: -0.4 }],
+            enabled: true,
+        };
+        const first = modulationStore.value!.modulators[0]!;
+        act(() => modulationStore.set({ modulators: [first, second] }));
+        const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const before = JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!);
+        expect(before).toHaveLength(2);
+        expect(before[0].color).not.toBe(before[1].color);
+        act(() => modulationStore.set({ modulators: [second, first] }));
+        view.rerender(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const after = JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!);
+        expect(Object.fromEntries(after.map((halo: { id: string; color: string }) => [halo.id, halo.color]))).toEqual(
+            Object.fromEntries(before.map((halo: { id: string; color: string }) => [halo.id, halo.color]))
+        );
+        view.unmount();
+        render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const reloaded = JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!);
+        expect(
+            Object.fromEntries(reloaded.map((halo: { id: string; color: string }) => [halo.id, halo.color]))
+        ).toEqual(Object.fromEntries(before.map((halo: { id: string; color: string }) => [halo.id, halo.color])));
+    });
+
+    it('previews a zero-runtime source over an unconnected knob, then commits only on drop', () => {
+        const unmapped = modulationStore.value!.modulators.map((modulator) =>
+            modulator.id === 'mod-related' ? { ...modulator, mappings: [] } : modulator
+        );
+        act(() => modulationStore.set({ modulators: unmapped }));
+        const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+
+        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-unrelated' }));
+        fireEvent.dragEnter(target);
+        expect(JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!)).toEqual([
+            expect.objectContaining({ id: 'mod-unrelated', amount: 0.5, activity: 0, preview: true }),
+        ]);
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.dragLeave(target);
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        fireEvent.dragEnter(target);
+        act(() => modulationDragPreviewStore.set({ modulatorId: null }));
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-unrelated' }));
+        fireEvent.dragEnter(target);
+        fireEvent.drop(target);
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'addMapping',
+            payload: {
+                modulatorId: 'mod-unrelated',
+                mapping: {
+                    targetTrackId: 'track-1',
+                    targetDeviceId: 'device-1',
+                    targetParamId: 'gain',
+                    amount: 0.5,
+                },
+            },
+        });
+        // The source owns drag teardown. The target only owns hover and the command.
+        expect(modulationDragPreviewStore.value?.modulatorId).toBe('mod-unrelated');
+        act(() => modulationDragPreviewStore.set({ modulatorId: null }));
+        expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
+        view.unmount();
     });
 });

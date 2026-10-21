@@ -1,6 +1,7 @@
-import { type ReactElement, type ChangeEvent } from 'react';
+import { type ReactElement, type ChangeEvent, type DragEvent, useRef, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { TRACK_COLOR_PRESETS } from '#/components/daw/colorPresets';
 import { Row, Stack } from '#/components/layout';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { Button } from '#/components/ui/button';
@@ -13,9 +14,11 @@ import {
     automationStore,
     modulationStore,
     modulationRuntimeStore,
+    modulationDragPreviewStore,
     type ModulationStoreState,
 } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
 import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 import { cn } from '#/utils/Styles/cn';
@@ -57,8 +60,34 @@ function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, Dev
 }
 
 type ParameterMapping = { modulatorId: string; amount: number };
+type ParameterHalo = { id: string; amount: number; color: string; activity: number; preview?: boolean };
 
 const NO_PARAMETER_MAPPINGS: ParameterMapping[] = [];
+const NO_ACTIVITIES: number[] = [];
+
+function sourceHash(id: string): number {
+    let hash = 2166136261;
+    for (const character of id) {
+        hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+    }
+    return hash >>> 0;
+}
+
+function colorForSource(id: string, usedColors: Set<string>): string {
+    const first = sourceHash(id) % TRACK_COLOR_PRESETS.length;
+    for (let offset = 0; offset < TRACK_COLOR_PRESETS.length; offset += 1) {
+        const color = `color-mix(in oklch, ${TRACK_COLOR_PRESETS[(first + offset) % TRACK_COLOR_PRESETS.length]!} 55%, white)`;
+        if (!usedColors.has(color)) {
+            usedColors.add(color);
+            return color;
+        }
+    }
+    // More simultaneous sources than palette entries remain distinguishable.
+    const hue = (sourceHash(id) + usedColors.size * 137) % 360;
+    const color = `oklch(0.72 0.13 ${hue})`;
+    usedColors.add(color);
+    return color;
+}
 
 /**
  * Pull the mappings that target this exact (trackId, deviceId, paramId) triple out of
@@ -91,7 +120,7 @@ function selectParameterMappings(
             }
         }
     }
-    return mappings ?? NO_PARAMETER_MAPPINGS;
+    return mappings?.sort((left, right) => left.modulatorId.localeCompare(right.modulatorId)) ?? NO_PARAMETER_MAPPINGS;
 }
 
 function parameterMappingsEqual(a: ParameterMapping[], b: ParameterMapping[]): boolean {
@@ -106,36 +135,40 @@ function parameterMappingsEqual(a: ParameterMapping[], b: ParameterMapping[]): b
     );
 }
 
-function selectModulationTotal(
+function selectModulationActivities(
     runtimeState: { runtimeValues: Record<string, number> } | null,
     mappings: ParameterMapping[]
-): number {
-    let total = 0;
-    for (const mapping of mappings) {
-        total += (runtimeState?.runtimeValues[mapping.modulatorId] ?? 0) * mapping.amount;
+): number[] {
+    if (mappings.length === 0) {
+        return NO_ACTIVITIES;
     }
-    return Math.max(-1, Math.min(1, total));
+    return mappings.map((mapping) => runtimeState?.runtimeValues[mapping.modulatorId] ?? 0);
 }
 
-/**
- * Narrow subscription for one device parameter's aggregated modulation amount (audit
- * m5/M5). `useStore(modulationRuntimeStore, ...)` re-renders every control in the
- * inspector on every runtime tick, whether or not a modulator targets it. This hook selects
- * down to just this parameter's mappings and their runtime total, so `useSyncExternalStore`'s
- * `Object.is` check on the *returned scalar* absorbs runtime ticks for every parameter an idle
- * control isn't wired to — a tick only triggers a re-render when this parameter's total
- * actually changes. The mapping lookup above still re-runs on each render (its selector
- * closure isn't reference-stable across renders); `parameterMappingsEqual` is what keeps that
- * recompute from itself causing a spurious total re-derivation for an idle parameter.
- */
-function useDeviceParameterModulation(trackId: string, deviceId: string, paramId: string): number {
+function activitiesEqual(left: number[], right: number[]): boolean {
+    return left.length === right.length && left.every((activity, index) => Object.is(activity, right[index]));
+}
+
+/** Runtime ticks for unrelated sources keep the returned selection unchanged. */
+function useDeviceParameterModulation(trackId: string, deviceId: string, paramId: string): ParameterHalo[] {
     const mappings = useStoreSelector(
         modulationStore,
         (state) => selectParameterMappings(state, trackId, deviceId, paramId),
         parameterMappingsEqual
     );
 
-    return useStoreSelector(modulationRuntimeStore, (state) => selectModulationTotal(state, mappings), Object.is);
+    const activities = useStoreSelector(
+        modulationRuntimeStore,
+        (state) => selectModulationActivities(state, mappings),
+        activitiesEqual
+    );
+    const usedColors = new Set<string>();
+    return mappings.map((mapping, index) => ({
+        id: mapping.modulatorId,
+        amount: mapping.amount,
+        color: colorForSource(mapping.modulatorId, usedColors),
+        activity: activities[index] ?? 0,
+    }));
 }
 
 /** Compute a sensible step from the parameter range and type. */
@@ -178,10 +211,15 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const autoState = useStore<DeviceAutomationState>(automationStore, { lanes: [] });
     const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
 
-    // Aggregated modulation amount for this parameter — narrow subscription (audit M5) so
-    // a runtime tick that doesn't move this parameter's mapped modulators does not re-render
-    // this control. See useDeviceParameterModulation above.
-    const modulation = useDeviceParameterModulation(trackId, device.id, param.id);
+    const modulations = useDeviceParameterModulation(trackId, device.id, param.id);
+    const draggedModulatorId = useStoreSelector(modulationDragPreviewStore, (state) => state?.modulatorId ?? null);
+    const draggedSourceEnabled = useStoreSelector(
+        modulationStore,
+        (state) =>
+            state?.modulators.some((modulator) => modulator.id === draggedModulatorId && modulator.enabled) ?? false
+    );
+    const [hoveredModulatorId, setHoveredModulatorId] = useState<string | null>(null);
+    const dropCommittedRef = useRef(false);
 
     const laneLookup = buildLaneLookup(autoState.lanes);
     const targetId = createDeviceAutomationTargetId(device.id, param.id);
@@ -224,6 +262,77 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
     const isSlider = param.unit === 'dB';
     const isLog = param.scaling === 'log';
+    const canPreview =
+        draggedModulatorId !== null &&
+        draggedSourceEnabled &&
+        param.automatable &&
+        !isDiscrete &&
+        !isSlider &&
+        !modulations.some((modulation) => modulation.id === draggedModulatorId);
+    const isPreviewing = canPreview && hoveredModulatorId === draggedModulatorId;
+    const previewColor =
+        isPreviewing && draggedModulatorId
+            ? colorForSource(draggedModulatorId, new Set(modulations.map((modulation) => modulation.color)))
+            : null;
+    const displayedModulations =
+        isPreviewing && draggedModulatorId && previewColor
+            ? [
+                  ...modulations,
+                  {
+                      id: draggedModulatorId,
+                      amount: 0.5,
+                      activity: 0,
+                      color: previewColor,
+                      preview: true,
+                  },
+              ]
+            : modulations;
+
+    const handleDragEnter = (event: DragEvent<HTMLDivElement>): void => {
+        if (!canPreview) {
+            return;
+        }
+        event.preventDefault();
+        dropCommittedRef.current = false;
+        setHoveredModulatorId(draggedModulatorId);
+    };
+
+    const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
+        if (!canPreview) {
+            return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+    };
+
+    const handleDragLeave = (event: DragEvent<HTMLDivElement>): void => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            return;
+        }
+        setHoveredModulatorId(null);
+    };
+
+    const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
+        if (draggedModulatorId === null || !canPreview || !isPreviewing || dropCommittedRef.current) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        dropCommittedRef.current = true;
+        setHoveredModulatorId(null);
+        void executeUserAppAction({
+            type: 'addMapping',
+            payload: {
+                modulatorId: draggedModulatorId,
+                mapping: {
+                    targetTrackId: trackId,
+                    targetDeviceId: device.id,
+                    targetParamId: param.id,
+                    amount: 0.5,
+                },
+            },
+        });
+    };
 
     const renderSliderOrKnob = () => {
         if (isLegalSet) {
@@ -315,35 +424,40 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         }
 
         return (
-            <RotaryKnob
-                paramId={param.id}
-                targetType="deviceParam"
-                trackId={trackId}
-                deviceId={device.id}
-                value={mappedValue}
-                onChange={onChange}
-                min={min}
-                max={max}
-                step={mappedStep}
-                fineStep={mappedFineStep}
-                defaultValue={mappedDefaultValue}
-                aria-label={param.name}
-                bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
-                modulations={
-                    modulation !== 0
-                        ? [{ id: param.name, amount: modulation, color: 'var(--color-accent-cyan)' }]
-                        : undefined
-                }
-                size={
-                    param.name.toLowerCase().includes('mix') ||
-                    param.name.toLowerCase().includes('dry/wet') ||
-                    param.name.toLowerCase().includes('threshold') ||
-                    param.name.toLowerCase().includes('time') ||
-                    param.name.toLowerCase().includes('rate')
-                        ? 'xl'
-                        : 'lg'
-                }
-            />
+            <div
+                role="region"
+                aria-label={`Modulation target for ${param.name}`}
+                onDragEnter={handleDragEnter}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+            >
+                <RotaryKnob
+                    paramId={param.id}
+                    targetType="deviceParam"
+                    trackId={trackId}
+                    deviceId={device.id}
+                    value={mappedValue}
+                    onChange={onChange}
+                    min={min}
+                    max={max}
+                    step={mappedStep}
+                    fineStep={mappedFineStep}
+                    defaultValue={mappedDefaultValue}
+                    aria-label={param.name}
+                    bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
+                    modulations={displayedModulations.length > 0 ? displayedModulations : undefined}
+                    size={
+                        param.name.toLowerCase().includes('mix') ||
+                        param.name.toLowerCase().includes('dry/wet') ||
+                        param.name.toLowerCase().includes('threshold') ||
+                        param.name.toLowerCase().includes('time') ||
+                        param.name.toLowerCase().includes('rate')
+                            ? 'xl'
+                            : 'lg'
+                    }
+                />
+            </div>
         );
     };
 
