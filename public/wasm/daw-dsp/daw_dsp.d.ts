@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:bb40b6cbc383e65aa9a7b634db017c97f8f10d56cdcd977421d5394ab7d81c62
+// @wasm-bindgen-dts crate-source: sha256:ac44be9fc61d11f0e98a86ccd3549ae111ebbc8ae8bb8cb6f9f951f1d6335919
 /* tslint:disable */
 /* eslint-disable */
 
@@ -1067,6 +1067,7 @@ export interface InitOutput {
     readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
     readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number];
+    readonly init_panic_hook: () => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly __wbg_toasterinstance_free: (a: number, b: number) => void;
@@ -1169,7 +1170,6 @@ export interface InitOutput {
     readonly grandbouleinstance_push_una_corda: (a: number, b: number, c: number) => number;
     readonly grandbouleinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly grandbouleinstance_set_temperament: (a: number, b: number) => void;
-    readonly init_panic_hook: () => void;
     readonly kneadinstance_get_f0: (a: number) => number;
     readonly kneadinstance_get_input_left_ptr: (a: number) => number;
     readonly kneadinstance_get_input_right_ptr: (a: number) => number;
