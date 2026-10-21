@@ -216,6 +216,21 @@ describe('projectClipControllerEvents', () => {
             ]);
         });
 
+        it('plays a portamento release on the closing line, below the latch threshold', () => {
+            // Portamento, legato and hold 2 are not pedals, so their closing-line
+            // releases are admitted only through the switch-controller fallthrough.
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('portamento-off', 4, 0, 65)],
+                clip: { startBeat: 0, endBeat: 4 },
+                fromBeat: 0,
+                toBeat: 8,
+            });
+
+            expect(events.map(({ id, beat, closesClip }) => [id, beat, closesClip])).toEqual([
+                ['portamento-off', 4, true],
+            ]);
+        });
+
         it.each([
             ['a half sustain', 63],
             ['the lightest partial sustain', 1],

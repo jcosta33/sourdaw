@@ -14,11 +14,20 @@ export const CC_UNA_CORDA_PEDAL = 67;
 /** The wire value at and above which a switch pedal (sostenuto, una corda) is engaged. */
 const PEDAL_LATCH_THRESHOLD = 64;
 
-/** The on/off switch controllers: sustain, portamento, sostenuto, soft, legato and hold 2. */
+/**
+ * The pedal controller band the raw switch frame spans: CC64-69. Within it only the
+ * non-sustain pedals — portamento, sostenuto, soft, legato and hold 2 — are on/off
+ * switches; sustain (CC64) is a continuous position, not a switch, and is served by
+ * `isPedalControllerLift` rather than by the frame.
+ */
 const FIRST_SWITCH_CONTROLLER = 64;
 const LAST_SWITCH_CONTROLLER = 69;
 
-/** Whether a controller change lets go of an on/off switch controller: a value below the latch threshold. */
+/**
+ * The raw switch frame over that band, and `isPedalControllerLift`'s fallthrough for
+ * the non-sustain pedals: a value below the latch threshold releases, whatever the
+ * controller.
+ */
 export function isSwitchControllerRelease(controller: number, value: number): boolean {
     return (
         controller >= FIRST_SWITCH_CONTROLLER && controller <= LAST_SWITCH_CONTROLLER && value < PEDAL_LATCH_THRESHOLD
