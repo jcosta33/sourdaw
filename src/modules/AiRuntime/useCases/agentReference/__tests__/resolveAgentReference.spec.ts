@@ -1715,4 +1715,57 @@ describe('sibling names the prompt states as closely as each other', () => {
 
         expect(resolveTrack('mute ΟΔΟΣ', id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
     });
+
+    // The okina (U+02BB), the modifier apostrophe (U+02BC) and the modifier prime (U+02B9) are letters
+    // that the text reads as an apostrophe, so the name must read them the same way.
+    it.each(['Oʻahu', 'Мʼята', 'Oʼahu', 'Oʹahu'])('resolves "mute %s" to the exact name it types', (name) => {
+        const project = namedTracksProject([name, 'Bass']);
+        const id = trackIdNamed(project, name);
+
+        expect(resolveTrack(`mute ${name}`, id, project)).toEqual(resolvedTo(id, name, 'exact-name'));
+    });
+
+    it.each(['mute Oʻahu and Other', 'mute Oʻahu Other'])(
+        'keeps "%s" ambiguous between the two tracks it names',
+        (prompt) => {
+            const project = namedTracksProject(['Oʻahu', 'Other']);
+            const namedIds = [trackIdNamed(project, 'Oʻahu'), trackIdNamed(project, 'Other')];
+
+            for (const assertedId of namedIds) {
+                expect(resolveTrack(prompt, assertedId, project)).toMatchObject({
+                    status: 'rejected',
+                    reason: 'ambiguous-target',
+                    candidateIds: namedIds,
+                });
+            }
+        }
+    );
+
+    it('never reads Bass Drum across the comma of "mute Bass, Drum Bus" beside a Drum Bus', () => {
+        const project = namedTracksProject(['Bass', 'Bass Drum', 'Drum Bus']);
+        const listedIds = [trackIdNamed(project, 'Bass'), trackIdNamed(project, 'Drum Bus')];
+
+        for (const assertedId of [...listedIds, trackIdNamed(project, 'Bass Drum')]) {
+            expect(resolveTrack('mute Bass, Drum Bus', assertedId, project)).toMatchObject({
+                status: 'rejected',
+                reason: 'ambiguous-target',
+                candidateIds: listedIds,
+            });
+        }
+    });
+
+    it.each([
+        ['mute Hi–Hat', ['Hi-Hat', 'Hi Hat'], 'Hi-Hat'],
+        ['mute Lead–Vox', ['Lead-Vox', 'Lead Vox'], 'Lead-Vox'],
+        // The prompt types Café decomposed (NFD), the track name composed (NFC).
+        ['mute Café', ['Café', 'Cafe'], 'Café'],
+    ])(
+        'resolves "%s" among %j to the name it types once dashes and composition are read alike',
+        (prompt, names, typed) => {
+            const project = namedTracksProject(names);
+            const typedId = trackIdNamed(project, typed);
+
+            expect(resolveTrack(prompt, typedId, project)).toEqual(resolvedTo(typedId, typed, 'exact-name'));
+        }
+    );
 });

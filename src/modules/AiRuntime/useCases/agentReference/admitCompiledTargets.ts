@@ -29,13 +29,14 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * `naming` mode, which reads an object by its literal id or its whole name, case, diacritics and
  * punctuation folded, its words joined across space and any dash ("hi hat" states Hi-Hat, "Lead-Vox"
  * Lead Vox), and across other punctuation only where the name has it there or what follows it names
- * no other object by itself ("drums/bus" states Drums Bus beside Drums, while "Bass & Drums" states no
- * Bass Drums beside Bass and Drums), never lengthened by punctuation closing it ("Lead?!" states Lead
- * as closely as Lead?), against every candidate whatever selection the request refers to, and takes the
- * final word of a name in either grammatical number ("the vocal" states Vocals), a form the direct
- * route leaves to its approximate reading. Each stated range names only the objects whose names read
- * it best, so "Vocal" states Vocal and not Vocals, "Café" states Café and not Cafe, and "Drum Bus"
- * states the bus and not Drum.
+ * no other object by itself and starts no other object's name ("drums/bus" states Drums Bus beside
+ * Drums, while "Bass & Drums" states no Bass Drums beside Bass and Drums, nor "Bass & Drum Bus" a Bass
+ * Drum beside a Drum Bus), never lengthened by punctuation closing it ("Lead?!" states Lead as closely
+ * as Lead?), against every candidate whatever selection the request refers to, and takes the final
+ * word of a name in either grammatical number ("the vocal" states Vocals), a form the direct route
+ * leaves to its approximate reading. Each stated range names only the objects whose names read it
+ * best, so "Vocal" states Vocal and not Vocals, "Café" states Café and not Cafe however either is
+ * composed, "Hi–Hat" states Hi-Hat and not Hi Hat, and "Drum Bus" states the bus and not Drum.
  *
  * A selector's whole-name pick and an owner-track pick are stated when that reading names their
  * target or owner track. A name fragment is stated for a target it picks when it occurs as a whole
@@ -46,11 +47,14 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * of those tracks, however the request phrases the owner, so "bypass the EQ on Vocals", "bypass the
  * Vocals EQ" and "bypass Vocals' EQ" never state the EQ on Keys, nor "mute the Vocals Verse clip" the
  * Verse clip on Keys; a request naming and selecting no track ("bypass every EQ") leaves the owner
- * open. The text read is the whole request less its restrictions and the values any call of the
- * batch writes, so an instruction may pick by a name an earlier one states ("turn Vocals down and pan
- * it left"). A selection reference ("this track", "the selected track", "it" or "its" for the
- * selected track) that resolves to the picked objects states those picks only when the request names
- * no object of that kind, so "set Vocals volume so it sits better" never stands for the selected Keys.
+ * open, and so does a selector that also picks by kind, role, role family, tag, device type or
+ * condition ("bypass the EQ on Vocals and all MIDI tracks"). The text read is the whole request less
+ * its restrictions and the values any call of the batch writes, so an instruction may pick by a name
+ * an earlier one states ("turn Vocals down and pan it left"). A selection reference ("this track",
+ * "the selected track", "it" or "its" outside every object name for the selected track) that resolves
+ * to the picked objects states those picks only when the request names no object of that kind or
+ * lists the reference beside one it names ("add an EQ to Vocals and this track"), so "set Vocals
+ * volume so it sits better" never stands for the selected Keys, nor "bypass the EQ on Play It".
  *
  * Literal targets, owner-track picks in a request that names and selects no track, and selections
  * by role, role family, kind, device type, tag, condition or no filter at all, are taken as the
@@ -218,29 +222,97 @@ function getProjectObjectNames(context: ProjectContext): string[] {
 /** "that track" points at a track as "this track" does, though the shared reading takes only the latter. */
 const DEMONSTRATIVE_TRACK_REFERENCE = /\bthat (?:audio |midi |bus |folder )?track\b/u;
 
+/** "it" or "its", which may stand for the selected track. */
+const SELECTION_PRONOUN = /\bits?\b/iu;
+
+/** A phrase that may stand for the selection: "this track", "the selected track", "the current track", "it" or "its". */
+const SELECTION_REFERENCE =
+    /\b(?:this|(?:the\s+)?(?:selected|current))(?:\s+(?:audio|midi|bus|folder))?\s+track\b|\bits?\b/giu;
+
+/**
+ * What lies between two members of one list, past any punctuation closing the first: a comma, "and",
+ * "or" or "also", with the preposition and article a member may repeat ("Vocals, and also to it", "this
+ * track and on Vocals").
+ */
+const LIST_JOINER = /^[\s,)\]"'’”]*(?:(?:and|or)\s+)?(?:also\s+)?(?:(?:to|on|for|in|of)\s+)?(?:the\s+)?$/iu;
+const LIST_CONJUNCTION = /,|\b(?:and|or|also)\b/iu;
+
+function joinsAsListMembers(between: string): boolean {
+    return LIST_JOINER.test(between) && LIST_CONJUNCTION.test(between);
+}
+
+/** The text with every range stating the name of an object in the project blanked out. */
+function maskObjectNames(text: string, context: ProjectContext): string {
+    const names = getProjectObjectNames(context);
+    return names.flatMap((name) => findAgentReferenceNameSpans(text, name, NAME_FORMS, names)).reduce(blankRange, text);
+}
+
+/** Whether "it" or "its" occurs outside every object name: "Play It" names a track, not the selection. */
+function mentionsSelectionPronoun(text: string, context: ProjectContext): boolean {
+    return SELECTION_PRONOUN.test(maskObjectNames(text, context));
+}
+
+/**
+ * Whether a selection reference outside every object name is listed beside a name of the capability
+ * the text states: "Kick (In) and this track", "Vocals, and also to it", never "Vocals so it sits
+ * better" or "Vocals to match this track".
+ */
+function listsSelectionBesideName(text: string, capability: Capability, context: ProjectContext): boolean {
+    const { nameRanges } = readNaming(text, capability, context);
+    return Array.from(maskObjectNames(text, context).matchAll(SELECTION_REFERENCE)).some((reference) => {
+        const start = reference.index;
+        const end = start + reference[0].length;
+        return nameRanges.some((name) =>
+            joinsAsListMembers(name.end <= start ? text.slice(name.end, start) : text.slice(end, name.start))
+        );
+    });
+}
+
+/**
+ * Whether the text's selection reference may stand for the selection: when the text names no object
+ * of the capability, or lists the reference beside one it names.
+ */
+function readsSelectionReference(text: string, capability: Capability, context: ProjectContext): boolean {
+    return !namesObjectByName(text, capability, context) || listsSelectionBesideName(text, capability, context);
+}
+
 /**
  * Whether the text refers to the selected track: "this track", "the selected track" or "that track"
- * whatever is selected, or "it" or "its" while a track is selected.
+ * whatever is selected, or "it" or "its" outside every object name while a track is selected, when the
+ * text names no track or lists the pronoun beside one ("bypass the EQ on Vocals so it sounds clearer"
+ * refers to Vocals alone).
  */
 function refersToSelectedTrack(text: string, context: ProjectContext): boolean {
     if (hasExplicitTrackSelection(text) || DEMONSTRATIVE_TRACK_REFERENCE.test(normalizeAgentReferenceText(text))) {
         return true;
     }
-    return context.selectedTrackId !== null && /\bits?\b/iu.test(text);
+    return (
+        context.selectedTrackId !== null &&
+        mentionsSelectionPronoun(text, context) &&
+        readsSelectionReference(text, 'track', context)
+    );
+}
+
+/**
+ * Whether every predicate of the selector's match is a name fragment. One that also picks by kind,
+ * role, role family, tag, device type or condition ("the EQ on Vocals and all MIDI tracks") reaches
+ * owners the request selects by those, so its owners are taken as the compiler resolved them.
+ */
+function picksByNameAlone(terms: CompiledSelectorTerms | undefined): boolean {
+    const predicates = [terms?.match?.all, terms?.match?.any].flatMap((list) => list ?? []);
+    return predicates.every((predicate) => 'nameIncludes' in predicate);
 }
 
 /**
  * The track-owned objects the text can refer to: every object on a track the text names, by whole
  * name or id in any phrasing ("the Vocals EQ", "the EQ of Vocals", "Vocals' EQ", "the EQ on Vocals"),
  * and on the selected track when the text refers to it. Null when a dependency already fixes the owner,
- * or when the text names and selects no track, which leaves every owner open.
+ * when the selector also picks by something other than a name fragment, or when the text names and
+ * selects no track, which leaves every owner open.
  */
-function readReachableOwnedIds(
-    text: string,
-    context: ProjectContext,
-    dependencyId?: string
-): ReadonlySet<string> | null {
-    if (dependencyId !== undefined) {
+function readReachableOwnedIds(text: string, input: CompiledTargetAuthorityInput): ReadonlySet<string> | null {
+    const { context, dependencyId } = input;
+    if (dependencyId !== undefined || !picksByNameAlone(input.selectorTerms)) {
         return null;
     }
     const namedTrackIds = readStatedIds(text, 'track', context);
@@ -441,16 +513,17 @@ function statesNamePicks(text: string, picks: NamePicks, input: CompiledTargetAu
         }
     }
     const { nameRanges } = readNaming(text, capability, context, dependencyId);
-    const reachableIds = readReachableOwnedIds(text, context, dependencyId);
+    const reachableIds = readReachableOwnedIds(text, input);
     return picks.fragments.every((fragment) => statesFragment(text, fragment, input, nameRanges, reachableIds));
 }
 
 /**
  * Whether the request's selection reference is the object: "this track" or "the selected track"
- * through the direct route's selection reading, or "it" or "its" for the selected track.
+ * through the direct route's selection reading, or "it" or "its" outside every object name for the
+ * selected track.
  */
 function selectsObject(text: string, objectId: string, capability: Capability, context: ProjectContext): boolean {
-    if (objectId === context.selectedTrackId && /\bits?\b/iu.test(text)) {
+    if (objectId === context.selectedTrackId && mentionsSelectionPronoun(text, context)) {
         return true;
     }
     const result = resolveAgentReference({ prompt: text, assertedId: objectId, capability, context });
@@ -464,11 +537,12 @@ function namesObjectByName(text: string, capability: Capability, context: Projec
 
 /**
  * Whether the request's selection reference stands for every target, which states any name the
- * selector picks them by; it stands for nothing once the request names an object of that kind.
+ * selector picks them by; once the request names an object of that kind, it stands for nothing unless
+ * the request lists it beside that name ("add an EQ to Vocals and this track").
  */
 function selectsEveryTarget(text: string, input: CompiledTargetAuthorityInput): boolean {
     return (
-        !namesObjectByName(text, input.capability, input.context) &&
+        readsSelectionReference(text, input.capability, input.context) &&
         input.targetIds.every((targetId) => selectsObject(text, targetId, input.capability, input.context))
     );
 }
@@ -482,12 +556,15 @@ function refersToAnyTrack(text: string, context: ProjectContext): boolean {
     );
 }
 
-/** Whether the request states the owner track by its whole name or id, or selects it without naming a track. */
+/**
+ * Whether the request states the owner track by its whole name or id, or selects it without naming a
+ * track or in a list beside one it names ("bypass the EQ on Vocals and on this track").
+ */
 function statesTrack(text: string, trackId: string, context: ProjectContext): boolean {
     if (readStatedIds(text, 'track', context).includes(trackId)) {
         return true;
     }
-    return !namesObjectByName(text, 'track', context) && selectsObject(text, trackId, 'track', context);
+    return readsSelectionReference(text, 'track', context) && selectsObject(text, trackId, 'track', context);
 }
 
 /** Whether the request authorizes every target a compiled list resolved for one argument. */

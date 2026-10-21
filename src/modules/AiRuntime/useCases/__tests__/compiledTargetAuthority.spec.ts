@@ -2187,3 +2187,263 @@ describe('an automation lane name fragment picks only on the track the request n
         expect(targetsOf(result, 'laneId')).toEqual(['lane-vocals-volume', 'lane-keys-volume']);
     });
 });
+
+describe('a selection reference listed beside a named track states the selected track', () => {
+    const kickIn = createTrack({ id: 'track-listed-kick-in', name: 'Kick (In)' });
+    const kickOut = createTrack({ id: 'track-listed-kick-out', name: 'Kick (Out)' });
+    const kickContext: ProjectContext = {
+        ...mixContext,
+        tracks: [kickIn, kickOut, master],
+        selectedTrackId: kickOut.id,
+    };
+    const keysSelected: ProjectContext = { ...mixContext, selectedTrackId: mixKeys.id };
+
+    it.each(['add an EQ to Kick (In) and this track', 'add an EQ to this track and Kick (In)'])(
+        'grounds both kicks for "%s" with Kick (Out) selected',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [addDeviceItem(kickIn, 'builtin-eq'), addDeviceItem(kickOut, 'builtin-eq')],
+                [],
+                kickContext
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(targetsOf(result)).toEqual([kickIn.id, kickOut.id]);
+        }
+    );
+
+    it.each(['add an EQ to Vocals and the selected track', 'add an EQ to Vocals, and also to it'])(
+        'grounds Vocals and the selected Keys for "%s"',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [addDeviceItem(mixVocals, 'builtin-eq'), addDeviceItem(mixKeys, 'builtin-eq')],
+                [],
+                keysSelected
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(targetsOf(result)).toEqual([mixVocals.id, mixKeys.id]);
+        }
+    );
+
+    it.each(['bypass the EQ on this track and on Vocals', 'bypass the EQ on Vocals and on this track'])(
+        'grounds the Vocals EQ and the selected Keys EQ for "%s"',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [bypassItem(mixVocalsEq, mixVocals.id), bypassItem(mixKeysEq, mixKeys.id)],
+                [],
+                keysSelected
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id, mixKeysEq.id]);
+        }
+    );
+});
+
+function namedEq(id: string): ProjectTrack['devices'][number] {
+    return { id, type: 'builtin-eq', name: 'EQ', bypassed: false };
+}
+
+function bypassEqsItem(predicates: Record<string, string>[], count: number): CompiledItem {
+    return roleItem(
+        'bypassDevice',
+        { bypassed: true },
+        { targetArgument: 'deviceId', entity: 'device', match: { all: predicates } },
+        count
+    );
+}
+
+const UNAUTHORIZED_DEVICE = 'Compiled target deviceId is not authorized by the user request';
+
+describe('a selector picking by kind beside a name fragment keeps the owners it selects', () => {
+    const groupVocals = createTrack({
+        id: 'track-group-vocals',
+        name: 'Vocals',
+        devices: [namedEq('eq-group-vocals')],
+    });
+    const groupKeys = createTrack({
+        id: 'track-group-keys',
+        name: 'Keys',
+        kind: 'midi',
+        devices: [namedEq('eq-group-keys')],
+    });
+    const groupRnbKeys = createTrack({
+        id: 'track-group-rnb-keys',
+        name: 'R&B Keys',
+        kind: 'midi',
+        devices: [namedEq('eq-group-rnb-keys')],
+    });
+    const groupContext: ProjectContext = { ...projectContext, tracks: [groupVocals, groupKeys, groupRnbKeys, master] };
+
+    it.each(['bypass the EQ on Vocals and all MIDI tracks', 'bypass every EQ on Vocals and the MIDI tracks'])(
+        'grounds the Vocals EQ and both MIDI EQs for "%s"',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [
+                    bypassItem(groupVocals.devices[0]!, groupVocals.id),
+                    bypassEqsItem([{ nameIncludes: 'EQ' }, { kind: 'midi' }], 2),
+                ],
+                [],
+                groupContext
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(targetsOf(result, 'deviceId')).toEqual(['eq-group-vocals', 'eq-group-keys', 'eq-group-rnb-keys']);
+        }
+    );
+
+    it('narrows a selector picking by the name fragment alone to the named Vocals', () => {
+        const result = compileAndBridge(
+            'bypass the EQ on Vocals and all MIDI tracks',
+            [bypassEqsItem([{ nameIncludes: 'EQ' }], 3)],
+            [],
+            groupContext
+        );
+
+        expect(targetsOf(result, 'deviceId')).toEqual(['eq-group-vocals']);
+        expect(result.rejections).toEqual([
+            { index: 1, name: 'bypassDevice', reason: UNAUTHORIZED_DEVICE },
+            { index: 2, name: 'bypassDevice', reason: UNAUTHORIZED_DEVICE },
+        ]);
+    });
+});
+
+describe('"it" and "its" stand for the selected track only outside object names and beside no named track', () => {
+    const pronounVocals = createTrack({
+        id: 'track-pronoun-vocals',
+        name: 'Vocals',
+        devices: [namedEq('eq-pronoun-vocals')],
+    });
+    const pronounKeys = createTrack({
+        id: 'track-pronoun-keys',
+        name: 'Keys',
+        kind: 'midi',
+        devices: [namedEq('eq-pronoun-keys')],
+    });
+    const playIt = createTrack({
+        id: 'track-pronoun-play-it',
+        name: 'Play It',
+        devices: [namedEq('eq-pronoun-play-it')],
+    });
+    const keysSelected = (tracks: ProjectTrack[]): ProjectContext => ({
+        ...projectContext,
+        tracks: [...tracks, master],
+        selectedTrackId: pronounKeys.id,
+    });
+
+    it('grounds only the Play It EQ for "bypass the EQ on Play It" with Keys selected', () => {
+        const result = compileAndBridge(
+            'bypass the EQ on Play It',
+            [bypassEqsItem([{ nameIncludes: 'EQ' }], 2)],
+            [],
+            keysSelected([playIt, pronounKeys])
+        );
+
+        expect(targetsOf(result, 'deviceId')).toEqual(['eq-pronoun-play-it']);
+        expect(result.rejections).toEqual([{ index: 1, name: 'bypassDevice', reason: UNAUTHORIZED_DEVICE }]);
+    });
+
+    // "bypass the EQ on Vocals if it clips" is left out: grounding refuses a bypass under an "if"
+    // clause whatever the target reading, so the row would observe nothing of this one.
+    it.each(['bypass the EQ on Vocals so it sounds clearer', 'bypass the EQ on Vocals, then pan it left'])(
+        'grounds only the Vocals EQ for "%s" with Keys selected',
+        (prompt) => {
+            const result = compileAndBridge(
+                prompt,
+                [bypassEqsItem([{ nameIncludes: 'EQ' }], 2)],
+                [],
+                keysSelected([pronounVocals, pronounKeys])
+            );
+
+            expect(targetsOf(result, 'deviceId')).toEqual(['eq-pronoun-vocals']);
+            expect(result.rejections).toContainEqual({ index: 1, name: 'bypassDevice', reason: UNAUTHORIZED_DEVICE });
+        }
+    );
+
+    it('grounds only the selected Keys EQ for "bypass its EQ"', () => {
+        const result = compileAndBridge(
+            'bypass its EQ',
+            [bypassEqsItem([{ nameIncludes: 'EQ' }], 2)],
+            [],
+            keysSelected([pronounVocals, pronounKeys])
+        );
+
+        expect(targetsOf(result, 'deviceId')).toEqual(['eq-pronoun-keys']);
+        expect(result.rejections).toEqual([{ index: 0, name: 'bypassDevice', reason: UNAUTHORIZED_DEVICE }]);
+    });
+
+    it('grounds both EQs for "bypass the EQ on Vocals and on it", which lists "it" beside Vocals', () => {
+        const result = compileAndBridge(
+            'bypass the EQ on Vocals and on it',
+            [bypassEqsItem([{ nameIncludes: 'EQ' }], 2)],
+            [],
+            keysSelected([pronounVocals, pronounKeys])
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result, 'deviceId')).toEqual(['eq-pronoun-vocals', 'eq-pronoun-keys']);
+    });
+});
+
+describe('a name never joins words across punctuation where another name starts past it', () => {
+    const listed = namedTracksContext(['Bass', 'Bass Drum', 'Drum Bus']);
+    const setTrack = (name: string) => trackItem('setTrackGain', listed.track(name), { gain: 0.5 });
+
+    it('refuses a Bass Drum pick for "set Bass & Drum Bus volume to 50%"', () => {
+        const result = compileAndBridge(
+            'set Bass & Drum Bus volume to 50%',
+            [setTrack('Bass Drum')],
+            [],
+            listed.context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+
+    it('grounds the Bass and Drum Bus picks for "set Bass & Drum Bus volume to 50%"', () => {
+        const result = compileAndBridge(
+            'set Bass & Drum Bus volume to 50%',
+            [setTrack('Bass'), setTrack('Drum Bus')],
+            [],
+            listed.context
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([listed.track('Bass').id, listed.track('Drum Bus').id]);
+    });
+});
+
+describe('a typed name reads every dash as the hyphen and its letters composed', () => {
+    it.each([
+        ['set Hi–Hat volume to 50%', 'Hi-Hat', 'Hi Hat'],
+        ['set Lead–Vox volume to 50%', 'Lead-Vox', 'Lead Vox'],
+        // The prompt types Café decomposed (NFD), the track name composed (NFC).
+        ['set Café volume to 50%', 'Café', 'Cafe'],
+    ])('grounds "%s" for %s and refuses its sibling %s', (prompt, typed, sibling) => {
+        const { context, track } = namedTracksContext([typed, sibling]);
+
+        const typedResult = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', track(typed), { gain: 0.5 })],
+            [],
+            context
+        );
+        expect(typedResult.rejections).toEqual([]);
+        expect(targetsOf(typedResult)).toEqual([track(typed).id]);
+
+        const siblingResult = compileAndBridge(
+            prompt,
+            [trackItem('setTrackGain', track(sibling), { gain: 0.5 })],
+            [],
+            context
+        );
+        expect(siblingResult.actions).toEqual([]);
+        expect(siblingResult.rejections).toContainEqual({ index: 0, name: 'setTrackGain', reason: UNAUTHORIZED_TRACK });
+    });
+});
