@@ -4,6 +4,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { type Track } from '#/modules/Arrangement/stores';
+import {
+    configureOfflineMidiEventProjection,
+    configureOfflinePpqEndpointProjection,
+} from '#/modules/AudioEngine/useCases';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
@@ -261,6 +266,8 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        configureOfflineMidiEventProjection: actual.configureOfflineMidiEventProjection,
+        configureOfflinePpqEndpointProjection: actual.configureOfflinePpqEndpointProjection,
         rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
         reconcileAutoInputMonitoring: vi.fn(),
         stopTrackInputMonitoring: vi.fn(),
@@ -349,7 +356,6 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
 // the real module's other exports.
 vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
-    defaultTransportState: { loopStart: 0, loopEnd: 0 },
     transportStore: mocks.transportStore,
 }));
 
@@ -416,45 +422,45 @@ vi.mock('fflate', async (importOriginal) => {
 const ownership = vi.hoisted(() => ({ rendered: 0, consumed: 0, peakRetained: 0 }));
 const stemRender = vi.hoisted(() => ({
     frames: 44100,
-    tracks: Array.from({ length: 64 }, (_, index) => ({
-        id: `track-${index}`,
-        name: `Track ${index}`,
-        kind: 'midi',
-        disabled: false,
-        devices: [],
-        clips: [],
-        muted: false,
-    })),
+    tracks: Array.from(
+        { length: 64 },
+        (_, index) =>
+            ({
+                id: `track-${index}`,
+                name: `Track ${index}`,
+                kind: 'midi',
+                disabled: false,
+                devices: [],
+                clips: [],
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                color: '#ffffff',
+                sends: [],
+                midiFx: [],
+                frozen: false,
+                freezeState: { status: 'unfrozen' },
+                parentId: null,
+                collapsed: false,
+                inputMonitoring: 'off',
+                hidden: false,
+                height: 80,
+                outputId: 'master',
+                automationMode: 'read',
+                groupId: null,
+                soloSafe: false,
+                notes: '',
+                inputId: null,
+                activeAlternativeId: `alt-${index}`,
+                alternatives: [{ id: `alt-${index}`, name: 'Alternative 1', clips: [] }],
+                vcaGroupId: null,
+                midiOutputTrackId: null,
+                followChordTrack: false,
+            }) satisfies Track
+    ),
 }));
-vi.mock('#/modules/AudioEngine/useCases/offlineRender/resolveRenderContext', () => ({
-    resolveRenderContext: () => ({
-        tracks: { tracks: stemRender.tracks },
-        midi: { notesByClipId: {} },
-        defaultTempo: 120,
-        changes: [],
-        startBeat: 0,
-        durationSeconds: 1,
-        tailSeconds: 0,
-        projectMidiEvents: () => [],
-        selectMidiEventProbability: () => true,
-        projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
-        projectPpqEndpoints: () => ({ durationSeconds: 1 }),
-        resolveTempoAtBeat: () => 120,
-    }),
-}));
-vi.mock('#/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip', () => ({
-    createOfflineTrackStrip: async () => ({
-        inputNode: {},
-        faderNode: {},
-        panNode: {},
-        outputNode: { connect: () => {} },
-        deviceEntries: [],
-    }),
-}));
-vi.mock('#/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips', () => ({
-    scheduleTrackClips: async () => {},
-}));
-
 // This observes production render admission and awaited consumer completion. It is an ownership
 // bound, not process RSS. Codec/sink bytes are also observed; Chrome RSS remains a separate gate.
 describe('connected stem export output ownership', () => {
@@ -464,26 +470,72 @@ describe('connected stem export output ownership', () => {
         ownership.peakRetained = 0;
         stemRender.frames = 44100;
         mocks.trackStore.value = { tracks: stemRender.tracks, selectedTrackId: null, ghostClips: [] };
+        vi.clearAllMocks();
+        const audioContext = createMockAudioContext();
+        audioContext.sampleRate = 44100;
+        mocks.audioContext = asBaseAudioContext(audioContext);
+        mocks.getAudioContext.mockImplementation(() => mocks.audioContext);
+        mocks.restoreCachedAudioBuffersFromIdb.mockResolvedValue(0);
+        mocks.automationStore.value = { lanes: [] };
+        mocks.midiStore.value = { notesByClipId: {} };
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        configureOfflinePpqEndpointProjection({
+            project: ({ startPpq, endPpq, defaultTempo, sampleRate }) => {
+                const startSeconds = (startPpq * 60) / defaultTempo;
+                const endSeconds = (endPpq * 60) / defaultTempo;
+                return {
+                    startSeconds,
+                    endSeconds,
+                    durationSeconds: endSeconds - startSeconds,
+                    startSamples: Math.round(startSeconds * sampleRate),
+                    endSamples: Math.round(endSeconds * sampleRate),
+                    durationSamples: Math.round((endSeconds - startSeconds) * sampleRate),
+                };
+            },
+            resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
+        });
+        configureOfflineMidiEventProjection({
+            createProjector:
+                () =>
+                ({ events }) =>
+                    events,
+            selectProbability: () => true,
+            createChordPitchProjector:
+                () =>
+                ({ pitch }) =>
+                    pitch,
+            evaluateAutomationValue: () => null,
+        });
+        // Only the Web Audio platform is synthetic. The actual context/strip/scheduler and
+        // public exportStems consumer run; no private AudioEngine route is substituted.
         vi.stubGlobal(
             'OfflineAudioContext',
-            class {
-                readonly sampleRate = 44100;
-                readonly destination = {};
-                async startRendering() {
-                    ownership.rendered++;
-                    ownership.peakRetained = Math.max(ownership.peakRetained, ownership.rendered - ownership.consumed);
-                    const channels = [
-                        new Float32Array(stemRender.frames).fill(0.125),
-                        new Float32Array(stemRender.frames).fill(-0.125),
-                    ];
-                    return {
-                        sampleRate: 44100,
-                        numberOfChannels: 2,
-                        length: stemRender.frames,
-                        getChannelData: (channel: number) => channels[channel]!,
-                    };
-                }
-            }
+            vi.fn(function () {
+                const context = createMockAudioContext();
+                return {
+                    ...context,
+                    sampleRate: 44100,
+                    suspend: undefined,
+                    resume: undefined,
+                    async startRendering() {
+                        ownership.rendered++;
+                        ownership.peakRetained = Math.max(
+                            ownership.peakRetained,
+                            ownership.rendered - ownership.consumed
+                        );
+                        const channels = [
+                            new Float32Array(stemRender.frames).fill(0.125),
+                            new Float32Array(stemRender.frames).fill(-0.125),
+                        ];
+                        return {
+                            sampleRate: 44100,
+                            numberOfChannels: 2,
+                            length: stemRender.frames,
+                            getChannelData: (channel: number) => channels[channel]!,
+                        };
+                    },
+                };
+            })
         );
     });
     it('drains 64 real stem renders through WAV and ZIP before admitting the next render', async () => {
