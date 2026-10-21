@@ -1,0 +1,100 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_6ccda6a13a81b6 5852-5854,6036-6040,6071-6073,6098-6102,6108
+  s_1c08b47ac3792f::t_d9d1b27752b3f7 5942-5943
+  s_1c08b47ac3792f::t_55b4dd1895b92a 166-170
+  s_1c08b47ac3792f::t_cdff79f6391799 147,5860,5932,5982,6029
+  s_1c08b47ac3792f::t_483ed506588242 5922-5931,5933-5940,5944-5956
+  s_1c08b47ac3792f::t_9ccc4e628c3cca 39
+  s_1c08b47ac3792f::t_bf9a9da1aec0ef 5628
+  s_1c08b47ac3792f::t_80ea98ea37ea02 5831-5851
+  s_1c08b47ac3792f::t_6002a9faffd9e6 67
+  s_1c08b47ac3792f::t_04f75690a08413 6091-6097,6103-6106
+  s_1c08b47ac3792f::t_222f9af42635e4 3625-3626
+  s_1c08b47ac3792f::t_b4b8d7238ce950 3095-3096,3105-3110
+  s_1c08b47ac3792f::t_189a4089be391d 5750,5753-5754,5765,5900
+  s_1c08b47ac3792f::t_5fa95db194df60 215-227
+  s_1c08b47ac3792f::t_067f70a0e9187a 3649-3650
+  s_1c08b47ac3792f::t_01fdbe1f077cbb 3482-3483,3501-3502
+  s_1c08b47ac3792f::t_6490262f12f4d4 6012-6015
+  s_1c08b47ac3792f::t_f16e3851541c5d 5585-5601,5603-5627,5629-5632,5637-5652,5654,5656-5686,5688-5689,5691-5749,5751-5752,5755-5764,5766-5830,5855-5859,5861-5899,5901-5921,5957-5981,5983-6011,6016-6028,6030-6035,6041-6070,6074-6090,6107,6109-6144
+  s_1c08b47ac3792f::t_ad5c44c90242c8 5633-5636
+  s_1c08b47ac3792f::t_efabb34aaacb1f 146,5602,5653,5655,5687,5690,5941
+  s_1c08b47ac3792f::t_28246b0175240c 8,16,41
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_1c08b47ac3792f::t_6ccda6a13a81b6 69-70
+  s_1c08b47ac3792f::t_10243ed3f391e5 16,62-65
+  s_1c08b47ac3792f::t_229ea8c4e9e2da 8
+  s_1c08b47ac3792f::t_04c94378ef5a17 7,9,11,13,15,23,26,31,33,51,54,88-93
+  s_1c08b47ac3792f::t_382cd5a4753920 1-6,10,12,14,17-22,24-25,27-30,32,34-50,52-53,55-61,66-68,71-87
+src/modules/AiRuntime/models/IntentResult.ts
+  s_1c08b47ac3792f::t_69df26b5b76924 69-74
+  s_1c08b47ac3792f::t_04e7a01044ea8e 9
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_1c08b47ac3792f::t_e5539d9b176e0c 132,281-291,335
+  s_1c08b47ac3792f::t_32dd42049c3a80 102-115,118,134-143
+  s_1c08b47ac3792f::t_0689226b39f42d 41-51,61-63
+  s_1c08b47ac3792f::t_21cdd35ab8d007 255-267,280,295-321,323-329,331-334
+  s_1c08b47ac3792f::t_f29322899aec2d 10,19
+  s_1c08b47ac3792f::t_9ccc4e628c3cca 15,21,322,330
+  s_1c08b47ac3792f::t_f88a66d6d1e0a7 336
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_85196235d45226 534
+  s_1c08b47ac3792f::t_e2246a95c6051f 457-458,467,474-477
+  s_1c08b47ac3792f::t_b3a4c84de1db6d 459-460
+  s_1c08b47ac3792f::t_813466cb956532 468-472
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_1c08b47ac3792f::t_44e5ae39b50017 40-41,130
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_1c08b47ac3792f::t_dd8dae88615c82 10,128-132,335,381
+src/modules/AiRuntime/useCases/agentReference/bindRefinementFigure.ts
+  s_1c08b47ac3792f::t_d95e8144c7ff73 253,255-260,287-290
+  s_1c08b47ac3792f::t_3e76b07e547f81 156-158,160-165
+  s_1c08b47ac3792f::t_cc3b27fc56da0d 1-155,159,166-252,254,261-286,291-311
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_1c08b47ac3792f::t_301ce639bb309c 834
+  s_1c08b47ac3792f::t_661b9cbd9bf233 158,180-184,191,579,642
+  s_1c08b47ac3792f::t_7c9eab8d75ae6a 825,829-830
+  s_1c08b47ac3792f::t_4a2493559e8a30 1-11,18-93,95-157,159-179,185-190,192-235,246-308,310-329,344-404,425-550,558,562-578,580-611,613-641,643-709,714-743,748-773,778-790,792-823,826-828,831-833,835,837-838
+  s_1c08b47ac3792f::t_18fb179684ee91 94,551-557,559-561,612,791,824
+  s_1c08b47ac3792f::t_51938810e1398d 411-420,836
+  s_1c08b47ac3792f::t_6ccda6a13a81b6 12-17,309,710-713,744-747,774-777
+  s_1c08b47ac3792f::t_7f36aeb50e35e7 236-245
+  s_1c08b47ac3792f::t_90191149aa4494 330-343
+  s_1c08b47ac3792f::t_9ad5eb6c6f6ed7 405-410,421-424
+src/modules/AiRuntime/useCases/agentReference/refinementClauseReader.ts
+  s_1c08b47ac3792f::t_086200c0d29c0b 348
+  s_1c08b47ac3792f::t_3e76b07e547f81 1-331,336-347,349-428
+  s_1c08b47ac3792f::t_dcd1dc2da55f6e 332-335
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_4c9d5a9fbfb1d4 44-45
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_1c08b47ac3792f::t_0ebb5f605fd585 379-380
+src/modules/AiRuntime/transformers/unionProtectedObjects.ts
+  s_1c08b47ac3792f::t_d2de8a4db45691 1-12
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_1c08b47ac3792f::t_4bf0792da0db2d 243-244
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_c5f286b8853900 865-870
+  s_1c08b47ac3792f::t_f8f31a8f55bcf1 1126-1128
+  s_1c08b47ac3792f::t_a699fd679beeb3 1100
+  s_1c08b47ac3792f::t_2627acdb0d917f 1168-1176
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_1c08b47ac3792f::t_9ccc4e628c3cca 15
+  s_1c08b47ac3792f::t_172d0ce47cbd2b 27-30,33-34,309-310,312-315,336-345
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86d715402ca0c116ae3eeda230ea92d7072a6a47",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
