@@ -33,6 +33,7 @@ import {
 } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
+import { resolveAutomationLaneTarget, SEND_TARGET_PREFIX } from '../../transformers/resolveAutomationLaneTarget';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
@@ -4023,6 +4024,22 @@ function getNamedExistingTargetIds(input: {
         .map((candidate) => candidate.id);
 }
 
+/**
+ * The bus a call's `send:<busId>` parameter names, when the asserted track already sends to it.
+ *
+ * "Duck the Kick send to the Drum Bus" names the bus as the send the parameter selects, not as a
+ * second candidate for the sending track, so resolving the track sets that bus aside. A track that
+ * does not send to the bus earns no such exclusion, so the bus cannot stand in for the sender.
+ */
+function getAutomatedSendBusIds(parameterId: unknown, trackId: unknown, context: ProjectContext): string[] {
+    if (typeof parameterId !== 'string' || !parameterId.startsWith(SEND_TARGET_PREFIX)) {
+        return [];
+    }
+    return resolveAutomationLaneTarget(context, trackId, parameterId) === null
+        ? []
+        : [parameterId.slice(SEND_TARGET_PREFIX.length)];
+}
+
 function getOwningTrackId(objectId: string, context: ProjectContext): string | undefined {
     const owner = context.tracks.find(
         (track) =>
@@ -4848,6 +4865,9 @@ function groundToolCall({
                 ...bulkSiblingTargetIds,
                 ...coordinatedSiblingIds,
                 ...batchCreatedIds,
+                ...(targetRule.argument === 'trackId'
+                    ? getAutomatedSendBusIds(groundedArguments.parameterId, assertedValue, context)
+                    : []),
             ],
             risk: getAppActionExecutionPolicy(call.name).risk,
         });

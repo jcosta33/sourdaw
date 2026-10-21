@@ -34,11 +34,13 @@ function createTrack({
     name,
     kind = 'audio',
     devices = [],
+    sends = [],
 }: {
     id: string;
     name: string;
     kind?: ProjectTrack['kind'];
     devices?: ProjectTrack['devices'];
+    sends?: ProjectTrack['sends'];
 }): ProjectTrack {
     return {
         id,
@@ -56,7 +58,7 @@ function createTrack({
         deviceCount: devices.length,
         clips: [],
         devices,
-        sends: [],
+        sends,
     };
 }
 
@@ -71,7 +73,12 @@ const keys = createTrack({
     kind: 'midi',
     devices: [{ id: 'device-keys-eq', type: 'builtin-eq', bypassed: false }],
 });
-const drums = createTrack({ id: 'track-drums', name: 'Drums' });
+const drumBus = createTrack({ id: 'track-drum-bus', name: 'Drum Bus', kind: 'bus' });
+const drums = createTrack({
+    id: 'track-drums',
+    name: 'Drums',
+    sends: [{ busId: drumBus.id, level: 1, preFader: false }],
+});
 const bass = createTrack({ id: 'track-bass', name: 'Bass' });
 const master = createTrack({ id: 'master', name: 'Master', kind: 'master' });
 const vocalsEq = vocals.devices[0]!;
@@ -91,7 +98,7 @@ const projectContext: ProjectContext = {
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
-    tracks: [vocals, keys, drums, bass, master],
+    tracks: [vocals, keys, drums, bass, drumBus, master],
     selectedTrackId: null,
     selectedClipId: null,
     selectedClipIds: [],
@@ -128,10 +135,10 @@ function bypassItem(device: ProjectTrack['devices'][number], ownerId: string): C
     };
 }
 
-const createDrumBusItem: CompiledItem = {
-    id: 'create-drum-bus',
+const createPlateBusItem: CompiledItem = {
+    id: 'create-plate-bus',
     name: 'createBus',
-    arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+    arguments: { name: 'Plate Bus', binding: 'plate-bus' },
 };
 
 function compileAndBridge(prompt: string, items: CompiledItem[], targetIds: string[]) {
@@ -178,6 +185,43 @@ function expectRefused(result: ReturnType<typeof compileAndBridge>, targetId: st
     expect(targetsOf(result, argument)).not.toContain(targetId);
     expect(result.rejections).not.toEqual([]);
 }
+
+const SEND_DUCK_PROMPT = 'Duck the Drums send to the Drum Bus to -12 dB over bars 5 to 8.';
+
+function sendDuckItem(track: ProjectTrack, busId: string): CompiledItem {
+    return trackItem('automateParameterRange', track, {
+        parameterId: `send:${busId}`,
+        range: { startBar: 5, endBar: 8 },
+        valueDb: -12,
+    });
+}
+
+describe('a send destination the request names is not a competing track target', () => {
+    it('grounds the sending track when the request also names the bus it sends to', () => {
+        const result = compileAndBridge(SEND_DUCK_PROMPT, [sendDuckItem(drums, drumBus.id)], [drums.id, drumBus.id]);
+
+        expect(result.rejections).toEqual([]);
+        expect(targetsOf(result)).toEqual([drums.id]);
+    });
+
+    it('refuses the bus swapped in as the sending track', () => {
+        const result = compileAndBridge(SEND_DUCK_PROMPT, [sendDuckItem(drumBus, drums.id)], [drums.id, drumBus.id]);
+
+        expectRefused(result, drumBus.id);
+        expect(result.actions).toEqual([]);
+    });
+
+    it('refuses a sending track the request does not name', () => {
+        const result = compileAndBridge(
+            'Duck the Vocals send to the Drum Bus to -12 dB over bars 5 to 8.',
+            [sendDuckItem(drums, drumBus.id)],
+            [drums.id, drumBus.id]
+        );
+
+        expectRefused(result, drums.id);
+        expect(result.actions).toEqual([]);
+    });
+});
 
 describe('a compiled selector cannot replace a target the request names', () => {
     it('refuses a gain selector for a track the request does not name', () => {
@@ -314,8 +358,8 @@ describe('a compiled set selector cannot widen the tracks the request names', ()
 describe('a compiled selector cannot stand in for an object the same batch creates', () => {
     it('refuses an existing track selected where the request names only a track the batch creates', () => {
         const result = compileAndBridge(
-            'Create a Drum Bus and set the Drum Bus volume to 50%',
-            [createDrumBusItem, trackItem('setTrackGain', keys, { gain: 0.5 })],
+            'Create a Plate Bus and set the Plate Bus volume to 50%',
+            [createPlateBusItem, trackItem('setTrackGain', keys, { gain: 0.5 })],
             [keys.id]
         );
 
@@ -324,14 +368,14 @@ describe('a compiled selector cannot stand in for an object the same batch creat
 
     it('grounds an existing track the request names beside a track the batch creates', () => {
         const result = compileAndBridge(
-            'Create a Drum Bus, set its gain, then remove the Keys track.',
+            'Create a Plate Bus, set its gain, then remove the Keys track.',
             [
-                createDrumBusItem,
+                createPlateBusItem,
                 {
-                    id: 'gain-drum-bus',
+                    id: 'gain-plate-bus',
                     name: 'setTrackGain',
-                    arguments: { trackId: '$drum-bus', gain: 0.8 },
-                    dependsOn: [createDrumBusItem.id],
+                    arguments: { trackId: '$plate-bus', gain: 0.8 },
+                    dependsOn: [createPlateBusItem.id],
                 },
                 trackItem('removeTrack', keys, {}),
             ],
