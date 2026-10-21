@@ -1,0 +1,23 @@
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createDeliveryPcmSource.spec.ts
+  s_59e31a5c6f3e31::t_b7a4b737a3cd0d 16-25
+  s_59e31a5c6f3e31::t_dc0aa733a46a48 26-29
+src/modules/AudioRendering/repositories/audioEncoders/createDeliveryPcmSource.ts
+  s_59e31a5c6f3e31::t_c2444df62cc4ef 51
+  s_59e31a5c6f3e31::t_e5270a70245c2c 52-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a33e6c59d263d045978eab08b802ecd23b9795c6",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
