@@ -36,8 +36,8 @@ function createTrackOutputRuntimeGraphDelta(trackId: string, outputId: string) {
         return null;
     }
     const nodes = target
-        ? [runtimeGraphTopology.createNode(source), runtimeGraphTopology.createNode(target)]
-        : [runtimeGraphTopology.createNode(source)];
+        ? [runtimeGraphTopology.createWebAudioNode(source), runtimeGraphTopology.createWebAudioNode(target)]
+        : [runtimeGraphTopology.createWebAudioNode(source)];
     return {
         schemaVersion: 1,
         command: 'set-track-output',

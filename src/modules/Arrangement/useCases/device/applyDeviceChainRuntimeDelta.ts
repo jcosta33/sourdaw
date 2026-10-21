@@ -1,7 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
 import {
     applyRuntimeGraphDelta,
+    createRuntimeGraphTopologyFingerprint,
     getRuntimeGraphRevision,
+    getTrackStrip,
     matchesRuntimeDeviceChainTopology,
     mirrorDeviceChainDelta,
 } from '#/modules/AudioEngine/useCases';
@@ -47,8 +49,8 @@ export type ApplyDeviceChainRuntimeDeltaResult =
  * Send the same chain to the rolling native engine, and wait for none of it.
  *
  * A native session is a second carrier, not a second authority: the Web Audio
- * delta has already landed by the time this runs, and a change the native
- * engine declines is deferred to the next play and said out loud there (#3575).
+ * chain is already applied or proved unchanged by the time this runs. A change
+ * the native engine declines is deferred to the next play and said out loud there (#3575).
  * Awaiting it would put a bridge round trip inside a project mutation, and
  * letting it throw would report a runtime-graph failure for a graph that is
  * intact — which is what `postCommitEffect: 'repair'` would then try to fix.
@@ -129,13 +131,42 @@ export function applyDeviceChainRuntimeDelta({
         currentTrack !== undefined &&
         !compiledAfterIsCurrent &&
         hasLaterSameTrackDeviceChainMutation(batchContext, after);
-    const authoritativeAfter = mayComposeGroupedFinal ? runtimeGraphTopology.createNode(currentTrack) : compiledAfter;
+    const authoritativeTrack = mayComposeGroupedFinal ? currentTrack : after;
+    const compiledBefore = runtimeGraphTopology.createWebAudioNode(before);
+    const authoritativeAfter = runtimeGraphTopology.createWebAudioNode(authoritativeTrack);
+    const projectedChainUnchanged =
+        createRuntimeGraphTopologyFingerprint(compiledBefore) ===
+        createRuntimeGraphTopologyFingerprint(authoritativeAfter);
+    const matchesAuthoritativeProject =
+        currentTrack !== undefined && (compiledAfterIsCurrent || mayComposeGroupedFinal);
+    const liveMatches = matchesAuthoritativeProject && matchesRuntimeDeviceChainTopology(authoritativeAfter);
 
-    if (
-        currentTrack !== undefined &&
-        (compiledAfterIsCurrent || mayComposeGroupedFinal) &&
-        matchesRuntimeDeviceChainTopology(authoritativeAfter)
-    ) {
+    // An instrument-only mutation owes no AudioNode edit. A cold empty strip
+    // has the same empty chain, but a live divergent strip must still reject.
+    if (projectedChainUnchanged) {
+        if (!matchesAuthoritativeProject) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta does not match the current project topology',
+            });
+        }
+        if (!liveMatches && (compiledBefore.devices.length > 0 || getTrackStrip(after.id))) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Live source strip does not match the compiled device-chain delta',
+            });
+        }
+        mirrorNativeDeviceChain(before, authoritativeTrack);
+        return Object.freeze({
+            acceptance: 'superseded' as const,
+            application: 'discharged' as const,
+            reason: `Web Audio device chain is unchanged for track ${after.id}`,
+        });
+    }
+
+    if (liveMatches) {
         return Object.freeze({
             acceptance: 'superseded' as const,
             application: 'discharged' as const,
@@ -151,7 +182,7 @@ export function applyDeviceChainRuntimeDelta({
             projectRevision: captureProjectRevision(),
         },
         operation: mayComposeGroupedFinal ? 'replace-device-chain' : operation,
-        before: runtimeGraphTopology.createNode(before),
+        before: compiledBefore,
         after: authoritativeAfter,
         parameters: [],
     });
@@ -160,7 +191,7 @@ export function applyDeviceChainRuntimeDelta({
     // asks for, and mirroring it would put a chain on the native engine that
     // the Web Audio graph does not have.
     if (result.acceptance === 'accepted' && result.application === 'applied') {
-        mirrorNativeDeviceChain(before, mayComposeGroupedFinal && currentTrack ? currentTrack : after);
+        mirrorNativeDeviceChain(before, authoritativeTrack);
     }
     return result;
 }

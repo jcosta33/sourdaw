@@ -479,4 +479,22 @@ describe('projectTrackToLiveStrip', () => {
             ['audio-1', 'crust-1', 'algorithm', 6],
         ]);
     });
+    it.each(['builtin-synth', 'drum-kit'])('initializes source and routed target without %s nodes', (type) => {
+        const source = createTrack({ id: 'midi', name: 'MIDI', kind: 'midi' });
+        source.devices = [{ id: 'source-instrument', type, name: 'Instrument', bypassed: false, parameterValues: {} }];
+        source.outputId = 'return';
+        const target = createTrack({ id: 'return', name: 'Return', kind: 'bus' });
+        target.devices = [{ id: 'target-instrument', type, name: 'Instrument', bypassed: false, parameterValues: {} }];
+        trackStore.set({ tracks: [source, target], selectedTrackId: source.id });
+        projectTrackToLiveStrip({ trackId: source.id });
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: [
+                    { id: 'midi', kind: 'midi', devices: [] },
+                    { id: 'return', kind: 'bus', devices: [] },
+                ],
+            })
+        );
+        expect(trackStore.value?.tracks.map((track) => track.devices[0]?.type)).toEqual([type, type]);
+    });
 });
