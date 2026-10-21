@@ -223,3 +223,18 @@ exact ESRCH before settling or restoring source, retain unchanged escalation/con
 and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRCH around a real
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
+
+### 2026-10-21 — a live owner could not finish release after its payload moved (introduced by PR #5274)
+
+PR #5274 (`40baa0716b`) left a post-relocation proof veto inside an owned claim, but the same
+live owner's next release looked up the vanished original path. The missed review risk was local
+release continuation after a fresh complete proof; dead-reclaimer crash recovery did not cover it.
+
+Probe: veto removal after relocation, then obtain fresh complete proof on a later release by the
+same live owner. Require removal of the original payload inode and its file contents, with no old
+empty claim wrappers. Repeat the post-rename veto before completion; unknown proof or a live
+borrower must retain the payload and an unowned sibling. Substitute claim reclaimer/run metadata
+or the payload inode before and during proof and require refusal without deleting either original
+or replacement storage. Preserve optional Linux `startTicks` in canonical run/reclaimer records
+and retain the positive case without that field. This escape does not establish the cause of any
+historical guard run.
