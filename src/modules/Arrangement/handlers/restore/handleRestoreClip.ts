@@ -79,7 +79,7 @@ function capturedMidiIdentitiesAreAvailable(
 }
 
 function restoreStateMatches(action: RestoreClipAction, context?: HandlerValidationContext): boolean {
-    // The restore re-appends `clipSnapshot` as-is, so it assumes the owning track
+    // The restore inserts `clipSnapshot` as-is, so it assumes the owning track
     // is present and the removed clip is absent from every track. A peer may
     // recreate the same identity under another owner after removal.
     const tracks = getTrackStoreState()?.tracks ?? [];
@@ -154,6 +154,7 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
             clipId,
             trackId,
             clipSnapshot,
+            clipIndex,
             ripplePlan,
             midiNotesSnapshot,
             midiCcSnapshot,
@@ -164,6 +165,7 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
         if (ripplePlan) {
             undoRippleDelete({
                 trackId,
+                ...(clipIndex === undefined ? {} : { clipIndex }),
                 removedClips: ripplePlan.removedClips,
                 shiftedClips: ripplePlan.shiftedClips,
                 clipSatellites: ripplePlan.clipSatellites,
@@ -171,7 +173,15 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
                 retiredTakeLanes,
             });
         } else {
-            updateTrack(trackId, (time) => ({ ...time, clips: [...time.clips, clipSnapshot] }));
+            updateTrack(trackId, (time) => {
+                const clips = [...time.clips];
+                clips.splice(
+                    clipIndex === undefined ? clips.length : Math.min(clipIndex, clips.length),
+                    0,
+                    clipSnapshot
+                );
+                return { ...time, clips };
+            });
             restoreTakesForClip(retiredTakeLanes ?? []);
         }
 
