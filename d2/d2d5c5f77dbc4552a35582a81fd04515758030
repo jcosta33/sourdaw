@@ -1,0 +1,29 @@
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  s_59e31a5c6f3e31::t_3cc3e9c0a67663 120-122,124,137-139,144-148
+  s_59e31a5c6f3e31::t_bb09fb2015d8eb 11,18,101-119,123,125-136,140-143,149-152,271
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  s_59e31a5c6f3e31::t_7e5c8533f093c7 1,402,423,476,478,487
+  s_59e31a5c6f3e31::t_e09f50dd79c3de 388-389,397
+  s_59e31a5c6f3e31::t_2bd915c5d63df8 490-493,498-501,506-508
+  s_59e31a5c6f3e31::t_ea9f7202419ae6 8,13,32-39,127-142,390,399-401,405,410-422,424-428,430-457,460,465,468-471,474,479-480,485-486,488-489,509-513
+  s_59e31a5c6f3e31::t_bfce529eb3a11b 403-404,406-408,461-464,472-473,481-484,494-497,502-505
+  s_59e31a5c6f3e31::t_6113d8a199eb69 458-459,466-467,475,477
+  s_59e31a5c6f3e31::t_02f59313c6ba7a 391-396
+  s_59e31a5c6f3e31::t_687ea159ed3dcb 398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2d2d5c5f77dbc4552a35582a81fd04515758030",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
