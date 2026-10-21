@@ -20,6 +20,7 @@ import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/
 import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
+import { cn } from '#/utils/Styles/cn';
 
 import { TOASTER_PAD_COUNT, type PadState, withActivePatternId } from '../../models/ToasterKit';
 import {
@@ -63,14 +64,16 @@ import { StepSequencer } from '../components/StepSequencer';
 const SectionCard = ({
     title,
     detail,
+    className,
     children,
 }: {
     title: string;
     detail?: string;
+    className?: string;
     children: ReactElement | ReactElement[];
 }): ReactElement => (
     <DawPluginSectionCard
-        className="toaster-window shrink-0"
+        className={cn('toaster-window shrink-0', className)}
         title={title}
         detail={detail}
         titleClassName="text-[var(--color-accent-peach)]/70"
@@ -407,11 +410,15 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                 className={
                     viewLevel === 'full'
                         ? 'grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3'
-                        : 'grid min-h-0 flex-1 grid-cols-[minmax(18rem,1fr)_minmax(17rem,1fr)] gap-3'
+                        : 'grid min-h-0 flex-1 grid-cols-[minmax(10rem,0.8fr)_minmax(0,1fr)_17rem] grid-rows-[minmax(0,1fr)] gap-3'
                 }
             >
-                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
-                    <SectionCard title="Kit shelf" detail="Grab a kit, then keep the active pad right below it.">
+                <Stack as="aside" gap={3} className={viewLevel === 'full' ? 'overflow-y-auto pr-1' : 'contents'}>
+                    <SectionCard
+                        title="Kit shelf"
+                        detail="Grab a kit, then keep the active pad right below it."
+                        className={viewLevel === 'simple' ? 'h-full overflow-hidden' : undefined}
+                    >
                         <Row as="label" gap={2} className="toaster-window px-3 py-2">
                             <input
                                 value={presetQuery}
@@ -459,6 +466,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                     <SectionCard
                         title="Pad bay"
                         detail="Pads stay chunky, the active hit stays obvious, and the quick shaping lives right here."
+                        className={viewLevel === 'simple' ? 'h-full overflow-hidden' : undefined}
                     >
                         <Row justify="between" align="center" gap={2} className="mb-2">
                             <Row align="center" gap={1.5}>
@@ -516,15 +524,19 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 ) : null}
                             </Row>
                         </Row>
-                        <PadGrid
-                            pads={kit.pads}
-                            selectedIndex={selectedPadIndex}
-                            onSelectPad={(index) => selectPad(deviceId, index)}
-                            onTriggerPad={triggerPad}
-                            sixteenLevelsTarget={is16Levels ? sixteenLevelsTarget : null}
-                            targetPadName={selectedPad?.name}
-                            onReleasePad={releasePad}
-                        />
+                        <div className={viewLevel === 'full' ? 'contents' : 'min-h-0 flex-1 [container-type:size]'}>
+                            <div className={viewLevel === 'full' ? 'contents' : 'mx-auto size-[min(100cqw,100cqh)]'}>
+                                <PadGrid
+                                    pads={kit.pads}
+                                    selectedIndex={selectedPadIndex}
+                                    onSelectPad={(index) => selectPad(deviceId, index)}
+                                    onTriggerPad={triggerPad}
+                                    sixteenLevelsTarget={is16Levels ? sixteenLevelsTarget : null}
+                                    targetPadName={selectedPad?.name}
+                                    onReleasePad={releasePad}
+                                />
+                            </div>
+                        </div>
 
                         {viewLevel === 'full' ? (
                             <>
@@ -733,8 +745,20 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                     </Stack>
                 ) : null}
 
-                <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
-                    <SectionCard title="Transport" detail="Keep the rhythm tools tight and ready.">
+                <Stack
+                    as="aside"
+                    gap={3}
+                    className={
+                        viewLevel === 'full'
+                            ? 'overflow-y-auto pr-1'
+                            : 'grid grid-rows-[auto_minmax(0,1fr)] overflow-hidden'
+                    }
+                >
+                    <SectionCard
+                        title="Transport"
+                        detail="Keep the rhythm tools tight and ready."
+                        className={viewLevel === 'simple' ? 'gap-1.5' : undefined}
+                    >
                         <Row gap={2}>
                             <DawPluginChip
                                 active={isPlaying}
@@ -869,8 +893,12 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             </Stack>
                         </SectionCard>
                     ) : null}
-                    <SectionCard title="Macros" detail="Master motion and room stay within reach.">
-                        <Grid cols={2} gapX={2} gapY={3}>
+                    <SectionCard
+                        title="Macros"
+                        detail="Master motion and room stay within reach."
+                        className={viewLevel === 'simple' ? 'overflow-y-auto gap-1.5' : undefined}
+                    >
+                        <Grid cols={viewLevel === 'full' ? 2 : 3} gapX={2} gapY={viewLevel === 'full' ? 3 : 1.5}>
                             <Knob
                                 value={kit.swing}
                                 onChange={(value) => setToasterKitParam(deviceId, 'swing', value)}
