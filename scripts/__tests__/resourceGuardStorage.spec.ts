@@ -169,6 +169,14 @@ function readOwner(tempDirectory: string): Parameters<typeof reclaimGuardStorage
     return JSON.parse(readFileSync(join(dirname(tempDirectory), 'owner.json'), 'utf8'));
 }
 
+// A logged `lsof -p` invocation names the PIDs it inspected after its `-p` flag.
+function targetedPids(call: string): string[] {
+    if (!call.startsWith('targeted ')) {
+        return [];
+    }
+    return (call.split(' -p ')[1] ?? '').split(',');
+}
+
 function claimPayloads(root: string): string[] {
     const claims = join(root, '.claims');
     return readdirSync(claims).flatMap((claim) =>
@@ -1299,6 +1307,62 @@ describe('storage ownership recovery', () => {
         }
     );
 
+    it('inspects the child of an uncovered macOS process that forks and exits during its PID inspection', () => {
+        const root = fixture();
+        const storage = ownedStorage(root);
+        const reports: string[] = [];
+        const states: string[] = [];
+        let forked = false;
+        const files: Parameters<typeof darwinStorageFileCensus>[5] = {
+            // Process 200 appears after the first catalog; its child 300 is never listed before it exits.
+            readProcessUsers: () => (forked ? [100, 300] : [100, 200]),
+            fileCatalog: (_uid, _deadline, selected) => {
+                if (selected?.includes(200)) {
+                    forked = true;
+                }
+                const openPaths = new Map<number, string[]>([[100, ['/elsewhere/held']]]);
+                if (forked) {
+                    openPaths.set(300, [join(storage.tempDirectory, 'held')]);
+                }
+                const pids: number[] = [];
+                for (const pid of openPaths.keys()) {
+                    if (selected === undefined || selected.includes(pid)) {
+                        pids.push(pid);
+                    }
+                }
+                return {
+                    inspected: new Set(pids),
+                    incomplete: new Set(),
+                    paths: pids.flatMap((pid) => openPaths.get(pid) ?? []),
+                };
+            },
+            snapshot: () => ({ uid: 501, state: 'S' }),
+            isGone: (pid) => pid === 200 && forked,
+            now: () => 0,
+            pause: () => {},
+        };
+        const ports: StorageRecoveryPorts = {
+            identityState: () => 'dead',
+            sessionState: (_owner, original, current = original) => {
+                const state = darwinStorageFileCensus(
+                    [100],
+                    501,
+                    [original, current],
+                    5_000,
+                    (reason) => reports.push(reason),
+                    files
+                );
+                states.push(state);
+                return state;
+            },
+        };
+        recoverGuardStorage(root, ports, fakeReclaimer);
+        expect(forked).toBe(true);
+        expect(states).toEqual(['alive']);
+        expect(reports).toEqual([]);
+        expect(existsSync(storage.tempDirectory)).toBe(true);
+    });
+
     it.each([
         {
             scenario: 'closed enumeration descriptor',
@@ -1725,7 +1789,7 @@ if(process.argv[2]==='-axo'){
                 join(bin, 'lsof'),
                 [
                     '#!/bin/sh',
-                    `case " $* " in *" -p "*) echo targeted >> '${log}'; exec /usr/sbin/lsof "$@";; esac`,
+                    `case " $* " in *" -p "*) echo "targeted $*" >> '${log}'; exec /usr/sbin/lsof "$@";; esac`,
                     `echo catalog >> '${log}'`,
                     `/usr/sbin/lsof "$@" > '${root}/catalog.out' || exit $?`,
                     `(cd '${consumer ? storage.tempDirectory : root}' && exec /bin/sleep 5) < /dev/null > /dev/null 2>&1 &`,
@@ -1751,14 +1815,18 @@ if(process.argv[2]==='-axo'){
             // A catalog discarded for a descriptor closing mid-read may precede each proof
             // once. Its replacement can already see an earlier newborn consumer; a proof that
             // reclaims always ends with one PID inspection of the newborn its catalog missed.
+            // Unrelated same-UID processes the host starts meanwhile receive their own PID
+            // inspections, so only inspections of this fixture's newborns are counted.
             const calls = readFileSync(log, 'utf8').trim().split('\n');
+            const born = readFileSync(newborns, 'utf8').trim().split('\n');
+            const newbornInspections = calls.filter((call) => targetedPids(call).some((pid) => born.includes(pid)));
             const proofs = consumer ? 1 : 2;
             expect(calls.filter((call) => call === 'catalog').length).toBeLessThanOrEqual(2 * proofs);
             if (consumer) {
-                expect(calls.filter((call) => call === 'targeted').length).toBeLessThanOrEqual(1);
+                expect(newbornInspections.length).toBeLessThanOrEqual(1);
             } else {
-                expect(calls.at(-1)).toBe('targeted');
-                expect(calls.filter((call) => call === 'targeted')).toHaveLength(proofs);
+                expect(calls.at(-1)).toMatch(/^targeted /);
+                expect(newbornInspections).toHaveLength(proofs);
             }
         },
         15_000
@@ -1796,7 +1864,7 @@ if(process.argv[2]==='-axo'){
                 join(bin, 'lsof'),
                 [
                     '#!/bin/sh',
-                    `case " $* " in *" -p "*) echo targeted >> '${log}'; exec /usr/sbin/lsof "$@";; esac`,
+                    `case " $* " in *" -p "*) echo "targeted $*" >> '${log}'; exec /usr/sbin/lsof "$@";; esac`,
                     `echo catalog >> '${log}'`,
                     `/usr/sbin/lsof "$@" -p '^${holder.pid}' > '${root}/catalog.out' || exit $?`,
                     `cat '${root}/catalog.out'`,
@@ -1817,12 +1885,13 @@ if(process.argv[2]==='-axo'){
             expect(released).toBe(!consumer);
             expect(existsSync(storage.tempDirectory)).toBe(consumer);
             // An untyped catalog is always replaced once; a real descriptor closing mid-read
-            // can replace an omitting catalog once too. Each proof ends with one PID inspection.
+            // can replace an omitting catalog once too. Each proof inspects the holder once by
+            // PID; unrelated same-UID processes the host starts meanwhile get their own.
             const calls = readFileSync(log, 'utf8').trim().split('\n');
             const proofs = consumer ? 1 : 2;
             const catalogs = calls.filter((call) => call === 'catalog').length;
-            expect(calls.at(-1)).toBe('targeted');
-            expect(calls.filter((call) => call === 'targeted')).toHaveLength(proofs);
+            expect(calls.at(-1)).toMatch(/^targeted /);
+            expect(calls.filter((call) => targetedPids(call).includes(String(holder.pid)))).toHaveLength(proofs);
             expect(catalogs).toBeGreaterThanOrEqual(untyped ? 2 * proofs : proofs);
             expect(catalogs).toBeLessThanOrEqual(2 * proofs);
         },

@@ -1572,14 +1572,35 @@ export function darwinStorageFileCensus(
         if (uncovered === undefined || ports.now() >= deadline) {
             return unknown('lsof-coverage-time-bound');
         }
-        if (uncovered.length === 0) {
-            return 'dead';
-        }
         // Same-UID work elsewhere on the host starts processes and closes descriptors
         // during every whole-account catalog, and lsof transiently skips a busy
         // long-lived process. Inspect exactly the uncovered processes by PID; a
         // replacement whole-account catalog races the next unrelated process.
-        const candidates = uncovered.map(({ pid }) => pid);
+        return darwinUncoveredFileState(
+            uncovered.map(({ pid }) => pid),
+            census.inspected,
+            uid,
+            tempDirectories,
+            deadline,
+            unknown,
+            ports
+        );
+    }
+    return unknown('file-census-unavailable');
+}
+
+function darwinUncoveredFileState(
+    initialCandidates: number[],
+    catalogued: Set<number>,
+    uid: number,
+    tempDirectories: string[],
+    deadline: number,
+    unknown: (reason: string) => 'unknown',
+    ports: DarwinFilePorts
+): 'alive' | 'dead' | 'unknown' {
+    const covered = new Set(catalogued);
+    let candidates = initialCandidates;
+    while (candidates.length > 0) {
         const retried = ports.fileCatalog(uid, deadline, candidates);
         if (typeof retried === 'string') {
             return unknown(retried);
@@ -1596,9 +1617,25 @@ export function darwinStorageFileCensus(
         if (remaining === undefined || ports.now() >= deadline) {
             return unknown('lsof-coverage-time-bound');
         }
-        return remaining.length === 0 ? 'dead' : unknown(darwinMissingReason(remaining));
+        if (remaining.length > 0) {
+            return unknown(darwinMissingReason(remaining));
+        }
+        for (const pid of candidates) {
+            covered.add(pid);
+        }
+        // An uncovered process can fork and exit while it is inspected or awaited; its
+        // child was never listed. List again until no live process escapes inspection.
+        const relisted = ports.readProcessUsers();
+        if (typeof relisted === 'string') {
+            return unknown(relisted);
+        }
+        const fresh = uncoveredDarwinProcesses(relisted, covered, uid, deadline, ports);
+        if (fresh === undefined || ports.now() >= deadline) {
+            return unknown('lsof-coverage-time-bound');
+        }
+        candidates = fresh.map(({ pid }) => pid);
     }
-    return unknown('file-census-unavailable');
+    return 'dead';
 }
 
 // supervisorPid names the live process that spawned the run, never a later reclaimer:

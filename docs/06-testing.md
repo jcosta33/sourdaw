@@ -754,7 +754,10 @@ with a descriptor missing its type may be discarded for one replacement catalog;
 allows at most two whole-account observations within the same five-second proof deadline. Every
 process the final macOS catalog leaves uncovered — newly observed, skipped by lsof, or listed with
 an untyped descriptor — is then inspected once by PID, and one still unreadable must exit within
-half a second. Only complete evidence for every observed process permits deletion; a process left
+half a second. Same-UID processes are then listed again, because an inspected process can fork and
+exit before its child is ever listed; each live process neither a catalog nor a PID inspection has
+covered receives the same PID inspection, until a listing adds none within the proof deadline.
+Only complete evidence for every observed process permits deletion; a process left
 uncovered, ambiguous identity, malformed catalog, denied inspection or unavailable evidence retains
 storage. Processes created after the final proof remain outside
 that observation; this is conservative sampled evidence, not a guarantee of continuous isolation.
