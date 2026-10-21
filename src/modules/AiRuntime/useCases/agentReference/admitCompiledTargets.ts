@@ -20,13 +20,14 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * A compiled command list proves which objects its selectors resolve to, never that the user asked
  * for them. This check closes one hole: a selector that picks an object by a name or id the request
  * never states. Every target the request protects or excludes is refused. A selector's whole-name
- * pick must appear whole in the request's original text, a name fragment as the start of a word
- * there (optionally pluralized with "s" or "es"), and an owner-track pick as that track's whole name
- * or id; the text read is the whole request less its restrictions and the values the batch writes,
- * so an instruction may pick by a name an earlier one states ("turn Vocals down and pan it left").
- * A selection reference ("this track", "the selected track", "it" for the selected track) that
- * resolves to the picked objects states those picks only when the request names no object of that
- * kind by name, so "set Vocals volume so it sits better" never stands for the selected Keys.
+ * pick, a name fragment and an owner-track pick's track name or id must each appear as whole words
+ * of the request, read in an ordinary form: case, diacritics and separators aside, and the final
+ * word in the singular or the plural ("the vocal" states Vocals, "hi hat" states Hi-Hat). The text
+ * read is the whole request less its restrictions and the values any call of the batch writes, so
+ * an instruction may pick by a name an earlier one states ("turn Vocals down and pan it left").
+ * A selection reference ("this track", "the selected track", "it" or "its" for the selected track)
+ * that resolves to the picked objects states those picks only when the request names no object of
+ * that kind by name, so "set Vocals volume so it sits better" never stands for the selected Keys.
  *
  * Literal targets, owner-track picks in a request that names and selects no track, and selections
  * by role, role family, kind, device type, tag, condition or no filter at all, are taken as the
@@ -64,7 +65,7 @@ export type CompiledTargetAuthorityInput = {
     /** The selector the call's targets came from, absent when the compiler named every one literally. */
     selectorTerms?: CompiledSelectorTerms;
     targetIds: readonly string[];
-    /** The text values the batch's calls of this action write ("Bass Drum" for a rename). */
+    /** The text values every call of the batch writes ("Bass Drum" for a rename). */
     valueTexts: readonly string[];
 };
 
@@ -150,18 +151,111 @@ function getRestrictionRanges(request: MaskedRequest, catalog: GroundingCatalog)
     }));
 }
 
-function blankRange(text: string, start: number, end: number): string {
+type TextRange = { start: number; end: number };
+
+function blankRange(text: string, { start, end }: TextRange): string {
     return `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`;
 }
 
-/** The text with every whole, case-insensitive occurrence of the names blanked to equal-length spaces. */
+/** What separates the words of a name: "Hi-Hat", "hi_hat" and "hi hat" are one name. */
+const NAME_SEPARATOR = '[\\s_-]+';
+
+/**
+ * The text without case or diacritics ("Café" reads "cafe"), with the offset in the original text of
+ * each folded code unit and of the end, so a range found in the folded text maps back onto it.
+ */
+function foldNameText(text: string): { folded: string; offsets: number[] } {
+    let folded = '';
+    const offsets: number[] = [];
+    let offset = 0;
+    for (const character of text) {
+        const foldedCharacter = character.normalize('NFD').replaceAll(/\p{M}/gu, '').toLowerCase();
+        folded += foldedCharacter;
+        offsets.push(...Array.from({ length: foldedCharacter.length }, () => offset));
+        offset += character.length;
+    }
+    offsets.push(offset);
+    return { folded, offsets };
+}
+
+/** The word and its singular or plural by "s", "es", or "ies" for "y", longest first. */
+function getNumberForms(word: string): string[] {
+    const forms = [word, `${word}s`, `${word}es`];
+    if (word.endsWith('ies')) {
+        forms.push(`${word.slice(0, -3)}y`);
+    }
+    if (word.endsWith('es')) {
+        forms.push(word.slice(0, -2));
+    }
+    if (word.endsWith('s') && !word.endsWith('ss')) {
+        forms.push(word.slice(0, -1));
+    }
+    if (word.endsWith('y')) {
+        forms.push(`${word.slice(0, -1)}ies`);
+    }
+    return Array.from(new Set(forms))
+        .filter((form) => form.length > 0)
+        .sort((left, right) => right.length - left.length);
+}
+
+/** The whole words of the folded name in order, the last in any of its number forms; null for a blank name. */
+function getNamePattern(name: string): RegExp | null {
+    const words = foldNameText(name)
+        .folded.split(new RegExp(NAME_SEPARATOR, 'u'))
+        .filter((word) => word.length > 0);
+    const finalWord = words.at(-1);
+    if (finalWord === undefined) {
+        return null;
+    }
+    const leadingWords = words.slice(0, -1).map((word) => `${escapeRegExp(word)}${NAME_SEPARATOR}`);
+    const finalForms = getNumberForms(finalWord).map(escapeRegExp).join('|');
+    return new RegExp(`(?<![\\p{L}\\p{N}])${leadingWords.join('')}(?:${finalForms})(?![\\p{L}\\p{N}])`, 'gu');
+}
+
+/**
+ * Every range of the text that states the name in an ordinary form: its whole words in order,
+ * folding case and diacritics, reading any run of hyphens, underscores and spaces as one separator,
+ * and taking the final word in the singular or the plural on either side ("the vocal" states
+ * Vocals, "the melodies" states a melody fragment).
+ */
+function findNameRanges(text: string, name: string): TextRange[] {
+    const pattern = getNamePattern(name);
+    if (pattern === null) {
+        return [];
+    }
+    const { folded, offsets } = foldNameText(text);
+    return Array.from(folded.matchAll(pattern), (match) => ({
+        start: offsets[match.index] ?? text.length,
+        end: offsets[match.index + match[0].length] ?? text.length,
+    }));
+}
+
+function isVerbatim(text: string, range: TextRange, name: string): boolean {
+    return text.slice(range.start, range.end).toLowerCase() === name.toLowerCase();
+}
+
+function isWithinLongerRange(range: TextRange, other: TextRange): boolean {
+    return other.start <= range.start && range.end <= other.end && other.end - other.start > range.end - range.start;
+}
+
+/**
+ * Whether the text states the name, the one reading whole names, name fragments, owner tracks and
+ * protections share: verbatim, or in an ordinary form that is not part of a longer track name the
+ * text states, so "drum" in "the Drum Bus" states the bus and never Drums.
+ */
+function statesName(text: string, name: string, context: ProjectContext): boolean {
+    const trackNameRanges = context.tracks.flatMap((track) => findNameRanges(text, track.name));
+    return findNameRanges(text, name).some(
+        (range) => isVerbatim(text, range, name) || !trackNameRanges.some((other) => isWithinLongerRange(range, other))
+    );
+}
+
+/** The text with every occurrence of the names, in any ordinary form, blanked to equal-length spaces. */
 function maskWholeNames(text: string, names: readonly string[]): string {
-    return names
-        .filter((name) => name.trim().length > 0)
-        .reduce(
-            (masked, name) => masked.replaceAll(wholeWordsPattern(name, 'giu'), (match) => ' '.repeat(match.length)),
-            text
-        );
+    return names.reduce(
+        (masked, name) => findNameRanges(masked, name).reduce((blanked, range) => blankRange(blanked, range), masked),
+        text
+    );
 }
 
 function wholeWordsPattern(phrase: string, flags: string): RegExp {
@@ -178,7 +272,10 @@ function maskWrittenValues(text: string, values: readonly string[]): string {
         .filter((value) => value.trim().length > 0)
         .reduce((masked, value) => {
             const last = [...masked.matchAll(wholeWordsPattern(value, 'giu'))].at(-1);
-            return last === undefined ? masked : blankRange(masked, last.index, last.index + last[0].length);
+            if (last === undefined) {
+                return masked;
+            }
+            return blankRange(masked, { start: last.index, end: last.index + last[0].length });
         }, text);
 }
 
@@ -206,7 +303,13 @@ function getProtectedIds(
             .filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
             .map((candidate) => candidate.name);
         const trackRestriction = maskWholeNames(restriction, namedObjectNames);
-        for (const trackId of getTieredReferenceIds(trackRestriction, 'track', input.context)) {
+        const restrictedTrackIds = new Set([
+            ...getTieredReferenceIds(trackRestriction, 'track', input.context),
+            ...input.context.tracks
+                .filter((track) => statesName(trackRestriction, track.name, input.context))
+                .map((track) => track.id),
+        ]);
+        for (const trackId of restrictedTrackIds) {
             protectedIds.add(trackId);
             for (const ownedId of getTrackOwnedObjectIds(trackId, input.context)) {
                 protectedIds.add(ownedId);
@@ -227,10 +330,7 @@ function getEvidenceText(
     request: MaskedRequest,
     restrictionRanges: readonly { start: number; end: number }[]
 ): string {
-    const unrestricted = restrictionRanges.reduce(
-        (text, range) => blankRange(text, range.start, range.end),
-        request.prompt
-    );
+    const unrestricted = restrictionRanges.reduce((text, range) => blankRange(text, range), request.prompt);
     return maskWrittenValues(unrestricted, input.valueTexts);
 }
 
@@ -261,18 +361,18 @@ function getNamePicks(input: CompiledTargetAuthorityInput): NamePicks {
 
 /**
  * Whether the request's selection reference is the object: "this track" or "the selected track"
- * through the direct route's selection reading, or "it" for the selected track.
+ * through the direct route's selection reading, or "it" or "its" for the selected track.
  */
 function selectsObject(text: string, objectId: string, capability: Capability, context: ProjectContext): boolean {
-    if (objectId === context.selectedTrackId && /\bit\b/iu.test(text)) {
+    if (objectId === context.selectedTrackId && /\bits?\b/iu.test(text)) {
         return true;
     }
     const result = resolveAgentReference({ prompt: text, assertedId: objectId, capability, context });
     return result.status === 'resolved' && result.evidence === 'selection';
 }
 
-function statesWholeReference(text: string, references: readonly string[]): boolean {
-    return references.some((reference) => wholeWordsPattern(reference, 'iu').test(text));
+function statesWholeReference(text: string, references: readonly string[], context: ProjectContext): boolean {
+    return references.some((reference) => statesName(text, reference, context));
 }
 
 /**
@@ -285,7 +385,7 @@ function namesObjectByName(text: string, capability: Capability, context: Projec
         return context.tracks.some(
             (track) =>
                 isAgentReferenceCapabilityCandidate({ capability, context, id: track.id }) &&
-                statesWholeReference(text, [track.id, track.name])
+                statesWholeReference(text, [track.id, track.name], context)
         );
     }
     return readReferences(text, capability, context).some((candidate) =>
@@ -316,15 +416,10 @@ function refersToAnyTrack(text: string, context: ProjectContext): boolean {
 /** Whether the request states the owner track by its whole name or id, or selects it without naming a track. */
 function statesTrack(text: string, trackId: string, context: ProjectContext): boolean {
     const name = context.tracks.find((track) => track.id === trackId)?.name;
-    if (statesWholeReference(text, name === undefined ? [trackId] : [trackId, name])) {
+    if (statesWholeReference(text, name === undefined ? [trackId] : [trackId, name], context)) {
         return true;
     }
     return !namesObjectByName(text, 'track', context) && selectsObject(text, trackId, 'track', context);
-}
-
-/** Whether a word of the text starts with the fragment and goes on with at most a plural "s" or "es". */
-function statesFragment(text: string, fragment: string): boolean {
-    return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(fragment)}(?:e?s)?(?![\\p{L}\\p{N}])`, 'iu').test(text);
 }
 
 /** Whether the request authorizes every target a compiled list resolved for one argument. */
@@ -344,8 +439,7 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): Comp
     }
     const text = getEvidenceText(input, request, restrictionRanges);
     const statesNamePicks =
-        (picks.names.every((name) => wholeWordsPattern(name, 'iu').test(text)) &&
-            picks.fragments.every((fragment) => statesFragment(text, fragment))) ||
+        [...picks.names, ...picks.fragments].every((name) => statesName(text, name, input.context)) ||
         selectsEveryTarget(text, input);
     const statesTrackPicks =
         picks.trackIds.every((trackId) => statesTrack(text, trackId, input.context)) ||

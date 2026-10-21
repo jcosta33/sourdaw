@@ -170,6 +170,8 @@ type GroundToolCallInput = {
     /** Whether the batch as a whole may take the plan-created object evidence route. */
     admitsPlanCreatedObjects: boolean;
     batchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    /** The text values every call of the batch writes, which never pick a compiled target. */
+    batchWrittenValueTexts: readonly string[];
     call: ToolCallResult;
     catalog: GroundingCatalog;
     /** Every id the compiled list's own selectors excluded or protected; empty off the compiled route. */
@@ -4059,27 +4061,26 @@ function getCompiledSelectorTermsByCallIndex(
     return termsByCallIndex;
 }
 
-/** The text values a call writes: its string arguments that are not target references. */
-function getWrittenValueTexts(arguments_: Readonly<Record<string, unknown>>, groundingRules: GroundingRules): string[] {
-    const targetArguments = new Set(groundingRules.targetRules.map((rule) => rule.argument));
-    return Object.entries(arguments_).flatMap(([argument, value]) =>
+/**
+ * The text values a call writes: its string arguments that are not target references, and not the
+ * batch-local binding a creation names its result by, which nothing writes.
+ */
+function getWrittenValueTexts(call: ToolCallResult): string[] {
+    const targetArguments = new Set(
+        getExecutableAppActionGroundingRules(call.name)?.targetRules.map((rule) => rule.argument) ?? []
+    );
+    return Object.entries(stripBatchLocalBinding(call).arguments).flatMap(([argument, value]) =>
         typeof value === 'string' && !targetArguments.has(argument) ? [value] : []
     );
 }
 
 /**
- * Every text value the batch's calls of this action write, so "Rename Keys to Pads and Vocals to
- * Piano Lead" reads neither written name as a target of either rename.
+ * Every text value any call of the batch writes, whatever its action, so neither "Rename Keys to
+ * Pads and Vocals to Piano Lead" nor "rename Kick to Snare 2 and set Vocals volume to 75%" reads a
+ * written name as a target.
  */
-function getSameActionWrittenValueTexts(
-    call: ToolCallResult,
-    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
-    groundingRules: GroundingRules
-): string[] {
-    const values = [call.arguments, ...sameActionAssertedArguments].flatMap((arguments_) =>
-        getWrittenValueTexts(arguments_, groundingRules)
-    );
-    return [...new Set(values)];
+function getBatchWrittenValueTexts(calls: readonly ToolCallResult[]): string[] {
+    return [...new Set(calls.flatMap(getWrittenValueTexts))];
 }
 
 function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
@@ -4381,6 +4382,7 @@ function groundToolCall({
     actionOrdinal,
     admitsPlanCreatedObjects,
     batchLocalCreationBindings,
+    batchWrittenValueTexts,
     call,
     catalog,
     compiledSelectorTerms,
@@ -4687,7 +4689,7 @@ function groundToolCall({
                     prompt,
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
-                    valueTexts: getSameActionWrittenValueTexts(call, sameActionAssertedArguments, groundingRules),
+                    valueTexts: batchWrittenValueTexts,
                     targetIds: compilerTargetOverride.stableIds,
                 }),
                 targetRule.argument
@@ -4823,7 +4825,7 @@ function groundToolCall({
                       referenceResolved: false,
                       selectorTerms: compiledSelectorTerms,
                       targetIds: compilerTargetOverride.stableIds,
-                      valueTexts: getSameActionWrittenValueTexts(call, sameActionAssertedArguments, groundingRules),
+                      valueTexts: batchWrittenValueTexts,
                   }
                 : null;
         if (
@@ -6654,6 +6656,7 @@ export function bridgeGroundedLlmToolCalls({
     const acceptedGroundedCalls: ToolCallResult[] = [];
     const visibleBindings = new Map<string, BatchLocalCreationBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
+    const batchWrittenValueTexts = getBatchWrittenValueTexts(effectiveCalls);
     let prospectiveContext = context;
     for (const [index, providerCall] of effectiveCalls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
@@ -6724,6 +6727,7 @@ export function bridgeGroundedLlmToolCalls({
                         createdObjectRequestIndexes.has(index) ||
                         createdTargetIntent === 'matched'),
                 batchLocalCreationBindings: visibleBindings,
+                batchWrittenValueTexts,
                 call,
                 catalog,
                 compiledSelectorTerms: compiledSelectorTermsByCallIndex.get(index),
