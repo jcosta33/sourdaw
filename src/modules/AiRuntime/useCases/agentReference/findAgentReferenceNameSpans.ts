@@ -23,13 +23,30 @@ export type AgentReferenceNameSpan = AgentReferenceTextRange & { closeness: Agen
 const WORD_BOUNDARY_BEFORE = '(?<![\\p{L}\\p{N}])';
 const WORD_BOUNDARY_AFTER = '(?![\\p{L}\\p{N}])';
 
-/** The text folded as normalizeAgentReferenceText folds case and diacritics, with each folded code unit's offset in the text. */
+/** A run of sentence punctuation closing a typed match, read as the sentence ending rather than the name: "mute Lead?". */
+const SENTENCE_END = /[.!?…]+$/u;
+
+/**
+ * Lowercasing a whole word turns a closing sigma into ς while lowercasing it alone gives σ, so a name
+ * and the text folded one character at a time would never agree on "ΟΔΟΣ".
+ */
+function foldFinalSigma(folded: string): string {
+    return folded.replaceAll('ς', 'σ');
+}
+
+function normalizeName(value: string): string {
+    return foldFinalSigma(normalizeAgentReferenceText(value));
+}
+
+/** The text folded as normalizeName folds case and diacritics, with each folded code unit's offset in the text. */
 function foldWithOffsets(text: string): { folded: string; offsets: number[] } {
     let folded = '';
     const offsets: number[] = [];
     let offset = 0;
     for (const character of text) {
-        const foldedCharacter = character.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, '');
+        const foldedCharacter = foldFinalSigma(
+            character.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, '')
+        );
         folded += foldedCharacter;
         offsets.push(...Array.from({ length: foldedCharacter.length }, () => offset));
         offset += character.length;
@@ -74,7 +91,22 @@ function getNumberForms(word: string): string[] {
     return forms;
 }
 
-/** Every range of the text where the name occurs as typed, case aside, at word edges wherever the name has one. */
+/**
+ * The end of a typed match short of the sentence punctuation that closes it before a space or the end
+ * of the text, so "Lead?" in "mute Lead?" reads no further than Lead does.
+ */
+function getTypedRangeEnd(text: string, start: number, end: number): number {
+    if (!/^(?:\s|$)/u.test(text.slice(end))) {
+        return end;
+    }
+    const sentenceEnd = SENTENCE_END.exec(text.slice(start, end));
+    return sentenceEnd === null ? end : start + sentenceEnd.index;
+}
+
+/**
+ * Every range of the text where the name occurs as typed, case aside, at word edges wherever the name
+ * has one, less any sentence punctuation that closes it.
+ */
 function findTypedRanges(text: string, name: string): AgentReferenceTextRange[] {
     const typed = name.trim();
     if (typed.length === 0) {
@@ -83,21 +115,25 @@ function findTypedRanges(text: string, name: string): AgentReferenceTextRange[] 
     const before = /^[\p{L}\p{N}]/u.test(typed) ? WORD_BOUNDARY_BEFORE : '';
     const after = /[\p{L}\p{N}]$/u.test(typed) ? WORD_BOUNDARY_AFTER : '';
     const pattern = new RegExp(`${before}${escapeRegExp(typed)}${after}`, 'giu');
-    return Array.from(text.matchAll(pattern), (match) => ({ start: match.index, end: match.index + match[0].length }));
+    return Array.from(text.matchAll(pattern), (match) => ({
+        start: match.index,
+        end: getTypedRangeEnd(text, match.index, match.index + match[0].length),
+    }));
 }
 
 /**
  * Every range of the text that states the name: its words folded as normalizeAgentReferenceText folds
- * them, in order, any run of punctuation or space between them, the final word in either grammatical
- * number when the forms allow it. A range the name as typed covers reaches as far as the typed name
- * does, so "Kick (In)" states all of "Kick (In)".
+ * them, final sigma aside, in order, any run of punctuation or space between them, the final word in
+ * either grammatical number when the forms allow it. A range the name as typed covers reaches as far
+ * as the typed name does, short of closing sentence punctuation, so "Kick (In)" states all of
+ * "Kick (In)" and "Lead?" in "mute Lead?" no more than Lead does.
  */
 export function findAgentReferenceNameSpans(
     text: string,
     name: string,
     forms: AgentReferenceNameForms
 ): AgentReferenceNameSpan[] {
-    const tokens = normalizeAgentReferenceText(name)
+    const tokens = normalizeName(name)
         .split(' ')
         .filter((token) => token.length > 0);
     const finalToken = tokens.at(-1);
@@ -118,7 +154,7 @@ export function findAgentReferenceNameSpans(
         if (typedRange !== undefined) {
             return { ...typedRange, closeness: 'typed' };
         }
-        const foldsToName = normalizeAgentReferenceText(text.slice(start, end)) === tokens.join(' ');
+        const foldsToName = normalizeName(text.slice(start, end)) === tokens.join(' ');
         return { start, end, closeness: foldsToName ? 'folded' : 'number-form' };
     });
 }

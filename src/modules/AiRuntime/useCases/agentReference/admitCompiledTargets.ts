@@ -33,8 +33,9 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  *
  * A selector's whole-name pick and an owner-track pick are stated when that reading names their
  * target or owner track. A name fragment is stated for a target it picks when it occurs as a whole
- * word, in either number, outside every range that states another object's whole name, so "the Drum
- * Bus" states a "Bus" fragment for the Drum Bus and never for the FX Bus. The text read is the whole
+ * word, in either number, outside every range that states a longer whole name of another object, so
+ * "the Drum Bus" states a "Bus" fragment for the Drum Bus and never for the FX Bus, while "the guitars"
+ * states a "guitar" fragment for Guitar 2 beside the Guitar track. The text read is the whole
  * request less its restrictions and the values any call of the batch writes, so an instruction may
  * pick by a name an earlier one states ("turn Vocals down and pan it left"). A selection reference
  * ("this track", "the selected track", "it" or "its" for the selected track) that resolves to the
@@ -323,14 +324,17 @@ function getObjectName(id: string, context: ProjectContext): string | undefined 
     return context.adjustmentLayers?.find((candidate) => candidate.id === id)?.name;
 }
 
-function covers(range: AgentReferenceTextRange, inner: AgentReferenceTextRange): boolean {
-    return range.start <= inner.start && inner.end <= range.end;
+/** Whether the range reaches past the inner range on either side while covering all of it. */
+function extendsBeyond(range: AgentReferenceTextRange, inner: AgentReferenceTextRange): boolean {
+    const covers = range.start <= inner.start && inner.end <= range.end;
+    return covers && (range.start < inner.start || inner.end < range.end);
 }
 
 /**
  * Whether the text states the fragment for every target it picks: as a whole word, in either number,
- * somewhere no range states another object's whole name, so "Bus" inside "the Drum Bus" states the
- * Drum Bus and never the FX Bus.
+ * somewhere no range states a longer whole name of another object, so "Bus" inside "the Drum Bus"
+ * states the Drum Bus and never the FX Bus. A whole name read no further than the fragment leaves it
+ * standing: "the guitars" states the Guitar track and the "guitar" fragment for Guitar 2 alike.
  */
 function statesFragment(
     text: string,
@@ -345,7 +349,7 @@ function statesFragment(
     });
     return pickedIds.every((targetId) =>
         occurrences.some((occurrence) =>
-            nameRanges.every((nameRange) => nameRange.id === targetId || !covers(nameRange, occurrence))
+            nameRanges.every((nameRange) => nameRange.id === targetId || !extendsBeyond(nameRange, occurrence))
         )
     );
 }

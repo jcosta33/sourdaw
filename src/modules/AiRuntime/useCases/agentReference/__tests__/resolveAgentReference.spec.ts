@@ -1545,11 +1545,11 @@ describe('sibling names the prompt states as closely as each other', () => {
         const siblingIds = [trackIdNamed(project, bare), trackIdNamed(project, punctuated)];
 
         for (const assertedId of siblingIds) {
-            const result = resolveTrack(prompt, assertedId, project);
-            expect(result).toMatchObject({ status: 'rejected', reason: 'ambiguous-target' });
-            expect(result.status === 'rejected' && [...(result.candidateIds ?? [])].sort()).toEqual(
-                [...siblingIds].sort()
-            );
+            expect(resolveTrack(prompt, assertedId, project)).toMatchObject({
+                status: 'rejected',
+                reason: 'ambiguous-target',
+                candidateIds: siblingIds,
+            });
         }
     });
 
