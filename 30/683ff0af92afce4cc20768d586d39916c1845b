@@ -1,0 +1,40 @@
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_4294fa3544c4d6 46-47
+  s_1c08b47ac3792f::t_e1d04c1d243608 216
+  s_1c08b47ac3792f::t_a8be13480f951d 95-99
+  s_1c08b47ac3792f::t_b7801ee0d8745c 398
+  s_1c08b47ac3792f::t_51cc541b69bfae 48-51
+  s_1c08b47ac3792f::t_da99bc173e4eea 43-45
+  s_1c08b47ac3792f::t_27a4a2faa4ca9e 19
+  s_1c08b47ac3792f::t_24ede8d31a4bfd 30-32
+  s_1c08b47ac3792f::t_4b0406f7a8d54e 380-382
+  s_1c08b47ac3792f::t_7f66a7aa4b284d 190-203,205-208,219-227
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_1c08b47ac3792f::t_5d56110f2b33b5 1904-1943
+  s_1c08b47ac3792f::t_99fd8c00353448 2043-2044
+  s_1c08b47ac3792f::t_cd9a4427661745 2059,2061
+  s_1c08b47ac3792f::t_e03427e48f5ef1 2077,2079
+  s_1c08b47ac3792f::t_9b443c3886d7c5 24
+  s_1c08b47ac3792f::t_f3d44efbca3bf1 1988-2042,2045-2058,2060,2062-2076,2078,2080-2088
+src/modules/AiRuntime/useCases/agentReference/findAgentReferenceNameSpans.ts
+  s_1c08b47ac3792f::t_89e2c1f61b4c80 71-75,77-79
+  s_1c08b47ac3792f::t_9196edfc42f63e 166-169
+  s_1c08b47ac3792f::t_6a621b5e5acbd9 82-83
+  s_1c08b47ac3792f::t_178457828a97c3 30-33,35,45-53,55-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30683ff0af92afce4cc20768d586d39916c1845b",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
