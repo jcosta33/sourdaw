@@ -1,0 +1,25 @@
+crates/daw-dsp/tests/support/pitch_baseline/engine.rs
+  s_59e31a5c6f3e31::t_77080ededf8fb9 7
+crates/daw-dsp/tests/support/pitch_baseline/mod.rs
+  s_59e31a5c6f3e31::t_2951301fa749eb 6
+crates/daw-dsp/tests/support/pitch_baseline/psola.rs
+  s_59e31a5c6f3e31::t_40ebec3772dc83 1-212
+crates/scoring/src/lib.rs
+  s_59e31a5c6f3e31::t_d6f89320898a81 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8fcb69b4ed01d7f23f3e2b82b6eedb1abbc55daf",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
