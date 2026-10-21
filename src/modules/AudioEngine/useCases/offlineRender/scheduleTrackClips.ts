@@ -12,6 +12,7 @@ import {
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
+import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -712,26 +713,42 @@ export async function scheduleTrackClips({
                 loopEnabled: clip.loopEnabled ?? false,
             });
             const iterationCount = loopProjection.iterationCount;
+            const loopEnabled = clip.loopEnabled ?? false;
+            const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
             for (let iteration = 0; iteration < iterationCount; iteration++) {
                 checkCallerAbort();
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
                 iterations.push({
-                    sourceNotes: sourceNotes.filter((note) =>
-                        selectMidiEventProbability({
-                            projectProbabilitySeed: midi.probabilitySeed,
-                            clipId: clip.id,
-                            eventId: note.id,
-                            absoluteOccurrenceIndex,
-                            probabilityPercent: note.probability ?? 100,
-                        })
+                    // #5198 — the anchored loop window owns membership on the
+                    // row's stored figure before the rack ever sees it: a row
+                    // past the trimmed region end must stay silent, and a
+                    // generator must never be fed it as pass input. Unanchored
+                    // clips admit without the window, byte-identically to the
+                    // pre-anchor construction.
+                    sourceNotes: sourceNotes.filter(
+                        (note) =>
+                            isBeatAdmittedByAnchoredClipLoopWindow({
+                                relativeBeat: note.startBeat - midiOffsetBeats,
+                                startBeat: clip.startBeat,
+                                loopOriginBeat: clip.loopOriginBeat,
+                                loopLengthBeats: loopLength,
+                                loopEnabled,
+                            }) &&
+                            selectMidiEventProbability({
+                                projectProbabilitySeed: midi.probabilitySeed,
+                                clipId: clip.id,
+                                eventId: note.id,
+                                absoluteOccurrenceIndex,
+                                probabilityPercent: note.probability ?? 100,
+                            })
                     ),
                     clipId: clip.id,
                     clipStartBeat: clip.startBeat,
                     clipEndBeat: clip.endBeat,
                     iterationStartBeat: clip.startBeat + iteration * loopLength,
                     loopLengthBeats: loopLength,
-                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                    loopEnabled: clip.loopEnabled ?? false,
+                    midiOffsetBeats,
+                    loopEnabled,
                     toasterPadIndex: padIndex,
                     clipGain: clip.gain,
                 });

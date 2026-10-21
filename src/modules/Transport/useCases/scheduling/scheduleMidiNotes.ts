@@ -24,7 +24,11 @@ import {
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
-import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE, isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
+import {
+    CLIP_LOOP_WINDOW_BEAT_TOLERANCE,
+    isBeatAdmittedByAnchoredClipLoopWindow,
+    isBeatInClipLoopWindow,
+} from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { isBypassedNoteReceiver, type NoteReceivingInstrumentKind } from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -320,6 +324,9 @@ type SelectYeastNotesForSchedulerWindowInput = {
     midiOffsetBeats: number;
     loopEnabled: boolean;
     loopLengthBeats: number;
+    /** The owning clip's start — not the iteration's; the anchor's trim advance reads against it. */
+    clipStartBeat: number;
+    loopOriginBeat: number | undefined;
     fromBeat: number;
     toBeat: number;
 };
@@ -329,7 +336,10 @@ type YeastLoopPhaseEntry = {
     phaseBeat: number;
 };
 type YeastLoopPhaseIndex = {
+    clipStartBeat: number;
+    loopEnabled: boolean;
     loopLengthBeats: number;
+    loopOriginBeat: number | undefined;
     midiOffsetBeats: number;
     orderByNote: ReadonlyMap<ScheduledMidiNote, number>;
     sortedEnds: readonly YeastLoopPhaseEntry[];
@@ -494,12 +504,21 @@ function getYeastLoopPhaseIndex({
     notes,
     loopLengthBeats,
     midiOffsetBeats,
+    clipStartBeat,
+    loopOriginBeat,
+    loopEnabled,
 }: Pick<
     SelectYeastNotesForSchedulerWindowInput,
-    'notes' | 'loopLengthBeats' | 'midiOffsetBeats'
+    'notes' | 'loopLengthBeats' | 'midiOffsetBeats' | 'clipStartBeat' | 'loopOriginBeat' | 'loopEnabled'
 >): YeastLoopPhaseIndex {
     const cached = yeastLoopPhaseIndexes.get(notes);
-    if (cached?.loopLengthBeats === loopLengthBeats && cached.midiOffsetBeats === midiOffsetBeats) {
+    if (
+        cached?.loopLengthBeats === loopLengthBeats &&
+        cached.midiOffsetBeats === midiOffsetBeats &&
+        cached.clipStartBeat === clipStartBeat &&
+        cached.loopOriginBeat === loopOriginBeat &&
+        cached.loopEnabled === loopEnabled
+    ) {
         return cached;
     }
 
@@ -516,6 +535,21 @@ function getYeastLoopPhaseIndex({
         // then re-anchors the displaced start to the iteration's late phase, so
         // the note must be a phase-index candidate for that window.
         if (relativeStartBeat >= MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
+            continue;
+        }
+        // #5198 — the anchored loop window is the index's membership too: a row
+        // past the trimmed region end never sounds on any pass, so it must not
+        // enter the index the looped windows read. An unanchored clip keeps the
+        // pre-anchor index — the admission helper admits without a test there.
+        if (
+            !isBeatAdmittedByAnchoredClipLoopWindow({
+                relativeBeat: relativeStartBeat,
+                startBeat: clipStartBeat,
+                loopOriginBeat,
+                loopLengthBeats,
+                loopEnabled,
+            })
+        ) {
             continue;
         }
         const phaseBeat = positiveModulo(relativeStartBeat, loopLengthBeats);
@@ -542,7 +576,10 @@ function getYeastLoopPhaseIndex({
         (left, right) => left.phaseBeat - right.phaseBeat || orderByNote.get(left.note)! - orderByNote.get(right.note)!
     );
     const created = {
+        clipStartBeat,
+        loopEnabled,
         loopLengthBeats,
+        loopOriginBeat,
         midiOffsetBeats,
         orderByNote,
         sortedEnds: sortedEnds.sort((left, right) => left.endPhaseBeat - right.endPhaseBeat),
@@ -558,6 +595,8 @@ function selectYeastNotesForSchedulerWindow({
     midiOffsetBeats,
     loopEnabled,
     loopLengthBeats,
+    clipStartBeat,
+    loopOriginBeat,
     fromBeat,
     toBeat,
 }: SelectYeastNotesForSchedulerWindowInput): readonly ScheduledMidiNote[] {
@@ -600,7 +639,14 @@ function selectYeastNotesForSchedulerWindow({
         // into loop phase and may itself straddle the seam; the release query
         // stays unnormalized because a wrapped release rings past the iteration
         // end.
-        const loopIndex = getYeastLoopPhaseIndex({ notes, loopLengthBeats, midiOffsetBeats });
+        const loopIndex = getYeastLoopPhaseIndex({
+            notes,
+            loopLengthBeats,
+            midiOffsetBeats,
+            clipStartBeat,
+            loopOriginBeat,
+            loopEnabled,
+        });
         const phaseStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
         const phaseEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
         const phaseWidthBeats = phaseEndBeat - phaseStartBeat;
@@ -636,7 +682,23 @@ function selectYeastNotesForSchedulerWindow({
             candidates.add(loopIndex.sortedEnds[index]!.note);
         }
     }
-    return [...candidates].sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
+    // #5198 — the anchored loop window owns admission on the row's stored
+    // figure, the same relative beat the synth path's selector and per-note
+    // test read: a row past the trimmed region end is a content-window
+    // candidate here (its audible beat sits inside the scheduler window) and
+    // must never reach the rack's ownership. An unanchored clip admits
+    // without the test, byte-identically to the pre-anchor selector.
+    return [...candidates]
+        .filter((note) =>
+            isBeatAdmittedByAnchoredClipLoopWindow({
+                relativeBeat: note.startBeat - midiOffsetBeats,
+                startBeat: clipStartBeat,
+                loopOriginBeat,
+                loopLengthBeats,
+                loopEnabled,
+            })
+        )
+        .sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
 }
 
 function getScheduledIterationRange({
@@ -1078,6 +1140,8 @@ export async function scheduleMidiNotes(
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                         loopEnabled: clip.loopEnabled ?? false,
                         loopLengthBeats: loopLength,
+                        clipStartBeat: clip.startBeat,
+                        loopOriginBeat: clip.loopOriginBeat,
                         fromBeat,
                         toBeat,
                     });
@@ -1094,6 +1158,8 @@ export async function scheduleMidiNotes(
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                         loopEnabled: clip.loopEnabled ?? false,
                         loopLengthBeats: loopLength,
+                        clipStartBeat: clip.startBeat,
+                        loopOriginBeat: clip.loopOriginBeat,
                         sourceNotes,
                     } satisfies LiveYeastIteration;
                     cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);

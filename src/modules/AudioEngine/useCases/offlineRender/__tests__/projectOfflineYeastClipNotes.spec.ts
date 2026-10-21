@@ -119,3 +119,47 @@ describe('projectOfflineYeastClipNotes — empty notes', () => {
         expect(result).toEqual([]);
     });
 });
+
+describe('projectOfflineYeastClipNotes — the anchored loop window on routed notes (#5198)', () => {
+    /**
+     * A clip trimmed across its anchor — start 2, anchor 4, loop 4 — so the
+     * anchored window reads [2, 6) in region-relative beats: the note at
+     * startPpq 5 carries relative 3 (in-region) and the note at startPpq 8.5
+     * carries relative 6.5 (past the region end, placed there by the pass
+     * mapping). The projection below runs `eventsAreAbsolute: true`, so the
+     * clip projection inside `projectMidiEvents` never applies the window —
+     * the membership this projector applies itself is what filters.
+     */
+    function projectRoutedNotes(loopOriginBeat: number | undefined) {
+        const projectMidiEvents = vi.fn((input: { events: readonly unknown[] }) => input.events);
+        const result = projectOfflineYeastClipNotes(
+            makeInput({
+                notes: [
+                    makeNote({ id: 'in-region', pitch: 61, startPpq: 5, endPpq: 5.25 }),
+                    makeNote({ id: 'past-region', pitch: 72, startPpq: 8.5, endPpq: 8.75 }),
+                ],
+                clipStartBeat: 2,
+                iterationStartBeat: 2,
+                loopLengthBeats: 4,
+                loopEnabled: true,
+                loopOriginBeat,
+                projectMidiEvents,
+            })
+        );
+        return { result, projectMidiEvents };
+    }
+
+    it('drops the routed note past the trimmed region end and keeps the in-region note', () => {
+        const { result, projectMidiEvents } = projectRoutedNotes(4);
+
+        expect(result.map((note) => note.pitch)).toEqual([61]);
+        const callArg = projectMidiEvents.mock.calls[0]?.[0] as { events: Array<{ startBeat: number }> };
+        expect(callArg.events).toEqual([expect.objectContaining({ startBeat: 3 })]);
+    });
+
+    it('control: keeps every routed note when the clip carries no anchor', () => {
+        const { result } = projectRoutedNotes(undefined);
+
+        expect(result.map((note) => note.pitch).sort((left, right) => left - right)).toEqual([61, 72]);
+    });
+});

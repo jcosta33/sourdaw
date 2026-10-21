@@ -130,4 +130,52 @@ describe('processLiveYeastTrackBlock', () => {
 
         expect(result?.generatedNotes).toEqual([expect.objectContaining({ pitch: 72, startBeat: 0, duration: 0.5 })]);
     });
+
+    it('keeps a row past the anchored loop region silent while the wrapped head sounds', async () => {
+        // The anchor sits 4 beats behind the trimmed head (start 4, anchor 0,
+        // advance 4), so the anchored window reads [−4, 0): the head at −4
+        // wraps onto the pass opening at beat 4, and the 0.5 row — which the
+        // wrap alone would re-anchor into the pass at 4.5 — reads past the
+        // region end on its stored figure and never reaches the rack.
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
+        vi.mocked(processYeastMidi).mockImplementation(({ events }) => Promise.resolve([...events]));
+
+        const result = await processLiveYeastTrackBlock({
+            context: { sampleRate: 48_000 } as BaseAudioContext,
+            rackId: 'rack-a',
+            trackId: 'track-a',
+            iterations: [
+                {
+                    routeId: 'route-a',
+                    clipId: 'clip-a',
+                    iterationStartBeat: 4,
+                    iterationEndBeat: 8,
+                    midiOffsetBeats: 0,
+                    loopEnabled: true,
+                    loopLengthBeats: 4,
+                    clipStartBeat: 4,
+                    loopOriginBeat: 0,
+                    sourceNotes: [
+                        { id: 'loop-head', pitch: 60, startBeat: -4, duration: 1, velocity: 100 },
+                        { id: 'past-region', pitch: 72, startBeat: 0.5, duration: 0.25, velocity: 100 },
+                    ],
+                },
+            ],
+            fromBeat: 4,
+            toBeat: 8,
+            changes: [],
+            timeSignatureChanges: [],
+            transport: { ...defaultTransportState, tempo: 120 },
+            isCurrent: () => true,
+        });
+
+        const inputEvents = vi.mocked(processYeastMidi).mock.calls[0]![0].events;
+        expect(inputEvents.map((event) => [event.kind.note, event.timePpq, event.kind.type])).toEqual([
+            [60, 4, 'noteOn'],
+            [60, 5, 'noteOff'],
+        ]);
+        expect(result?.notesByRoute.get('route-a')).toEqual([
+            expect.objectContaining({ pitch: 60, startBeat: 4 }),
+        ]);
+    });
 });

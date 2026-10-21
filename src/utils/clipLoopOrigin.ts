@@ -96,6 +96,23 @@ export function resolveLoopedOffsetBeats({
     return ((offsetBeats % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
 }
 
+/**
+ * The membership law for the readers that own candidates at absolute or
+ * rack-owned coordinates — the Yeast chains, live and offline. The anchored
+ * window when the clip carries one; unconditional admission otherwise. The
+ * unanchored `isBeatInClipLoopWindow` fallback (`relative < loopLength`) is
+ * deliberately NOT applied: these readers preselected their candidates by
+ * scheduler window before the anchor existed, and grafting that fallback onto
+ * them now would silently change loop-off and legacy-anchorless behavior the
+ * anchor must never touch.
+ */
+export function isBeatAdmittedByAnchoredClipLoopWindow(input: ClipLoopWindowMembershipInput): boolean {
+    if (input.loopEnabled !== true || !isPresentLoopOriginBeat(input.loopOriginBeat)) {
+        return true;
+    }
+    return isBeatInClipLoopWindow(input);
+}
+
 type ClipLoopOriginShiftInput = Readonly<{
     loopOriginBeat?: number;
 }>;

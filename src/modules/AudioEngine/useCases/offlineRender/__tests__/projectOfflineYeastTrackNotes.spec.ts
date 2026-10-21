@@ -293,3 +293,74 @@ describe('projectOfflineYeastTrackNotes', () => {
         ).toBe(-1);
     });
 });
+
+describe('projectOfflineYeastTrackNotes — the anchored loop window on routed rows (#5198)', () => {
+    /**
+     * A clip trimmed across its anchor — start 2, anchor 4, loop 4 — so the
+     * anchored window reads [2, 6) in stored-figure coordinates: the row at
+     * relative 3 is in-region material and the row at relative 6.5 sits past
+     * the region end, audible at 8.5 and 12.5 only because the pass mapping
+     * places it there.
+     */
+    function projectTrimmedClipRows(loopOriginBeat: number | undefined) {
+        function projectMidiEvents<Event extends ProjectableEvent>(
+            input: Parameters<OfflineMidiEventProjector>[0]
+        ): readonly Event[] {
+            return input.events as readonly Event[];
+        }
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>((input) => [...input.events]);
+        return projectOfflineYeastTrackNotes({
+            trackId: 'track-1',
+            iterations: [2, 6].map((iterationStartBeat) => ({
+                sourceNotes: [
+                    { id: 'in-window', pitch: 61, startBeat: 3, duration: 0.25, velocity: 100 },
+                    { id: 'past-region', pitch: 72, startBeat: 6.5, duration: 0.25, velocity: 100 },
+                ],
+                clipId: 'clip-1',
+                clipStartBeat: 2,
+                clipEndBeat: 10,
+                iterationStartBeat,
+                loopLengthBeats: 4,
+                midiOffsetBeats: 0,
+                loopEnabled: true,
+                loopOriginBeat,
+            })),
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 400_000,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents,
+            projectPpqEndpoints,
+            processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
+        });
+    }
+
+    it('keeps the row past the trimmed region end out of the rack input and the rendered pass', () => {
+        // The membership runs on the row's stored figure before the
+        // clip-groove phase offers it to the rack: the 6.5 row reads past the
+        // [2, 6) window in both passes and never renders; the 3 row sounds at
+        // its pass positions 5 and 9.
+        const notes = projectTrimmedClipRows(4);
+
+        expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([
+            [61, 5],
+            [61, 9],
+        ]);
+    });
+
+    it('control: keeps every row when the clip carries no anchor', () => {
+        // Without the anchor the pre-anchor projector admitted everything the
+        // pass mapping placed, and it still must: the anchorless fallback
+        // bound (`relative < loopLength`) would drop exactly these lifted rows.
+        const notes = projectTrimmedClipRows(undefined);
+
+        expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([
+            [61, 5],
+            [72, 8.5],
+            [61, 9],
+            [72, 12.5],
+        ]);
+    });
+});

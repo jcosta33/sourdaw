@@ -2223,7 +2223,7 @@ describe('scheduleTrackClips — the anchored loop window through the real proje
      * −4 so every relative keeps the raw advance's figure — the loop head at
      * −4 and one row of source material a beat past the region end at 0.5.
      */
-    async function scheduleAnchoredClip(): Promise<string[]> {
+    async function scheduleAnchoredClip(options: { yeastRouted?: boolean } = {}): Promise<string[]> {
         const arrivals: string[] = [];
         const strategy: DeviceNodeEntry['strategy'] = {
             node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
@@ -2243,6 +2243,9 @@ describe('scheduleTrackClips — the anchored loop window through the real proje
             },
         };
         const track = makeMidiTrack();
+        if (options.yeastRouted) {
+            track.devices.push({ id: 'yeast-1', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} });
+        }
         track.clips = [
             {
                 ...track.clips[0]!,
@@ -2299,6 +2302,22 @@ describe('scheduleTrackClips — the anchored loop window through the real proje
         // [0, 4) reading admits the past-region row and drops the head, so
         // losing the pass-through at the scheduler swaps the audible material.
         const arrivals = await scheduleAnchoredClip();
+
+        expect(arrivals).toEqual([
+            `noteOn @${4 * BEAT_FRAMES}`,
+            `noteOff @${5 * BEAT_FRAMES}`,
+            `noteOn @${8 * BEAT_FRAMES}`,
+            `noteOff @${9 * BEAT_FRAMES}`,
+        ]);
+    });
+
+    it('sounds the trimmed-in loop head on the Yeast rack path and stays silent past the region', async () => {
+        // The same anchored clip routed to a Yeast rack: the offline
+        // construction, the routed-row projection, and the post-rack clip
+        // projection each apply the anchored window, so the past-region row
+        // never reaches the rack and both passes render exactly the head —
+        // the same material the synth twin above renders.
+        const arrivals = await scheduleAnchoredClip({ yeastRouted: true });
 
         expect(arrivals).toEqual([
             `noteOn @${4 * BEAT_FRAMES}`,

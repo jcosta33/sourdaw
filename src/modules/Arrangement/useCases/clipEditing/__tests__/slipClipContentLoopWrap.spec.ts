@@ -85,13 +85,14 @@ function storedPressBeats(clipId: string): number[] {
 
 /** The scheduling selector on the clip's stored figures — the admission law the audience hears. */
 function audibleStoredNotes(clip: Clip): number {
+    const loopLengthBeats = clip.loopLength ?? 4;
     return selectMidiNotesForLoopWindow({
         notes: getNotesForClip(clip.id),
         iterationStartBeat: 0,
-        loopLengthBeats: 4,
+        loopLengthBeats,
         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
         fromBeat: 0,
-        toBeat: 4,
+        toBeat: loopLengthBeats,
         lastScheduledBeat: 0,
         grooveLookaroundBeats: 0,
         clipStartBeat: clip.startBeat,
@@ -238,5 +239,65 @@ describe('a slip undo restores the rows its raising wrap lifted (#5198)', () => 
         expect(readClip('c-loop').midiOffsetBeats).toBe(0);
         expect(storedNoteBeats('c-loop')).toEqual([4, 5, 6, 7]);
         expect(storedPressBeats('c-loop')).toEqual([4]);
+    });
+});
+
+describe('a slip undo restores the captured offset verbatim, not its phase at replay time', () => {
+    afterEach(() => {
+        trackStore.set(structuredClone(defaultTrackState));
+        midiStore.set(structuredClone(defaultMidiStoreState));
+    });
+
+    it('restores a legacy raw negative offset to the captured audible state', () => {
+        // A pre-anchor slip stored the raw figure −1, and hydrate passes it
+        // verbatim. The captured state sounds 3 of 4 rows through the anchored
+        // window. Re-wrapping the captured −1 to its phase 3 at replay time
+        // wrote offset 3 against the rows the recorded shift restored to
+        // 0..3 — relatives −3..0 against the unmoved window, 1 of 4 audible,
+        // a state the pre-action clip never carried.
+        seed([{ ...loopedClip('c-loop'), midiOffsetBeats: -1 }]);
+
+        const action = {
+            type: 'slipClipContent',
+            payload: { clipId: 'c-loop', clipType: 'midi', offset: -4 },
+        } as const;
+        const description = handleSlipClipContent.describe(action);
+        expect(handleSlipClipContent.execute(action)).toEqual({ status: 'written' });
+        if (description.inverseAction?.type !== 'slipClipContent') {
+            throw new Error('Expected slip inverse action');
+        }
+        expect(description.inverseAction.payload.offset).toBe(-1);
+        expect(handleSlipClipContent.execute(description.inverseAction)).toEqual({ status: 'written' });
+
+        const restored = readClip('c-loop');
+        expect(restored.midiOffsetBeats).toBe(-1);
+        expect(storedNoteBeats('c-loop')).toEqual([0, 1, 2, 3]);
+        expect(audibleStoredNotes(restored)).toBe(3);
+    });
+
+    it('restores a stored phase a loop-length change de-phased, instead of re-writing the slipped state', () => {
+        // setClipLoopLength re-wraps nothing: offset 3 under a loop shrunk to
+        // 2 is a stale phase. The −1 slip lifts the rows to 2..5 and stores
+        // phase 1; replaying the captured 3 through the wrap law produced
+        // phase 1 again — the exact post-slip offset, an undo that consumed
+        // the entry and lost the pre-slip state.
+        seed([{ ...loopedClip('c-loop'), loopLength: 2, midiOffsetBeats: 3 }]);
+
+        const action = {
+            type: 'slipClipContent',
+            payload: { clipId: 'c-loop', clipType: 'midi', offset: -1 },
+        } as const;
+        const description = handleSlipClipContent.describe(action);
+        expect(handleSlipClipContent.execute(action)).toEqual({ status: 'written' });
+        if (description.inverseAction?.type !== 'slipClipContent') {
+            throw new Error('Expected slip inverse action');
+        }
+        expect(description.inverseAction.payload.offset).toBe(3);
+        expect(handleSlipClipContent.execute(description.inverseAction)).toEqual({ status: 'written' });
+
+        const restored = readClip('c-loop');
+        expect(restored.midiOffsetBeats).toBe(3);
+        expect(storedNoteBeats('c-loop')).toEqual([0, 1, 2, 3]);
+        expect(audibleStoredNotes(restored)).toBe(1);
     });
 });
