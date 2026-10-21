@@ -35,12 +35,13 @@
 import { type ReactElement, type PointerEvent, type RefObject, useRef, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
+import { projectPianoRollRecordingPassNotes } from '../../helpers/pianoRollRecordingPass';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
@@ -231,7 +232,7 @@ type NotePropertyLaneProps = {
      */
     trackId: string;
     selectedNoteIds: Set<string>;
-    /** Display projection with canonical IDs; omitted callers read the raw primary clip. */
+    /** Explicit display projection; omitted callers project the selected recorded pass. */
     primaryNotes?: readonly MidiNote[];
     /**
      * Notes of the clips the piano roll has open alongside the primary clip,
@@ -293,7 +294,17 @@ export const NotePropertyLane = ({
         selectedTrackId: null,
     });
 
-    const laneNotes = buildLaneNotes(clipId, midiState.notesByClipId, openedClipNotes, selectedNoteIds, primaryNotes);
+    useStore(takeLaneStore);
+    const primaryDisplayNotes =
+        primaryNotes ??
+        (clipId ? projectPianoRollRecordingPassNotes(clipId, midiState.notesByClipId[clipId] ?? []) : undefined);
+    const laneNotes = buildLaneNotes(
+        clipId,
+        midiState.notesByClipId,
+        openedClipNotes,
+        selectedNoteIds,
+        primaryDisplayNotes
+    );
 
     // Every clip in scope resolves its own color, the same lookup the piano
     // roll's renderer uses for opened clips — a secondary clip's bars must not
