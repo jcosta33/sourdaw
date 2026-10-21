@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/getPlanningProviderToolSchemas.spec.ts
+  s_29d8df116c5b92::t_60ca1eaefc0a37 52-70,136-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f65e126ce0312b79fac16acf79ea0387de333cc6",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
