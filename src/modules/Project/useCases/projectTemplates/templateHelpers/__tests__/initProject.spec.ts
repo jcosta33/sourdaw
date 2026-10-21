@@ -13,15 +13,22 @@ const mocks = vi.hoisted(() => ({
     projectSet: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    createTrack: mocks.createTrack,
-    resetArrangementStoresForProject: mocks.resetArrangementStoresForProject,
-    getAllTracks: mocks.getAllTracks,
-}));
-vi.mock('#/modules/MIDI/useCases', () => ({
-    replaceChordTrackState: mocks.replaceChordTrackState,
-    hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        createTrack: mocks.createTrack,
+        resetArrangementStoresForProject: mocks.resetArrangementStoresForProject,
+    };
+});
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return {
+        ...actual,
+        replaceChordTrackState: mocks.replaceChordTrackState,
+        hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
+    };
+});
 // Real stores with only the write spied, so the real Transport useCases barrel —
 // and with it the real `preferencesSeededTransportState` — loads and runs below.
 vi.mock('#/modules/Transport/stores', async (importOriginal) => {
