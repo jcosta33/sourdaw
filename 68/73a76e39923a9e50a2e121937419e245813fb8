@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/verifiedBatchReplayThreadContext.spec.ts
+  s_29d8df116c5b92::t_dfc79b58c5b795 195,215-224,227-248,250,260-262,267,270,274-320
+src/modules/AiRuntime/useCases/agentRequestOrchestration/settleVerifiedBatchReplay.ts
+  s_29d8df116c5b92::t_7b783ad7771ebd 1,41-44,46-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6873a76e39923a9e50a2e121937419e245813fb8",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
