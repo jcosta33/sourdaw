@@ -29,9 +29,9 @@ type Track = { id: string; name: string; clips: Clip[] };
 type MirroredEntry = {
     kind: string;
     groupId?: string;
-    action?: { type: string };
-    inverseAction?: { type: string };
-    redoAction?: { type: string };
+    action?: AppAction;
+    inverseAction?: AppAction;
+    redoAction?: AppAction;
 };
 type Mirror = { projectId?: string; witness?: string; past: MirroredEntry[]; future: MirroredEntry[] };
 type Snapshot = {
@@ -280,7 +280,12 @@ async function expectExact(page: Page, expected: Snapshot): Promise<Snapshot> {
     return actual;
 }
 
-function requireMirror(snapshot: Snapshot, side: 'past' | 'future', types: string[]): MirroredEntry[] {
+function requireMirror(
+    snapshot: Snapshot,
+    side: 'past' | 'future',
+    types: string[],
+    removeRipple = false
+): MirroredEntry[] {
     expect(snapshot.mirror.projectId).toBe(snapshot.projectId);
     expect(snapshot.mirror.witness).toBe(snapshot.witness);
     const entries =
@@ -290,10 +295,14 @@ function requireMirror(snapshot: Snapshot, side: 'past' | 'future', types: strin
         expect(entry.kind).toBe('action');
         expect(entry.inverseAction?.type).toBeTruthy();
         if (entry.action?.type === 'removeClip') {
-            // removeClip replays its original action (redo.ts), while its
-            // session validator requires the captured restore inverse only.
+            // New removal entries bind their actual forward Ripple choice.
+            // Legacy entries without this metadata remain covered by unit tests.
             expect(entry.inverseAction?.type).toBe('restoreClip');
-            expect(entry.redoAction).toBeUndefined();
+            expect(entry.action.payload.clipId).toEqual(expect.any(String));
+            expect(entry.redoAction).toEqual({
+                type: 'removeClip',
+                payload: { clipId: entry.action.payload.clipId, ripple: removeRipple },
+            });
         } else {
             expect(entry.redoAction?.type).toBeTruthy();
         }
@@ -336,13 +345,14 @@ async function reloadSaved(
     expected: Snapshot,
     capabilities: string[],
     side: 'past' | 'future',
-    types: string[]
+    types: string[],
+    removeRipple = false
 ): Promise<void> {
     const before = await readSnapshot(page);
-    const entries = requireMirror(before, side, types);
+    const entries = requireMirror(before, side, types, removeRipple);
     await bootReload(page, capabilities);
     const restored = await expectExact(page, expected);
-    expect(requireMirror(restored, side, types)).toEqual(entries);
+    expect(requireMirror(restored, side, types, removeRipple)).toEqual(entries);
     await expect(page.getByRole('button', { name: side === 'past' ? 'Undo' : 'Redo', exact: true })).toBeEnabled();
 }
 
@@ -459,7 +469,8 @@ async function replayTwice(
     trackName: string,
     types: string[],
     capabilities: string[],
-    edit: (before: Snapshot) => Promise<void>
+    edit: (before: Snapshot) => Promise<void>,
+    removeRipple = false
 ): Promise<void> {
     const before = await readSnapshot(page);
     await visibleTrackCount(page, before, trackName);
@@ -480,7 +491,7 @@ async function replayTwice(
     await visibleTrackCount(page, changed, trackName);
     await evidence(page, info, `${name}-changed`, changed);
     await save(page);
-    await reloadSaved(page, changed, capabilities, 'past', types);
+    await reloadSaved(page, changed, capabilities, 'past', types, removeRipple);
     await visibleTrackCount(page, changed, trackName);
     for (let cycle = 1; cycle <= 2; cycle += 1) {
         await page.getByRole('button', { name: 'Undo', exact: true }).click();
@@ -488,7 +499,7 @@ async function replayTwice(
         await visibleTrackCount(page, undone, trackName);
         await evidence(page, info, `${name}-undo-${cycle}`, undone);
         await save(page);
-        await reloadSaved(page, before, capabilities, 'future', types);
+        await reloadSaved(page, before, capabilities, 'future', types, removeRipple);
         await visibleTrackCount(page, before, trackName);
         await page.getByRole('button', { name: 'Redo', exact: true }).click();
         const redone = await expectExact(page, changed);
@@ -628,6 +639,7 @@ test('persisted clip edits replay exact owners and source material through real 
 
     await test.step('Remove one selected MIDI clip with Backspace', async () => {
         await replayTwice(page, info, 'remove', MIDI_NAME, ['removeClip'], capabilities, async (before) => {
+            await expect(page.getByTestId('tool-ripple')).not.toHaveAttribute('aria-pressed', 'true');
             const clip = before.tracks
                 .flatMap((track) => track.clips)
                 .filter((entry) => entry.type === 'midi')
@@ -706,11 +718,12 @@ test('persisted clip edits replay exact owners and source material through real 
                     body: JSON.stringify(commits),
                     contentType: 'application/json',
                 });
-            }
+            },
+            true
         );
     });
     const finalState = await readSnapshot(page);
     await save(page);
-    await reloadSaved(page, finalState, capabilities, 'past', ['removeClip', 'splitClip']);
+    await reloadSaved(page, finalState, capabilities, 'past', ['removeClip', 'splitClip'], true);
     await evidence(page, info, 'final-hydrated', await readSnapshot(page));
 });
