@@ -16,15 +16,16 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  * Compiled target authority (#5295).
  *
  * A compiled command list proves which objects its selectors resolve to, never that the user asked
- * for them. This check closes one hole: a selector, or a literal target, that picks an object by
- * name or id the request never states. Every target the request protects or excludes is refused.
- * Every name, name fragment, owner track or literal id a target is picked by must be stated in the
- * clause's original text (outside its protections and the values the batch writes), or, for an id,
- * reached by the clause's selection reference ("the selected track"). A single target picked that
- * way must also be the one the clause grounds when the direct route reads it.
+ * for them. This check closes one hole: a selector that picks an object by a name or id the request
+ * never states. Every target the request protects or excludes is refused. A selector's whole-name
+ * pick must appear whole in the clause's original text, a name fragment anywhere in it, and an
+ * owner-track pick as that track's whole name or id; the text read leaves out the request's
+ * restrictions and the values the batch writes. A selection reference ("this track", "the selected
+ * track") that resolves to the picked objects states any of those picks.
  *
- * Selections by role, role family, kind, device type, tag, condition or no filter at all are taken
- * as the compiler resolved them, as before this check. What the request must state for those is
+ * Literal targets, and selections by role, role family, kind, device type, tag, condition or no
+ * filter at all, are taken as the compiler resolved them, as before this check; so are names the
+ * clause states beside a negation ("don't touch Keys"). What the request must state for those is
  * left to #5351 and #5353.
  */
 
@@ -46,16 +47,10 @@ export type CompiledTargetAuthorityInput = {
     catalog: GroundingCatalog;
     /** Where the clause the targets belong to starts in the request, when the scope knows it. */
     clauseStart?: number;
-    /** Every id the batch's calls of this action assert for this argument. */
-    compiledArgumentIds: readonly string[];
     /** Every id the compiled list's own selectors excluded or protected. */
     compilerExcludedIds: ReadonlySet<string>;
     context: ProjectContext;
-    /** Objects this batch creates; a compiled selector resolved only objects that already exist. */
-    createdIds: ReadonlySet<string>;
     dependencyId?: string;
-    /** Ids the batch's calls of this action bind to their other target arguments. */
-    otherArgumentIds: readonly string[];
     /** The whole original request, where protections and exclusions are read. */
     prompt: string;
     /**
@@ -65,8 +60,6 @@ export type CompiledTargetAuthorityInput = {
     referenceResolved: boolean;
     /** The selector the call's targets came from, absent when the compiler named every one literally. */
     selectorTerms?: CompiledSelectorTerms;
-    /** Buses a send parameter of the call names and its asserted track already sends to. */
-    sendBusIds: readonly string[];
     /** The original text of the clause the targets belong to. */
     targetPrompt: string;
     targetIds: readonly string[];
@@ -74,8 +67,7 @@ export type CompiledTargetAuthorityInput = {
     valueTexts: readonly string[];
 };
 
-export type CompiledTargetAuthority =
-    { status: 'admitted' } | { status: 'refused'; reason: 'unauthorized' | 'reference-mismatch' };
+export type CompiledTargetAuthority = { status: 'admitted' } | { status: 'refused' };
 
 /** Owned capabilities whose candidates a track dependency narrows to that track's objects. */
 const TRACK_DEPENDENT_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
@@ -84,23 +76,10 @@ const TRACK_DEPENDENT_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability
 ]);
 
 const ADMITTED: CompiledTargetAuthority = { status: 'admitted' };
-const UNAUTHORIZED: CompiledTargetAuthority = { status: 'refused', reason: 'unauthorized' };
+const UNAUTHORIZED: CompiledTargetAuthority = { status: 'refused' };
 
-function readReferences(
-    text: string,
-    capability: Capability,
-    context: ProjectContext,
-    dependencyId?: string,
-    excludedIds: readonly string[] = []
-) {
-    return resolveAgentReference({
-        prompt: text,
-        assertedId: undefined,
-        capability,
-        context,
-        dependencyId,
-        excludedIds,
-    }).candidates;
+function readReferences(text: string, capability: Capability, context: ProjectContext, dependencyId?: string) {
+    return resolveAgentReference({ prompt: text, assertedId: undefined, capability, context, dependencyId }).candidates;
 }
 
 /** Objects of the capability the text names by literal id, whole name or selection. */
@@ -108,10 +87,9 @@ function getTieredReferenceIds(
     text: string,
     capability: Capability,
     context: ProjectContext,
-    dependencyId?: string,
-    excludedIds: readonly string[] = []
+    dependencyId?: string
 ): string[] {
-    return readReferences(text, capability, context, dependencyId, excludedIds)
+    return readReferences(text, capability, context, dependencyId)
         .filter((candidate) => candidate.evidence.some((evidence) => evidence !== 'fuzzy-name'))
         .map((candidate) => candidate.id);
 }
@@ -258,94 +236,50 @@ function getEvidenceText(
     return maskWrittenValues(unrestricted.slice(input.clauseStart, end), input.valueTexts);
 }
 
-/** The names, name fragments and ids a call's targets for one argument are picked by. */
-type NamePredicates = { names: string[]; ids: string[] };
+/** The whole names, name fragments and owner tracks a selector picks its targets by. */
+type NamePicks = { names: string[]; fragments: string[]; trackIds: string[] };
 
-function getNamePredicates(input: CompiledTargetAuthorityInput): NamePredicates {
+function getNamePicks(input: CompiledTargetAuthorityInput): NamePicks {
+    const picks: NamePicks = { names: [], fragments: [], trackIds: [] };
     const terms = input.selectorTerms;
+    // A literal target is not a selector pick; it is admitted as the compiler resolved it.
     if (terms === undefined || terms.targetArgument !== input.argument) {
-        return { names: [], ids: [...input.targetIds] };
+        return picks;
     }
-    const names: string[] = [];
-    const ids: string[] = [];
     if (terms.where?.name !== undefined) {
-        names.push(terms.where.name);
+        picks.names.push(terms.where.name);
     }
     if (terms.where?.trackId !== undefined) {
-        ids.push(terms.where.trackId);
+        picks.trackIds.push(terms.where.trackId);
     }
     const predicates = [terms.match?.all, terms.match?.any].flatMap((list) => list ?? []);
     for (const predicate of predicates) {
         if ('nameIncludes' in predicate) {
-            names.push(predicate.nameIncludes);
+            picks.fragments.push(predicate.nameIncludes);
         }
     }
-    return { names, ids };
+    return picks;
 }
 
-/** The names an object is stated by: its own name, and a device's catalogue type name. */
-function getObjectNames(objectId: string, context: ProjectContext): string[] {
-    for (const track of context.tracks) {
-        if (track.id === objectId) {
-            return [track.name];
-        }
-        const clip = track.clips.find((candidate) => candidate.id === objectId);
-        if (clip !== undefined) {
-            return [clip.name];
-        }
-        const device = track.devices.find((candidate) => candidate.id === objectId);
-        if (device !== undefined) {
-            const typeName = (context.availableDeviceTypes ?? []).find((type) => type.id === device.type)?.name;
-            return [device.name, typeName].filter((name): name is string => name !== undefined);
-        }
-    }
-    const lane = (context.automationLanes ?? []).find((candidate) => candidate.id === objectId);
-    return lane === undefined ? [] : [lane.name];
-}
-
-/** Whether the clause states the id literally, states the object's name, or selects it. */
-function statesObject(text: string, objectId: string, input: CompiledTargetAuthorityInput): boolean {
-    if (
-        [objectId, ...getObjectNames(objectId, input.context)].some((name) => wholeWordsPattern(name, 'iu').test(text))
-    ) {
-        return true;
-    }
-    const capability: Capability = input.context.tracks.some((track) => track.id === objectId)
-        ? 'track'
-        : input.capability;
-    const result = resolveAgentReference({ prompt: text, assertedId: objectId, capability, context: input.context });
+/** Whether the clause's own selection reference ("this track", "the selected track") is the object. */
+function selectsObject(text: string, objectId: string, capability: Capability, context: ProjectContext): boolean {
+    const result = resolveAgentReference({ prompt: text, assertedId: objectId, capability, context });
     return result.status === 'resolved' && result.evidence === 'selection';
 }
 
-/**
- * How the direct route reads a single target in the clause: as the one exact reference it names
- * beside the batch's other targets for the argument, as a clause that names another object instead,
- * as one that names another object as well, or with no exact reference at all. Every set-aside
- * object stays out of the reading; the batch's other targets stay in it, so a longer name one of
- * them carries still overlaps a shorter one ("Bass, DI" beside a track named Bass).
- */
-function resolveLikeDirectCall(
-    input: CompiledTargetAuthorityInput,
-    text: string,
-    setAside: readonly string[]
-): 'target' | 'other' | 'ambiguous' | 'none' {
-    const [targetId] = input.targetIds;
-    if (input.targetIds.length !== 1 || targetId === undefined) {
-        return 'none';
-    }
-    const siblingIds = new Set(input.compiledArgumentIds.filter((id) => id !== targetId));
-    const named = getTieredReferenceIds(
-        text,
-        input.capability,
-        input.context,
-        input.dependencyId,
-        setAside.filter((id) => id !== targetId)
+/** Whether the clause selects every target, which states any name the selector picks them by. */
+function selectsEveryTarget(text: string, input: CompiledTargetAuthorityInput): boolean {
+    return input.targetIds.every((targetId) => selectsObject(text, targetId, input.capability, input.context));
+}
+
+/** Whether the clause states the owner track by its whole name or id, or selects it. */
+function statesTrack(text: string, trackId: string, context: ProjectContext): boolean {
+    const name = context.tracks.find((track) => track.id === trackId)?.name;
+    const references = name === undefined ? [trackId] : [trackId, name];
+    return (
+        references.some((reference) => wholeWordsPattern(reference, 'iu').test(text)) ||
+        selectsObject(text, trackId, 'track', context)
     );
-    const others = named.filter((id) => id !== targetId && !siblingIds.has(id));
-    if (named.includes(targetId)) {
-        return others.length === 0 ? 'target' : 'ambiguous';
-    }
-    return others.length === 0 ? 'none' : 'other';
 }
 
 /** Whether the request authorizes every target a compiled list resolved for one argument. */
@@ -359,23 +293,16 @@ export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): Comp
     if (input.referenceResolved) {
         return ADMITTED;
     }
-    const predicates = getNamePredicates(input);
-    if (predicates.names.length === 0 && predicates.ids.length === 0) {
+    const picks = getNamePicks(input);
+    if (picks.names.length === 0 && picks.fragments.length === 0 && picks.trackIds.length === 0) {
         return ADMITTED;
     }
     const text = getEvidenceText(input, request, restrictionRanges);
-    const statesEveryPredicate =
-        predicates.names.every((name) => wholeWordsPattern(name, 'iu').test(text)) &&
-        predicates.ids.every((id) => statesObject(text, id, input));
-    if (!statesEveryPredicate) {
-        return UNAUTHORIZED;
-    }
-    const setAside = [
-        ...new Set([...input.createdIds, ...protectedIds, ...input.sendBusIds, ...input.otherArgumentIds]),
-    ];
-    const direct = resolveLikeDirectCall(input, text, setAside);
-    if (direct === 'other') {
-        return { status: 'refused', reason: 'reference-mismatch' };
-    }
-    return direct === 'ambiguous' ? UNAUTHORIZED : ADMITTED;
+    const lowerText = text.toLowerCase();
+    const statesNamePicks =
+        (picks.names.every((name) => wholeWordsPattern(name, 'iu').test(text)) &&
+            picks.fragments.every((fragment) => lowerText.includes(fragment.toLowerCase()))) ||
+        selectsEveryTarget(text, input);
+    const statesTrackPicks = picks.trackIds.every((trackId) => statesTrack(text, trackId, input.context));
+    return statesNamePicks && statesTrackPicks ? ADMITTED : UNAUTHORIZED;
 }

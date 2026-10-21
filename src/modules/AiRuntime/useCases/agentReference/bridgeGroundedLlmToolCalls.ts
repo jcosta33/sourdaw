@@ -77,7 +77,6 @@ import {
 import { type CoordinatedTrackList, findCoordinatedTrackLists } from './findCoordinatedTrackLists';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
-import { getAutomatedSendBusIds } from './getAutomatedSendBusIds';
 import {
     getBassProcessingCopyPromptScope,
     type BassProcessingCopyRequestScope,
@@ -4025,16 +4024,10 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
-function getBatchCreatedIds(bindings: ReadonlyMap<string, BatchLocalCreationBinding>): ReadonlySet<string> {
-    return new Set([...bindings.values()].map((binding) => binding.createdId));
-}
 
 function compiledTargetRefusalReason(authority: CompiledTargetAuthority, argument: string): string | null {
     if (authority.status === 'admitted') {
         return null;
-    }
-    if (authority.reason === 'reference-mismatch') {
-        return `Provider target ${argument} does not match the uniquely grounded project reference`;
     }
     return `Compiled target ${argument} is not authorized by the user request`;
 }
@@ -4088,30 +4081,6 @@ function getSameActionWrittenValueTexts(
         getWrittenValueTexts(arguments_, groundingRules)
     );
     return [...new Set(values)];
-}
-
-function getAssertedIds(value: unknown): string[] {
-    if (typeof value === 'string') {
-        return [value];
-    }
-    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
-}
-
-/** Every id the calls assert for the argument, and every id they bind to their other target arguments. */
-function getSameActionTargetIds(
-    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
-    groundingRules: GroundingRules,
-    argument: string
-): { compiledArgumentIds: string[]; otherArgumentIds: string[] } {
-    const otherArguments = groundingRules.targetRules
-        .map((rule) => rule.argument)
-        .filter((candidate) => candidate !== argument);
-    return {
-        compiledArgumentIds: sameActionAssertedArguments.flatMap((arguments_) => getAssertedIds(arguments_[argument])),
-        otherArgumentIds: sameActionAssertedArguments.flatMap((arguments_) =>
-            otherArguments.flatMap((other) => getAssertedIds(arguments_[other]))
-        ),
-    };
 }
 
 function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
@@ -4717,15 +4686,12 @@ function groundToolCall({
                     clauseStart: resolvedActionScope?.start,
                     compilerExcludedIds,
                     context,
-                    createdIds: getBatchCreatedIds(batchLocalCreationBindings),
                     prompt,
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
-                    sendBusIds: [],
                     valueTexts: getSameActionWrittenValueTexts(call, sameActionAssertedArguments, groundingRules),
                     targetPrompt,
                     targetIds: compilerTargetOverride.stableIds,
-                    ...getSameActionTargetIds(sameActionAssertedArguments, groundingRules, targetRule.argument),
                 }),
                 targetRule.argument
             );
@@ -4856,19 +4822,13 @@ function groundToolCall({
                       clauseStart: resolvedActionScope?.start,
                       compilerExcludedIds,
                       context,
-                      createdIds: getBatchCreatedIds(batchLocalCreationBindings),
                       dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
                       prompt,
-                      sendBusIds:
-                          targetRule.argument === 'trackId'
-                              ? getAutomatedSendBusIds(groundedArguments.parameterId, assertedValue, context)
-                              : [],
                       referenceResolved: false,
                       selectorTerms: compiledSelectorTerms,
                       targetPrompt,
                       targetIds: compilerTargetOverride.stableIds,
                       valueTexts: getSameActionWrittenValueTexts(call, sameActionAssertedArguments, groundingRules),
-                      ...getSameActionTargetIds(sameActionAssertedArguments, groundingRules, targetRule.argument),
                   }
                 : null;
         if (
@@ -4916,12 +4876,6 @@ function groundToolCall({
         // member with the others set aside.
         const coordinatedSiblingIds =
             actionScope.coordinatedTargets?.memberIds.filter((memberId) => memberId !== assertedValue) ?? [];
-        // A compiled selector resolved an object that already exists, so an object this batch creates
-        // is never the one it names, however the request words it.
-        const batchCreatedIds =
-            compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride
-                ? [...getBatchCreatedIds(batchLocalCreationBindings)]
-                : [];
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
@@ -4932,10 +4886,6 @@ function groundToolCall({
                 ...(typeof distinctValue === 'string' ? [distinctValue] : []),
                 ...bulkSiblingTargetIds,
                 ...coordinatedSiblingIds,
-                ...batchCreatedIds,
-                ...(targetRule.argument === 'trackId'
-                    ? getAutomatedSendBusIds(groundedArguments.parameterId, assertedValue, context)
-                    : []),
             ],
             risk: getAppActionExecutionPolicy(call.name).risk,
         });

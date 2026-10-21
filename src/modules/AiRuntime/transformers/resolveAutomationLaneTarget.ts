@@ -20,7 +20,7 @@ const TRACK_AUTOMATION_TARGETS: ReadonlyMap<string, ResolvedAutomationLaneTarget
 ]);
 
 /** The send-level prefix a send lane's `parameterId` carries before its bus id. */
-export const SEND_TARGET_PREFIX = 'send:';
+const SEND_TARGET_PREFIX = 'send:';
 
 /**
  * A send target is `send:<busId>` naming a bus this track already sends to. Its lane holds the send's
