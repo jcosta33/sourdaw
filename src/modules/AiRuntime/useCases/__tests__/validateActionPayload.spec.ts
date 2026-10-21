@@ -1646,6 +1646,14 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('device parameter presence guards', () => {
+        function admits(payload: unknown): boolean {
+            const guard = PAYLOAD_VALIDATORS.setDeviceParameter;
+            if (guard === 'unchecked') {
+                throw new Error('Expected setDeviceParameter to carry a payload guard');
+            }
+            return guard(payload);
+        }
+
         it.each([true, false])(
             'admits the boolean presence guard %s through runtime validation',
             (expectedValuePresent) => {
@@ -1653,14 +1661,14 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                     type: 'setDeviceParameter',
                     payload: { deviceId: 'device-1', paramId: 'level', value: -6, expectedValuePresent },
                 };
-                expect(PAYLOAD_VALIDATORS.setDeviceParameter(action.payload)).toBe(true);
+                expect(admits(action.payload)).toBe(true);
                 expect(validateActions([action])).toEqual([action]);
             }
         );
 
         it.each(['false', 0, null, [], {}])('rejects a nonboolean presence guard %j', (expectedValuePresent) => {
             expect(
-                PAYLOAD_VALIDATORS.setDeviceParameter({
+                admits({
                     deviceId: 'device-1',
                     paramId: 'level',
                     value: -6,
