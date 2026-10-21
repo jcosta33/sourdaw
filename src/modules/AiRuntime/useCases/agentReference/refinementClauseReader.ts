@@ -3,10 +3,17 @@ import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCas
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ProposalGroundingBasis, type ProposalGroundingCommand } from '../../models/ProposalGroundingBasis';
 
-import { bindRefinementFigure, type BoundRefinementValue, type RefinementClause } from './bindRefinementFigure';
+import {
+    bindRefinementFigure,
+    LEVEL_DIRECTION_PHRASES,
+    type BoundRefinementValue,
+    type RefinementClause,
+} from './bindRefinementFigure';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
+import { getIntentPhraseIndex } from './groundingStrategies/getIntentPhraseIndex';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
+import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
@@ -25,10 +32,12 @@ type CommandView = { index: number; command: ProposalGroundingCommand; denotes: 
 /**
  * What a refinement removes from the pending card. A removal names one object of that card in whole,
  * after its article and an optional operation word; a name merely contained in the phrase never
- * counts, and a removal that names no pending object refuses the refinement.
+ * counts, and a removal that names no pending object refuses the refinement. A negated clause is a
+ * removal of the one pending object it names, and is asked when it names none.
  */
 type RefinementRemovals =
     | { status: 'refused'; reason: string }
+    | { status: 'clarify'; reason: string; question: string }
     | {
           status: 'read';
           removedCommandIndexes: ReadonlySet<number>;
@@ -55,14 +64,32 @@ type ClauseRead =
     | { kind: 'comparative'; comparative: 'less' | 'more' }
     | ReturnType<typeof bindRefinementFigure>;
 
-type RemovalClauseRead = { kind: 'none' } | { kind: 'read' } | { kind: 'refused'; reason: string };
+type RemovalClauseRead =
+    { kind: 'none' } | { kind: 'read' } | { kind: 'refused'; reason: string } | { kind: 'clarify'; question: string };
+
+type RemovalClauseInput = {
+    clause: RefinementClause;
+    commands: readonly CommandView[];
+    candidates: readonly ReferenceCandidate[];
+    context: ProjectContext;
+    /** Every phrase a clause can state a change by, which a negation before it negates. */
+    changePhrases: readonly string[];
+    removed: Set<number>;
+    removedTargets: ProtectedObject[];
+    protectedTargets: ProtectedObject[];
+};
 
 const OPEN_VALUE_REASON = 'The refinement leaves part of the change it asks for open.';
+const NEGATED_CLAUSE_REASON = 'The refinement says what not to do without naming one pending change to remove.';
 const LEADING_CONNECTOR = /^(?:(?:and|but|also|then|just|please|ok|okay)\s+)+/u;
 const FILLER_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks', 'thank you', 'ok', 'okay', 'instead']);
 const COMPARATIVE =
     /^(?:(?:make it|go|do it)\s+)?(?:(?:a\s+)?(?:bit|little|touch|tad|lot)\s+|slightly\s+|much\s+|even\s+)?(less|more)(?:\s+please)?$/u;
 const REMOVAL = /^(?:not|except(?:\s+for)?|without|drop|leave\s+out)\s+(.+)$/u;
+/** The removal words that negate what follows them even beside a figure; "drop it 2 dB" is a level move. */
+const EXCLUSION = /^(?:not|except|without)\s/u;
+/** Verbs that remove a pending change, so negating one keeps it. */
+const REMOVAL_VERBS: ReadonlySet<string> = new Set(['delete', 'drop', 'exclude', 'omit', 'remove', 'skip']);
 const LEAVE_ALONE = /^leave\s+(.+?)\s+alone$/u;
 const PROTECTION = /\b(?:leave|leaving|keep|keeping|preserve|preserving)\b.*\bunchanged\b/u;
 const INNER_REMOVAL_SEPARATOR = /\s+(?=(?:except(?:\s+for)?|without)\s)/giu;
@@ -218,25 +245,68 @@ function describeUnresolvedRemoval(reference: string, what: 'object' | 'change')
     return `The refinement removes "${reference}", which names no single ${what} of the pending proposal.`;
 }
 
-function readRemovalClause(input: {
-    clause: RefinementClause;
-    commands: readonly CommandView[];
-    candidates: readonly ReferenceCandidate[];
-    context: ProjectContext;
-    removed: Set<number>;
-    removedTargets: ProtectedObject[];
-    protectedTargets: ProtectedObject[];
-}): RemovalClauseRead {
-    const { clause, commands, candidates, context } = input;
-    if (findPromptNumbers(clause.masked).length > 0) {
-        return { kind: 'none' };
+/** Every action phrase the registry reads and every level direction: the words a clause states a change by. */
+function getChangePhrases(catalog: ReturnType<typeof getExecutableAppActionGroundingCatalog>): string[] {
+    const actionPhrases = catalog.flatMap((entry) => entry.intentPhrases.concat(entry.levelIntentPhrases ?? []));
+    return actionPhrases.concat(LEVEL_DIRECTION_PHRASES);
+}
+
+/** The first change phrase a "not", "don't" or "never" governs in a clause, read as any negated request is. */
+function findNegatedPhrase(clause: RefinementClause, changePhrases: readonly string[]): string | null {
+    const negated = changePhrases.flatMap((phrase) => {
+        const index = getIntentPhraseIndex(clause.masked, phrase);
+        return index >= 0 && isNegatedIntent(clause.masked, phrase, index) ? [{ phrase, index }] : [];
+    });
+    const [first] = negated.toSorted((left, right) => left.index - right.index);
+    return first?.phrase ?? null;
+}
+
+/**
+ * Whether a clause states its change negated. "Don't drop the snare" without a figure keeps the snare's
+ * change rather than removing it, so a negated removal verb is left to the removal reading.
+ */
+function negatesChange(clause: RefinementClause, changePhrases: readonly string[], statesFigure: boolean): boolean {
+    const phrase = findNegatedPhrase(clause, changePhrases);
+    return phrase !== null && (statesFigure || !REMOVAL_VERBS.has(normalizePromptText(phrase)));
+}
+
+/**
+ * A negated clause ("don't turn the snare down 2 dB", "not the snare at 2 dB") states what not to do,
+ * so it binds no value and restates no change: naming one pending object, it removes that object's
+ * pending changes and protects it; naming none, or anything else, it is asked.
+ */
+function readNegatedClause(input: RemovalClauseInput): RemovalClauseRead {
+    const { clause, commands, context } = input;
+    const question = `"${clause.text.trim()}" says what not to do. Name the pending change to remove, or say what it should be instead.`;
+    const references = findReferences(clause.text, input.candidates);
+    const [only] = references;
+    if (references.length !== 1 || only === undefined) {
+        return { kind: 'clarify', question };
     }
+    const pendingObjectIds = Array.from(only.denotes).filter((id) => commands.some((view) => view.denotes.has(id)));
+    const [pendingObjectId] = pendingObjectIds;
+    if (pendingObjectId === undefined || pendingObjectIds.length !== 1) {
+        return { kind: 'clarify', question };
+    }
+    for (const view of commands) {
+        if (view.denotes.has(pendingObjectId)) {
+            input.removed.add(view.index);
+        }
+    }
+    input.removedTargets.push({ id: pendingObjectId, name: nameObject(context, pendingObjectId) });
+    return { kind: 'read' };
+}
+
+function readRemovalClause(input: RemovalClauseInput): RemovalClauseRead {
+    const { clause, commands, candidates, context } = input;
     const text = normalizedClause(clause);
     const alone = LEAVE_ALONE.exec(text);
     const removal = alone ?? REMOVAL.exec(text);
     const stated = removal?.[1];
-    if (stated === undefined) {
-        return { kind: 'none' };
+    const statesFigure = findPromptNumbers(clause.masked).length > 0;
+    if (statesFigure || stated === undefined) {
+        const negated = EXCLUSION.test(text) || negatesChange(clause, input.changePhrases, statesFigure);
+        return negated ? readNegatedClause(input) : { kind: 'none' };
     }
     const reference = stripReference(stated);
     const candidate = candidates.find((entry) => entry.name === reference.name);
@@ -286,12 +356,14 @@ function readRefinementRemovals(input: {
     const removedTargets: ProtectedObject[] = [];
     const protectedTargets: ProtectedObject[] = [];
     const removalClauseStarts = new Set<number>();
+    const changePhrases = getChangePhrases(getExecutableAppActionGroundingCatalog());
     for (const clause of readClauseSpans(input.text, input.context)) {
         const outcome = readRemovalClause({
             clause,
             commands,
             candidates,
             context: input.context,
+            changePhrases,
             removed,
             removedTargets,
             protectedTargets,
@@ -301,6 +373,9 @@ function readRefinementRemovals(input: {
         }
         if (outcome.kind === 'refused') {
             return { status: 'refused', reason: outcome.reason };
+        }
+        if (outcome.kind === 'clarify') {
+            return { status: 'clarify', reason: NEGATED_CLAUSE_REASON, question: outcome.question };
         }
         removalClauseStarts.add(clause.start);
     }

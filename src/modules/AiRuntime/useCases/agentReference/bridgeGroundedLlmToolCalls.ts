@@ -5,7 +5,6 @@ import {
     getExecutableAppActionGroundingRules,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
-import { gainToDb } from '#/utils/audioLevelLaw';
 import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { NOTE_NAMES } from '#/utils/noteNames';
 
@@ -5712,38 +5711,16 @@ function replaySourceGrounding(
     return new Set(source.calls.flatMap((_call, index) => (rejected.has(index) ? [] : [index])));
 }
 
-/** How far a value sits from where the target is now, in the value's own unit, or `null` when unknown. */
-function distanceFromCurrent(
-    actionType: string,
-    argument: string,
-    value: number,
-    targets: ProposalGroundingCommand['targets'],
-    context: ProjectContext
-): number | null {
-    const levelForm = getExecutableAppActionGroundingRules(actionType)?.valueRules.find(
-        (rule) => rule.argument === argument && rule.kind === 'number-if-present'
-    );
-    const form = levelForm?.kind === 'number-if-present' ? levelForm.levelForm : undefined;
-    if (form === 'relative-decibel') {
-        return Math.abs(value);
-    }
-    const trackId = targets.find((target) => target.argument === 'trackId')?.id;
-    const track = context.tracks.find((candidate) => candidate.id === trackId);
-    if (form === 'absolute-decibel' && actionType === 'setTrackGain' && track !== undefined) {
-        return Math.abs(value - gainToDb(track.gain));
-    }
-    if (actionType === 'setTrackPan' && track !== undefined) {
-        return Math.abs(value - track.pan);
-    }
-    const deviceId = targets.find((target) => target.argument === 'deviceId')?.id;
-    const paramId = targets.find((target) => target.argument === 'paramId')?.id;
-    const parameter = context.tracks
-        .flatMap((candidate) => candidate.devices)
-        .find((device) => device.id === deviceId)
-        ?.parameters?.find((candidate) => candidate.id === paramId);
-    return parameter === undefined ? null : Math.abs(value - parameter.value);
-}
+const COMPARATIVE_ASKS = {
+    less: { relative: 'smaller change', absolute: 'lower value' },
+    more: { relative: 'larger change', absolute: 'higher value' },
+} as const;
 
+/**
+ * A "less" or "more" checks the bound value against the pending one: against a pending move it asks
+ * for a smaller or larger move, against a pending absolute value for a lower or higher one. A bound
+ * value of another form than the pending one has nothing to compare against.
+ */
 function validateComparative(input: {
     comparative: 'less' | 'more';
     command: ProposalGroundingCommand;
@@ -5753,24 +5730,20 @@ function validateComparative(input: {
 }): string | null {
     const { command, call, argument, context } = input;
     const next = call.arguments[argument];
-    if (command.value === null || typeof next !== 'number') {
+    const pending = command.value;
+    if (pending === null || typeof next !== 'number') {
         return `"${input.comparative}" has no pending value to compare against`;
     }
-    const pendingDistance = distanceFromCurrent(
-        command.type,
-        command.value.argument,
-        command.value.value,
-        command.targets,
-        context
-    );
-    const nextDistance = distanceFromCurrent(call.name, argument, next, command.targets, context);
-    if (pendingDistance === null || nextDistance === null) {
-        return `"${input.comparative}" cannot be compared with the pending ${describePendingCommand(command, context)} value`;
+    const description = describePendingCommand(command, context);
+    if (argument !== pending.argument) {
+        return `"${input.comparative}" cannot be compared with the pending ${description} value`;
     }
-    const consistent = input.comparative === 'less' ? nextDistance < pendingDistance : nextDistance > pendingDistance;
-    return consistent
-        ? null
-        : `"${input.comparative}" asks for a ${input.comparative === 'less' ? 'smaller' : 'larger'} change than the pending ${describePendingCommand(command, context)}, and the stated value is not`;
+    const difference = pending.form === 'relative' ? Math.abs(next) - Math.abs(pending.value) : next - pending.value;
+    if (input.comparative === 'less' ? difference < 0 : difference > 0) {
+        return null;
+    }
+    const asked = COMPARATIVE_ASKS[input.comparative][pending.form];
+    return `"${input.comparative}" asks for a ${asked} than the pending ${description}, and the stated value is not`;
 }
 
 /**
@@ -5919,7 +5892,7 @@ function groundInheritedCall(input: {
 
 /**
  * A "less" or "more" beside a batch the refinement text grounded by itself still compares: each
- * pending value the batch restates must move closer to, or further from, where its target is now.
+ * pending value the batch changes must be smaller or larger than the pending one, as it reads there.
  */
 function findDirectComparativeRejection(
     calls: readonly ToolCallResult[],
@@ -5980,6 +5953,13 @@ function bridgeRefinedLlmToolCalls(
     const removals = refinementClauseReader.removals({ text: prompt, basis, context });
     if (removals.status === 'refused') {
         return refuseRefinement(removals.reason);
+    }
+    if (removals.status === 'clarify') {
+        return {
+            actions: [],
+            rejections: [],
+            clarification: { reason: removals.reason, questions: [removals.question] },
+        };
     }
     const protectedObjects = getRefinementProtectedObjects({
         basis,

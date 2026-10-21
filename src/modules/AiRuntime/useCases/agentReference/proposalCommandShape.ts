@@ -11,8 +11,11 @@ function getTargetArguments(actionType: string): string[] {
 type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
 type TargetRule = GroundingRules['targetRules'][number];
 
-/** One argument a command's identity reads, how many ids it holds, and whether it gathers members into one object. */
-type IdentityArgument = { argument: string; many: boolean; gathersMembers: boolean };
+/**
+ * One argument a command's identity reads, how many ids it holds, whether it gathers members into one
+ * object, and whether its members are sources that one command acts on together (a send range's tracks).
+ */
+type IdentityArgument = { argument: string; many: boolean; gathersMembers: boolean; gathersSources: boolean };
 
 /**
  * Every provider-supplied argument the mutation identity rules name, of the rules that are, or are
@@ -34,6 +37,7 @@ function getMutationIdentityArguments(rules: GroundingRules, referenceOnly: bool
                 argument: argument.argument,
                 many: argument.cardinality === 'many' || target?.cardinality === 'many',
                 gathersMembers: target?.promptRole === 'members',
+                gathersSources: target?.promptRole === 'source',
             });
         }
     }
@@ -70,6 +74,7 @@ function getIdentityArguments(actionType: string): IdentityArgument[] {
             argument: rule.argument,
             many: rule.cardinality === 'many',
             gathersMembers: rule.promptRole === 'members',
+            gathersSources: rule.promptRole === 'source',
         }));
 }
 
@@ -81,25 +86,41 @@ function readMemberId(member: unknown): string | null {
     return isRecord(member) && typeof member.clipId === 'string' ? member.clipId : null;
 }
 
+/** Which object a command acts on, and the set of members it acts on there, as a proposal diff pairs commands. */
+type CommandIdentity = {
+    /** The command's type and every single id its identity arguments carry. */
+    object: string;
+    /** Each member of its sets of sources or placements, as `[argument, id]`, sorted; empty when it has none. */
+    members: readonly string[];
+    /** Whether those members are sources, which may pair by type alone; placements pair only by a shared clip. */
+    membersAreSources: boolean;
+};
+
 /**
  * Which object a command acts on, as a proposal diff pairs commands: its type and the ids its identity
  * arguments carry. A many-target counts by its members, sorted, except a set of members the command
  * gathers into one object (a VCA group's tracks), which pairs by type alone so a changed membership
  * reads as the same command changed.
  */
-function getIdentity(actionType: string, argumentsRecord: Readonly<Record<string, unknown>>): string {
-    const parts = getIdentityArguments(actionType).flatMap((identity) => {
+function getIdentity(actionType: string, argumentsRecord: Readonly<Record<string, unknown>>): CommandIdentity {
+    const parts: unknown[] = [];
+    const members: string[] = [];
+    let membersAreSources = false;
+    for (const identity of getIdentityArguments(actionType)) {
         const value = argumentsRecord[identity.argument];
         if (value === undefined || identity.gathersMembers) {
-            return [];
+            continue;
         }
         if (identity.many && Array.isArray(value)) {
-            const members = value.map((member: unknown) => readMemberId(member) ?? canonicalJson(member));
-            return [[identity.argument, members.toSorted()]];
+            for (const member of value) {
+                members.push(canonicalJson([identity.argument, readMemberId(member) ?? canonicalJson(member)]));
+            }
+            membersAreSources ||= identity.gathersSources;
+            continue;
         }
-        return [[identity.argument, value]];
-    });
-    return canonicalJson([actionType, parts]);
+        parts.push([identity.argument, value]);
+    }
+    return { object: canonicalJson([actionType, parts]), members: members.toSorted(), membersAreSources };
 }
 
 /** Each id a command's targets name, with the capability of the target that names it. */

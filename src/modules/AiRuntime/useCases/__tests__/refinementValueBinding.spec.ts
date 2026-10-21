@@ -4,7 +4,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultVcaGroupState, trackStore, vcaGroupStore, type Track } from '#/modules/Arrangement/stores';
+import { defaultVcaGroupState, trackStore, vcaGroupStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -618,6 +618,151 @@ describe('binding a terse refinement to the pending card it refines', () => {
         });
     });
 
+    describe('a negated clause removes the change it names, or asks, and never binds a value', () => {
+        const UP_CARD = { prompt: 'turn Vocals up 3 dB', calls: [vocalsBy(3)] };
+        const AT_CARD = {
+            prompt: 'put Vocals at -6 dB',
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: -6 } }],
+        };
+        const vocalsAt = (gainDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-vocals', gainDb },
+        });
+        const snareAt = (gainDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-snare', gainDb },
+        });
+
+        function statusOf(
+            card: { prompt: string; calls: readonly ProviderCall[] },
+            refinement: string,
+            calls: readonly ProviderCall[]
+        ) {
+            return { refinement, calls, status: refine(card, refinement, calls).status };
+        }
+
+        it('against a pending boost, a negated cut, lower, turn-down or louder asks', () => {
+            const refinements = [
+                "don't cut it 2 dB",
+                'do not lower it by 2 dB',
+                'never turn it down 2 dB',
+                'not louder than 2 dB',
+            ];
+            for (const refinement of refinements) {
+                for (const calls of [[vocalsBy(-2)], [vocalsBy(2)]]) {
+                    expect(statusOf(UP_CARD, refinement, calls)).toEqual({ refinement, calls, status: 'clarify' });
+                }
+            }
+        });
+
+        it('against a pending cut, "don\'t raise it 2 dB" asks rather than admitting +2 dB', () => {
+            for (const calls of [[vocalsBy(2)], [vocalsBy(-2)]]) {
+                const result = refine(P0_CARD, "don't raise it 2 dB", calls);
+
+                expect(result.status).toBe('clarify');
+                expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain(
+                    '"don\'t raise it 2 dB" says what not to do'
+                );
+            }
+        });
+
+        it('against a pending absolute level, "don\'t drop it 3 dB" asks rather than landing at -9 dB', () => {
+            for (const calls of [[vocalsAt(-9)], [vocalsAt(-3)]]) {
+                expect(statusOf(AT_CARD, "don't drop it 3 dB", calls)).toMatchObject({ status: 'clarify' });
+            }
+        });
+
+        it('"not" or "except" before a pending track and a figure removes that track\'s change and protects it', () => {
+            for (const refinement of [
+                'make the vocals 1.5 dB, not the snare at 2 dB',
+                'make the vocals 1.5 dB, except the snare at 2 dB',
+            ]) {
+                expect(statusOf(P1_CARD, refinement, [vocalsBy(-1.5), snareAt(2)])).toMatchObject({
+                    status: 'rejected',
+                });
+                const result = refine(P1_CARD, refinement, [vocalsBy(-1.5)]);
+
+                expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 }]);
+                expect(result.status === 'grounded' ? result.groundingBasis?.protectedUnchanged : null).toEqual(
+                    expect.arrayContaining([{ id: 'track-snare', name: 'Snare' }])
+                );
+            }
+        });
+
+        it('"don\'t turn the snare down 2 dB" removes the pending Snare change rather than keeping it', () => {
+            expect(refine(P1_CARD, "don't turn the snare down 2 dB", [vocalsBy(-3), snareBy(-2)])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('removes'),
+            });
+            const result = refine(P1_CARD, "don't turn the snare down 2 dB", [vocalsBy(-3)]);
+
+            expect(commandsOf(result)).toEqual([{ type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -3 }]);
+            expect(result.status === 'grounded' ? result.groundingBasis?.protectedUnchanged : null).toEqual(
+                expect.arrayContaining([{ id: 'track-snare', name: 'Snare' }])
+            );
+        });
+
+        it('"don\'t drop the snare" without a figure keeps the Snare change rather than removing it', () => {
+            expect(refine(P1_CARD, "don't drop the snare", [vocalsBy(-3)])).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('omits'),
+            });
+        });
+
+        it('a negated clause naming no pending change asks', () => {
+            expect(statusOf(P1_CARD, "don't turn the bass down 2 dB", [vocalsBy(-3), snareBy(-2)])).toMatchObject({
+                status: 'clarify',
+            });
+        });
+    });
+
+    describe('a comparative checks the bound value against the pending one', () => {
+        const AT_CARD = {
+            prompt: 'put Vocals at -6 dB',
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: -6 } }],
+        };
+        const vocalsAt = (gainDb: number): ProviderCall => ({
+            name: 'setTrackGain',
+            arguments: { trackId: 'track-vocals', gainDb },
+        });
+
+        it('against a pending mix of 40% (now 25%), "more" asks for above 40% and "less" for below it', () => {
+            const rows: Array<[string, number, string]> = [
+                ['more, make it 5%', 5, 'rejected'],
+                ['less, 5%', 5, 'grounded'],
+                ['less, make it 10%', 10, 'grounded'],
+                ['more, make it 60%', 60, 'grounded'],
+                ['less, make it 60%', 60, 'rejected'],
+            ];
+            for (const [refinement, value, status] of rows) {
+                expect({ refinement, status: refine(PD_CARD, refinement, [reverbMix(value)]).status }).toEqual({
+                    refinement,
+                    status,
+                });
+            }
+        });
+
+        it('against a pending level of -6 dB (now about -1.9 dB), "less" lands below -6 dB and "more" above it', () => {
+            const rows: Array<[string, number, string]> = [
+                ['less, put it at -9 dB', -9, 'grounded'],
+                ['more, put it at -9 dB', -9, 'rejected'],
+                ['more, put it at -3 dB', -3, 'grounded'],
+                ['less, put it at -3 dB', -3, 'rejected'],
+            ];
+            for (const [refinement, gainDb, status] of rows) {
+                expect({ refinement, status: refine(AT_CARD, refinement, [vocalsAt(gainDb)]).status }).toEqual({
+                    refinement,
+                    status,
+                });
+            }
+        });
+
+        it('against a pending move of -3 dB, "less" and "more" compare how far it moves', () => {
+            expect(refine(P0_CARD, 'more, make it 4 dB', [vocalsBy(-4)]).status).toBe('grounded');
+            expect(refine(P0_CARD, 'more, make it 1.5 dB', [vocalsBy(-1.5)]).status).toBe('rejected');
+        });
+    });
+
     describe('reading side and direction words outside the object names a refinement states', () => {
         const NAMED_CONTEXT = projectContext([
             ...BASE_TRACKS,
@@ -899,6 +1044,45 @@ describe('binding a terse refinement to the pending card it refines', () => {
             expect(ground('make the vocals 1.5 dB', [vocalsBy(-1.5), snareBy(-2)], basis).status).toBe('rejected');
         });
 
+        it('a batch whose grounded actions are not the provider calls one for one carries no basis', () => {
+            const clip = (id: string, name: string, startBeat: number) => ({
+                id,
+                name,
+                type: 'midi' as const,
+                startBeat,
+                endBeat: startBeat + 8,
+                gain: 1,
+                locked: false,
+                noteCount: 4,
+            });
+            const intro = clip('clip-midi-intro', 'MIDI Intro', 0);
+            const verse = clip('clip-midi-verse', 'MIDI Verse', 8);
+            const glueContext: ProjectContext = {
+                ...projectContext([
+                    projectTrack('track-vocals', 'Vocals', {
+                        kind: 'midi',
+                        clipCount: 3,
+                        clips: [intro, verse, clip('clip-midi-outro', 'MIDI Outro', 16)],
+                    }),
+                ]),
+                glueEligibleClipPairs: [[intro.id, verse.id]],
+            };
+            const glue: ProviderCall = { name: 'glueClips', arguments: { clipIds: [intro.id, verse.id] } };
+            const tempo: ProviderCall = { name: 'setTempo', arguments: { bpm: 130 } };
+
+            // The request cancels its own glue, so grounding drops that call and the card holds one command
+            // for two provider calls: no request clause stands behind each command one for one.
+            const result = ground(
+                "glue MIDI Intro and MIDI Verse clips, but don't glue them due to phase issues, then set tempo to 130",
+                [glue, tempo],
+                undefined,
+                glueContext
+            );
+
+            expect(result).toMatchObject({ status: 'grounded', actions: [{ type: 'setTempo' }] });
+            expect(result.status === 'grounded' ? result.groundingBasis : null).toBeUndefined();
+        });
+
         it('a compiled command-list card carries no basis, so a terse refinement of it inherits nothing', () => {
             const revision = 'revision-compiled-p1';
             const compilerEvidence = compiledP1(revision);
@@ -953,6 +1137,117 @@ describe('binding a terse refinement to the pending card it refines', () => {
 
             expect(result.status).toBe('clarify');
             expect(result.status === 'clarify' ? result.planningOutcome.questions[0] : '').toContain('"bump"');
+        });
+
+        it('a unit word beside the figure states no direction', () => {
+            for (const refinement of ['make it 50%', 'make it 50 percent', 'make it 50 per cent']) {
+                expect({ refinement, commands: commandsOf(refine(PD_CARD, refinement, [reverbMix(50)])) }).toEqual({
+                    refinement,
+                    commands: [{ type: 'setDeviceParameter', deviceId: 'device-reverb', paramId: 'mix', value: 50 }],
+                });
+            }
+        });
+
+        it('"wet" beside a mix figure states no direction, while "dry" would invert it and is asked', () => {
+            expect(commandsOf(refine(PD_CARD, 'make it 60% wet', [reverbMix(60)]))).toEqual([
+                { type: 'setDeviceParameter', deviceId: 'device-reverb', paramId: 'mix', value: 60 },
+            ]);
+            const dry = refine(PD_CARD, 'make it 60% dry', [reverbMix(60)]);
+
+            expect(dry.status).toBe('clarify');
+            expect(dry.status === 'clarify' ? dry.planningOutcome.questions[0] : '').toContain('"dry"');
+        });
+
+        it('"wet" beside a figure for a parameter that is no mix is asked', () => {
+            const decayDevice: ProjectTrack['devices'][number] = {
+                ...reverbDevice,
+                parameters: [
+                    { id: 'decay', name: 'Decay', type: 'float', value: 25, minValue: 0, maxValue: 100, unit: '%' },
+                ],
+            };
+            const context = projectContext([
+                ...BASE_TRACKS.filter((track) => track.id !== 'track-keys'),
+                projectTrack('track-keys', 'Keys', { deviceCount: 1, devices: [decayDevice] }),
+            ]);
+            const decay = (value: number): ProviderCall => ({
+                name: 'setDeviceParameter',
+                arguments: { deviceId: 'device-reverb', paramId: 'decay', value },
+            });
+            const card = { prompt: 'set Reverb decay to 40%', calls: [decay(40)] };
+
+            expect(commandsOf(refine(card, 'make it 60%', [decay(60)], context))).toEqual([
+                { type: 'setDeviceParameter', deviceId: 'device-reverb', paramId: 'decay', value: 60 },
+            ]);
+            expect(refine(card, 'make it 60% wet', [decay(60)], context).status).toBe('clarify');
+        });
+
+        it('binds a frequency in Hz and a tempo in bpm', () => {
+            const filterDevice: ProjectTrack['devices'][number] = {
+                id: 'device-filter',
+                type: 'Filter',
+                bypassed: false,
+                parameters: [
+                    {
+                        id: 'cutoff',
+                        name: 'Cutoff',
+                        type: 'float',
+                        value: 1000,
+                        minValue: 20,
+                        maxValue: 20000,
+                        unit: 'Hz',
+                    },
+                ],
+            };
+            const context = projectContext([
+                ...BASE_TRACKS,
+                projectTrack('track-pad', 'Pad', { deviceCount: 1, devices: [filterDevice] }),
+            ]);
+            const cutoff = (value: number): ProviderCall => ({
+                name: 'setDeviceParameter',
+                arguments: { deviceId: 'device-filter', paramId: 'cutoff', value },
+            });
+            const tempo = (bpm: number): ProviderCall => ({ name: 'setTempo', arguments: { bpm } });
+
+            expect(
+                commandsOf(
+                    refine(
+                        { prompt: 'set Filter cutoff to 1000 Hz', calls: [cutoff(1000)] },
+                        'make it 200 Hz',
+                        [cutoff(200)],
+                        context
+                    )
+                )
+            ).toEqual([{ type: 'setDeviceParameter', deviceId: 'device-filter', paramId: 'cutoff', value: 200 }]);
+            const tempoResult = refine({ prompt: 'set tempo to 120', calls: [tempo(120)] }, 'make it 100 bpm', [
+                tempo(100),
+            ]);
+
+            expect(tempoResult).toMatchObject({ status: 'grounded', actions: [{ type: 'setTempo' }] });
+            expect(tempoResult.status === 'grounded' ? payloadOf(tempoResult.actions[0]!) : null).toMatchObject({
+                bpm: 100,
+            });
+        });
+    });
+
+    describe('a pending command with no value', () => {
+        const bassMute: ProviderCall = { name: 'muteTrack', arguments: { trackId: 'track-bass', muted: true } };
+
+        it('a figure binds past a pending mute to the only pending level', () => {
+            const card = { prompt: 'turn Vocals down 3 dB and mute Bass', calls: [vocalsBy(-3), bassMute] };
+
+            expect(commandsOf(refine(card, 'make it 1.5 dB', [vocalsBy(-1.5), bassMute]))).toEqual([
+                { type: 'setTrackGain', trackId: 'track-vocals', deltaDb: -1.5 },
+                { type: 'muteTrack', trackId: 'track-bass' },
+            ]);
+        });
+
+        it('a percentage binds past a pending mute to the only pending parameter, never asking which', () => {
+            const card = { prompt: 'set Reverb mix to 40% and mute Bass', calls: [reverbMix(40), bassMute] };
+
+            expect(commandsOf(refine(card, 'make it 50%', [reverbMix(50), bassMute]))).toEqual([
+                { type: 'setDeviceParameter', deviceId: 'device-reverb', paramId: 'mix', value: 50 },
+                { type: 'muteTrack', trackId: 'track-bass' },
+            ]);
         });
     });
 
@@ -1063,6 +1358,8 @@ type ProposalScript = {
     beforeProposal?: () => void;
     /** What the provider's plan says its batch leaves unchanged; a first card restates its request's protections. */
     protectedTargetIds?: readonly string[];
+    /** The capabilities the plan names, when they are not every call's action. */
+    capabilityIds?: readonly string[];
 };
 
 function asCommandBatchProposal(script: ProposalScript): ProviderCall {
@@ -1088,7 +1385,7 @@ function asCommandBatchProposal(script: ProposalScript): ProviderCall {
                     protectedTargetIds: Array.from(script.protectedTargetIds ?? []),
                     protectedRanges: [],
                 },
-                capabilityIds: [...new Set(calls.map((call) => call.name))],
+                capabilityIds: Array.from(script.capabilityIds ?? new Set(calls.map((call) => call.name))),
                 assetIds: [],
                 alternatives: [],
                 validationStrategy: ['Validate exact track identities and values.'],
@@ -1300,6 +1597,66 @@ describe('refining a held card through the chat', () => {
         expect(replacement?.approvalSnapshot.groundingBasis).toBeUndefined();
         expect(replacement?.protectedUnchanged.map((object) => object.id)).toEqual(
             expect.arrayContaining(['track-snare', 'track-drum-bus'])
+        );
+    });
+
+    it('a card with no basis carries its own protection into the replacement', async () => {
+        let pendingId = '';
+        const midiClip = (id: string, name: string, startBeat: number): Clip => ({
+            id,
+            trackId: 'track-bass',
+            name,
+            startBeat,
+            endBeat: startBeat + 8,
+            type: 'midi',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#ffffff',
+            locked: false,
+            muted: false,
+        });
+        const midiBass: Track = {
+            ...storeTrack('track-bass', 'Bass'),
+            kind: 'midi',
+            clips: [midiClip('clip-midi-intro', 'MIDI Intro', 0), midiClip('clip-midi-verse', 'MIDI Verse', 8)],
+        };
+        const current = trackStore.value!;
+        trackStore.set({
+            ...current,
+            tracks: current.tracks.filter((track) => track.id !== midiBass.id).concat(midiBass),
+        });
+        const glue = { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } };
+        // The request cancels its own glue, so the card holds fewer commands than the provider's calls and
+        // carries no basis; the refinement's text protects nothing, so only the refined card itself carries
+        // the Drum Bus into the replacement.
+        scriptProvider([
+            { calls: [glue, ...P1_PLAN], capabilityIds: ['setTrackGain'], protectedTargetIds: ['track-drum-bus'] },
+            // The provider restates the protection the thread shows it, as the application-owned scope requires.
+            { calls: [vocalsBy(-2), snareBy(-2)], refines: () => pendingId, protectedTargetIds: ['track-drum-bus'] },
+        ]);
+        await sendChatMessage(
+            `glue MIDI Intro and MIDI Verse clips, but don't glue them due to phase issues, then ${P1}`
+        );
+        pendingId = onlyProposedId();
+        const card = getPendingActionConfirmation(pendingId);
+        expect(card?.actions.map((action) => action.type)).toEqual(['setTrackGain', 'setTrackGain']);
+        expect(card?.approvalSnapshot.groundingBasis).toBeUndefined();
+        expect(card?.protectedUnchanged.map((object) => object.id)).toContain('track-drum-bus');
+
+        await sendChatMessage('turn Vocals down 2 dB and turn Snare down 2 dB');
+
+        const replacementId = onlyProposedId();
+        expect(replacementId).not.toBe(pendingId);
+        const replacement = getPendingActionConfirmation(replacementId);
+        expect(replacement).toMatchObject({ supersedes: pendingId });
+        expect(pendingLevels(replacementId).map(({ trackId, deltaDb }) => [trackId, deltaDb])).toEqual([
+            ['track-vocals', -2],
+            ['track-snare', -2],
+        ]);
+        expect(replacement?.protectedUnchanged.map((object) => object.id)).toContain('track-drum-bus');
+        expect(replacement?.approvalSnapshot.commandBatch?.authority.scope.protectedTargetIds).toContain(
+            'track-drum-bus'
         );
     });
 

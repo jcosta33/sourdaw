@@ -51,9 +51,19 @@ type ValueResolution =
 
 type MoveDirection = { status: 'direction'; sign: -1 | 1; kept: boolean } | { status: 'clarify'; question: string };
 
+/** The words that move a level down or up: the scope phrases any level request is read by, plus `down` and `up`. */
+const LOWERING_PHRASES: readonly string[] = [...QUIETER_SCOPE_PHRASES, 'down'];
+const RAISING_PHRASES: readonly string[] = [...LOUDER_SCOPE_PHRASES, 'up'];
+export const LEVEL_DIRECTION_PHRASES: readonly string[] = [...LOWERING_PHRASES, ...RAISING_PHRASES];
+
 const PAN_SIDE_WORDS: ReadonlySet<string> = new Set(['left', 'right']);
 /** Words a pan clause reads itself: the operation and the side it lands on. */
 const PAN_WORDS: ReadonlySet<string> = new Set(['pan', 'panning', ...PAN_SIDE_WORDS]);
+/**
+ * A mix figure says how much of the signal is wet, so "wet" beside it states no direction. "Dry" is
+ * not read: "60% dry" is 40% wet, which a plain value that lands where it says would invert.
+ */
+const MIX_WORDS: ReadonlySet<string> = new Set(['wet']);
 /**
  * A sign spoken or typeset before the figure, touching it or a space away: "minus 1.5 dB", and any
  * dash or minus character — "-", "–" (U+2013), "‑" (U+2011), "−" (U+2212) — as in "by – 1.5 dB".
@@ -67,7 +77,8 @@ const RELATIVE_WORDS: ReadonlySet<string> = new Set(['bigger', 'decrease', 'incr
 /**
  * Words that state no direction, so a clause made only of them, its figure, unit and connector keeps
  * the pending change's direction. Any other word may be a direction this reading cannot tell ("bump",
- * "nudge"), and is asked rather than read as the pending one.
+ * "nudge"), and is asked rather than read as the pending one. The unit the figure is read in is left
+ * out of the words beside it, so no unit word needs listing here.
  */
 const DIRECTIONLESS_WORDS: ReadonlySet<string> = new Set([
     'a',
@@ -79,10 +90,6 @@ const DIRECTIONLESS_WORDS: ReadonlySet<string> = new Set([
     'but',
     'by',
     'change',
-    'd',
-    'db',
-    'decibel',
-    'decibels',
     'do',
     'fader',
     'gain',
@@ -112,17 +119,27 @@ const DIRECTIONLESS_WORDS: ReadonlySet<string> = new Set([
     'volume',
 ]);
 
-function readUnit(raw: string, after: string): StatedFigure['unit'] {
+const UNIT_WORDS: ReadonlyArray<{ unit: NonNullable<StatedFigure['unit']>; pattern: RegExp }> = [
+    { unit: '%', pattern: /^\s*(?:percent|per\s+cent)(?![\p{L}\p{N}])/iu },
+    { unit: 'dB', pattern: /^\s*(?:d\s?b|decibels?)(?![\p{L}\p{N}])/iu },
+    {
+        unit: 'other',
+        pattern: /^\s*(?:k?hz|bpm|ms|s|sec|seconds?|beats?|bars?|semitones?|cents?)(?![\p{L}\p{N}])/iu,
+    },
+];
+
+/** The unit a figure is stated in, and how much of the text after it the unit word takes. */
+function readUnit(raw: string, after: string): { unit: StatedFigure['unit']; length: number } {
     if (raw.endsWith('%')) {
-        return '%';
+        return { unit: '%', length: 0 };
     }
-    if (/^\s*(?:d\s?b|decibels?)(?![\p{L}\p{N}])/iu.test(after)) {
-        return 'dB';
+    for (const { unit, pattern } of UNIT_WORDS) {
+        const match = pattern.exec(after);
+        if (match !== null) {
+            return { unit, length: match[0].length };
+        }
     }
-    if (/^\s*(?:k?hz|ms|s|sec|seconds?|beats?|bars?|semitones?|cents?)(?![\p{L}\p{N}])/iu.test(after)) {
-        return 'other';
-    }
-    return null;
+    return { unit: null, length: 0 };
 }
 
 function readConnector(before: string): StatedFigure['connector'] {
@@ -144,8 +161,8 @@ function namesPhrase(words: string, phrase: string): boolean {
  * read by, plus the `up` and `down` a figure may follow.
  */
 function readDirection(words: string): StatedFigure['direction'] {
-    const lowers = [...QUIETER_SCOPE_PHRASES, 'down'].some((phrase) => namesPhrase(words, phrase));
-    const raises = [...LOUDER_SCOPE_PHRASES, 'up'].some((phrase) => namesPhrase(words, phrase));
+    const lowers = LOWERING_PHRASES.some((phrase) => namesPhrase(words, phrase));
+    const raises = RAISING_PHRASES.some((phrase) => namesPhrase(words, phrase));
     if (lowers && raises) {
         return 'conflicting';
     }
@@ -196,12 +213,13 @@ function readFigure(clause: RefinementClause): StatedFigure | 'none' | 'several'
         sign = signMark[1]?.toLowerCase() === 'plus' ? 1 : -1;
         raw = `${sign < 0 ? '-' : '+'}${number.raw}`;
     }
-    const words = normalizePromptText(`${before} ${after}`);
+    const unit = readUnit(number.raw, after);
+    const words = normalizePromptText(`${before} ${after.slice(unit.length)}`);
     return {
         magnitude: Math.abs(value),
         sign,
         raw,
-        unit: readUnit(number.raw, after),
+        unit: unit.unit,
         connector: readConnector(before),
         direction: readDirection(words),
         words,
@@ -329,17 +347,39 @@ function resolveLevelValue(
     return resolveRelativeLevel(levels.relative, value, figure);
 }
 
+/** The device parameter a pending command sets, when it sets one. */
+function findPendingParameter(command: ProposalGroundingCommand, context: ProjectContext) {
+    const deviceId = command.targets.find((target) => target.argument === 'deviceId')?.id;
+    const paramId = command.targets.find((target) => target.argument === 'paramId')?.id;
+    return context.tracks
+        .flatMap((track) => track.devices)
+        .find((device) => device.id === deviceId)
+        ?.parameters?.find((candidate) => candidate.id === paramId);
+}
+
 function isSignedDomain(command: ProposalGroundingCommand, context: ProjectContext): boolean {
     if (command.type === 'setTrackPan') {
         return true;
     }
-    const deviceId = command.targets.find((target) => target.argument === 'deviceId')?.id;
-    const paramId = command.targets.find((target) => target.argument === 'paramId')?.id;
-    const parameter = context.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)
-        ?.parameters?.find((candidate) => candidate.id === paramId);
-    return (parameter?.minValue ?? 0) < 0 || (command.value?.value ?? 0) < 0;
+    return (findPendingParameter(command, context)?.minValue ?? 0) < 0 || (command.value?.value ?? 0) < 0;
+}
+
+/** A wet/dry mix parameter, by its name or id: "Mix", "Reverb Mix", "Wet", `delayMix`. */
+function isMixParameter(command: ProposalGroundingCommand, context: ProjectContext): boolean {
+    const parameter = findPendingParameter(command, context);
+    if (parameter === undefined) {
+        return false;
+    }
+    const named = normalizePromptText(parameter.name ?? '').split(' ');
+    return named.includes('mix') || named.includes('wet') || /(?:mix|^wet)$/iu.test(parameter.id);
+}
+
+/** The words a plain value's clause reads itself beside its figure: a pan's side, a mix's "wet". */
+function getReadWords(command: ProposalGroundingCommand, context: ProjectContext): ReadonlySet<string> {
+    if (command.type === 'setTrackPan') {
+        return PAN_WORDS;
+    }
+    return isMixParameter(command, context) ? MIX_WORDS : new Set();
 }
 
 /**
@@ -362,7 +402,7 @@ function resolvePlainValue(
         return clarify(moveQuestion);
     }
     const isPan = command.type === 'setTrackPan';
-    const unreadWord = findUnreadWord(figure.words, isPan ? PAN_WORDS : new Set());
+    const unreadWord = findUnreadWord(figure.words, getReadWords(command, context));
     if (figure.connector === null && unreadWord !== null) {
         return clarify(`Where should the value land? "${unreadWord}" beside ${figure.raw} does not say.`);
     }

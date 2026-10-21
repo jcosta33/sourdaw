@@ -275,6 +275,147 @@ describe('diffProposalCommands', () => {
             ]);
         });
 
+        it('pairs a send range whose source set changed, by type and bus', () => {
+            const sendRange = (trackIds: string[], busId = 'bus-1') => ({
+                trackIds,
+                busId,
+                sectionName: 'Chorus',
+                reductionDb: 3,
+            });
+            const trackIdsChanged = {
+                field: 'trackIds',
+                previous: canonicalJson(['track-1', 'track-2']),
+                next: canonicalJson(['track-1']),
+            };
+
+            expect(
+                changedOnly('automateSendRange', sendRange(['track-1', 'track-2']), sendRange(['track-1'])).changes
+            ).toEqual([
+                { kind: 'changed', actionType: 'automateSendRange', label: 'After', fields: [trackIdsChanged] },
+            ]);
+            expect(
+                changedOnly('automateSendRange', sendRange(['track-1']), sendRange(['track-2'])).changes.map(
+                    ({ kind }) => kind
+                )
+            ).toEqual(['changed']);
+            expect(
+                changedOnly(
+                    'automateSendRanges',
+                    {
+                        trackIds: ['track-1', 'track-2'],
+                        busId: 'bus-1',
+                        sectionIds: ['s1'],
+                        tailBars: 4,
+                        targetLevelDb: -12,
+                    },
+                    { trackIds: ['track-1'], busId: 'bus-1', sectionIds: ['s1'], tailBars: 4, targetLevelDb: -12 }
+                ).changes
+            ).toEqual([
+                { kind: 'changed', actionType: 'automateSendRanges', label: 'After', fields: [trackIdsChanged] },
+            ]);
+            expect(
+                changedOnly('automateSendRange', sendRange(['track-1']), sendRange(['track-1'], 'bus-2')).changes.map(
+                    ({ kind }) => kind
+                )
+            ).toEqual(['added', 'removed']);
+        });
+
+        it('pairs send ranges by shared sources when more than one goes to the same bus', () => {
+            const sendRange = (trackIds: string[], reductionDb: number) =>
+                ({
+                    type: 'automateSendRange',
+                    payload: { trackIds, busId: 'bus-1', sectionName: 'Chorus', reductionDb },
+                }) satisfies AppAction;
+
+            expect(
+                diff(
+                    {
+                        actions: [sendRange(['track-1', 'track-2'], 3), sendRange(['track-3'], 6)],
+                        actionLabels: ['Lead sends', 'Pad send'],
+                    },
+                    {
+                        actions: [sendRange(['track-3', 'track-4'], 6), sendRange(['track-1'], 3)],
+                        actionLabels: ['Pad sends', 'Lead send'],
+                    }
+                ).changes.map(({ kind, label }) => [kind, label])
+            ).toEqual([
+                ['changed', 'Pad sends'],
+                ['changed', 'Lead send'],
+            ]);
+            expect(
+                diff(
+                    {
+                        actions: [sendRange(['track-1'], 3), sendRange(['track-2'], 3)],
+                        actionLabels: ['Lead send', 'Pad send'],
+                    },
+                    { actions: [sendRange(['track-3'], 3)], actionLabels: ['Keys send'] }
+                ).changes.map(({ kind }) => kind)
+            ).toEqual(['added', 'removed', 'removed']);
+        });
+
+        it('pairs a placement set that dropped a clip, by the clip both still place', () => {
+            const move = (clipId: string, startBeat: number) => ({ clipId, trackId: 'track-1', startBeat });
+
+            expect(
+                changedOnly(
+                    'moveClips',
+                    { moves: [move('clip-1', 4), move('clip-2', 8)] },
+                    { moves: [move('clip-1', 4)] }
+                ).changes
+            ).toEqual([
+                {
+                    kind: 'changed',
+                    actionType: 'moveClips',
+                    label: 'After',
+                    fields: [
+                        {
+                            field: 'moves',
+                            previous: canonicalJson([move('clip-1', 4), move('clip-2', 8)]),
+                            next: canonicalJson([move('clip-1', 4)]),
+                        },
+                    ],
+                },
+            ]);
+            expect(
+                diff(
+                    {
+                        actions: [
+                            { type: 'moveClips', payload: { moves: [move('clip-1', 4), move('clip-2', 8)] } },
+                            { type: 'moveClips', payload: { moves: [move('clip-3', 12)] } },
+                        ],
+                        actionLabels: ['Move verse', 'Move chorus'],
+                    },
+                    {
+                        actions: [
+                            { type: 'moveClips', payload: { moves: [move('clip-3', 12), move('clip-4', 16)] } },
+                            { type: 'moveClips', payload: { moves: [move('clip-1', 4)] } },
+                        ],
+                        actionLabels: ['Move chorus', 'Move verse'],
+                    }
+                ).changes.map(({ kind, label }) => [kind, label])
+            ).toEqual([
+                ['changed', 'Move chorus'],
+                ['changed', 'Move verse'],
+            ]);
+        });
+
+        it('pairs a track output whose destination changed, by the track it routes', () => {
+            expect(
+                changedOnly(
+                    'setTrackOutput',
+                    { trackId: 'track-1', outputId: 'bus-a' },
+                    { trackId: 'track-1', outputId: 'bus-b' }
+                ).changes
+            ).toEqual([
+                {
+                    kind: 'changed',
+                    actionType: 'setTrackOutput',
+                    label: 'After',
+                    fields: [{ field: 'outputId', previous: 'bus-a', next: 'bus-b' }],
+                },
+            ]);
+        });
+
         it('pairs a device insert whose position moved, by the track it goes on', () => {
             expect(
                 changedOnly(
