@@ -1029,20 +1029,33 @@ describe('startNativeLiveGraphSession', () => {
         // which changed nothing.
         attachReportedInstancesInStore();
         mocks.programmeOverride = PLAYING_PROGRAMME;
+        const fermenter: Device = {
+            id: 'ferm-1',
+            name: 'Fermenter',
+            type: 'fermenter',
+            bypassed: false,
+            parameterValues: {},
+        };
         trackStore.set({
-            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            tracks: [createTrack({ id: 'audio-1', devices: [fermenter, externalPluginDevice('i1')] })],
             selectedTrackId: null,
             ghostClips: [],
         });
+        const firstReports = [{ kind: 'track' as const, id: 'audio-1', deviceIds: ['ferm-1'] }];
         mocks.applyGraphCommands
-            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1' }] })
-            .mockResolvedValueOnce({
-                acceptance: 'accepted',
-                application: 'needs-reconcile',
-                compensation: 'not-attempted',
-                reason: 'strip audio-1 was rebuilt without its chain',
-                runtimeRevision: 2,
-                reports: [],
+            .mockResolvedValueOnce({ ...APPLIED, reports: firstReports, attachedPlugins: [{ instanceId: 'i1' }] })
+            .mockImplementationOnce(() => {
+                expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([['audio-1', ['ferm-1']]]);
+                expect(isDeviceHeldByNativeSession('audio-1', 'ferm-1')).toBe(true);
+
+                return Promise.resolve({
+                    acceptance: 'accepted',
+                    application: 'needs-reconcile',
+                    compensation: 'not-attempted',
+                    reason: 'strip audio-1 was rebuilt without its chain',
+                    runtimeRevision: 2,
+                    reports: [],
+                });
             });
 
         const result = await startHeldSession({
@@ -1055,9 +1068,12 @@ describe('startNativeLiveGraphSession', () => {
             outcome: 'declined',
             reason: 'strip audio-1 was rebuilt without its chain',
         });
+        expect(topologyBatches()).toHaveLength(2);
         expect(nativeLiveGraphSession.backend).toBeNull();
         expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([true]);
         expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+        expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([]);
+        expect(isDeviceHeldByNativeSession('audio-1', 'ferm-1')).toBe(false);
     });
 
     it('keeps no session when the very first topology is left half applied', async () => {

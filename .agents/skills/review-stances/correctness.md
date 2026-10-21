@@ -82,6 +82,19 @@ Keep same-envelope point duplicates, global track/clip/device collisions, and
 repeated arrangement IDs repair-required; only canonical gain point rows have
 this local scope.
 
+### 2026-10-21 — final cleanup changed storage state after result construction
+
+PR #5274 (`40baa0716b`) set a storage-only leak reason and retained message before its
+existing `finally` cleanup attempt. Complete proof on that final attempt could delete the
+owned payload while the returned result still said it was retained. The historical review
+stance, prompt, and tier are unestablished. A result assembled before finalization was not
+an oracle for the final state.
+
+Probe a real guarded child and owned payload with the first release refused and the final
+direct and claimed release permitted. Assert exact owner and claim removal alongside the
+reported reason and output. Persistent refusal must still report retention, and an earlier
+process or resource failure must remain a failure after storage removal.
+
 ### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
 
 The orchestrator packet prescribed the requested beat-four anchor without tracing
