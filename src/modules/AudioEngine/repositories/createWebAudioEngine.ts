@@ -9,6 +9,7 @@ import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission'
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { runAllAsyncEffects, runAllEffects } from '#/utils/runEffects';
 
 import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../engine/AdjustmentLayerRuntime';
 import { BusNode } from '../engine/BusNode';
@@ -2651,41 +2652,44 @@ class AudioEngineImpl implements AudioEngine {
         // A monitor edge feeds a strip gain node, so it cannot outlive the graph
         // it feeds. Release the microphone before the strips below are torn down,
         // on every teardown path — project switch and disposal alike.
-        stopInputMonitoring();
-        // Tear down all per-project audio graph state (tracks, buses, sends,
-        // sidechain routes) without closing the AudioContext, master nodes,
-        // or already-loaded worklet modules. Used when switching projects.
-        this.mutateRuntimeGraph(() => {
-            const hadLiveGraph =
-                !this.fallbackMode &&
-                (this.trackNodes.size > 0 ||
-                    this.busNodes.size > 0 ||
-                    this.sendNodes.size > 0 ||
-                    this.sidechainConnections.size > 0 ||
-                    this.adjustmentRuntime.listLiveBusKeys().length > 0 ||
-                    Array.from(this.toasterPadRoutes.values()).some((route) => route.destinationNode !== null));
-            this.stopAllScheduled();
-            this.adjustmentRuntime.reset();
-            for (const [key] of this.sidechainConnections) {
-                this.removeLiveSidechainConnection(key);
-            }
-            // Drop sidechain routes queued during fallback: they belong to the
-            // project being torn down and must not replay into the next one.
-            this.pendingSidechainRoutes.clear();
-            for (const send of Array.from(this.sendNodes.values())) {
-                this.removeSendFromGraph(send.sourceTrackId, send.busId);
-            }
-            for (const [id] of this.busNodes) {
-                this.removeBusStripFromGraph(id, 'graph-reset');
-            }
-            for (const [id] of this.trackNodes) {
-                this.removeTrackStripFromGraph(id, 'graph-reset');
-            }
-            this.toasterPadRoutes.clear();
-            this.pendingDevicePromises.clear();
-            this.deviceReadinessDiagnostics.reset();
-            return { value: undefined, changed: hadLiveGraph };
-        });
+        runAllEffects([
+            stopInputMonitoring,
+            // Tear down all per-project audio graph state (tracks, buses, sends,
+            // sidechain routes) without closing the AudioContext, master nodes,
+            // or already-loaded worklet modules. Used when switching projects.
+            () =>
+                this.mutateRuntimeGraph(() => {
+                    const hadLiveGraph =
+                        !this.fallbackMode &&
+                        (this.trackNodes.size > 0 ||
+                            this.busNodes.size > 0 ||
+                            this.sendNodes.size > 0 ||
+                            this.sidechainConnections.size > 0 ||
+                            this.adjustmentRuntime.listLiveBusKeys().length > 0 ||
+                            Array.from(this.toasterPadRoutes.values()).some((route) => route.destinationNode !== null));
+                    this.stopAllScheduled();
+                    this.adjustmentRuntime.reset();
+                    for (const [key] of this.sidechainConnections) {
+                        this.removeLiveSidechainConnection(key);
+                    }
+                    // Drop sidechain routes queued during fallback: they belong to the
+                    // project being torn down and must not replay into the next one.
+                    this.pendingSidechainRoutes.clear();
+                    for (const send of Array.from(this.sendNodes.values())) {
+                        this.removeSendFromGraph(send.sourceTrackId, send.busId);
+                    }
+                    for (const [id] of this.busNodes) {
+                        this.removeBusStripFromGraph(id, 'graph-reset');
+                    }
+                    for (const [id] of this.trackNodes) {
+                        this.removeTrackStripFromGraph(id, 'graph-reset');
+                    }
+                    this.toasterPadRoutes.clear();
+                    this.pendingDevicePromises.clear();
+                    this.deviceReadinessDiagnostics.reset();
+                    return { value: undefined, changed: hadLiveGraph };
+                }),
+        ]);
     }
 
     public applyAdjustmentLayerTick(records: AdjustmentLayerTickInput[]): void {
@@ -2715,53 +2719,38 @@ class AudioEngineImpl implements AudioEngine {
         this.initPromise = null;
         this.workletReady = false;
 
-        // Tell every live worklet processor to shut down before we tear down the
-        // graph and close the context, so processors stop their RT work cleanly.
-        this.postShutdownToWorklets();
-
-        // Tear down the per-project graph (tracks, buses, sends, sidechain,
-        // adjustment-layer runtime). This also releases the monitor session
-        // before the strip nodes its edges feed are disposed, and closes
-        // per-track meter ports.
-        this.resetGraph();
-
-        this.masterGainNode.disconnect();
-        // Disconnect the master meter tap (inserted by wireMasterMeter into the
-        // master chain) so it is not left dangling on the closed context.
-        if (typeof AudioWorkletNode !== 'undefined' && this.masterMeterNode instanceof AudioWorkletNode) {
-            try {
-                this.masterMeterNode.disconnect();
-            } catch {
-                // already disconnected
-            }
-        }
-        this.masterMeterNode = undefined;
-        // Drop the view onto the meter SAB with the node that fed it, so a
-        // post-dispose read reports "unavailable" instead of replaying whatever
-        // the last block happened to leave in the buffer.
-        this.masterMeterBuffer = null;
-        this.masterAnalyser.disconnect();
-        // Tear down the control-room listening insert alongside the chain it
-        // sits in, so nothing is left connected into the closed context.
-        this.monitorMonoNode.disconnect();
-        this.monitorDimNode.disconnect();
-        // Tear down the stereo analysis tap alongside the mono analyser it
-        // branches from, so nothing is left connected into the closed context.
-        this.masterStereoSplitter.disconnect();
-        this.masterAnalyserLeft.disconnect();
-        this.masterAnalyserRight.disconnect();
-        this.masterStereoTapSink.disconnect();
-
-        // Release the transport SAB / its view so the buffer can be GC'd and a
-        // post-dispose setTransportInfo() no-ops instead of writing into a stale
-        // buffer.
-        this.transportSAB = null;
-        this.transportView = null;
-        this.transportSeqView = null;
-
-        // Await the close so callers can sequence teardown; the dropped promise
-        // previously hid close() failures and left the context not-yet-closed.
-        await this.context.close();
+        // Keep the synchronous shutdown order, but attempt every independent
+        // resource before reporting a fault. Context closure must still settle
+        // before the one cached disposal result is returned to any caller.
+        await runAllAsyncEffects([
+            () =>
+                runAllEffects([
+                    () => this.postShutdownToWorklets(),
+                    () => this.resetGraph(),
+                    () => this.masterGainNode.disconnect(),
+                    () => {
+                        const meter = this.masterMeterNode;
+                        this.masterMeterNode = undefined;
+                        this.masterMeterBuffer = null;
+                        if (typeof AudioWorkletNode !== 'undefined' && meter instanceof AudioWorkletNode) {
+                            meter.disconnect();
+                        }
+                    },
+                    () => this.masterAnalyser.disconnect(),
+                    () => this.monitorMonoNode.disconnect(),
+                    () => this.monitorDimNode.disconnect(),
+                    () => this.masterStereoSplitter.disconnect(),
+                    () => this.masterAnalyserLeft.disconnect(),
+                    () => this.masterAnalyserRight.disconnect(),
+                    () => this.masterStereoTapSink.disconnect(),
+                    () => {
+                        this.transportSAB = null;
+                        this.transportView = null;
+                        this.transportSeqView = null;
+                    },
+                ]),
+            () => this.context.close(),
+        ]);
     }
 
     private postShutdownToWorklets(): void {

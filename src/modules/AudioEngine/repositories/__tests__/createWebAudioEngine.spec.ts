@@ -367,6 +367,7 @@ function getPendingSidechainRoutes(engine: AudioEngine): Map<string, unknown> {
 }
 
 type MockTrackNode = {
+    dispose: Mock;
     notifyDeviceLoaded(device: unknown): void;
     rebuildChain(): void;
     completeAsyncDevicePromotion(application?: 'applied' | 'needs-reconcile'): void;
@@ -1868,6 +1869,165 @@ describe('AudioEngine', () => {
             expect(stripExistedAtStop).toBe(true);
             expect(engine.getTrackStrip('t1')).toBeUndefined();
         });
+    });
+
+    describe('monitor fault continuation', () => {
+        function createFaultingMonitoredGraph() {
+            const firstStrip = engine.ensureTrackStrip('faulting-input');
+            const secondStrip = engine.ensureTrackStrip('healthy-input');
+            engine.ensureBusStrip('monitor-bus');
+            const bus = (engine as unknown as { busNodes: Map<string, { dispose: Mock }> }).busNodes.get(
+                'monitor-bus'
+            )!;
+            const scheduled = mockCtx.createOscillator();
+            engine.registerScheduledSource(scheduled);
+            engine.setSend('healthy-input', 'monitor-bus', 0.5);
+            const send = mockCtx.createGain.mock.results.at(-1)!.value;
+            const trackNodes = ['faulting-input', 'healthy-input', 'monitor-bus'].map((id) =>
+                getMockTrackNode(engine, id)
+            );
+            const firstCapture = seedMonitorCapture('input-1', 'faulting-input', firstStrip.gainNode);
+            const secondCapture = seedMonitorCapture('input-2', 'healthy-input', secondStrip.gainNode);
+            inputMonitoringSession.pendingRequests.set('input-3', Promise.withResolvers<MediaStream>().promise);
+            const failure = new Error('monitor source refused disconnect');
+            // Fault the source's capture-wide disconnect, after the per-track
+            // edge was released. This leaves exactly one original failure.
+            firstCapture.sourceDisconnect.mockImplementation((...destinations) => {
+                if (destinations.length === 0) {
+                    throw failure;
+                }
+            });
+            expect(engine.getDiagnostics().graph).toMatchObject({ trackStrips: 2, busStrips: 1, sends: 1 });
+            return { firstCapture, secondCapture, failure, send, trackNodes, bus, scheduled };
+        }
+
+        function expectGraphReleased(graph: ReturnType<typeof createFaultingMonitoredGraph>) {
+            for (const capture of [graph.firstCapture, graph.secondCapture]) {
+                expect(capture.trackStop).toHaveBeenCalledTimes(1);
+                expect(capture.sourceDisconnect).toHaveBeenCalledWith();
+            }
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            expect(inputMonitoringSession.trackKeys.size).toBe(0);
+            expect(inputMonitoringSession.pendingRequests.size).toBe(0);
+            expect(graph.bus.dispose).toHaveBeenCalledTimes(1);
+            expect(graph.scheduled.stop).toHaveBeenCalledTimes(1);
+            expect(graph.send.disconnect).toHaveBeenCalledTimes(1);
+            for (const track of graph.trackNodes) {
+                expect(track.dispose).toHaveBeenCalledTimes(1);
+            }
+            expect(engine.getDiagnostics().graph).toMatchObject({ trackStrips: 0, busStrips: 0, sends: 0 });
+        }
+
+        it('rethrows the monitor failure after releasing both captures and the track, bus and send graph', () => {
+            const graph = createFaultingMonitoredGraph();
+
+            expect(() => engine.resetGraph()).toThrow(graph.failure);
+
+            expectGraphReleased(graph);
+            expect(mockCtx.close).not.toHaveBeenCalled();
+            engine.resetGraph();
+            expectGraphReleased(graph);
+        });
+
+        it('awaits one context close after a monitor failure and retains that terminal result on repeated disposal', async () => {
+            await engine.initialize();
+            const graph = createFaultingMonitoredGraph();
+            const master = engine as unknown as {
+                masterGainNode: { disconnect: Mock };
+                masterMeterNode: { disconnect: Mock };
+                masterAnalyser: { disconnect: Mock };
+                monitorMonoNode: { disconnect: Mock };
+                monitorDimNode: { disconnect: Mock };
+                masterStereoSplitter: { disconnect: Mock };
+                masterAnalyserLeft: { disconnect: Mock };
+                masterAnalyserRight: { disconnect: Mock };
+                masterStereoTapSink: { disconnect: Mock };
+            };
+            const masterNodes = Object.values({
+                gain: master.masterGainNode,
+                meter: master.masterMeterNode,
+                analyser: master.masterAnalyser,
+                mono: master.monitorMonoNode,
+                dim: master.monitorDimNode,
+                splitter: master.masterStereoSplitter,
+                left: master.masterAnalyserLeft,
+                right: master.masterAnalyserRight,
+                sink: master.masterStereoTapSink,
+            });
+            for (const node of masterNodes) {
+                node.disconnect.mockClear();
+            }
+            const closing = Promise.withResolvers<void>();
+            mockCtx.close.mockReturnValue(closing.promise);
+            let settled = false;
+
+            const disposal = engine.dispose();
+            const result = disposal.catch((error: unknown) => error);
+            void disposal.then(
+                () => {
+                    settled = true;
+                },
+                () => {
+                    settled = true;
+                }
+            );
+            expect(engine.dispose()).toBe(disposal);
+            await vi.waitFor(() => expect(mockCtx.close).toHaveBeenCalledTimes(1));
+            expect(settled).toBe(false);
+            expectGraphReleased(graph);
+            for (const node of masterNodes) {
+                expect(node.disconnect).toHaveBeenCalledTimes(1);
+            }
+            closing.resolve();
+            expect(await result).toBe(graph.failure);
+            await expect(engine.dispose()).rejects.toBe(graph.failure);
+            expect(mockCtx.close).toHaveBeenCalledTimes(1);
+            expectGraphReleased(graph);
+            for (const node of masterNodes) {
+                expect(node.disconnect).toHaveBeenCalledTimes(1);
+            }
+        });
+        it('retains both the monitor failure and a rejected context close without retrying teardown', async () => {
+            const graph = createFaultingMonitoredGraph();
+            const closeFailure = new Error('context close refused');
+            mockCtx.close.mockRejectedValueOnce(closeFailure);
+
+            const disposal = engine.dispose();
+            const failure: unknown = await disposal.catch((error: unknown) => error);
+
+            expect(failure).toBeInstanceOf(AggregateError);
+            expect((failure as AggregateError).errors).toEqual([graph.failure, closeFailure]);
+            await expect(engine.dispose()).rejects.toBe(failure);
+            expect(mockCtx.close).toHaveBeenCalledTimes(1);
+            expectGraphReleased(graph);
+        });
+
+        it.each(['masterGainNode', 'masterMeterNode'] as const)(
+            'continues the remaining master teardown after the monitor and %s both fail',
+            async (nodeName) => {
+                await engine.initialize();
+                const graph = createFaultingMonitoredGraph();
+                const nodes = engine as unknown as {
+                    masterGainNode: { disconnect: Mock };
+                    masterMeterNode: { disconnect: Mock };
+                    masterStereoTapSink: { disconnect: Mock };
+                };
+                const nodeFailure = new Error('master disconnect refused');
+                nodes[nodeName].disconnect.mockImplementationOnce(() => {
+                    throw nodeFailure;
+                });
+
+                const disposal = engine.dispose();
+                const failure: unknown = await disposal.catch((error: unknown) => error);
+
+                expect(failure).toBeInstanceOf(AggregateError);
+                expect((failure as AggregateError).errors).toEqual([graph.failure, nodeFailure]);
+                expect(nodes.masterStereoTapSink.disconnect).toHaveBeenCalledTimes(1);
+                expect(mockCtx.close).toHaveBeenCalledTimes(1);
+                await expect(engine.dispose()).rejects.toBe(failure);
+                expectGraphReleased(graph);
+            }
+        );
     });
 
     describe('dispose', () => {
