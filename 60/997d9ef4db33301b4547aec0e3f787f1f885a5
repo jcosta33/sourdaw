@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_2a5c668d293da9 81-82,90,92
+  s_1c08b47ac3792f::t_84a2d726ed496a 239-240,242-243,245,247,250,253,258,261
+  s_1c08b47ac3792f::t_54b7c6d4c097e6 264-267,270-272,275-281
+  s_1c08b47ac3792f::t_70378c56905308 70
+  s_1c08b47ac3792f::t_ca13e8afc63062 296-297,301-307
+  s_1c08b47ac3792f::t_7cc644585915a6 79
+  s_1c08b47ac3792f::t_b9927abdd24a82 19-24,26-28
+src/modules/AiRuntime/transformers/resolveAutomationLaneTarget.ts
+  s_1c08b47ac3792f::t_0a816cad1f367a 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "60997d9ef4db33301b4547aec0e3f787f1f885a5",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
