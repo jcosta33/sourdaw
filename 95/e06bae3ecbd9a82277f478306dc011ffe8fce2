@@ -1,0 +1,54 @@
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_1c08b47ac3792f::t_b8db63867b79fa 235-236
+  s_1c08b47ac3792f::t_d171225f518904 57-60
+  s_1c08b47ac3792f::t_8e3557e0b34170 257-260
+  s_29d8df116c5b92::t_62fd5a46dd79a0 56
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_ebee51bf89baa0 4865-4870
+  s_1c08b47ac3792f::t_c081fa35218254 6757
+  s_1c08b47ac3792f::t_42378b8fe82bbf 4042-4069
+  s_1c08b47ac3792f::t_bb28b205a59078 4032-4038,4070-4092
+  s_1c08b47ac3792f::t_c9b8a71e66e2e1 5966-5969
+  s_1c08b47ac3792f::t_fe4d7abb853e24 47-52
+  s_1c08b47ac3792f::t_1dc9e688029206 4841,4844
+  s_1c08b47ac3792f::t_a7de7430063d48 4395
+  s_1c08b47ac3792f::t_77f7ef302af757 4689-4690,4699,4703-4708
+  s_1c08b47ac3792f::t_9ffc8419853f11 178-179
+  s_1c08b47ac3792f::t_2041f2c6ef25db 4930-4938
+  s_1c08b47ac3792f::t_97c41c2470318d 4093
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_1c08b47ac3792f::t_e193063e6c7433 3,5-9,31-37,43-44,51-52,60-63,69-72,79-80,82-90,98-99,101,110-117,122,205-224,226-227,230-232,235-237,240-243,245-246,248-266,269-280,282-283,285-299,302-309,312-314,316-317,320-329,340-366,371-375,377,382,385,387,389,391-396,398-399,401-409,412,414-415,417-418
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_1c08b47ac3792f::t_af84a480dd4f87 934,936,941-942,949-953
+  s_1c08b47ac3792f::t_d71b51962f37e2 796-932,957-974
+  s_1c08b47ac3792f::t_e518daa83082f7 236-239,247
+  s_1c08b47ac3792f::t_c336ffc7eb5dd3 349
+  s_1c08b47ac3792f::t_fb662b60593b00 126-140
+  s_1c08b47ac3792f::t_b8d58337cf8301 25
+  s_1c08b47ac3792f::t_02982bbb51be5d 933,935,937-940,943-948,954-956
+  s_1c08b47ac3792f::t_0a07548631d796 462
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "95e06bae3ecbd9a82277f478306dc011ffe8fce2",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
