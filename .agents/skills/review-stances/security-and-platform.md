@@ -22,6 +22,19 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-21 — the storage census attributed foreign same-UID processes to every run (introduced by PR #5274)
+
+PR #5274 proved its Linux file census only in a fresh isolated account. In the runner account a
+long-lived same-UID process with EACCES on `/proc/<pid>/cwd` made every cleanup unknown, so nightly
+unit shards and the runner-account "Review tooling unit suite" reported `leak`. That suite was
+skipped on #5274 because its profile was broad, and the isolated unit shards have no foreign
+processes.
+
+Probe: run a guarded no-op in a populated Linux account beside an uninspectable process that
+predates the supervisor, and require reclamation. Keep the denial retained for a process started
+after the supervisor, and for every denial during crash recovery or under any owner other than the
+run's own live supervisor.
+
 ### 2026-10-12 — transient Darwin descriptor omission exhausted complete-census admission
 
 PR #5274 (`40baa0716b`) added conservative whole-account file proof but allowed only two
@@ -63,7 +76,9 @@ Probe Linux terminal file proof with a real unreaped child and a zombie leader w
 Require matching PID/thread-group/four UIDs and one thread; denied, incomplete or expired status
 retains. File release never grants authority to treat a registered PID as gone.
 UID equality does not grant `/proc` readlink access: dumpability and access policy can deny a live
-same-UID cwd or file descriptor. Keep denial unknown and retain storage. For hosted test isolation,
+same-UID cwd or file descriptor. Keep denial unknown and retain storage, except for a process that
+started before the run's live supervisor and so inherited no cwd or descriptor from it; that start
+time does not prove it never opens a storage path it is later handed. For hosted test isolation,
 prove the account's UID unused before install, all runtime identity fields unprivileged, groups and
 capabilities cleared, and private storage owned. Attack denied same-test-UID consumers before worker
 concurrency and require actual retention followed by reclamation after reaping. Account isolation
