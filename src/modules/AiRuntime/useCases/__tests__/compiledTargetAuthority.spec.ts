@@ -645,6 +645,31 @@ function everyAudioTrackExceptVocals(name: string, arguments_: Record<string, un
     };
 }
 
+describe('a name stated only inside a protection picks no target', () => {
+    it('refuses a track picked by a name the request states only in the clip it protects', () => {
+        const bassWithVerse: ProjectTrack = {
+            ...bass,
+            clipCount: 1,
+            clips: [
+                { id: 'clip-bass-verse', name: 'Bass Verse', type: 'audio', startBeat: 0, endBeat: 8, noteCount: 0 },
+            ],
+        };
+        const result = compileAndBridge(
+            'set the volume to 75% but leave Bass Verse unchanged',
+            [trackItem('setTrackGain', bass, { gain: 0.75 })],
+            [bass.id],
+            { ...projectContext, tracks: [vocals, keys, drums, bassWithVerse, master] }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({
+            index: 0,
+            name: 'setTrackGain',
+            reason: 'Compiled target trackId is not authorized by the user request',
+        });
+    });
+});
+
 describe('a compiled selector cannot take authority the request does not give', () => {
     it.each(['set Vocalz volume to 75%', 'set Vocal volume to 75%'])(
         'refuses a selector where "%s" only approximates a track name',
