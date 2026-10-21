@@ -159,6 +159,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const automation = useStore(automationStore, { lanes: [] });
     const midi = useStore(midiStore, defaultMidiStoreState);
     const [mode, setMode] = useState<ExportMode>('mixdown');
+    const [includeWavLoudnessReports, setIncludeWavLoudnessReports] = useState(false);
     const [range, setRange] = useState<ExportRange>('project');
     const [tailSeconds, setTailSeconds] = useState(DEFAULT_EXPORT_TAIL_SECONDS);
     const [autoTail, setAutoTail] = useState(true);
@@ -380,6 +381,20 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     }),
                 });
             }
+            if (
+                includeWavLoudnessReports &&
+                (mode !== 'stems' ||
+                    targetPlan.length === 0 ||
+                    targetPlan.some(
+                        (target) =>
+                            target.formats.length !== 1 ||
+                            target.formats[0] !== 'wav' ||
+                            !EXPORT_SAMPLE_RATES.some((rate) => rate === target.sampleRate) ||
+                            (target.channels !== 1 && target.channels !== 2)
+                    ))
+            ) {
+                throw new Error('WAV loudness reports require Stems and WAV-only supported delivery targets.');
+            }
         } catch (error) {
             setErrorText(error instanceof Error ? error.message : 'Invalid delivery target.');
             setProgress(0);
@@ -395,6 +410,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         let nativeFilePath: string | null = null;
 
         let output: Awaited<ReturnType<typeof streamExport>> | undefined;
+        let exportFailure: string | undefined;
         const checkCancelled = () => {
             if (cancelledRef.current) {
                 throw new Error('Export cancelled');
@@ -449,6 +465,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     destination,
                     targets: targetPlan,
                     checkCancelled,
+                    includeWavLoudnessReports,
+                    exportMode: mode === 'stems' ? 'stems' : 'mixdown',
                 });
             } catch (error) {
                 if (error instanceof Error && error.name === 'AbortError') {
@@ -533,7 +551,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 buffer: Parameters<NonNullable<Parameters<typeof renderOffline>[0]['onRendered']>>[0],
                 name: string,
                 index: number,
-                total: number
+                total: number,
+                stemId?: string
             ) => {
                 if (!output) {
                     throw new Error('Export storage is unavailable.');
@@ -544,6 +563,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 await output.writeAudio({
                     source: buffer,
                     name,
+                    stemId,
                     onProgress: whileNotCancelled((format, fraction, targetId) => {
                         const pass = passes.findIndex(
                             (candidate) => candidate.id === targetId && candidate.format === format
@@ -631,7 +651,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         stemBaseNames = deriveStemFileBaseNames({ stemTrackIds: ids, orderedTracks: tracks });
                     },
                     onStem: async (trackId, buffer, index, total) => {
-                        await serializeAudio(buffer, stemBaseNames.get(trackId) ?? trackId, index, total);
+                        await serializeAudio(buffer, stemBaseNames.get(trackId) ?? trackId, index, total, trackId);
                     },
                     onProgress: whileNotCancelled((fraction: number) => setProgress(fraction * 100)),
                     onWarning: whileNotCancelled((message: string) => {
@@ -697,8 +717,16 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
 
             setProgress(100);
-            setStatusText('Ding! Baking Complete! 🍞');
-            notifyUser('Ding! The audio finished baking', 'success');
+            const reportCount = output?.reportedFiles() ?? 0;
+            setStatusText(
+                reportCount > 0 ? `Baking complete — ${reportCount} WAV loudness reports` : 'Ding! Baking Complete! 🍞'
+            );
+            notifyUser(
+                reportCount > 0
+                    ? `Audio and ${reportCount} WAV loudness reports finished baking`
+                    : 'Ding! The audio finished baking',
+                'success'
+            );
 
             // Auto-close after 2.5s, only if this export's session still owns the dialog
             setTimeout(() => {
@@ -710,8 +738,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             // A Cancel's own failure is reported by the finally below.
             if (!endedCancelled()) {
                 const msg = error instanceof Error ? error.message : 'Unknown oven malfunction';
+                exportFailure = includeWavLoudnessReports ? `Export incomplete: ${msg}` : msg;
                 logger.error(new Error('Export failed', { cause: error }));
-                setErrorText(msg);
+                setErrorText(exportFailure);
                 setStatusText('The bread burned...');
                 // Reset the bar so a stale half-filled value doesn't render beside the error box
                 setProgress(0);
@@ -722,7 +751,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             } catch (cleanupError) {
                 const message = cleanupError instanceof Error ? cleanupError.message : 'Export cleanup failed.';
                 logger.error(new Error('Export cleanup failed', { cause: cleanupError }));
-                setErrorText(message);
+                setErrorText(exportFailure ? `${exportFailure} Cleanup also failed: ${message}` : message);
             }
             // Always unlock the UI. On cancel, delay briefly so the status text is readable.
             if (endedCancelled()) {
@@ -903,7 +932,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             <Button
                                 variant={mode === 'mixdown' ? 'default' : 'outline'}
                                 size="sm"
-                                onClick={() => setMode('mixdown')}
+                                onClick={() => {
+                                    setMode('mixdown');
+                                    setIncludeWavLoudnessReports(false);
+                                }}
                                 data-testid="export-mode-mixdown"
                                 className={
                                     mode === 'mixdown'
@@ -933,7 +965,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             <Button
                                 variant={mode === 'render-to-clip' ? 'default' : 'outline'}
                                 size="sm"
-                                onClick={() => setMode('render-to-clip')}
+                                onClick={() => {
+                                    setMode('render-to-clip');
+                                    setIncludeWavLoudnessReports(false);
+                                }}
                                 className={
                                     mode === 'render-to-clip'
                                         ? 'w-full border-amber-500/30 bg-amber-700/20 text-amber-300 hover:bg-amber-700/30'
@@ -1134,6 +1169,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                     {mode !== 'render-to-clip' ? (
                         <>
+                            {mode === 'stems' ? (
+                                <label className="flex items-center gap-2 text-dense">
+                                    <DawCompactCheckbox
+                                        aria-label="Include WAV loudness reports"
+                                        checked={includeWavLoudnessReports}
+                                        disabled={exporting}
+                                        onChange={(event) => setIncludeWavLoudnessReports(event.target.checked)}
+                                    />
+                                    <span>Include WAV loudness reports</span>
+                                </label>
+                            ) : null}
                             <DawDialogSection tone="warm" title="Ingredients">
                                 <Grid cols={3} gap={2}>
                                     {FORMAT_OPTIONS.map((freq) => {

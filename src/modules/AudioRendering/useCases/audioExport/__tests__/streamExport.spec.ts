@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -5,12 +6,188 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { unzipSync } from 'fflate';
 
 import { DELIVERY_PRESETS } from '../../../models/deliveryPresets';
+import { type DeliverySettings } from '../../../models/DeliveryTarget';
+import { type PcmDitherOptions } from '../../../models/PcmDitherOptions';
 import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';
 import { streamExport } from '../streamExport';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('multi-target actual output', () => {
+    it('publishes one decoded-byte report for each of two stems and two distinct WAV targets', async () => {
+        const chunks: Uint8Array[] = [];
+        vi.stubGlobal('showSaveFilePicker', async () => ({
+            createWritable: async () => ({
+                write: async (bytes: Uint8Array) => {
+                    chunks.push(bytes.slice());
+                },
+                close: async () => {},
+                abort: async () => {},
+            }),
+        }));
+        const targets = resolveDeliveryTargets({
+            targets: [48000, 44100].map((rate, index) => {
+                const settings: DeliverySettings = {
+                    ...DELIVERY_PRESETS[2]!.settings,
+                    formats: ['wav'],
+                    sampleRate: rate,
+                    channels: index === 0 ? 2 : 1,
+                    normalization: 'off',
+                };
+                const dither: PcmDitherOptions = { mode: 'tpdf', seed: 113 };
+                return { id: `target-${index}`, name: `Target ${index}`, settings, dither };
+            }),
+        });
+        const output = await streamExport({
+            targets,
+            includeWavLoudnessReports: true,
+            exportMode: 'stems',
+            destination: {
+                kind: 'browser',
+                suggestedName: 'reports.zip',
+                extension: '.zip',
+                mime: 'application/zip',
+                archive: true,
+            },
+            checkCancelled: () => {},
+        });
+        const samples = Float32Array.from(
+            { length: 48000 },
+            (_, frame) => 0.1 * Math.sin((2 * Math.PI * 1000 * frame) / 48000)
+        );
+        for (const stemId of ['track-a', 'track-b']) {
+            await output.writeAudio({
+                source: {
+                    length: samples.length,
+                    numberOfChannels: 2,
+                    sampleRate: 48000,
+                    getChannelData: () => samples,
+                },
+                name: stemId,
+                stemId,
+                onProgress: () => {},
+                onLimited: () => {},
+            });
+        }
+        await output.commit(() => {});
+        const archive = new Uint8Array(chunks.reduce((count, part) => count + part.length, 0));
+        let offset = 0;
+        for (const part of chunks) {
+            archive.set(part, offset);
+            offset += part.length;
+        }
+        const files = unzipSync(archive);
+        expect(Object.keys(files)).toHaveLength(8);
+        for (const stemId of ['track-a', 'track-b'])
+            for (let index = 0; index < 2; index++) {
+                const audioName = `${stemId}__target-${index}.wav`;
+                const audio = files[audioName]!;
+                const report = JSON.parse(new TextDecoder().decode(files[`${audioName}.loudness.json`]!));
+                const wav = new DataView(audio.buffer, audio.byteOffset, audio.byteLength);
+                expect(report).toMatchObject({
+                    stemId,
+                    targetId: `target-${index}`,
+                    audioFile: audioName,
+                    measurementBasis: 'decoded-WAV-bytes',
+                    publicationAttested: false,
+                });
+                expect(report.wav).toMatchObject({
+                    sampleRate: wav.getUint32(24, true),
+                    channels: wav.getUint16(22, true),
+                    bitDepth: wav.getUint16(34, true),
+                    bytes: audio.length,
+                    md5: createHash('md5').update(audio).digest('hex'),
+                });
+                expect(report.integrated).toHaveProperty('value');
+                expect(report.maxMomentary).toHaveProperty('value');
+                expect(report.maxShortTerm).toEqual({ unavailable: 'short-window', unit: 'LUFS' });
+            }
+    });
+
+    it('refuses unsupported report plans before selecting storage', async () => {
+        const picker = vi.fn();
+        vi.stubGlobal('showSaveFilePicker', picker);
+        const targets = resolveDeliveryTargets({
+            targets: [
+                {
+                    id: 'mixed',
+                    name: 'Mixed',
+                    settings: { ...DELIVERY_PRESETS[2]!.settings, formats: ['wav', 'mp3'] },
+                    dither: { mode: 'none' },
+                },
+            ],
+        });
+        await expect(
+            streamExport({
+                targets,
+                includeWavLoudnessReports: true,
+                exportMode: 'stems',
+                destination: {
+                    kind: 'browser',
+                    archive: true,
+                    suggestedName: 'x.zip',
+                    extension: '.zip',
+                    mime: 'application/zip',
+                },
+                checkCancelled: () => {},
+            })
+        ).rejects.toThrow('WAV loudness reports require');
+        expect(picker).not.toHaveBeenCalled();
+    });
+    it('refuses a same-shape changed second PCM replay without publishing its ZIP', async () => {
+        const close = vi.fn(async () => {});
+        const abort = vi.fn(async () => {});
+        vi.stubGlobal('showSaveFilePicker', async () => ({
+            createWritable: async () => ({ write: async () => {}, close, abort }),
+        }));
+        const targets = resolveDeliveryTargets({
+            targets: [
+                {
+                    id: 'wav',
+                    name: 'WAV',
+                    settings: {
+                        ...DELIVERY_PRESETS[2]!.settings,
+                        formats: ['wav'],
+                        sampleRate: 48000,
+                        channels: 1,
+                        normalization: 'off',
+                    },
+                    dither: { mode: 'tpdf', seed: 42 },
+                },
+            ],
+        });
+        let reads = 0;
+        const output = await streamExport({
+            targets,
+            includeWavLoudnessReports: true,
+            exportMode: 'stems',
+            destination: {
+                kind: 'browser',
+                archive: true,
+                suggestedName: 'x.zip',
+                extension: '.zip',
+                mime: 'application/zip',
+            },
+            checkCancelled: () => {},
+        });
+        await expect(
+            output.writeAudio({
+                source: {
+                    length: 48000,
+                    numberOfChannels: 1,
+                    sampleRate: 48000,
+                    readChannels: (_start, length) => [new Float32Array(length).fill(++reads > 24 ? 0.2 : 0.1)],
+                },
+                name: 'stem',
+                stemId: 'track',
+                onProgress: () => {},
+                onLimited: () => {},
+            })
+        ).rejects.toThrow('emitted audio changed');
+        await output.abort();
+        expect(close).not.toHaveBeenCalled();
+        expect(abort).toHaveBeenCalledTimes(1);
+    });
     it('writes distinct same-format targets with real rate/channel/duration conversion and independent gain', async () => {
         const samples = Float32Array.from(
             { length: 96000 },

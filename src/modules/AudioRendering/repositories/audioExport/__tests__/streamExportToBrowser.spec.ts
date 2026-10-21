@@ -36,6 +36,39 @@ const options = {
 
 afterEach(() => vi.unstubAllGlobals());
 describe('browser export transaction', () => {
+    it('requires every real audio/report pair before the ZIP can close', async () => {
+        const { chunks, writable } = createDestination();
+        const batch = await streamExportToBrowser({ ...options, requireReportPairs: true });
+        const audio = await batch.beginFile('stem.wav');
+        await audio.writer.write(new Uint8Array([1]));
+        await audio.finish();
+        await expect(batch.commit(() => {})).rejects.toThrow('pairs are incomplete');
+        const report = await batch.beginFile('stem.wav.loudness.json');
+        await report.writer.write(new Uint8Array([2]));
+        await report.finish();
+        batch.registerReportPair('stem.wav', 'stem.wav.loudness.json');
+        await batch.commit(() => {});
+        expect(writable.close).toHaveBeenCalledTimes(1);
+        expect(Object.keys(unzipSync(collect(chunks)))).toEqual(['stem.wav', 'stem.wav.loudness.json']);
+    });
+    it('does not certify a paired report when final browser close fails', async () => {
+        const { writable } = createDestination();
+        writable.close.mockRejectedValueOnce(new Error('disk full at close'));
+        const batch = await streamExportToBrowser({ ...options, requireReportPairs: true });
+        const files: [string, number][] = [
+            ['stem.wav', 1],
+            ['stem.wav.loudness.json', 2],
+        ];
+        for (const [name, bytes] of files) {
+            const entry = await batch.beginFile(name);
+            await entry.writer.write(new Uint8Array([bytes]));
+            await entry.finish();
+        }
+        batch.registerReportPair('stem.wav', 'stem.wav.loudness.json');
+        await expect(batch.commit(() => {})).rejects.toThrow('disk full at close');
+        await batch.abort();
+        expect(writable.abort).toHaveBeenCalledTimes(1);
+    });
     it('emits real ZIP32 entries with matching local and central CRCs and stable order', async () => {
         const { chunks, writable } = createDestination();
         const batch = await streamExportToBrowser(options);

@@ -15,6 +15,68 @@ import { LOUDNESS_OFFSET, loudnessChannelWeight } from './loudnessScale';
 /** 100 ms, the refresh interval Tech 3341 specifies for both meters. */
 const WINDOW_STEP_SECONDS = 0.1;
 
+/** Streaming counterpart to the batch window law: hop windows and the final end-aligned window. */
+export function createMaxWindowedLoudnessAccumulator(input: { numberOfChannels: number; sampleRate: number }) {
+    const lengths = [0.4, 3].map((seconds) => Math.round(seconds * input.sampleRate));
+    const step = Math.round(WINDOW_STEP_SECONDS * input.sampleRate);
+    if (input.numberOfChannels < 1 || lengths.some((length) => length < 1) || step < 1) {
+        throw new Error('Invalid windowed loudness shape.');
+    }
+    const { shelf, highPass } = createKWeightingFilters(input.sampleRate);
+    const filters = Array.from({ length: input.numberOfChannels }, () => ({
+        shelf: { x1: 0, x2: 0, y1: 0, y2: 0 },
+        highPass: { x1: 0, x2: 0, y1: 0, y2: 0 },
+        samples: new Float64Array(4096),
+    }));
+    const history = new Float64Array(lengths[1]!);
+    const sums = [0, 0];
+    const maxima = [0, 0];
+    let frames = 0;
+    return {
+        push(channels: readonly Float32Array[]) {
+            const length = channels[0]?.length ?? 0;
+            if (channels.length !== input.numberOfChannels || channels.some((channel) => channel.length !== length)) {
+                throw new Error('Invalid windowed loudness PCM block.');
+            }
+            for (let start = 0; start < length; start += 4096) {
+                const count = Math.min(4096, length - start);
+                filters.forEach((filter, channel) => {
+                    const samples = filter.samples.subarray(0, count);
+                    for (let frame = 0; frame < count; frame++) {
+                        const value = channels[channel]![start + frame]!;
+                        samples[frame] = Number.isFinite(value) ? value : 0;
+                    }
+                    applyBiquad(samples, shelf, filter.shelf);
+                    applyBiquad(samples, highPass, filter.highPass);
+                });
+                for (let frame = 0; frame < count; frame++) {
+                    let power = 0;
+                    filters.forEach((filter, channel) => {
+                        power += loudnessChannelWeight(channel) * filter.samples[frame]! ** 2;
+                    });
+                    for (let window = 0; window < lengths.length; window++) {
+                        const windowFrames = lengths[window]!;
+                        const old = frames >= windowFrames ? history[(frames - windowFrames) % history.length]! : 0;
+                        sums[window] = sums[window]! + power - old;
+                        if (frames + 1 >= windowFrames && (frames + 1 - windowFrames) % step === 0) {
+                            maxima[window] = Math.max(maxima[window]!, sums[window]! / windowFrames);
+                        }
+                    }
+                    history[frames % history.length] = power;
+                    frames++;
+                }
+            }
+        },
+        finish() {
+            return lengths.map((windowFrames, index) => {
+                if (frames < windowFrames) return null;
+                const power = Math.max(maxima[index]!, sums[index]! / windowFrames);
+                return power > 0 ? LOUDNESS_OFFSET + 10 * Math.log10(power) : null;
+            });
+        },
+    };
+}
+
 /**
  * Every window start frame: the Tech 3341 hop, plus one window flush with the
  * end of the render when the last hop leaves frames uncovered.
